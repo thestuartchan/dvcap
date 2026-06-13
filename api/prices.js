@@ -3,32 +3,32 @@ export default async function handler(req, res) {
   if (!tickers) return res.status(400).json({ error: "Missing tickers" });
 
   const tickerList = tickers.split(",").map(t => t.trim()).filter(Boolean);
-  const MASSIVE_KEY = process.env.MASSIVE_API_KEY;
-
-  if (!MASSIVE_KEY) {
-    return res.status(500).json({ error: "MASSIVE_API_KEY not configured" });
-  }
-
   const results = {};
 
   for (let i = 0; i < tickerList.length; i++) {
-    // Stagger requests to respect free tier rate limit (5 req/min)
-    if (i > 0) await new Promise(r => setTimeout(r, 250));
+    if (i > 0) await new Promise(r => setTimeout(r, 120));
     const ticker = tickerList[i];
     try {
-      const r = await fetch(
-        `https://api.massive.com/v2/snapshot/locale/us/markets/stocks/tickers/${ticker}?apiKey=${MASSIVE_KEY}`
-      );
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
+      const r = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "Accept": "application/json",
+        },
+      });
       const data = await r.json();
-      const snap = data?.ticker;
-      if (snap) {
+      const meta = data?.chart?.result?.[0]?.meta;
+      if (meta) {
+        const price         = meta.regularMarketPrice ?? 0;
+        const prevClose     = meta.chartPreviousClose ?? meta.previousClose ?? price;
+        const changePercent = prevClose ? ((price - prevClose) / prevClose) * 100 : 0;
         results[ticker] = {
-          price: snap.day?.c ?? snap.prevDay?.c ?? 0,
-          changePercent: snap.todaysChangePerc ?? 0,
+          price: parseFloat(price.toFixed(2)),
+          changePercent: parseFloat(changePercent.toFixed(2)),
         };
       }
     } catch (e) {
-      console.error(`Massive fetch failed for ${ticker}:`, e.message);
+      console.error(`Yahoo fetch failed for ${ticker}:`, e.message);
     }
   }
 
