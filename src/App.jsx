@@ -1703,8 +1703,39 @@ export default function App() {
                           ? `Spread above 1.5% would suggest the bond market is pricing strong sustained growth — a precondition for this scenario.`
                           : `At ${(yc >= 0 ? "+" : "") + yc.toFixed(2)}%, the spread is well below the 1.5% level associated with inflationary boom conditions. This scenario remains a tail risk.`,
                       },
+                      {
+                        label: "US Dollar Index", value: liveInd?.dxy ?? 105, unit: "", threshold: 95,
+                        thresholdLabel: "weak <95", good: "below", fmtVal: v => v.toFixed(1),
+                        context: (v, breached) => breached
+                          ? `Dollar index at ${v.toFixed(1)} — weakening meaningfully. A sustained break below 95 would signal dollar structural decline, which is a key precondition for the inflationary boom scenario.`
+                          : `Dollar index at ${v.toFixed(1)} — still relatively strong. A structural dollar decline (sustained below 95) would be required to validate this scenario. Watch for sustained trend lower.`,
+                      },
+                      {
+                        label: "M2 Money Supply", value: liveInd?.m2 ? liveInd.m2 / 1000 : 21.5, unit: "T", threshold: 22,
+                        thresholdLabel: "re-accel >$22T", good: "above", fmtVal: v => "$" + v.toFixed(1),
+                        context: (v, breached) => {
+                          const dir = liveInd?.m2Rising ? "↑ rising" : "↓ falling";
+                          return breached
+                            ? `M2 at $${v.toFixed(1)}T and ${dir} — money supply re-accelerating is the Fed losing control of the inflation narrative. Combined with a weak dollar, this is the Dalio scenario in motion.`
+                            : `M2 at $${v.toFixed(1)}T, ${dir}. Re-acceleration above $22T would suggest fiscal dominance — the government printing faster than the Fed can tighten.`;
+                        },
+                      },
                     ],
-                    tip: "📊 The key signals here are off-market: watch the US Dollar Index (DXY) for a sustained break below 85, and M2 money supply for re-acceleration. Both would suggest the Fed has lost control of the inflation narrative. This is Ray Dalio's 'big debt cycle' endgame scenario — low probability near-term, but worth holding gold miners as insurance regardless.",
+                    tip: (() => {
+                      const dxyVal = liveInd?.dxy;
+                      const m2Val  = liveInd?.m2;
+                      const m2Dir  = liveInd?.m2Rising;
+                      if (!dxyVal && !m2Val) return "Hit Refresh signals to get live DXY and M2 readings for this scenario.";
+                      const dxyNote = dxyVal
+                        ? (dxyVal < 95 ? `⚠️ Dollar index at ${dxyVal.toFixed(1)} — below the 95 warning level. Dollar weakening is a live signal.`
+                          : `Dollar index at ${dxyVal.toFixed(1)} — no structural decline yet. Needs to break below 95 to validate.`)
+                        : "";
+                      const m2Note = m2Val
+                        ? (m2Dir ? `⚠️ M2 is re-accelerating ($${(m2Val/1000).toFixed(1)}T, rising) — money supply expanding again.`
+                          : `M2 at $${(m2Val/1000).toFixed(1)}T and falling — not yet signalling fiscal dominance.`)
+                        : "";
+                      return `${dxyNote} ${m2Note} Both signals need to confirm simultaneously for this scenario to become probable. Currently a tail risk — but hold gold miners as insurance regardless.`.trim();
+                    })(),
                   },
                 ];
 
