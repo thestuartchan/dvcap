@@ -1060,6 +1060,18 @@ export default function App() {
               </p>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {/* Unified refresh — fires both prices and indicators */}
+              <button
+                onClick={() => {
+                  const tickers = ["AAPL","AXP","KO","BAC","CVX","OXY","GOOGL","DAL","BN","AMZN","UBER","MSFT","SPY","NVDA","AVGO","MU","TSM","NTRA","EWZ","ARGT","BABA","META","CRWD","GDX","XLP","TLT","EPD","O","JEPI","BIL"];
+                  fetchPrices(tickers);
+                  fetchIndicators();
+                }}
+                disabled={pricesLoading || indLoading}
+                style={{ background: C.bg, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: (pricesLoading || indLoading) ? 0.5 : 1, whiteSpace: "nowrap" }}
+              >
+                {(pricesLoading || indLoading) ? "⏳ Refreshing…" : "🔄 Refresh All"}
+              </button>
               {(() => {
                 const cs = liveInd ? liveInd.creditSpread : 2.75;
                 const ue = liveInd ? liveInd.unemployment : 4.4;
@@ -1793,10 +1805,10 @@ export default function App() {
                         <td style={{ padding: "9px 12px", borderBottom: "1px solid " + C.bdr, color: C.muted, fontSize: 13 }}>
                           {f.manager}
                         </td>
-                        <td style={{ padding: "9px 12px", borderBottom: "1px solid " + C.bdr }}>
+                        <td style={{ padding: "9px 12px", borderBottom: "1px solid " + C.bdr, minWidth: 140 }}>
                           {f.regimeBet
-                            ? <Pill label={f.regimeBet} color={f.regimeBetColor || f.color} />
-                            : <span style={{ color: C.lbl, fontSize: 13 }}>Not set — edit fund to add</span>
+                            ? <span style={{ background: (f.regimeBetColor || f.color) + "15", color: f.regimeBetColor || f.color, border: "1.5px solid " + (f.regimeBetColor || f.color) + "40", borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 800, lineHeight: 1.5, display: "inline-block" }}>{f.regimeBet}</span>
+                            : <span style={{ color: C.lbl, fontSize: 12 }}>Not set</span>
                           }
                         </td>
                         <td style={{ padding: "9px 12px", borderBottom: "1px solid " + C.bdr, color: C.muted, fontSize: 13 }}>
