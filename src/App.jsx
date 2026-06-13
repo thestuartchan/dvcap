@@ -989,7 +989,7 @@ export default function App() {
   ];
 
   return (
-    <div style={{ background: C.bg, minHeight: "100vh", width: "100%", color: C.text, fontFamily: "'Inter', system-ui, sans-serif" }}>
+    <div style={{ background: C.bg, minHeight: "100vh", width: "100%", color: C.text, fontFamily: "'DM Sans', system-ui, sans-serif" }}>
       {(editingFund || addingFund) && (
         <FundEditor
           fund={addingFund ? blankFund : editingFund}
@@ -999,7 +999,7 @@ export default function App() {
       )}
 
       {/* ── HEADER ── */}
-      <div style={{ background: C.surf, borderBottom: "2px solid " + C.bdr, padding: "14px 16px 0", position: "sticky", top: 0, zIndex: 100 }}>
+      <div className="mwd-sticky-header" style={{ background: C.surf, borderBottom: "2px solid " + C.bdr, padding: "14px 16px 0", position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ maxWidth: 1080, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
             <div>
@@ -1053,7 +1053,7 @@ export default function App() {
       </div>
 
       {/* ── CONTENT ── */}
-      <div style={{ maxWidth: 1080, margin: "0 auto", padding: "16px" }}>
+      <div className="mwd-content-pad" style={{ maxWidth: 1080, margin: "0 auto", padding: "16px" }}>
 
         {/* ── INDICATORS ── */}
         {tab === "indicators" && (
@@ -1462,9 +1462,9 @@ export default function App() {
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <Card>
               <SLabel>Regime Probability — Analyst Consensus (Mid-2026)</SLabel>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+              <div className="mwd-regime-grid" style={{ marginBottom: 14 }}>
                 {REGIMES.map(r => (
-                  <button key={r.id} onClick={() => setActiveRegime(r)} style={{ background: activeRegime.id === r.id ? r.bg : C.surf, border: "1.5px solid " + (activeRegime.id === r.id ? r.color : C.bdr), borderTop: "4px solid " + r.color, borderRadius: 10, padding: "12px 14px", cursor: "pointer", textAlign: "left", flex: "1 1 130px" }}>
+                  <button key={r.id} onClick={() => setActiveRegime(r)} style={{ background: activeRegime.id === r.id ? r.bg : C.surf, border: "1.5px solid " + (activeRegime.id === r.id ? r.color : C.bdr), borderTop: "4px solid " + r.color, borderRadius: 10, padding: "12px 14px", cursor: "pointer", textAlign: "left", width: "100%" }}>
                     <div style={{ fontSize: 22, fontWeight: 900, color: r.color }}>{r.prob}%</div>
                     <div style={{ color: r.color, fontWeight: 700, fontSize: 13, marginTop: 3, lineHeight: 1.3 }}>{r.label}</div>
                   </button>
