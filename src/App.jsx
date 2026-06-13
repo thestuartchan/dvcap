@@ -7,7 +7,7 @@ import {
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
 const C = {
-  bg:"#F5F6FA", surf:"#FFFFFF", bdr:"#E4E7F0", bdrMd:"#C9D0E4",
+  bg:"#F2F3F7", surf:"#FFFFFF", bdr:"#E4E7F0", bdrMd:"#C9D0E4",
   text:"#1C1F2E", mid:"#4B5068", muted:"#7C82A0", lbl:"#9CA3C0",
   green:"#166534", gBg:"#F0FDF4", gBdr:"#86EFAC",
   amber:"#92400E", aBg:"#FFFBEB", aBdr:"#FCD34D",
@@ -989,7 +989,7 @@ export default function App() {
   ];
 
   return (
-    <div style={{ background: C.bg, minHeight: "100vh", color: C.text, fontFamily: "'Inter', system-ui, sans-serif" }}>
+    <div style={{ background: C.bg, minHeight: "100vh", width: "100%", color: C.text, fontFamily: "'Inter', system-ui, sans-serif" }}>
       {(editingFund || addingFund) && (
         <FundEditor
           fund={addingFund ? blankFund : editingFund}
