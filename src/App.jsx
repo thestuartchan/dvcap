@@ -455,7 +455,7 @@ const REGIMES = [
 //               Most secure: API key never touches the browser.
 //               See DEPLOYMENT.md (generated alongside this file) for exact code.
 //
-const DATA_SOURCE = "claude"; // change to "polygon" or "proxy" when deploying
+const DATA_SOURCE = "proxy"; // change to "polygon" or "proxy" when deploying
 const MASSIVE_API_KEY = "YOUR_MASSIVE_API_KEY_HERE"; // only needed for "polygon" mode
 const PROXY_BASE_URL = "/api"; // only needed for "proxy" mode — adjust if different
 
