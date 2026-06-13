@@ -599,17 +599,34 @@ function useLiveIndicators() {
   const [live, setLive] = useState(null);
   const [loading, setLoading] = useState(false);
   const [updated, setUpdated] = useState(null);
+  const [error, setError] = useState(null);
 
   const fetchIndicators = useCallback(async function() {
     setLoading(true);
+    setError(null);
     try {
       const result = await fetchMacroIndicators();
-      if (result) { setLive(result); setUpdated(new Date()); }
-    } catch (e) { console.error("Indicator fetch error:", e); }
+      // Validate: reject if all key values are zero or missing (failed API call)
+      const isValid = result &&
+        (result.tenY > 0 || result.unemployment > 0 || result.creditSpread > 0);
+      if (isValid) {
+        setLive(result);
+        setUpdated(new Date());
+        setError(null);
+      } else if (result) {
+        // Got a response but values are all zero — API key likely not configured
+        setError("API returned zero values — check FRED_API_KEY is set in Vercel environment variables.");
+      } else {
+        setError("Could not reach indicators API. Check FRED_API_KEY in Vercel settings.");
+      }
+    } catch (e) {
+      console.error("Indicator fetch error:", e);
+      setError("Fetch error: " + e.message);
+    }
     setLoading(false);
   }, []);
 
-  return { live, loading, updated, fetchIndicators };
+  return { live, loading, updated, error, fetchIndicators };
 }
 
 async function loadFunds() {
@@ -982,7 +999,7 @@ export default function App() {
   const [addingFund, setAddingFund]     = useState(false);
 
   const { prices, loading: pricesLoading, updated: pricesUpdated, fetchPrices } = useLivePrices();
-  const { live: liveInd, loading: indLoading, updated: indUpdated, fetchIndicators } = useLiveIndicators();
+  const { live: liveInd, loading: indLoading, updated: indUpdated, error: indError, fetchIndicators } = useLiveIndicators();
 
   useEffect(function() {
     loadFunds().then(function(saved) {
@@ -1164,6 +1181,11 @@ export default function App() {
                 <div style={{ marginBottom: 10, padding: "8px 12px", background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 8, fontSize: 13, color: C.blue, fontWeight: 700 }}>
                   Live: 10Y {liveInd.tenY?.toFixed(2)}% · 2Y {liveInd.twoY?.toFixed(2)}% · Spread {liveInd.yieldSpread >= 0 ? "+" : ""}{liveInd.yieldSpread?.toFixed(2)}% · UE {liveInd.unemployment?.toFixed(1)}% · HY OAS {liveInd.creditSpread?.toFixed(2)}%
                   <span style={{ color: C.lbl, fontWeight: 400, marginLeft: 8 }}>Updated {fmtTime(indUpdated)}</span>
+                </div>
+              )}
+              {indError && (
+                <div style={{ marginBottom: 10, padding: "10px 13px", background: C.rBg, border: "1px solid " + C.rBdr, borderRadius: 8, fontSize: 13, color: C.red }}>
+                  ⚠️ {indError}
                 </div>
               )}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
