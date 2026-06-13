@@ -1567,33 +1567,49 @@ export default function App() {
                 const hy  = liveInd ? liveInd.creditSpread  : 2.75;
                 const ue  = liveInd ? liveInd.unemployment  : 4.4;
                 const yc  = liveInd ? liveInd.yieldSpread   : 0.38;
-                // Oil has no free live source — keep as static note
-                const oilStatic = 88; // update manually when you refresh data
+                const cpi = liveInd ? liveInd.cpi            : null;
+                const gdp = liveInd ? liveInd.gdp            : null;
+                const oilStatic = 88;
 
-                // Mini signal bar component
-                function SignalBar({ label, value, unit, threshold, thresholdLabel, good, color, fmtVal }) {
+                // CPI/GDP formatted for display
+                // FRED CPIAUCSL is an index level (~315), not a % — compute YoY% from context note
+                // GDP is quarterly real GDP in billions
+                const cpiNote = cpi && cpi > 100
+                  ? `CPI index at ${cpi.toFixed(1)} (latest BLS release via FRED — reflects most recently published monthly figure)`
+                  : "CPI: fetching from FRED…";
+                const gdpNote = gdp && gdp > 0
+                  ? `Real GDP: $${(gdp/1000).toFixed(1)}T (latest BEA quarterly release via FRED)`
+                  : "GDP: fetching from FRED…";
+
+                // SignalBar — with analyst context sentence below the bar
+                function SignalBar({ label, value, unit, threshold, thresholdLabel, good, fmtVal, context }) {
                   const pct = Math.min(100, Math.max(0, (value / (threshold * 1.5)) * 100));
                   const breached = good === "below" ? value >= threshold : value <= threshold;
                   const barColor = breached ? C.red : C.green;
                   const statusLabel = breached ? "⚠️ BREACHED" : "✅ OK";
                   const statusColor = breached ? C.red : C.green;
                   return (
-                    <div style={{ background: C.bg, borderRadius: 8, padding: "8px 10px", border: "1px solid " + C.bdr, minWidth: 130 }}>
+                    <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px", border: "1px solid " + C.bdr, flex: "1 1 150px", minWidth: 140 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
                         <span style={{ color: C.mid, fontSize: 11, fontWeight: 700 }}>{label}</span>
                         <span style={{ color: statusColor, fontSize: 10, fontWeight: 800 }}>{statusLabel}</span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 5 }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 6 }}>
                         <span style={{ fontSize: 19, fontWeight: 900, color: C.text, lineHeight: 1 }}>{fmtVal ? fmtVal(value) : value}{unit}</span>
                         <span style={{ fontSize: 11, color: C.lbl }}>vs {thresholdLabel}</span>
                       </div>
-                      <div style={{ height: 5, background: C.bdr, borderRadius: 3, overflow: "hidden" }}>
+                      <div style={{ height: 5, background: C.bdr, borderRadius: 3, overflow: "hidden", marginBottom: 6 }}>
                         <div style={{ width: pct + "%", height: "100%", background: barColor, borderRadius: 3, transition: "width 0.4s" }} />
                       </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: context ? 7 : 0 }}>
                         <span style={{ fontSize: 10, color: C.lbl }}>0</span>
                         <span style={{ fontSize: 10, color: breached ? C.red : C.lbl, fontWeight: breached ? 700 : 400 }}>threshold {threshold}{unit}</span>
                       </div>
+                      {context && (
+                        <div style={{ fontSize: 11, color: breached ? C.red : C.green, lineHeight: 1.5, borderTop: "1px solid " + C.bdr, paddingTop: 6 }}>
+                          {context(value, breached)}
+                        </div>
+                      )}
                     </div>
                   );
                 }
@@ -1602,59 +1618,113 @@ export default function App() {
                   {
                     label: "Stagflation → Deflationary Recession",
                     prob: "35% most likely", color: C.blue,
-                    path: "Sustained high oil + tight Fed → demand destruction → credit spreads blow out → unemployment surges. TLT and cash win. Commodities crash.",
+                    path: "High oil + tight Fed choke off demand. Businesses stop hiring, consumers stop spending. Credit markets crack first — then unemployment surges. Treasuries and cash win. Everything else falls.",
                     signals: [
-                      { label: "HY Credit Spread", value: hy,  unit: "%", threshold: 4.5, thresholdLabel: "alert >4.5%", good: "below", fmtVal: v => v.toFixed(2) },
-                      { label: "Unemployment",      value: ue,  unit: "%", threshold: 5.0, thresholdLabel: "recession >5%", good: "below", fmtVal: v => v.toFixed(1) },
+                      {
+                        label: "HY Credit Spread", value: hy, unit: "%", threshold: 4.5,
+                        thresholdLabel: "alert >4.5%", good: "below", fmtVal: v => v.toFixed(2),
+                        context: (v, breached) => breached
+                          ? `At ${v.toFixed(2)}%, credit markets are pricing stress. Companies are struggling to refinance debt — this is the classic deflationary warning. Act now.`
+                          : `At ${v.toFixed(2)}%, credit markets are calm — investors aren't panicking yet. This scenario needs spreads to widen to 4.5%+ before it becomes probable. Watch weekly.`,
+                      },
+                      {
+                        label: "Unemployment", value: ue, unit: "%", threshold: 5.0,
+                        thresholdLabel: "recession >5%", good: "below", fmtVal: v => v.toFixed(1),
+                        context: (v, breached) => breached
+                          ? `At ${v.toFixed(1)}%, unemployment has crossed the recession confirmation threshold. Demand destruction is underway.`
+                          : `At ${v.toFixed(1)}%, unemployment is elevated but hasn't hit the 5% recession zone yet. Rising trend is the concern — direction matters more than the level.`,
+                      },
                     ],
-                    tip: liveInd ? (hy > 4.5 ? "⚠️ HY OAS breached. Deflationary risk elevated." : hy > 3.5 ? "📡 Spreads widening — watch closely." : "✅ Credit market calm. No imminent signal.") : "Refresh signals for live status.",
+                    tip: liveInd
+                      ? (hy > 4.5 ? "⚠️ Credit spreads have breached the alert level. Deflationary recession risk is now elevated — consider rotating toward Treasuries and cash."
+                        : hy > 3.5 ? "📡 Spreads are widening toward the alert zone. Start building insurance positions — don't wait for 4.5% to confirm."
+                        : `✅ Both indicators are well within safe territory today. This scenario requires credit spreads to more than double from here (${hy.toFixed(2)}% → 4.5%+). Low near-term risk.`)
+                      : "Hit Refresh signals to get live readings for this scenario.",
                   },
                   {
                     label: "Stagflation → Reflationary Recovery",
                     prob: "30% next likely", color: C.green,
-                    path: "Gulf peace deal → oil falls below $80 → Fed resumes cutting → growth bounces. Best outcome for risk assets.",
+                    path: "A Gulf peace deal or OPEC production increase brings oil below $80. Inflation cools, the Fed resumes cutting, and growth bounces back. This is the best-case exit from stagflation — and what equity markets would celebrate most.",
                     signals: [
-                      { label: "Yield Spread",  value: Math.abs(yc), unit: "%", threshold: 0.5, thresholdLabel: "normal >0.5%", good: "above", fmtVal: v => (yc >= 0 ? "+" : "-") + v.toFixed(2) },
-                      { label: "Oil (static)",  value: oilStatic,    unit: "$", threshold: 80,  thresholdLabel: "target <$80", good: "below",  fmtVal: v => "$" + v },
+                      {
+                        label: "Yield Spread", value: Math.abs(yc), unit: "%", threshold: 0.5,
+                        thresholdLabel: "normal >0.5%", good: "above", fmtVal: v => (yc >= 0 ? "+" : "-") + v.toFixed(2),
+                        context: (v, breached) => breached
+                          ? `Spread is below 0.5% — curve hasn't fully normalized yet. Recovery hasn't been confirmed by the bond market.`
+                          : `At ${(yc >= 0 ? "+" : "") + yc.toFixed(2)}%, the yield curve has re-normalized. Historically this means the bond market is no longer pricing a recession — a good early sign for recovery.`,
+                      },
+                      {
+                        label: "Oil (static)", value: oilStatic, unit: "$", threshold: 80,
+                        thresholdLabel: "target <$80", good: "below", fmtVal: v => "$" + v,
+                        context: (v, breached) => breached
+                          ? `Oil at $${v} is the primary blockage. Until oil falls below $80, the Fed can't cut with confidence — inflation stays too sticky. Watch the Gulf situation closely.`
+                          : `Oil below $80 would be the green light. At that level, inflation pressure eases enough for the Fed to resume cutting, which kick-starts the recovery cycle.`,
+                      },
                     ],
-                    tip: oilStatic < 80 ? "✅ Oil below $80 — reflationary trigger zone." : "⚠️ Oil above $80. Reflationary pivot not yet signalled.",
+                    tip: oilStatic < 80
+                      ? "✅ Oil below $80 — the single biggest trigger for reflationary recovery is in place. Watch for a Fed pivot signal next."
+                      : `⚠️ Oil at $${oilStatic} is the main obstacle to this scenario. A Gulf peace deal or OPEC production increase that brings oil below $80 would rapidly shift probability toward recovery.`,
                   },
                   {
                     label: "Persistent Stagflation (1970s path)",
                     prob: "25% painful", color: C.amber,
-                    path: "Iran conflict drags on. Fed stuck. No resolution. Gold and real assets outperform for years.",
+                    path: "The Iran conflict drags on for years. Oil stays elevated. The Fed is paralysed — it can't raise rates without crushing growth, and can't cut without reigniting inflation. Gold and real assets become the only reliable stores of value.",
                     signals: [
-                      { label: "Unemployment",  value: ue, unit: "%", threshold: 4.5, thresholdLabel: "elevated >4.5%", good: "below", fmtVal: v => v.toFixed(1) },
-                      { label: "Yield Spread",  value: Math.abs(yc), unit: "%", threshold: 1.0, thresholdLabel: "normal >1%", good: "above", fmtVal: v => (yc >= 0 ? "+" : "-") + v.toFixed(2) },
+                      {
+                        label: "Unemployment", value: ue, unit: "%", threshold: 4.5,
+                        thresholdLabel: "elevated >4.5%", good: "below", fmtVal: v => v.toFixed(1),
+                        context: (v, breached) => breached
+                          ? `Unemployment above 4.5% while inflation stays high is the textbook stagflation combination — the same dynamic the US faced in 1974–1982.`
+                          : `At ${v.toFixed(1)}%, unemployment is approaching the zone where the Fed's dual mandate becomes impossible to satisfy simultaneously.`,
+                      },
+                      {
+                        label: "Yield Spread", value: Math.abs(yc), unit: "%", threshold: 1.0,
+                        thresholdLabel: "normal >1%", good: "above", fmtVal: v => (yc >= 0 ? "+" : "-") + v.toFixed(2),
+                        context: (v, breached) => breached
+                          ? `Spread hasn't reached 1%+ — the curve isn't pricing a sustained growth recovery yet. Consistent with a prolonged stagnation environment.`
+                          : `Spread above 1% suggests the bond market expects growth to recover — which would make persistent stagflation less likely.`,
+                      },
                     ],
-                    tip: "CPI above 3.5% + GDP below 2% for 6+ months = 1970s confirmation. No live CPI/GDP feed — update manually.",
+                    tip: (() => {
+                      const cpiLine = cpi ? `Latest CPI index: ${cpi.toFixed(1)} (FRED, most recent monthly release).` : "CPI: fetching…";
+                      const gdpLine = gdp ? `Real GDP: $${(gdp/1000).toFixed(1)}T (FRED, most recent quarterly release).` : "GDP: fetching…";
+                      return `📊 ${cpiLine} ${gdpLine} The 1970s confirmation signal is CPI staying above 3.5% for 6+ consecutive months while GDP growth stays below 2%. Both are published monthly/quarterly by the BLS and BEA — FRED pulls the latest figure automatically when you hit Refresh.`;
+                    })(),
                   },
                   {
                     label: "Any regime → Inflationary Boom",
-                    prob: "5% Dalio scenario", color: "#7C3AED",
-                    path: "Debt monetization + dollar structural decline + AI productivity surprise. Gold miners, commodities, Bitcoin are the ultimate winners.",
+                    prob: "5% — Dalio scenario", color: "#7C3AED",
+                    path: "The US government keeps spending regardless of the Fed. The dollar structurally weakens. AI generates a genuine productivity surprise. The result: persistent inflation above 4%, but with real growth — a 1990s-style boom with a debasement twist. Gold miners, commodities, and Bitcoin are the standout winners.",
                     signals: [
-                      { label: "Yield Spread", value: Math.abs(yc), unit: "%", threshold: 1.5, thresholdLabel: "boom >1.5%", good: "above", fmtVal: v => (yc >= 0 ? "+" : "-") + v.toFixed(2) },
+                      {
+                        label: "Yield Spread", value: Math.abs(yc), unit: "%", threshold: 1.5,
+                        thresholdLabel: "boom >1.5%", good: "above", fmtVal: v => (yc >= 0 ? "+" : "-") + v.toFixed(2),
+                        context: (v, breached) => breached
+                          ? `Spread above 1.5% would suggest the bond market is pricing strong sustained growth — a precondition for this scenario.`
+                          : `At ${(yc >= 0 ? "+" : "") + yc.toFixed(2)}%, the spread is well below the 1.5% level associated with inflationary boom conditions. This scenario remains a tail risk.`,
+                      },
                     ],
-                    tip: "DXY below 85 + M2 re-accelerating = inflationary boom signal. No live DXY feed — add Massive proxy for FX if needed.",
+                    tip: "📊 The key signals here are off-market: watch the US Dollar Index (DXY) for a sustained break below 85, and M2 money supply for re-acceleration. Both would suggest the Fed has lost control of the inflation narrative. This is Ray Dalio's 'big debt cycle' endgame scenario — low probability near-term, but worth holding gold miners as insurance regardless.",
                   },
                 ];
 
                 return ROADMAP.map((r, i) => (
-                  <div key={i} style={{ padding: "14px 0", borderBottom: i < ROADMAP.length - 1 ? "1px solid " + C.bdr : "none" }}>
+                  <div key={i} style={{ padding: "16px 0", borderBottom: i < ROADMAP.length - 1 ? "1px solid " + C.bdr : "none" }}>
                     <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-                      <div style={{ flexShrink: 0, width: 110, paddingTop: 2 }}>
-                        <span style={{ background: r.color + "15", color: r.color, border: "1.5px solid " + r.color + "40", borderRadius: 8, padding: "5px 10px", fontSize: 12, fontWeight: 800, whiteSpace: "nowrap", display: "block", textAlign: "center" }}>{r.prob}</span>
+                      <div style={{ flexShrink: 0, width: 120, paddingTop: 2 }}>
+                        <span style={{ background: r.color + "15", color: r.color, border: "1.5px solid " + r.color + "40", borderRadius: 8, padding: "5px 8px", fontSize: 11, fontWeight: 800, display: "block", textAlign: "center", lineHeight: 1.4, wordBreak: "break-word" }}>{r.prob}</span>
                       </div>
-                      <div style={{ flex: 1, minWidth: 180 }}>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3 }}>{r.label}</div>
-                        <div style={{ color: C.mid, fontSize: 14, lineHeight: 1.65, marginBottom: 8 }}>{r.path}</div>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 5 }}>{r.label}</div>
+                        <div style={{ color: C.mid, fontSize: 13, lineHeight: 1.7, marginBottom: 10 }}>{r.path}</div>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                           {r.signals.map((s, si) => (
                             <SignalBar key={si} {...s} />
                           ))}
                         </div>
-                        <div style={{ color: r.color, fontSize: 13, fontWeight: 600 }}>📡 {r.tip}</div>
+                        <div style={{ background: r.color + "0D", border: "1px solid " + r.color + "30", borderRadius: 8, padding: "9px 12px", color: r.color, fontSize: 12, lineHeight: 1.65, fontWeight: 500 }}>
+                          📡 {r.tip}
+                        </div>
                       </div>
                     </div>
                   </div>
