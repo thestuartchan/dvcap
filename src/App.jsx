@@ -46,7 +46,15 @@ const INDICATORS = [
       {val:0,    label:"Inversion line",  color:"#D97706", dash:"5 3"},
       {val:1.0,  label:"Normal",          color:"#16A34A", dash:"4 2"},
     ],
-    stagflation:"Curve steepens in stagflation but long-bond duration risk is elevated.",
+    // Returns independent assessment based on this indicator's own live value
+    signal(liveVal) {
+      const v = liveVal ?? 0.38;
+      if (v < -0.5)  return { label:"Deep Inversion", text:"Severe inversion — historically the strongest recession predictor. Average lead time: 12–18 months.",       color:"#991B1B", bg:"#FEF2F2", bdr:"#FCA5A5" };
+      if (v < 0)     return { label:"Inverted",        text:"Curve still inverted — markets pricing Fed cuts ahead of deteriorating growth.",                            color:"#DC2626", bg:"#FEF2F2", bdr:"#FCA5A5" };
+      if (v < 0.5)   return { label:"Danger Window",   text:"Just re-normalized. Recessions historically strike 4–11 months after un-inversion. This is the risk zone.", color:"#92400E", bg:"#FFFBEB", bdr:"#FCD34D" };
+      if (v < 1.0)   return { label:"Steepening",      text:"Curve steepening — consistent with either reflationary recovery or stagflation. Watch credit spreads to differentiate.", color:"#D97706", bg:"#FFFBEB", bdr:"#FCD34D" };
+      return           { label:"Normal",               text:"Curve fully normalized. Historical recession risk low based on this indicator alone.",                       color:"#166534", bg:"#F0FDF4", bdr:"#86EFAC" };
+    },
   },
   {
     id:"unemp", name:"Unemployment Rate", current:"4.4%",
@@ -55,12 +63,19 @@ const INDICATORS = [
     yFmt: v=>`${v.toFixed(1)}%`,
     detail:"Rose from 3.4% trough (Jan 2023) to 4.4% — a 1.0pp rise. Sahm Rule triggers at 0.5pp above 12-month low. We are at or near that threshold.",
     thresholds:[
-      {val:3.5, label:"Pre-pandemic low",  color:"#16A34A", dash:"4 2"},
-      {val:4.0, label:"Historical avg",    color:"#D97706", dash:"5 3"},
-      {val:4.5, label:"Sahm Rule zone",    color:"#DC2626", dash:"4 2"},
-      {val:5.0, label:"Recession confirmed",color:"#7F1D1D",dash:"3 2"},
+      {val:3.5, label:"Pre-pandemic low",   color:"#16A34A", dash:"4 2"},
+      {val:4.0, label:"Historical avg",     color:"#D97706", dash:"5 3"},
+      {val:4.5, label:"Sahm Rule zone",     color:"#DC2626", dash:"4 2"},
+      {val:5.0, label:"Recession confirmed",color:"#7F1D1D", dash:"3 2"},
     ],
-    stagflation:"Confirms stagflation — rising unemployment + elevated inflation simultaneously.",
+    signal(liveVal) {
+      const v = liveVal ?? 4.4;
+      if (v >= 5.5)  return { label:"Recession Confirmed",  text:"Unemployment above 5.5% — recession is underway by historical standards. Capital preservation is the priority.", color:"#991B1B", bg:"#FEF2F2", bdr:"#FCA5A5" };
+      if (v >= 5.0)  return { label:"Recession Zone",       text:"Crossed 5.0% — recession historically confirmed at this level. Defensive positioning warranted.",              color:"#DC2626", bg:"#FEF2F2", bdr:"#FCA5A5" };
+      if (v >= 4.5)  return { label:"Sahm Rule Triggered",  text:"At or above the Sahm Rule threshold. Labour market deteriorating — leading indicator for recession.",           color:"#92400E", bg:"#FFFBEB", bdr:"#FCD34D" };
+      if (v >= 4.0)  return { label:"Elevated & Rising",    text:"Above historical average and trending up. Not yet alarming but direction is wrong. Monitor closely.",           color:"#D97706", bg:"#FFFBEB", bdr:"#FCD34D" };
+      return           { label:"Healthy",                   text:"Below historical average. Labour market resilient — low near-term recession risk from this indicator.",         color:"#166534", bg:"#F0FDF4", bdr:"#86EFAC" };
+    },
   },
   {
     id:"credit", name:"HY Credit Spreads (ICE BofA OAS)", current:"2.75%",
@@ -69,11 +84,18 @@ const INDICATORS = [
     yFmt: v=>`${v.toFixed(2)}%`,
     detail:"At 2.75%, markets are NOT pricing stress. This is your best leading indicator — when spreads blow out above 4.5% start buying insurance aggressively. GFC peak: 21.8%. COVID peak: 10.9%.",
     thresholds:[
-      {val:3.0, label:"Mild stress",            color:"#D97706", dash:"4 2"},
-      {val:4.5, label:"⚠ Alert threshold",      color:"#F97316", dash:"5 3"},
-      {val:6.0, label:"🔴 Recession likely",    color:"#DC2626", dash:"4 2"},
+      {val:3.0, label:"Mild stress",         color:"#D97706", dash:"4 2"},
+      {val:4.5, label:"⚠ Alert threshold",   color:"#F97316", dash:"5 3"},
+      {val:6.0, label:"🔴 Recession likely", color:"#DC2626", dash:"4 2"},
     ],
-    stagflation:"KEY SIGNAL — widening spreads while CPI stays high = stagflation signature.",
+    signal(liveVal) {
+      const v = liveVal ?? 2.75;
+      if (v >= 6.0)  return { label:"Recession Imminent",  text:"Spreads above 6% — markets pricing systemic stress. This is the deflationary trip wire. Rotate to Treasuries and cash immediately.", color:"#991B1B", bg:"#FEF2F2", bdr:"#FCA5A5" };
+      if (v >= 4.5)  return { label:"Alert — Act Now",     text:"Breached the 4.5% alert threshold. Insurance accumulation phase is over — full defensive rotation warranted.",                      color:"#DC2626", bg:"#FEF2F2", bdr:"#FCA5A5" };
+      if (v >= 3.5)  return { label:"Widening — Watch",    text:"Spreads widening toward the alert zone. Begin building insurance positions. Don't wait for 4.5% to confirm.",                       color:"#92400E", bg:"#FFFBEB", bdr:"#FCD34D" };
+      if (v >= 3.0)  return { label:"Mild Stress",         text:"Mild stress appearing. Markets slightly nervous but not panicking. Monitor weekly.",                                                  color:"#D97706", bg:"#FFFBEB", bdr:"#FCD34D" };
+      return           { label:"Benign — No Stress",       text:"Markets are calm. No credit stress priced. This is the window to accumulate insurance cheaply before spreads move.",                 color:"#166534", bg:"#F0FDF4", bdr:"#86EFAC" };
+    },
   },
 ];
 
@@ -696,10 +718,19 @@ function IndicatorChart({ ind, live }) {
             <Pill label={ind.label} color={statusColor} bg={statusBg} bdr={statusBdr} />
           </div>
         </div>
-        <div style={{ background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8, padding: "8px 12px", maxWidth: 260 }}>
-          <div style={{ color: C.amber, fontSize: 11, letterSpacing: 1.5, fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>Stagflation signal</div>
-          <div style={{ color: C.amber, fontSize: 13, lineHeight: 1.6 }}>{ind.stagflation}</div>
-        </div>
+        {(() => {
+          const liveVal = ind.id === "yield"  && live ? live.yieldSpread
+                        : ind.id === "unemp"  && live ? live.unemployment
+                        : ind.id === "credit" && live ? live.creditSpread
+                        : null;
+          const sig = ind.signal(liveVal);
+          return (
+            <div style={{ background: sig.bg, border: "1px solid " + sig.bdr, borderRadius: 8, padding: "8px 12px", maxWidth: 260 }}>
+              <div style={{ color: sig.color, fontSize: 11, letterSpacing: 1.5, fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>Signal: {sig.label}</div>
+              <div style={{ color: sig.color, fontSize: 13, lineHeight: 1.6 }}>{sig.text}</div>
+            </div>
+          );
+        })()}
       </div>
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 280px", minWidth: 240 }}>
@@ -1078,7 +1109,7 @@ export default function App() {
                   bullets:["⚠️ Indicators approaching alert thresholds — credit spreads or unemployment near critical levels.",
                            "🛡️ Increase insurance allocation: gold miners, consumer staples, short-duration T-bills.",
                            "💵 Reduce leverage and extend cash runway. Wait for credit spreads to confirm direction."] },
-                WATCH:   { g1:"#1E40AF", g2:"#1D4ED8", shadow:"rgba(30,64,175,0.30)",
+                WATCH:   { g1:"#334155", g2:"#1E293B", shadow:"rgba(30,41,59,0.35)",
                   action:"Accumulate Insurance. Don't Chase Yield.",
                   bullets:["📡 Credit spreads at 2.75% — benign. Markets not pricing stress yet. This is your trip wire.",
                            "🛡️ Gold miners + consumer staples: appropriate to build positions now at current prices.",
@@ -1394,10 +1425,10 @@ export default function App() {
                     background: selectedFund.id === f.id ? f.color + "12" : C.surf,
                     border: "1.5px solid " + (selectedFund.id === f.id ? f.color : C.bdr),
                     borderLeft: "4px solid " + f.color,
-                    borderRadius: 10, padding: "10px 12px", textAlign: "left", cursor: "pointer", width: 160,
+                    borderRadius: 10, padding: "10px 12px", textAlign: "left", cursor: "pointer", width: 155, minWidth: 140, flexShrink: 0,
                   }}>
-                    <div style={{ color: f.color, fontWeight: 800, fontSize: 13 }}>{f.name}</div>
-                    <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>{f.manager}</div>
+                    <div style={{ color: f.color, fontWeight: 800, fontSize: 12, lineHeight: 1.3, wordBreak: "break-word" }}>{f.name}</div>
+                    <div style={{ color: C.muted, fontSize: 11, marginTop: 2, lineHeight: 1.3, wordBreak: "break-word" }}>{f.manager}</div>
                     <Pill label={f.signal} color={f.signalColor} />
                     {f.lastUpdated && <div style={{ color: C.lbl, fontSize: 10, marginTop: 4 }}>{f.lastUpdated}</div>}
                   </button>
@@ -1587,9 +1618,9 @@ export default function App() {
 
                 return ROADMAP.map((r, i) => (
                   <div key={i} style={{ padding: "14px 0", borderBottom: i < ROADMAP.length - 1 ? "1px solid " + C.bdr : "none" }}>
-                    <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-                      <div style={{ flexShrink: 0 }}>
-                        <span style={{ background: r.color + "15", color: r.color, border: "1.5px solid " + r.color + "40", borderRadius: 8, padding: "4px 9px", fontSize: 12, fontWeight: 800, whiteSpace: "nowrap" }}>{r.prob}</span>
+                    <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                      <div style={{ flexShrink: 0, width: 110, paddingTop: 2 }}>
+                        <span style={{ background: r.color + "15", color: r.color, border: "1.5px solid " + r.color + "40", borderRadius: 8, padding: "5px 10px", fontSize: 12, fontWeight: 800, whiteSpace: "nowrap", display: "block", textAlign: "center" }}>{r.prob}</span>
                       </div>
                       <div style={{ flex: 1, minWidth: 180 }}>
                         <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3 }}>{r.label}</div>
