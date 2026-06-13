@@ -657,11 +657,12 @@ function PriceBadge({ ticker, prices }) {
   const p = prices[ticker];
   if (!p) return <span style={{ color: C.lbl, fontSize: 12 }}>—</span>;
   const up = p.changePercent >= 0;
+  const col = up ? C.green : C.red;
   return (
-    <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+    <span style={{ display: "inline-flex", gap: 5, alignItems: "center" }}>
       <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>${(p.price || 0).toFixed(2)}</span>
-      <span style={{ background: up ? C.gBg : C.rBg, color: up ? C.green : C.red, border: "1px solid " + (up ? C.gBdr : C.rBdr), borderRadius: 4, padding: "1px 5px", fontSize: 12, fontWeight: 700 }}>
-        {up ? "▲" : "▼"}{Math.abs(p.changePercent || 0).toFixed(2)}%
+      <span style={{ color: col, fontWeight: 700, fontSize: 13 }}>
+        {up ? "↑" : "↓"}{Math.abs(p.changePercent || 0).toFixed(2)}%
       </span>
     </span>
   );
@@ -1417,20 +1418,21 @@ export default function App() {
               {editMode && <span style={{ color: C.amber, fontSize: 13 }}>Changes auto-saved to browser.</span>}
             </div>
 
-            {/* Fund selector — horizontal scroll on mobile */}
-            <div style={{ display: "flex", gap: 6, overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 4 }}>
+            {/* Fund selector — horizontal scroll */}
+            <div style={{ display: "flex", gap: 8, overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 6, scrollbarWidth: "none" }}>
               {funds.map(f => (
                 <div key={f.id} style={{ position: "relative", flexShrink: 0 }}>
                   <button onClick={() => { setSelectedFund(f); if (editMode) setEditingFund(f); }} style={{
                     background: selectedFund.id === f.id ? f.color + "12" : C.surf,
                     border: "1.5px solid " + (selectedFund.id === f.id ? f.color : C.bdr),
                     borderLeft: "4px solid " + f.color,
-                    borderRadius: 10, padding: "10px 12px", textAlign: "left", cursor: "pointer", width: 155, minWidth: 140, flexShrink: 0,
+                    borderRadius: 10, padding: "12px 13px", textAlign: "left", cursor: "pointer",
+                    width: 170, flexShrink: 0,
                   }}>
-                    <div style={{ color: f.color, fontWeight: 800, fontSize: 12, lineHeight: 1.3, wordBreak: "break-word" }}>{f.name}</div>
-                    <div style={{ color: C.muted, fontSize: 11, marginTop: 2, lineHeight: 1.3, wordBreak: "break-word" }}>{f.manager}</div>
-                    <Pill label={f.signal} color={f.signalColor} />
-                    {f.lastUpdated && <div style={{ color: C.lbl, fontSize: 10, marginTop: 4 }}>{f.lastUpdated}</div>}
+                    <div style={{ color: f.color, fontWeight: 800, fontSize: 13, lineHeight: 1.3, marginBottom: 3 }}>{f.name}</div>
+                    <div style={{ color: C.muted, fontSize: 12, lineHeight: 1.3, marginBottom: 8 }}>{f.manager}</div>
+                    <div style={{ background: f.signalColor + "15", color: f.signalColor, border: "1.5px solid " + f.signalColor + "40", borderRadius: 6, padding: "3px 7px", fontSize: 11, fontWeight: 800, lineHeight: 1.4, display: "inline-block", maxWidth: "100%", wordBreak: "break-word" }}>{f.signal}</div>
+                    {f.lastUpdated && <div style={{ color: C.lbl, fontSize: 10, marginTop: 6 }}>{f.lastUpdated}</div>}
                   </button>
                   {editMode && (
                     <button onClick={e => { e.stopPropagation(); handleDeleteFund(f.id); }} style={{ position: "absolute", top: 5, right: 5, background: C.rBg, color: C.red, border: "none", borderRadius: 4, width: 18, height: 18, fontSize: 12, cursor: "pointer" }}>×</button>
