@@ -1,24 +1,19 @@
 export const config = {
-  matcher: "/((?!api/).*)",
+  // Only intercept the root HTML request — let all assets, API routes, etc. pass freely
+  matcher: "/",
 };
 
 export default function middleware(request) {
-  const url = new URL(request.url);
-
-  // Allow the login page itself through always
-  if (url.pathname === "/" && request.headers.get("cookie")?.includes("mwd_auth=true")) {
-    return new Response(null, { status: 200 });
-  }
-
-  // Check for auth cookie
+  // Check for valid auth cookie
   const cookies = request.headers.get("cookie") || "";
   const isAuthed = cookies.includes("mwd_auth=true");
 
   if (isAuthed) {
-    return new Response(null, { status: 200 });
+    // Authenticated — let the request pass through to the Vite app
+    return new Response(null, { status: 200, headers: { "x-middleware-next": "1" } });
   }
 
-  // Not authenticated — serve the login page inline
+  // Not authenticated — serve the login page
   const loginHTML = `<!doctype html>
 <html lang="en">
 <head>
@@ -44,67 +39,29 @@ export default function middleware(request) {
       max-width: 380px;
       box-shadow: 0 20px 60px rgba(0,0,0,0.5);
     }
-    .logo {
-      font-size: 22px;
-      font-weight: 900;
-      color: #F1F5F9;
-      margin-bottom: 6px;
-      letter-spacing: -0.5px;
-    }
-    .sub {
-      font-size: 13px;
-      color: #64748B;
-      margin-bottom: 32px;
-    }
-    label {
-      display: block;
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
-      color: #94A3B8;
-      margin-bottom: 8px;
-    }
+    .logo { font-size: 22px; font-weight: 900; color: #F1F5F9; margin-bottom: 6px; letter-spacing: -0.5px; }
+    .sub  { font-size: 13px; color: #64748B; margin-bottom: 32px; }
+    label { display: block; font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: #94A3B8; margin-bottom: 8px; }
     input[type=password] {
-      width: 100%;
-      background: #0F172A;
-      border: 1.5px solid #334155;
-      border-radius: 10px;
-      padding: 13px 16px;
-      font-size: 16px;
-      font-family: inherit;
-      color: #F1F5F9;
-      outline: none;
-      transition: border-color 0.15s;
-      letter-spacing: 4px;
+      width: 100%; background: #0F172A; border: 1.5px solid #334155;
+      border-radius: 10px; padding: 13px 16px; font-size: 16px;
+      font-family: inherit; color: #F1F5F9; outline: none;
+      transition: border-color 0.15s; letter-spacing: 4px;
     }
     input[type=password]:focus { border-color: #3B82F6; }
     input[type=password]::placeholder { letter-spacing: 0; color: #475569; }
     button {
-      width: 100%;
-      margin-top: 16px;
-      background: #3B82F6;
-      color: #fff;
-      border: none;
-      border-radius: 10px;
-      padding: 13px;
-      font-size: 15px;
-      font-weight: 700;
-      font-family: inherit;
-      cursor: pointer;
+      width: 100%; margin-top: 16px; background: #3B82F6; color: #fff;
+      border: none; border-radius: 10px; padding: 13px; font-size: 15px;
+      font-weight: 700; font-family: inherit; cursor: pointer;
       transition: background 0.15s, opacity 0.15s;
     }
     button:hover { background: #2563EB; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     .error {
-      margin-top: 12px;
-      background: #450A0A;
-      border: 1px solid #7F1D1D;
-      border-radius: 8px;
-      padding: 10px 14px;
-      color: #FCA5A5;
-      font-size: 13px;
-      display: none;
+      margin-top: 12px; background: #450A0A; border: 1px solid #7F1D1D;
+      border-radius: 8px; padding: 10px 14px; color: #FCA5A5;
+      font-size: 13px; display: none;
     }
     .error.show { display: block; }
   </style>
@@ -123,7 +80,7 @@ export default function middleware(request) {
       if (e.key === 'Enter') login();
     });
     async function login() {
-      const pw = document.getElementById('pw').value;
+      const pw  = document.getElementById('pw').value;
       const btn = document.getElementById('btn');
       const err = document.getElementById('err');
       if (!pw) return;
@@ -158,6 +115,6 @@ export default function middleware(request) {
 
   return new Response(loginHTML, {
     status: 200,
-    headers: { "Content-Type": "text/html" },
+    headers: { "Content-Type": "text/html; charset=utf-8" },
   });
 }
