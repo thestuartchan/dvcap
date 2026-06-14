@@ -644,7 +644,35 @@ async function persistFunds(funds) {
   try { await window.storage.set("funds_v4", JSON.stringify(funds)); } catch (_) {}
 }
 
-// ─── SHARED UI PIECES ─────────────────────────────────────────────────────────
+// ─── TICKER → COMPANY NAME MAP ───────────────────────────────────────────────
+const COMPANY_NAMES = {
+  AAPL:"Apple", AXP:"American Express", KO:"Coca-Cola", BAC:"Bank of America",
+  CVX:"Chevron", OXY:"Occidental Petroleum", GOOGL:"Alphabet (Google)",
+  CB:"Chubb", MCO:"Moody's", DAL:"Delta Air Lines", BN:"Brookfield Asset Mgmt",
+  AMZN:"Amazon", UBER:"Uber", MSFT:"Microsoft", QSR:"Restaurant Brands",
+  HHH:"Howard Hughes", FNMA:"Fannie Mae", SPY:"S&P 500 ETF", IVV:"iShares S&P 500",
+  NVDA:"Nvidia", AVGO:"Broadcom", MU:"Micron Technology", ORCL:"Oracle",
+  TSM:"Taiwan Semiconductor", NTRA:"Natera", ETHB:"Ethereum ETF",
+  INSM:"Insmed", EWZ:"Brazil ETF", ARGT:"Argentina ETF", SNDK:"SanDisk",
+  HUM:"Humana", "JD.com":"JD.com", INTC:"Intel", HOOD:"Robinhood",
+  BABA:"Alibaba", META:"Meta Platforms", CRWD:"CrowdStrike", W:"Wayfair",
+  GDX:"Gold Miners ETF", GDXJ:"Junior Gold Miners ETF", RING:"Global Gold Miners ETF",
+  AEM:"Agnico Eagle", NEM:"Newmont", ABX:"Barrick Mining", WPM:"Wheaton Precious Metals",
+  XLP:"Consumer Staples ETF", PG:"Procter & Gamble", PEP:"PepsiCo",
+  WMT:"Walmart", COST:"Costco", MDLZ:"Mondelez",
+  TLT:"20+ Year Treasury ETF", IEF:"7-10 Year Treasury ETF",
+  ZROZ:"25+ Zero Coupon ETF", BIL:"1-3 Month T-Bill ETF",
+  LAND:"Gladstone Land", FPI:"Farmland Partners",
+  EPD:"Enterprise Products", ET:"Energy Transfer", MPLX:"MPLX LP",
+  KMI:"Kinder Morgan", AMLP:"Alerian MLP ETF",
+  O:"Realty Income", NNN:"NNN REIT", WPC:"W.P. Carey", STAG:"STAG Industrial",
+  JNJ:"Johnson & Johnson", SCHD:"Schwab Dividend ETF", VIG:"Vanguard Div. Appreciation",
+  JEPI:"JPMorgan Equity Premium", JEPQ:"JPMorgan Nasdaq Premium",
+  XYLD:"Global X S&P 500 Covered Call", PFF:"iShares Preferred Securities",
+  PFFD:"Global X Preferred ETF", SGOV:"0-3 Month T-Bill ETF",
+  USFR:"WisdomTree Floating Rate Treasury", ARM:"ARM Holdings",
+  Other:"Various",
+};
 function Pill({ label, color, bg, bdr }) {
   return (
     <span style={{ background: bg || color + "18", color, border: "1.5px solid " + (bdr || color + "44"), borderRadius: 6, padding: "3px 9px", fontSize: 12, fontWeight: 800 }}>
@@ -753,7 +781,7 @@ function IndicatorChart({ ind, live }) {
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 280px", minWidth: 240 }}>
           <ResponsiveContainer width="100%" height={148}>
-            <AreaChart data={ind.data} margin={{ top: 6, right: 6, bottom: 0, left: -12 }}>
+            <AreaChart data={ind.data} margin={{ top: 6, right: 6, bottom: 0, left: 4 }}>
               <defs>
                 <linearGradient id={"g" + ind.id} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%"  stopColor={ind.areaColor} stopOpacity={0.15} />
@@ -762,7 +790,7 @@ function IndicatorChart({ ind, live }) {
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke={C.bdr} vertical={false} />
               <XAxis dataKey="d" tick={{ fill: C.lbl, fontSize: 10 }} axisLine={false} tickLine={false} interval={2} />
-              <YAxis domain={ind.yDomain} tick={{ fill: C.lbl, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={ind.yFmt} width={38} />
+              <YAxis domain={ind.yDomain} tick={{ fill: C.lbl, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={ind.yFmt} width={52} />
               <Tooltip content={<ChartTip fmt={ind.yFmt} />} />
               {ind.thresholds.map((th, i) => (
                 <ReferenceLine key={i} y={th.val} stroke={th.color} strokeDasharray={th.dash} strokeWidth={1.5}
@@ -952,10 +980,13 @@ function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated,
         </ResponsiveContainer>
         <div>
           {fund.holdings.filter(h => h.name !== "Other").map((h, i, arr) => (
-            <div key={h.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: i < arr.length - 1 ? "1px solid " + C.bdr : "none", flexWrap: "wrap", gap: 6 }}>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span style={{ color: C.text, fontWeight: 800, fontSize: 15, minWidth: 50 }}>{h.name}</span>
-                <span style={{ color: C.lbl, fontSize: 12 }}>{h.sector}</span>
+            <div key={h.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: i < arr.length - 1 ? "1px solid " + C.bdr : "none", flexWrap: "wrap", gap: 6 }}>
+              <div style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
+                <span style={{ color: C.text, fontWeight: 800, fontSize: 15, minWidth: 52 }}>{h.name}</span>
+                <div>
+                  <div style={{ color: C.mid, fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>{COMPANY_NAMES[h.name] || h.name}</div>
+                  <div style={{ color: C.lbl, fontSize: 11 }}>{h.sector}</div>
+                </div>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ color: fund.color, fontWeight: 800, fontSize: 14 }}>{h.pct}%</span>
