@@ -40,7 +40,7 @@ const INDICATORS = [
     status:"AMBER", label:"Watch", color:"#92400E", areaColor:"#F59E0B",
     data:YIELD_DATA, refLine:0, yDomain:[-1.2,1.0],
     yFmt: v=>`${v>=0?"+":""}${v.toFixed(2)}%`,
-    detail:"Re-normalized to +0.38% after the longest inversion (Oct 2022–Dec 2024) in modern history. Recessions historically arrive 4–11 months AFTER the curve un-inverts — the re-steepening phase is the danger window.",
+    detail: (v) => `Currently ${v >= 0 ? "+" : ""}${v.toFixed(2)}% after the longest inversion (Oct 2022–Dec 2024) in modern history. Recessions historically arrive 4–11 months AFTER the curve un-inverts — the re-steepening phase is the danger window. A fully normal curve is above +1.0%.`,
     thresholds:[
       {val:-0.5, label:"Deep inversion", color:"#DC2626", dash:"4 2"},
       {val:0,    label:"Inversion line",  color:"#D97706", dash:"5 3"},
@@ -61,7 +61,7 @@ const INDICATORS = [
     status:"AMBER", label:"Rising", color:"#92400E", areaColor:"#F59E0B",
     data:UNEMP_DATA, refLine:4.0, yDomain:[3.0,5.5],
     yFmt: v=>`${v.toFixed(1)}%`,
-    detail:"Rose from 3.4% trough (Jan 2023) to 4.4% — a 1.0pp rise. Sahm Rule triggers at 0.5pp above 12-month low. We are at or near that threshold.",
+    detail: (v) => `Currently ${v.toFixed(1)}% — rose from a 3.4% trough (Jan 2023), a ${(v - 3.4).toFixed(1)}pp rise. Sahm Rule triggers at 0.5pp above the 12-month low. ${v >= 4.5 ? "The Sahm Rule has triggered — recession risk is elevated." : v >= 4.0 ? "We are approaching the Sahm Rule threshold. Direction is the concern." : "Still below the Sahm Rule trigger zone."}`,
     thresholds:[
       {val:3.5, label:"Pre-pandemic low",   color:"#16A34A", dash:"4 2"},
       {val:4.0, label:"Historical avg",     color:"#D97706", dash:"5 3"},
@@ -82,7 +82,7 @@ const INDICATORS = [
     status:"GREEN", label:"Benign", color:"#166534", areaColor:"#22C55E",
     data:CREDIT_DATA, refLine:4.5, yDomain:[1.5,7.0],
     yFmt: v=>`${v.toFixed(2)}%`,
-    detail:"At 2.75%, markets are NOT pricing stress. This is your best leading indicator — when spreads blow out above 4.5% start buying insurance aggressively. GFC peak: 21.8%. COVID peak: 10.9%.",
+    detail: (v) => `At ${v.toFixed(2)}%, markets are ${v < 3.0 ? "NOT pricing stress — calm conditions prevail" : v < 4.5 ? "beginning to price some stress — watch closely" : "pricing significant stress — act defensively"}. This is your best leading indicator. GFC peak: 21.8%. COVID peak: 10.9%. ${v >= 4.5 ? "⚠️ Alert threshold breached." : "Alert threshold: 4.5%."}`,
     thresholds:[
       {val:3.0, label:"Mild stress",         color:"#D97706", dash:"4 2"},
       {val:4.5, label:"⚠ Alert threshold",   color:"#F97316", dash:"5 3"},
@@ -801,7 +801,14 @@ function IndicatorChart({ ind, live }) {
           </ResponsiveContainer>
         </div>
         <div style={{ flex: "1 1 220px", display: "flex", flexDirection: "column", gap: 10 }}>
-          <p style={{ color: C.mid, fontSize: 14, lineHeight: 1.75, margin: 0 }}>{ind.detail}</p>
+          <p style={{ color: C.mid, fontSize: 14, lineHeight: 1.75, margin: 0 }}>
+                {typeof ind.detail === "function"
+                  ? ind.detail(ind.id === "yield"  && live ? live.yieldSpread
+                              : ind.id === "unemp"  && live ? live.unemployment
+                              : ind.id === "credit" && live ? live.creditSpread
+                              : (ind.id === "yield" ? 0.38 : ind.id === "unemp" ? 4.4 : 2.75))
+                  : ind.detail}
+              </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             {ind.thresholds.map((th, i) => (
               <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -1172,7 +1179,7 @@ export default function App() {
                            "💵 Reduce leverage and extend cash runway. Wait for credit spreads to confirm direction."] },
                 WATCH:   { g1:"#334155", g2:"#1E293B", shadow:"rgba(30,41,59,0.35)",
                   action:"Accumulate Insurance. Don't Chase Yield.",
-                  bullets:["📡 Credit spreads at 2.75% — benign. Markets not pricing stress yet. This is your trip wire.",
+                  bullets:[`📡 Credit spreads at ${liveInd ? liveInd.creditSpread.toFixed(2) : "2.75"}% — ${liveInd && liveInd.creditSpread >= 3.5 ? "widening toward alert zone. Build insurance now." : "benign. Markets not pricing stress yet. This is your trip wire."}`,
                            "🛡️ Gold miners + consumer staples: appropriate to build positions now at current prices.",
                            "💵 Berkshire's playbook: $397B in T-bills at 4.2% while waiting. Optionality > yield."] },
                 NEUTRAL: { g1:"#166534", g2:"#15803D", shadow:"rgba(22,101,52,0.30)",
@@ -1233,9 +1240,9 @@ export default function App() {
               )}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
                 {[
-                  { icon: "✅", text: "Credit spreads benign at 2.75%. Markets not pricing stress. Trip wire: 4.5%." },
-                  { icon: "⚠️", text: "Yield curve re-normalized post-inversion — the statistically dangerous lag window (avg 4–11 months to recession after un-inversion)." },
-                  { icon: "⚠️", text: "Unemployment risen from 3.4% trough to 4.4%. Sahm Rule borderline. Trending wrong direction." },
+                  { icon: liveInd && liveInd.creditSpread >= 4.5 ? "🚨" : liveInd && liveInd.creditSpread >= 3.5 ? "⚠️" : "✅", text: `Credit spreads at ${liveInd ? liveInd.creditSpread.toFixed(2) : "2.75"}%. ${liveInd && liveInd.creditSpread >= 4.5 ? "ALERT THRESHOLD BREACHED — rotate defensive now." : liveInd && liveInd.creditSpread >= 3.5 ? "Widening toward alert zone. Build insurance." : "Markets not pricing stress. Trip wire: 4.5%."}` },
+                  { icon: "⚠️", text: `Yield curve at ${liveInd ? (liveInd.yieldSpread >= 0 ? "+" : "") + liveInd.yieldSpread.toFixed(2) + "%" : "+0.38%"} — ${liveInd && liveInd.yieldSpread < 0 ? "still inverted, pricing recession ahead." : liveInd && liveInd.yieldSpread < 0.5 ? "re-normalized but in the danger window (avg 4–11 months to recession after un-inversion)." : "steepening toward normal. Danger window still open until spread exceeds +1.0%."}` },
+                  { icon: liveInd && liveInd.unemployment >= 5.0 ? "🚨" : "⚠️", text: `Unemployment at ${liveInd ? liveInd.unemployment.toFixed(1) : "4.4"}% — risen from 3.4% trough${liveInd ? ", a " + (liveInd.unemployment - 3.4).toFixed(1) + "pp rise" : ""}. ${liveInd && liveInd.unemployment >= 5.0 ? "Recession confirmed by this indicator." : liveInd && liveInd.unemployment >= 4.5 ? "Sahm Rule triggered. Defensive positioning warranted." : "Sahm Rule borderline. Direction is the concern."}` },
                 ].map((r, i) => (
                   <div key={i} style={{ flex: "1 1 200px", display: "flex", gap: 10 }}>
                     <span style={{ fontSize: 17, flexShrink: 0 }}>{r.icon}</span>
