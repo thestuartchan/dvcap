@@ -54,33 +54,12 @@ export default async function handler(req, res) {
     return thinned;
   }
 
-  // ── Fetch oil price from Yahoo Finance (WTI crude futures CL=F) ────────────
-  async function fetchOil() {
-    try {
-      const url = "https://query1.finance.yahoo.com/v8/finance/chart/CL%3DF?interval=1d&range=1d";
-      const r = await fetch(url, {
-        headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" },
-      });
-      const d = await r.json();
-      const meta = d?.chart?.result?.[0]?.meta;
-      if (meta) {
-        return {
-          price: parseFloat((meta.regularMarketPrice ?? 0).toFixed(2)),
-          prevClose: parseFloat((meta.chartPreviousClose ?? meta.previousClose ?? 0).toFixed(2)),
-        };
-      }
-    } catch (e) {
-      console.error("Oil fetch error:", e.message);
-    }
-    return null;
-  }
-
   const START_DATE = "2022-01-01"; // Chart history start
 
   try {
     // ── Fetch all data in parallel ────────────────────────────────────────────
     const [
-      tenY, twoY, unemp, hySpread, cpi, gdp, dxyRaw, m2Raw, oil,
+      tenY, twoY, unemp, hySpread, cpi, gdp, dxyRaw, m2Raw, oilRaw,
       tenYHistory, twoYHistory, unempHistory, creditHistory,
     ] = await Promise.all([
       fredLatest("DGS10"),
@@ -91,7 +70,7 @@ export default async function handler(req, res) {
       fredLatest("GDPC1"),
       fredLatest("DTWEXBGS"),
       fredTwo("M2SL"),
-      fetchOil(),
+      fredTwo("DCOILWTICO"),    // WTI crude oil spot price $/barrel (daily, FRED)
       // History series for charts
       fredHistory("DGS10", START_DATE),
       fredHistory("DGS2",  START_DATE),
@@ -125,8 +104,8 @@ export default async function handler(req, res) {
       m2:       m2Raw.latest,
       m2Prev:   m2Raw.prev,
       m2Rising: m2Raw.latest > m2Raw.prev,
-      oil:      oil?.price ?? null,
-      oilPrev:  oil?.prevClose ?? null,
+      oil:      oilRaw.latest > 0 ? parseFloat(oilRaw.latest.toFixed(2)) : null,
+      oilPrev:  oilRaw.prev > 0   ? parseFloat(oilRaw.prev.toFixed(2))   : null,
       // ── Chart history arrays ───────────────────────────────────────────────
       yieldHistory:  yieldSpreadHistory,
       unempHistory,
