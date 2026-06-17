@@ -129,8 +129,8 @@ export default async function handler(req, res) {
       creditHistory,
     };
 
-    // Cache 1 hour — FRED updates daily, oil updates intraday
-    res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    // Cache 5 minutes — allows near-fresh data without hammering FRED
+    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=60");
     return res.status(200).json(result);
   } catch (e) {
     console.error("Indicator fetch error:", e.message);

@@ -519,7 +519,7 @@ async function fetchTickerPrices(tickers) {
   // Your serverless function at /api/prices receives tickers and returns the
   // same { TICK: { price, changePercent } } shape. API key stays server-side.
   if (DATA_SOURCE === "proxy") {
-    const res = await fetch(`${PROXY_BASE_URL}/prices?tickers=${tickers.join(",")}`, {
+    const res = await fetch(`${PROXY_BASE_URL}/prices?tickers=${tickers.join(",")}&t=${Date.now()}`, {
       credentials: "include",
     });    if (!res.ok) throw new Error("Proxy error " + res.status);
     return await res.json();
@@ -566,7 +566,7 @@ async function fetchMacroIndicators() {
   }
 
   if (DATA_SOURCE === "proxy") {
-    const res = await fetch(`${PROXY_BASE_URL}/indicators`, {
+    const res = await fetch(`${PROXY_BASE_URL}/indicators?t=${Date.now()}`, {
       credentials: "include",
     });
     if (!res.ok) return null;
