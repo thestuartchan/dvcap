@@ -54,6 +54,23 @@ export default async function handler(req, res) {
     return thinned;
   }
 
+  // ── Fetch WTI crude oil price from API Ninjas (near real-time) ───────────
+  async function fetchOil() {
+    const API_NINJAS_KEY = process.env.API_NINJAS_KEY;
+    if (!API_NINJAS_KEY) return { latest: 0, prev: 0 };
+    try {
+      const r = await fetch("https://api.api-ninjas.com/v1/commodityprice?name=crude_oil", {
+        headers: { "X-Api-Key": API_NINJAS_KEY },
+      });
+      const d = await r.json();
+      const price = d?.price ?? 0;
+      return { latest: parseFloat(price.toFixed(2)), prev: 0 };
+    } catch (e) {
+      console.error("API Ninjas oil fetch error:", e.message);
+      return { latest: 0, prev: 0 };
+    }
+  }
+
   const START_DATE = "2022-01-01"; // Chart history start
 
   try {
@@ -70,7 +87,7 @@ export default async function handler(req, res) {
       fredLatest("GDPC1"),
       fredLatest("DTWEXBGS"),
       fredTwo("M2SL"),
-      fredTwo("DCOILWTICO"),    // WTI crude oil spot price $/barrel (daily, FRED)
+      fetchOil(),               // WTI crude oil — API Ninjas (near real-time)
       // History series for charts
       fredHistory("DGS10", START_DATE),
       fredHistory("DGS2",  START_DATE),
