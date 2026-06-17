@@ -38,7 +38,7 @@ const INDICATORS = [
   {
     id:"yield", name:"Yield Curve (10Y – 2Y)", current:"+0.38%",
     status:"AMBER", label:"Watch", color:"#92400E", areaColor:"#F59E0B",
-    data:YIELD_DATA, refLine:0, yDomain:[-1.2,1.0],
+    dataKey:"yieldHistory", data:YIELD_DATA, refLine:0, yDomain:[-1.2,1.0],
     yFmt: v=>`${v>=0?"+":""}${v.toFixed(2)}%`,
     detail: (v) => `Currently ${v >= 0 ? "+" : ""}${v.toFixed(2)}% after the longest inversion (Oct 2022–Dec 2024) in modern history. Recessions historically arrive 4–11 months AFTER the curve un-inverts — the re-steepening phase is the danger window. A fully normal curve is above +1.0%.`,
     thresholds:[
@@ -59,7 +59,7 @@ const INDICATORS = [
   {
     id:"unemp", name:"Unemployment Rate", current:"4.4%",
     status:"AMBER", label:"Rising", color:"#92400E", areaColor:"#F59E0B",
-    data:UNEMP_DATA, refLine:4.0, yDomain:[3.0,5.5],
+    dataKey:"unempHistory", data:UNEMP_DATA, refLine:4.0, yDomain:[3.0,5.5],
     yFmt: v=>`${v.toFixed(1)}%`,
     detail: (v) => `Currently ${v.toFixed(1)}% — rose from a 3.4% trough (Jan 2023), a ${(v - 3.4).toFixed(1)}pp rise. Sahm Rule triggers at 0.5pp above the 12-month low. ${v >= 4.5 ? "The Sahm Rule has triggered — recession risk is elevated." : v >= 4.0 ? "We are approaching the Sahm Rule threshold. Direction is the concern." : "Still below the Sahm Rule trigger zone."}`,
     thresholds:[
@@ -80,7 +80,7 @@ const INDICATORS = [
   {
     id:"credit", name:"HY Credit Spreads (ICE BofA OAS)", current:"2.75%",
     status:"GREEN", label:"Benign", color:"#166534", areaColor:"#22C55E",
-    data:CREDIT_DATA, refLine:4.5, yDomain:[1.5,7.0],
+    dataKey:"creditHistory", data:CREDIT_DATA, refLine:4.5, yDomain:[1.5,7.0],
     yFmt: v=>`${v.toFixed(2)}%`,
     detail: (v) => `At ${v.toFixed(2)}%, markets are ${v < 3.0 ? "NOT pricing stress — calm conditions prevail" : v < 4.5 ? "beginning to price some stress — watch closely" : "pricing significant stress — act defensively"}. This is your best leading indicator. GFC peak: 21.8%. COVID peak: 10.9%. ${v >= 4.5 ? "⚠️ Alert threshold breached." : "Alert threshold: 4.5%."}`,
     thresholds:[
@@ -519,8 +519,9 @@ async function fetchTickerPrices(tickers) {
   // Your serverless function at /api/prices receives tickers and returns the
   // same { TICK: { price, changePercent } } shape. API key stays server-side.
   if (DATA_SOURCE === "proxy") {
-    const res = await fetch(`${PROXY_BASE_URL}/prices?tickers=${tickers.join(",")}`);
-    if (!res.ok) throw new Error("Proxy error " + res.status);
+    const res = await fetch(`${PROXY_BASE_URL}/prices?tickers=${tickers.join(",")}`, {
+      credentials: "include",
+    });    if (!res.ok) throw new Error("Proxy error " + res.status);
     return await res.json();
   }
 
@@ -565,7 +566,9 @@ async function fetchMacroIndicators() {
   }
 
   if (DATA_SOURCE === "proxy") {
-    const res = await fetch(`${PROXY_BASE_URL}/indicators`);
+    const res = await fetch(`${PROXY_BASE_URL}/indicators`, {
+      credentials: "include",
+    });
     if (!res.ok) return null;
     return await res.json();
   }
@@ -781,7 +784,7 @@ function IndicatorChart({ ind, live }) {
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 280px", minWidth: 240 }}>
           <ResponsiveContainer width="100%" height={148}>
-            <AreaChart data={ind.data} margin={{ top: 6, right: 6, bottom: 0, left: 4 }}>
+            <AreaChart data={(live && ind.dataKey && live[ind.dataKey] && live[ind.dataKey].length > 0) ? live[ind.dataKey] : ind.data} margin={{ top: 6, right: 6, bottom: 0, left: 4 }}>
               <defs>
                 <linearGradient id={"g" + ind.id} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%"  stopColor={ind.areaColor} stopOpacity={0.15} />
@@ -1619,7 +1622,8 @@ export default function App() {
                 const yc  = liveInd ? liveInd.yieldSpread   : 0.38;
                 const cpi = liveInd ? liveInd.cpi            : null;
                 const gdp = liveInd ? liveInd.gdp            : null;
-                const oilStatic = 88;
+                const oil = liveInd?.oil ?? 88;
+                const oilPrev = liveInd?.oilPrev ?? null;
 
                 // CPI/GDP formatted for display
                 // FRED CPIAUCSL is an index level (~315), not a % — compute YoY% from context note
@@ -1704,16 +1708,19 @@ export default function App() {
                           : `At ${(yc >= 0 ? "+" : "") + yc.toFixed(2)}%, the yield curve has re-normalized. Historically this means the bond market is no longer pricing a recession — a good early sign for recovery.`,
                       },
                       {
-                        label: "Oil (static)", value: oilStatic, unit: "$", threshold: 80,
+                        label: "WTI Crude Oil", value: oil, unit: "$", threshold: 80,
                         thresholdLabel: "target <$80", good: "below", fmtVal: v => "$" + v,
                         context: (v, breached) => breached
-                          ? `Oil at $${v} is the primary blockage. Until oil falls below $80, the Fed can't cut with confidence — inflation stays too sticky. Watch the Gulf situation closely.`
-                          : `Oil below $80 would be the green light. At that level, inflation pressure eases enough for the Fed to resume cutting, which kick-starts the recovery cycle.`,
+                          ? `WTI crude at $${v.toFixed(1)} is the primary blockage. Until oil falls below $80, inflation stays too sticky for the Fed to cut. ${oilPrev ? (v > oilPrev ? "Price is rising — moving in the wrong direction." : "Price is falling — trending toward the trigger.") : ""}`
+                          : `At $80 oil, inflation pressure eases enough for the Fed to resume cutting. Current: $${v.toFixed(1)} — needs to fall $${(v - 80).toFixed(1)} more to hit the trigger.`,
                       },
                     ],
-                    tip: oilStatic < 80
-                      ? "✅ Oil below $80 — the single biggest trigger for reflationary recovery is in place. Watch for a Fed pivot signal next."
-                      : `⚠️ Oil at $${oilStatic} is the main obstacle to this scenario. A Gulf peace deal or OPEC production increase that brings oil below $80 would rapidly shift probability toward recovery.`,
+                    tip: (() => {
+                      const oilDir = oilPrev && oil ? (oil > oilPrev ? "↑ rising" : "↓ falling") : "";
+                      return oil < 80
+                        ? \`✅ WTI crude at \$\${oil.toFixed(1)} — below the $80 reflationary trigger. Oil has fallen enough for the Fed to consider cutting. Watch for a Fed pivot signal next.\`
+                        : \`⚠️ WTI crude at \$\${oil.toFixed(1)} \${oilDir} — above the $80 threshold. Until oil falls below $80, inflation stays too sticky for the Fed to cut with confidence. A Gulf peace deal or OPEC production increase is the key trigger.\`;
+                    })(),
                   },
                   {
                     label: "Persistent Stagflation (1970s path)",

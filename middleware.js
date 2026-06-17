@@ -1,19 +1,15 @@
 export const config = {
-  // Only intercept the root HTML request — let all assets, API routes, etc. pass freely
   matcher: "/",
 };
 
 export default function middleware(request) {
-  // Check for valid auth cookie
   const cookies = request.headers.get("cookie") || "";
   const isAuthed = cookies.includes("mwd_auth=true");
 
-  if (isAuthed) {
-    // Authenticated — let the request pass through to the Vite app
-    return new Response(null, { status: 200, headers: { "x-middleware-next": "1" } });
-  }
+  // Authenticated — return undefined to pass through to the Vite app
+  if (isAuthed) return;
 
-  // Not authenticated — serve the login page
+  // Not authenticated — serve the login page inline
   const loginHTML = `<!doctype html>
 <html lang="en">
 <head>
@@ -31,12 +27,9 @@ export default function middleware(request) {
       min-height: 100vh;
     }
     .card {
-      background: #1E293B;
-      border: 1.5px solid #334155;
-      border-radius: 16px;
-      padding: 40px 36px;
-      width: 100%;
-      max-width: 380px;
+      background: #1E293B; border: 1.5px solid #334155;
+      border-radius: 16px; padding: 40px 36px;
+      width: 100%; max-width: 380px;
       box-shadow: 0 20px 60px rgba(0,0,0,0.5);
     }
     .logo { font-size: 22px; font-weight: 900; color: #F1F5F9; margin-bottom: 6px; letter-spacing: -0.5px; }
@@ -54,7 +47,7 @@ export default function middleware(request) {
       width: 100%; margin-top: 16px; background: #3B82F6; color: #fff;
       border: none; border-radius: 10px; padding: 13px; font-size: 15px;
       font-weight: 700; font-family: inherit; cursor: pointer;
-      transition: background 0.15s, opacity 0.15s;
+      transition: background 0.15s;
     }
     button:hover { background: #2563EB; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
