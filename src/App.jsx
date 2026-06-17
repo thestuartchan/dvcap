@@ -1712,7 +1712,7 @@ export default function App() {
                         thresholdLabel: "target <$80", good: "below", fmtVal: v => "$" + v,
                         context: (v, breached) => breached
                           ? `WTI crude at $${v.toFixed(1)} is the primary blockage. Until oil falls below $80, inflation stays too sticky for the Fed to cut. ${oilPrev ? (v > oilPrev ? "Price is rising — moving in the wrong direction." : "Price is falling — trending toward the trigger.") : ""}`
-                          : `At $80 oil, inflation pressure eases enough for the Fed to resume cutting. Current: $${v.toFixed(1)} — needs to fall $${(v - 80).toFixed(1)} more to hit the trigger.`,
+                          : `✅ WTI crude at $${v.toFixed(1)} — below the $80 reflationary trigger. Oil is no longer the inflation blockage. The Fed now has room to cut if labour market data warrants it.`,
                       },
                     ],
                     tip: (() => {
