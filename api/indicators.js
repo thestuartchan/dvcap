@@ -57,13 +57,19 @@ export default async function handler(req, res) {
   // ── Fetch WTI crude oil price from API Ninjas (near real-time) ───────────
   async function fetchOil() {
     const API_NINJAS_KEY = process.env.API_NINJAS_KEY;
-    if (!API_NINJAS_KEY) return { latest: 0, prev: 0 };
+    if (!API_NINJAS_KEY) {
+      console.error("API_NINJAS_KEY not set");
+      return { latest: 0, prev: 0 };
+    }
     try {
       const r = await fetch("https://api.api-ninjas.com/v1/commodityprice?name=crude_oil", {
         headers: { "X-Api-Key": API_NINJAS_KEY },
       });
-      const d = await r.json();
+      const text = await r.text();
+      console.log("API Ninjas status:", r.status, "body:", text.slice(0, 200));
+      const d = JSON.parse(text);
       const price = d?.price ?? 0;
+      console.log("API Ninjas parsed price:", price);
       return { latest: parseFloat(price.toFixed(2)), prev: 0 };
     } catch (e) {
       console.error("API Ninjas oil fetch error:", e.message);
