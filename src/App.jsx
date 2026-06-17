@@ -1718,8 +1718,8 @@ export default function App() {
                     tip: (() => {
                       const oilDir = oilPrev && oil ? (oil > oilPrev ? "↑ rising" : "↓ falling") : "";
                       return oil < 80
-                        ? \`✅ WTI crude at \$\${oil.toFixed(1)} — below the $80 reflationary trigger. Oil has fallen enough for the Fed to consider cutting. Watch for a Fed pivot signal next.\`
-                        : \`⚠️ WTI crude at \$\${oil.toFixed(1)} \${oilDir} — above the $80 threshold. Until oil falls below $80, inflation stays too sticky for the Fed to cut with confidence. A Gulf peace deal or OPEC production increase is the key trigger.\`;
+                        ? `✅ WTI crude at $${oil.toFixed(1)} — below the $80 reflationary trigger. Oil has fallen enough for the Fed to consider cutting. Watch for a Fed pivot signal next.`
+                        : `⚠️ WTI crude at $${oil.toFixed(1)} ${oilDir} — above the $80 threshold. Until oil falls below $80, inflation stays too sticky for the Fed to cut with confidence. A Gulf peace deal or OPEC production increase is the key trigger.`;
                     })(),
                   },
                   {
