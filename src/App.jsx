@@ -739,11 +739,28 @@ async function fetchMacroIndicators() {
   return null;
 }
 
+// Tickers fetched by the header "Refresh All" button and the on-mount auto-fetch.
+const HEADER_TICKERS = ["AAPL","AXP","KO","BAC","CVX","OXY","GOOGL","DAL","BN","AMZN","UBER","MSFT","SPY","NVDA","AVGO","MU","TSM","NTRA","EWZ","ARGT","BABA","META","CRWD","GDX","XLP","TLT","EPD","O","JEPI","BIL","IBIT","FBTC","BTC-USD"];
+
 // ─── SHARED HOOKS ─────────────────────────────────────────────────────────────
+// localStorage cache so the last successful fetch survives a page reload, instead
+// of resetting to the hardcoded static fallbacks (oil 88, spread 2.75, prices "—").
+function cacheLoad(key, fallback) {
+  try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : fallback; }
+  catch (_) { return fallback; }
+}
+function cacheSave(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) {}
+}
+function cacheLoadDate(key) {
+  try { const s = localStorage.getItem(key); return s ? new Date(s) : null; }
+  catch (_) { return null; }
+}
+
 function useLivePrices() {
-  const [prices, setPrices] = useState({});
+  const [prices, setPrices] = useState(() => cacheLoad("cache_prices_v1", {}));
   const [loading, setLoading] = useState(false);
-  const [updated, setUpdated] = useState(null);
+  const [updated, setUpdated] = useState(() => cacheLoadDate("cache_prices_updated_v1"));
 
   const fetchPrices = useCallback(async function(tickers) {
     if (!tickers || !tickers.length) return;
@@ -751,8 +768,14 @@ function useLivePrices() {
     try {
       const result = await fetchTickerPrices(tickers);
       if (result && Object.keys(result).length) {
-        setPrices(prev => ({ ...prev, ...result }));
-        setUpdated(new Date());
+        setPrices(prev => {
+          const merged = { ...prev, ...result };
+          cacheSave("cache_prices_v1", merged);
+          return merged;
+        });
+        const now = new Date();
+        setUpdated(now);
+        try { localStorage.setItem("cache_prices_updated_v1", now.toISOString()); } catch (_) {}
       }
     } catch (e) { console.error("Price fetch error:", e); }
     setLoading(false);
@@ -762,9 +785,9 @@ function useLivePrices() {
 }
 
 function useLiveIndicators() {
-  const [live, setLive] = useState(null);
+  const [live, setLive] = useState(() => cacheLoad("cache_indicators_v1", null));
   const [loading, setLoading] = useState(false);
-  const [updated, setUpdated] = useState(null);
+  const [updated, setUpdated] = useState(() => cacheLoadDate("cache_indicators_updated_v1"));
   const [error, setError] = useState(null);
 
   const fetchIndicators = useCallback(async function() {
@@ -777,8 +800,11 @@ function useLiveIndicators() {
         (result.tenY > 0 || result.unemployment > 0 || result.creditSpread > 0);
       if (isValid) {
         setLive(result);
-        setUpdated(new Date());
+        const now = new Date();
+        setUpdated(now);
         setError(null);
+        cacheSave("cache_indicators_v1", result);
+        try { localStorage.setItem("cache_indicators_updated_v1", now.toISOString()); } catch (_) {}
       } else if (result) {
         // Got a response but values are all zero — API key likely not configured
         setError("API returned zero values — check FRED_API_KEY is set in Vercel environment variables.");
@@ -1351,6 +1377,13 @@ export default function App() {
     });
   }, []);
 
+  // Auto-refresh live data on load. Cached values (from localStorage) render
+  // immediately, so there's no static-fallback flash while this fetch runs.
+  useEffect(function() {
+    fetchIndicators();
+    fetchPrices(HEADER_TICKERS);
+  }, [fetchIndicators, fetchPrices]);
+
   // Load manual deploy-stage toggles + portfolio value from localStorage
   useEffect(function() {
     try {
@@ -1429,8 +1462,7 @@ export default function App() {
               {/* Unified refresh — fires both prices and indicators */}
               <button
                 onClick={() => {
-                  const tickers = ["AAPL","AXP","KO","BAC","CVX","OXY","GOOGL","DAL","BN","AMZN","UBER","MSFT","SPY","NVDA","AVGO","MU","TSM","NTRA","EWZ","ARGT","BABA","META","CRWD","GDX","XLP","TLT","EPD","O","JEPI","BIL","IBIT","FBTC","BTC-USD"];
-                  fetchPrices(tickers);
+                  fetchPrices(HEADER_TICKERS);
                   fetchIndicators();
                 }}
                 disabled={pricesLoading || indLoading}
