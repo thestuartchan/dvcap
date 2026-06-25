@@ -899,8 +899,16 @@ function readManual(ticker) {
   try { return { price: localStorage.getItem("manual_price_" + ticker), date: localStorage.getItem("manual_price_date_" + ticker) }; }
   catch (_) { return { price: null, date: null }; }
 }
-// Manual price entry for tickers with no live feed (ADX/DFM names). Click to edit,
-// persists to localStorage, shows an exchange deep-link when one is known.
+// Format a stored ISO date as e.g. "Jun 25, 2026" (tolerant of "YYYY-MM-DD" too).
+function fmtManualDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+// Manual price entry for tickers with no live feed (ADX/DFM names). Mirrors the
+// recession-table manual-update pattern: saved price shown live-style with a ✏️ to
+// edit, "Updated: <date>" beneath, exchange deep-link always visible.
 function ManualPrice({ ticker }) {
   const stored = readManual(ticker);
   const [editing, setEditing] = useState(false);
@@ -912,13 +920,16 @@ function ManualPrice({ ticker }) {
     setEditing(false);
     const clean = String(draft).replace(/[^0-9.]/g, "");
     if (!clean) return;
-    const today = new Date().toISOString().slice(0, 10);
+    const isoNow = new Date().toISOString();
     try {
       localStorage.setItem("manual_price_" + ticker, clean);
-      localStorage.setItem("manual_price_date_" + ticker, today);
+      localStorage.setItem("manual_price_date_" + ticker, isoNow);
     } catch (_) {}
-    setVal(clean); setDate(today);
+    setVal(clean); setDate(isoNow);
   }
+  const linkIcon = link && (
+    <a href={link} target="_blank" rel="noopener noreferrer" title="Open exchange page" style={{ fontSize: 12, textDecoration: "none" }}>🔗</a>
+  );
   return (
     <span style={{ display: "inline-flex", gap: 5, alignItems: "center" }}>
       {editing ? (
@@ -927,20 +938,23 @@ function ManualPrice({ ticker }) {
           onChange={e => setDraft(e.target.value)}
           onBlur={commit}
           onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
-          inputMode="decimal" placeholder="price"
-          style={{ width: 64, fontSize: 13, padding: "2px 5px", border: "1.5px solid " + C.blBdr, borderRadius: 5, color: C.text }}
+          type="number" step="0.01" placeholder="price"
+          style={{ width: 70, fontSize: 13, padding: "2px 5px", border: "1.5px solid " + C.blBdr, borderRadius: 5, color: C.text }}
         />
       ) : val ? (
-        <span onClick={() => { setDraft(val); setEditing(true); }} title="Click to update" style={{ cursor: "pointer", display: "inline-flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.2 }}>
-          <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>{ccyPrefix(ticker)}{val}</span>
-          {date && <span style={{ color: C.lbl, fontSize: 9 }}>Updated: {date}</span>}
+        <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.25 }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>{ccyPrefix(ticker)}{val}</span>
+            <span onClick={() => { setDraft(val); setEditing(true); }} title="Edit price" style={{ cursor: "pointer", fontSize: 11 }}>✏️</span>
+          </span>
+          {date && <span style={{ color: C.lbl, fontSize: 10 }}>Updated: {fmtManualDate(date)}</span>}
         </span>
       ) : (
-        <span onClick={() => { setDraft(""); setEditing(true); }} title="Click to enter price" style={{ cursor: "pointer", color: C.lbl, fontSize: 11, fontStyle: "italic" }}>
-          Manual — click to update
+        <span onClick={() => { setDraft(""); setEditing(true); }} title="Tap to enter price" style={{ cursor: "pointer", color: C.lbl, fontSize: 12, fontStyle: "italic" }}>
+          Tap to enter price
         </span>
       )}
-      {link && <a href={link} target="_blank" rel="noopener noreferrer" title="Open exchange page" style={{ fontSize: 12, textDecoration: "none" }}>🔗</a>}
+      {linkIcon}
     </span>
   );
 }
@@ -1166,7 +1180,7 @@ function AssetDetail({ asset, prices, onFetchPrices, pricesLoading, pricesUpdate
         {asset.tickers.map((tk, i) => (
           <div key={tk.t} style={{ display: "flex", gap: 12, padding: "10px 0", borderBottom: i < asset.tickers.length - 1 ? "1px solid " + C.bdr : "none", alignItems: "flex-start" }}>
             <div style={{ flexShrink: 0, width: 70 }}>
-              <span style={{ background: asset.bg, color: asset.color, border: "1.5px solid " + asset.bdr, borderRadius: 6, padding: "3px 5px", fontSize: tk.t.length > 8 ? 9 : tk.t.length > 5 ? 11 : 13, fontWeight: 800, display: "block", textAlign: "center", whiteSpace: "nowrap", maxWidth: 90, overflow: "hidden" }}>{tk.t}</span>
+              <span title={tk.t} style={{ background: asset.bg, color: asset.color, border: "1.5px solid " + asset.bdr, borderRadius: 6, padding: "3px 5px", fontSize: tk.t.length > 8 ? 9 : tk.t.length > 5 ? 11 : 13, fontWeight: 800, display: "block", textAlign: "center", whiteSpace: "nowrap", maxWidth: 72, overflow: "hidden", textOverflow: "ellipsis" }}>{tk.t}</span>
               <span style={{ color: C.lbl, fontSize: 11, display: "block", textAlign: "center", marginTop: 2 }}>{tk.type}</span>
             </div>
             <div style={{ flex: 1 }}>
@@ -1714,25 +1728,25 @@ export default function App() {
                       const a = alloc[m.key];
                       const sc = POSTURE_STATUS[a.status] || POSTURE_STATUS.HOLD;
                       return (
-                        <Card key={m.key} onClick={m.link ? () => setTab(m.link) : undefined} style={{ borderTop: "4px solid " + sc.color, cursor: m.link ? "pointer" : "default" }}>
+                        <Card key={m.key} onClick={m.link ? () => setTab(m.link) : undefined} style={{ borderTop: "4px solid " + sc.color, cursor: m.link ? "pointer" : "default", minWidth: 0 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 8 }}>
-                            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                            <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1, minWidth: 0 }}>
                               <span style={{ fontSize: 20 }}>{m.icon}</span>
-                              <div>
+                              <div style={{ minWidth: 0 }}>
                                 <div style={{ fontSize: 15, fontWeight: 900, color: C.text, lineHeight: 1.2 }}>{m.name}</div>
-                                <div style={{ color: C.lbl, fontSize: 11 }}>{m.sub}</div>
+                                <div style={{ color: C.lbl, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={m.sub}>{m.sub}</div>
                               </div>
                             </div>
-                            <span style={{ background: sc.bg, color: sc.color, border: "1px solid " + sc.bdr, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>{a.status}</span>
+                            <span style={{ background: sc.bg, color: sc.color, border: "1px solid " + sc.bdr, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap", flexShrink: 0 }}>{a.status}</span>
                           </div>
-                          <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: dollarRange(a.range) ? 2 : 6 }}>
-                            <span style={{ fontSize: 26, fontWeight: 900, letterSpacing: -1, color: sc.color }}>{a.range}</span>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: dollarRange(a.range) ? 2 : 6, flexWrap: "wrap" }}>
+                            <span style={{ fontSize: "clamp(18px, 2.2vw, 28px)", fontWeight: 900, letterSpacing: -1, color: sc.color, whiteSpace: "nowrap" }}>{a.range}</span>
                             <span style={{ color: C.lbl, fontSize: 12 }}>target allocation</span>
                           </div>
                           {dollarRange(a.range) && (
-                            <div style={{ color: C.mid, fontSize: 14, fontWeight: 800, marginBottom: 6 }}>{dollarRange(a.range)}</div>
+                            <div style={{ color: C.mid, fontSize: 13, fontWeight: 800, marginBottom: 6, whiteSpace: "nowrap" }}>{dollarRange(a.range)}</div>
                           )}
-                          <div style={{ color: C.mid, fontSize: 13, lineHeight: 1.6 }}>{a.note}</div>
+                          <div style={{ color: C.mid, fontSize: 12, lineHeight: 1.55 }}>{a.note}</div>
                         </Card>
                       );
                     })}
@@ -2007,7 +2021,7 @@ export default function App() {
                       {activeIncome.tickers.map((tk, i) => (
                         <div key={tk.t} style={{ display: "flex", gap: 12, padding: "10px 0", borderBottom: i < activeIncome.tickers.length - 1 ? "1px solid " + C.bdr : "none", alignItems: "flex-start" }}>
                           <div style={{ flexShrink: 0, width: 70 }}>
-                            <span style={{ background: activeIncome.bg, color: activeIncome.color, border: "1.5px solid " + activeIncome.color + "40", borderRadius: 6, padding: "3px 5px", fontSize: tk.t.length > 8 ? 9 : tk.t.length > 5 ? 11 : 13, fontWeight: 800, display: "block", textAlign: "center", whiteSpace: "nowrap", maxWidth: 90, overflow: "hidden" }}>{tk.t}</span>
+                            <span title={tk.t} style={{ background: activeIncome.bg, color: activeIncome.color, border: "1.5px solid " + activeIncome.color + "40", borderRadius: 6, padding: "3px 5px", fontSize: tk.t.length > 8 ? 9 : tk.t.length > 5 ? 11 : 13, fontWeight: 800, display: "block", textAlign: "center", whiteSpace: "nowrap", maxWidth: 72, overflow: "hidden", textOverflow: "ellipsis" }}>{tk.t}</span>
                             {tk.yield && <span style={{ background: C.gBg, color: C.green, border: "1px solid " + C.gBdr, borderRadius: 4, padding: "1px 5px", fontSize: 11, fontWeight: 700, display: "block", textAlign: "center", marginTop: 3 }}>{tk.yield}</span>}
                           </div>
                           <div style={{ flex: 1 }}>
