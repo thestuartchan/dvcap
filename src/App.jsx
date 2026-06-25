@@ -864,24 +864,105 @@ function ActionBadge({ action }) {
   const [fg, bg, lbl] = M[action] || ["#6B7280", "#F9FAFB", action];
   return <span style={{ background: bg, color: fg, border: "1px solid " + fg + "33", borderRadius: 4, padding: "1px 6px", fontSize: 11, fontWeight: 700 }}>{lbl}</span>;
 }
+// Exchange deep-links for foreign names Yahoo doesn't cover (manual price entry).
+const EXCHANGE_LINKS = {
+  "DEWA.AE":     "https://www.dfm.ae/the-exchange/market-information/equities/security-details?SecurityCode=DEWA",
+  "ADNOCGAS.AE": "https://www.adx.ae/English/Pages/SecurityDetails.aspx?Symbol=ADNOCGAS",
+  "EMAAR.AE":    "https://www.dfm.ae/the-exchange/market-information/equities/security-details?SecurityCode=EMAAR",
+  "FAB.AE":      "https://www.adx.ae/English/Pages/SecurityDetails.aspx?Symbol=FAB",
+};
+const CA_TICKERS = new Set(["ENB", "FTS", "CNR"]); // Canadian names listed in USD on NYSE
+function ccyPrefix(ticker) {
+  if (typeof ticker !== "string") return "$";
+  if (ticker.endsWith(".TO")) return "C$";
+  if (ticker.endsWith(".HK")) return "HK$";
+  if (ticker.endsWith(".AE")) return "AED ";
+  return "$";
+}
+function regionOf(ticker) {
+  if (typeof ticker !== "string") return null;
+  if (ticker.endsWith(".AE")) return { label: "UAE", bg: "#00732F" };
+  if (ticker.endsWith(".HK")) return { label: "HK",  bg: "#DE2910" };
+  if (ticker.endsWith(".TO") || CA_TICKERS.has(ticker)) return { label: "CA", bg: "#FF0000" };
+  return null;
+}
+function RegionBadge({ ticker }) {
+  const r = regionOf(ticker);
+  if (!r) return null;
+  return (
+    <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 4px", borderRadius: 3, backgroundColor: r.bg, color: "white", letterSpacing: 0.5, marginRight: 4, whiteSpace: "nowrap" }}>
+      {r.label}
+    </span>
+  );
+}
+function readManual(ticker) {
+  try { return { price: localStorage.getItem("manual_price_" + ticker), date: localStorage.getItem("manual_price_date_" + ticker) }; }
+  catch (_) { return { price: null, date: null }; }
+}
+// Manual price entry for tickers with no live feed (ADX/DFM names). Click to edit,
+// persists to localStorage, shows an exchange deep-link when one is known.
+function ManualPrice({ ticker }) {
+  const stored = readManual(ticker);
+  const [editing, setEditing] = useState(false);
+  const [val, setVal]   = useState(stored.price || "");
+  const [date, setDate] = useState(stored.date || "");
+  const [draft, setDraft] = useState(stored.price || "");
+  const link = EXCHANGE_LINKS[ticker];
+  function commit() {
+    setEditing(false);
+    const clean = String(draft).replace(/[^0-9.]/g, "");
+    if (!clean) return;
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+      localStorage.setItem("manual_price_" + ticker, clean);
+      localStorage.setItem("manual_price_date_" + ticker, today);
+    } catch (_) {}
+    setVal(clean); setDate(today);
+  }
+  return (
+    <span style={{ display: "inline-flex", gap: 5, alignItems: "center" }}>
+      {editing ? (
+        <input
+          autoFocus value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
+          inputMode="decimal" placeholder="price"
+          style={{ width: 64, fontSize: 13, padding: "2px 5px", border: "1.5px solid " + C.blBdr, borderRadius: 5, color: C.text }}
+        />
+      ) : val ? (
+        <span onClick={() => { setDraft(val); setEditing(true); }} title="Click to update" style={{ cursor: "pointer", display: "inline-flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.2 }}>
+          <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>{ccyPrefix(ticker)}{val}</span>
+          {date && <span style={{ color: C.lbl, fontSize: 9 }}>Updated: {date}</span>}
+        </span>
+      ) : (
+        <span onClick={() => { setDraft(""); setEditing(true); }} title="Click to enter price" style={{ cursor: "pointer", color: C.lbl, fontSize: 11, fontStyle: "italic" }}>
+          Manual — click to update
+        </span>
+      )}
+      {link && <a href={link} target="_blank" rel="noopener noreferrer" title="Open exchange page" style={{ fontSize: 12, textDecoration: "none" }}>🔗</a>}
+    </span>
+  );
+}
 function PriceBadge({ ticker, prices }) {
   const p = prices[ticker];
   const isAE = typeof ticker === "string" && ticker.endsWith(".AE");
-  if (!p) return <span style={{ color: C.lbl, fontSize: 12 }}>{isAE ? "N/A — check ADX/DFM directly" : "—"}</span>;
+  // No live price → manual entry for unsupported feeds (.AE) or any ticker the
+  // user has already saved a manual price for; otherwise the usual placeholder.
+  if (!p) {
+    if (isAE || readManual(ticker).price) return <ManualPrice ticker={ticker} />;
+    return <span style={{ color: C.lbl, fontSize: 12 }}>—</span>;
+  }
   const up = (p.changePercent || 0) >= 0;
   const col = up ? C.green : C.red;
-  // Yahoo returns local-currency prices for foreign listings — label them correctly.
-  const prefix = typeof ticker !== "string" ? "$"
-    : ticker.endsWith(".TO") ? "C$"
-    : ticker.endsWith(".HK") ? "HK$"
-    : ticker.endsWith(".AE") ? "AED "
-    : "$";
+  const link = EXCHANGE_LINKS[ticker];
   return (
     <span style={{ display: "inline-flex", gap: 5, alignItems: "center" }}>
-      <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>{prefix}{(p.price || 0).toFixed(2)}</span>
+      <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>{ccyPrefix(ticker)}{(p.price || 0).toFixed(2)}</span>
       <span style={{ color: col, fontWeight: 700, fontSize: 13 }}>
         {up ? "↑" : "↓"}{Math.abs(p.changePercent || 0).toFixed(2)}%
       </span>
+      {link && <a href={link} target="_blank" rel="noopener noreferrer" title="Open exchange page" style={{ fontSize: 12, textDecoration: "none" }}>🔗</a>}
     </span>
   );
 }
@@ -1084,15 +1165,16 @@ function AssetDetail({ asset, prices, onFetchPrices, pricesLoading, pricesUpdate
         </div>
         {asset.tickers.map((tk, i) => (
           <div key={tk.t} style={{ display: "flex", gap: 12, padding: "10px 0", borderBottom: i < asset.tickers.length - 1 ? "1px solid " + C.bdr : "none", alignItems: "flex-start" }}>
-            <div style={{ flexShrink: 0, width: 58 }}>
-              <span style={{ background: asset.bg, color: asset.color, border: "1.5px solid " + asset.bdr, borderRadius: 6, padding: "3px 6px", fontSize: 13, fontWeight: 800, display: "block", textAlign: "center" }}>{tk.t}</span>
+            <div style={{ flexShrink: 0, width: 70 }}>
+              <span style={{ background: asset.bg, color: asset.color, border: "1.5px solid " + asset.bdr, borderRadius: 6, padding: "3px 5px", fontSize: tk.t.length > 8 ? 9 : tk.t.length > 5 ? 11 : 13, fontWeight: 800, display: "block", textAlign: "center", whiteSpace: "nowrap", maxWidth: 90, overflow: "hidden" }}>{tk.t}</span>
               <span style={{ color: C.lbl, fontSize: 11, display: "block", textAlign: "center", marginTop: 2 }}>{tk.type}</span>
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
                 <span style={{ color: C.text, fontWeight: 700, fontSize: 15 }}>
+                  <RegionBadge ticker={tk.t} />
                   {tk.name}
-                  {tk.link && <a href={tk.link} target="_blank" rel="noopener noreferrer" title="Exchange" style={{ marginLeft: 5, fontSize: 12, textDecoration: "none" }}>🔗</a>}
+                  {tk.link && !String(tk.t).endsWith(".AE") && <a href={tk.link} target="_blank" rel="noopener noreferrer" title="Exchange" style={{ marginLeft: 5, fontSize: 12, textDecoration: "none" }}>🔗</a>}
                 </span>
                 <PriceBadge ticker={tk.t} prices={prices} />
               </div>
@@ -1239,6 +1321,7 @@ export default function App() {
   const [insurancePhase, setInsurancePhase] = useState("onset"); // Insurance tab only — crash onset vs post-crash/debasement
   const [stage4, setStage4] = useState(false); // Posture deploy stage 4 — manual, persisted
   const [stage5, setStage5] = useState(false); // Posture deploy stage 5 — manual, persisted
+  const [portfolioValue, setPortfolioValue] = useState(""); // Posture portfolio total (digits only), persisted
   const [funds, setFunds]       = useState(DEFAULT_FUNDS);
   const [selectedFund, setSelectedFund] = useState(DEFAULT_FUNDS[0]);
   const [editMode, setEditMode] = useState(false);
@@ -1254,13 +1337,20 @@ export default function App() {
     });
   }, []);
 
-  // Load manual deploy-stage toggles from localStorage (persist across sessions)
+  // Load manual deploy-stage toggles + portfolio value from localStorage
   useEffect(function() {
     try {
       setStage4(localStorage.getItem("posture_stage4_active") === "true");
       setStage5(localStorage.getItem("posture_stage5_active") === "true");
+      const pv = localStorage.getItem("portfolio_total_value");
+      if (pv) setPortfolioValue(pv.replace(/[^0-9]/g, ""));
     } catch (_) {}
   }, []);
+  function updatePortfolioValue(raw) {
+    const digits = String(raw).replace(/[^0-9]/g, "");
+    setPortfolioValue(digits);
+    try { localStorage.setItem("portfolio_total_value", digits); } catch (_) {}
+  }
   function toggleStage4() {
     setStage4(function(v) { const n = !v; try { localStorage.setItem("posture_stage4_active", String(n)); } catch (_) {} return n; });
   }
@@ -1506,12 +1596,54 @@ export default function App() {
                 return activeRegime.color + Math.round(a * 255).toString(16).padStart(2, "0");
               };
               const chartData = POSTURE_BUCKET_META.map((m, i) => ({ name: m.name, value: mids[i] || 0.5, range: alloc[m.key].range, fill: segColor(mids[i]) }));
+              // Fix F — portfolio value → dollar extrapolation.
+              const pv = parseFloat(portfolioValue) || 0;
+              const fmtUSD = n => "$" + Math.round(n).toLocaleString("en-US");
+              const fmtCompact = n => n >= 1e9 ? "$" + (n / 1e9).toFixed(n >= 1e10 ? 0 : 1).replace(/\.0$/, "") + "B"
+                : n >= 1e6 ? "$" + (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M"
+                : n >= 1e3 ? "$" + Math.round(n / 1e3) + "K"
+                : "$" + Math.round(n);
+              const dollarRange = range => {
+                const nums = String(range).replace(/%/g, "").split("–").map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+                if (pv <= 0 || nums.length < 2) return null;
+                return fmtUSD(pv * nums[0] / 100) + " – " + fmtUSD(pv * nums[1] / 100);
+              };
+              // Fix A — top regime-ranked insurance instruments feed the stage tracker
+              // (same rankKey + sort as the Insurance tab; best-ranked first).
+              const insRankKey = { stag: "stagRank", def: "defRank", ref: "refRank", inf: "infRank" }[activeRegime.id] || "stagRank";
+              const rankedIns = [...ASSETS].sort((a, b) => (a[insRankKey] || 9) - (b[insRankKey] || 9));
+              const top2Ins = rankedIns.slice(0, 2).map(a => a.name).join(", ");
+              const top3Ins = rankedIns.slice(0, 3).map(a => a.name).join(", ");
+              const stageNote = s => s.n === 2
+                ? `Activate first insurance tranche — current regime favours: ${top2Ins}. For put spreads: 90% strike, 90-day expiry, ~1.5% of portfolio in premium. Reduce leveraged positions.`
+                : s.n === 3
+                ? `Full insurance active — deploy ${top3Ins}. No new equity. Let positions work. Path 2 corrections average 18 months — do not deploy cash yet.`
+                : s.note;
               return (
                 <>
                   {/* Pinned cash-floor banner — always visible regardless of regime */}
                   <div style={{ background: C.aBg, border: "1.5px solid " + C.aBdr, borderRadius: 12, padding: "11px 15px", color: C.amber, fontSize: 14, lineHeight: 1.6, fontWeight: 600 }}>
                     ⚠️ Cash floor: never below 25% of portfolio. No employment income requires maintained liquidity runway at all times. This floor does not change with regime.
                   </div>
+
+                  {/* Portfolio value input (Fix F) */}
+                  <Card>
+                    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                      <label htmlFor="pv-input" style={{ fontSize: 13, fontWeight: 700, color: C.mid, whiteSpace: "nowrap" }}>Total Portfolio Value</label>
+                      <div style={{ display: "flex", alignItems: "center", border: "1.5px solid " + C.bdr, borderRadius: 8, padding: "6px 10px", background: C.bg, flex: "1 1 200px", maxWidth: 280 }}>
+                        <span style={{ color: C.muted, fontSize: 15, fontWeight: 700, marginRight: 4 }}>$</span>
+                        <input
+                          id="pv-input" inputMode="numeric" placeholder="e.g. 500,000"
+                          value={pv > 0 ? pv.toLocaleString("en-US") : ""}
+                          onChange={e => updatePortfolioValue(e.target.value)}
+                          style={{ border: "none", outline: "none", background: "transparent", fontSize: 15, fontWeight: 700, color: C.text, width: "100%" }}
+                        />
+                        <span style={{ color: C.lbl, fontSize: 12, fontWeight: 700, marginLeft: 4 }}>USD</span>
+                      </div>
+                      {pv > 0 && <Btn onClick={() => updatePortfolioValue("")} color={C.muted} bgColor={C.bg} label="Clear" />}
+                    </div>
+                    <div style={{ color: C.lbl, fontSize: 11, marginTop: 6 }}>Stored locally in your browser. Never transmitted.</div>
+                  </Card>
 
                   {/* Header banner */}
                   <div style={{ background: activeRegime.bg, border: "1.5px solid " + activeRegime.bdr, borderRadius: 14, padding: "14px 18px", borderTop: "4px solid " + activeRegime.color }}>
@@ -1537,7 +1669,13 @@ export default function App() {
                   <Card>
                     <SLabel>Target Allocation · {activeRegime.label}</SLabel>
                     <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-                      <div style={{ flex: "0 0 200px", minWidth: 180 }}>
+                      <div style={{ flex: "0 0 200px", minWidth: 180, position: "relative" }}>
+                        {pv > 0 && (
+                          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                            <span style={{ color: C.lbl, fontSize: 10, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700 }}>Total</span>
+                            <span style={{ color: C.text, fontSize: 18, fontWeight: 900, letterSpacing: -0.5 }}>{fmtCompact(pv)}</span>
+                          </div>
+                        )}
                         <ResponsiveContainer width="100%" height={200}>
                           <PieChart>
                             <Pie data={chartData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" stroke="#fff" strokeWidth={2} paddingAngle={2}>
@@ -1570,8 +1708,8 @@ export default function App() {
                     </div>
                   </Card>
 
-                  {/* Bucket cards */}
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 12 }}>
+                  {/* Bucket cards — single row on desktop, wrap below 900px (Fix B) */}
+                  <div className="mwd-posture-row">
                     {POSTURE_BUCKET_META.map(m => {
                       const a = alloc[m.key];
                       const sc = POSTURE_STATUS[a.status] || POSTURE_STATUS.HOLD;
@@ -1587,10 +1725,13 @@ export default function App() {
                             </div>
                             <span style={{ background: sc.bg, color: sc.color, border: "1px solid " + sc.bdr, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>{a.status}</span>
                           </div>
-                          <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 6 }}>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: dollarRange(a.range) ? 2 : 6 }}>
                             <span style={{ fontSize: 26, fontWeight: 900, letterSpacing: -1, color: sc.color }}>{a.range}</span>
                             <span style={{ color: C.lbl, fontSize: 12 }}>target allocation</span>
                           </div>
+                          {dollarRange(a.range) && (
+                            <div style={{ color: C.mid, fontSize: 14, fontWeight: 800, marginBottom: 6 }}>{dollarRange(a.range)}</div>
+                          )}
                           <div style={{ color: C.mid, fontSize: 13, lineHeight: 1.6 }}>{a.note}</div>
                         </Card>
                       );
@@ -1615,7 +1756,7 @@ export default function App() {
                                 <span style={{ fontWeight: 800, fontSize: 14, color: isActive ? activeRegime.color : C.text }}>Stage {s.n}: {s.label}</span>
                                 <span style={{ fontSize: 11, color: isActive ? activeRegime.color : C.lbl, fontWeight: 700 }}>{s.auto ? "Auto" : "Manual"} · {s.trigger}</span>
                               </div>
-                              <div style={{ color: C.mid, fontSize: 13, lineHeight: 1.6, marginTop: 3 }}>{s.note}</div>
+                              <div style={{ color: C.mid, fontSize: 13, lineHeight: 1.6, marginTop: 3 }}>{stageNote(s)}</div>
                               {isActive && <div style={{ marginTop: 4, color: activeRegime.color, fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase" }}>● Active now</div>}
                             </div>
                             {!s.auto && (
@@ -1865,15 +2006,16 @@ export default function App() {
                       </div>
                       {activeIncome.tickers.map((tk, i) => (
                         <div key={tk.t} style={{ display: "flex", gap: 12, padding: "10px 0", borderBottom: i < activeIncome.tickers.length - 1 ? "1px solid " + C.bdr : "none", alignItems: "flex-start" }}>
-                          <div style={{ flexShrink: 0, width: 58 }}>
-                            <span style={{ background: activeIncome.bg, color: activeIncome.color, border: "1.5px solid " + activeIncome.color + "40", borderRadius: 6, padding: "3px 6px", fontSize: 13, fontWeight: 800, display: "block", textAlign: "center" }}>{tk.t}</span>
+                          <div style={{ flexShrink: 0, width: 70 }}>
+                            <span style={{ background: activeIncome.bg, color: activeIncome.color, border: "1.5px solid " + activeIncome.color + "40", borderRadius: 6, padding: "3px 5px", fontSize: tk.t.length > 8 ? 9 : tk.t.length > 5 ? 11 : 13, fontWeight: 800, display: "block", textAlign: "center", whiteSpace: "nowrap", maxWidth: 90, overflow: "hidden" }}>{tk.t}</span>
                             {tk.yield && <span style={{ background: C.gBg, color: C.green, border: "1px solid " + C.gBdr, borderRadius: 4, padding: "1px 5px", fontSize: 11, fontWeight: 700, display: "block", textAlign: "center", marginTop: 3 }}>{tk.yield}</span>}
                           </div>
                           <div style={{ flex: 1 }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
                               <span style={{ color: C.text, fontWeight: 700, fontSize: 15 }}>
+                                <RegionBadge ticker={tk.t} />
                                 {tk.name}
-                                {tk.link && <a href={tk.link} target="_blank" rel="noopener noreferrer" title="Exchange" style={{ marginLeft: 5, fontSize: 12, textDecoration: "none" }}>🔗</a>}
+                                {tk.link && !String(tk.t).endsWith(".AE") && <a href={tk.link} target="_blank" rel="noopener noreferrer" title="Exchange" style={{ marginLeft: 5, fontSize: 12, textDecoration: "none" }}>🔗</a>}
                               </span>
                               <PriceBadge ticker={tk.t} prices={prices} />
                             </div>

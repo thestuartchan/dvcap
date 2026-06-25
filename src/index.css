@@ -149,6 +149,22 @@ button, input, textarea, select { font-family: inherit; }
   .mwd-card { padding: 12px 13px !important; }
 }
 
+/* Posture bucket cards: single row on desktop, wrap below 900px */
+.mwd-posture-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 12px;
+  align-items: stretch;
+}
+.mwd-posture-row > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .mwd-posture-row { flex-wrap: wrap; }
+  .mwd-posture-row > * { flex: 1 1 230px; }
+}
+
 /* Font scale: slightly smaller on mobile */
 @media (max-width: 640px) {
   html { font-size: 14px; }
