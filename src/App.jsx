@@ -157,6 +157,19 @@ const ASSETS = [
       {t:"MDLZ", name:"Mondelez",                  type:"Stock", note:"Global snacks. 3.5% dividend."},
     ],
   },
+  {
+    id:"btc", name:"Bitcoin", icon:"₿", color:"#F7931A", bg:"#FFF8F0", bdr:"#F7931A",
+    stagRank:3, defRank:6, refRank:2, infRank:1, volatility:"VERY HIGH",
+    stagNote:"Mixed in stagflation — debasement tailwind, but risk-off selloffs hit it hard. Shines only once panic clears and the dollar-credibility narrative takes over.",
+    crisisScore:40, inflationScore:85, deflationScore:20, liquidityScore:90, stagScore:55,
+    verdict:"Hardest debasement hedge in existence — fixed supply, no central bank, no balance sheet. Best in class if the thesis is dollar credibility loss or Fed balance sheet explosion. Critical caveat: in a liquidity crisis onset (2008-style, March 2020-style), BTC sells off WITH equities — it dropped 50% in 48 hours in March 2020. It is NOT crash protection. It is post-crash, post-panic, debasement-phase protection. Correlation to Nasdaq in risk-off stress periods remains ~0.6–0.7. Size as high-conviction, long-horizon, volatile insurance — meaningful but not dominant.",
+    uaeBenefit:"No UAE capital gains tax on crypto. AED/USD peg means no FX drag. IBKR Singapore supports BTC exposure via IBIT ETF.",
+    tickers:[
+      {t:"IBIT",    name:"iShares Bitcoin Trust",       type:"ETF",    note:"BlackRock ETF. Most liquid US access to BTC. $50B+ AUM. Use this over direct BTC for IBKR trading."},
+      {t:"BTC-USD", name:"Bitcoin spot",                type:"Crypto", note:"Direct spot via Binance or Hyperliquid. Use for sizing beyond ETF or for crypto-native accounts."},
+      {t:"FBTC",    name:"Fidelity Wise Origin Bitcoin",type:"ETF",    note:"Alternative to IBIT. Slightly lower expense ratio. Same exposure."},
+    ],
+  },
 ];
 
 // ─── INSURANCE TRIGGERS ───────────────────────────────────────────────────────
@@ -189,6 +202,25 @@ const TICKER_TRIGGERS = {
   JNK:"HY spread >400bps and widening. Credit leads equity by 6–12 weeks.",
   SOXX:"AI capex guidance miss OR semi earnings disappointment.",
   SMH:"AI capex guidance miss OR semi earnings disappointment.",
+};
+
+// ─── INSURANCE PHASE NOTES ────────────────────────────────────────────────────
+// Crash-onset vs post-crash/debasement overrides for the three phase-sensitive
+// buckets. tone drives colour (caution = amber, recovery = green) independently
+// of the phase — TLT is a positive at onset but a caution in recovery.
+const PHASE_NOTES = {
+  miners: {
+    onset:    { tone:"caution",  text:"⚠️ ONSET CAUTION: In liquidity crises, miners sell off WITH equities before recovering. GLD is the better crash-phase hedge. Hold miners light until panic clears." },
+    recovery: { tone:"recovery", text:"✅ RECOVERY PHASE: This is where miners shine. Gold up 20% = miners up 40–60%. Maximum debasement leverage. Add GDX/GDXJ aggressively after VIX peak." },
+  },
+  btc: {
+    onset:    { tone:"caution",  text:"⚠️ ONSET CAUTION: BTC dropped 50% in 48 hours in March 2020. Do not use as crash protection. Wait for panic to clear before entering." },
+    recovery: { tone:"recovery", text:"✅ RECOVERY PHASE: Post-panic BTC is the highest-conviction debasement play. Fixed supply vs exploding Fed balance sheet. Enter after VIX peaks and begins sustained decline." },
+  },
+  tbonds: {
+    onset:    { tone:"recovery", text:"✅ ONSET (growth scare only): TLT works if the crash is deflationary — rates fall, bonds rally. Check the regime. If stagflationary, TLT is still a trap even at onset." },
+    recovery: { tone:"caution",  text:"⚠️ RECOVERY CAUTION: TLT fails in inflationary recovery. If debasement narrative takes hold post-crash, TLT gets crushed again as in 2022. Exit TLT before the pivot fully prices in." },
+  },
 };
 
 // ─── PORTFOLIO POSTURE ────────────────────────────────────────────────────────
@@ -914,7 +946,7 @@ function IndicatorChart({ ind, live }) {
 }
 
 // ─── ASSET DETAIL ─────────────────────────────────────────────────────────────
-function AssetDetail({ asset, prices, onFetchPrices, pricesLoading, pricesUpdated }) {
+function AssetDetail({ asset, prices, onFetchPrices, pricesLoading, pricesUpdated, phase }) {
   const radarData = [
     { axis: "Crisis",     val: asset.crisisScore },
     { axis: "Inflation",  val: asset.inflationScore },
@@ -936,10 +968,29 @@ function AssetDetail({ asset, prices, onFetchPrices, pricesLoading, pricesUpdate
           </div>
         </div>
         <p style={{ color: C.mid, fontSize: 15, lineHeight: 1.75, margin: "0 0 10px" }}>{asset.verdict}</p>
+        {(() => {
+          const pn = PHASE_NOTES[asset.id] && PHASE_NOTES[asset.id][phase];
+          if (!pn) return null;
+          const rec = pn.tone === "recovery";
+          const col = rec ? C.green : C.amber;
+          const bg  = rec ? C.gBg : C.aBg;
+          const bd  = rec ? C.gBdr : C.aBdr;
+          return (
+            <div style={{ background: bg, border: "1.5px solid " + bd, borderRadius: 8, padding: "10px 13px", marginBottom: 10, color: col, fontSize: 14, lineHeight: 1.65, fontWeight: 600 }}>
+              {pn.text}
+            </div>
+          );
+        })()}
         <div style={{ background: asset.bg, border: "1px solid " + asset.bdr, borderRadius: 8, padding: "10px 13px" }}>
           <span style={{ color: asset.color, fontWeight: 700, fontSize: 13 }}>📊 Stagflation: </span>
           <span style={{ color: asset.color, fontSize: 14 }}>{asset.stagNote}</span>
         </div>
+        {asset.uaeBenefit && (
+          <div style={{ background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 8, padding: "10px 13px", marginTop: 10 }}>
+            <span style={{ color: C.blue, fontWeight: 700, fontSize: 13 }}>🇦🇪 UAE: </span>
+            <span style={{ color: C.mid, fontSize: 14 }}>{asset.uaeBenefit}</span>
+          </div>
+        )}
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 14 }}>
           <div style={{ flex: "0 0 175px" }}>
             <ResponsiveContainer width="100%" height={185}>
@@ -1125,6 +1176,7 @@ export default function App() {
   const [activeAsset, setActiveAsset]   = useState(ASSETS[0]);
   const [activeIncome, setActiveIncome] = useState(INCOME_PLAYS[0]);
   const [activeRegime, setActiveRegime] = useState(REGIMES[0]);
+  const [insurancePhase, setInsurancePhase] = useState("onset"); // Insurance tab only — crash onset vs post-crash/debasement
   const [funds, setFunds]       = useState(DEFAULT_FUNDS);
   const [selectedFund, setSelectedFund] = useState(DEFAULT_FUNDS[0]);
   const [editMode, setEditMode] = useState(false);
@@ -1197,7 +1249,7 @@ export default function App() {
               {/* Unified refresh — fires both prices and indicators */}
               <button
                 onClick={() => {
-                  const tickers = ["AAPL","AXP","KO","BAC","CVX","OXY","GOOGL","DAL","BN","AMZN","UBER","MSFT","SPY","NVDA","AVGO","MU","TSM","NTRA","EWZ","ARGT","BABA","META","CRWD","GDX","XLP","TLT","EPD","O","JEPI","BIL"];
+                  const tickers = ["AAPL","AXP","KO","BAC","CVX","OXY","GOOGL","DAL","BN","AMZN","UBER","MSFT","SPY","NVDA","AVGO","MU","TSM","NTRA","EWZ","ARGT","BABA","META","CRWD","GDX","XLP","TLT","EPD","O","JEPI","BIL","IBIT","FBTC","BTC-USD"];
                   fetchPrices(tickers);
                   fetchIndicators();
                 }}
@@ -1496,6 +1548,24 @@ export default function App() {
               );
             })()}
 
+            {/* Phase toggle — onset vs post-crash/debasement (Insurance tab only) */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ color: C.lbl, fontSize: 11, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase" }}>Phase: Crash Onset / Post-Crash · Debasement</span>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {[["onset", "Crash Onset"], ["recovery", "Post-Crash · Debasement"]].map(([k, lbl]) => {
+                  const on = insurancePhase === k;
+                  return (
+                    <button key={k} onClick={() => setInsurancePhase(k)} style={{
+                      background: on ? activeRegime.bg : C.surf,
+                      color: on ? activeRegime.color : C.muted,
+                      border: "1.5px solid " + (on ? activeRegime.color : C.bdr),
+                      borderRadius: 999, padding: "6px 14px", fontSize: 13, fontWeight: 800, cursor: "pointer",
+                    }}>{lbl}</button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Asset selector — sorted by active regime rank */}
             {(() => {
               const rankKey = { stag: "stagRank", def: "defRank", ref: "refRank", inf: "infRank" }[activeRegime.id] || "stagRank";
@@ -1522,7 +1592,7 @@ export default function App() {
                     ))}
                   </div>
                   <div style={{ width: "100%" }}>
-                    <AssetDetail asset={activeAsset} prices={prices} onFetchPrices={fetchPrices} pricesLoading={pricesLoading} pricesUpdated={pricesUpdated} />
+                    <AssetDetail asset={activeAsset} prices={prices} onFetchPrices={fetchPrices} pricesLoading={pricesLoading} pricesUpdated={pricesUpdated} phase={insurancePhase} />
                   </div>
                 </div>
               );
@@ -1775,6 +1845,41 @@ export default function App() {
                 ))}
               </div>
             </Card>
+
+            {/* 10Y Treasury auction health — compact, no chart */}
+            {(() => {
+              const bc = liveInd ? liveInd.auctionBidCover : null;
+              const ad = liveInd ? liveInd.auctionDate : null;
+              let col = C.muted, bg = C.bg, bd = C.bdr, msg = "Unavailable — check TreasuryDirect manually";
+              if (bc != null) {
+                if (bc >= 2.5)      { col = C.green; bg = C.gBg; bd = C.gBdr; msg = "Strong demand. No stress."; }
+                else if (bc >= 2.3) { col = C.amber; bg = C.aBg; bd = C.aBdr; msg = "Softening. Monitor closely."; }
+                else                { col = C.red;   bg = C.rBg; bd = C.rBdr; msg = "Stress signal. Weak auction demand. Watch for Fed intervention."; }
+              }
+              return (
+                <Card style={{ background: bg, border: "1.5px solid " + bd }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+                    <div>
+                      <SLabel>10Y Treasury Auction Health</SLabel>
+                      {bc != null ? (
+                        <>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 30, fontWeight: 900, letterSpacing: -1, color: col }}>{bc.toFixed(2)}x</span>
+                            <span style={{ color: col, fontSize: 14, fontWeight: 700 }}>{msg}</span>
+                          </div>
+                          <div style={{ color: C.lbl, fontSize: 12, marginTop: 3 }}>Last auction: {ad || "—"}</div>
+                        </>
+                      ) : (
+                        <div style={{ color: C.muted, fontSize: 14 }}>{msg}</div>
+                      )}
+                    </div>
+                    <div style={{ maxWidth: 240, color: C.muted, fontSize: 12, lineHeight: 1.6 }}>
+                      Threshold: &lt;2.3x = stress signal. Weak foreign/institutional demand for US debt.
+                    </div>
+                  </div>
+                </Card>
+              );
+            })()}
 
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <Card style={{ flex: "1 1 240px", background: activeRegime.bg, border: "1.5px solid " + activeRegime.bdr, borderTop: "4px solid " + activeRegime.color }}>
@@ -2070,14 +2175,14 @@ export default function App() {
             </Card>
 
             <Card>
-              <SLabel>Wall Street Recession Probability (Mar–Jun 2026)</SLabel>
+              <SLabel>Wall Street Recession Probability (June 2026)</SLabel>
               {(() => {
-                const lastUpdate = new Date("2026-03-15");
+                const lastUpdate = new Date("2026-06-25");
                 const daysStale = Math.floor((Date.now() - lastUpdate.getTime()) / 86400000);
                 const isStale = daysStale > 90;
                 return (
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10, fontSize: 12 }}>
-                    <span style={{ color: C.lbl }}>Last updated: <b style={{ color: C.muted }}>March 2026</b> (~quarterly cadence)</span>
+                    <span style={{ color: C.lbl }}>Last updated: <b style={{ color: C.muted }}>June 25, 2026</b> (~quarterly cadence)</span>
                     {isStale && (
                       <span style={{ background: C.aBg, color: C.amber, border: "1px solid " + C.aBdr, borderRadius: 6, padding: "2px 8px", fontWeight: 700 }}>
                         ⚠️ {daysStale} days stale — refresh due (&gt;90-day cadence)
@@ -2090,31 +2195,41 @@ export default function App() {
                 <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 400 }}>
                   <thead>
                     <tr style={{ background: C.bg }}>
-                      {["Institution", "Probability", "Driver", "Date"].map(h => (
+                      {["Source", "Probability", "Timeframe", "Notes"].map(h => (
                         <th key={h} style={{ textAlign: "left", color: C.mid, padding: "8px 12px", borderBottom: "2px solid " + C.bdr, fontSize: 13, fontWeight: 700 }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {[
-                      ["Moody's Analytics","49%","Oil shock + consumer stress","Mar 25, 2026"],
-                      ["EY Parthenon","40%","Stagflation risk, tight policy","Mar 24, 2026"],
-                      ["HSBC","35%","Credit spreads, yield curve","Mar 25, 2026"],
-                      ["Goldman Sachs","30%","Oil-driven inflation, tariff drag","Mar 25, 2026"],
-                      ["RSM US","30%","Eased from 40% — services resilient","Jun 2026"],
-                      ["JP Morgan","Elevated","Gulf conflict threatens recovery","Mar 2026"],
-                    ].map((r, i) => (
+                      ["NY Fed DSGE Model","35.8%","12-month","March 2026. Recession = 4Q output growth below −1%. Down from 37.5% in December."],
+                      ["NY Fed Yield Curve Model","~15%","12-month","May 2026 data. Based on 3M/10Y spread. Below historical alarm threshold of 30%."],
+                      ["Goldman Sachs","30%","12-month","Raised March 2026 from 25% on Iran oil shock. Not their base case. Growth forecast 1.25–1.75% H2 2026."],
+                      ["Moody's Analytics (Zandi)","~50%","12-month","\"Near even before the war broke out.\" Most bearish major forecaster."],
+                      ["Kalshi prediction market","17.5%","End-2026","Collapsed from 36.9% in one month post Iran peace deal."],
+                      ["Kalshi prediction market","41%","End-2027","Investors pricing delayed reckoning — debt refinancing, consumer credit stress."],
+                      ["Polymarket","~12.5%","End-2026","June 2026. Market-implied."],
+                      ["BNP Paribas","Low","12-month","\"Well-positioned to absorb shock.\" US net energy exporter status cited."],
+                    ].map((r, i) => {
+                      const pv = parseFloat(String(r[1]).replace(/[^\d.]/g, ""));
+                      const pCol = pv > 40 ? C.red : pv >= 30 ? C.amber : C.green;
+                      return (
                       <tr key={i} style={{ background: i % 2 === 0 ? C.surf : C.bg }}>
                         <td style={{ padding: "8px 12px", color: C.text, fontSize: 14, fontWeight: 600, borderBottom: "1px solid " + C.bdr }}>{r[0]}</td>
                         <td style={{ padding: "8px 12px", borderBottom: "1px solid " + C.bdr }}>
-                          <span style={{ color: parseInt(r[1]) > 40 ? C.red : parseInt(r[1]) > 30 ? C.amber : C.green, fontWeight: 800, fontSize: 15 }}>{r[1]}</span>
+                          <span style={{ color: pCol, fontWeight: 800, fontSize: 15 }}>{r[1]}</span>
                         </td>
-                        <td style={{ padding: "8px 12px", color: C.muted, fontSize: 13, borderBottom: "1px solid " + C.bdr }}>{r[2]}</td>
-                        <td style={{ padding: "8px 12px", color: C.lbl, fontSize: 12, borderBottom: "1px solid " + C.bdr }}>{r[3]}</td>
+                        <td style={{ padding: "8px 12px", color: C.muted, fontSize: 13, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap" }}>{r[2]}</td>
+                        <td style={{ padding: "8px 12px", color: C.muted, fontSize: 13, borderBottom: "1px solid " + C.bdr }}>{r[3]}</td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
+              </div>
+              <div style={{ marginTop: 12, padding: "12px 14px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8 }}>
+                <span style={{ color: C.amber, fontWeight: 700, fontSize: 13 }}>⚠️ The signal that matters: </span>
+                <span style={{ color: C.amber, fontSize: 14, lineHeight: 1.65 }}>Probabilities spiked sharply in March 2026 during peak Iran/Hormuz disruption (Goldman 30%, Moody's ~50%), then fell after the peace deal. The more important signal is 2027: Kalshi at 41% suggests markets expect delayed reckoning, not avoidance. Debt refinancing at 5–7% vs prior near-zero rates, $1.3T consumer revolving credit balances, and corporate capex compression are the slow-burn mechanisms.</span>
               </div>
             </Card>
           </div>

@@ -77,12 +77,34 @@ export default async function handler(req, res) {
     }
   }
 
+  // ── Fetch latest 10Y Treasury auction bid-to-cover (FiscalData, public) ─────
+  // No API key required. Endpoint confirmed live: returns auction_date,
+  // security_term, bid_to_cover_ratio. Returns null gracefully on any failure
+  // so the rest of the indicators payload is unaffected.
+  async function fetchAuction() {
+    try {
+      const url = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/auctions_query"
+        + "?fields=auction_date,security_term,bid_to_cover_ratio"
+        + "&filter=security_term:eq:10-Year&sort=-auction_date&page[size]=1";
+      const r = await fetch(url);
+      if (!r.ok) { console.error("FiscalData auction status:", r.status); return null; }
+      const d = await r.json();
+      const row = d?.data?.[0];
+      if (!row) return null;
+      const bidCover = parseFloat(row.bid_to_cover_ratio);
+      return { bidCover: Number.isFinite(bidCover) ? bidCover : null, date: row.auction_date || null };
+    } catch (e) {
+      console.error("FiscalData auction fetch error:", e.message);
+      return null;
+    }
+  }
+
   const START_DATE = "2022-01-01"; // Chart history start
 
   try {
     // ── Fetch all data in parallel ────────────────────────────────────────────
     const [
-      tenY, twoY, unemp, hySpread, cpi, gdp, dxyRaw, m2Raw, oilRaw,
+      tenY, twoY, unemp, hySpread, cpi, gdp, dxyRaw, m2Raw, oilRaw, auctionRaw,
       tenYHistory, twoYHistory, unempHistory, creditHistory,
     ] = await Promise.all([
       fredLatest("DGS10"),
@@ -94,6 +116,7 @@ export default async function handler(req, res) {
       fredLatest("DTWEXBGS"),
       fredTwo("M2SL"),
       fetchOil(),               // WTI crude oil — API Ninjas (near real-time)
+      fetchAuction(),           // 10Y Treasury auction bid-to-cover (FiscalData)
       // History series for charts
       fredHistory("DGS10", START_DATE),
       fredHistory("DGS2",  START_DATE),
@@ -129,6 +152,8 @@ export default async function handler(req, res) {
       m2Rising: m2Raw.latest > m2Raw.prev,
       oil:      oilRaw.latest > 0 ? parseFloat(oilRaw.latest.toFixed(2)) : null,
       oilPrev:  oilRaw.prev > 0   ? parseFloat(oilRaw.prev.toFixed(2))   : null,
+      auctionBidCover: auctionRaw?.bidCover ?? null,
+      auctionDate:     auctionRaw?.date ?? null,
       // ── Chart history arrays ───────────────────────────────────────────────
       yieldHistory:  yieldSpreadHistory,
       unempHistory,
