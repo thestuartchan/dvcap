@@ -159,6 +159,93 @@ const ASSETS = [
   },
 ];
 
+// ─── INSURANCE TRIGGERS ───────────────────────────────────────────────────────
+// Per-ticker activation signal. Falls back to the bucket-level trigger when a
+// ticker has no specific entry. NOTE: SQQQ / VIX calls / VXX / HYG·JNK puts /
+// SOXX·SMH puts / SPY·QQQ put spreads are NOT yet present as Insurance buckets —
+// their triggers are staged below, ready to wire once those instruments are added.
+const BUCKET_TRIGGERS = {
+  miners:   "Credit spreads >400bps OR CPI re-accelerates above 4.5%",
+  farmland: "Stagflationary regime active. Long-duration inflation hedge.",
+  tbonds:   "Unemployment >5.5% AND yield curve deeply inverted (growth scare, not inflation)",
+  staples:  "Unemployment rising + consumer confidence falling. Defensive rotation.",
+};
+const TICKER_TRIGGERS = {
+  // Gold miners
+  GDX:"Credit spreads >400bps OR CPI re-accelerates above 4.5%",
+  GDXJ:"Credit spreads >400bps OR CPI re-accelerates above 4.5%",
+  GLD:"Credit spreads >400bps OR CPI re-accelerates above 4.5%",
+  // Treasuries
+  TLT:"Unemployment >5.5% AND yield curve deeply inverted (growth scare, not inflation)",
+  // Staples
+  XLP:"Unemployment rising + consumer confidence falling. Defensive rotation.",
+  // Farmland
+  LAND:"Stagflationary regime active. Long-duration inflation hedge.",
+  FPI:"Stagflationary regime active. Long-duration inflation hedge.",
+  // Staged — not yet wired as Insurance buckets:
+  SQQQ:"QQQ breaks 200-day MA on weekly close. Hold max 3–5 days.",
+  VXX:"VIX <18 AND DANGER signal active. Buy convexity cheap before spike.",
+  HYG:"HY spread >400bps and widening. Credit leads equity by 6–12 weeks.",
+  JNK:"HY spread >400bps and widening. Credit leads equity by 6–12 weeks.",
+  SOXX:"AI capex guidance miss OR semi earnings disappointment.",
+  SMH:"AI capex guidance miss OR semi earnings disappointment.",
+};
+
+// ─── PORTFOLIO POSTURE ────────────────────────────────────────────────────────
+// Allocation buckets keyed by deployment signal (watch/alert/danger/ref).
+// Consumes activeRegime + liveInd — no parallel state.
+const POSTURE_BUCKETS = [
+  {
+    id:"cash", name:"Cash", sub:"dry powder · deployment ready", icon:"💵",
+    states:{
+      watch:  { pct:"60–70%", status:"HOLD",       desc:"Maximum optionality. T-bills at ~4.2% while waiting for dislocations." },
+      alert:  { pct:"55–65%", status:"HOLD",       desc:"Small draw to fund the first insurance tranche. Keep powder dry." },
+      danger: { pct:"65–75%", status:"ACCUMULATE", desc:"Raise cash. Do NOT deploy yet — wait for the VIX peak." },
+      ref:    { pct:"30–40%", status:"REDUCE",     desc:"Deploy into equities in tranches. Cash drag is now a cost." },
+    },
+  },
+  {
+    id:"insurance", name:"Insurance", sub:"active hedges · see Insurance tab", icon:"🛡️",
+    states:{
+      watch:  { pct:"0–5%",   status:"ACCUMULATE", desc:"Insurance is cheap with VIX low. Prepare — don't overpay." },
+      alert:  { pct:"5–10%",  status:"ACTIVATE",   desc:"Buy first tranche — SPY puts 90% strike, 90-day expiry." },
+      danger: { pct:"10–15%", status:"HOLD",       desc:"Full insurance active. Let puts work; add only on convexity." },
+      ref:    { pct:"0–5%",   status:"REDUCE",     desc:"Unwind hedges as growth resumes. Keep a small tail." },
+    },
+  },
+  {
+    id:"holds", name:"Long-term holds", sub:"ARM, AMZN, GOOGL · hold through", icon:"🏛️",
+    states:{
+      watch:  { pct:"20–25%", status:"HOLD",       desc:"Core compounders held through the cycle. No changes." },
+      alert:  { pct:"20–25%", status:"HOLD",       desc:"Hold core. Trim only leveraged or speculative names." },
+      danger: { pct:"15–20%", status:"REDUCE",     desc:"Trim into strength; keep highest-conviction compounders." },
+      ref:    { pct:"30–35%", status:"ACCUMULATE", desc:"Add to long-term holds as the recovery broadens." },
+    },
+  },
+  {
+    id:"deploy", name:"Deployment ready", sub:"software sleeve + hardware adds · stage-gated", icon:"🚀",
+    states:{
+      watch:  { pct:"5–10%",  status:"HOLD",     desc:"Software sleeve staged and stage-gated. Await the signal." },
+      alert:  { pct:"5–10%",  status:"HOLD",     desc:"Hold the sleeve. Do not pre-empt the deploy signal." },
+      danger: { pct:"0–5%",   status:"HOLD",     desc:"No new equity. Capital waits for VIX peak + Fed pivot." },
+      ref:    { pct:"25–35%", status:"ACTIVATE", desc:"Deploy — software first, then hardware adds, in tranches." },
+    },
+  },
+];
+const POSTURE_STATUS = {
+  HOLD:       { color:"#6B7280", bg:"#F9FAFB", bdr:"#E5E7EB" },
+  ACCUMULATE: { color:"#166534", bg:"#F0FDF4", bdr:"#86EFAC" },
+  REDUCE:     { color:"#92400E", bg:"#FFFBEB", bdr:"#FCD34D" },
+  ACTIVATE:   { color:"#1E40AF", bg:"#EFF6FF", bdr:"#BFDBFE" },
+};
+const DEPLOY_STAGES = [
+  { n:1, label:"Surveillance",     trigger:"WATCH signal",                note:"No insurance purchases yet. Hold cash; prepare while VIX is low.", key:"watch"  },
+  { n:2, label:"Warning",          trigger:"ALERT signal",                note:"Buy first put tranche. Reduce leverage.",                         key:"alert"  },
+  { n:3, label:"Correction onset", trigger:"DANGER signal",               note:"Hold. Let puts work. Deploy no new equity.",                      key:"danger" },
+  { n:4, label:"Deploy",           trigger:"VIX peak + Fed pivot signal", note:"Begin deploying — software first, then hardware.",                key:"ref"    },
+  { n:5, label:"Full deployment",  trigger:"13-position portfolio built", note:"Fully invested across the sleeve.",                               key:null     },
+];
+
 // ─── INCOME PLAYS ─────────────────────────────────────────────────────────────
 const INCOME_PLAYS = [
   {
@@ -899,6 +986,11 @@ function AssetDetail({ asset, prices, onFetchPrices, pricesLoading, pricesUpdate
                 <PriceBadge ticker={tk.t} prices={prices} />
               </div>
               <div style={{ color: C.muted, fontSize: 14, marginTop: 3, lineHeight: 1.6 }}>{tk.note}</div>
+              {(TICKER_TRIGGERS[tk.t] || BUCKET_TRIGGERS[asset.id]) && (
+                <div style={{ color: C.lbl, fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
+                  <b style={{ color: asset.color }}>Trigger:</b> {TICKER_TRIGGERS[tk.t] || BUCKET_TRIGGERS[asset.id]}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -1074,6 +1166,7 @@ export default function App() {
     { id: "macro",      label: "🌐 Macro"        },
     { id: "smartmoney", label: "🏦 Smart Money"  },
     { id: "indicators", label: "📡 Indicators"  },
+    { id: "posture",    label: "🎯 Posture"      },
     { id: "insurance",  label: "🛡️ Insurance"   },
     { id: "income",     label: "💰 Income"       },
   ];
@@ -1171,20 +1264,20 @@ export default function App() {
               const sigLabel  = isDanger ? "DANGER" : isAlert ? "ALERT" : isNeutral ? "NEUTRAL" : "WATCH";
               const CONFIGS = {
                 DANGER:  { g1:"#991B1B", g2:"#B91C1C", shadow:"rgba(153,27,27,0.35)",
-                  action:"Raise Cash. Reduce Risk Exposure.",
-                  bullets:["🚨 Credit spreads have breached the 4.5% threshold — primary deflationary signal confirmed.",
-                           "🏛️ Rotate to long Treasuries (TLT/IEF) and cash (BIL). Capital preservation first.",
-                           "⛏️ Hold gold miners — they can still perform in early recession phases."] },
+                  action:"Full Insurance Active. Let Puts Work.",
+                  bullets:["🚨 Full insurance active. Deploy no new equity. Let puts work.",
+                           "⏳ Do NOT deploy cash yet — Path 2 corrections average 18 months.",
+                           "📈 Wait for VIX peak before deployment."] },
                 ALERT:   { g1:"#92400E", g2:"#B45309", shadow:"rgba(146,64,14,0.35)",
-                  action:"Position Defensively. Tighten Stops.",
-                  bullets:["⚠️ Indicators approaching alert thresholds — credit spreads or unemployment near critical levels.",
-                           "🛡️ Increase insurance allocation: gold miners, consumer staples, short-duration T-bills.",
-                           "💵 Reduce leverage and extend cash runway. Wait for credit spreads to confirm direction."] },
+                  action:"Buy First Insurance Tranche.",
+                  bullets:["🛡️ Buy first insurance tranche.",
+                           "🎯 SPY puts at 90% strike, 90-day expiry, ~1.5% of portfolio in premium.",
+                           "📉 Reduce any leveraged positions."] },
                 WATCH:   { g1:"#334155", g2:"#1E293B", shadow:"rgba(30,41,59,0.35)",
-                  action:"Accumulate Insurance. Don't Chase Yield.",
-                  bullets:[`📡 Credit spreads at ${liveInd ? liveInd.creditSpread.toFixed(2) : "2.75"}% — ${liveInd && liveInd.creditSpread >= 3.5 ? "widening toward alert zone. Build insurance now." : "benign. Markets not pricing stress yet. This is your trip wire."}`,
-                           "🛡️ Gold miners + consumer staples: appropriate to build positions now at current prices.",
-                           "💵 Berkshire's playbook: $397B in T-bills at 4.2% while waiting. Optionality > yield."] },
+                  action:"Surveillance Mode. Prepare — Don't Deploy Yet.",
+                  bullets:["🔍 Surveillance mode. No insurance purchases yet. Hold cash.",
+                           "📉 VIX below 20 = insurance is cheap — right window to prepare.",
+                           "💵 Berkshire's playbook: T-bills at ~4.2% while waiting. Optionality > yield."] },
                 NEUTRAL: { g1:"#166534", g2:"#15803D", shadow:"rgba(22,101,52,0.30)",
                   action:"Risk-On. Deploy Capital Selectively.",
                   bullets:["🌱 Reflationary recovery underway. AI infrastructure, broad equities, and REITs leading.",
@@ -1256,6 +1349,100 @@ export default function App() {
             </Card>
 
             {INDICATORS.map(ind => <IndicatorChart key={ind.id} ind={ind} live={liveInd} />)}
+          </div>
+        )}
+
+        {/* ── POSTURE ── */}
+        {tab === "posture" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {(() => {
+              const cs = liveInd ? liveInd.creditSpread : 2.75;
+              const ue = liveInd ? liveInd.unemployment : 4.4;
+              const isDanger = cs > 6.0 || ue > 5.5;
+              const isAlert  = !isDanger && (cs > 4.5 || ue > 5.0);
+              const isRef    = !isDanger && !isAlert && activeRegime.id === "ref";
+              const postureKey = isDanger ? "danger" : isAlert ? "alert" : isRef ? "ref" : "watch";
+              const sigLabel = { watch:"WATCH", alert:"ALERT", danger:"DANGER", ref:"REFLATIONARY" }[postureKey];
+              const sigColor = { watch:C.amber, alert:"#D97706", danger:C.red, ref:C.green }[postureKey];
+              const activeStage = { watch:1, alert:2, danger:3, ref:4 }[postureKey];
+              return (
+                <>
+                  {/* Header banner */}
+                  <div style={{ background: activeRegime.bg, border: "1.5px solid " + activeRegime.bdr, borderRadius: 14, padding: "14px 18px", borderTop: "4px solid " + activeRegime.color }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 11, letterSpacing: 2.5, textTransform: "uppercase", color: activeRegime.color, fontWeight: 700, marginBottom: 3 }}>Portfolio Posture · {activeRegime.label}</div>
+                        <div style={{ fontSize: 16, fontWeight: 900, color: activeRegime.color }}>Allocation by bucket — driven by the active regime + signal</div>
+                      </div>
+                      <div style={{ background: "#fff", border: "1.5px solid " + sigColor + "55", borderRadius: 10, padding: "6px 14px", textAlign: "center", minWidth: 90 }}>
+                        <div style={{ color: C.lbl, fontSize: 10, letterSpacing: 2, textTransform: "uppercase", fontWeight: 700 }}>Signal</div>
+                        <div style={{ color: sigColor, fontSize: 17, fontWeight: 900, lineHeight: 1 }}>{sigLabel}</div>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button onClick={() => setTab("indicators")} style={{ background: "#fff", color: activeRegime.color, border: "1.5px solid " + activeRegime.bdr, borderRadius: 8, padding: "5px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>📡 See Indicators tab for signals →</button>
+                      <button onClick={() => setTab("insurance")} style={{ background: "#fff", color: activeRegime.color, border: "1.5px solid " + activeRegime.bdr, borderRadius: 8, padding: "5px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>🛡️ See Insurance tab for instruments →</button>
+                    </div>
+                  </div>
+
+                  {/* Bucket cards */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 12 }}>
+                    {POSTURE_BUCKETS.map(b => {
+                      const st = b.states[postureKey];
+                      const sc = POSTURE_STATUS[st.status];
+                      return (
+                        <Card key={b.id} style={{ borderTop: "4px solid " + sc.color }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 8 }}>
+                            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                              <span style={{ fontSize: 20 }}>{b.icon}</span>
+                              <div>
+                                <div style={{ fontSize: 15, fontWeight: 900, color: C.text, lineHeight: 1.2 }}>{b.name}</div>
+                                <div style={{ color: C.lbl, fontSize: 11 }}>{b.sub}</div>
+                              </div>
+                            </div>
+                            <span style={{ background: sc.bg, color: sc.color, border: "1px solid " + sc.bdr, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>{st.status}</span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 6 }}>
+                            <span style={{ fontSize: 26, fontWeight: 900, letterSpacing: -1, color: sc.color }}>{st.pct}</span>
+                            <span style={{ color: C.lbl, fontSize: 12 }}>target allocation</span>
+                          </div>
+                          <div style={{ color: C.mid, fontSize: 13, lineHeight: 1.6 }}>{st.desc}</div>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                  <div style={{ color: C.lbl, fontSize: 12, textAlign: "center" }}>
+                    Ranges overlap by design — they are guard-rails, not a fixed sum. Tune within the bands for your conviction.
+                  </div>
+
+                  {/* Deployment stage tracker */}
+                  <Card>
+                    <SLabel>Deployment Stage Tracker</SLabel>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+                      {DEPLOY_STAGES.map(s => {
+                        const isActive = s.n === activeStage;
+                        return (
+                          <div key={s.n} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "10px 12px", borderRadius: 10, background: isActive ? activeRegime.bg : C.bg, border: "1.5px solid " + (isActive ? activeRegime.color : C.bdr) }}>
+                            <div style={{ flexShrink: 0, width: 30, height: 30, borderRadius: "50%", background: isActive ? activeRegime.color : C.bdrMd, color: "#fff", fontWeight: 900, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>{s.n}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
+                                <span style={{ fontWeight: 800, fontSize: 14, color: isActive ? activeRegime.color : C.text }}>Stage {s.n}: {s.label}</span>
+                                <span style={{ fontSize: 11, color: isActive ? activeRegime.color : C.lbl, fontWeight: 700 }}>Trigger: {s.trigger}</span>
+                              </div>
+                              <div style={{ color: C.mid, fontSize: 13, lineHeight: 1.6, marginTop: 3 }}>{s.note}</div>
+                              {isActive && <div style={{ marginTop: 4, color: activeRegime.color, fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase" }}>● Active now</div>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{ marginTop: 10, color: C.lbl, fontSize: 12, lineHeight: 1.6 }}>
+                      Stage 4 (Deploy) and Stage 5 (Full deployment) are manual milestones — confirm a VIX peak and a Fed pivot before activating, regardless of the auto-highlighted stage.
+                    </div>
+                  </Card>
+                </>
+              );
+            })()}
           </div>
         )}
 
@@ -1483,6 +1670,10 @@ export default function App() {
         {/* ── SMART MONEY ── */}
         {tab === "smartmoney" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {/* 13F staleness banner */}
+            <div style={{ background: C.aBg, border: "1.5px solid " + C.aBdr, borderRadius: 12, padding: "11px 15px", color: C.amber, fontSize: 14, lineHeight: 1.6, fontWeight: 600 }}>
+              ⚠️ Q2 2026 13F data available mid-August 2026 — fund positions below reflect Q1 2026 filings. Update manually when available.
+            </div>
             {/* Toolbar */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1587,7 +1778,15 @@ export default function App() {
 
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <Card style={{ flex: "1 1 240px", background: activeRegime.bg, border: "1.5px solid " + activeRegime.bdr, borderTop: "4px solid " + activeRegime.color }}>
-                <div style={{ fontSize: 18, fontWeight: 900, color: activeRegime.color, marginBottom: 8 }}>{activeRegime.label}</div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: activeRegime.color, marginBottom: 4 }}>{activeRegime.label}</div>
+                <div style={{ color: C.muted, fontSize: 13, fontStyle: "italic", lineHeight: 1.6, marginBottom: 10 }}>
+                  {{
+                    stag: "Prioritise insurance (miners, staples). Hold cash. Avoid new software/growth entries. TLT is a trap here.",
+                    def:  "TLT and cash are primary hedges. Reduce equity exposure. Watch for Fed pivot signal before deploying.",
+                    ref:  "Gradual equity deployment appropriate. REITs and growth names benefit. Begin filling long-term positions in tranches.",
+                    inf:  "Real assets and pipelines outperform. Equities with pricing power hold. Avoid long-duration bonds.",
+                  }[activeRegime.id]}
+                </div>
                 <p style={{ color: C.mid, fontSize: 15, lineHeight: 1.75, margin: "0 0 12px" }}>{activeRegime.desc}</p>
                 <div style={{ padding: "10px 13px", background: "#fff", border: "1px solid " + activeRegime.bdr, borderRadius: 8 }}>
                   <div style={{ color: activeRegime.color, fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Transition trigger</div>
@@ -1872,6 +2071,21 @@ export default function App() {
 
             <Card>
               <SLabel>Wall Street Recession Probability (Mar–Jun 2026)</SLabel>
+              {(() => {
+                const lastUpdate = new Date("2026-03-15");
+                const daysStale = Math.floor((Date.now() - lastUpdate.getTime()) / 86400000);
+                const isStale = daysStale > 90;
+                return (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10, fontSize: 12 }}>
+                    <span style={{ color: C.lbl }}>Last updated: <b style={{ color: C.muted }}>March 2026</b> (~quarterly cadence)</span>
+                    {isStale && (
+                      <span style={{ background: C.aBg, color: C.amber, border: "1px solid " + C.aBdr, borderRadius: 6, padding: "2px 8px", fontWeight: 700 }}>
+                        ⚠️ {daysStale} days stale — refresh due (&gt;90-day cadence)
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 400 }}>
                   <thead>
