@@ -226,44 +226,61 @@ const PHASE_NOTES = {
 // ─── PORTFOLIO POSTURE ────────────────────────────────────────────────────────
 // Allocation buckets keyed by deployment signal (watch/alert/danger/ref).
 // Consumes activeRegime + liveInd — no parallel state.
+// Posture columns are keyed watch / alert / danger / ref. The active column is
+// derived from activeRegime.id (stag→alert, def→danger, ref→ref, inf→watch) and
+// can be escalated by the live signal — see the Posture tab render.
 const POSTURE_BUCKETS = [
   {
     id:"cash", name:"Cash", sub:"dry powder · deployment ready", icon:"💵",
     states:{
       watch:  { pct:"60–70%", status:"HOLD",       desc:"Maximum optionality. T-bills at ~4.2% while waiting for dislocations." },
-      alert:  { pct:"55–65%", status:"HOLD",       desc:"Small draw to fund the first insurance tranche. Keep powder dry." },
+      alert:  { pct:"55–65%", status:"HOLD",       desc:"Slight draw to fund insurance. Keep powder dry through the stress." },
       danger: { pct:"65–75%", status:"ACCUMULATE", desc:"Raise cash. Do NOT deploy yet — wait for the VIX peak." },
       ref:    { pct:"30–40%", status:"REDUCE",     desc:"Deploy into equities in tranches. Cash drag is now a cost." },
     },
   },
   {
-    id:"insurance", name:"Insurance", sub:"active hedges · see Insurance tab", icon:"🛡️",
+    id:"insurance", name:"Insurance", sub:"active hedges · links to Insurance tab", icon:"🛡️", link:"insurance",
     states:{
-      watch:  { pct:"0–5%",   status:"ACCUMULATE", desc:"Insurance is cheap with VIX low. Prepare — don't overpay." },
-      alert:  { pct:"5–10%",  status:"ACTIVATE",   desc:"Buy first tranche — SPY puts 90% strike, 90-day expiry." },
-      danger: { pct:"10–15%", status:"HOLD",       desc:"Full insurance active. Let puts work; add only on convexity." },
-      ref:    { pct:"0–5%",   status:"REDUCE",     desc:"Unwind hedges as growth resumes. Keep a small tail." },
+      watch:  { pct:"0–5%",   status:"ACCUMULATE", desc:"Active hedge instruments — see Insurance tab for current ranking and phase." },
+      alert:  { pct:"8–12%",  status:"ACTIVATE",   desc:"Active hedge instruments — see Insurance tab for current ranking and phase." },
+      danger: { pct:"12–18%", status:"HOLD",       desc:"Active hedge instruments — see Insurance tab for current ranking and phase." },
+      ref:    { pct:"0–5%",   status:"REDUCE",     desc:"Active hedge instruments — see Insurance tab for current ranking and phase." },
     },
   },
   {
-    id:"holds", name:"Long-term holds", sub:"ARM, AMZN, GOOGL · hold through", icon:"🏛️",
+    id:"income", name:"Income", sub:"regime-ranked yield · links to Income tab", icon:"💰", link:"income",
     states:{
-      watch:  { pct:"20–25%", status:"HOLD",       desc:"Core compounders held through the cycle. No changes." },
-      alert:  { pct:"20–25%", status:"HOLD",       desc:"Hold core. Trim only leveraged or speculative names." },
-      danger: { pct:"15–20%", status:"REDUCE",     desc:"Trim into strength; keep highest-conviction compounders." },
-      ref:    { pct:"30–35%", status:"ACCUMULATE", desc:"Add to long-term holds as the recovery broadens." },
+      watch:  { pct:"5–10%",  status:"HOLD",       desc:"Regime-ranked yield plays — see Income tab for current ranking." },
+      alert:  { pct:"10–15%", status:"ACCUMULATE", desc:"Regime-ranked yield plays — see Income tab for current ranking." },
+      danger: { pct:"5–10%",  status:"HOLD",       desc:"Regime-ranked yield plays — see Income tab for current ranking." },
+      ref:    { pct:"10–15%", status:"ACCUMULATE", desc:"Regime-ranked yield plays — see Income tab for current ranking." },
     },
   },
   {
-    id:"deploy", name:"Deployment ready", sub:"software sleeve + hardware adds · stage-gated", icon:"🚀",
+    id:"holds", name:"Long-term holds", sub:"core conviction positions", icon:"🏛️",
+    states:{
+      watch:  { pct:"15–20%", status:"HOLD",       desc:"Real asset adjacent tech — energy infrastructure, commodity-linked. Avoid pure software multiples." },
+      alert:  { pct:"15–20%", status:"HOLD",       desc:"AI infrastructure hardware (semiconductors, compute). Real asset exposure. Avoid high-multiple software." },
+      danger: { pct:"10–15%", status:"REDUCE",     desc:"Highest-quality compounders only — pricing power, strong balance sheet, no leverage. Reduce speculative positions." },
+      ref:    { pct:"25–30%", status:"ACCUMULATE", desc:"AI infrastructure full stack — hardware and software. Growth names re-rate on rate cuts. Add to conviction positions." },
+    },
+  },
+  {
+    id:"deploy", name:"Deployment ready", sub:"stage-gated software/hardware adds", icon:"🚀",
     states:{
       watch:  { pct:"5–10%",  status:"HOLD",     desc:"Software sleeve staged and stage-gated. Await the signal." },
-      alert:  { pct:"5–10%",  status:"HOLD",     desc:"Hold the sleeve. Do not pre-empt the deploy signal." },
+      alert:  { pct:"0–5%",   status:"HOLD",     desc:"Hold the sleeve. Do not pre-empt the deploy signal." },
       danger: { pct:"0–5%",   status:"HOLD",     desc:"No new equity. Capital waits for VIX peak + Fed pivot." },
-      ref:    { pct:"25–35%", status:"ACTIVATE", desc:"Deploy — software first, then hardware adds, in tranches." },
+      ref:    { pct:"20–30%", status:"ACTIVATE", desc:"Deploy — software first, then hardware adds, in tranches." },
     },
   },
 ];
+// Midpoint of a "60–70%" style range, for the allocation donut.
+function postureMid(pct) {
+  const nums = String(pct).replace(/%/g, "").split("–").map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+  return nums.length === 2 ? (nums[0] + nums[1]) / 2 : (nums[0] || 0);
+}
 const POSTURE_STATUS = {
   HOLD:       { color:"#6B7280", bg:"#F9FAFB", bdr:"#E5E7EB" },
   ACCUMULATE: { color:"#166534", bg:"#F0FDF4", bdr:"#86EFAC" },
@@ -357,6 +374,55 @@ const INCOME_PLAYS = [
     ],
   },
 ];
+
+// ─── REGIONAL ALTERNATIVES ────────────────────────────────────────────────────
+// Static, non-regime-ranked geographic reference lists. sym = Yahoo symbol for
+// the existing /api/prices feed (null where no listed ticker exists). UAE names
+// (.AE) are best-effort on Yahoo — they fall back to an "N/A" hint, never break.
+const REGIONAL_INSURANCE = {
+  title: "Regional Alternatives — UAE · Canada · HK",
+  subnote: "Supplementary instruments by geography. Not regime-ranked. Verify local execution via IBKR before trading.",
+  regions: [
+    { region:"UAE", items:[
+      { sym:null,          label:"Gold",         name:"Physical Gold (Dubai)", note:"0% VAT on gold in UAE. Buy via Dubai Gold Souk, DMCC-registered dealers, or gold savings accounts (Emirates NBD, ADCB). No FX risk vs GLD given AED/USD peg. Best local expression of debasement hedge." },
+      { sym:"DEWA.AE",     label:"DFM: DEWA",     name:"DEWA",                  note:"Dubai utility monopoly. Regulated returns. Defensive income. Inflation-insulated via government backing." },
+      { sym:"ADNOCGAS.AE", label:"ADX: ADNOCGAS", name:"ADNOC Gas",            note:"Energy infrastructure. Inflation pass-through via long-term contracts. Stable dividends." },
+    ]},
+    { region:"Canada (TSX)", items:[
+      { sym:"AEM.TO", label:"TSX: AEM", name:"Agnico Eagle Mines", note:"Already in Gold Miners bucket above. Canadian-domiciled. No duplication needed." },
+      { sym:"ENB.TO", label:"TSX: ENB", name:"Enbridge",           note:"Pipeline infrastructure. 30+ years consecutive dividend increases. 98% contracted cash flows. Inflation pass-through. ~5% yield. 15% Canadian withholding tax on dividends for non-residents." },
+      { sym:"FTS.TO", label:"TSX: FTS", name:"Fortis",             note:"Regulated utility. 52 consecutive years of dividend increases. One of the safest dividend stocks globally. ~3.3% yield. Same withholding tax caveat." },
+    ]},
+    { region:"Hong Kong (HKEX)", items:[
+      { sym:"2840.HK", label:"2840.HK", name:"SPDR Gold Trust (HK)", note:"Physical gold ETF on HKEX. HKD/USD pegged = no FX drag vs GLD. Useful if holding via IBKR HK account. Zero HK dividend withholding tax." },
+      { sym:"0005.HK", label:"0005.HK", name:"HSBC Holdings",        note:"Global bank, Asia-focused. ~6-7% yield. Consistent dividends. Liquid." },
+      { sym:"0883.HK", label:"0883.HK", name:"CNOOC",               note:"Chinese offshore oil. ~6-8% yield. Inflation/energy hedge. China geopolitical risk is real — tactical instrument, not a structural hold." },
+    ]},
+  ],
+};
+const REGIONAL_INCOME = {
+  title: "Regional Income — UAE · Canada · HK",
+  subnote: "Supplementary income plays by geography. Not regime-ranked. Local tax treatment noted.",
+  regions: [
+    { region:"UAE", items:[
+      { sym:"EMAAR.AE", label:"DFM: EMAAR", name:"Emaar Properties",     note:"~7% dividend yield. Dominant Dubai real estate developer. Tied to UAE premium property demand. Stagflation-resilient given AED/USD peg and strong rental market. No UAE capital gains or dividend tax." },
+      { sym:"DEWA.AE",  label:"DFM: DEWA",  name:"DEWA",                 note:"~4-5% yield. Monopoly utility. Extremely stable. Regime-agnostic income. Zero tax." },
+      { sym:"FAB.AE",   label:"ADX: FAB",   name:"First Abu Dhabi Bank", note:"~5-6% yield. UAE's largest bank. USD-pegged income. Consistent payer. Zero tax." },
+      { sym:"UAE",      label:"NYSE: UAE",  name:"iShares MSCI UAE ETF", note:"Broad UAE market exposure. Covers ADX + DFM blue chips. Use if preferring ETF over individual names. US-listed, accessible via IBKR." },
+    ]},
+    { region:"Canada (TSX)", items:[
+      { sym:"ENB.TO", label:"TSX: ENB", name:"Enbridge",                  note:"~5% yield. 30+ consecutive dividend increases. Pipeline infrastructure — inflation pass-through via contracts. Best-in-class Canadian income stock. 15% withholding tax for non-residents — net yield ~4.25%." },
+      { sym:"FTS.TO", label:"TSX: FTS", name:"Fortis",                    note:"~3.3% yield. 52 consecutive years of dividend increases. Regulated utility = bond-like income with growth. Same 15% withholding tax caveat." },
+      { sym:"CNR.TO", label:"TSX: CNR", name:"Canadian National Railway", note:"~2.5% yield but 29 consecutive years of dividend growth. Quality over yield. Economic moat. Note: BCE (BCE.TO) explicitly excluded — dividend cut by >50% in May 2025, avoid." },
+    ]},
+    { region:"Hong Kong (HKEX)", items:[
+      { sym:"0005.HK", label:"0005.HK", name:"HSBC Holdings",                           note:"~6-7% yield. Global bank, Asia-anchored. Consistent dividends. Zero HK withholding tax for individual investors." },
+      { sym:"1299.HK", label:"1299.HK", name:"AIA Group",                               note:"~2% yield but strong dividend growth. Pan-Asian life insurer. Growing Asian middle class structural tailwind. More growth than income." },
+      { sym:"0883.HK", label:"0883.HK", name:"CNOOC",                                   note:"~6-8% yield. Energy infrastructure. High yield, inflation-linked. China geopolitical risk — treat as tactical, not structural. Zero HK withholding tax." },
+      { sym:"3070.HK", label:"3070.HK", name:"Hang Seng China High Dividend Yield ETF", note:"Broad HK/China high-dividend exposure. ~5-7% yield. Use if preferring ETF to individual H-shares. Zero HK withholding tax." },
+    ]},
+  ],
+};
 
 // ─── FUND DEFAULTS ────────────────────────────────────────────────────────────
 const DEFAULT_FUNDS = [
@@ -805,8 +871,8 @@ function Pill({ label, color, bg, bdr }) {
 function SLabel({ children, color }) {
   return <div style={{ fontSize: 12, letterSpacing: 2.5, color: color || C.lbl, textTransform: "uppercase", fontWeight: 700, marginBottom: 10 }}>{children}</div>;
 }
-function Card({ children, style }) {
-  return <div style={{ background: C.surf, border: "1.5px solid " + C.bdr, borderRadius: 14, padding: "16px 18px", boxShadow: "0 1px 5px rgba(0,0,0,.05)", ...style }}>{children}</div>;
+function Card({ children, style, onClick }) {
+  return <div onClick={onClick} style={{ background: C.surf, border: "1.5px solid " + C.bdr, borderRadius: 14, padding: "16px 18px", boxShadow: "0 1px 5px rgba(0,0,0,.05)", ...style }}>{children}</div>;
 }
 function Btn({ onClick, disabled, color, bgColor, label }) {
   return (
@@ -1170,6 +1236,61 @@ function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated,
   );
 }
 
+// ─── REGIONAL ALTERNATIVES SECTION ────────────────────────────────────────────
+function RegionalAlternatives({ config, prices, onFetchPrices, pricesLoading }) {
+  const allSyms = config.regions.flatMap(r => r.items.map(i => i.sym).filter(Boolean));
+  // Yahoo returns local-currency prices for foreign listings — label them correctly.
+  const ccyPrefix = sym => !sym ? "$"
+    : sym.endsWith(".TO") ? "C$"
+    : sym.endsWith(".HK") ? "HK$"
+    : sym.endsWith(".AE") ? "AED "
+    : "$";
+  return (
+    <Card>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
+        <SLabel>{config.title}</SLabel>
+        <Btn onClick={() => onFetchPrices(allSyms)} disabled={pricesLoading} color="#fff" bgColor={C.green} label={pricesLoading ? "Loading…" : "🔄 Prices"} />
+      </div>
+      <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.6, marginBottom: 12 }}>{config.subnote}</div>
+      {config.regions.map(region => (
+        <div key={region.region} style={{ marginBottom: 14 }}>
+          <div style={{ display: "inline-block", background: C.bg, color: C.mid, border: "1px solid " + C.bdr, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>{region.region}</div>
+          {region.items.map((it, i) => {
+            const isUAE = region.region === "UAE";
+            const hasPrice = it.sym && prices[it.sym];
+            return (
+              <div key={it.label + i} style={{ display: "flex", gap: 12, padding: "9px 0", borderBottom: i < region.items.length - 1 ? "1px solid " + C.bdr : "none", alignItems: "flex-start" }}>
+                <div style={{ flexShrink: 0, width: 102 }}>
+                  <span style={{ background: C.bg, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 6, padding: "3px 6px", fontSize: 12, fontWeight: 800, display: "block", textAlign: "center" }}>{it.label}</span>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                    <span style={{ color: C.text, fontWeight: 700, fontSize: 15 }}>{it.name}</span>
+                    {hasPrice
+                      ? (() => {
+                          const p = prices[it.sym];
+                          const up = (p.changePercent || 0) >= 0;
+                          const col = up ? C.green : C.red;
+                          return (
+                            <span style={{ display: "inline-flex", gap: 5, alignItems: "center" }}>
+                              <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>{ccyPrefix(it.sym)}{(p.price || 0).toFixed(2)}</span>
+                              <span style={{ color: col, fontWeight: 700, fontSize: 13 }}>{up ? "↑" : "↓"}{Math.abs(p.changePercent || 0).toFixed(2)}%</span>
+                            </span>
+                          );
+                        })()
+                      : <span style={{ color: C.lbl, fontSize: 12 }}>{it.sym ? (isUAE ? "N/A — check ADX/DFM directly" : "—") : "—"}</span>}
+                  </div>
+                  <div style={{ color: C.muted, fontSize: 14, marginTop: 3, lineHeight: 1.6 }}>{it.note}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </Card>
+  );
+}
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [tab, setTab]           = useState("macro");
@@ -1410,10 +1531,11 @@ export default function App() {
             {(() => {
               const cs = liveInd ? liveInd.creditSpread : 2.75;
               const ue = liveInd ? liveInd.unemployment : 4.4;
-              const isDanger = cs > 6.0 || ue > 5.5;
-              const isAlert  = !isDanger && (cs > 4.5 || ue > 5.0);
-              const isRef    = !isDanger && !isAlert && activeRegime.id === "ref";
-              const postureKey = isDanger ? "danger" : isAlert ? "alert" : isRef ? "ref" : "watch";
+              // Base posture column from the active regime; live signal can escalate it.
+              const regimeKey = { stag: "alert", def: "danger", ref: "ref", inf: "watch" }[activeRegime.id] || "watch";
+              const sigDanger = cs > 6.0 || ue > 5.5;
+              const sigAlert  = !sigDanger && (cs > 4.5 || ue > 5.0);
+              const postureKey = sigDanger ? "danger" : (sigAlert && regimeKey !== "danger") ? "alert" : regimeKey;
               const sigLabel = { watch:"WATCH", alert:"ALERT", danger:"DANGER", ref:"REFLATIONARY" }[postureKey];
               const sigColor = { watch:C.amber, alert:"#D97706", danger:C.red, ref:C.green }[postureKey];
               const activeStage = { watch:1, alert:2, danger:3, ref:4 }[postureKey];
@@ -1434,8 +1556,50 @@ export default function App() {
                     <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <button onClick={() => setTab("indicators")} style={{ background: "#fff", color: activeRegime.color, border: "1.5px solid " + activeRegime.bdr, borderRadius: 8, padding: "5px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>📡 See Indicators tab for signals →</button>
                       <button onClick={() => setTab("insurance")} style={{ background: "#fff", color: activeRegime.color, border: "1.5px solid " + activeRegime.bdr, borderRadius: 8, padding: "5px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>🛡️ See Insurance tab for instruments →</button>
+                      <button onClick={() => setTab("income")} style={{ background: "#fff", color: activeRegime.color, border: "1.5px solid " + activeRegime.bdr, borderRadius: 8, padding: "5px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>💰 See Income tab for yield ranking →</button>
                     </div>
                   </div>
+
+                  {/* Allocation donut for the active regime/posture */}
+                  <Card>
+                    <SLabel>Target Allocation · {activeRegime.label}</SLabel>
+                    {(() => {
+                      const chartData = POSTURE_BUCKETS.map(b => ({ name: b.name, value: postureMid(b.states[postureKey].pct), range: b.states[postureKey].pct }));
+                      const alphas = ["FF", "CC", "99", "66", "40"];
+                      const segColors = POSTURE_BUCKETS.map((_, i) => activeRegime.color + alphas[i % alphas.length]);
+                      return (
+                        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+                          <div style={{ flex: "0 0 200px", minWidth: 180 }}>
+                            <ResponsiveContainer width="100%" height={200}>
+                              <PieChart>
+                                <Pie data={chartData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" stroke="#fff" strokeWidth={2} paddingAngle={2}>
+                                  {chartData.map((_, i) => <Cell key={i} fill={segColors[i]} />)}
+                                </Pie>
+                                <Tooltip content={function({ active, payload }) {
+                                  if (!active || !payload || !payload.length) return null;
+                                  const p = payload[0].payload;
+                                  return <div style={{ background: "#fff", border: "1px solid " + C.bdr, borderRadius: 8, padding: "8px 12px" }}>
+                                    <div style={{ fontWeight: 700, fontSize: 14 }}>{p.name}</div>
+                                    <div style={{ color: C.muted, fontSize: 13 }}>{p.range}</div>
+                                  </div>;
+                                }} />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+                          <div style={{ flex: 1, minWidth: 200, display: "flex", flexDirection: "column", gap: 7 }}>
+                            {chartData.map((d, i) => (
+                              <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                                <div style={{ width: 12, height: 12, borderRadius: 3, background: segColors[i], flexShrink: 0 }} />
+                                <span style={{ color: C.text, fontWeight: 600, flex: 1 }}>{d.name}</span>
+                                <span style={{ color: C.muted, fontWeight: 700 }}>{d.range}</span>
+                              </div>
+                            ))}
+                            <div style={{ color: C.lbl, fontSize: 11, marginTop: 2, lineHeight: 1.5 }}>Donut sizes by range mid-point — ranges overlap by design, so segments are relative, not a fixed sum.</div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </Card>
 
                   {/* Bucket cards */}
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 12 }}>
@@ -1443,7 +1607,7 @@ export default function App() {
                       const st = b.states[postureKey];
                       const sc = POSTURE_STATUS[st.status];
                       return (
-                        <Card key={b.id} style={{ borderTop: "4px solid " + sc.color }}>
+                        <Card key={b.id} onClick={b.link ? () => setTab(b.link) : undefined} style={{ borderTop: "4px solid " + sc.color, cursor: b.link ? "pointer" : "default" }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 8 }}>
                             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                               <span style={{ fontSize: 20 }}>{b.icon}</span>
@@ -1597,6 +1761,8 @@ export default function App() {
                 </div>
               );
             })()}
+
+            <RegionalAlternatives config={REGIONAL_INSURANCE} prices={prices} onFetchPrices={fetchPrices} pricesLoading={pricesLoading} />
           </div>
         )}
 
@@ -1734,6 +1900,8 @@ export default function App() {
                 </div>
               );
             })()}
+
+            <RegionalAlternatives config={REGIONAL_INCOME} prices={prices} onFetchPrices={fetchPrices} pricesLoading={pricesLoading} />
           </div>
         )}
 
