@@ -237,10 +237,12 @@ const PHASE_NOTES = {
 // ─── INSURANCE CRASH-SCENARIO PHASES ──────────────────────────────────────────
 // Three-state toggle for the Insurance tab. The user reads the scenario matrix +
 // live-signal lean, then sets this manually. It does NOT auto-drive the toggle.
+// `col` maps each phase to its SCENARIO_MATRIX field; colour set is reused by the
+// interactive guide (active column) and the phase-note callouts.
 const INSURANCE_PHASES = [
-  { k:"onset",        label:"Crash Onset",             desc:"Signals deteriorating. Buy protection before confirmation. Puts, spreads, GLD." },
-  { k:"deflationary", label:"Deflationary Resolution", desc:"Debt deflation, falling prices, Japan-style. TLT wins. Gold moderate. BTC loses." },
-  { k:"inflationary", label:"Inflationary / Debasement", desc:"Fed prints to reflate. Dollar credibility erodes. Gold and BTC win. TLT is a trap." },
+  { k:"onset",        col:"onset", label:"Crash Onset",               short:"Crash Onset",  color:"#92400E", bg:"#FFFBEB", bdr:"#FCD34D", desc:"Signals deteriorating. Buy protection before confirmation. Puts, spreads, GLD." },
+  { k:"deflationary", col:"def",   label:"Deflationary Resolution",   short:"Deflationary", color:"#1E40AF", bg:"#EFF6FF", bdr:"#BFDBFE", desc:"Debt deflation, falling prices, Japan-style. TLT wins. Gold moderate. BTC loses." },
+  { k:"inflationary", col:"inf",   label:"Inflationary / Debasement", short:"Inflationary", color:"#7C3AED", bg:"#F5F3FF", bdr:"#C4B5FD", desc:"Fed prints to reflate. Dollar credibility erodes. Gold and BTC win. TLT is a trap." },
 ];
 
 // Permanent, non-interactive reference. Three columns = three scenarios.
@@ -1830,7 +1832,78 @@ export default function App() {
         {/* ── INSURANCE ── */}
         {tab === "insurance" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {/* Regime-aware header banner */}
+            {/* Crash Scenario Guide — TOP of page. Static ratings (regime-independent);
+                the three column headers ARE the scenario selector. Picking a column
+                drives the phase-note callouts in the instrument detail below. */}
+            <Card>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
+                <SLabel>Crash Scenario Guide</SLabel>
+                <span style={{ color: C.lbl, fontSize: 12 }}>Tap a column to plan around that scenario ↓</span>
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 460, fontSize: 12 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: "left", color: C.mid, padding: "6px 10px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700 }}>Instrument</th>
+                      {INSURANCE_PHASES.map(p => {
+                        const on = insurancePhase === p.k;
+                        return (
+                          <th key={p.k} style={{ padding: 0, borderBottom: "1.5px solid " + (on ? p.color : C.bdr) }}>
+                            <button onClick={() => setInsurancePhase(p.k)} title={p.desc} style={{
+                              width: "100%", cursor: "pointer", border: "none",
+                              background: on ? p.color : "transparent",
+                              color: on ? "#fff" : p.color,
+                              fontWeight: 800, fontSize: 12, padding: "9px 8px", lineHeight: 1.25,
+                              borderTopLeftRadius: 6, borderTopRightRadius: 6,
+                            }}>
+                              {on ? "● " : ""}{p.short}
+                            </button>
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {SCENARIO_MATRIX.map((r, ri) => (
+                      <tr key={r.row} style={{ background: ri % 2 === 0 ? C.surf : C.bg }}>
+                        <td style={{ padding: "6px 10px", color: C.text, fontWeight: 600, borderBottom: "1px solid " + C.bdr }}>{r.row}</td>
+                        {INSURANCE_PHASES.map(p => {
+                          const on = insurancePhase === p.k;
+                          return (
+                            <td key={p.k} style={{ textAlign: "center", padding: "6px 8px", fontSize: 14, borderBottom: "1px solid " + C.bdr, background: on ? p.bg : "transparent", fontWeight: on ? 800 : 400 }}>
+                              {r[p.col]}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap" }}>
+                {[["✅✅", "Primary instrument"], ["✅", "Works well"], ["⚠️", "Caution / timing-dependent"], ["❌", "Avoid"]].map(([sym, lbl]) => (
+                  <div key={lbl} style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 12, color: C.muted }}>
+                    <span style={{ fontSize: 13 }}>{sym}</span>{lbl}
+                  </div>
+                ))}
+              </div>
+              {/* Active scenario summary + live-signal lean (informational; your call) */}
+              {(() => {
+                const active = INSURANCE_PHASES.find(p => p.k === insurancePhase) || INSURANCE_PHASES[0];
+                const read = getCrashSignalRead(liveInd || {});
+                return (
+                  <div style={{ marginTop: 12, padding: "10px 13px", background: active.bg, border: "1.5px solid " + active.bdr, borderRadius: 8 }}>
+                    <div style={{ color: active.color, fontWeight: 800, fontSize: 13, marginBottom: 3 }}>Planning for: {active.label}</div>
+                    <div style={{ color: C.mid, fontSize: 13, lineHeight: 1.6 }}>{active.desc}</div>
+                    <div style={{ color: C.muted, fontSize: 12, fontStyle: "italic", marginTop: 6, lineHeight: 1.55 }}>
+                      Live signals lean toward: <b style={{ fontStyle: "normal", color: C.text }}>{read.lean}</b> — {read.reason}. Your call — set the column you believe.
+                    </div>
+                  </div>
+                );
+              })()}
+            </Card>
+
+            {/* Regime-aware context banner — best→worst ranking for the active macro regime */}
             {(() => {
               const rankKey = { stag: "stagRank", def: "defRank", ref: "refRank", inf: "infRank" }[activeRegime.id] || "stagRank";
               const sorted = [...ASSETS].sort((a, b) => (a[rankKey] || 9) - (b[rankKey] || 9));
@@ -1838,7 +1911,7 @@ export default function App() {
                 <div style={{ background: activeRegime.bg, border: "1.5px solid " + activeRegime.bdr, borderRadius: 14, padding: "14px 18px", borderTop: "4px solid " + activeRegime.color }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
                     <div>
-                      <div style={{ fontSize: 11, letterSpacing: 2.5, textTransform: "uppercase", color: activeRegime.color, fontWeight: 700, marginBottom: 3 }}>Active Regime</div>
+                      <div style={{ fontSize: 11, letterSpacing: 2.5, textTransform: "uppercase", color: activeRegime.color, fontWeight: 700, marginBottom: 3 }}>Active Regime · context</div>
                       <div style={{ fontSize: 17, fontWeight: 900, color: activeRegime.color }}>{activeRegime.label} — Best → Worst Insurance</div>
                     </div>
                     <Pill label={"Switch regime on Macro tab"} color={activeRegime.color} />
@@ -1876,72 +1949,6 @@ export default function App() {
                 </div>
               );
             })()}
-
-            {/* Three-state crash-scenario toggle (Insurance tab only) */}
-            <div>
-              <span style={{ color: C.lbl, fontSize: 11, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", display: "block", marginBottom: 8 }}>Crash Scenario — your call</span>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {INSURANCE_PHASES.map(p => {
-                  const on = insurancePhase === p.k;
-                  return (
-                    <button key={p.k} onClick={() => setInsurancePhase(p.k)} style={{
-                      background: on ? activeRegime.color : C.surf,
-                      color: on ? "#fff" : C.muted,
-                      border: "1.5px solid " + (on ? activeRegime.color : C.bdr),
-                      borderRadius: 999, padding: "7px 16px", fontSize: 13, fontWeight: 800, cursor: "pointer",
-                    }}>{p.label}</button>
-                  );
-                })}
-              </div>
-              {/* Active-phase description */}
-              {(() => {
-                const active = INSURANCE_PHASES.find(p => p.k === insurancePhase) || INSURANCE_PHASES[0];
-                return <div style={{ color: C.mid, fontSize: 13, lineHeight: 1.6, marginTop: 8 }}>{active.desc}</div>;
-              })()}
-              {/* Live signal anchor — informational only, does NOT drive the toggle */}
-              {(() => {
-                const read = getCrashSignalRead(liveInd || {});
-                return (
-                  <div style={{ color: C.muted, fontSize: 12, fontStyle: "italic", marginTop: 6, lineHeight: 1.55 }}>
-                    Live signals lean toward: <b style={{ fontStyle: "normal", color: C.text }}>{read.lean}</b> — {read.reason}
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* Crash Scenario Guide — permanent, non-interactive reference table */}
-            <Card>
-              <SLabel>Crash Scenario Guide</SLabel>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 420, fontSize: 12 }}>
-                  <thead>
-                    <tr>
-                      <th style={{ textAlign: "left", color: C.mid, padding: "6px 10px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700 }}>Instrument</th>
-                      <th style={{ textAlign: "center", color: C.mid, padding: "6px 8px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700 }}>Crash Onset</th>
-                      <th style={{ textAlign: "center", color: C.mid, padding: "6px 8px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700 }}>Deflationary</th>
-                      <th style={{ textAlign: "center", color: C.mid, padding: "6px 8px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700 }}>Inflationary / Debasement</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {SCENARIO_MATRIX.map((r, ri) => (
-                      <tr key={r.row} style={{ background: ri % 2 === 0 ? C.surf : C.bg }}>
-                        <td style={{ padding: "6px 10px", color: C.text, fontWeight: 600, borderBottom: "1px solid " + C.bdr }}>{r.row}</td>
-                        <td style={{ textAlign: "center", padding: "6px 8px", fontSize: 14, borderBottom: "1px solid " + C.bdr }}>{r.onset}</td>
-                        <td style={{ textAlign: "center", padding: "6px 8px", fontSize: 14, borderBottom: "1px solid " + C.bdr }}>{r.def}</td>
-                        <td style={{ textAlign: "center", padding: "6px 8px", fontSize: 14, borderBottom: "1px solid " + C.bdr }}>{r.inf}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap" }}>
-                {[["✅✅", "Primary instrument"], ["✅", "Works well"], ["⚠️", "Caution / timing-dependent"], ["❌", "Avoid"]].map(([sym, lbl]) => (
-                  <div key={lbl} style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 12, color: C.muted }}>
-                    <span style={{ fontSize: 13 }}>{sym}</span>{lbl}
-                  </div>
-                ))}
-              </div>
-            </Card>
 
             {/* Asset selector — sorted by active regime rank */}
             {(() => {
