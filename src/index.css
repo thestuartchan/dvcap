@@ -165,6 +165,25 @@ button, input, textarea, select { font-family: inherit; }
   .mwd-posture-row > * { flex: 1 1 230px; }
 }
 
+/* Smart Money fund selector: single flex-fit row, scroll fallback when narrow */
+.mwd-smartmoney-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  align-items: stretch;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.mwd-smartmoney-row::-webkit-scrollbar { display: none; }
+.mwd-smartmoney-row > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+@media (max-width: 720px) {
+  .mwd-smartmoney-row > * { flex: 0 0 150px; }
+}
+
 /* Font scale: slightly smaller on mobile */
 @media (max-width: 640px) {
   html { font-size: 14px; }

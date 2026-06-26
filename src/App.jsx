@@ -213,23 +213,72 @@ const TICKER_TRIGGERS = {
 };
 
 // ─── INSURANCE PHASE NOTES ────────────────────────────────────────────────────
-// Crash-onset vs post-crash/debasement overrides for the three phase-sensitive
-// buckets. tone drives colour (caution = amber, recovery = green) independently
-// of the phase — TLT is a positive at onset but a caution in recovery.
+// Three-state crash-scenario overrides (onset / deflationary / inflationary) for
+// the phase-sensitive buckets. The first character of each note drives colour:
+// ⚠️ = amber, ✅ = green, ❌ = red (see AssetDetail phase-note render).
 const PHASE_NOTES = {
   miners: {
-    onset:    { tone:"caution",  text:"⚠️ ONSET CAUTION: In liquidity crises, miners sell off WITH equities before recovering. GLD is the better crash-phase hedge. Hold miners light until panic clears." },
-    recovery: { tone:"recovery", text:"✅ RECOVERY PHASE: This is where miners shine. Gold up 20% = miners up 40–60%. Maximum debasement leverage. Add GDX/GDXJ aggressively after VIX peak." },
+    onset:        "⚠️ ONSET: Miners sell off with equities in the initial panic. Hold light. GLD is better crash-phase protection until panic clears.",
+    deflationary: "⚠️ DEFLATIONARY: Gold moderate in deflation, miners underperform gold. Only add after Fed pivot signal confirmed.",
+    inflationary: "✅✅ INFLATIONARY/DEBASEMENT: This is where miners shine. Gold up 20% = miners up 40–60%. Add aggressively after VIX peak.",
   },
   btc: {
-    onset:    { tone:"caution",  text:"⚠️ ONSET CAUTION: BTC dropped 50% in 48 hours in March 2020. Do not use as crash protection. Wait for panic to clear before entering." },
-    recovery: { tone:"recovery", text:"✅ RECOVERY PHASE: Post-panic BTC is the highest-conviction debasement play. Fixed supply vs exploding Fed balance sheet. Enter after VIX peaks and begins sustained decline." },
+    onset:        "❌ ONSET: BTC dropped 50% in 48 hours in March 2020. Do not use as crash onset protection. Wait for panic to clear.",
+    deflationary: "❌ DEFLATIONARY: BTC performs poorly in deflationary crashes — no yield, high beta, sells with risk assets. Avoid.",
+    inflationary: "✅✅ INFLATIONARY/DEBASEMENT: Post-panic BTC is the highest-conviction debasement play. Fixed supply vs exploding Fed balance sheet. Enter after VIX peaks.",
   },
   tbonds: {
-    onset:    { tone:"recovery", text:"✅ ONSET (growth scare only): TLT works if the crash is deflationary — rates fall, bonds rally. Check the regime. If stagflationary, TLT is still a trap even at onset." },
-    recovery: { tone:"caution",  text:"⚠️ RECOVERY CAUTION: TLT fails in inflationary recovery. If debasement narrative takes hold post-crash, TLT gets crushed again as in 2022. Exit TLT before the pivot fully prices in." },
+    onset:        "⚠️ ONSET: Only works if the crash is deflationary. Check the regime — if stagflationary, TLT is still a trap even at onset.",
+    deflationary: "✅✅ DEFLATIONARY: TLT is your best instrument here. Rates fall, bonds rally hard. This is the one scenario where TLT belongs at the top of the stack.",
+    inflationary: "❌ INFLATIONARY/DEBASEMENT: TLT gets crushed. Sticky inflation + Fed balance sheet expansion = bond bear market. Avoid entirely. 2022 repeat risk.",
   },
 };
+
+// ─── INSURANCE CRASH-SCENARIO PHASES ──────────────────────────────────────────
+// Three-state toggle for the Insurance tab. The user reads the scenario matrix +
+// live-signal lean, then sets this manually. It does NOT auto-drive the toggle.
+const INSURANCE_PHASES = [
+  { k:"onset",        label:"Crash Onset",             desc:"Signals deteriorating. Buy protection before confirmation. Puts, spreads, GLD." },
+  { k:"deflationary", label:"Deflationary Resolution", desc:"Debt deflation, falling prices, Japan-style. TLT wins. Gold moderate. BTC loses." },
+  { k:"inflationary", label:"Inflationary / Debasement", desc:"Fed prints to reflate. Dollar credibility erodes. Gold and BTC win. TLT is a trap." },
+];
+
+// Permanent, non-interactive reference. Three columns = three scenarios.
+// ✅✅ = primary · ✅ = works well · ⚠️ = caution/timing · ❌ = avoid.
+const SCENARIO_MATRIX = [
+  { row:"GLD",                    onset:"✅", def:"✅",  inf:"✅✅" },
+  { row:"GDX / GDXJ",             onset:"⚠️", def:"⚠️", inf:"✅✅" },
+  { row:"TLT",                    onset:"⚠️", def:"✅✅", inf:"❌" },
+  { row:"BTC",                    onset:"❌", def:"❌",  inf:"✅✅" },
+  { row:"SPY / QQQ Puts",         onset:"✅", def:"✅",  inf:"✅" },
+  { row:"HYG / JNK Puts",         onset:"✅", def:"✅",  inf:"✅" },
+  { row:"XLP / Staples",          onset:"✅", def:"✅",  inf:"⚠️" },
+  { row:"SQQQ / 7568.HK",         onset:"✅", def:"✅",  inf:"✅" },
+  { row:"VIX Calls / VXX",        onset:"✅", def:"✅",  inf:"✅" },
+  { row:"CNOOC / Energy",         onset:"⚠️", def:"❌",  inf:"✅✅" },
+  { row:"Gold Miners (Physical)", onset:"⚠️", def:"⚠️", inf:"✅✅" },
+];
+
+// Live-signal anchor — auto-computed lean from liveInd. Informational only;
+// the user still sets the toggle. Safe to call with {} when liveInd is null.
+// Uses cpiYoY (year-over-year %) — NOT the raw CPIAUCSL index level, which is
+// ~315 and would always read as inflationary.
+function getCrashSignalRead(liveInd) {
+  const inflationary = liveInd.cpiYoY > 4.0 && liveInd.m2Rising;
+  const deflationary = liveInd.yieldSpread < -0.5 && liveInd.creditSpread > 4.5;
+  if (inflationary) return {
+    lean: "Inflationary / Debasement",
+    reason: `CPI ${liveInd.cpiYoY?.toFixed(1)}% YoY, M2 rising, sticky inflation environment`,
+  };
+  if (deflationary) return {
+    lean: "Deflationary",
+    reason: `Yield curve ${liveInd.yieldSpread?.toFixed(2)}%, credit spreads ${liveInd.creditSpread?.toFixed(1)}%`,
+  };
+  return {
+    lean: "Onset / Unclear",
+    reason: "Signals mixed — monitor credit spreads and CPI trajectory",
+  };
+}
 
 // ─── PORTFOLIO POSTURE ────────────────────────────────────────────────────────
 // Fund-manager allocation framework. Keyed by regime (activeRegime.id); "baseline"
@@ -1014,30 +1063,6 @@ function ChartTip({ active, payload, label, fmt }) {
   </div>;
 }
 
-// ─── FUND EDITOR MODAL ────────────────────────────────────────────────────────
-function FundEditor({ fund, onSave, onCancel }) {
-  const [draft, setDraft] = useState(JSON.stringify(fund, null, 2));
-  const [err, setErr] = useState(null);
-  function save() {
-    try { onSave(JSON.parse(draft)); setErr(null); }
-    catch (e) { setErr("Invalid JSON: " + e.message); }
-  }
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div style={{ background: C.surf, borderRadius: 16, padding: 20, width: "100%", maxWidth: 680, maxHeight: "90vh", overflow: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
-        <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>Edit Fund Data</div>
-        <div style={{ color: C.muted, fontSize: 14, marginBottom: 12 }}>Edit JSON directly. Change thesis, holdings, sectors, buys/sells, lastUpdated. Auto-saves to your browser.</div>
-        <textarea value={draft} onChange={e => setDraft(e.target.value)} style={{ width: "100%", height: 360, fontFamily: "monospace", fontSize: 12, padding: 12, border: "1.5px solid " + (err ? C.rBdr : C.bdr), borderRadius: 8, color: C.text, background: C.bg, resize: "vertical", boxSizing: "border-box" }} />
-        {err && <div style={{ color: C.red, fontSize: 13, marginTop: 6 }}>⚠ {err}</div>}
-        <div style={{ display: "flex", gap: 10, marginTop: 14, justifyContent: "flex-end" }}>
-          <Btn onClick={onCancel} color={C.mid} bgColor={C.bg} label="Cancel" />
-          <Btn onClick={save} color="#fff" bgColor={C.blue} label="Save Changes" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── INDICATOR CHART ─────────────────────────────────────────────────────────
 function IndicatorChart({ ind, live }) {
   const current = ind.id === "yield" && live ? (live.yieldSpread >= 0 ? "+" : "") + live.yieldSpread.toFixed(2) + "%" :
@@ -1143,13 +1168,14 @@ function AssetDetail({ asset, prices, onFetchPrices, pricesLoading, pricesUpdate
         {(() => {
           const pn = PHASE_NOTES[asset.id] && PHASE_NOTES[asset.id][phase];
           if (!pn) return null;
-          const rec = pn.tone === "recovery";
-          const col = rec ? C.green : C.amber;
-          const bg  = rec ? C.gBg : C.aBg;
-          const bd  = rec ? C.gBdr : C.aBdr;
+          // Colour from the first character of the note: ✅ green, ❌ red, else amber.
+          const ch = pn.charAt(0);
+          const col = ch === "✅" ? C.green : ch === "❌" ? C.red : C.amber;
+          const bg  = ch === "✅" ? C.gBg   : ch === "❌" ? C.rBg : C.aBg;
+          const bd  = ch === "✅" ? C.gBdr  : ch === "❌" ? C.rBdr : C.aBdr;
           return (
             <div style={{ background: bg, border: "1.5px solid " + bd, borderRadius: 8, padding: "10px 13px", marginBottom: 10, color: col, fontSize: 14, lineHeight: 1.65, fontWeight: 600 }}>
-              {pn.text}
+              {pn}
             </div>
           );
         })()}
@@ -1233,7 +1259,7 @@ function AssetDetail({ asset, prices, onFetchPrices, pricesLoading, pricesUpdate
 }
 
 // ─── FUND DETAIL ──────────────────────────────────────────────────────────────
-function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated, editMode, onEdit }) {
+function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated }) {
   const fmtTime = d => d ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
   const pieData = fund.sectors.map(s => ({ name: s.name, value: s.pct }));
   const tickers = fund.holdings.filter(h => h.name !== "Other").map(h => h.name);
@@ -1249,7 +1275,6 @@ function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated,
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <Pill label={fund.signal} color={fund.signalColor} />
-            {editMode && <Btn onClick={onEdit} color={C.amber} bgColor={C.aBg} label="✏️ Edit" />}
           </div>
         </div>
         <p style={{ color: C.mid, fontSize: 15, lineHeight: 1.75, margin: 0 }}>{fund.thesis}</p>
@@ -1301,10 +1326,10 @@ function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated,
             <Btn onClick={() => onFetchPrices(tickers)} disabled={pricesLoading} color="#fff" bgColor={C.green} label={pricesLoading ? "Loading…" : "🔄 Prices"} />
           </div>
         </div>
-        <ResponsiveContainer width="100%" height={155}>
+        <ResponsiveContainer width="100%" height={Math.max(200, fund.holdings.length * 28)}>
           <BarChart data={fund.holdings} layout="vertical" margin={{ left: 4, right: 16, top: 0, bottom: 0 }}>
             <XAxis type="number" tick={{ fill: C.lbl, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => v + "%"} />
-            <YAxis type="category" dataKey="name" tick={{ fill: C.mid, fontSize: 12, fontWeight: 600 }} axisLine={false} tickLine={false} width={50} />
+            <YAxis type="category" dataKey="name" interval={0} tick={{ fill: C.mid, fontSize: 11, fontWeight: 600 }} axisLine={false} tickLine={false} width={55} />
             <Tooltip formatter={v => [v + "%", "% of Portfolio"]} contentStyle={{ background: "#fff", border: "1px solid " + C.bdr, borderRadius: 8, fontSize: 13 }} />
             <Bar dataKey="pct" radius={[0, 5, 5, 0]}>
               {fund.holdings.map((h, i) => (
@@ -1358,15 +1383,12 @@ export default function App() {
   const [activeAsset, setActiveAsset]   = useState(ASSETS[0]);
   const [activeIncome, setActiveIncome] = useState(INCOME_PLAYS[0]);
   const [activeRegime, setActiveRegime] = useState(REGIMES[0]);
-  const [insurancePhase, setInsurancePhase] = useState("onset"); // Insurance tab only — crash onset vs post-crash/debasement
+  const [insurancePhase, setInsurancePhase] = useState("onset"); // Insurance tab — "onset" | "deflationary" | "inflationary"
   const [stage4, setStage4] = useState(false); // Posture deploy stage 4 — manual, persisted
   const [stage5, setStage5] = useState(false); // Posture deploy stage 5 — manual, persisted
   const [portfolioValue, setPortfolioValue] = useState(""); // Posture portfolio total (digits only), persisted
   const [funds, setFunds]       = useState(DEFAULT_FUNDS);
   const [selectedFund, setSelectedFund] = useState(DEFAULT_FUNDS[0]);
-  const [editMode, setEditMode] = useState(false);
-  const [editingFund, setEditingFund]   = useState(null);
-  const [addingFund, setAddingFund]     = useState(false);
 
   const { prices, loading: pricesLoading, updated: pricesUpdated, fetchPrices } = useLivePrices();
   const { live: liveInd, loading: indLoading, updated: indUpdated, error: indError, fetchIndicators } = useLiveIndicators();
@@ -1405,26 +1427,6 @@ export default function App() {
     setStage5(function(v) { const n = !v; try { localStorage.setItem("posture_stage5_active", String(n)); } catch (_) {} return n; });
   }
 
-  function updateFunds(newFunds) {
-    setFunds(newFunds);
-    persistFunds(newFunds);
-  }
-  function handleSaveFund(updated) {
-    const newFunds = addingFund ? [...funds, updated] : funds.map(f => f.id === updated.id ? updated : f);
-    updateFunds(newFunds);
-    setSelectedFund(updated);
-    setEditingFund(null);
-    setAddingFund(false);
-  }
-  function handleDeleteFund(id) {
-    if (!confirm("Delete this fund?")) return;
-    const newFunds = funds.filter(f => f.id !== id);
-    updateFunds(newFunds);
-    if (selectedFund.id === id && newFunds.length) setSelectedFund(newFunds[0]);
-  }
-
-  const blankFund = { id: "fund_" + Date.now(), name: "New Fund", manager: "Manager Name", aum: "$0B", style: "Strategy", color: "#1E40AF", turnover: "Medium", signal: "NEUTRAL", signalColor: "#6B7280", lastUpdated: "Q? 202?", regimeBet: "Unknown", regimeBetColor: "#6B7280", regimeBetSignal: "Edit this fund to set the implied macro regime bet.", thesis: "Fund thesis here.", holdings: [{ name: "TICK", pct: 100, value: 0, sector: "Sector", action: "hold" }], sectors: [{ name: "Sector", pct: 100 }], recentBuys: [], recentSells: [], radar: [{ axis: "Value", score: 50 }, { axis: "Growth", score: 50 }, { axis: "Defensiveness", score: 50 }, { axis: "AI Exposure", score: 50 }, { axis: "International", score: 50 }, { axis: "Income", score: 50 }] };
-
   const fmtTime = d => d ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
 
   const TABS = [
@@ -1438,14 +1440,6 @@ export default function App() {
 
   return (
     <div style={{ background: C.bg, minHeight: "100vh", width: "100%", color: C.text, fontFamily: "'DM Sans', system-ui, sans-serif" }}>
-      {(editingFund || addingFund) && (
-        <FundEditor
-          fund={addingFund ? blankFund : editingFund}
-          onSave={handleSaveFund}
-          onCancel={function() { setEditingFund(null); setAddingFund(false); }}
-        />
-      )}
-
       {/* ── HEADER ── */}
       <div className="mwd-sticky-header" style={{ background: C.surf, borderBottom: "2px solid " + C.bdr, padding: "14px 16px 0", position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ maxWidth: 1080, margin: "0 auto" }}>
@@ -1883,23 +1877,71 @@ export default function App() {
               );
             })()}
 
-            {/* Phase toggle — onset vs post-crash/debasement (Insurance tab only) */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <span style={{ color: C.lbl, fontSize: 11, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase" }}>Phase: Crash Onset / Post-Crash · Debasement</span>
+            {/* Three-state crash-scenario toggle (Insurance tab only) */}
+            <div>
+              <span style={{ color: C.lbl, fontSize: 11, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", display: "block", marginBottom: 8 }}>Crash Scenario — your call</span>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {[["onset", "Crash Onset"], ["recovery", "Post-Crash · Debasement"]].map(([k, lbl]) => {
-                  const on = insurancePhase === k;
+                {INSURANCE_PHASES.map(p => {
+                  const on = insurancePhase === p.k;
                   return (
-                    <button key={k} onClick={() => setInsurancePhase(k)} style={{
-                      background: on ? activeRegime.bg : C.surf,
-                      color: on ? activeRegime.color : C.muted,
+                    <button key={p.k} onClick={() => setInsurancePhase(p.k)} style={{
+                      background: on ? activeRegime.color : C.surf,
+                      color: on ? "#fff" : C.muted,
                       border: "1.5px solid " + (on ? activeRegime.color : C.bdr),
-                      borderRadius: 999, padding: "6px 14px", fontSize: 13, fontWeight: 800, cursor: "pointer",
-                    }}>{lbl}</button>
+                      borderRadius: 999, padding: "7px 16px", fontSize: 13, fontWeight: 800, cursor: "pointer",
+                    }}>{p.label}</button>
                   );
                 })}
               </div>
+              {/* Active-phase description */}
+              {(() => {
+                const active = INSURANCE_PHASES.find(p => p.k === insurancePhase) || INSURANCE_PHASES[0];
+                return <div style={{ color: C.mid, fontSize: 13, lineHeight: 1.6, marginTop: 8 }}>{active.desc}</div>;
+              })()}
+              {/* Live signal anchor — informational only, does NOT drive the toggle */}
+              {(() => {
+                const read = getCrashSignalRead(liveInd || {});
+                return (
+                  <div style={{ color: C.muted, fontSize: 12, fontStyle: "italic", marginTop: 6, lineHeight: 1.55 }}>
+                    Live signals lean toward: <b style={{ fontStyle: "normal", color: C.text }}>{read.lean}</b> — {read.reason}
+                  </div>
+                );
+              })()}
             </div>
+
+            {/* Crash Scenario Guide — permanent, non-interactive reference table */}
+            <Card>
+              <SLabel>Crash Scenario Guide</SLabel>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 420, fontSize: 12 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: "left", color: C.mid, padding: "6px 10px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700 }}>Instrument</th>
+                      <th style={{ textAlign: "center", color: C.mid, padding: "6px 8px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700 }}>Crash Onset</th>
+                      <th style={{ textAlign: "center", color: C.mid, padding: "6px 8px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700 }}>Deflationary</th>
+                      <th style={{ textAlign: "center", color: C.mid, padding: "6px 8px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700 }}>Inflationary / Debasement</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {SCENARIO_MATRIX.map((r, ri) => (
+                      <tr key={r.row} style={{ background: ri % 2 === 0 ? C.surf : C.bg }}>
+                        <td style={{ padding: "6px 10px", color: C.text, fontWeight: 600, borderBottom: "1px solid " + C.bdr }}>{r.row}</td>
+                        <td style={{ textAlign: "center", padding: "6px 8px", fontSize: 14, borderBottom: "1px solid " + C.bdr }}>{r.onset}</td>
+                        <td style={{ textAlign: "center", padding: "6px 8px", fontSize: 14, borderBottom: "1px solid " + C.bdr }}>{r.def}</td>
+                        <td style={{ textAlign: "center", padding: "6px 8px", fontSize: 14, borderBottom: "1px solid " + C.bdr }}>{r.inf}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap" }}>
+                {[["✅✅", "Primary instrument"], ["✅", "Works well"], ["⚠️", "Caution / timing-dependent"], ["❌", "Avoid"]].map(([sym, lbl]) => (
+                  <div key={lbl} style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 12, color: C.muted }}>
+                    <span style={{ fontSize: 13 }}>{sym}</span>{lbl}
+                  </div>
+                ))}
+              </div>
+            </Card>
 
             {/* Asset selector — sorted by active regime rank */}
             {(() => {
@@ -2091,50 +2133,7 @@ export default function App() {
             <div style={{ background: C.aBg, border: "1.5px solid " + C.aBdr, borderRadius: 12, padding: "11px 15px", color: C.amber, fontSize: 14, lineHeight: 1.6, fontWeight: 600 }}>
               ⚠️ Q2 2026 13F data available mid-August 2026 — fund positions below reflect Q1 2026 filings. Update manually when available.
             </div>
-            {/* Toolbar */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Btn onClick={() => setEditMode(em => !em)} color={editMode ? C.amber : C.muted} bgColor={editMode ? C.aBg : C.bg} label={editMode ? "✏️ Edit Mode ON" : "✏️ Edit Mode OFF"} />
-                {editMode && <Btn onClick={() => setAddingFund(true)} color={C.green} bgColor={C.gBg} label="+ Add Fund" />}
-                {editMode && <Btn onClick={function() { if (confirm("Reset all funds to defaults?")) { updateFunds(DEFAULT_FUNDS); setSelectedFund(DEFAULT_FUNDS[0]); } }} color={C.red} bgColor={C.rBg} label="↺ Reset" />}
-              </div>
-              {editMode && <span style={{ color: C.amber, fontSize: 13 }}>Changes auto-saved to browser.</span>}
-            </div>
-
-            {/* Fund selector — horizontal scroll */}
-            <div style={{ display: "flex", gap: 8, overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 6, scrollbarWidth: "none" }}>
-              {funds.map(f => (
-                <div key={f.id} style={{ position: "relative", flexShrink: 0 }}>
-                  <button onClick={() => { setSelectedFund(f); if (editMode) setEditingFund(f); }} style={{
-                    background: selectedFund.id === f.id ? f.color + "12" : C.surf,
-                    border: "1.5px solid " + (selectedFund.id === f.id ? f.color : C.bdr),
-                    borderLeft: "4px solid " + f.color,
-                    borderRadius: 10, padding: "12px 13px", textAlign: "left", cursor: "pointer",
-                    width: 170, flexShrink: 0,
-                  }}>
-                    <div style={{ color: f.color, fontWeight: 800, fontSize: 13, lineHeight: 1.3, marginBottom: 3 }}>{f.name}</div>
-                    <div style={{ color: C.muted, fontSize: 12, lineHeight: 1.3, marginBottom: 8 }}>{f.manager}</div>
-                    <div style={{ background: f.signalColor + "15", color: f.signalColor, border: "1.5px solid " + f.signalColor + "40", borderRadius: 6, padding: "3px 7px", fontSize: 11, fontWeight: 800, lineHeight: 1.4, display: "inline-block", maxWidth: "100%", wordBreak: "break-word" }}>{f.signal}</div>
-                    {f.lastUpdated && <div style={{ color: C.lbl, fontSize: 10, marginTop: 6 }}>{f.lastUpdated}</div>}
-                  </button>
-                  {editMode && (
-                    <button onClick={e => { e.stopPropagation(); handleDeleteFund(f.id); }} style={{ position: "absolute", top: 5, right: 5, background: C.rBg, color: C.red, border: "none", borderRadius: 4, width: 18, height: 18, fontSize: 12, cursor: "pointer" }}>×</button>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <FundDetail
-              fund={selectedFund}
-              prices={prices}
-              onFetchPrices={fetchPrices}
-              pricesLoading={pricesLoading}
-              pricesUpdated={pricesUpdated}
-              editMode={editMode}
-              onEdit={() => setEditingFund(selectedFund)}
-            />
-
-            {/* Consensus matrix */}
+            {/* Cross-Fund Positioning Matrix — rendered above the fund selector (Fix 3) */}
             <Card>
               <SLabel>Cross-Fund Positioning Matrix</SLabel>
               <div style={{ overflowX: "auto" }}>
@@ -2170,6 +2169,31 @@ export default function App() {
                 ))}
               </div>
             </Card>
+
+            {/* Fund selector — single row, flex-fit with horizontal-scroll fallback (Fix 1) */}
+            <div className="mwd-smartmoney-row">
+              {funds.map(f => (
+                <button key={f.id} onClick={() => setSelectedFund(f)} style={{
+                  background: selectedFund.id === f.id ? f.color + "12" : C.surf,
+                  border: "1.5px solid " + (selectedFund.id === f.id ? f.color : C.bdr),
+                  borderLeft: "4px solid " + f.color,
+                  borderRadius: 10, padding: "12px 13px", textAlign: "left", cursor: "pointer",
+                }}>
+                  <div style={{ color: f.color, fontWeight: 800, fontSize: 13, lineHeight: 1.3, marginBottom: 3, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{f.name}</div>
+                  <div style={{ color: C.muted, fontSize: 12, lineHeight: 1.3, marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.manager}</div>
+                  <div style={{ background: f.signalColor + "15", color: f.signalColor, border: "1.5px solid " + f.signalColor + "40", borderRadius: 6, padding: "3px 7px", fontSize: 11, fontWeight: 800, lineHeight: 1.4, display: "inline-block", maxWidth: "100%", wordBreak: "break-word" }}>{f.signal}</div>
+                  {f.lastUpdated && <div style={{ color: C.lbl, fontSize: 10, marginTop: 6 }}>{f.lastUpdated}</div>}
+                </button>
+              ))}
+            </div>
+
+            <FundDetail
+              fund={selectedFund}
+              prices={prices}
+              onFetchPrices={fetchPrices}
+              pricesLoading={pricesLoading}
+              pricesUpdated={pricesUpdated}
+            />
           </div>
         )}
 

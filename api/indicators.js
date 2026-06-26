@@ -14,6 +14,19 @@ export default async function handler(req, res) {
     return obs.length ? parseFloat(obs[0].value) : 0;
   }
 
+  // ── Compute year-over-year % change from a monthly series ──────────────────
+  // CPIAUCSL etc. are index levels, not rates — YoY% = (latest / 12-mo-ago − 1).
+  async function fredYoY(seriesId) {
+    const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=13&api_key=${FRED_KEY}&file_type=json`;
+    const r = await fetch(url);
+    const d = await r.json();
+    const obs = (d.observations || []).filter(o => o.value !== "." && o.value !== "");
+    if (obs.length < 13) return 0;
+    const latest = parseFloat(obs[0].value);
+    const yearAgo = parseFloat(obs[12].value);
+    return yearAgo > 0 ? parseFloat((((latest / yearAgo) - 1) * 100).toFixed(2)) : 0;
+  }
+
   // ── Fetch two observations for direction (rising/falling) ──────────────────
   async function fredTwo(seriesId) {
     const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=3&api_key=${FRED_KEY}&file_type=json`;
@@ -111,7 +124,7 @@ export default async function handler(req, res) {
   try {
     // ── Fetch all data in parallel ────────────────────────────────────────────
     const [
-      tenY, twoY, unemp, hySpread, cpi, gdp, dxyRaw, m2Raw, oilRaw, auctionRaw,
+      tenY, twoY, unemp, hySpread, cpi, cpiYoY, gdp, dxyRaw, m2Raw, oilRaw, auctionRaw,
       tenYHistory, twoYHistory, unempHistory, creditHistory,
     ] = await Promise.all([
       fredLatest("DGS10"),
@@ -119,6 +132,7 @@ export default async function handler(req, res) {
       fredLatest("UNRATE"),
       fredLatest("BAMLH0A0HYM2"),
       fredLatest("CPIAUCSL"),
+      fredYoY("CPIAUCSL"),
       fredLatest("GDPC1"),
       fredLatest("DTWEXBGS"),
       fredTwo("M2SL"),
@@ -152,6 +166,7 @@ export default async function handler(req, res) {
       unemployment: unemp,
       creditSpread: hySpread,
       cpi,
+      cpiYoY,
       gdp,
       dxy:      dxyRaw,
       m2:       m2Raw.latest,
