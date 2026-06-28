@@ -157,8 +157,6 @@ const ASSETS = [
       {t:"WMT",  name:"Walmart",                   type:"Stock", note:"Recession beneficiary — budget trade-down."},
       {t:"COST", name:"Costco",                    type:"Stock", note:"Membership = sticky revenue."},
       {t:"MDLZ", name:"Mondelez",                  type:"Stock", note:"Global snacks. 3.5% dividend."},
-      {t:"DEWA.AE", name:"DEWA (Dubai Utility)",  type:"Stock", note:"Dubai electricity/water monopoly. Regulated returns. Regime-agnostic defensive income. Zero UAE tax. Price feed may show N/A — check DFM directly if so.", link:"https://www.dfm.ae"},
-      {t:"FTS",  name:"Fortis Inc (Canada)",      type:"Stock", note:"52 consecutive years of dividend increases. Regulated Canadian utility. Bond-like income with growth. 15% Canadian withholding tax on dividends for non-residents."},
     ],
   },
   {
