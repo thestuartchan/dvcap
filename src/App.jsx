@@ -656,6 +656,70 @@ const REGIMES = [
   },
 ];
 
+// ─── FED LANGUAGE STATUS ──────────────────────────────────────────────────────
+// Manually-updated status card (no live fetch). Update the STATUS fields below
+// after each FOMC meeting / significant Fed communication. The five STATES
+// definitions are stable and only change on explicit request.
+const FED_LANGUAGE_STATUS = {
+  status: "hawkish_hold", // current state — update manually
+  lastUpdated: "2026-06-29",
+  lastEvent: "FOMC June 2026",
+  summary: "Warsh maintaining higher for longer stance. No acknowledgment of downside risks. Rate cuts explicitly off the table until CPI shows sustained progress toward 2%.",
+  nextEvent: "FOMC July 30, 2026",
+};
+const FED_LANGUAGE_STATES = {
+  hawkish_hold: {
+    label: "🔴 Hawkish Hold",
+    color: "#ef4444",
+    bg: "#fef2f2",
+    description: "Higher for longer dominant. No acknowledgment of downside risks. Rate cuts not on the table.",
+    sgov_usfr: "Optimal hold. Yield stays elevated. No action needed.",
+    ief_tlt: "Avoid. Duration risk with no catalyst for rate decline.",
+    equities: "Hold existing positions. No new deployment. Stage 1-2 only.",
+    watchFor: "Watch for: first mention of 'data dependent' flexibility, any acknowledgment of labor market softening, or dissenting dovish votes at FOMC.",
+  },
+  hawkish_tilt: {
+    label: "🟠 Hawkish Tilt",
+    color: "#f97316",
+    bg: "#fff7ed",
+    description: "Still holding but beginning to acknowledge growth risks or disinflation progress. 'Data dependent' language increasing.",
+    sgov_usfr: "Still optimal. Yield may begin modest compression. No action yet.",
+    ief_tlt: "Begin watching IEF. Do not buy yet — wait for neutral or better.",
+    equities: "No deployment yet. Prepare Stage 4 checklist mentally.",
+    watchFor: "Watch for: 'appropriate to begin discussing' rate adjustments, explicit acknowledgment of disinflation progress, two consecutive dovish dissenting votes.",
+  },
+  neutral: {
+    label: "🟡 Neutral / Watching",
+    color: "#eab308",
+    bg: "#fefce8",
+    description: "Balanced language. Internal debate visible. Historical pivot precursor — typically 1-2 meetings before first cut.",
+    sgov_usfr: "Begin preparing rotation. Futures should be pricing 25-50bps cuts by now.",
+    ief_tlt: "Buy IEF in partial size — first tranche only. Do not go full duration yet.",
+    equities: "Stage 4 imminent. Finalize deployment target list. Confirm VIX trajectory.",
+    watchFor: "Watch for: explicit 'easing may be appropriate' language, removal of 'higher for longer' phrasing, Fed Chair press conference tone shift.",
+  },
+  dovish_tilt: {
+    label: "🟢 Dovish Tilt",
+    color: "#22c55e",
+    bg: "#f0fdf4",
+    description: "Explicit acknowledgment that policy needs to ease. First cut likely within 1-2 meetings.",
+    sgov_usfr: "Rotate now. Sell USFR → Buy IEF same day. Yield compression imminent.",
+    ief_tlt: "Full IEF position. Consider partial TLT if deflation scenario confirmed.",
+    equities: "Stage 4 active. Begin software sleeve deployment within 30 days of first cut.",
+    watchFor: "Watch for: first actual cut, pace of subsequent cuts, terminal rate language.",
+  },
+  active_easing: {
+    label: "🟢🟢 Active Easing",
+    color: "#16a34a",
+    bg: "#dcfce7",
+    description: "Cutting cycle underway. Focus shifts to pace and terminal rate.",
+    sgov_usfr: "Exit entirely. Yield collapsing. Hold only IBKR sweep for trading float.",
+    ief_tlt: "IEF appreciating. Begin rolling proceeds into equities as positions fill.",
+    equities: "Full Stage 4-5 deployment. Software first, hardware fills, ARM adds. Drift to 50/50 by mid-2027.",
+    watchFor: "Watch for: pause signals, re-acceleration of inflation, terminal rate guidance.",
+  },
+};
+
 // ─── DATA SOURCE CONFIG ───────────────────────────────────────────────────────
 //
 //  HOW TO CONFIGURE LIVE DATA FOR DEPLOYMENT
@@ -2199,6 +2263,57 @@ export default function App() {
               </div>
             </Card>
 
+            {/* Smart Money Implied Regime Bets — moved here from the Macro tab */}
+            <Card>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                <SLabel>Smart Money Implied Regime Bets</SLabel>
+                <span style={{ color: C.lbl, fontSize: 12 }}>
+                  ✏️ Edit funds on the Smart Money tab to update this table live
+                </span>
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 460 }}>
+                  <thead>
+                    <tr style={{ background: C.bg }}>
+                      {["Fund", "Manager", "Implied Bet", "Key Signal"].map(h => (
+                        <th key={h} style={{ textAlign: "left", color: C.mid, padding: "9px 12px", borderBottom: "2px solid " + C.bdr, fontSize: 13, fontWeight: 700 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {funds.map((f, i) => (
+                      <tr
+                        key={f.id}
+                        style={{ background: i % 2 === 0 ? C.surf : C.bg, cursor: "pointer" }}
+                        onClick={() => { setTab("smartmoney"); setSelectedFund(f); }}
+                        title="Click to view on Smart Money tab"
+                      >
+                        <td style={{ padding: "9px 12px", borderBottom: "1px solid " + C.bdr }}>
+                          <span style={{ color: f.color, fontWeight: 800, fontSize: 14 }}>{f.name}</span>
+                        </td>
+                        <td style={{ padding: "9px 12px", borderBottom: "1px solid " + C.bdr, color: C.muted, fontSize: 13 }}>
+                          {f.manager}
+                        </td>
+                        <td style={{ padding: "9px 12px", borderBottom: "1px solid " + C.bdr, minWidth: 140 }}>
+                          {f.regimeBet
+                            ? <span style={{ background: (f.regimeBetColor || f.color) + "15", color: f.regimeBetColor || f.color, border: "1.5px solid " + (f.regimeBetColor || f.color) + "40", borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 800, lineHeight: 1.5, display: "inline-block" }}>{f.regimeBet}</span>
+                            : <span style={{ color: C.lbl, fontSize: 12 }}>Not set</span>
+                          }
+                        </td>
+                        <td style={{ padding: "9px 12px", borderBottom: "1px solid " + C.bdr, color: C.muted, fontSize: 13 }}>
+                          {f.regimeBetSignal || f.thesis?.slice(0, 100) + "…"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ marginTop: 12, padding: "12px 14px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8 }}>
+                <span style={{ color: C.amber, fontWeight: 700, fontSize: 13 }}>⚠️ The live disagreement: </span>
+                <span style={{ color: C.amber, fontSize: 14 }}>Druckenmiller + Bridgewater positioned for stagflation/debasement. Tiger + Pershing + Appaloosa positioned for recovery. Berkshire waiting for neither. Add or edit funds on the Smart Money tab — this table updates instantly.</span>
+              </div>
+            </Card>
+
             {/* Fund selector — single row, flex-fit with horizontal-scroll fallback (Fix 1) */}
             <div className="mwd-smartmoney-row">
               {funds.map(f => (
@@ -2316,6 +2431,78 @@ export default function App() {
                       Insufficient history — check back after next auction
                     </div>
                   )}
+                </Card>
+              );
+            })()}
+
+            {/* Market-Implied Fed Cuts (6-Month) — Fed funds vs 6m T-bill proxy (Update 1) */}
+            {(() => {
+              const bps = liveInd ? liveInd.impliedCutsBps : null;
+              const cf  = liveInd ? liveInd.currentFedFunds : null;
+              const tb  = liveInd ? liveInd.tbill6m : null;
+              let fcCol = C.muted, fcMsg = "Unavailable — Fed funds / T-bill data not loaded", fcNote = "";
+              if (bps != null) {
+                if (bps < 0)        { fcCol = C.red;     fcMsg = "Market pricing rate hike. Hold USFR, avoid duration.";                                   fcNote = "USFR yield likely to rise further. Hold. Avoid all duration."; }
+                else if (bps === 0) { fcCol = C.muted;   fcMsg = "No cuts priced in. Market aligned with hawkish hold.";                                    fcNote = "USFR and SGOV remain optimal. No action needed on cash positions."; }
+                else if (bps < 25)  { fcCol = C.amber;   fcMsg = `Market pricing ~${bps}bps of cuts. Early expectation forming.`;                          fcNote = "Monitor Fed language for confirmation. No action yet — futures can be wrong."; }
+                else if (bps < 50)  { fcCol = "#f97316"; fcMsg = "Market pricing ~1 cut. Watch for Fed language confirmation.";                             fcNote = "Prepare IEF/TLT position. Do not rotate yet — wait for Fed language confirmation (Dovish Tilt or better)."; }
+                else                { fcCol = C.green;   fcMsg = "Market pricing 2+ cuts within 6 months. USFR → IEF rotation signal approaching.";        fcNote = "Rotation signal active if Fed language confirms. USFR → IEF on confirmed pivot. Begin Stage 4 checklist."; }
+              }
+              return (
+                <Card style={{ borderLeft: "3px solid " + fcCol }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+                    <div>
+                      <SLabel>Market-Implied Fed Cuts (6-Month)</SLabel>
+                      {bps != null ? (
+                        <>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 30, fontWeight: 900, letterSpacing: -1, color: fcCol }}>{bps} bps</span>
+                            <span style={{ color: fcCol, fontSize: 14, fontWeight: 700, maxWidth: 380 }}>{fcMsg}</span>
+                          </div>
+                          <div style={{ color: C.lbl, fontSize: 12, marginTop: 3 }}>Current Fed funds: {cf != null ? cf.toFixed(2) : "—"}% | 6M T-bill: {tb != null ? tb.toFixed(2) : "—"}%</div>
+                        </>
+                      ) : (
+                        <div style={{ color: C.muted, fontSize: 14 }}>{fcMsg}</div>
+                      )}
+                    </div>
+                    <div style={{ maxWidth: 240, color: C.muted, fontSize: 12, lineHeight: 1.6 }}>
+                      Proxy: Fed funds rate minus 6-month T-bill. Positive = market pricing cuts.
+                    </div>
+                  </div>
+                  {bps != null && fcNote && (
+                    <div style={{ marginTop: 10, padding: "9px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, color: C.mid, fontSize: 13, lineHeight: 1.55 }}>{fcNote}</div>
+                  )}
+                </Card>
+              );
+            })()}
+
+            {/* Fed Language Status — manually updated after each FOMC (Update 2) */}
+            {(() => {
+              const currentState = FED_LANGUAGE_STATES[FED_LANGUAGE_STATUS.status] || FED_LANGUAGE_STATES.hawkish_hold;
+              const cell = (label, text, italic) => (
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
+                  <div style={{ fontSize: 12, marginTop: 2, color: italic ? "#555" : C.mid, fontStyle: italic ? "italic" : "normal", lineHeight: 1.5 }}>{text}</div>
+                </div>
+              );
+              return (
+                <Card style={{ borderLeft: "3px solid " + currentState.color }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
+                    <div>
+                      <SLabel>Fed Language Status</SLabel>
+                      <div style={{ color: currentState.color, fontSize: 20, fontWeight: 700, lineHeight: 1.2 }}>{currentState.label}</div>
+                      <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>{FED_LANGUAGE_STATUS.lastEvent} · Updated {FED_LANGUAGE_STATUS.lastUpdated}</div>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#888", textAlign: "right" }}>Next: {FED_LANGUAGE_STATUS.nextEvent}</div>
+                  </div>
+                  <p style={{ fontSize: 13, marginTop: 10, color: C.mid, lineHeight: 1.6 }}>{FED_LANGUAGE_STATUS.summary}</p>
+                  <div className="mwd-grid-2" style={{ gap: 12, marginTop: 12, background: currentState.bg, borderRadius: 8, padding: 12 }}>
+                    {cell("SGOV / USFR", currentState.sgov_usfr)}
+                    {cell("IEF / TLT", currentState.ief_tlt)}
+                    {cell("Equities / Deployment", currentState.equities)}
+                    {cell("Watch For", currentState.watchFor, true)}
+                  </div>
+                  <div style={{ fontSize: 11, color: C.lbl, marginTop: 10 }}>Updated manually after each FOMC meeting or significant Fed communication.</div>
                 </Card>
               );
             })()}
@@ -2561,56 +2748,6 @@ export default function App() {
                   </div>
                 ));
               })()}
-            </Card>
-
-            <Card>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-                <SLabel>Smart Money Implied Regime Bets</SLabel>
-                <span style={{ color: C.lbl, fontSize: 12 }}>
-                  ✏️ Edit funds on the Smart Money tab to update this table live
-                </span>
-              </div>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 460 }}>
-                  <thead>
-                    <tr style={{ background: C.bg }}>
-                      {["Fund", "Manager", "Implied Bet", "Key Signal"].map(h => (
-                        <th key={h} style={{ textAlign: "left", color: C.mid, padding: "9px 12px", borderBottom: "2px solid " + C.bdr, fontSize: 13, fontWeight: 700 }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {funds.map((f, i) => (
-                      <tr
-                        key={f.id}
-                        style={{ background: i % 2 === 0 ? C.surf : C.bg, cursor: "pointer" }}
-                        onClick={() => { setTab("smartmoney"); setSelectedFund(f); }}
-                        title="Click to view on Smart Money tab"
-                      >
-                        <td style={{ padding: "9px 12px", borderBottom: "1px solid " + C.bdr }}>
-                          <span style={{ color: f.color, fontWeight: 800, fontSize: 14 }}>{f.name}</span>
-                        </td>
-                        <td style={{ padding: "9px 12px", borderBottom: "1px solid " + C.bdr, color: C.muted, fontSize: 13 }}>
-                          {f.manager}
-                        </td>
-                        <td style={{ padding: "9px 12px", borderBottom: "1px solid " + C.bdr, minWidth: 140 }}>
-                          {f.regimeBet
-                            ? <span style={{ background: (f.regimeBetColor || f.color) + "15", color: f.regimeBetColor || f.color, border: "1.5px solid " + (f.regimeBetColor || f.color) + "40", borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 800, lineHeight: 1.5, display: "inline-block" }}>{f.regimeBet}</span>
-                            : <span style={{ color: C.lbl, fontSize: 12 }}>Not set</span>
-                          }
-                        </td>
-                        <td style={{ padding: "9px 12px", borderBottom: "1px solid " + C.bdr, color: C.muted, fontSize: 13 }}>
-                          {f.regimeBetSignal || f.thesis?.slice(0, 100) + "…"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div style={{ marginTop: 12, padding: "12px 14px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8 }}>
-                <span style={{ color: C.amber, fontWeight: 700, fontSize: 13 }}>⚠️ The live disagreement: </span>
-                <span style={{ color: C.amber, fontSize: 14 }}>Druckenmiller + Bridgewater positioned for stagflation/debasement. Tiger + Pershing + Appaloosa positioned for recovery. Berkshire waiting for neither. Add or edit funds on the Smart Money tab — this table updates instantly.</span>
-              </div>
             </Card>
 
             <Card>

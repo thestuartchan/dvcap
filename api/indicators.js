@@ -131,6 +131,7 @@ export default async function handler(req, res) {
     // ── Fetch all data in parallel ────────────────────────────────────────────
     const [
       tenY, twoY, unemp, hySpread, cpi, cpiYoY, gdp, dxyRaw, m2Raw, oilRaw, auctionRaw,
+      fedFundsRaw, tbill6mRaw,
       tenYHistory, twoYHistory, unempHistory, creditHistory,
     ] = await Promise.all([
       fredLatest("DGS10"),
@@ -144,6 +145,8 @@ export default async function handler(req, res) {
       fredTwo("M2SL"),
       fetchOil(),               // WTI crude oil — Yahoo Finance CL=F
       fetchAuction(),           // 10Y Treasury auction bid-to-cover (FiscalData)
+      fredLatest("FEDFUNDS"),   // Current Fed funds effective rate
+      fredLatest("DTB6"),       // 6-month T-bill — forward policy-rate proxy
       // History series for charts
       fredHistory("DGS10", START_DATE),
       fredHistory("DGS2",  START_DATE),
@@ -164,6 +167,16 @@ export default async function handler(req, res) {
       }
     }
 
+    // ── Market-implied Fed policy change ──────────────────────────────────────
+    // Proxy: current Fed funds effective rate vs the 6-month T-bill. When the 6m
+    // bill yields less than Fed funds, the market is pricing rate cuts → positive
+    // bps. Negative bps = market pricing hikes. Null if either fetch is missing.
+    const currentFedFunds = fedFundsRaw > 0 ? fedFundsRaw : null;
+    const tbill6m = tbill6mRaw > 0 ? tbill6mRaw : null;
+    const impliedCutsBps = (currentFedFunds != null && tbill6m != null)
+      ? Math.round((currentFedFunds - tbill6m) * 100)
+      : null;
+
     const result = {
       // ── Scalar values ──────────────────────────────────────────────────────
       tenY,
@@ -183,6 +196,9 @@ export default async function handler(req, res) {
       auctionBidCover: auctionRaw?.bidCover ?? null,
       auctionDate:     auctionRaw?.date ?? null,
       auctionHistory:  auctionRaw?.history ?? [],
+      currentFedFunds,
+      tbill6m,
+      impliedCutsBps, // positive = market pricing cuts, negative = pricing hikes
       // ── Chart history arrays ───────────────────────────────────────────────
       yieldHistory:  yieldSpreadHistory,
       unempHistory,
