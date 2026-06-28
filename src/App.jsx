@@ -2344,23 +2344,6 @@ export default function App() {
         {/* ── MACRO ── */}
         {tab === "macro" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <Card>
-              <SLabel>Regime Probability — Analyst Consensus (Mid-2026)</SLabel>
-              <div className="mwd-regime-grid" style={{ marginBottom: 14 }}>
-                {REGIMES.map(r => (
-                  <button key={r.id} onClick={() => setActiveRegime(r)} style={{ background: activeRegime.id === r.id ? r.bg : C.surf, border: "1.5px solid " + (activeRegime.id === r.id ? r.color : C.bdr), borderTop: "4px solid " + r.color, borderRadius: 10, padding: "12px 14px", cursor: "pointer", textAlign: "left", width: "100%" }}>
-                    <div style={{ fontSize: 22, fontWeight: 900, color: r.color }}>{r.prob}%</div>
-                    <div style={{ color: r.color, fontWeight: 700, fontSize: 13, marginTop: 3, lineHeight: 1.3 }}>{r.label}</div>
-                  </button>
-                ))}
-              </div>
-              <div style={{ display: "flex", height: 12, borderRadius: 6, overflow: "hidden", border: "1px solid " + C.bdr }}>
-                {REGIMES.map(r => (
-                  <div key={r.id} style={{ width: r.prob + "%", background: r.color, fontSize: 10, color: "#fff", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }} title={r.label}>{r.prob}%</div>
-                ))}
-              </div>
-            </Card>
-
             {/* 10Y Treasury auction health — number + 12-auction trend chart */}
             {(() => {
               const bc = liveInd ? liveInd.auctionBidCover : null;
@@ -2506,6 +2489,82 @@ export default function App() {
                 </Card>
               );
             })()}
+
+            <Card>
+              <SLabel>Wall Street Recession Probability (June 2026)</SLabel>
+              {(() => {
+                const lastUpdate = new Date("2026-06-25");
+                const daysStale = Math.floor((Date.now() - lastUpdate.getTime()) / 86400000);
+                const isStale = daysStale > 90;
+                return (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10, fontSize: 12 }}>
+                    <span style={{ color: C.lbl }}>Last updated: <b style={{ color: C.muted }}>June 25, 2026</b> (~quarterly cadence)</span>
+                    {isStale && (
+                      <span style={{ background: C.aBg, color: C.amber, border: "1px solid " + C.aBdr, borderRadius: 6, padding: "2px 8px", fontWeight: 700 }}>
+                        ⚠️ {daysStale} days stale — refresh due (&gt;90-day cadence)
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 400 }}>
+                  <thead>
+                    <tr style={{ background: C.bg }}>
+                      {["Source", "Probability", "Timeframe", "Notes"].map(h => (
+                        <th key={h} style={{ textAlign: "left", color: C.mid, padding: "8px 12px", borderBottom: "2px solid " + C.bdr, fontSize: 13, fontWeight: 700 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      ["NY Fed DSGE Model","35.8%","12-month","March 2026. Recession = 4Q output growth below −1%. Down from 37.5% in December."],
+                      ["NY Fed Yield Curve Model","~15%","12-month","May 2026 data. Based on 3M/10Y spread. Below historical alarm threshold of 30%."],
+                      ["Goldman Sachs","30%","12-month","Raised March 2026 from 25% on Iran oil shock. Not their base case. Growth forecast 1.25–1.75% H2 2026."],
+                      ["Moody's Analytics (Zandi)","~50%","12-month","\"Near even before the war broke out.\" Most bearish major forecaster."],
+                      ["Kalshi prediction market","17.5%","End-2026","Collapsed from 36.9% in one month post Iran peace deal."],
+                      ["Kalshi prediction market","41%","End-2027","Investors pricing delayed reckoning — debt refinancing, consumer credit stress."],
+                      ["Polymarket","~12.5%","End-2026","June 2026. Market-implied."],
+                      ["BNP Paribas","Low","12-month","\"Well-positioned to absorb shock.\" US net energy exporter status cited."],
+                    ].map((r, i) => {
+                      const pv = parseFloat(String(r[1]).replace(/[^\d.]/g, ""));
+                      const pCol = pv > 40 ? C.red : pv >= 30 ? C.amber : C.green;
+                      return (
+                      <tr key={i} style={{ background: i % 2 === 0 ? C.surf : C.bg }}>
+                        <td style={{ padding: "8px 12px", color: C.text, fontSize: 14, fontWeight: 600, borderBottom: "1px solid " + C.bdr }}>{r[0]}</td>
+                        <td style={{ padding: "8px 12px", borderBottom: "1px solid " + C.bdr }}>
+                          <span style={{ color: pCol, fontWeight: 800, fontSize: 15 }}>{r[1]}</span>
+                        </td>
+                        <td style={{ padding: "8px 12px", color: C.muted, fontSize: 13, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap" }}>{r[2]}</td>
+                        <td style={{ padding: "8px 12px", color: C.muted, fontSize: 13, borderBottom: "1px solid " + C.bdr }}>{r[3]}</td>
+                      </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ marginTop: 12, padding: "12px 14px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8 }}>
+                <span style={{ color: C.amber, fontWeight: 700, fontSize: 13 }}>⚠️ The signal that matters: </span>
+                <span style={{ color: C.amber, fontSize: 14, lineHeight: 1.65 }}>Probabilities spiked sharply in March 2026 during peak Iran/Hormuz disruption (Goldman 30%, Moody's ~50%), then fell after the peace deal. The more important signal is 2027: Kalshi at 41% suggests markets expect delayed reckoning, not avoidance. Debt refinancing at 5–7% vs prior near-zero rates, $1.3T consumer revolving credit balances, and corporate capex compression are the slow-burn mechanisms.</span>
+              </div>
+            </Card>
+
+            <Card>
+              <SLabel>Regime Probability — Analyst Consensus (Mid-2026)</SLabel>
+              <div className="mwd-regime-grid" style={{ marginBottom: 14 }}>
+                {REGIMES.map(r => (
+                  <button key={r.id} onClick={() => setActiveRegime(r)} style={{ background: activeRegime.id === r.id ? r.bg : C.surf, border: "1.5px solid " + (activeRegime.id === r.id ? r.color : C.bdr), borderTop: "4px solid " + r.color, borderRadius: 10, padding: "12px 14px", cursor: "pointer", textAlign: "left", width: "100%" }}>
+                    <div style={{ fontSize: 22, fontWeight: 900, color: r.color }}>{r.prob}%</div>
+                    <div style={{ color: r.color, fontWeight: 700, fontSize: 13, marginTop: 3, lineHeight: 1.3 }}>{r.label}</div>
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: "flex", height: 12, borderRadius: 6, overflow: "hidden", border: "1px solid " + C.bdr }}>
+                {REGIMES.map(r => (
+                  <div key={r.id} style={{ width: r.prob + "%", background: r.color, fontSize: 10, color: "#fff", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }} title={r.label}>{r.prob}%</div>
+                ))}
+              </div>
+            </Card>
 
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <Card style={{ flex: "1 1 240px", background: activeRegime.bg, border: "1.5px solid " + activeRegime.bdr, borderTop: "4px solid " + activeRegime.color }}>
@@ -2748,65 +2807,6 @@ export default function App() {
                   </div>
                 ));
               })()}
-            </Card>
-
-            <Card>
-              <SLabel>Wall Street Recession Probability (June 2026)</SLabel>
-              {(() => {
-                const lastUpdate = new Date("2026-06-25");
-                const daysStale = Math.floor((Date.now() - lastUpdate.getTime()) / 86400000);
-                const isStale = daysStale > 90;
-                return (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10, fontSize: 12 }}>
-                    <span style={{ color: C.lbl }}>Last updated: <b style={{ color: C.muted }}>June 25, 2026</b> (~quarterly cadence)</span>
-                    {isStale && (
-                      <span style={{ background: C.aBg, color: C.amber, border: "1px solid " + C.aBdr, borderRadius: 6, padding: "2px 8px", fontWeight: 700 }}>
-                        ⚠️ {daysStale} days stale — refresh due (&gt;90-day cadence)
-                      </span>
-                    )}
-                  </div>
-                );
-              })()}
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 400 }}>
-                  <thead>
-                    <tr style={{ background: C.bg }}>
-                      {["Source", "Probability", "Timeframe", "Notes"].map(h => (
-                        <th key={h} style={{ textAlign: "left", color: C.mid, padding: "8px 12px", borderBottom: "2px solid " + C.bdr, fontSize: 13, fontWeight: 700 }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[
-                      ["NY Fed DSGE Model","35.8%","12-month","March 2026. Recession = 4Q output growth below −1%. Down from 37.5% in December."],
-                      ["NY Fed Yield Curve Model","~15%","12-month","May 2026 data. Based on 3M/10Y spread. Below historical alarm threshold of 30%."],
-                      ["Goldman Sachs","30%","12-month","Raised March 2026 from 25% on Iran oil shock. Not their base case. Growth forecast 1.25–1.75% H2 2026."],
-                      ["Moody's Analytics (Zandi)","~50%","12-month","\"Near even before the war broke out.\" Most bearish major forecaster."],
-                      ["Kalshi prediction market","17.5%","End-2026","Collapsed from 36.9% in one month post Iran peace deal."],
-                      ["Kalshi prediction market","41%","End-2027","Investors pricing delayed reckoning — debt refinancing, consumer credit stress."],
-                      ["Polymarket","~12.5%","End-2026","June 2026. Market-implied."],
-                      ["BNP Paribas","Low","12-month","\"Well-positioned to absorb shock.\" US net energy exporter status cited."],
-                    ].map((r, i) => {
-                      const pv = parseFloat(String(r[1]).replace(/[^\d.]/g, ""));
-                      const pCol = pv > 40 ? C.red : pv >= 30 ? C.amber : C.green;
-                      return (
-                      <tr key={i} style={{ background: i % 2 === 0 ? C.surf : C.bg }}>
-                        <td style={{ padding: "8px 12px", color: C.text, fontSize: 14, fontWeight: 600, borderBottom: "1px solid " + C.bdr }}>{r[0]}</td>
-                        <td style={{ padding: "8px 12px", borderBottom: "1px solid " + C.bdr }}>
-                          <span style={{ color: pCol, fontWeight: 800, fontSize: 15 }}>{r[1]}</span>
-                        </td>
-                        <td style={{ padding: "8px 12px", color: C.muted, fontSize: 13, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap" }}>{r[2]}</td>
-                        <td style={{ padding: "8px 12px", color: C.muted, fontSize: 13, borderBottom: "1px solid " + C.bdr }}>{r[3]}</td>
-                      </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <div style={{ marginTop: 12, padding: "12px 14px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8 }}>
-                <span style={{ color: C.amber, fontWeight: 700, fontSize: 13 }}>⚠️ The signal that matters: </span>
-                <span style={{ color: C.amber, fontSize: 14, lineHeight: 1.65 }}>Probabilities spiked sharply in March 2026 during peak Iran/Hormuz disruption (Goldman 30%, Moody's ~50%), then fell after the peace deal. The more important signal is 2027: Kalshi at 41% suggests markets expect delayed reckoning, not avoidance. Debt refinancing at 5–7% vs prior near-zero rates, $1.3T consumer revolving credit balances, and corporate capex compression are the slow-burn mechanisms.</span>
-              </div>
             </Card>
           </div>
         )}
