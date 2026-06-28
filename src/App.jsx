@@ -1757,15 +1757,14 @@ export default function App() {
                       const sc = POSTURE_STATUS[a.status] || POSTURE_STATUS.HOLD;
                       return (
                         <Card key={m.key} onClick={m.link ? () => setTab(m.link) : undefined} style={{ borderTop: "4px solid " + sc.color, cursor: m.link ? "pointer" : "default", minWidth: 0 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 8 }}>
-                            <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1, minWidth: 0 }}>
-                              <span style={{ fontSize: 20 }}>{m.icon}</span>
-                              <div style={{ minWidth: 0 }}>
-                                <div style={{ fontSize: 15, fontWeight: 900, color: C.text, lineHeight: 1.2 }}>{m.name}</div>
-                                <div style={{ color: C.lbl, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={m.sub}>{m.sub}</div>
-                              </div>
+                          {/* Header: title + subtitle take the full card width on their own lines; the status badge sits on its own line below — so the title never truncates or breaks beside the badge. */}
+                          <div style={{ marginBottom: 8 }}>
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 6, minWidth: 0 }}>
+                              <span style={{ fontSize: 20, flexShrink: 0, lineHeight: 1.2 }}>{m.icon}</span>
+                              <strong style={{ fontSize: 15, fontWeight: 900, color: C.text, lineHeight: 1.2, minWidth: 0, overflowWrap: "break-word" }} title={m.name}>{m.name}</strong>
                             </div>
-                            <span style={{ background: sc.bg, color: sc.color, border: "1px solid " + sc.bdr, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap", flexShrink: 0 }}>{a.status}</span>
+                            <div style={{ fontSize: 11, color: C.lbl, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={m.sub}>{m.sub}</div>
+                            <span style={{ display: "inline-block", marginTop: 6, fontSize: 10, fontWeight: 800, letterSpacing: 0.3, padding: "2px 8px", borderRadius: 99, border: "1px solid " + sc.bdr, background: sc.bg, color: sc.color, whiteSpace: "nowrap" }}>{a.status}</span>
                           </div>
                           <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: dollarRange(a.range) ? 2 : 6, flexWrap: "wrap" }}>
                             <span style={{ fontSize: "clamp(18px, 2.2vw, 28px)", fontWeight: 900, letterSpacing: -1, color: sc.color, whiteSpace: "nowrap" }}>{a.range}</span>
