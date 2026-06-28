@@ -217,21 +217,24 @@ const PHASE_NOTES = {
     onset:        "⚠️ ONSET: Miners sell off with equities in the initial panic. Hold light. GLD is better crash-phase protection until panic clears.",
     deflationary: "⚠️ DEFLATIONARY: Gold moderate in deflation, miners underperform gold. Only add after Fed pivot signal confirmed.",
     inflationary: "✅✅ INFLATIONARY/DEBASEMENT: This is where miners shine. Gold up 20% = miners up 40–60%. Add aggressively after VIX peak.",
+    stagflation:  "⚠️ STAGFLATION: Gold grinds higher but without the explosive move of a debasement crash. Miners move with gold but underperform in a slow-grind regime. Hold a moderate position — don't over-allocate waiting for a spike that may take years.",
   },
   btc: {
     onset:        "❌ ONSET: BTC dropped 50% in 48 hours in March 2020. Do not use as crash onset protection. Wait for panic to clear.",
     deflationary: "❌ DEFLATIONARY: BTC performs poorly in deflationary crashes — no yield, high beta, sells with risk assets. Avoid.",
     inflationary: "✅✅ INFLATIONARY/DEBASEMENT: Post-panic BTC is the highest-conviction debasement play. Fixed supply vs exploding Fed balance sheet. Enter after VIX peaks.",
+    stagflation:  "⚠️ STAGFLATION: No clear catalyst for BTC in persistent stagflation. Inflation is present but not acute enough to drive debasement narrative. Equity correlation remains — BTC drifts with risk sentiment. Hold existing position, do not add aggressively.",
   },
   tbonds: {
     onset:        "⚠️ ONSET: Only works if the crash is deflationary. Check the regime — if stagflationary, TLT is still a trap even at onset.",
     deflationary: "✅✅ DEFLATIONARY: TLT is your best instrument here. Rates fall, bonds rally hard. This is the one scenario where TLT belongs at the top of the stack.",
     inflationary: "❌ INFLATIONARY/DEBASEMENT: TLT gets crushed. Sticky inflation + Fed balance sheet expansion = bond bear market. Avoid entirely. 2022 repeat risk.",
+    stagflation:  "❌ STAGFLATION: Avoid. Inflation stays sticky — rates cannot fall meaningfully. TLT grinds lower as real yields stay elevated. This is the worst regime for long-duration bonds. 2022 replay risk if inflation re-accelerates.",
   },
 };
 
 // ─── INSURANCE CRASH-SCENARIO PHASES ──────────────────────────────────────────
-// Three-state toggle for the Insurance tab. The user reads the scenario matrix +
+// Four-state toggle for the Insurance tab. The user reads the scenario matrix +
 // live-signal lean, then sets this manually. It does NOT auto-drive the toggle.
 // `col` maps each phase to its SCENARIO_MATRIX field; colour set is reused by the
 // interactive guide (active column) and the phase-note callouts.
@@ -239,29 +242,36 @@ const INSURANCE_PHASES = [
   { k:"onset",        col:"onset", label:"Crash Onset",               short:"Crash Onset",  color:"#92400E", bg:"#FFFBEB", bdr:"#FCD34D", desc:"Signals deteriorating. Buy protection before confirmation. Puts, spreads, GLD." },
   { k:"deflationary", col:"def",   label:"Deflationary Resolution",   short:"Deflationary", color:"#1E40AF", bg:"#EFF6FF", bdr:"#BFDBFE", desc:"Debt deflation, falling prices, Japan-style. TLT wins. Gold moderate. BTC loses." },
   { k:"inflationary", col:"inf",   label:"Inflationary / Debasement", short:"Inflationary", color:"#7C3AED", bg:"#F5F3FF", bdr:"#C4B5FD", desc:"Fed prints to reflate. Dollar credibility erodes. Gold and BTC win. TLT is a trap." },
+  { k:"stagflation",  col:"stag",  label:"Persistent Stagflation",    short:"Stagflation",  color:"#0F766E", bg:"#F0FDFA", bdr:"#5EEAD1", desc:"Persistent Stagflation — slow grind, not a sharp crash. Favour passive real-asset hedges (GLD, XLP, farmland, HYG puts) over active short instruments. Avoid VIX calls (contango) and SQQQ (daily decay). Puts are expensive to roll monthly — size conservatively." },
 ];
 
-// Permanent, non-interactive reference. Three columns = three scenarios.
+// Permanent, non-interactive reference. Four columns = four scenarios.
 // ✅✅ = primary · ✅ = works well · ⚠️ = caution/timing · ❌ = avoid.
 const SCENARIO_MATRIX = [
-  { row:"GLD",                    onset:"✅", def:"✅",  inf:"✅✅" },
-  { row:"GDX / GDXJ",             onset:"⚠️", def:"⚠️", inf:"✅✅" },
-  { row:"TLT",                    onset:"⚠️", def:"✅✅", inf:"❌" },
-  { row:"BTC",                    onset:"❌", def:"❌",  inf:"✅✅" },
-  { row:"SPY / QQQ Puts",         onset:"✅", def:"✅",  inf:"✅" },
-  { row:"HYG / JNK Puts",         onset:"✅", def:"✅",  inf:"✅" },
-  { row:"XLP / Staples",          onset:"✅", def:"✅",  inf:"⚠️" },
-  { row:"SQQQ / 7568.HK",         onset:"✅", def:"✅",  inf:"✅" },
-  { row:"VIX Calls / VXX",        onset:"✅", def:"✅",  inf:"✅" },
-  { row:"CNOOC / Energy",         onset:"⚠️", def:"❌",  inf:"✅✅" },
-  { row:"Gold Miners (Physical)", onset:"⚠️", def:"⚠️", inf:"✅✅" },
+  { row:"GLD",                    onset:"✅", def:"✅",  inf:"✅✅", stag:"✅" },
+  { row:"GDX / GDXJ",             onset:"⚠️", def:"⚠️", inf:"✅✅", stag:"⚠️" },
+  { row:"TLT",                    onset:"⚠️", def:"✅✅", inf:"❌",  stag:"❌" },
+  { row:"BTC",                    onset:"❌", def:"❌",  inf:"✅✅", stag:"⚠️" },
+  { row:"SPY / QQQ Puts",         onset:"✅", def:"✅",  inf:"✅",  stag:"⚠️" },
+  { row:"HYG / JNK Puts",         onset:"✅", def:"✅",  inf:"✅",  stag:"✅" },
+  { row:"XLP / Staples",          onset:"✅", def:"✅",  inf:"⚠️", stag:"✅✅" },
+  { row:"SQQQ / 7568.HK",         onset:"✅", def:"✅",  inf:"✅",  stag:"⚠️" },
+  { row:"VIX Calls / VXX",        onset:"✅", def:"✅",  inf:"✅",  stag:"❌" },
+  { row:"CNOOC / Energy",         onset:"⚠️", def:"❌",  inf:"✅✅", stag:"✅" },
+  { row:"Gold Miners (Physical)", onset:"⚠️", def:"⚠️", inf:"✅✅", stag:"⚠️" },
 ];
 
 // Live-signal anchor — auto-computed lean from liveInd. Informational only;
 // the user still sets the toggle. Safe to call with {} when liveInd is null.
 // Uses cpiYoY (year-over-year %) — NOT the raw CPIAUCSL index level, which is
 // ~315 and would always read as inflationary.
-function getCrashSignalRead(liveInd) {
+function getCrashSignalRead(liveInd, activeRegime) {
+  // Stagflation: the dashboard's active regime is already stagflationary. This
+  // connects the regime engine directly to the Insurance tab's signal anchor.
+  if (activeRegime?.id === "stag") return {
+    lean: "Persistent Stagflation",
+    reason: "active regime is stagflationary — inflation sticky, growth slowing. Favour staples, GLD, HYG puts over short-dated puts and VIX calls",
+  };
   const inflationary = liveInd.cpiYoY > 4.0 && liveInd.m2Rising;
   const deflationary = liveInd.yieldSpread < -0.5 && liveInd.creditSpread > 4.5;
   if (inflationary) return {
@@ -1381,7 +1391,7 @@ export default function App() {
   const [activeAsset, setActiveAsset]   = useState(ASSETS[0]);
   const [activeIncome, setActiveIncome] = useState(INCOME_PLAYS[0]);
   const [activeRegime, setActiveRegime] = useState(REGIMES[0]);
-  const [insurancePhase, setInsurancePhase] = useState("onset"); // Insurance tab — "onset" | "deflationary" | "inflationary"
+  const [insurancePhase, setInsurancePhase] = useState("onset"); // Insurance tab — "onset" | "deflationary" | "inflationary" | "stagflation"
   const [stage4, setStage4] = useState(false); // Posture deploy stage 4 — manual, persisted
   const [stage5, setStage5] = useState(false); // Posture deploy stage 5 — manual, persisted
   const [portfolioValue, setPortfolioValue] = useState(""); // Posture portfolio total (digits only), persisted
@@ -1835,20 +1845,20 @@ export default function App() {
                 <SLabel>Crash Scenario Guide</SLabel>
                 <span style={{ color: C.lbl, fontSize: 12 }}>Tap a column to plan around that scenario ↓</span>
               </div>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 460, fontSize: 12 }}>
+              <div style={{ overflowX: "auto", width: "100%" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620, fontSize: 12 }}>
                   <thead>
                     <tr>
-                      <th style={{ textAlign: "left", color: C.mid, padding: "6px 10px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700 }}>Instrument</th>
+                      <th style={{ textAlign: "left", color: C.mid, padding: "6px 10px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700, width: 140, minWidth: 140 }}>Instrument</th>
                       {INSURANCE_PHASES.map(p => {
                         const on = insurancePhase === p.k;
                         return (
-                          <th key={p.k} style={{ padding: 0, borderBottom: "1.5px solid " + (on ? p.color : C.bdr) }}>
+                          <th key={p.k} style={{ padding: 0, minWidth: 120, borderBottom: "1.5px solid " + (on ? p.color : C.bdr) }}>
                             <button onClick={() => setInsurancePhase(p.k)} title={p.desc} style={{
-                              width: "100%", cursor: "pointer", border: "none",
+                              width: "100%", cursor: "pointer", border: "none", whiteSpace: "nowrap",
                               background: on ? p.color : "transparent",
                               color: on ? "#fff" : p.color,
-                              fontWeight: 800, fontSize: 12, padding: "9px 8px", lineHeight: 1.25,
+                              fontWeight: 800, fontSize: 12, padding: "8px 10px", lineHeight: 1.25,
                               borderTopLeftRadius: 6, borderTopRightRadius: 6,
                             }}>
                               {on ? "● " : ""}{p.short}
@@ -1861,11 +1871,11 @@ export default function App() {
                   <tbody>
                     {SCENARIO_MATRIX.map((r, ri) => (
                       <tr key={r.row} style={{ background: ri % 2 === 0 ? C.surf : C.bg }}>
-                        <td style={{ padding: "6px 10px", color: C.text, fontWeight: 600, borderBottom: "1px solid " + C.bdr }}>{r.row}</td>
+                        <td style={{ padding: "6px 10px", color: C.text, fontWeight: 600, borderBottom: "1px solid " + C.bdr, width: 140, minWidth: 140 }}>{r.row}</td>
                         {INSURANCE_PHASES.map(p => {
                           const on = insurancePhase === p.k;
                           return (
-                            <td key={p.k} style={{ textAlign: "center", padding: "6px 8px", fontSize: 14, borderBottom: "1px solid " + C.bdr, background: on ? p.bg : "transparent", fontWeight: on ? 800 : 400 }}>
+                            <td key={p.k} style={{ textAlign: "center", padding: "6px 8px", fontSize: 14, minWidth: 120, borderBottom: "1px solid " + C.bdr, background: on ? p.bg : "transparent", fontWeight: on ? 800 : 400 }}>
                               {r[p.col]}
                             </td>
                           );
@@ -1885,7 +1895,7 @@ export default function App() {
               {/* Active scenario summary + live-signal lean (informational; your call) */}
               {(() => {
                 const active = INSURANCE_PHASES.find(p => p.k === insurancePhase) || INSURANCE_PHASES[0];
-                const read = getCrashSignalRead(liveInd || {});
+                const read = getCrashSignalRead(liveInd || {}, activeRegime);
                 return (
                   <div style={{ marginTop: 12, padding: "10px 13px", background: active.bg, border: "1.5px solid " + active.bdr, borderRadius: 8 }}>
                     <div style={{ color: active.color, fontWeight: 800, fontSize: 13, marginBottom: 3 }}>Planning for: {active.label}</div>
