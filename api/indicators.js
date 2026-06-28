@@ -15,16 +15,18 @@ export default async function handler(req, res) {
   }
 
   // ── Compute year-over-year % change from a monthly series ──────────────────
-  // CPIAUCSL etc. are index levels, not rates — YoY% = (latest / 12-mo-ago − 1).
+  // Uses FRED's units=pc1 (percent change from a year ago) so FRED does the
+  // base-period math server-side and returns the YoY% directly. Robust to
+  // release timing: the previous approach fetched exactly 13 rows and required
+  // all 13 to be non-empty, so a single placeholder "." row (e.g. an unreleased
+  // current month) dropped the count to 12 and silently returned 0 — the
+  // cpiYoY:0 bug. Filter "." and take the latest real value, like fredLatest.
   async function fredYoY(seriesId) {
-    const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=13&api_key=${FRED_KEY}&file_type=json`;
+    const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&units=pc1&sort_order=desc&limit=3&api_key=${FRED_KEY}&file_type=json`;
     const r = await fetch(url);
     const d = await r.json();
     const obs = (d.observations || []).filter(o => o.value !== "." && o.value !== "");
-    if (obs.length < 13) return 0;
-    const latest = parseFloat(obs[0].value);
-    const yearAgo = parseFloat(obs[12].value);
-    return yearAgo > 0 ? parseFloat((((latest / yearAgo) - 1) * 100).toFixed(2)) : 0;
+    return obs.length ? parseFloat(parseFloat(obs[0].value).toFixed(2)) : 0;
   }
 
   // ── Fetch two observations for direction (rising/falling) ──────────────────
