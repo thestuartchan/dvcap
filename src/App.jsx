@@ -120,17 +120,14 @@ const ASSETS = [
     regionalNote:"Physical Gold (Dubai): 0% VAT on gold purchases in UAE. Available via Dubai Gold Souk, DMCC dealers, or Emirates NBD/ADCB gold savings accounts. No FX risk given AED/USD peg. Best local debasement hedge for UAE residents.",
   },
   {
-    id:"farmland", name:"Real Assets & Energy", icon:"🌾", color:"#166534", bg:"#F0FDF4", bdr:"#86EFAC",
+    id:"farmland", name:"Farmland", icon:"🌾", color:"#166534", bg:"#F0FDF4", bdr:"#86EFAC",
     stagRank:3, defRank:3, refRank:2, infRank:2, volatility:"LOW",
     stagNote:"Good inflation hedge — food prices sticky in all environments. Illiquid. Multi-year hold.",
     crisisScore:60, inflationScore:85, deflationScore:50, liquidityScore:20, stagScore:75,
-    verdict:"Physical and contracted real assets that hold value in inflationary environments. Covers agricultural land, pipeline infrastructure, and energy production. Unified thesis: inflation pass-through via real assets rather than financial instruments.",
+    verdict:"Excellent long-run inflation hedge. Thinly traded — use limit orders.",
     tickers:[
       {t:"LAND", name:"Gladstone Land",    type:"REIT", note:"Berry & vegetable farms. ~$350M cap. Thinly traded."},
       {t:"FPI",  name:"Farmland Partners", type:"REIT", note:"Row-crop (corn, soy, wheat). Geographic diversity."},
-      {t:"0883.HK", name:"CNOOC (HK)",     type:"Stock", note:"Chinese offshore oil. ~6-8% yield. Real asset / energy inflation hedge. CAUTION: China geopolitical risk — treat as tactical, not structural. Zero HK withholding tax.", link:"https://www.hkex.com.hk"},
-      {t:"ADNOCGAS.AE", name:"ADNOC Gas (Abu Dhabi)", type:"Stock", note:"UAE energy infrastructure. Inflation pass-through via long-term contracts. Stable dividends. Zero UAE tax. Price feed may show N/A — check ADX directly if so.", link:"https://www.adx.ae"},
-      {t:"ENB",  name:"Enbridge (Canada)",        type:"Stock", note:"30+ consecutive years of dividend increases. Pipeline infrastructure — 98% contracted cash flows. Inflation pass-through. ~5% yield. 15% Canadian withholding tax on dividends."},
     ],
   },
   {
@@ -186,7 +183,7 @@ const ASSETS = [
 // their triggers are staged below, ready to wire once those instruments are added.
 const BUCKET_TRIGGERS = {
   miners:   "Credit spreads >400bps OR CPI re-accelerates above 4.5%",
-  farmland: "Stagflationary or Inflationary regime active. Real assets outperform financial assets when inflation is structural.",
+  farmland: "Stagflationary regime active. Long-duration inflation hedge.",
   tbonds:   "Unemployment >5.5% AND yield curve deeply inverted (growth scare, not inflation)",
   staples:  "Unemployment rising + consumer confidence falling. Defensive rotation.",
 };
@@ -199,9 +196,9 @@ const TICKER_TRIGGERS = {
   TLT:"Unemployment >5.5% AND yield curve deeply inverted (growth scare, not inflation)",
   // Staples
   XLP:"Unemployment rising + consumer confidence falling. Defensive rotation.",
-  // Real Assets & Energy
-  LAND:"Stagflationary or Inflationary regime active. Real assets outperform financial assets when inflation is structural.",
-  FPI:"Stagflationary or Inflationary regime active. Real assets outperform financial assets when inflation is structural.",
+  // Farmland
+  LAND:"Stagflationary regime active. Long-duration inflation hedge.",
+  FPI:"Stagflationary regime active. Long-duration inflation hedge.",
   // Staged — not yet wired as Insurance buckets:
   SQQQ:"QQQ breaks 200-day MA on weekly close. Hold max 3–5 days.",
   VXX:"VIX <18 AND DANGER signal active. Buy convexity cheap before spike.",
