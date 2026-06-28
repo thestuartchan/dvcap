@@ -105,14 +105,20 @@ export default async function handler(req, res) {
       // monthly reopenings and leaving the bid-to-cover weeks stale.
       const url = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/auctions_query"
         + "?fields=auction_date,security_term,original_security_term,bid_to_cover_ratio"
-        + "&filter=original_security_term:eq:10-Year&sort=-auction_date&page[size]=1";
+        + "&filter=original_security_term:eq:10-Year&sort=-auction_date&page[size]=12";
       const r = await fetch(url);
       if (!r.ok) { console.error("FiscalData auction status:", r.status); return null; }
       const d = await r.json();
-      const row = d?.data?.[0];
+      const rows = d?.data || [];
+      const row = rows[0];
       if (!row) return null;
       const bidCover = parseFloat(row.bid_to_cover_ratio);
-      return { bidCover: Number.isFinite(bidCover) ? bidCover : null, date: row.auction_date || null };
+      // Chronological order (oldest → newest) for the trend chart.
+      const history = rows
+        .filter(x => x.bid_to_cover_ratio && x.auction_date)
+        .map(x => ({ date: x.auction_date, value: parseFloat(x.bid_to_cover_ratio) }))
+        .reverse();
+      return { bidCover: Number.isFinite(bidCover) ? bidCover : null, date: row.auction_date || null, history };
     } catch (e) {
       console.error("FiscalData auction fetch error:", e.message);
       return null;
@@ -176,6 +182,7 @@ export default async function handler(req, res) {
       oilPrev:  oilRaw.prev > 0   ? parseFloat(oilRaw.prev.toFixed(2))   : null,
       auctionBidCover: auctionRaw?.bidCover ?? null,
       auctionDate:     auctionRaw?.date ?? null,
+      auctionHistory:  auctionRaw?.history ?? [],
       // ── Chart history arrays ───────────────────────────────────────────────
       yieldHistory:  yieldSpreadHistory,
       unempHistory,

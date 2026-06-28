@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   AreaChart, Area, BarChart, Bar, RadarChart, PolarGrid,
-  PolarAngleAxis, Radar, PieChart, Pie, Cell,
+  PolarAngleAxis, Radar, PieChart, Pie, Cell, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
 
@@ -2246,16 +2246,18 @@ export default function App() {
               </div>
             </Card>
 
-            {/* 10Y Treasury auction health — compact, no chart */}
+            {/* 10Y Treasury auction health — number + 12-auction trend chart */}
             {(() => {
               const bc = liveInd ? liveInd.auctionBidCover : null;
               const ad = liveInd ? liveInd.auctionDate : null;
+              const hist = liveInd && Array.isArray(liveInd.auctionHistory) ? liveInd.auctionHistory : [];
               let col = C.muted, bg = C.bg, bd = C.bdr, msg = "Unavailable — check TreasuryDirect manually";
               if (bc != null) {
                 if (bc >= 2.5)      { col = C.green; bg = C.gBg; bd = C.gBdr; msg = "Strong demand. No stress."; }
                 else if (bc >= 2.3) { col = C.amber; bg = C.aBg; bd = C.aBdr; msg = "Softening. Monitor closely."; }
                 else                { col = C.red;   bg = C.rBg; bd = C.rBdr; msg = "Stress signal. Weak auction demand. Watch for Fed intervention."; }
               }
+              const lineColor = bc != null ? (bc >= 2.5 ? "#22c55e" : bc >= 2.3 ? "#f59e0b" : "#ef4444") : "#9ca3af";
               return (
                 <Card style={{ background: bg, border: "1.5px solid " + bd }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
@@ -2277,6 +2279,43 @@ export default function App() {
                       Threshold: &lt;2.3x = stress signal. Weak foreign/institutional demand for US debt.
                     </div>
                   </div>
+                  {/* Trend chart — last 12 auctions, oldest → newest */}
+                  {hist.length >= 2 ? (
+                    <div style={{ marginTop: 12 }}>
+                      <ResponsiveContainer width="100%" height={120}>
+                        <LineChart data={hist} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
+                          <XAxis
+                            dataKey="date"
+                            tick={{ fontSize: 10 }}
+                            tickFormatter={(d) => {
+                              const date = new Date(d);
+                              return date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+                            }}
+                            interval="preserveStartEnd"
+                          />
+                          <YAxis
+                            domain={["auto", "auto"]}
+                            tick={{ fontSize: 10 }}
+                            width={44}
+                            tickFormatter={(v) => `${v.toFixed(2)}x`}
+                          />
+                          <Tooltip
+                            formatter={(value) => [`${value}x`, "Bid-to-Cover"]}
+                            labelFormatter={(label) => `Auction: ${label}`}
+                          />
+                          {/* Stress threshold — red dotted */}
+                          <ReferenceLine y={2.3} stroke="#ef4444" strokeDasharray="4 3" label={{ value: "2.3x stress", position: "right", fontSize: 9, fill: "#ef4444" }} />
+                          {/* Strong demand threshold — green dotted */}
+                          <ReferenceLine y={2.5} stroke="#22c55e" strokeDasharray="4 3" label={{ value: "2.5x strong", position: "right", fontSize: 9, fill: "#22c55e" }} />
+                          <Line type="monotone" dataKey="value" stroke={lineColor} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 12, color: C.muted, fontSize: 13, fontStyle: "italic" }}>
+                      Insufficient history — check back after next auction
+                    </div>
+                  )}
                 </Card>
               );
             })()}
