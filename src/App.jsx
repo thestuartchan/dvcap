@@ -138,7 +138,7 @@ const ASSETS = [
     verdict:"Works in deflation/growth-scare recessions (2008, 2020). Fails in stagflation. Know your recession type first.",
     tickers:[
       {t:"TLT",  name:"iShares 20+ Year Treasury", type:"ETF", note:"Max duration. ~16% price sensitivity per 1% rate move."},
-      {t:"IEF",  name:"iShares 7-10 Year Treasury",type:"ETF", note:"Less volatile. More balanced duration."},
+      {t:"IEF",  name:"iShares 7-10 Year Treasury",type:"ETF", note:"Lower duration alternative to TLT. Use if uncertain about crash depth or speed of recovery. 100bps cut ≈ 7-8% NAV appreciation vs TLT's 15-18%. Less reward, less risk."},
       {t:"ZROZ", name:"PIMCO 25+ Zero Coupon",     type:"ETF", note:"Maximum duration. High conviction rate cut only."},
       {t:"BIL",  name:"SPDR 1-3 Month T-Bill",     type:"ETF", note:"Essentially cash. ~4.2% yield."},
     ],
@@ -214,22 +214,22 @@ const TICKER_TRIGGERS = {
 // ⚠️ = amber, ✅ = green, ❌ = red (see AssetDetail phase-note render).
 const PHASE_NOTES = {
   miners: {
-    onset:        "⚠️ ONSET: Miners sell off with equities in the initial panic. Hold light. GLD is better crash-phase protection until panic clears.",
-    deflationary: "⚠️ DEFLATIONARY: Gold moderate in deflation, miners underperform gold. Only add after Fed pivot signal confirmed.",
-    inflationary: "✅✅ INFLATIONARY/DEBASEMENT: This is where miners shine. Gold up 20% = miners up 40–60%. Add aggressively after VIX peak.",
-    stagflation:  "⚠️ STAGFLATION: Gold grinds higher but without the explosive move of a debasement crash. Miners move with gold but underperform in a slow-grind regime. Hold a moderate position — don't over-allocate waiting for a spike that may take years.",
+    onset:        "GLD is more stable than miners in the initial panic — hold GLD first, add miners after panic clears. ⚠️ ONSET: Miners sell off with equities in the initial panic. Hold light. GLD is better crash-phase protection until panic clears.",
+    deflationary: "GLD outperforms miners in deflation — prefer GLD over GDX here. ⚠️ DEFLATIONARY: Gold moderate in deflation, miners underperform gold. Only add after Fed pivot signal confirmed.",
+    inflationary: "Both GLD and GDX/GDXJ win here — miners provide 2-3× leverage to gold price. ✅✅ INFLATIONARY/DEBASEMENT: This is where miners shine. Gold up 20% = miners up 40–60%. Add aggressively after VIX peak.",
+    stagflation:  "GLD grinds higher steadily. Miners amplify but with more volatility. ⚠️ STAGFLATION: Gold grinds higher but without the explosive move of a debasement crash. Miners move with gold but underperform in a slow-grind regime. Hold a moderate position — don't over-allocate waiting for a spike that may take years.",
   },
   btc: {
     onset:        "❌ ONSET: BTC dropped 50% in 48 hours in March 2020. Do not use as crash onset protection. Wait for panic to clear.",
     deflationary: "❌ DEFLATIONARY: BTC performs poorly in deflationary crashes — no yield, high beta, sells with risk assets. Avoid.",
     inflationary: "✅✅ INFLATIONARY/DEBASEMENT: Post-panic BTC is the highest-conviction debasement play. Fixed supply vs exploding Fed balance sheet. Enter after VIX peaks.",
-    stagflation:  "⚠️ STAGFLATION: No clear catalyst for BTC in persistent stagflation. Inflation is present but not acute enough to drive debasement narrative. Equity correlation remains — BTC drifts with risk sentiment. Hold existing position, do not add aggressively.",
+    stagflation:  "⚠️ STAGFLATION: No clear catalyst for BTC in persistent stagflation. Inflation present but not acute enough to drive debasement narrative. Equity correlation remains. Hold existing position, do not add aggressively.",
   },
   tbonds: {
-    onset:        "⚠️ ONSET: Only works if the crash is deflationary. Check the regime — if stagflationary, TLT is still a trap even at onset.",
-    deflationary: "✅✅ DEFLATIONARY: TLT is your best instrument here. Rates fall, bonds rally hard. This is the one scenario where TLT belongs at the top of the stack.",
+    onset:        "⚠️ ONSET: Only works if the crash is confirmed deflationary — falling CPI, growth scare, 10Y yield falling. In stagflation, TLT is still a trap even at onset. Do not buy until deflation is confirmed.",
+    deflationary: "✅✅ DEFLATIONARY: TLT is your best instrument here. Rates fall, bonds rally hard. This is the one scenario where TLT belongs at the top of the stack. Also consider IEF (7-10 year) as a lower-volatility alternative — less upside but less drawdown risk if recovery is faster than expected.",
     inflationary: "❌ INFLATIONARY/DEBASEMENT: TLT gets crushed. Sticky inflation + Fed balance sheet expansion = bond bear market. Avoid entirely. 2022 repeat risk.",
-    stagflation:  "❌ STAGFLATION: Avoid. Inflation stays sticky — rates cannot fall meaningfully. TLT grinds lower as real yields stay elevated. This is the worst regime for long-duration bonds. 2022 replay risk if inflation re-accelerates.",
+    stagflation:  "❌ STAGFLATION: Avoid. Inflation stays sticky — rates cannot fall meaningfully. TLT grinds lower as real yields stay elevated. Worst regime for long-duration bonds.",
   },
 };
 
@@ -242,23 +242,25 @@ const INSURANCE_PHASES = [
   { k:"onset",        col:"onset", label:"Crash Onset",               short:"Crash Onset",  color:"#92400E", bg:"#FFFBEB", bdr:"#FCD34D", desc:"Signals deteriorating. Buy protection before confirmation. Puts, spreads, GLD." },
   { k:"deflationary", col:"def",   label:"Deflationary Resolution",   short:"Deflationary", color:"#1E40AF", bg:"#EFF6FF", bdr:"#BFDBFE", desc:"Debt deflation, falling prices, Japan-style. TLT wins. Gold moderate. BTC loses." },
   { k:"inflationary", col:"inf",   label:"Inflationary / Debasement", short:"Inflationary", color:"#7C3AED", bg:"#F5F3FF", bdr:"#C4B5FD", desc:"Fed prints to reflate. Dollar credibility erodes. Gold and BTC win. TLT is a trap." },
-  { k:"stagflation",  col:"stag",  label:"Persistent Stagflation",    short:"Stagflation",  color:"#0F766E", bg:"#F0FDFA", bdr:"#5EEAD1", desc:"Persistent Stagflation — slow grind, not a sharp crash. Favour passive real-asset hedges (GLD, XLP, farmland, HYG puts) over active short instruments. Avoid VIX calls (contango) and SQQQ (daily decay). Puts are expensive to roll monthly — size conservatively." },
+  { k:"stagflation",  col:"stag",  label:"Persistent Stagflation",    short:"Stagflation",  color:"#0F766E", bg:"#F0FDFA", bdr:"#5EEAD1", desc:"Persistent Stagflation — slow grind, not a sharp crash. Favour passive real-asset hedges (GLD, XLP, farmland, HYG puts) over active short instruments. Avoid VIX calls (contango) and SQQQ (daily decay). Puts are expensive to roll monthly over 18-24 months — size conservatively and favour longer-dated instruments to reduce theta bleed." },
 ];
 
-// Permanent, non-interactive reference. Four columns = four scenarios.
+// Permanent, non-interactive reference. Four columns = four scenarios, grouped by
+// hedge family (group header rows rendered in the table).
 // ✅✅ = primary · ✅ = works well · ⚠️ = caution/timing · ❌ = avoid.
+// NOTE: GLD/Physical Gold and GDX/GDXJ are intentionally separate rows — GLD held
+// value in March 2020 while GDX dropped ~40% before recovering. The distinction matters.
 const SCENARIO_MATRIX = [
-  { row:"GLD",                    onset:"✅", def:"✅",  inf:"✅✅", stag:"✅" },
-  { row:"GDX / GDXJ",             onset:"⚠️", def:"⚠️", inf:"✅✅", stag:"⚠️" },
-  { row:"TLT",                    onset:"⚠️", def:"✅✅", inf:"❌",  stag:"❌" },
-  { row:"BTC",                    onset:"❌", def:"❌",  inf:"✅✅", stag:"⚠️" },
-  { row:"SPY / QQQ Puts",         onset:"✅", def:"✅",  inf:"✅",  stag:"⚠️" },
-  { row:"HYG / JNK Puts",         onset:"✅", def:"✅",  inf:"✅",  stag:"✅" },
-  { row:"XLP / Staples",          onset:"✅", def:"✅",  inf:"⚠️", stag:"✅✅" },
-  { row:"SQQQ / 7568.HK",         onset:"✅", def:"✅",  inf:"✅",  stag:"⚠️" },
-  { row:"VIX Calls / VXX",        onset:"✅", def:"✅",  inf:"✅",  stag:"❌" },
-  { row:"CNOOC / Energy",         onset:"⚠️", def:"❌",  inf:"✅✅", stag:"✅" },
-  { row:"Gold Miners (Physical)", onset:"⚠️", def:"⚠️", inf:"✅✅", stag:"⚠️" },
+  { group:"Gold & Precious Metals", row:"GLD / Physical Gold", onset:"✅", def:"✅",  inf:"✅✅", stag:"✅" },
+  { group:"Gold & Precious Metals", row:"GDX / GDXJ",          onset:"⚠️", def:"⚠️", inf:"✅✅", stag:"⚠️" },
+  { group:"Macro / Rate Hedges",    row:"TLT / IEF",           onset:"⚠️", def:"✅✅", inf:"❌",  stag:"❌" },
+  { group:"Macro / Rate Hedges",    row:"HYG / JNK Puts",      onset:"✅", def:"✅",  inf:"✅",  stag:"✅" },
+  { group:"Macro / Rate Hedges",    row:"VIX Calls / VXX",     onset:"✅", def:"✅",  inf:"✅",  stag:"❌" },
+  { group:"Equity Shorts",          row:"SPY / QQQ Puts",      onset:"✅", def:"✅",  inf:"✅",  stag:"⚠️" },
+  { group:"Equity Shorts",          row:"SQQQ / 7568.HK",      onset:"✅", def:"✅",  inf:"✅",  stag:"⚠️" },
+  { group:"Defensive Income",       row:"XLP / Staples",       onset:"✅", def:"✅",  inf:"⚠️", stag:"✅✅" },
+  { group:"Commodities / Energy",   row:"CNOOC / Energy",      onset:"⚠️", def:"❌",  inf:"✅✅", stag:"✅" },
+  { group:"Debasement / Monetary",  row:"BTC",                 onset:"❌", def:"❌",  inf:"✅✅", stag:"⚠️" },
 ];
 
 // Live-signal anchor — auto-computed lean from liveInd. Informational only;
@@ -296,7 +298,7 @@ function getCrashSignalRead(liveInd, activeRegime) {
 // toggles — allocations = regime, stages = where we are in the cycle.
 const POSTURE_ALLOCATIONS = {
   baseline: {
-    cash:            { range: "55–65%", status: "HOLD",       note: "Core liquidity. Earns real yield in current rate environment. Floor: never below 25%." },
+    cash:            { range: "55–65%", status: "HOLD",       note: "Core liquidity. Floor: never below 25%. Current optimal hold: USFR (WisdomTree Floating Rate Treasury ETF) for bulk — yield resets weekly, tracks Fed funds rate, currently ~5.3% annualized. SGOV for trading-ready portion — marginally lower yield but identical liquidity. IBKR cash sweep (~4.83%) for active trading float — automatic, zero friction. UAE bank account for AED living expenses only. Do not hold investment capital in bank accounts earning 2-3%." },
     insurance:       { range: "0–3%",   status: "PREPARE",    note: "Insurance is cheap now (VIX <20). Begin sizing positions. Don't activate yet." },
     income:          { range: "8–12%",  status: "HOLD",       note: "Regime-agnostic yield plays. Pipelines, utilities, dividend aristocrats." },
     longTermHolds:   { range: "15–20%", status: "HOLD",       note: "AI infrastructure hardware. Quality compounders. Hold through volatility." },
@@ -304,7 +306,7 @@ const POSTURE_ALLOCATIONS = {
     categoryNote:    "AI infrastructure hardware (semiconductors, compute) and highest-quality compounders with pricing power.",
   },
   stag: {
-    cash:            { range: "50–60%", status: "HOLD",       note: "Preserve optionality. Real yield eroding but cash dominates over equity drawdowns." },
+    cash:            { range: "50–60%", status: "HOLD",       note: "Preserve optionality. Real yield eroding in real terms but cash dominates over equity drawdowns. Hold USFR — floating rate means yield stays elevated as long as rates hold. Warsh holding at 4.2% CPI means USFR continues earning ~5.3%. Do not rotate out of USFR until Fed pivot is confirmed. Bank AED expenses only." },
     insurance:       { range: "8–15%",  status: "ACTIVATE",   note: "Gold miners, GLD, put spreads. TLT is a trap in stagflation — avoid bonds here." },
     income:          { range: "12–18%", status: "ACCUMULATE", note: "Pipelines and utilities with inflation pass-through contracts. Real asset income only." },
     longTermHolds:   { range: "12–18%", status: "HOLD",       note: "Hardware only. Avoid high-multiple software — multiples compress with sticky inflation." },
@@ -312,7 +314,7 @@ const POSTURE_ALLOCATIONS = {
     categoryNote:    "AI infrastructure hardware only (ASML, AVGO, AMAT). No software adds until regime clears.",
   },
   def: {
-    cash:            { range: "60–70%", status: "HOLD",       note: "Cash is king in deflation — purchasing power rises. Highest real return of any asset." },
+    cash:            { range: "60–70%", status: "HOLD",       note: "Cash is king in deflation — purchasing power rises as prices fall. Hold USFR until Fed pivot signal confirmed, then rotate immediately: USFR → IEF (7-10yr Treasuries) on pivot day. IEF appreciates ~7-8% per 100bps of cuts on top of coupon. TLT for more aggressive duration play if deflation is deep. Do NOT rotate to IEF/TLT before pivot confirmation — in crash onset, USFR stays put and earns yield while you wait." },
     insurance:       { range: "10–18%", status: "ACTIVATE",   note: "TLT and SPY puts dominate. Gold moderate. Miners underperform until Fed pivots." },
     income:          { range: "8–12%",  status: "SELECTIVE",  note: "Dividend aristocrats with 20+ year track records only. Avoid high-yield — default risk spikes." },
     longTermHolds:   { range: "8–12%",  status: "REDUCE",     note: "Equity multiples compress in deflation. Hold only highest-conviction names. Trim speculative." },
@@ -320,7 +322,7 @@ const POSTURE_ALLOCATIONS = {
     categoryNote:    "Highest-quality compounders with pricing power and zero leverage only. No new positions.",
   },
   ref: {
-    cash:            { range: "25–35%", status: "DEPLOY",     note: "Cash is a drag in reflation — real yield turns negative as rates cut. Begin staged deployment." },
+    cash:            { range: "25–35%", status: "DEPLOY",     note: "Pivot confirmed — cash is now a drag in real terms as rates fall and yield compresses. Execute rotation immediately: (1) Sell USFR — yield collapsing as rates cut. (2) Buy IEF same day — captures rate duration appreciation. (3) Begin Stage 4 equity deployment 30-60 days after first cut — software sleeve first, then hardware. (4) Maintain 25% cash floor throughout — deploy into equities from IEF proceeds as positions fill. UAE banks lag Fed cuts by 1-2 months — briefly check FAB/Emirates NBD term deposit rates post-pivot, may briefly exceed T-bill yields." },
     insurance:       { range: "0–3%",   status: "REDUCE",     note: "Roll off puts as VIX normalises. Minimal insurance — you want exposure, not hedges." },
     income:          { range: "12–18%", status: "ACCUMULATE", note: "REITs and dividend growers re-rate on rate cuts. Best income regime." },
     longTermHolds:   { range: "25–35%", status: "ACCUMULATE", note: "Full AI infrastructure stack — hardware and software. Growth names re-rate on cuts." },
@@ -328,7 +330,7 @@ const POSTURE_ALLOCATIONS = {
     categoryNote:    "Full AI infrastructure stack: hardware (ASML, AVGO, AMAT, ARM) + software (NOW, DDOG, CRWD, PLTR, SNOW). Drift to 50/50 by mid-2027.",
   },
   inf: {
-    cash:            { range: "40–50%", status: "HOLD",       note: "Cash erodes in real terms but provides optionality. Minimum floor maintained." },
+    cash:            { range: "40–50%", status: "HOLD",       note: "Cash erodes in real terms but maintains optionality. Hold USFR — floating rate captures elevated yield. Do not extend duration into TLT/IEF — inflation persistence means rates stay higher for longer. Monitor for debasement signals: Fed balance sheet expanding + CPI sticky above 4% = begin building BTC and gold positions from cash. Maintain floor." },
     insurance:       { range: "5–10%",  status: "HOLD",       note: "Gold and BTC as debasement hedges. Not crash insurance — monetary system insurance." },
     income:          { range: "15–20%", status: "ACCUMULATE", note: "Pipelines and energy infrastructure with inflation escalator contracts. Highest income allocation of any regime." },
     longTermHolds:   { range: "15–20%", status: "SELECTIVE",  note: "Names with hard pricing power only. Avoid pure software multiples — rate pressure compresses them." },
@@ -365,7 +367,7 @@ const DEPLOY_STAGES = [
   { n:1, label:"Surveillance",     auto:true,  trigger:"WATCH signal (spread <4.5% & UE <5%)",   note:"All signals within normal range. Monitoring only. No action required." },
   { n:2, label:"Warning",          auto:true,  trigger:"ALERT signal (spread >4.5% OR UE >5%)",  note:"Buy first insurance tranche. SPY puts 90% strike, 90-day expiry, ~1.5% of portfolio in premium. Reduce leveraged positions." },
   { n:3, label:"Correction Onset", auto:true,  trigger:"DANGER signal (spread >6% OR UE >5.5%)", note:"Full insurance active. Deploy no new equity. Let puts work. Path 2 corrections average 18 months — do not deploy cash yet." },
-  { n:4, label:"Deploy",           auto:false, trigger:"Manual toggle — judgment call",          note:"Deploy cash in tranches. Software sleeve first (maximum discount to intrinsic value). Then hardware fills. ARM add levels $360–375." },
+  { n:4, label:"Deploy",           auto:false, trigger:"Manual toggle — judgment call",          note:"Fed pivot confirmed. Two-step sequence: (1) Rotate USFR → IEF immediately on pivot signal — captures rate duration appreciation while assessing equity entry. (2) Begin equity deployment 30-60 days after first cut — software sleeve first (NOW, DDOG, CRWD, PLTR, SNOW), then hardware fills (ASML, AVGO, AMAT), then ARM adds at $360-375. Roll IEF proceeds into equities as positions fill. Maintain 25% cash floor throughout — this never reaches zero." },
   { n:5, label:"Full Deployment",  auto:false, trigger:"Manual toggle — judgment call",          note:"Fully deployed. Drift toward 50/50 hardware/software by mid-2027. Roll off insurance as VIX normalises below 20." },
 ];
 
@@ -1665,7 +1667,7 @@ export default function App() {
               const stageNote = s => s.n === 2
                 ? `Activate first insurance tranche — current regime favours: ${top2Ins}. For put spreads: 90% strike, 90-day expiry, ~1.5% of portfolio in premium. Reduce leveraged positions.`
                 : s.n === 3
-                ? `Full insurance active — deploy ${top3Ins}. No new equity. Let positions work. Path 2 corrections average 18 months — do not deploy cash yet.`
+                ? `Full insurance active — deploy ${top3Ins}. No new equity. Let positions work. Path 2 corrections average 18 months — do not deploy cash yet. USFR and SGOV stay put — they continue earning yield while insurance works. Do not sell cash instruments to fund insurance purchases — insurance should be sized from existing liquid positions, not by reducing cash.`
                 : s.note;
               return (
                 <>
@@ -1804,6 +1806,11 @@ export default function App() {
                                 <span style={{ fontSize: 11, color: isActive ? activeRegime.color : C.lbl, fontWeight: 700 }}>{s.auto ? "Auto" : "Manual"} · {s.trigger}</span>
                               </div>
                               <div style={{ color: C.mid, fontSize: 13, lineHeight: 1.6, marginTop: 3 }}>{stageNote(s)}</div>
+                              {s.n === 4 && (
+                                <div style={{ marginTop: 6, padding: "7px 10px", background: C.surf, border: "1px solid " + C.bdr, borderRadius: 8, color: C.muted, fontSize: 12, lineHeight: 1.55 }}>
+                                  <b style={{ color: C.mid }}>Trigger checklist before activating Stage 4:</b> (1) Fed has made first cut OR signalled cuts explicitly. (2) VIX has peaked and begun sustained decline from above 30. (3) HY credit spreads contracting from peak. (4) IEF purchased as rate duration bridge. All four should be present before deploying into equities.
+                                </div>
+                              )}
                               {isActive && <div style={{ marginTop: 4, color: activeRegime.color, fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase" }}>● Active now</div>}
                             </div>
                             {!s.auto && (
@@ -1869,19 +1876,31 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {SCENARIO_MATRIX.map((r, ri) => (
-                      <tr key={r.row} style={{ background: ri % 2 === 0 ? C.surf : C.bg }}>
-                        <td style={{ padding: "6px 10px", color: C.text, fontWeight: 600, borderBottom: "1px solid " + C.bdr, width: 140, minWidth: 140 }}>{r.row}</td>
-                        {INSURANCE_PHASES.map(p => {
-                          const on = insurancePhase === p.k;
-                          return (
-                            <td key={p.k} style={{ textAlign: "center", padding: "6px 8px", fontSize: 14, minWidth: 120, borderBottom: "1px solid " + C.bdr, background: on ? p.bg : "transparent", fontWeight: on ? 800 : 400 }}>
-                              {r[p.col]}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
+                    {SCENARIO_MATRIX.flatMap((r, ri) => {
+                      const showGroup = ri === 0 || SCENARIO_MATRIX[ri - 1].group !== r.group;
+                      const rows = [];
+                      if (showGroup) rows.push(
+                        <tr key={"grp-" + r.group}>
+                          <td colSpan={5} style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#999", textTransform: "uppercase", padding: "10px 12px 4px", backgroundColor: "transparent", borderBottom: "none" }}>
+                            {r.group}
+                          </td>
+                        </tr>
+                      );
+                      rows.push(
+                        <tr key={r.row} style={{ background: ri % 2 === 0 ? C.surf : C.bg }}>
+                          <td style={{ padding: "6px 10px", color: C.text, fontWeight: 600, borderBottom: "1px solid " + C.bdr, width: 140, minWidth: 140 }}>{r.row}</td>
+                          {INSURANCE_PHASES.map(p => {
+                            const on = insurancePhase === p.k;
+                            return (
+                              <td key={p.k} style={{ textAlign: "center", padding: "6px 8px", fontSize: 14, minWidth: 120, borderBottom: "1px solid " + C.bdr, background: on ? p.bg : "transparent", fontWeight: on ? 800 : 400 }}>
+                                {r[p.col]}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                      return rows;
+                    })}
                   </tbody>
                 </table>
               </div>
