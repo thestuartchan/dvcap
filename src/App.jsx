@@ -720,6 +720,23 @@ const FED_LANGUAGE_STATES = {
   },
 };
 
+// ─── WALL STREET RECESSION PROBABILITY ────────────────────────────────────────
+// Manually-updated source table. Last refreshed June 29, 2026 (post Iran peace
+// deal + June FOMC). `color` drives the probability cell colour; `year` and
+// `name` are used by the regime-probability derivation.
+const RECESSION_SOURCES = [
+  { name: "Goldman Sachs",             probability: "15%",    timeframe: "12-month", year: 2026, notes: "Cut from 25% (pre-Iran war) → 30% (March peak Hormuz) → 15% (June 26, post peace deal). Cites lower oil, higher real income, AI wealth effect, solid capex. GDP forecast H2 2026: 2.0%. Flags Fed rate hike risk as new variable — half of FOMC penciled in at least one hike.", color: "green" },
+  { name: "NY Fed Yield Curve Model",  probability: "~15%",   timeframe: "12-month", year: 2026, notes: "May 2026 data. Based on 3M/10Y spread. Below historical alarm threshold of 30%. Yield curve now upward sloping: 10Y at 4.37%, 3M at 3.75%, spread +62bps. Structural improvement from prior inversion.", color: "green" },
+  { name: "NY Fed DSGE Model",         probability: "35.8%",  timeframe: "12-month", year: 2026, notes: "March 2026, latest published. Recession = 4Q output growth below -1%. Down from 37.5% in December. Next update expected Q3 2026.", color: "amber" },
+  { name: "JPMorgan",                  probability: "35%",    timeframe: "12-month", year: 2026, notes: "March 2026. Warned markets complacent over sustained oil shock. No updated June figure available — figure may have declined post peace deal. Watch for mid-year update.", color: "amber" },
+  { name: "EY-Parthenon (Daco)",       probability: "40%",    timeframe: "12-month", year: 2026, notes: "March 2026. Risks rising if geopolitical tensions persist. New source added June 2026.", color: "amber" },
+  { name: "Moody's Analytics (Zandi)", probability: "~49%",   timeframe: "12-month", year: 2026, notes: "March 2026 peak — 'on the precipice.' Driven by weak labor data and soft economic indicators since late 2025. Most bearish major forecaster. No updated post-peace-deal figure available.", color: "red" },
+  { name: "Kalshi prediction market",  probability: "22%",    timeframe: "End-2026", year: 2026, notes: "June 2026. Up from 17.5% last month. Real-money market. CFTC-regulated. Slight uptick despite Iran peace deal — reflects lingering growth concerns.", color: "green" },
+  { name: "Kalshi prediction market",  probability: "41%",    timeframe: "End-2027", year: 2027, notes: "Investors pricing delayed reckoning — debt refinancing at 5-7% vs near-zero rates, $1.3T consumer revolving credit, corporate capex compression. More concerning than 2026 figure.", color: "amber" },
+  { name: "Polymarket",                probability: "~12.5%", timeframe: "End-2026", year: 2026, notes: "June 2026. Market-implied. 87.5% probability on No recession. Sahm Rule at 0.10 — well below 0.50 threshold. Lowest of all sources.", color: "green" },
+  { name: "BNP Paribas",               probability: "Low",    timeframe: "12-month", year: 2026, notes: "Qualitative only — excluded from weighted average. 'Well-positioned to absorb shock.' US net energy exporter status cited. No numeric update available.", color: "green" },
+];
+
 // ─── DATA SOURCE CONFIG ───────────────────────────────────────────────────────
 //
 //  HOW TO CONFIGURE LIVE DATA FOR DEPLOYMENT
@@ -2575,12 +2592,12 @@ export default function App() {
             <Card>
               <SLabel>Wall Street Recession Probability (June 2026)</SLabel>
               {(() => {
-                const lastUpdate = new Date("2026-06-25");
+                const lastUpdate = new Date("2026-06-29");
                 const daysStale = Math.floor((Date.now() - lastUpdate.getTime()) / 86400000);
                 const isStale = daysStale > 90;
                 return (
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10, fontSize: 12 }}>
-                    <span style={{ color: C.lbl }}>Last updated: <b style={{ color: C.muted }}>June 25, 2026</b> (~quarterly cadence)</span>
+                    <span style={{ color: C.lbl }}>Last updated: <b style={{ color: C.muted }}>June 29, 2026</b> · Updated post Iran peace deal + June FOMC</span>
                     {isStale && (
                       <span style={{ background: C.aBg, color: C.amber, border: "1px solid " + C.aBdr, borderRadius: 6, padding: "2px 8px", fontWeight: 700 }}>
                         ⚠️ {daysStale} days stale — refresh due (&gt;90-day cadence)
@@ -2599,26 +2616,16 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {[
-                      ["NY Fed DSGE Model","35.8%","12-month","March 2026. Recession = 4Q output growth below −1%. Down from 37.5% in December."],
-                      ["NY Fed Yield Curve Model","~15%","12-month","May 2026 data. Based on 3M/10Y spread. Below historical alarm threshold of 30%."],
-                      ["Goldman Sachs","30%","12-month","Raised March 2026 from 25% on Iran oil shock. Not their base case. Growth forecast 1.25–1.75% H2 2026."],
-                      ["Moody's Analytics (Zandi)","~50%","12-month","\"Near even before the war broke out.\" Most bearish major forecaster."],
-                      ["Kalshi prediction market","17.5%","End-2026","Collapsed from 36.9% in one month post Iran peace deal."],
-                      ["Kalshi prediction market","41%","End-2027","Investors pricing delayed reckoning — debt refinancing, consumer credit stress."],
-                      ["Polymarket","~12.5%","End-2026","June 2026. Market-implied."],
-                      ["BNP Paribas","Low","12-month","\"Well-positioned to absorb shock.\" US net energy exporter status cited."],
-                    ].map((r, i) => {
-                      const pv = parseFloat(String(r[1]).replace(/[^\d.]/g, ""));
-                      const pCol = pv > 40 ? C.red : pv >= 30 ? C.amber : C.green;
+                    {RECESSION_SOURCES.map((r, i) => {
+                      const pCol = r.color === "red" ? C.red : r.color === "amber" ? C.amber : C.green;
                       return (
                       <tr key={i} style={{ background: i % 2 === 0 ? C.surf : C.bg }}>
-                        <td style={{ padding: "8px 12px", color: C.text, fontSize: 14, fontWeight: 600, borderBottom: "1px solid " + C.bdr }}>{r[0]}</td>
+                        <td style={{ padding: "8px 12px", color: C.text, fontSize: 14, fontWeight: 600, borderBottom: "1px solid " + C.bdr }}>{r.name}</td>
                         <td style={{ padding: "8px 12px", borderBottom: "1px solid " + C.bdr }}>
-                          <span style={{ color: pCol, fontWeight: 800, fontSize: 15 }}>{r[1]}</span>
+                          <span style={{ color: pCol, fontWeight: 800, fontSize: 15 }}>{r.probability}</span>
                         </td>
-                        <td style={{ padding: "8px 12px", color: C.muted, fontSize: 13, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap" }}>{r[2]}</td>
-                        <td style={{ padding: "8px 12px", color: C.muted, fontSize: 13, borderBottom: "1px solid " + C.bdr }}>{r[3]}</td>
+                        <td style={{ padding: "8px 12px", color: C.muted, fontSize: 13, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap" }}>{r.timeframe}</td>
+                        <td style={{ padding: "8px 12px", color: C.muted, fontSize: 13, borderBottom: "1px solid " + C.bdr }}>{r.notes}</td>
                       </tr>
                       );
                     })}
@@ -2627,7 +2634,7 @@ export default function App() {
               </div>
               <div style={{ marginTop: 12, padding: "12px 14px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8 }}>
                 <span style={{ color: C.amber, fontWeight: 700, fontSize: 13 }}>⚠️ The signal that matters: </span>
-                <span style={{ color: C.amber, fontSize: 14, lineHeight: 1.65 }}>Probabilities spiked sharply in March 2026 during peak Iran/Hormuz disruption (Goldman 30%, Moody's ~50%), then fell after the peace deal. The more important signal is 2027: Kalshi at 41% suggests markets expect delayed reckoning, not avoidance. Debt refinancing at 5–7% vs prior near-zero rates, $1.3T consumer revolving credit balances, and corporate capex compression are the slow-burn mechanisms.</span>
+                <span style={{ color: C.amber, fontSize: 14, lineHeight: 1.65 }}>Goldman's dramatic round-trip — 15% (pre-war) → 30% (March peak) → 15% (June post-deal) — shows how oil-driven the near-term risk was. Post peace deal, 2026 recession odds have broadly normalized. The more important signal is 2027: Kalshi at 41% suggests markets expect delayed reckoning from debt refinancing at 5-7%, $1.3T consumer revolving credit balances, and corporate capex compression. New risk to monitor: half of FOMC officials penciled in rate hikes at June meeting — BofA expects 3 hikes, Deutsche Bank expects 2. If hikes materialize, recession risk reprices sharply higher.</span>
               </div>
             </Card>
 
