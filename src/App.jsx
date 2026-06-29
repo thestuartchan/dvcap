@@ -737,6 +737,84 @@ const RECESSION_SOURCES = [
   { name: "BNP Paribas",               probability: "Low",    timeframe: "12-month", year: 2026, notes: "Qualitative only — excluded from weighted average. 'Well-positioned to absorb shock.' US net energy exporter status cited. No numeric update available.", color: "green" },
 ];
 
+// Weighted-average weights per source. Sum is 1.10 (intentional — the average
+// divides by the realized total weight, so it need not sum to 1.0). Sources not
+// listed here (e.g. BNP "Low") are excluded automatically.
+const RECESSION_SOURCE_WEIGHTS = {
+  "NY Fed DSGE Model": 0.18,
+  "NY Fed Yield Curve Model": 0.20,
+  "Goldman Sachs": 0.20,
+  "JPMorgan": 0.15,
+  "EY-Parthenon (Daco)": 0.07,
+  "Moody's Analytics (Zandi)": 0.10,
+  "Kalshi prediction market": 0.10, // 2026 row only; 2027 row handled separately
+  "Polymarket": 0.10,
+};
+
+// Parse a probability string ("~15%", "35.8%", "Low") to a number, or null.
+const parseProbability = (probStr) => {
+  if (!probStr || probStr === "Low" || probStr === "High") return null;
+  const cleaned = probStr.replace("~", "").replace("%", "").trim();
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? null : num;
+};
+
+// Weighted average of the 2026 recession-probability sources. The Kalshi 2027
+// row is pulled out separately as the delayed-reckoning modifier input.
+const computeWeightedRecessionProb = (sources) => {
+  let weightedSum = 0, totalWeight = 0, kalshi2027 = null;
+  sources.forEach(source => {
+    if (source.name === "Kalshi prediction market" && source.year === 2027) {
+      kalshi2027 = parseProbability(source.probability);
+      return;
+    }
+    const weight = RECESSION_SOURCE_WEIGHTS[source.name];
+    const prob = parseProbability(source.probability);
+    if (weight && prob !== null) { weightedSum += prob * weight; totalWeight += weight; }
+  });
+  const weightedAvg = totalWeight > 0 ? weightedSum / totalWeight : null;
+  return { weightedAvg, kalshi2027 };
+};
+
+// Map weighted recession prob (+ live CPI + Kalshi 2027) to regime probabilities.
+const deriveRegimeProbabilities = (weightedAvg, cpi, kalshi2027) => {
+  if (weightedAvg === null) return null;
+
+  let base;
+  if (weightedAvg < 15)      base = { reflationary: 60, stagflation: 25, deflationary: 10, inflationary: 5 };
+  else if (weightedAvg < 30) base = { reflationary: 40, stagflation: 35, deflationary: 20, inflationary: 5 };
+  else if (weightedAvg < 45) base = { reflationary: 25, stagflation: 45, deflationary: 25, inflationary: 5 };
+  else                       base = { reflationary: 15, stagflation: 40, deflationary: 35, inflationary: 10 };
+
+  // CPI modifier — shift points from deflationary to stagflation when CPI > 3.5%
+  if (cpi && cpi > 3.5) {
+    const inflationShift = Math.min(10, Math.round((cpi - 3.5) * 4));
+    base.deflationary = Math.max(5, base.deflationary - inflationShift);
+    base.stagflation = base.stagflation + inflationShift;
+  }
+
+  // 2027 delayed-reckoning modifier — threshold raised to <30 (from <25) so it
+  // engages while the realized weighted average sits in the mid-20s.
+  if (kalshi2027 && kalshi2027 > 35 && weightedAvg < 30) {
+    const delayedShift = Math.min(8, Math.round((kalshi2027 - 35) / 3));
+    base.reflationary = Math.max(10, base.reflationary - delayedShift);
+    base.stagflation = base.stagflation + delayedShift;
+  }
+
+  // Normalize to exactly 100%
+  const total = base.reflationary + base.stagflation + base.deflationary + base.inflationary;
+  const scale = 100 / total;
+  return {
+    reflationary: Math.round(base.reflationary * scale),
+    stagflation: Math.round(base.stagflation * scale),
+    deflationary: Math.round(base.deflationary * scale),
+    inflationary: Math.round(base.inflationary * scale),
+    weightedAvg: Math.round(weightedAvg),
+    kalshi2027,
+    derivedFrom: `Weighted recession prob: ${Math.round(weightedAvg)}% | CPI: ${cpi?.toFixed(1) ?? "N/A"}% | Kalshi 2027: ${kalshi2027 ?? "N/A"}%`,
+  };
+};
+
 // ─── DATA SOURCE CONFIG ───────────────────────────────────────────────────────
 //
 //  HOW TO CONFIGURE LIVE DATA FOR DEPLOYMENT
@@ -1481,6 +1559,16 @@ export default function App() {
 
   const { prices, loading: pricesLoading, updated: pricesUpdated, fetchPrices } = useLivePrices();
   const { live: liveInd, loading: indLoading, updated: indUpdated, error: indError, fetchIndicators } = useLiveIndicators();
+
+  // Regime probabilities derived from the recession table + live CPI. Falls back
+  // to the prior static split when no weighted average is available.
+  const fallbackRegimes = { stagflation: 45, reflationary: 30, deflationary: 20, inflationary: 5 };
+  const { weightedAvg: recWeightedAvg, kalshi2027: recKalshi2027 } = computeWeightedRecessionProb(RECESSION_SOURCES);
+  const cpiForRegime = liveInd?.cpiHeadlineCurrent ?? liveInd?.cpi ?? null;
+  const derivedRegimes = deriveRegimeProbabilities(recWeightedAvg, cpiForRegime, recKalshi2027);
+  const regimeProbFor = (id) => (derivedRegimes || fallbackRegimes)[
+    { stag: "stagflation", ref: "reflationary", def: "deflationary", inf: "inflationary" }[id]
+  ];
 
   useEffect(function() {
     loadFunds().then(function(saved) {
@@ -2603,6 +2691,7 @@ export default function App() {
                         ⚠️ {daysStale} days stale — refresh due (&gt;90-day cadence)
                       </span>
                     )}
+                    <span style={{ color: C.lbl, fontStyle: "italic" }}>Updating this table recalculates regime probabilities automatically.</span>
                   </div>
                 );
               })()}
@@ -2639,20 +2728,29 @@ export default function App() {
             </Card>
 
             <Card>
-              <SLabel>Regime Probability — Analyst Consensus (Mid-2026)</SLabel>
+              <SLabel>Regime Probability — Derived from Recession Consensus + Live CPI</SLabel>
               <div className="mwd-regime-grid" style={{ marginBottom: 14 }}>
                 {REGIMES.map(r => (
                   <button key={r.id} onClick={() => setActiveRegime(r)} style={{ background: activeRegime.id === r.id ? r.bg : C.surf, border: "1.5px solid " + (activeRegime.id === r.id ? r.color : C.bdr), borderTop: "4px solid " + r.color, borderRadius: 10, padding: "12px 14px", cursor: "pointer", textAlign: "left", width: "100%" }}>
-                    <div style={{ fontSize: 22, fontWeight: 900, color: r.color }}>{r.prob}%</div>
+                    <div style={{ fontSize: 22, fontWeight: 900, color: r.color }}>{regimeProbFor(r.id)}%</div>
                     <div style={{ color: r.color, fontWeight: 700, fontSize: 13, marginTop: 3, lineHeight: 1.3 }}>{r.label}</div>
                   </button>
                 ))}
               </div>
               <div style={{ display: "flex", height: 12, borderRadius: 6, overflow: "hidden", border: "1px solid " + C.bdr }}>
                 {REGIMES.map(r => (
-                  <div key={r.id} style={{ width: r.prob + "%", background: r.color, fontSize: 10, color: "#fff", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }} title={r.label}>{r.prob}%</div>
+                  <div key={r.id} style={{ width: regimeProbFor(r.id) + "%", background: r.color, fontSize: 10, color: "#fff", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }} title={r.label}>{regimeProbFor(r.id)}%</div>
                 ))}
               </div>
+              {derivedRegimes ? (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5 }}>Weighted Wall Street recession probability: <b style={{ color: C.muted }}>{derivedRegimes.weightedAvg}%</b> | Derived from analyst consensus + live CPI</div>
+                  <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5, marginTop: 2 }}>{derivedRegimes.derivedFrom}</div>
+                  <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5, marginTop: 2, fontStyle: "italic" }}>Updates automatically when recession table is refreshed or CPI changes.</div>
+                </div>
+              ) : (
+                <div style={{ color: C.lbl, fontSize: 11, marginTop: 10, fontStyle: "italic" }}>Using fallback regime probabilities — live recession data unavailable.</div>
+              )}
             </Card>
 
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
@@ -2749,7 +2847,7 @@ export default function App() {
                 const ROADMAP = [
                   {
                     label: "Stagflation → Deflationary Recession",
-                    prob: "35% most likely", color: C.blue,
+                    prob: `${derivedRegimes?.deflationary ?? 35}% most likely`, color: C.blue,
                     path: "High oil + tight Fed choke off demand. Businesses stop hiring, consumers stop spending. Credit markets crack first — then unemployment surges. Treasuries and cash win. Everything else falls.",
                     signals: [
                       {
@@ -2775,7 +2873,7 @@ export default function App() {
                   },
                   {
                     label: "Stagflation → Reflationary Recovery",
-                    prob: "30% next likely", color: C.green,
+                    prob: `${derivedRegimes?.reflationary ?? 30}% next likely`, color: C.green,
                     path: "A Gulf peace deal or OPEC production increase brings oil below $80. Inflation cools, the Fed resumes cutting, and growth bounces back. This is the best-case exit from stagflation — and what equity markets would celebrate most.",
                     signals: [
                       {
@@ -2802,7 +2900,7 @@ export default function App() {
                   },
                   {
                     label: "Persistent Stagflation (1970s path)",
-                    prob: "25% painful", color: C.amber,
+                    prob: `${derivedRegimes?.stagflation ?? 25}% painful`, color: C.amber,
                     path: "The Iran conflict drags on for years. Oil stays elevated. The Fed is paralysed — it can't raise rates without crushing growth, and can't cut without reigniting inflation. Gold and real assets become the only reliable stores of value.",
                     signals: [
                       {
@@ -2828,7 +2926,7 @@ export default function App() {
                   },
                   {
                     label: "Any regime → Inflationary Boom",
-                    prob: "5% — Dalio scenario", color: "#7C3AED",
+                    prob: `${derivedRegimes?.inflationary ?? 5}% — Dalio scenario`, color: "#7C3AED",
                     path: "The US government keeps spending regardless of the Fed. The dollar structurally weakens. AI generates a genuine productivity surprise. The result: persistent inflation above 4%, but with real growth — a 1990s-style boom with a debasement twist. Gold miners, commodities, and Bitcoin are the standout winners.",
                     signals: [
                       {
