@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   AreaChart, Area, BarChart, Bar, RadarChart, PolarGrid,
   PolarAngleAxis, Radar, PieChart, Pie, Cell, LineChart, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine,
 } from "recharts";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
@@ -2486,6 +2486,88 @@ export default function App() {
                     {cell("Watch For", currentState.watchFor, true)}
                   </div>
                   <div style={{ fontSize: 11, color: C.lbl, marginTop: 10 }}>Updated manually after each FOMC meeting or significant Fed communication.</div>
+                </Card>
+              );
+            })()}
+
+            {/* CPI Inflation Tracker — Headline/Core CPI + Core PCE YoY, real-yield-on-cash */}
+            {(() => {
+              const getCpiColor = (value) => {
+                if (!value) return "#888";
+                if (value >= 4.0) return "#ef4444";  // red — well above target
+                if (value >= 3.0) return "#f97316";  // orange — elevated
+                if (value >= 2.5) return "#eab308";  // amber — above target
+                if (value >= 1.5) return "#22c55e";  // green — near target
+                return "#3b82f6";                    // blue — below target, deflation risk
+              };
+              const headline = liveInd ? liveInd.cpiHeadlineCurrent : null;
+              const core     = liveInd ? liveInd.cpiCoreCurrent : null;
+              const pce      = liveInd ? liveInd.pceCoreCurrent : null;
+              const hHist = liveInd && Array.isArray(liveInd.cpiHeadlineHistory) ? liveInd.cpiHeadlineHistory : [];
+              const cHist = liveInd && Array.isArray(liveInd.cpiCoreHistory)     ? liveInd.cpiCoreHistory     : [];
+              const pHist = liveInd && Array.isArray(liveInd.pceCoreHistory)     ? liveInd.pceCoreHistory     : [];
+              const hasChartData = [hHist, cHist, pHist].some(a => a.length >= 2);
+              const realYield = (liveInd && liveInd.currentFedFunds && headline != null)
+                ? (liveInd.currentFedFunds - headline)
+                : null;
+              const reading = (label, val, sub) => (
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>{label}</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: getCpiColor(val) }}>{val != null ? val.toFixed(1) + "%" : "—"}</div>
+                  <div style={{ fontSize: 11, color: "#888" }}>{sub}</div>
+                </div>
+              );
+              return (
+                <Card>
+                  <SLabel>CPI Inflation Tracker</SLabel>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 4, marginBottom: 16 }}>
+                    {reading("Headline CPI", headline, "YoY · BLS")}
+                    {reading("Core CPI", core, "Ex food & energy · BLS")}
+                    {reading("Core PCE", pce, "Fed's preferred · BEA")}
+                  </div>
+                  {realYield != null && (
+                    <div style={{ padding: "8px 12px", borderRadius: 6, backgroundColor: realYield > 0 ? "#f0fdf4" : "#fef2f2", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: C.mid }}>
+                        Real Yield on Cash (Fed Funds − CPI):
+                        <span style={{ color: realYield > 0 ? "#22c55e" : "#ef4444", marginLeft: 8, fontWeight: 800 }}>
+                          {realYield > 0 ? "+" : ""}{realYield.toFixed(2)}%
+                        </span>
+                      </span>
+                      <span style={{ fontSize: 11, color: "#888", fontStyle: "italic" }}>
+                        {realYield > 0 ? "SGOV/USFR earning above inflation. Hold." : "Inflation exceeding cash yield. Real erosion active."}
+                      </span>
+                    </div>
+                  )}
+                  {hasChartData ? (
+                    <ResponsiveContainer width="100%" height={160}>
+                      <LineChart margin={{ top: 4, right: 52, bottom: 4, left: 0 }}>
+                        <XAxis
+                          dataKey="date"
+                          type="category"
+                          allowDuplicatedCategory={false}
+                          tick={{ fontSize: 10 }}
+                          tickFormatter={(d) => {
+                            const date = new Date(d);
+                            return date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+                          }}
+                          interval={3}
+                        />
+                        <YAxis tick={{ fontSize: 10 }} width={32} tickFormatter={(v) => `${v}%`} domain={["auto", "auto"]} />
+                        <Tooltip formatter={(value, name) => [`${value.toFixed(2)}%`, name]} labelFormatter={(label) => label} />
+                        <Legend iconType="line" iconSize={10} wrapperStyle={{ fontSize: "11px" }} />
+                        {/* Fed 2% target line — extendDomain so it stays visible when CPI sits above it */}
+                        <ReferenceLine y={2} stroke="#22c55e" strokeDasharray="4 3" ifOverflow="extendDomain" label={{ value: "2% target", position: "right", fontSize: 9, fill: "#22c55e" }} />
+                        {/* USFR yield reference — hardcoded; update manually when rates move materially.
+                            extendDomain keeps it on-chart; when a CPI line crosses above it, real yield on cash turns negative. */}
+                        <ReferenceLine y={5.3} stroke="#3b82f6" strokeDasharray="4 3" ifOverflow="extendDomain" label={{ value: "USFR ~5.3%", position: "right", fontSize: 9, fill: "#3b82f6" }} />
+                        <Line data={hHist} type="monotone" dataKey="value" name="Headline CPI" stroke="#ef4444" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                        <Line data={cHist} type="monotone" dataKey="value" name="Core CPI" stroke="#f97316" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                        <Line data={pHist} type="monotone" dataKey="value" name="Core PCE" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="5 3" dot={false} activeDot={{ r: 4 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div style={{ color: C.muted, fontSize: 13, fontStyle: "italic", marginTop: 8 }}>Awaiting data</div>
+                  )}
                 </Card>
               );
             })()}

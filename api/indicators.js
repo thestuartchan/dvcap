@@ -127,6 +127,25 @@ export default async function handler(req, res) {
     }
   }
 
+  // ── Fetch YoY % change history (units=pc1) — returns [{date, value}] chrono ──
+  // FRED computes the year-over-year % server-side. Returns [] on any failure so
+  // the rest of the payload is unaffected. Used for the CPI inflation tracker.
+  async function fredPc1History(seriesId, limit = 25) {
+    try {
+      const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=${limit}&units=pc1&api_key=${FRED_KEY}&file_type=json`;
+      const r = await fetch(url);
+      if (!r.ok) { console.error("FRED pc1 status (" + seriesId + "):", r.status); return []; }
+      const d = await r.json();
+      return (d.observations || [])
+        .filter(o => o.value !== "." && o.value !== "" && o.value !== "NA")
+        .map(o => ({ date: o.date, value: parseFloat(o.value) }))
+        .reverse(); // chronological order, oldest → newest
+    } catch (e) {
+      console.error("FRED pc1 history error (" + seriesId + "):", e.message);
+      return [];
+    }
+  }
+
   const START_DATE = "2022-01-01"; // Chart history start
 
   try {
@@ -135,6 +154,7 @@ export default async function handler(req, res) {
       tenY, twoY, unemp, hySpread, cpi, cpiYoY, gdp, dxyRaw, m2Raw, oilRaw, auctionRaw,
       fedFundsRaw, tbill6mRaw,
       tenYHistory, twoYHistory, unempHistory, creditHistory,
+      cpiHeadlineHistory, cpiCoreHistory, pceCoreHistory,
     ] = await Promise.all([
       fredLatest("DGS10"),
       fredLatest("DGS2"),
@@ -154,6 +174,10 @@ export default async function handler(req, res) {
       fredHistory("DGS2",  START_DATE),
       fredHistory("UNRATE", START_DATE),
       fredHistory("BAMLH0A0HYM2", START_DATE),
+      // CPI inflation tracker — YoY % histories (24 months)
+      fredPc1History("CPIAUCSL"),  // Headline CPI
+      fredPc1History("CPILFESL"),  // Core CPI (ex food & energy)
+      fredPc1History("PCEPILFE"),  // Core PCE (Fed's preferred)
     ]);
 
     // ── Compute yield spread history by merging 10Y and 2Y arrays ─────────────
@@ -179,6 +203,11 @@ export default async function handler(req, res) {
       ? Math.round((currentFedFunds - tbill6m) * 100)
       : null;
 
+    // ── CPI inflation tracker — latest reading of each YoY series ──────────────
+    const cpiHeadlineCurrent = cpiHeadlineHistory.length ? cpiHeadlineHistory[cpiHeadlineHistory.length - 1].value : null;
+    const cpiCoreCurrent     = cpiCoreHistory.length     ? cpiCoreHistory[cpiCoreHistory.length - 1].value         : null;
+    const pceCoreCurrent     = pceCoreHistory.length     ? pceCoreHistory[pceCoreHistory.length - 1].value         : null;
+
     const result = {
       // ── Scalar values ──────────────────────────────────────────────────────
       tenY,
@@ -201,10 +230,17 @@ export default async function handler(req, res) {
       currentFedFunds,
       tbill6m,
       impliedCutsBps, // positive = market pricing cuts, negative = pricing hikes
+      // ── CPI inflation tracker (additive; existing `cpi` field unchanged) ─────
+      cpiHeadlineCurrent,
+      cpiCoreCurrent,
+      pceCoreCurrent,
       // ── Chart history arrays ───────────────────────────────────────────────
       yieldHistory:  yieldSpreadHistory,
       unempHistory,
       creditHistory,
+      cpiHeadlineHistory,
+      cpiCoreHistory,
+      pceCoreHistory,
     };
 
     // Cache 5 minutes — allows near-fresh data without hammering FRED
