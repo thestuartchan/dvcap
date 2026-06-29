@@ -1108,9 +1108,9 @@ function ActionBadge({ action }) {
 }
 // Exchange deep-links for foreign names Yahoo doesn't cover (manual price entry).
 const EXCHANGE_LINKS = {
-  "DEWA.AE":     "https://www.dfm.ae/the-exchange/market-information/equities/security-details?SecurityCode=DEWA",
+  "DEWA.AE":     "https://www.dfm.ae/the-exchange/market-information/company/DEWA/trading",
   "ADNOCGAS.AE": "https://www.adx.ae/English/Pages/SecurityDetails.aspx?Symbol=ADNOCGAS",
-  "EMAAR.AE":    "https://www.dfm.ae/the-exchange/market-information/equities/security-details?SecurityCode=EMAAR",
+  "EMAAR.AE":    "https://www.dfm.ae/the-exchange/market-information/company/EMAAR/trading",
   "FAB.AE":      "https://www.adx.ae/English/Pages/SecurityDetails.aspx?Symbol=FAB",
 };
 const CA_TICKERS = new Set(["ENB", "FTS", "CNR"]); // Canadian names listed in USD on NYSE
@@ -1123,17 +1123,17 @@ function ccyPrefix(ticker) {
 }
 function regionOf(ticker) {
   if (typeof ticker !== "string") return null;
-  if (ticker.endsWith(".AE")) return { label: "UAE", bg: "#00732F" };
-  if (ticker.endsWith(".HK")) return { label: "HK",  bg: "#DE2910" };
-  if (ticker.endsWith(".TO") || CA_TICKERS.has(ticker)) return { label: "CA", bg: "#FF0000" };
+  if (ticker.endsWith(".AE")) return { flag: "🇦🇪", title: "UAE — ADX/DFM" };
+  if (ticker.endsWith(".HK")) return { flag: "🇭🇰", title: "Hong Kong — HKEX" };
+  if (ticker.endsWith(".TO") || CA_TICKERS.has(ticker)) return { flag: "🇨🇦", title: "Canada — TSX/NYSE" };
   return null;
 }
 function RegionBadge({ ticker }) {
   const r = regionOf(ticker);
   if (!r) return null;
   return (
-    <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 4px", borderRadius: 3, backgroundColor: r.bg, color: "white", letterSpacing: 0.5, marginRight: 4, whiteSpace: "nowrap" }}>
-      {r.label}
+    <span style={{ fontSize: 14, lineHeight: 1, marginRight: 4 }} title={r.title}>
+      {r.flag}
     </span>
   );
 }
@@ -2303,7 +2303,14 @@ export default function App() {
                                 {tk.name}
                                 {tk.link && !String(tk.t).endsWith(".AE") && <a href={tk.link} target="_blank" rel="noopener noreferrer" title="Exchange" style={{ marginLeft: 5, fontSize: 12, textDecoration: "none" }}>🔗</a>}
                               </span>
-                              <PriceBadge ticker={tk.t} prices={prices} />
+                              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                                <PriceBadge ticker={tk.t} prices={prices} />
+                                {prices[tk.t]?.dividendYield > 0 && (
+                                  <span title="Trailing 12-month dividend yield" style={{ fontSize: 11, color: "#22c55e", fontWeight: 600 }}>
+                                    {(prices[tk.t].dividendYield * 100).toFixed(1)}% yield
+                                  </span>
+                                )}
+                              </div>
                             </div>
                             <div style={{ color: C.muted, fontSize: 14, marginTop: 3, lineHeight: 1.6 }}>{tk.note}</div>
                           </div>
