@@ -117,22 +117,24 @@ export default async function handler(req, res) {
       if (!r.ok) { console.error("FiscalData auction FAILED status:", r.status); return null; }
       const d = await r.json();
       const rows = d?.data || [];
-      const row = rows[0];
+      // Keep only rows that carry a real, positive bid-to-cover ratio. The most
+      // recent matching auction is often an announcement/just-auctioned issue
+      // whose ratio is still blank (parseFloat -> NaN); skip those and use the
+      // latest *settled* auction. rows are sorted newest-first by the API.
+      const valid = rows
+        .map(x => ({ date: x.auction_date, value: parseFloat(x.bid_to_cover_ratio) }))
+        .filter(x => x.date && Number.isFinite(x.value) && x.value > 0);
+      const row = valid[0];
       if (!row) {
-        // Fetch succeeded but the filter matched nothing — usually means the
-        // upstream field value/format changed. Log the raw shape so we can see it.
-        console.error("FiscalData auction: 0 rows. keys=", Object.keys(d || {}).join(","),
-          "meta.count=", d?.meta?.["total-count"]);
+        console.error("FiscalData auction: no rows with a valid bid-to-cover. rawRows=",
+          rows.length, "sample=", JSON.stringify(rows[0] || {}));
         return null;
       }
-      const bidCover = parseFloat(row.bid_to_cover_ratio);
       // Chronological order (oldest → newest) for the trend chart.
-      const history = rows
-        .filter(x => x.bid_to_cover_ratio && x.auction_date)
-        .map(x => ({ date: x.auction_date, value: parseFloat(x.bid_to_cover_ratio) }))
-        .reverse();
-      console.log("FiscalData auction OK:", rows.length, "rows · latest", row.auction_date, "bid-to-cover", bidCover);
-      return { bidCover: Number.isFinite(bidCover) ? bidCover : null, date: row.auction_date || null, history };
+      const history = valid.map(x => ({ date: x.date, value: x.value })).reverse();
+      console.log("FiscalData auction OK:", rows.length, "raw,", valid.length,
+        "valid · latest settled", row.date, "bid-to-cover", row.value);
+      return { bidCover: row.value, date: row.date || null, history };
     } catch (e) {
       console.error("FiscalData auction fetch error:", e.message);
       return null;
