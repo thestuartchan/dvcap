@@ -107,8 +107,13 @@ export default async function handler(req, res) {
       // monthly reopenings and leaving the bid-to-cover weeks stale.
       const url = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/auctions_query"
         + "?fields=auction_date,security_term,original_security_term,bid_to_cover_ratio"
-        + "&filter=original_security_term:eq:10-Year&sort=-auction_date&page[size]=12";
-      const r = await fetch(url);
+        + "&filter=original_security_term:eq:10-Year&sort=-auction_date&page%5Bsize%5D=12";
+      const r = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "Accept": "application/json",
+        },
+      });
       if (!r.ok) { console.error("FiscalData auction status:", r.status); return null; }
       const d = await r.json();
       const rows = d?.data || [];

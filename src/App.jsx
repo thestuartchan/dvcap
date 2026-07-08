@@ -668,12 +668,12 @@ const DEFAULT_FUNDS = [
 const CONSENSUS_ROWS = [
   {theme:"AI Chips / Semis",            vals:["◐","◯","●","●","●","●","◯"],note:"5/7 bullish — most crowded consensus long; Fairfax absent"},
   {theme:"Hyperscalers (AMZN/GOOG/MSFT)",vals:["●","●","●","◯","●","●","◯"],note:"Berkshire now large GOOGL holder; Ackman owns AMZN+MSFT"},
-  {theme:"Legacy SaaS",                 vals:["◯","◯","✕","◯","◯","◯","◯"],note:"Bridgewater broadly exiting/shorting"},
-  {theme:"China / EM",                  vals:["◯","◯","●","●","◐","●","●"],note:"Druckenmiller Brazil/Argentina, Tepper China, Fairfax India"},
-  {theme:"Gold / Commodities",          vals:["◐","◯","●","●","◯","◯","◐"],note:"Druckenmiller 25–30%, Bridgewater adding GLD, Fairfax commodity-linked"},
-  {theme:"Energy / Airlines",           vals:["●","◯","◯","◐","◯","◯","◯"],note:"Berkshire: CVX+OXY+DAL new"},
-  {theme:"Biotech / Healthcare",        vals:["◯","◯","◯","●","◯","●","◯"],note:"Druckenmiller NTRA, Appaloosa selective"},
-  {theme:"Financials / Insurance",      vals:["●","◐","◯","◯","◐","◯","●"],note:"Berkshire + Fairfax core insurance/float; Ackman GSEs, Tiger HOOD"},
+  {theme:"Legacy SaaS",                 vals:["◯","◯","◐","◯","◯","◯","◯"],note:"Bridgewater holds CRM/ADBE/ORCL; no one adding aggressively"},
+  {theme:"China / EM",                  vals:["◯","◯","●","●","◐","●","●"],note:"Druckenmiller Brazil/Argentina, Tepper BABA, Fairfax India"},
+  {theme:"Gold / Commodities",          vals:["◐","◯","◐","●","◯","◯","◐"],note:"Druckenmiller 25–30% (off-13F), Bridgewater light (NEM), Fairfax commodity-linked"},
+  {theme:"Energy / Airlines",           vals:["●","◯","◯","◐","◯","◐","◯"],note:"Berkshire CVX+OXY+DAL; Appaloosa Vistra+NRG power"},
+  {theme:"Biotech / Healthcare",        vals:["◯","◯","◯","●","◯","◯","◯"],note:"Druckenmiller NTRA/INSM/Caris/Teva"},
+  {theme:"Financials / Insurance",      vals:["●","◐","◯","◯","◐","◯","●"],note:"Berkshire + Fairfax core insurance/float; Ackman GSEs, Tiger Corpay"},
   {theme:"Cash / T-Bills",             vals:["●●","◯","◯","◯","◯","◯","◐"],note:"Berkshire $397B dry powder; Fairfax float in T-bills/bonds"},
   {theme:"Macro Hedges / Tail Risk",    vals:["◯","◐","●","◐","◯","◯","●"],note:"Fairfax deflation/CPI hedges; Bridgewater risk-parity; Ackman episodic"},
 ];
