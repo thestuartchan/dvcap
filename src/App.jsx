@@ -636,14 +636,14 @@ const DEFAULT_FUNDS = [
 ];
 
 const CONSENSUS_ROWS = [
-  {theme:"AI Chips / Semis",            vals:["◐","◯","●","●","●","●"],note:"5/6 bullish — most crowded consensus long"},
-  {theme:"Hyperscalers (AMZN/GOOG/MSFT)",vals:["●","●","●","◯","●","●"],note:"Berkshire now large GOOGL holder; Ackman owns AMZN+MSFT"},
-  {theme:"Legacy SaaS",                 vals:["◯","◯","✕","◯","◯","◯"],note:"Bridgewater broadly exiting/shorting"},
-  {theme:"China / EM",                  vals:["◯","◯","●","●","◐","●"],note:"Druckenmiller Brazil/Argentina, Tepper China"},
-  {theme:"Gold / Commodities",          vals:["◐","◯","●","●","◯","◯"],note:"Druckenmiller 25–30%, Bridgewater adding GLD"},
-  {theme:"Energy / Airlines",           vals:["●","◯","◯","◐","◯","◯"],note:"Berkshire: CVX+OXY+DAL new"},
-  {theme:"Biotech / Healthcare",        vals:["◯","◯","◯","●","◯","●"],note:"Druckenmiller NTRA, Appaloosa selective"},
-  {theme:"Cash / T-Bills",             vals:["●●","◯","◯","◯","◯","◯"],note:"Berkshire $397B — no one else close"},
+  {theme:"AI Chips / Semis",            vals:["◐","◯","●","●","●","●","◯"],note:"5/7 bullish — most crowded consensus long; Fairfax absent"},
+  {theme:"Hyperscalers (AMZN/GOOG/MSFT)",vals:["●","●","●","◯","●","●","◯"],note:"Berkshire now large GOOGL holder; Ackman owns AMZN+MSFT"},
+  {theme:"Legacy SaaS",                 vals:["◯","◯","✕","◯","◯","◯","◯"],note:"Bridgewater broadly exiting/shorting"},
+  {theme:"China / EM",                  vals:["◯","◯","●","●","◐","●","●"],note:"Druckenmiller Brazil/Argentina, Tepper China, Fairfax India"},
+  {theme:"Gold / Commodities",          vals:["◐","◯","●","●","◯","◯","◐"],note:"Druckenmiller 25–30%, Bridgewater adding GLD, Fairfax commodity-linked"},
+  {theme:"Energy / Airlines",           vals:["●","◯","◯","◐","◯","◯","◯"],note:"Berkshire: CVX+OXY+DAL new"},
+  {theme:"Biotech / Healthcare",        vals:["◯","◯","◯","●","◯","●","◯"],note:"Druckenmiller NTRA, Appaloosa selective"},
+  {theme:"Cash / T-Bills",             vals:["●●","◯","◯","◯","◯","◯","◐"],note:"Berkshire $397B; Fairfax runs insurance float + tail hedges"},
 ];
 
 const REGIMES = [
@@ -1100,6 +1100,8 @@ const COMPANY_NAMES = {
   XYLD:"Global X S&P 500 Covered Call", PFF:"iShares Preferred Securities",
   PFFD:"Global X Preferred ETF", SGOV:"0-3 Month T-Bill ETF",
   USFR:"WisdomTree Floating Rate Treasury", ARM:"ARM Holdings",
+  FFH:"Fairfax Financial (associate/buyback)", "India Basket":"Digit, IIFL, Thomas Cook (India)",
+  Eurobank:"Eurobank Ergasias (Greece)", Poseidon:"Poseidon — Greek shipping",
   Other:"Various",
 };
 function Pill({ label, color, bg, bdr }) {
