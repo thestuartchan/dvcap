@@ -612,6 +612,27 @@ const DEFAULT_FUNDS = [
     recentSells:["BABA (-617K, risk mgmt)"],
     radar:[{axis:"Value",score:75},{axis:"Growth",score:60},{axis:"Defensiveness",score:35},{axis:"AI Exposure",score:65},{axis:"International",score:55},{axis:"Income",score:30}],
   },
+  {
+    id:"fairfax", name:"Fairfax Financial Holdings", manager:"Prem Watsa",
+    aum:"~$75B (insurance + investment portfolio)", style:"Value / Insurance Float", color:"#A16207",
+    turnover:"Low (buy & hold)", signal:"MACRO HEDGE + INDIA", signalColor:"#B45309",
+    lastUpdated:"Annual Report 2025 · Mar 2026",
+    regimeBet:"INFLATION + DEFLATION HEDGE",
+    regimeBetColor:"#B45309",
+    regimeBetSignal:"Long India/EM structural bet. CPI-linked hedges + tail protection. Positioned for both inflation and deflation shocks.",
+    thesis:"The 'Canadian Berkshire.' Watsa runs a massive insurance float like Buffett — but with a harder macro edge. Known for prescient macro calls: shorted the US housing market pre-2008, held CPI-linked derivatives for years anticipating inflation. Currently positioned with significant equity exposure in India and emerging markets, commodity-linked names, and tail hedges. Watsa has been consistently bullish on India as a decade-long structural bet. Canadian-listed (TSX: FFH). Holdings from annual report — not a US 13F filer.",
+    holdings:[
+      {name:"FFH",          pct:12,value:7.8, sector:"Insurance",  action:"hold"},
+      {name:"India Basket", pct:18,value:11.7,sector:"India/EM",   action:"added"},
+      {name:"Eurobank",     pct:10,value:6.5, sector:"Financials", action:"hold"},
+      {name:"Poseidon",     pct:8, value:5.2, sector:"Shipping",   action:"hold"},
+      {name:"Other",        pct:52,value:33.8,sector:"Mix",        action:"hold"},
+    ],
+    sectors:[{name:"Financials/Insurance",pct:35},{name:"India/EM",pct:25},{name:"Commodities",pct:15},{name:"Other/Hedges",pct:25}],
+    recentBuys:["India Basket (decade-long structural add)","Eurobank (core financials)","Commodity-linked names"],
+    recentSells:["Trimmed US equity beta","Reduced long-duration exposure"],
+    radar:[{axis:"Value",score:90},{axis:"Growth",score:30},{axis:"Defensiveness",score:70},{axis:"AI Exposure",score:20},{axis:"International",score:80},{axis:"Income",score:50}],
+  },
 ];
 
 const CONSENSUS_ROWS = [
