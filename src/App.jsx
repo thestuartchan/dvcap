@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   AreaChart, Area, BarChart, Bar, RadarChart, PolarGrid,
   PolarAngleAxis, Radar, PieChart, Pie, Cell, LineChart, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList,
 } from "recharts";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
@@ -622,19 +622,18 @@ const DEFAULT_FUNDS = [
     regimeBetSignal:"Long India/EM structural bet. CPI-linked hedges + tail protection. Positioned for both inflation and deflation shocks.",
     thesis:"The 'Canadian Berkshire.' Watsa runs a massive insurance float like Buffett — but with a harder macro edge. Known for prescient macro calls: shorted the US housing market pre-2008, held CPI-linked derivatives for years anticipating inflation. Currently positioned with significant equity exposure in India and emerging markets, commodity-linked names, and tail hedges. Watsa has been consistently bullish on India as a decade-long structural bet. Canadian-listed (TSX: FFH). Holdings from annual report — not a US 13F filer.",
     holdings:[
-      {name:"EGFEY",  pct:14,value:4.2, sector:"Financials",  action:"hold"},
-      {name:"FFXDF",  pct:12,value:3.6, sector:"India/EM",    action:"added"},
-      {name:"KW",     pct:8, value:2.4, sector:"Real Estate", action:"hold"},
-      {name:"BB",     pct:6, value:1.8, sector:"Tech",        action:"hold"},
-      {name:"ORLA",   pct:6, value:1.8, sector:"Commodities", action:"added"},
-      {name:"FRFHF",  pct:6, value:1.8, sector:"Insurance",   action:"hold"},
-      {name:"CIBEY",  pct:4, value:1.2, sector:"Financials",  action:"hold"},
-      {name:"FOM.TO", pct:4, value:1.2, sector:"Commodities", action:"hold"},
-      {name:"DXT.TO", pct:3, value:0.9, sector:"Services",    action:"hold"},
-      {name:"Other",  pct:37,value:11.1,sector:"Mix",         action:"hold"},
+      {name:"EUROB.AT",pct:22,value:6.6,sector:"Financials",  action:"hold"},
+      {name:"FFXDF",   pct:15,value:4.5,sector:"India/EM",    action:"added"},
+      {name:"KW",      pct:11,value:3.3,sector:"Real Estate", action:"hold"},
+      {name:"BB",      pct:9, value:2.7,sector:"Tech",        action:"hold"},
+      {name:"CIBEY",   pct:9, value:2.7,sector:"Financials",  action:"hold"},
+      {name:"ORLA",    pct:8, value:2.4,sector:"Commodities", action:"added"},
+      {name:"FRFHF",   pct:8, value:2.4,sector:"Insurance",   action:"hold"},
+      {name:"DXT.TO",  pct:6, value:1.8,sector:"Services",    action:"hold"},
+      {name:"Other",   pct:12,value:3.6,sector:"Mix",         action:"hold"},
     ],
     sectors:[{name:"Financials/Insurance",pct:35},{name:"India/EM",pct:25},{name:"Commodities",pct:15},{name:"Other/Hedges",pct:25}],
-    recentBuys:["FFXDF (Fairfax India — structural add)","ORLA (gold / commodity exposure)","EGFEY (Eurobank — core financials)"],
+    recentBuys:["FFXDF (Fairfax India — structural add)","ORLA (gold / commodity exposure)","EUROB.AT (Eurobank — core financials)"],
     recentSells:["Trimmed US equity beta","Reduced long-duration bond exposure"],
     radar:[{axis:"Value",score:90},{axis:"Growth",score:30},{axis:"Defensiveness",score:70},{axis:"AI Exposure",score:20},{axis:"International",score:80},{axis:"Income",score:50}],
   },
@@ -1107,10 +1106,10 @@ const COMPANY_NAMES = {
   XYLD:"Global X S&P 500 Covered Call", PFF:"iShares Preferred Securities",
   PFFD:"Global X Preferred ETF", SGOV:"0-3 Month T-Bill ETF",
   USFR:"WisdomTree Floating Rate Treasury", ARM:"ARM Holdings",
-  EGFEY:"Eurobank Ergasias (Greece)", FFXDF:"Fairfax India Holdings",
+  "EUROB.AT":"Eurobank Ergasias (Greece)", FFXDF:"Fairfax India Holdings",
   KW:"Kennedy-Wilson", BB:"BlackBerry", ORLA:"Orla Mining",
   FRFHF:"Fairfax Financial (buybacks)", CIBEY:"Commercial Int'l Bank (Egypt)",
-  "FOM.TO":"Foran Mining", "DXT.TO":"Dexterra Group",
+  "DXT.TO":"Dexterra Group",
   Other:"Various",
 };
 function Pill({ label, color, bg, bdr }) {
@@ -1526,14 +1525,15 @@ function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated 
           </div>
         </div>
         <ResponsiveContainer width="100%" height={Math.max(200, fund.holdings.length * 28)}>
-          <BarChart data={fund.holdings} layout="vertical" margin={{ left: 4, right: 16, top: 0, bottom: 0 }}>
-            <XAxis type="number" tick={{ fill: C.lbl, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => v + "%"} />
-            <YAxis type="category" dataKey="name" interval={0} tick={{ fill: C.mid, fontSize: 11, fontWeight: 600 }} axisLine={false} tickLine={false} width={55} />
+          <BarChart data={fund.holdings} layout="vertical" margin={{ left: 4, right: 44, top: 0, bottom: 0 }}>
+            <XAxis type="number" domain={[0, dataMax => Math.ceil(dataMax * 1.08)]} tick={{ fill: C.lbl, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => v + "%"} />
+            <YAxis type="category" dataKey="name" interval={0} tick={{ fill: C.mid, fontSize: 11, fontWeight: 600 }} axisLine={false} tickLine={false} width={64} />
             <Tooltip formatter={v => [v + "%", "% of Portfolio"]} contentStyle={{ background: "#fff", border: "1px solid " + C.bdr, borderRadius: 8, fontSize: 13 }} />
             <Bar dataKey="pct" radius={[0, 5, 5, 0]}>
               {fund.holdings.map((h, i) => (
                 <Cell key={i} fill={h.action === "bought" ? "#166534" : h.action === "added" ? "#22C55E" : h.action === "trim" ? "#D97706" : h.action === "exit" ? "#DC2626" : fund.color} opacity={0.85} />
               ))}
+              <LabelList dataKey="pct" position="right" formatter={v => v + "%"} style={{ fill: C.mid, fontSize: 11, fontWeight: 700 }} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
