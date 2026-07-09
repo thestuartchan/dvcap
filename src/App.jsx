@@ -788,6 +788,7 @@ const RECESSION_SOURCES = [
   { name: "Kalshi prediction market",  probability: "41%",    timeframe: "End-2027", year: 2027, notes: "Investors pricing delayed reckoning — debt refinancing at 5-7% vs near-zero rates, $1.3T consumer revolving credit, corporate capex compression. More concerning than 2026 figure.", color: "amber" },
   { name: "Polymarket",                probability: "~12.5%", timeframe: "End-2026", year: 2026, notes: "June 2026. Market-implied. 87.5% probability on No recession. Sahm Rule at 0.10 — well below 0.50 threshold. Lowest of all sources.", color: "green" },
   { name: "BNP Paribas",               probability: "Low",    timeframe: "12-month", year: 2026, notes: "Qualitative only — excluded from weighted average. 'Well-positioned to absorb shock.' US net energy exporter status cited. No numeric update available.", color: "green" },
+  { name: "June FOMC Minutes", probability: "Elevated", timeframe: "qualitative", year: 2026, notes: "July 8, 2026. 'Only a few' members saw a case to hike — mildly dovish vs. the June dot plot (9/18 penciled a hike). Warsh withheld his own dot. PCE revised to 3.6%. Minutes predate July 7–8 Hormuz attacks entirely — the hawkish oil impulse is not yet in any official Fed communication.", color: "amber" },
 ];
 
 // Weighted-average weights per source. Sum is 1.10 (intentional — the average
@@ -1626,7 +1627,7 @@ export default function App() {
 
   // Regime probabilities derived from the recession table + live CPI. Falls back
   // to the prior static split when no weighted average is available.
-  const fallbackRegimes = { stagflation: 45, reflationary: 30, deflationary: 20, inflationary: 5 };
+  const fallbackRegimes = { stagflation: 48, reflationary: 17, deflationary: 30, inflationary: 5 };
   const { weightedAvg: recWeightedAvg, kalshi2027: recKalshi2027 } = computeWeightedRecessionProb(RECESSION_SOURCES);
   const cpiForRegime = liveInd?.cpiHeadlineCurrent ?? liveInd?.cpi ?? null;
   const derivedRegimes = deriveRegimeProbabilities(recWeightedAvg, cpiForRegime, recKalshi2027);
@@ -2749,7 +2750,7 @@ export default function App() {
             })()}
 
             <Card>
-              <SLabel>Wall Street Recession Probability (June 2026)</SLabel>
+              <SLabel>Wall Street Recession Probability (July 8, 2026)</SLabel>
               {(() => {
                 const lastUpdate = new Date("2026-06-29");
                 const daysStale = Math.floor((Date.now() - lastUpdate.getTime()) / 86400000);
@@ -2964,9 +2965,10 @@ export default function App() {
                     ],
                     tip: (() => {
                       const oilDir = oilPrev && oil ? (oil > oilPrev ? "↑ rising" : "↓ falling") : "";
-                      return oil < 80
-                        ? `✅ WTI crude at $${oil.toFixed(1)} — below the $80 reflationary trigger. Oil has fallen enough for the Fed to consider cutting. Watch for a Fed pivot signal next.`
-                        : `⚠️ WTI crude at $${oil.toFixed(1)} ${oilDir} — above the $80 threshold. Until oil falls below $80, inflation stays too sticky for the Fed to cut with confidence. A Gulf peace deal or OPEC production increase is the key trigger.`;
+                      const oilNote = oil < 80
+                        ? `WTI at $${oil.toFixed(1)} is technically below the $80 trigger — but July 7–8 Hormuz attacks reversed the disinflationary impulse. The Fed needs sustained sub-$80 oil for multiple months, not a brief dip.`
+                        : `WTI at $${oil.toFixed(1)} ${oilDir} — above the $80 threshold. Until sustained below $80, inflation stays too sticky for the Fed to cut.`;
+                      return `⚠️ June FOMC minutes (Jul 8): "only a few" members saw a case to hike — less hawkish than the dot plot implied, but Warsh gave no forward guidance and is firmly on hold. ${oilNote} Next live catalysts: June CPI (mid-July) and June PCE (late July).`;
                     })(),
                   },
                   {
