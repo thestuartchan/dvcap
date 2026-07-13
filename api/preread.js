@@ -3,8 +3,8 @@
 // formats Discord-ready (no tables, bullets, bold), optionally posts to the webhook.
 
 import { UNIVERSE } from '../data/universe.js';
-import { getQuotes, getMacro } from './lib/quotes.js';
-import { computeRegime, structure, arrow } from './lib/regime.js';
+import { getQuotes, getMacro, getKoreaStress } from './lib/quotes.js';
+import { computeRegime, structure } from './lib/regime.js';
 import { weekHighlights } from './lib/calendar.js';
 
 const MODEL = 'claude-sonnet-5';
@@ -34,16 +34,38 @@ function buildBlocks(region, quotes, indices, macro, regime, cal) {
     + `- US 2Y ${macro.us2y?.value ?? '—'}% · 10Y ${macro.us10y?.value ?? '—'}%\n`
     + `- HY OAS ${macro.oas?.value ?? '—'} (${macro.oas?.date ?? 'n/a'}, last hard print) · ${regime.credit.state}`;
 
-  const regimeLines =
+  const koreaLines = buildKorea(regime.korea);
+
+  let regimeLines =
     `- Split: ${regime.split.label} (foundry ${fmtPct(regime.split.fnd)} vs memory ${fmtPct(regime.split.mem)})\n`
-    + `- Credit: ${regime.credit.state} — ${regime.credit.note}\n`
+    + `- Credit (global/OAS gate): ${regime.credit.state} — ${regime.credit.note}\n`
     + `- Oil: ${regime.oil.label}`;
+  // Surface the Korea-local cluster to the model as a SEPARATE gate from OAS.
+  if (regime.korea) {
+    regimeLines += `\n- Korea (local gate): ${regime.korea.cluster} — ${regime.korea.note}`;
+  }
 
   const calLines = cal.length
     ? cal.map(e => `- ${e.date} — ${e.title} [${e.region}]`).join('\n')
     : '- (no flagged events this week)';
 
-  return { nameLines, idxLines, macroLines, regimeLines, calLines };
+  return { nameLines, idxLines, macroLines, koreaLines, regimeLines, calLines };
+}
+
+// Korea-stress cluster block (Asia only). null when there's no Korea gate.
+function buildKorea(k) {
+  if (!k) return null;
+  const { won, vol, etf } = k;
+  const wonLine = won.level != null
+    ? `- USD/KRW ${won.level}${won.dir !== 'n/a' ? ` (${won.dir})` : ''} · ${won.flag}`
+    : '- USD/KRW — no print';
+  const volLine = vol.level != null
+    ? `- VKOSPI ${vol.level}${vol.band !== 'n/a' ? ` [${vol.band}]` : ''}${vol.changePct != null ? ` ${fmtPct(vol.changePct)}` : ''} · ${vol.flag}`
+    : '- VKOSPI — no print';
+  const etfLine = etf.available
+    ? `- 7709 units ${etf.units.toLocaleString('en-US')} (${etf.asOf})${etf.deltaPct != null ? ` ${fmtPct(etf.deltaPct)}` : ''} · ${etf.flag}`
+    : `- 7709 units — ${etf.flag}`;
+  return [wonLine, volLine, etfLine, `- Cluster: ${k.cluster} — ${k.note}`].join('\n');
 }
 
 async function synthProse(region, blocks) {
@@ -84,6 +106,8 @@ function assembleDiscord(region, label, blocks, read) {
     `**NAMES**`, blocks.nameLines,
     ``, `**INDICES**`, blocks.idxLines,
     ``, `🛢️ **MACRO**`, blocks.macroLines,
+    // Korea-local stress cluster — Asia only (null otherwise).
+    ...(blocks.koreaLines ? [``, `🇰🇷 **KOREA STRESS**`, blocks.koreaLines] : []),
     ``, `🧭 **REGIME**`, blocks.regimeLines,
     ``, `🧭 **READ**`, read,
     ``, `📅 **THIS WEEK**`, blocks.calLines,
@@ -98,13 +122,15 @@ export default async function handler(req, res) {
   const nameSyms = R.names.map(n => n.sym);
   const idxSyms  = R.indices.map(n => n.sym);
 
-  const [quotes, idxRaw, macro] = await Promise.all([
+  const [quotes, idxRaw, macro, korea] = await Promise.all([
     getQuotes(nameSyms), getQuotes(idxSyms), getMacro(),
+    // Korea-local stress gate is Asia-specific — skip the fetch for EU/US.
+    region === 'asia' ? getKoreaStress() : Promise.resolve(null),
   ]);
   // attach display names to indices
   const indices = idxRaw.map((q, i) => ({ ...q, _name: R.indices[i].name }));
 
-  const regime = computeRegime({ quotes, names: R.names, macro });
+  const regime = computeRegime({ quotes, names: R.names, macro, korea });
   const cal = weekHighlights();
   const blocks = buildBlocks(region, quotes, indices, macro, regime, cal);
   const read = await synthProse(region, blocks);

@@ -9,8 +9,11 @@ alerting, and a journal/rules-log.
 ## Status: Layer 1 built & tested (this package, drop into repo)
 - `data/universe.js` — tickers per region (asia/eu/us), tagged by role
   (foundry/memory/litho/equip/index/megacap/gpu) + `leader` flags. Single source of truth.
-- `api/lib/quotes.js` — DATA SPINE. Normalized quote shape, FMP primary, isolated oil
-  fallback, FRED for yields/OAS, honest `stale` flag on every print. Everything reads this.
+- `api/lib/quotes.js` — DATA SPINE. Normalized quote shape, honest `stale` flag on every
+  print. Sources: Yahoo (equities/indices/oil, keyless — `api/lib/yahoo.js`) + FRED
+  (yields/OAS — `api/lib/fred.js`, shares `FRED_API_KEY` with `api/indicators.js`).
+  Everything reads this. [Reconciled: was FMP-primary + placeholder oil; moved onto the
+  repo's existing keyless Yahoo stack and unified the FRED key.]
 - `api/lib/regime.js` — DETERMINISTIC regime engine (memory-vs-foundry split, credit
   state, oil-vs-pivot, structure-vs-MAs). NO model. Pure arithmetic. TESTED against live
   Jul 13 numbers — correctly output "memory-specific weakness (foundry holding)".
@@ -37,11 +40,13 @@ regime engine encodes). Read it before touching regime.js or universe.js.
    Aug 31 2026). Pre-Read is ~2k in/1k out = sub-cent. Don't over-model this.
 
 ## FIRST TASKS in Claude Code (in order)
-1. Merge this package into the repo; reconcile with existing `api/` structure & FRED usage
-   (dvcap already has a FRED integration — dedupe, don't duplicate the key).
-2. Wire the OIL feed: `oilQuote()` in quotes.js is a placeholder. Point it at the actual
-   oil source + key. This is the one real data gap (FMP commodity is plan-gated).
-3. Set env vars in Vercel: FMP_KEY, FRED_KEY, OIL_KEY, ANTHROPIC_API_KEY, DISCORD_WEBHOOK.
+1. ✅ DONE — Merged & reconciled against the existing `api/` stack: spine now reads the
+   repo's keyless Yahoo endpoint (`api/lib/yahoo.js`, same one `api/prices.js`/`indicators.js`
+   use) and shares the FRED key via `api/lib/fred.js` (`FRED_API_KEY`). No duplicate key.
+2. ✅ DONE — Oil is NOT a gap: `oilQuote()` reads Yahoo `CL=F`/`BZ=F` (keyless), the same
+   WTI source `api/indicators.js` already uses. No OIL_KEY / paid feed needed.
+3. Set env vars in Vercel: FRED_API_KEY, ANTHROPIC_API_KEY, DISCORD_WEBHOOK.
+   (FRED_API_KEY is already set for the existing dashboard; FMP_KEY / OIL_KEY no longer used.)
 4. Dry-run: `GET /api/preread?region=asia` (no post) → eyeball the message + regime JSON.
    Then `&post=1` to test the webhook. Then enable cron.
 
@@ -57,9 +62,19 @@ regime engine encodes). Read it before touching regime.js or universe.js.
 ## Known gaps / cautions
 - IBKR `get_price_snapshot` had a serialization bug (contract_id coerced to string). If
   wiring IBKR as a data source, test that first — search_contracts works, the snapshot didn't.
+- Korea stress cluster (Asia pre-read): USD/KRW (Yahoo `KRW=X`) and VKOSPI (CNBC
+  `.KSVKOSPI`) are live/keyless. CSOP 7709 **units outstanding** — CSOP/HKEX are 403
+  bot-walled, so it's scraped by a headless-browser cron (`api/scrape-7709.js`, 00:30 UTC)
+  that commits daily to `data/korea_7709.json` via the GitHub API (needs `GITHUB_TOKEN`/
+  `GITHUB_REPO`). Validate on first deploy with `GET /api/scrape-7709?dry=1` and tune the
+  label regexes if `units` comes back null — the CSOP DOM can't be checked from a dev box
+  (Chromium is Linux-only) and the bot-wall may need header tweaks. 7709 *price* is live via
+  Yahoo `7709.HK`. Modeled as a Korea-LOCAL regime gate (`regime.korea`), kept separate from
+  the global OAS gate — do not merge them.
 - EU/US quotes in the seeded universe are close-of-Friday; live only when those markets open.
-- FMP index MA fields are unreliable (KOSPI returned garbage 50d/200d) — don't trust index
-  MAs from FMP; source them elsewhere or omit.
+- MAs are now computed from Yahoo daily closes (`api/lib/yahoo.js`), not a provider's
+  precomputed field — this resolves the old "FMP index MAs are garbage (KOSPI nonsense)" gap.
+  The newest close in the SMA window may be intraday; the 50/200d level is barely affected.
 
 ## Build sequence discipline
 Get Layer 1 live and posting Pre-Reads FIRST — that alone kills the daily manual grind and

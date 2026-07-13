@@ -75,9 +75,10 @@ Region-by-region market summary posted to Discord at each regional open. HARD co
 ## Data discipline (learned the hard way, encode it)
 - Every print carries a `stale` flag; the Pre-Read shows ⚠️ on stale data. NEVER launder a
   stale/last-close number into a clean live-looking one. Tag the source and timestamp.
-- Provider fallback cascade: FMP (equities) → isolated oil source → FRED (yields/OAS) →
-  web as last resort. FMP commodity is plan-gated (the oil gap). FMP index MAs are garbage
-  (KOSPI returned nonsense) — don't trust index MAs from FMP.
+- Provider cascade: Yahoo (equities/indices/oil, keyless — `api/lib/yahoo.js`) → FRED
+  (yields/OAS — `api/lib/fred.js`) → web as last resort. MAs are computed from Yahoo daily
+  closes, not a provider's precomputed field (that field was unreliable — KOSPI returned
+  nonsense). The universe is authored in Yahoo symbol format, so this is the native fit.
 - Cross-check timestamps: Asian/EU/US markets are open at different times; a "live" call on a
   closed market returns the last close. The tool must know which markets are open (timezone
   engine, roadmap layer 3) and flag accordingly.
