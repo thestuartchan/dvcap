@@ -1091,6 +1091,50 @@ function useLiveIndicators() {
   return { live, loading, updated, error, fetchIndicators };
 }
 
+// ─── PLAYBOOK FETCHER (Global Playbook tab) ──────────────────────────────────
+// Hits the /api/playbook proxy (structured spine + regime, no model). Cached per
+// region in localStorage so switching tabs/regions shows the last value instantly.
+async function fetchPlaybook(region) {
+  const res = await fetch(`${PROXY_BASE_URL}/playbook?region=${region}&t=${Date.now()}`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error("Playbook error " + res.status);
+  return await res.json();
+}
+
+function useLivePlaybook() {
+  const [byRegion, setByRegion] = useState(() => cacheLoad("cache_playbook_v1", {}));
+  const [loading, setLoading]   = useState(false);
+  const [updated, setUpdated]   = useState(() => cacheLoadDate("cache_playbook_updated_v1"));
+  const [error, setError]       = useState(null);
+
+  const fetchRegion = useCallback(async function(region) {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await fetchPlaybook(region);
+      if (data && data.region) {
+        setByRegion(prev => {
+          const merged = { ...prev, [region]: data };
+          cacheSave("cache_playbook_v1", merged);
+          return merged;
+        });
+        const now = new Date();
+        setUpdated(now);
+        try { localStorage.setItem("cache_playbook_updated_v1", now.toISOString()); } catch (_) {}
+      } else {
+        setError("Playbook returned no data.");
+      }
+    } catch (e) {
+      console.error("Playbook fetch error:", e);
+      setError("Fetch error: " + e.message);
+    }
+    setLoading(false);
+  }, []);
+
+  return { byRegion, loading, updated, error, fetchRegion };
+}
+
 async function loadFunds() {
   try {
     const r = await window.storage.get("funds_v4");
@@ -1609,9 +1653,222 @@ function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated 
   );
 }
 
+// ─── GLOBAL PLAYBOOK TAB ──────────────────────────────────────────────────────
+// Live macro/semi spine + deterministic regime per region, from /api/playbook (no
+// model). Asia additionally renders the Korea-local stress gate.
+const PB_REGIONS = [
+  { id: "asia", label: "🌏 Asia" },
+  { id: "eu",   label: "🇪🇺 Europe" },
+  { id: "us",   label: "🇺🇸 US" },
+];
+const pbFmtPct     = p => (p == null ? "—" : `${p > 0 ? "+" : ""}${p.toFixed(1)}%`);
+const pbFmtNum     = n => (n == null ? "—" : Number(n).toLocaleString("en-US"));
+const pbPctColor   = p => (p == null ? C.muted : p > 0.15 ? C.green : p < -0.15 ? C.red : C.muted);
+const pbCreditColor = s => ({ calm: C.green, watch: C.blue, defending: C.amber, stress: C.red }[s] || C.muted);
+const pbClusterColor = c => ({ exhausting: C.green, active: C.red, mixed: C.amber }[c] || C.muted);
+const pbBandColor  = b => ({ calm: C.green, normal: C.blue, elevated: C.amber, high: C.red, severe: C.red, panic: C.red }[b] || C.muted);
+
+function MacroStat({ label, value, sub }) {
+  return (
+    <div style={{ minWidth: 90 }}>
+      <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 900, color: C.text }}>{value}</div>
+      {sub ? <div style={{ fontSize: 11, color: C.lbl }}>{sub}</div> : null}
+    </div>
+  );
+}
+
+function KoreaStressPanel({ korea }) {
+  const { won, vol, etf, cluster, note } = korea;
+  const cCol = pbClusterColor(cluster);
+  // USD/KRW: a rising won (weakening) is bad → red; falling (stabilizing) → green.
+  const wonCol = won.dir === "rising" ? C.red : won.dir === "falling" ? C.green : C.amber;
+  const vCol = pbBandColor(vol.band);
+  const box = { background: C.bg, border: "1.5px solid " + C.bdr, borderRadius: 10, padding: "12px 14px" };
+  return (
+    <Card style={{ borderTop: "4px solid " + cCol }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+        <SLabel>🇰🇷 Korea Stress — local gate</SLabel>
+        <Pill label={cluster.toUpperCase()} color={cCol} />
+      </div>
+      <div style={{ color: cCol, fontSize: 13, fontWeight: 700, marginBottom: 14 }}>{note}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
+        {/* USD/KRW */}
+        <div style={box}>
+          <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>USD/KRW</div>
+          <div style={{ fontSize: 24, fontWeight: 900, color: C.text }}>{won.level ?? "—"}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: wonCol }}>
+            {won.dir && won.dir !== "n/a" ? `${won.dir} · ` : ""}{won.flag}
+          </div>
+        </div>
+        {/* VKOSPI with a 0–100 level bar (markers at 20/45/80) */}
+        <div style={box}>
+          <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>VKOSPI</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+            <span style={{ fontSize: 24, fontWeight: 900, color: vCol }}>{vol.level ?? "—"}</span>
+            <span style={{ fontSize: 12, fontWeight: 800, color: vCol }}>{vol.band !== "n/a" ? vol.band : ""}</span>
+          </div>
+          <div style={{ position: "relative", height: 6, background: C.bdr, borderRadius: 3, margin: "7px 0 5px" }}>
+            <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: Math.max(0, Math.min(100, vol.level || 0)) + "%", background: vCol, borderRadius: 3 }} />
+            {[20, 45, 80].map(m => <div key={m} style={{ position: "absolute", left: m + "%", top: -2, bottom: -2, width: 1, background: C.muted }} />)}
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: vCol }}>{vol.flag}</div>
+        </div>
+        {/* CSOP 7709 units outstanding (the deleveraging tell) */}
+        <div style={box}>
+          <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>CSOP 7709 units</div>
+          {etf.available ? (
+            <>
+              <div style={{ fontSize: 20, fontWeight: 900, color: C.text }}>{pbFmtNum(etf.units)}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: etf.shrinking ? C.red : etf.flattening ? C.amber : C.muted }}>
+                {pbFmtPct(etf.deltaPct)} · {etf.flag}
+              </div>
+              {etf.series && etf.series.length >= 2 && (
+                <div style={{ marginTop: 6 }}>
+                  <ResponsiveContainer width="100%" height={42}>
+                    <LineChart data={etf.series} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+                      <Line type="monotone" dataKey="units" stroke={C.blue} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{ fontSize: 12, color: C.muted, fontStyle: "italic", marginTop: 4 }}>{etf.flag}</div>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function GlobalPlaybook({ data, region, setRegion, loading, error, updated, onRefresh, fmtTime }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Region toggle + refresh */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          {PB_REGIONS.map(r => (
+            <button key={r.id} onClick={() => setRegion(r.id)} style={{
+              background: region === r.id ? C.blue : C.surf, color: region === r.id ? "#fff" : C.mid,
+              border: "1.5px solid " + (region === r.id ? C.blue : C.bdr), borderRadius: 8,
+              padding: "7px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+            }}>{r.label}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 12, color: C.muted }}>Updated {fmtTime(updated)}</span>
+          <Btn onClick={onRefresh} disabled={loading} color={C.blue} bgColor={C.blBg} label={loading ? "⏳ …" : "🔄 Refresh"} />
+        </div>
+      </div>
+
+      {error && <Card style={{ background: C.rBg, border: "1.5px solid " + C.rBdr }}><span style={{ color: C.red, fontSize: 13 }}>{error}</span></Card>}
+
+      {!data ? (
+        <Card><div style={{ color: C.muted, fontSize: 14 }}>{loading ? "Loading…" : "No data yet — hit Refresh."}</div></Card>
+      ) : (
+        <>
+          {/* Regime summary — the deterministic tags */}
+          <Card>
+            <SLabel>🧭 Regime — {data.label}</SLabel>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+              <div style={{ minWidth: 210 }}>
+                <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>Memory vs Foundry</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{data.regime.split.label}</div>
+                <div style={{ fontSize: 12, color: C.muted }}>foundry {pbFmtPct(data.regime.split.fnd)} · memory {pbFmtPct(data.regime.split.mem)}</div>
+              </div>
+              <div style={{ minWidth: 170 }}>
+                <div style={{ fontSize: 12, color: C.muted, fontWeight: 700, marginBottom: 4 }}>Credit — global/OAS gate</div>
+                <Pill label={data.regime.credit.state.toUpperCase()} color={pbCreditColor(data.regime.credit.state)} />
+                <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{data.regime.credit.note}</div>
+              </div>
+              <div style={{ minWidth: 170 }}>
+                <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>Oil</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{data.regime.oil.label}</div>
+              </div>
+            </div>
+          </Card>
+
+          {/* Korea-local stress gate (Asia only) */}
+          {data.regime.korea && <KoreaStressPanel korea={data.regime.korea} />}
+
+          {/* Names grid — leaders starred + blue-bordered */}
+          <Card>
+            <SLabel>Names</SLabel>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
+              {data.names.map(n => (
+                <div key={n.sym} style={{ background: C.bg, border: "1.5px solid " + (n.leader ? C.blBdr : C.bdr), borderRadius: 10, padding: "10px 12px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{n.leader ? "★ " : ""}{n.name}</span>
+                    <span style={{ fontSize: 10, color: C.muted, fontWeight: 700, textTransform: "uppercase" }}>{n.role}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 2 }}>
+                    <span style={{ fontSize: 16, fontWeight: 900, color: C.text }}>{n.price ?? "—"}</span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: pbPctColor(n.changePct) }}>{pbFmtPct(n.changePct)}</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: C.muted }}>
+                    {n.structure || ""}{n.stale ? " · ⚠️ stale" : ""}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* Indices */}
+          <Card>
+            <SLabel>Indices</SLabel>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 20 }}>
+              {data.indices.map(ix => (
+                <div key={ix.sym} style={{ minWidth: 120 }}>
+                  <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>{ix.name}</div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                    <span style={{ fontSize: 18, fontWeight: 900, color: C.text }}>{ix.price ?? "—"}</span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: pbPctColor(ix.changePct) }}>{pbFmtPct(ix.changePct)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* Macro */}
+          <Card>
+            <SLabel>🛢️ Macro</SLabel>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 20 }}>
+              <MacroStat label="WTI" value={data.macro.wti?.price != null ? "$" + data.macro.wti.price : "—"} sub={data.macro.wti?.stale ? "⚠️ stale" : ""} />
+              <MacroStat label="Brent" value={data.macro.brent?.price != null ? "$" + data.macro.brent.price : "—"} />
+              <MacroStat label="US 2Y" value={data.macro.us2y?.value != null ? data.macro.us2y.value + "%" : "—"} />
+              <MacroStat label="US 10Y" value={data.macro.us10y?.value != null ? data.macro.us10y.value + "%" : "—"} />
+              <MacroStat label="HY OAS" value={data.macro.oas?.value ?? "—"} sub={data.macro.oas?.date ? data.macro.oas.date + " · last hard print" : ""} />
+            </div>
+          </Card>
+
+          {/* This week's flagged events */}
+          {data.calendar && data.calendar.length > 0 && (
+            <Card>
+              <SLabel>📅 This Week</SLabel>
+              {data.calendar.map((e, i) => (
+                <div key={i} style={{ display: "flex", gap: 10, padding: "4px 0", fontSize: 13, color: C.mid, borderBottom: i < data.calendar.length - 1 ? "1px solid " + C.bdr : "none" }}>
+                  <span style={{ color: C.muted, minWidth: 92 }}>{e.date}</span>
+                  <span style={{ fontWeight: 600 }}>{e.title}</span>
+                  <span style={{ color: C.lbl, marginLeft: "auto" }}>{e.region}</span>
+                </div>
+              ))}
+            </Card>
+          )}
+
+          <div style={{ fontSize: 11, color: C.lbl, textAlign: "center" }}>
+            Same data spine as the Discord pre-reads · {data.region.toUpperCase()} · {data.tz}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [tab, setTab]           = useState("macro");
+  const [pbRegion, setPbRegion] = useState("asia"); // Global Playbook active region
   const [activeAsset, setActiveAsset]   = useState(ASSETS[0]);
   const [activeIncome, setActiveIncome] = useState(INCOME_PLAYS[0]);
   const [activeRegime, setActiveRegime] = useState(REGIMES[0]);
@@ -1624,6 +1881,7 @@ export default function App() {
 
   const { prices, loading: pricesLoading, updated: pricesUpdated, fetchPrices } = useLivePrices();
   const { live: liveInd, loading: indLoading, updated: indUpdated, error: indError, fetchIndicators } = useLiveIndicators();
+  const { byRegion: pbData, loading: pbLoading, updated: pbUpdated, error: pbError, fetchRegion: fetchPlaybookRegion } = useLivePlaybook();
 
   // Regime probabilities derived from the recession table + live CPI. Falls back
   // to the prior static split when no weighted average is available.
@@ -1647,6 +1905,11 @@ export default function App() {
     fetchIndicators();
     fetchPrices(HEADER_TICKERS);
   }, [fetchIndicators, fetchPrices]);
+
+  // Fetch the Global Playbook when its tab is open or the region changes.
+  useEffect(function() {
+    if (tab === "global") fetchPlaybookRegion(pbRegion);
+  }, [tab, pbRegion, fetchPlaybookRegion]);
 
   // Load manual deploy-stage toggles + portfolio value from localStorage
   useEffect(function() {
@@ -1673,6 +1936,7 @@ export default function App() {
 
   const TABS = [
     { id: "macro",      label: "🌐 Macro"        },
+    { id: "global",     label: "🌏 Global Playbook" },
     { id: "smartmoney", label: "🏦 Smart Money"  },
     { id: "indicators", label: "📡 Indicators"  },
     { id: "posture",    label: "🎯 Posture"      },
@@ -2519,6 +2783,19 @@ export default function App() {
         )}
 
         {/* ── MACRO ── */}
+        {tab === "global" && (
+          <GlobalPlaybook
+            data={pbData[pbRegion]}
+            region={pbRegion}
+            setRegion={setPbRegion}
+            loading={pbLoading}
+            error={pbError}
+            updated={pbUpdated}
+            onRefresh={() => fetchPlaybookRegion(pbRegion)}
+            fmtTime={fmtTime}
+          />
+        )}
+
         {tab === "macro" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {/* 10Y Treasury auction health — number + 12-auction trend chart */}

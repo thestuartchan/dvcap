@@ -3,8 +3,8 @@
 // formats Discord-ready (no tables, bullets, bold), optionally posts to the webhook.
 
 import { UNIVERSE } from '../data/universe.js';
-import { getQuotes, getMacro, getKoreaStress } from './lib/quotes.js';
-import { computeRegime, structure } from './lib/regime.js';
+import { assembleRegion } from './lib/assemble.js';
+import { structure } from './lib/regime.js';
 import { weekHighlights } from './lib/calendar.js';
 
 const MODEL = 'claude-sonnet-5';
@@ -119,18 +119,9 @@ export default async function handler(req, res) {
   const R = UNIVERSE[region];
   if (!R) return res.status(400).json({ error: 'bad region' });
 
-  const nameSyms = R.names.map(n => n.sym);
-  const idxSyms  = R.indices.map(n => n.sym);
-
-  const [quotes, idxRaw, macro, korea] = await Promise.all([
-    getQuotes(nameSyms), getQuotes(idxSyms), getMacro(),
-    // Korea-local stress gate is Asia-specific — skip the fetch for EU/US.
-    region === 'asia' ? getKoreaStress() : Promise.resolve(null),
-  ]);
+  const { quotes, idxRaw, macro, regime } = await assembleRegion(region);
   // attach display names to indices
   const indices = idxRaw.map((q, i) => ({ ...q, _name: R.indices[i].name }));
-
-  const regime = computeRegime({ quotes, names: R.names, macro, korea });
   const cal = weekHighlights();
   const blocks = buildBlocks(region, quotes, indices, macro, regime, cal);
   const read = await synthProse(region, blocks);
