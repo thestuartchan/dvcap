@@ -60,3 +60,39 @@ export async function yahooChart(symbol, { range = "1y", interval = "1d" } = {})
     return null;
   }
 }
+
+// Latest EXTENDED-HOURS (pre/post-market) print, keyless. Kept separate from
+// yahooChart because pre/post bars need an INTRADAY interval, whereas yahooChart uses
+// daily bars for the SMA — one request can't serve both. Returns { price, ts, base }
+// where `base` is the last REGULAR close (the reference for the pre/post % change), or
+// null when there is no extended-hours bar after the regular close (e.g. the overnight
+// dead zone) — callers then fall back to the regular/prior-close print.
+export async function yahooPrePost(symbol) {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`
+      + `?interval=5m&range=1d&includePrePost=true`;
+    const r = await fetch(url, {
+      headers: { "User-Agent": UA, Accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!r.ok) return null;
+    const result = (await r.json())?.chart?.result?.[0];
+    const meta = result?.meta;
+    const base = meta?.regularMarketPrice;
+    const regTs = meta?.regularMarketTime;
+    if (base == null || regTs == null) return null;
+
+    const ts = result?.timestamp || [];
+    const closes = result?.indicators?.quote?.[0]?.close || [];
+    // Walk back to the last traded bar; it's extended-hours only if it printed AFTER
+    // the regular session close.
+    for (let i = ts.length - 1; i >= 0; i--) {
+      if (typeof closes[i] === "number") {
+        return ts[i] > regTs ? { price: closes[i], ts: ts[i], base } : null;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}

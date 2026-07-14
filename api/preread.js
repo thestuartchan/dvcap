@@ -30,6 +30,18 @@ function freshLabel(sym, q) {
   return '';
 }
 
+// Pick the price/%chg/label to display. US pre/post-market override: when the US
+// market is SHUT but a FRESH extended-hours print exists, show it (labeled · pre-mkt /
+// · post) instead of the stale prior regular close — that's the live gap at the 09:00
+// ET fire. Everywhere else, the regular print + market-state freshness label.
+function displayQuote(q, region) {
+  if (region === 'us' && marketState(q.sym) === 'closed' && q.ext && !q.ext.stale) {
+    const sess = localHour('America/New_York') < 12 ? 'pre-mkt' : 'post';
+    return { price: q.ext.price, changePct: q.ext.changePct, tail: ` · ${sess}` };
+  }
+  return { price: q.price, changePct: q.changePct, tail: freshLabel(q.sym, q) };
+}
+
 function buildBlocks(region, quotes, indices, macro, regime, cal) {
   const R = UNIVERSE[region];
   const names = R.names;
@@ -39,15 +51,18 @@ function buildBlocks(region, quotes, indices, macro, regime, cal) {
   const nameLines = quotes.map((q, i) => {
     const m = names[i];
     const st = structure(q);
-    const bits = [`**${m.name}**`, `${q.price ?? '—'}`, fmtPct(q.changePct)];
+    const d = displayQuote(q, region);
+    const bits = [`**${m.name}**`, `${d.price ?? '—'}`, fmtPct(d.changePct)];
     if (st) bits.push(st);
     let line = `• ${bits.join(' · ')}`;
     if (m.leader) line += ' ⭐';
-    return line + freshLabel(q.sym, q);
+    return line + d.tail;
   }).join('\n');
 
-  const idxLines = indices.map(q =>
-    `• **${q._name}** · ${q.price ?? '—'} · ${fmtPct(q.changePct)}${freshLabel(q.sym, q)}`).join('\n');
+  const idxLines = indices.map(q => {
+    const d = displayQuote(q, region);
+    return `• **${q._name}** · ${d.price ?? '—'} · ${fmtPct(d.changePct)}${d.tail}`;
+  }).join('\n');
 
   const oil = macro.wti?.price != null
     ? `• **WTI** $${macro.wti.price} ${regime.oil.above ? '▲' : '▼'}${macro.wti.stale ? ' ⚠️' : ''}\n• **Brent** $${macro.brent?.price ?? '—'}`

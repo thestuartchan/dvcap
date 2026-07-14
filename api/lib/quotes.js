@@ -4,7 +4,7 @@
 // FRED (yields/OAS — see fred.js). No plan-gated providers, no per-feed keys.
 
 import { fredLatest } from './fred.js';
-import { yahooChart } from './yahoo.js';
+import { yahooChart, yahooPrePost } from './yahoo.js';
 import { cnbcQuote } from './cnbc.js';
 import k7709units from '../../data/korea_7709.json' with { type: 'json' };
 
@@ -56,10 +56,28 @@ async function oilQuote(symbol, label) {
 }
 
 // ---- public API of the spine ----
-export async function getQuotes(syms) {
+export async function getQuotes(syms, { prepost = false } = {}) {
   const map = await yahooBatch(syms);
   // Guarantee a row for every requested symbol, even on miss (stale/null, not absent).
-  return syms.map(s => map[s] ?? shape(s, { src: 'miss' }));
+  const rows = syms.map(s => map[s] ?? shape(s, { src: 'miss' }));
+
+  // Optional extended-hours (pre/post-market) overlay — used for the US Pre-Read, which
+  // fires pre-open when the regular print is a stale prior close but pre-market is live.
+  // Attaches q.ext = { price, changePct vs last regular close, ts, stale }; null-safe.
+  if (prepost) {
+    await Promise.all(rows.map(async (row) => {
+      const pp = await yahooPrePost(row.sym);
+      if (pp && pp.base) {
+        row.ext = {
+          price: pp.price,
+          changePct: ((pp.price - pp.base) / pp.base) * 100,
+          ts: pp.ts,
+          stale: (Date.now() / 1000 - pp.ts) > STALE_MIN * 60,
+        };
+      }
+    }));
+  }
+  return rows;
 }
 
 export async function getMacro() {

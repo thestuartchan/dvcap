@@ -14,9 +14,11 @@ export async function assembleRegion(region) {
   const nameSyms = R.names.map(n => n.sym);
   const idxSyms  = R.indices.map(n => n.sym);
 
+  // US Pre-Read fires pre-open, so overlay pre/post-market prints for its names+indices.
+  const prepost = region === 'us';
   const [quotes, idxRaw, macro, korea] = await Promise.all([
-    getQuotes(nameSyms),
-    getQuotes(idxSyms),
+    getQuotes(nameSyms, { prepost }),
+    getQuotes(idxSyms, { prepost }),
     getMacro(),
     // Korea-local stress gate is Asia-specific — skip the fetch for EU/US.
     region === 'asia' ? getKoreaStress() : Promise.resolve(null),
