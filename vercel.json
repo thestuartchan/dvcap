@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "api/scrape-7709.js": { "maxDuration": 60 }
+  },
+  "crons": [
+    { "path": "/api/scrape-7709",                        "schedule": "30 0 * * 1-5" },
+    { "path": "/api/preread?region=asia&post=1&cron=1",  "schedule": "0 23 * * 0-4" },
+    { "path": "/api/preread?region=eu&post=1&cron=1",    "schedule": "0 8 * * 1-5" },
+    { "path": "/api/preread?region=eu&post=1&cron=1",    "schedule": "0 9 * * 1-5" },
+    { "path": "/api/preread?region=us&post=1&cron=1",    "schedule": "0 13 * * 1-5" },
+    { "path": "/api/preread?region=us&post=1&cron=1",    "schedule": "0 14 * * 1-5" }
+  ]
+}
