@@ -34,39 +34,44 @@ function buildBlocks(region, quotes, indices, macro, regime, cal) {
   const R = UNIVERSE[region];
   const names = R.names;
 
+  // Line shape: bold ticker anchors the eye, then price, %chg, structure, leader ⭐,
+  // freshness. `·` separators keep it scannable (Discord collapses runs of spaces).
   const nameLines = quotes.map((q, i) => {
     const m = names[i];
     const st = structure(q);
-    const flag = freshLabel(q.sym, q);
-    return `- ${m.name} ${q.price ?? '—'} ${fmtPct(q.changePct)}${st ? ` · ${st}` : ''}${m.leader ? ' ·L' : ''}${flag}`;
+    const bits = [`**${m.name}**`, `${q.price ?? '—'}`, fmtPct(q.changePct)];
+    if (st) bits.push(st);
+    let line = `• ${bits.join(' · ')}`;
+    if (m.leader) line += ' ⭐';
+    return line + freshLabel(q.sym, q);
   }).join('\n');
 
   const idxLines = indices.map(q =>
-    `- ${q._name} ${q.price ?? '—'} ${fmtPct(q.changePct)}${freshLabel(q.sym, q)}`).join('\n');
+    `• **${q._name}** · ${q.price ?? '—'} · ${fmtPct(q.changePct)}${freshLabel(q.sym, q)}`).join('\n');
 
   const oil = macro.wti?.price != null
-    ? `- WTI $${macro.wti.price} ${regime.oil.above ? '▲' : '▼'}${macro.wti.stale ? ' ⚠️' : ''}\n- Brent $${macro.brent?.price ?? '—'}`
-    : '- oil: no live print';
+    ? `• **WTI** $${macro.wti.price} ${regime.oil.above ? '▲' : '▼'}${macro.wti.stale ? ' ⚠️' : ''}\n• **Brent** $${macro.brent?.price ?? '—'}`
+    : '• oil: no live print';
 
   const macroLines =
     `${oil}\n`
-    + `- US 2Y ${macro.us2y?.value ?? '—'}% · 10Y ${macro.us10y?.value ?? '—'}%\n`
-    + `- HY OAS ${macro.oas?.value ?? '—'} (${macro.oas?.date ?? 'n/a'}, last hard print) · ${regime.credit.state}`;
+    + `• **US 2Y** ${macro.us2y?.value ?? '—'}% · **10Y** ${macro.us10y?.value ?? '—'}%\n`
+    + `• **HY OAS** ${macro.oas?.value ?? '—'} (${macro.oas?.date ?? 'n/a'}, last hard print) · ${regime.credit.state}`;
 
   const koreaLines = buildKorea(regime.korea);
 
   let regimeLines =
-    `- Split: ${regime.split.label} (foundry ${fmtPct(regime.split.fnd)} vs memory ${fmtPct(regime.split.mem)})\n`
-    + `- Credit (global/OAS gate): ${regime.credit.state} — ${regime.credit.note}\n`
-    + `- Oil: ${regime.oil.label}`;
+    `• **Split:** ${regime.split.label} (foundry ${fmtPct(regime.split.fnd)} vs memory ${fmtPct(regime.split.mem)})\n`
+    + `• **Credit** (global/OAS gate): ${regime.credit.state} — ${regime.credit.note}\n`
+    + `• **Oil:** ${regime.oil.label}`;
   // Surface the Korea-local cluster to the model as a SEPARATE gate from OAS.
   if (regime.korea) {
-    regimeLines += `\n- Korea (local gate): ${regime.korea.cluster} — ${regime.korea.note}`;
+    regimeLines += `\n• **Korea** (local gate): ${regime.korea.cluster} — ${regime.korea.note}`;
   }
 
   const calLines = cal.length
-    ? cal.map(e => `- ${e.date} — ${e.title} [${e.region}]`).join('\n')
-    : '- (no flagged events this week)';
+    ? cal.map(e => `• **${e.date.slice(5)}** · ${e.title}${e.scope === 'global' ? ' 🌐' : ''}`).join('\n')
+    : '• (no flagged events this region this week)';
 
   return { nameLines, idxLines, macroLines, koreaLines, regimeLines, calLines };
 }
@@ -76,15 +81,15 @@ function buildKorea(k) {
   if (!k) return null;
   const { won, vol, etf } = k;
   const wonLine = won.level != null
-    ? `- USD/KRW ${won.level}${won.dir !== 'n/a' ? ` (${won.dir})` : ''} · ${won.flag}`
-    : '- USD/KRW — no print';
+    ? `• **USD/KRW** ${won.level}${won.dir !== 'n/a' ? ` (${won.dir})` : ''} · ${won.flag}`
+    : '• **USD/KRW** — no print';
   const volLine = vol.level != null
-    ? `- VKOSPI ${vol.level}${vol.band !== 'n/a' ? ` [${vol.band}]` : ''}${vol.changePct != null ? ` ${fmtPct(vol.changePct)}` : ''} · ${vol.flag}`
-    : '- VKOSPI — no print';
+    ? `• **VKOSPI** ${vol.level}${vol.band !== 'n/a' ? ` [${vol.band}]` : ''}${vol.changePct != null ? ` ${fmtPct(vol.changePct)}` : ''} · ${vol.flag}`
+    : '• **VKOSPI** — no print';
   const etfLine = etf.available
-    ? `- 7709 units ${etf.units.toLocaleString('en-US')} (${etf.asOf})${etf.deltaPct != null ? ` ${fmtPct(etf.deltaPct)}` : ''} · ${etf.flag}`
-    : `- 7709 units — ${etf.flag}`;
-  return [wonLine, volLine, etfLine, `- Cluster: ${k.cluster} — ${k.note}`].join('\n');
+    ? `• **7709 units** ${etf.units.toLocaleString('en-US')} (${etf.asOf})${etf.deltaPct != null ? ` ${fmtPct(etf.deltaPct)}` : ''} · ${etf.flag}`
+    : `• **7709 units** — ${etf.flag}`;
+  return [wonLine, volLine, etfLine, `• **Cluster:** ${k.cluster} — ${k.note}`].join('\n');
 }
 
 async function synthProse(region, blocks) {
@@ -119,18 +124,27 @@ Write only the READ paragraph.`;
 function assembleDiscord(region, label, blocks, read) {
   const emoji = { asia: '🌏', eu: '🇪🇺', us: '🇺🇸' }[region] || '📊';
   const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+
+  // Each section is header + body; sections are separated by a blank line AND a thin
+  // rule so they breathe (Discord collapses bare consecutive newlines, so we use an
+  // explicit divider rather than relying on extra \n's).
+  const RULE = '───────────────';
+  const sections = [
+    `📋 **NAMES**\n${blocks.nameLines}`,
+    `📈 **INDICES**\n${blocks.idxLines}`,
+    `🛢️ **MACRO**\n${blocks.macroLines}`,
+    ...(blocks.koreaLines ? [`🇰🇷 **KOREA STRESS**\n${blocks.koreaLines}`] : []),
+    `🧭 **REGIME**\n${blocks.regimeLines}`,
+    `📝 **READ**\n${read}`,
+    `📅 **THIS WEEK**\n${blocks.calLines}`,
+  ];
+
   return [
-    `${emoji} **DAILY PRE-READ — ${label} — ${now}Z**`,
-    ``,
-    `**NAMES**`, blocks.nameLines,
-    ``, `**INDICES**`, blocks.idxLines,
-    ``, `🛢️ **MACRO**`, blocks.macroLines,
-    // Korea-local stress cluster — Asia only (null otherwise).
-    ...(blocks.koreaLines ? [``, `🇰🇷 **KOREA STRESS**`, blocks.koreaLines] : []),
-    ``, `🧭 **REGIME**`, blocks.regimeLines,
-    ``, `🧭 **READ**`, read,
-    ``, `📅 **THIS WEEK**`, blocks.calLines,
-  ].join('\n');
+    `${emoji} **DAILY PRE-READ · ${label} · ${now}Z**`,
+    ...sections.flatMap(s => [RULE, s]),
+    RULE,
+    `*⭐ sector leader (cross-market tell) · ⏱ delayed feed · 🌐 global event · "prior close" = market shut*`,
+  ].join('\n\n');
 }
 
 export default async function handler(req, res) {
@@ -154,7 +168,7 @@ export default async function handler(req, res) {
   const { quotes, idxRaw, macro, regime } = await assembleRegion(region);
   // attach display names to indices
   const indices = idxRaw.map((q, i) => ({ ...q, _name: R.indices[i].name }));
-  const cal = weekHighlights();
+  const cal = weekHighlights(new Date(), region);
   const blocks = buildBlocks(region, quotes, indices, macro, regime, cal);
   const read = await synthProse(region, blocks);
   const message = assembleDiscord(region, R.label, blocks, read);

@@ -16,11 +16,16 @@ export function monthView(year, month) {
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-export function weekHighlights(ref = new Date()) {
-  // Events from this Monday through Sunday — what the Monday Pre-Read surfaces.
+export function weekHighlights(ref = new Date(), region = null) {
+  // Events from this Monday through Sunday — what the Pre-Read surfaces.
+  // When a region is passed, keep only what's relevant to it: events tagged for that
+  // region PLUS anything marked scope:"global" (Fed/US-macro that moves every region —
+  // the master gate in the framework). Other regions' local events drop off.
   const start = startOfWeek(ref);
   const end = new Date(start); end.setDate(end.getDate() + 7);
+  const R = region ? region.toUpperCase() : null;
   return cal
     .filter(e => { const d = new Date(e.date); return d >= start && d < end; })
+    .filter(e => !R || e.region === R || e.scope === 'global')
     .sort((a, b) => a.date.localeCompare(b.date));
 }
