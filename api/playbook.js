@@ -1,11 +1,11 @@
 // /api/playbook?region=asia|eu|us
 // Structured spine + regime for the dashboard's Global Playbook tab. Same data
-// path as the Discord pre-read (api/lib/assemble.js) but WITHOUT the Anthropic
+// path as the Discord pre-read (lib/assemble.js) but WITHOUT the Anthropic
 // prose call — so the tab is cheap to refresh on demand. No webhook, no model.
 
-import { assembleRegion } from './lib/assemble.js';
-import { structure } from './lib/regime.js';
-import { weekHighlights } from './lib/calendar.js';
+import { assembleRegion } from '../lib/assemble.js';
+import { structure } from '../lib/regime.js';
+import { weekHighlights } from '../lib/calendar.js';
 
 export default async function handler(req, res) {
   const region = (req.query.region || 'asia').toLowerCase();

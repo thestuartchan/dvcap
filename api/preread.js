@@ -3,10 +3,10 @@
 // formats Discord-ready (no tables, bullets, bold), optionally posts to the webhook.
 
 import { UNIVERSE } from '../data/universe.js';
-import { assembleRegion } from './lib/assemble.js';
-import { structure } from './lib/regime.js';
-import { weekHighlights } from './lib/calendar.js';
-import { marketState, localHour } from './lib/sessions.js';
+import { assembleRegion } from '../lib/assemble.js';
+import { structure } from '../lib/regime.js';
+import { weekHighlights } from '../lib/calendar.js';
+import { marketState, localHour } from '../lib/sessions.js';
 
 const MODEL = 'claude-sonnet-5';
 

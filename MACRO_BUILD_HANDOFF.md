@@ -9,22 +9,22 @@ alerting, and a journal/rules-log.
 ## Status: Layer 1 built & tested (this package, drop into repo)
 - `data/universe.js` — tickers per region (asia/eu/us), tagged by role
   (foundry/memory/litho/equip/index/megacap/gpu) + `leader` flags. Single source of truth.
-- `api/lib/quotes.js` — DATA SPINE. Normalized quote shape, honest `stale` flag on every
-  print. Sources: Yahoo (equities/indices/oil, keyless — `api/lib/yahoo.js`) + FRED
-  (yields/OAS — `api/lib/fred.js`, shares `FRED_API_KEY` with `api/indicators.js`).
+- `lib/quotes.js` — DATA SPINE. Normalized quote shape, honest `stale` flag on every
+  print. Sources: Yahoo (equities/indices/oil, keyless — `lib/yahoo.js`) + FRED
+  (yields/OAS — `lib/fred.js`, shares `FRED_API_KEY` with `api/indicators.js`).
   Everything reads this. [Reconciled: was FMP-primary + placeholder oil; moved onto the
   repo's existing keyless Yahoo stack and unified the FRED key.]
-- `api/lib/regime.js` — DETERMINISTIC regime engine (memory-vs-foundry split, credit
+- `lib/regime.js` — DETERMINISTIC regime engine (memory-vs-foundry split, credit
   state, oil-vs-pivot, structure-vs-MAs). NO model. Pure arithmetic. TESTED against live
   Jul 13 numbers — correctly output "memory-specific weakness (foundry holding)".
-- `api/lib/calendar.js` + `data/calendar.json` — global macro calendar, hand-maintained
+- `lib/calendar.js` + `data/calendar.json` — global macro calendar, hand-maintained
   monthly; `monthView(y,m)` + `weekHighlights()` (auto Mon–Sun). TESTED.
 - `api/preread.js` — assembles data + regime, calls `claude-sonnet-5` for ONLY the prose
   read, formats Discord-ready, posts webhook. ✅ RUN END-TO-END against live Jul 14 tape:
   spine/oil/FRED/Korea all live, regime coherent, Discord post returns 204. Posts as an
   EMBED (4096-char limit) — plain `content` caps at 2000 and was silently 400ing. The
   webhook response is now checked, not swallowed.
-- `api/lib/sessions.js` — per-exchange trading hours (HK/KR/TW/JP/EU/US) via `Intl`
+- `lib/sessions.js` — per-exchange trading hours (HK/KR/TW/JP/EU/US) via `Intl`
   (DST-safe). `marketState()` → open|lunch|closed; `localHour()` for cron gating. Seed of
   the Layer 3 timezone engine. The Pre-Read uses it to label prints by MARKET state
   ("· prior close" / "· lunch" / "⏱Nm delayed" / "⚠️no print") instead of a blunt STALE bit.
@@ -55,8 +55,8 @@ regime engine encodes). Read it before touching regime.js or universe.js.
 
 ## FIRST TASKS in Claude Code (in order)
 1. ✅ DONE — Merged & reconciled against the existing `api/` stack: spine now reads the
-   repo's keyless Yahoo endpoint (`api/lib/yahoo.js`, same one `api/prices.js`/`indicators.js`
-   use) and shares the FRED key via `api/lib/fred.js` (`FRED_API_KEY`). No duplicate key.
+   repo's keyless Yahoo endpoint (`lib/yahoo.js`, same one `api/prices.js`/`indicators.js`
+   use) and shares the FRED key via `lib/fred.js` (`FRED_API_KEY`). No duplicate key.
 2. ✅ DONE — Oil is NOT a gap: `oilQuote()` reads Yahoo `CL=F`/`BZ=F` (keyless), the same
    WTI source `api/indicators.js` already uses. No OIL_KEY / paid feed needed.
 3. Set env vars in Vercel: FRED_API_KEY, ANTHROPIC_API_KEY, DISCORD_WEBHOOK.
@@ -77,6 +77,14 @@ regime engine encodes). Read it before touching regime.js or universe.js.
    become an editable store; grows region-by-region as the tape teaches.
 
 ## Known gaps / cautions
+- VERCEL HOBBY 12-FUNCTION CAP: the project is on the Hobby plan, which allows at most
+  12 Serverless Functions per deployment — and Vercel turns EVERY file under `api/` into
+  a function. Shared modules therefore live in a top-level `lib/` (NOT `api/lib/`), so they
+  bundle as imports instead of counting as functions. Current count = 6 endpoints
+  (indicators, login, playbook, preread, prices, scrape-7709). DO NOT put helpers under
+  `api/`, and adding new endpoints eats the remaining headroom. (This bit us: moving lib
+  into `api/` pushed the count to 14 and every deploy silently ERRORed — errorCode
+  `exceeded_serverless_functions_per_deployment` — while production stayed on the old build.)
 - DATA DELAY (keyless Yahoo): HK/KR/TW/JP cash equities come ~15–20 min delayed via the
   keyless Yahoo feed — inherent to any free source (real-time needs paid exchange
   entitlements). This is NOT cosmetic in a volatile session: on Jul 14, delayed Yahoo showed
@@ -96,7 +104,7 @@ regime engine encodes). Read it before touching regime.js or universe.js.
   (A) always-on IBKR gateway (IBeam/ib-gateway-docker on Fly/Railway/VPS, ~$5/mo + daily
   2FA/session tax) that the cron HTTP-calls; or (B) IBKR OAuth self-service (headless,
   fits serverless, dense one-time key/registration setup). In-repo code is ~half a day
-  (`api/lib/ibkr.js` + spine fallback: IBKR primary when session live → Yahoo fallback with
+  (`lib/ibkr.js` + spine fallback: IBKR primary when session live → Yahoo fallback with
   the honest delayed label). Do this when building the dashboard, and decide gateway-vs-OAuth
   then. Keep Yahoo as the permanent fallback regardless.
 - Korea stress cluster (Asia pre-read): USD/KRW (Yahoo `KRW=X`) and VKOSPI (CNBC
@@ -109,7 +117,7 @@ regime engine encodes). Read it before touching regime.js or universe.js.
   Yahoo `7709.HK`. Modeled as a Korea-LOCAL regime gate (`regime.korea`), kept separate from
   the global OAS gate — do not merge them.
 - EU/US quotes in the seeded universe are close-of-Friday; live only when those markets open.
-- MAs are now computed from Yahoo daily closes (`api/lib/yahoo.js`), not a provider's
+- MAs are now computed from Yahoo daily closes (`lib/yahoo.js`), not a provider's
   precomputed field — this resolves the old "FMP index MAs are garbage (KOSPI nonsense)" gap.
   The newest close in the SMA window may be intraday; the 50/200d level is barely affected.
 
