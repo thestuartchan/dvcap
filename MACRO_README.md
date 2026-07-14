@@ -5,10 +5,10 @@ Daily Pre-Reads (posted to Discord at each regional open) and a maintainable glo
 macro calendar.
 
 ## Architecture (3 layers)
-1. **Data spine** (`api/lib/quotes.js`) — one normalized quote shape, Yahoo primary
-   (keyless; equities/indices/oil via `api/lib/yahoo.js`) + FRED (yields/OAS via
-   `api/lib/fred.js`), honest `stale` flags. Everything reads this, never a raw provider.
-2. **Regime engine** (`api/lib/regime.js`) — deterministic tagging (memory/foundry split,
+1. **Data spine** (`lib/quotes.js`) — one normalized quote shape, Yahoo primary
+   (keyless; equities/indices/oil via `lib/yahoo.js`) + FRED (yields/OAS via
+   `lib/fred.js`), honest `stale` flags. Everything reads this, never a raw provider.
+2. **Regime engine** (`lib/regime.js`) — deterministic tagging (memory/foundry split,
    credit state, oil read, structure). NO model. Pure arithmetic. This is what keeps
    the tool from ever inventing a number.
 3. **Generator** (`api/preread.js`) — assembles data + regime, calls `claude-sonnet-5`
@@ -45,9 +45,9 @@ Edit `data/calendar.json` monthly. Each event: `{ date, title, region, tier }`.
 A Korea-LOCAL credit/fear gate, modeled SEPARATELY from the global HY-OAS gate (OAS
 answers "is this a world credit event?"; this answers "is the leveraged-memory forced-
 deleveraging spiral exhausting?"). Rendered as a 🇰🇷 KOREA STRESS block and as a
-`regime.korea` object. Three tells (`api/lib/regime.js` → `koreaStress`):
+`regime.korea` object. Three tells (`lib/regime.js` → `koreaStress`):
 - **USD/KRW** — Yahoo `KRW=X` (keyless). Rising = won weakening = outflows; falling/flat = stabilizing.
-- **VKOSPI** — CNBC `.KSVKOSPI` (keyless, `api/lib/cnbc.js`; Yahoo/FMP don't carry it).
+- **VKOSPI** — CNBC `.KSVKOSPI` (keyless, `lib/cnbc.js`; Yahoo/FMP don't carry it).
   Bands calm<20 / elevated 30–45 / panic 80+. Elevated **and falling** = peak-and-roll (fear exhausting).
 - **CSOP 7709 units outstanding** — the deleveraging tell (day-over-day UNITS, not price/AUM).
   The authoritative CSOP page and HKEX are bot-protected (HTTP 403 to plain fetch), so units

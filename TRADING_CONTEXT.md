@@ -75,8 +75,8 @@ Region-by-region market summary posted to Discord at each regional open. HARD co
 ## Data discipline (learned the hard way, encode it)
 - Every print carries a `stale` flag; the Pre-Read shows ⚠️ on stale data. NEVER launder a
   stale/last-close number into a clean live-looking one. Tag the source and timestamp.
-- Provider cascade: Yahoo (equities/indices/oil, keyless — `api/lib/yahoo.js`) → FRED
-  (yields/OAS — `api/lib/fred.js`) → web as last resort. MAs are computed from Yahoo daily
+- Provider cascade: Yahoo (equities/indices/oil, keyless — `lib/yahoo.js`) → FRED
+  (yields/OAS — `lib/fred.js`) → web as last resort. MAs are computed from Yahoo daily
   closes, not a provider's precomputed field (that field was unreliable — KOSPI returned
   nonsense). The universe is authored in Yahoo symbol format, so this is the native fit.
 - Cross-check timestamps: Asian/EU/US markets are open at different times; a "live" call on a

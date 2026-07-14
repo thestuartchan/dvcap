@@ -5,7 +5,7 @@
 // (HTTP 403 to plain fetch), and no keyless feed carries units for this ETF. A real
 // browser (puppeteer-core + @sparticuz/chromium) renders the page and reads the
 // number. See data/korea_7709.json (the maintained series this appends to) and
-// api/lib/regime.js → etfUnitsRead (which consumes the series).
+// lib/regime.js → etfUnitsRead (which consumes the series).
 //
 // Persistence: Vercel's filesystem is read-only, so this commits the new row back to
 // data/korea_7709.json via the GitHub contents API. The Asia pre-read reads that file
