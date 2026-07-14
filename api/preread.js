@@ -127,13 +127,31 @@ export default async function handler(req, res) {
   const read = await synthProse(region, blocks);
   const message = assembleDiscord(region, R.label, blocks, read);
 
-  // Optional: post to Discord if a webhook is set and ?post=1
-  if (req.query.post === '1' && process.env.DISCORD_WEBHOOK) {
-    await fetch(process.env.DISCORD_WEBHOOK, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ content: message.slice(0, 3900) }),
-    });
+  // Optional: post to Discord if a webhook is set and ?post=1.
+  // We check Discord's response (204 = success) and surface failures instead of
+  // swallowing them — a bad/expired webhook must not read as a clean post.
+  let posted = null;
+  if (req.query.post === '1') {
+    if (!process.env.DISCORD_WEBHOOK) {
+      posted = { ok: false, error: 'DISCORD_WEBHOOK not set' };
+    } else {
+      try {
+        // Post as an embed: description caps at 4096 chars (vs 2000 for plain
+        // `content`), so the full Pre-Read fits in one message without truncating
+        // off the calendar/read. Markdown (bold, bullets) still renders.
+        const wr = await fetch(process.env.DISCORD_WEBHOOK, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ embeds: [{ description: message.slice(0, 4096) }] }),
+        });
+        const body = wr.ok ? '' : (await wr.text().catch(() => ''));
+        posted = wr.ok
+          ? { ok: true, status: wr.status }
+          : { ok: false, status: wr.status, error: body.slice(0, 300) };
+      } catch (e) {
+        posted = { ok: false, error: String(e?.message || e) };
+      }
+    }
   }
 
-  res.status(200).json({ region, message, regime, generatedAt: new Date().toISOString() });
+  res.status(200).json({ region, message, regime, posted, generatedAt: new Date().toISOString() });
 }

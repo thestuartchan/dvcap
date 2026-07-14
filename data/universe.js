@@ -23,7 +23,7 @@ export const UNIVERSE = {
     ],
     indices: [
       { sym: '^HSI',    name: 'HSI'    },
-      { sym: '^HSTECH', name: 'HSTECH' },
+      { sym: 'HSTECH.HK', name: 'HSTECH' },
       { sym: '^KS11',   name: 'KOSPI'  },
       { sym: '^N225',   name: 'Nikkei' },
     ],
