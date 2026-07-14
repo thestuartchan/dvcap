@@ -6,10 +6,29 @@ import { UNIVERSE } from '../data/universe.js';
 import { assembleRegion } from './lib/assemble.js';
 import { structure } from './lib/regime.js';
 import { weekHighlights } from './lib/calendar.js';
+import { marketState } from './lib/sessions.js';
 
 const MODEL = 'claude-sonnet-5';
 
 function fmtPct(p) { return p == null ? '—' : `${p > 0 ? '+' : ''}${p.toFixed(1)}%`; }
+
+// Honest freshness label, keyed off the MARKET's state — not a blunt stale flag.
+//   market closed (pre/post/weekend) → "· prior close"  (expected; the pre-market case)
+//   market in lunch                  → "· lunch"         (mid-session, price frozen)
+//   market open + feed lagging       → "⏱Nm delayed"     (keyless Yahoo runs ~15m behind)
+//   market open + fresh              → ""                 (live)
+//   no price                         → "⚠️no print"
+function freshLabel(sym, q) {
+  if (q.price == null) return ' ⚠️no print';
+  const st = marketState(sym);
+  if (st === 'closed') return ' · prior close';
+  if (st === 'lunch')  return ' · lunch';
+  if (q.stale) {
+    const mins = q.ts ? Math.round(Date.now() / 1000 / 60 - q.ts / 60) : null;
+    return mins != null ? ` ⏱${mins}m delayed` : ' ⏱delayed';
+  }
+  return '';
+}
 
 function buildBlocks(region, quotes, indices, macro, regime, cal) {
   const R = UNIVERSE[region];
@@ -18,12 +37,12 @@ function buildBlocks(region, quotes, indices, macro, regime, cal) {
   const nameLines = quotes.map((q, i) => {
     const m = names[i];
     const st = structure(q);
-    const flag = q.stale ? ' ⚠️stale' : '';
+    const flag = freshLabel(q.sym, q);
     return `- ${m.name} ${q.price ?? '—'} ${fmtPct(q.changePct)}${st ? ` · ${st}` : ''}${m.leader ? ' ·L' : ''}${flag}`;
   }).join('\n');
 
   const idxLines = indices.map(q =>
-    `- ${q._name} ${q.price ?? '—'} ${fmtPct(q.changePct)}`).join('\n');
+    `- ${q._name} ${q.price ?? '—'} ${fmtPct(q.changePct)}${freshLabel(q.sym, q)}`).join('\n');
 
   const oil = macro.wti?.price != null
     ? `- WTI $${macro.wti.price} ${regime.oil.above ? '▲' : '▼'}${macro.wti.stale ? ' ⚠️' : ''}\n- Brent $${macro.brent?.price ?? '—'}`
