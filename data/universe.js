@@ -6,7 +6,7 @@ export const UNIVERSE = {
   asia: {
     label: 'Asia',
     tz: 'Asia/Hong_Kong',
-    prereadHourLocal: 9,          // ~09:00 HKT, into the HK open
+    prereadHourLocal: 7,          // 07:00 HKT = pre-market brief, before Korea/Japan (08:00 HKT / 09:00 local) open. HK/KR/TW/JP keep no DST, so 23:00 UTC maps here year-round.
     names: [
       { sym: '0981.HK',   name: 'SMIC',        role: 'foundry',  leader: true  },
       { sym: '1347.HK',   name: 'Hua Hong',    role: 'foundry'                 },

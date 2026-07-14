@@ -6,7 +6,7 @@ import { UNIVERSE } from '../data/universe.js';
 import { assembleRegion } from './lib/assemble.js';
 import { structure } from './lib/regime.js';
 import { weekHighlights } from './lib/calendar.js';
-import { marketState } from './lib/sessions.js';
+import { marketState, localHour } from './lib/sessions.js';
 
 const MODEL = 'claude-sonnet-5';
 
@@ -137,6 +137,19 @@ export default async function handler(req, res) {
   const region = (req.query.region || 'asia').toLowerCase();
   const R = UNIVERSE[region];
   if (!R) return res.status(400).json({ error: 'bad region' });
+
+  // DST-safe cron gating. Vercel crons are UTC-only and would drift an hour across
+  // daylight-saving shifts. For DST-observing regions (EU/US) we schedule the cron at
+  // BOTH candidate UTC hours and gate here on the region's real local hour (Intl,
+  // DST-aware), so exactly one firing per day actually posts. Asia (HK/KR/TW/JP keep
+  // no DST) needs one entry, but the same gate applies harmlessly. Only scheduled
+  // calls pass cron=1 — manual calls/dry-runs skip the gate, so tests always run.
+  if (req.query.cron === '1' && localHour(R.tz) !== R.prereadHourLocal) {
+    return res.status(200).json({
+      region, skipped: true,
+      reason: `off-target local hour (want ${R.prereadHourLocal}:00 ${R.tz}, now ${localHour(R.tz)}:00)`,
+    });
+  }
 
   const { quotes, idxRaw, macro, regime } = await assembleRegion(region);
   // attach display names to indices

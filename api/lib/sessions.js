@@ -43,6 +43,17 @@ export function exchangeFor(sym) {
   }
 }
 
+// Current hour (0-23) in an IANA timezone, DST-aware. Used to gate UTC crons onto a
+// region's true local pre-read hour so they don't drift across daylight-saving shifts.
+export function localHour(tz, now = new Date()) {
+  const h = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour: '2-digit', hour12: false,
+  }).formatToParts(now).find(p => p.type === 'hour')?.value;
+  let hh = parseInt(h, 10);
+  if (hh === 24) hh = 0;
+  return hh;
+}
+
 // 'open' | 'lunch' | 'closed' for a symbol at a given instant (default: now).
 // Weekends are 'closed'. Exchange holidays are NOT modeled yet — a holiday reads as
 // 'closed' only if it also falls outside session hours, which it always does here
