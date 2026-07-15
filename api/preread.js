@@ -12,6 +12,8 @@ const MODEL = 'claude-sonnet-5';
 
 function fmtPct(p) { return p == null ? '—' : `${p > 0 ? '+' : ''}${p.toFixed(1)}%`; }
 
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
 // Honest freshness label, keyed off the MARKET's state — not a blunt stale flag.
 //   market closed (pre/post/weekend) → "· prior close"  (expected; the pre-market case)
 //   market in lunch                  → "· lunch"         (mid-session, price frozen)
@@ -85,8 +87,11 @@ function buildBlocks(region, quotes, indices, macro, regime, cal) {
   }
 
   const calLines = cal.length
-    ? cal.map(e => `• **${e.date.slice(5)}** · ${e.title}${e.scope === 'global' ? ' 🌐' : ''}`).join('\n')
-    : '• (no flagged events this region this week)';
+    ? cal.map(e => {
+        const dow = DOW[new Date(e.date + 'T00:00:00Z').getUTCDay()];
+        return `• **${dow} ${e.date.slice(5)}** · ${e.title}${e.scope === 'global' ? ' 🌐' : ''}`;
+      }).join('\n')
+    : '• (nothing left on the calendar this week)';
 
   return { nameLines, idxLines, macroLines, koreaLines, regimeLines, calLines };
 }
@@ -94,17 +99,17 @@ function buildBlocks(region, quotes, indices, macro, regime, cal) {
 // Korea-stress cluster block (Asia only). null when there's no Korea gate.
 function buildKorea(k) {
   if (!k) return null;
-  const { won, vol, etf } = k;
+  const { won, vol } = k;
   const wonLine = won.level != null
     ? `• **USD/KRW** ${won.level}${won.dir !== 'n/a' ? ` (${won.dir})` : ''} · ${won.flag}`
     : '• **USD/KRW** — no print';
+  // VKOSPI here is the SPOT index (CNBC .KSVKOSPI) — labeled "spot" so it isn't mistaken
+  // for the tradeable VKOSPI futures (VKI1!), which sit in heavy backwardation during a
+  // vol spike and have no keyless feed (see IBKR-integration note in the handoff).
   const volLine = vol.level != null
-    ? `• **VKOSPI** ${vol.level}${vol.band !== 'n/a' ? ` [${vol.band}]` : ''}${vol.changePct != null ? ` ${fmtPct(vol.changePct)}` : ''} · ${vol.flag}`
-    : '• **VKOSPI** — no print';
-  const etfLine = etf.available
-    ? `• **7709 units** ${etf.units.toLocaleString('en-US')} (${etf.asOf})${etf.deltaPct != null ? ` ${fmtPct(etf.deltaPct)}` : ''} · ${etf.flag}`
-    : `• **7709 units** — ${etf.flag}`;
-  return [wonLine, volLine, etfLine, `• **Cluster:** ${k.cluster} — ${k.note}`].join('\n');
+    ? `• **VKOSPI spot** ${vol.level}${vol.band !== 'n/a' ? ` [${vol.band}]` : ''}${vol.changePct != null ? ` ${fmtPct(vol.changePct)}` : ''} · ${vol.flag}`
+    : '• **VKOSPI spot** — no print';
+  return [wonLine, volLine, `• **Cluster:** ${k.cluster} — ${k.note}`].join('\n');
 }
 
 async function synthProse(region, blocks) {
@@ -183,7 +188,7 @@ export default async function handler(req, res) {
   const { quotes, idxRaw, macro, regime } = await assembleRegion(region);
   // attach display names to indices
   const indices = idxRaw.map((q, i) => ({ ...q, _name: R.indices[i].name }));
-  const cal = weekHighlights(new Date(), region);
+  const cal = weekHighlights(new Date(), region, R.tz);
   const blocks = buildBlocks(region, quotes, indices, macro, regime, cal);
   const read = await synthProse(region, blocks);
   const message = assembleDiscord(region, R.label, blocks, read);
