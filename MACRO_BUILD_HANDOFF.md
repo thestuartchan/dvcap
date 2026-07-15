@@ -130,7 +130,10 @@ regime engine encodes). Read it before touching regime.js or universe.js.
   code; top up yearly like calendar.json). `marketState()` returns 'holiday' on those dates
   (exchange-local) → the Pre-Read labels the print '· holiday'. Safe-degrading: a missing
   date just falls back to normal hours; a WRONG date mislabels a real trading day, so verify.
-  Half-day early closes are NOT modeled. Adding a region → add its holidays here too. (US
+  Half-day early closes ARE modeled (`half` array per exchange) → the Pre-Read shows a
+  "🕐 HALF DAY" heads-up under the header naming the affected exchange(s); the exact early-
+  close time is not tracked (pre-read fires pre-open, only needs the warning). Adding a
+  region → add its closures + half-days here too. (US
   permanent-DST bill passed the House 2026-07 — no code change needed if it becomes law: the
   Intl-based cron guard follows the tz database automatically; the winter cron slot just
   becomes a daily no-op.)
