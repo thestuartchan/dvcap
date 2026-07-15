@@ -6,7 +6,9 @@ into a global macro trading tool: automated region-by-region Daily Pre-Reads +
 a maintainable global macro calendar + (roadmap) live dashboard, timezone engine,
 alerting, and a journal/rules-log.
 
-## Status: Layer 1 built & tested (this package, drop into repo)
+## Status: Layer 1 LIVE in production (merged to main, deployed on dvcap.vercel.app)
+Deployed 2026-07-14. Crons active; first automated post (EU) landed ~08:00 UTC that day.
+Pipeline verified end-to-end live: GET /api/preread?region=asia returns the full read.
 - `data/universe.js` — tickers per region (asia/eu/us), tagged by role
   (foundry/memory/litho/equip/index/megacap/gpu) + `leader` flags. Single source of truth.
 - `lib/quotes.js` — DATA SPINE. Normalized quote shape, honest `stale` flag on every
@@ -59,13 +61,15 @@ regime engine encodes). Read it before touching regime.js or universe.js.
    use) and shares the FRED key via `lib/fred.js` (`FRED_API_KEY`). No duplicate key.
 2. ✅ DONE — Oil is NOT a gap: `oilQuote()` reads Yahoo `CL=F`/`BZ=F` (keyless), the same
    WTI source `api/indicators.js` already uses. No OIL_KEY / paid feed needed.
-3. Set env vars in Vercel: FRED_API_KEY, ANTHROPIC_API_KEY, DISCORD_WEBHOOK.
-   (FRED_API_KEY is already set for the existing dashboard; FMP_KEY / OIL_KEY no longer used.)
-   ⚠️ STILL TODO for production cron — verified locally via `.env.local` only. The cron runs
-   in Vercel, so these MUST be added to the Vercel project's env before it will post.
-4. ✅ DONE (locally) — Dry-run of `region=asia` no-post and `&post=1` both verified against
-   live tape; Discord post lands as an embed (204). HSTECH index symbol fixed (`^HSTECH`
-   404'd → `HSTECH.HK`). Remaining: set Vercel env (task 3) + confirm the cron fires.
+3. ✅ DONE — Vercel env set (FRED_API_KEY, ANTHROPIC_API_KEY, DISCORD_WEBHOOK) and
+   verified live in production. FMP_KEY / OIL_KEY no longer used.
+   ⚠️ STILL TODO: GITHUB_TOKEN (fine-grained PAT, repo Contents: read+write) + GITHUB_REPO
+   (`thestuartchan/dvcap`) for the 7709 units scraper — until set, units read null and the
+   Korea cluster runs on USD/KRW + VKOSPI only. Validate with `/api/scrape-7709?debug=1`
+   then `?dry=1`; tune the CSOP label regexes if `units` is null.
+4. ✅ DONE — Dry-runs (local + live prod endpoint) verified; Discord posts as an embed (204);
+   cron confirmed firing (EU landed ~08:00 UTC 2026-07-14). HSTECH symbol fixed
+   (`^HSTECH` 404'd → `HSTECH.HK`). Pre/post-market pricing added for the US read.
 
 ## ROADMAP (layers 2–5, each a discrete build)
 2. Dashboard UI tab — render spine + regime live (the v3 playbook, but dynamic).
