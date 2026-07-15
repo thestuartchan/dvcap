@@ -1,0 +1,11 @@
+{
+  "_README": "Exchange holidays (full-day CLOSURES), keyed by the exchange codes in lib/sessions.js (SEHK/KRX/TWSE/TSE/EURONEXT/XETRA/LSE/US). Hand-maintained like calendar.json — top up each year. Dates are the exchange's LOCAL calendar date (YYYY-MM-DD). marketState() returns 'holiday' on these so the Pre-Read labels the print '· holiday' instead of expecting a live quote. SAFE-DEGRADING: a MISSING holiday just falls back to normal hours (no worse than before); only a WRONG date mislabels a real trading day, so verify before adding. Half-day early closes are NOT modeled. Seeded 2026-07-15 for the remainder of 2026, verified against exchange/aggregator calendars; lunar-based dates (Chuseok, Mid-Autumn) especially warrant a re-check each year.",
+  "SEHK":     ["2026-10-01", "2026-10-19", "2026-12-25"],
+  "KRX":      ["2026-08-17", "2026-09-24", "2026-09-25", "2026-10-05", "2026-10-09", "2026-12-25", "2026-12-31"],
+  "TWSE":     ["2026-09-25", "2026-09-28", "2026-10-09", "2026-10-26"],
+  "TSE":      ["2026-07-20", "2026-08-11", "2026-09-21", "2026-09-22", "2026-09-23", "2026-10-12", "2026-11-03", "2026-11-23", "2026-12-31"],
+  "EURONEXT": ["2026-12-25"],
+  "XETRA":    ["2026-12-24", "2026-12-25", "2026-12-31"],
+  "LSE":      ["2026-08-31", "2026-12-25", "2026-12-28"],
+  "US":       ["2026-09-07", "2026-11-26", "2026-12-25"]
+}

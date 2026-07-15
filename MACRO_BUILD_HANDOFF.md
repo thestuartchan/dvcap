@@ -125,9 +125,15 @@ regime engine encodes). Read it before touching regime.js or universe.js.
   winter time while US is still on summer — handled automatically, since each guard reads its
   own tz. Asia (HK/KR/TW/JP) observes no DST → single UTC slot. Canada follows US DST and we
   only track US via `America/New_York`, so it's a non-issue. TO ADD A REGION: set the correct
-  IANA `tz` in universe.js and, if it observes DST, add both candidate UTC cron slots. NOT
-  modeled: exchange HOLIDAYS — the pre-read still fires on a market holiday and shows prior
-  close (separate future add, unrelated to DST).
+  IANA `tz` in universe.js and, if it observes DST, add both candidate UTC cron slots.
+- EXCHANGE HOLIDAYS: modeled in `data/holidays.json` (hand-maintained, keyed by exchange
+  code; top up yearly like calendar.json). `marketState()` returns 'holiday' on those dates
+  (exchange-local) → the Pre-Read labels the print '· holiday'. Safe-degrading: a missing
+  date just falls back to normal hours; a WRONG date mislabels a real trading day, so verify.
+  Half-day early closes are NOT modeled. Adding a region → add its holidays here too. (US
+  permanent-DST bill passed the House 2026-07 — no code change needed if it becomes law: the
+  Intl-based cron guard follows the tz database automatically; the winter cron slot just
+  becomes a daily no-op.)
 - EU/US quotes in the seeded universe are close-of-Friday; live only when those markets open.
 - MAs are now computed from Yahoo daily closes (`lib/yahoo.js`), not a provider's
   precomputed field — this resolves the old "FMP index MAs are garbage (KOSPI nonsense)" gap.
