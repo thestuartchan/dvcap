@@ -23,6 +23,7 @@ const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 function freshLabel(sym, q) {
   if (q.price == null) return ' ⚠️no print';
   const st = marketState(sym);
+  if (st === 'holiday') return ' · holiday';
   if (st === 'closed') return ' · prior close';
   if (st === 'lunch')  return ' · lunch';
   if (q.stale) {

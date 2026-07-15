@@ -62,11 +62,8 @@ regime engine encodes). Read it before touching regime.js or universe.js.
 2. ✅ DONE — Oil is NOT a gap: `oilQuote()` reads Yahoo `CL=F`/`BZ=F` (keyless), the same
    WTI source `api/indicators.js` already uses. No OIL_KEY / paid feed needed.
 3. ✅ DONE — Vercel env set (FRED_API_KEY, ANTHROPIC_API_KEY, DISCORD_WEBHOOK) and
-   verified live in production. FMP_KEY / OIL_KEY no longer used.
-   ⚠️ STILL TODO: GITHUB_TOKEN (fine-grained PAT, repo Contents: read+write) + GITHUB_REPO
-   (`thestuartchan/dvcap`) for the 7709 units scraper — until set, units read null and the
-   Korea cluster runs on USD/KRW + VKOSPI only. Validate with `/api/scrape-7709?debug=1`
-   then `?dry=1`; tune the CSOP label regexes if `units` is null.
+   verified live in production. FMP_KEY / OIL_KEY no longer used. (CSOP 7709 fully retired
+   2026-07-15 — no GITHUB_TOKEN/scraper anymore; see Known gaps.)
 4. ✅ DONE — Dry-runs (local + live prod endpoint) verified; Discord posts as an embed (204);
    cron confirmed firing (EU landed ~08:00 UTC 2026-07-14). HSTECH symbol fixed
    (`^HSTECH` 404'd → `HSTECH.HK`). Pre/post-market pricing added for the US read.
@@ -84,8 +81,8 @@ regime engine encodes). Read it before touching regime.js or universe.js.
 - VERCEL HOBBY 12-FUNCTION CAP: the project is on the Hobby plan, which allows at most
   12 Serverless Functions per deployment — and Vercel turns EVERY file under `api/` into
   a function. Shared modules therefore live in a top-level `lib/` (NOT `api/lib/`), so they
-  bundle as imports instead of counting as functions. Current count = 6 endpoints
-  (indicators, login, playbook, preread, prices, scrape-7709). DO NOT put helpers under
+  bundle as imports instead of counting as functions. Current count = 5 endpoints
+  (indicators, login, playbook, preread, prices). DO NOT put helpers under
   `api/`, and adding new endpoints eats the remaining headroom. (This bit us: moving lib
   into `api/` pushed the count to 14 and every deploy silently ERRORed — errorCode
   `exceeded_serverless_functions_per_deployment` — while production stayed on the old build.)
@@ -111,15 +108,32 @@ regime engine encodes). Read it before touching regime.js or universe.js.
   (`lib/ibkr.js` + spine fallback: IBKR primary when session live → Yahoo fallback with
   the honest delayed label). Do this when building the dashboard, and decide gateway-vs-OAuth
   then. Keep Yahoo as the permanent fallback regardless.
-- Korea stress cluster (Asia pre-read): USD/KRW (Yahoo `KRW=X`) and VKOSPI (CNBC
-  `.KSVKOSPI`) are live/keyless. CSOP 7709 **units outstanding** — CSOP/HKEX are 403
-  bot-walled, so it's scraped by a headless-browser cron (`api/scrape-7709.js`, 00:30 UTC)
-  that commits daily to `data/korea_7709.json` via the GitHub API (needs `GITHUB_TOKEN`/
-  `GITHUB_REPO`). Validate on first deploy with `GET /api/scrape-7709?dry=1` and tune the
-  label regexes if `units` comes back null — the CSOP DOM can't be checked from a dev box
-  (Chromium is Linux-only) and the bot-wall may need header tweaks. 7709 *price* is live via
-  Yahoo `7709.HK`. Modeled as a Korea-LOCAL regime gate (`regime.korea`), kept separate from
-  the global OAS gate — do not merge them.
+- Korea stress cluster (Asia pre-read): two keyless tells now — USD/KRW (Yahoo `KRW=X`)
+  and VKOSPI. VKOSPI reads the tradeable **V-KOSPI FUTURES** (KRX:VKI1!) via TradingView's
+  widget scanner endpoint (`lib/tradingview.js`), NOT the spot index — spot (CNBC
+  `.KSVKOSPI`) runs ~16pts above the future in backwardation during a vol spike and
+  overstates the tradeable fear level. The TV endpoint is best-effort (~20-min delayed,
+  can rate-limit/change/IP-block; verified working from Vercel iad1 on 2026-07-15) and
+  degrades to "no print" on failure — never breaks the pre-read. Modeled as a Korea-LOCAL
+  regime gate (`regime.korea`, legs = won + VKOSPI), kept separate from the global OAS gate.
+  CSOP 7709 units were RETIRED (2026-07-15): no reliable keyless source; the headless
+  scraper, its cron, `data/korea_7709.json`, and puppeteer/chromium deps are all removed.
+- DST / new regions: cron scheduling is DST-safe by design and self-correcting PER REGION.
+  Each region's cron fires at BOTH candidate UTC hours and the handler gates on that region's
+  own IANA-tz local hour (`localHour(R.tz) === R.prereadHourLocal`). Because EU and US flip
+  DST on different dates (EU last Sun Oct, US first Sun Nov), during the ~1-week gap EU is on
+  winter time while US is still on summer — handled automatically, since each guard reads its
+  own tz. Asia (HK/KR/TW/JP) observes no DST → single UTC slot. Canada follows US DST and we
+  only track US via `America/New_York`, so it's a non-issue. TO ADD A REGION: set the correct
+  IANA `tz` in universe.js and, if it observes DST, add both candidate UTC cron slots.
+- EXCHANGE HOLIDAYS: modeled in `data/holidays.json` (hand-maintained, keyed by exchange
+  code; top up yearly like calendar.json). `marketState()` returns 'holiday' on those dates
+  (exchange-local) → the Pre-Read labels the print '· holiday'. Safe-degrading: a missing
+  date just falls back to normal hours; a WRONG date mislabels a real trading day, so verify.
+  Half-day early closes are NOT modeled. Adding a region → add its holidays here too. (US
+  permanent-DST bill passed the House 2026-07 — no code change needed if it becomes law: the
+  Intl-based cron guard follows the tz database automatically; the winter cron slot just
+  becomes a daily no-op.)
 - EU/US quotes in the seeded universe are close-of-Friday; live only when those markets open.
 - MAs are now computed from Yahoo daily closes (`lib/yahoo.js`), not a provider's
   precomputed field — this resolves the old "FMP index MAs are garbage (KOSPI nonsense)" gap.
