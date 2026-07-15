@@ -103,12 +103,11 @@ function buildKorea(k) {
   const wonLine = won.level != null
     ? `• **USD/KRW** ${won.level}${won.dir !== 'n/a' ? ` (${won.dir})` : ''} · ${won.flag}`
     : '• **USD/KRW** — no print';
-  // VKOSPI here is the SPOT index (CNBC .KSVKOSPI) — labeled "spot" so it isn't mistaken
-  // for the tradeable VKOSPI futures (VKI1!), which sit in heavy backwardation during a
-  // vol spike and have no keyless feed (see IBKR-integration note in the handoff).
+  // VKOSPI here is the FUTURES (V-KOSPI, KRX:VKI1! via TradingView) — the tradeable
+  // contract, not the spot index. Labeled "fut" for precision.
   const volLine = vol.level != null
-    ? `• **VKOSPI spot** ${vol.level}${vol.band !== 'n/a' ? ` [${vol.band}]` : ''}${vol.changePct != null ? ` ${fmtPct(vol.changePct)}` : ''} · ${vol.flag}`
-    : '• **VKOSPI spot** — no print';
+    ? `• **VKOSPI fut** ${vol.level}${vol.band !== 'n/a' ? ` [${vol.band}]` : ''}${vol.changePct != null ? ` ${fmtPct(vol.changePct)}` : ''} · ${vol.flag}`
+    : '• **VKOSPI fut** — no print';
   return [wonLine, volLine, `• **Cluster:** ${k.cluster} — ${k.note}`].join('\n');
 }
 
