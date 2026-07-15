@@ -6,7 +6,7 @@ import { UNIVERSE } from '../data/universe.js';
 import { assembleRegion } from '../lib/assemble.js';
 import { structure } from '../lib/regime.js';
 import { weekHighlights } from '../lib/calendar.js';
-import { marketState, localHour } from '../lib/sessions.js';
+import { marketState, localHour, halfDayLabels } from '../lib/sessions.js';
 
 const MODEL = 'claude-sonnet-5';
 
@@ -94,7 +94,14 @@ function buildBlocks(region, quotes, indices, macro, regime, cal) {
       }).join('\n')
     : '• (nothing left on the calendar this week)';
 
-  return { nameLines, idxLines, macroLines, koreaLines, regimeLines, calLines };
+  // Half-day heads-up: a region can span several exchanges, so flag whichever are on an
+  // early-close session today (the Pre-Read fires pre-open, so this is a forward warning).
+  const halfEx = halfDayLabels([...quotes.map(q => q.sym), ...indices.map(q => q.sym)]);
+  const halfDayNote = halfEx.length
+    ? `🕐 **HALF DAY** — ${halfEx.join(', ')} ${halfEx.length === 1 ? 'closes' : 'close'} early today`
+    : null;
+
+  return { nameLines, idxLines, macroLines, koreaLines, regimeLines, calLines, halfDayNote };
 }
 
 // Korea-stress cluster block (Asia only). null when there's no Korea gate.
@@ -161,6 +168,8 @@ function assembleDiscord(region, label, blocks, read) {
 
   return [
     `${emoji} **DAILY PRE-READ · ${label} · ${now}Z**`,
+    // Prominent half-day warning right under the header (only when applicable).
+    ...(blocks.halfDayNote ? [blocks.halfDayNote] : []),
     ...sections.flatMap(s => [RULE, s]),
     RULE,
     `*⭐ sector leader (cross-market tell) · ⏱ delayed feed · 🌐 global event · "prior close" = market shut*`,
