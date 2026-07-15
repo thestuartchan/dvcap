@@ -1679,7 +1679,7 @@ function MacroStat({ label, value, sub }) {
 }
 
 function KoreaStressPanel({ korea }) {
-  const { won, vol, etf, cluster, note } = korea;
+  const { won, vol, cluster, note } = korea;
   const cCol = pbClusterColor(cluster);
   // USD/KRW: a rising won (weakening) is bad → red; falling (stabilizing) → green.
   const wonCol = won.dir === "rising" ? C.red : won.dir === "falling" ? C.green : C.amber;
@@ -1703,7 +1703,7 @@ function KoreaStressPanel({ korea }) {
         </div>
         {/* VKOSPI with a 0–100 level bar (markers at 20/45/80) */}
         <div style={box}>
-          <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>VKOSPI</div>
+          <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>VKOSPI fut</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
             <span style={{ fontSize: 24, fontWeight: 900, color: vCol }}>{vol.level ?? "—"}</span>
             <span style={{ fontSize: 12, fontWeight: 800, color: vCol }}>{vol.band !== "n/a" ? vol.band : ""}</span>
@@ -1713,29 +1713,6 @@ function KoreaStressPanel({ korea }) {
             {[20, 45, 80].map(m => <div key={m} style={{ position: "absolute", left: m + "%", top: -2, bottom: -2, width: 1, background: C.muted }} />)}
           </div>
           <div style={{ fontSize: 12, fontWeight: 700, color: vCol }}>{vol.flag}</div>
-        </div>
-        {/* CSOP 7709 units outstanding (the deleveraging tell) */}
-        <div style={box}>
-          <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>CSOP 7709 units</div>
-          {etf.available ? (
-            <>
-              <div style={{ fontSize: 20, fontWeight: 900, color: C.text }}>{pbFmtNum(etf.units)}</div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: etf.shrinking ? C.red : etf.flattening ? C.amber : C.muted }}>
-                {pbFmtPct(etf.deltaPct)} · {etf.flag}
-              </div>
-              {etf.series && etf.series.length >= 2 && (
-                <div style={{ marginTop: 6 }}>
-                  <ResponsiveContainer width="100%" height={42}>
-                    <LineChart data={etf.series} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
-                      <Line type="monotone" dataKey="units" stroke={C.blue} strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </>
-          ) : (
-            <div style={{ fontSize: 12, color: C.muted, fontStyle: "italic", marginTop: 4 }}>{etf.flag}</div>
-          )}
         </div>
       </div>
     </Card>
