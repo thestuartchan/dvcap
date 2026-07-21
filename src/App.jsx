@@ -58,7 +58,7 @@ const INDICATORS = [
   },
   {
     id:"unemp", name:"Unemployment Rate", current:"4.4%",
-    status:"AMBER", label:"Rising", color:"#92400E", areaColor:"#F59E0B",
+    status:"AMBER", label:"↑ since '23 low", color:"#92400E", areaColor:"#F59E0B",
     dataKey:"unempHistory", data:UNEMP_DATA, refLine:4.0, yDomain:[3.0,5.5],
     yFmt: v=>`${v.toFixed(1)}%`,
     detail: (v) => `Currently ${v.toFixed(1)}% — rose from a 3.4% trough (Jan 2023), a ${(v - 3.4).toFixed(1)}pp rise. Sahm Rule triggers at 0.5pp above the 12-month low. ${v >= 4.5 ? "The Sahm Rule has triggered — recession risk is elevated." : v >= 4.0 ? "We are approaching the Sahm Rule threshold. Direction is the concern." : "Still below the Sahm Rule trigger zone."}`,
@@ -73,7 +73,7 @@ const INDICATORS = [
       if (v >= 5.5)  return { label:"Recession Confirmed",  text:"Unemployment above 5.5% — recession is underway by historical standards. Capital preservation is the priority.", color:"#991B1B", bg:"#FEF2F2", bdr:"#FCA5A5" };
       if (v >= 5.0)  return { label:"Recession Zone",       text:"Crossed 5.0% — recession historically confirmed at this level. Defensive positioning warranted.",              color:"#DC2626", bg:"#FEF2F2", bdr:"#FCA5A5" };
       if (v >= 4.5)  return { label:"Sahm Rule Triggered",  text:"At or above the Sahm Rule threshold. Labour market deteriorating — leading indicator for recession.",           color:"#92400E", bg:"#FFFBEB", bdr:"#FCD34D" };
-      if (v >= 4.0)  return { label:"Elevated & Rising",    text:"Above historical average and trending up. Not yet alarming but direction is wrong. Monitor closely.",           color:"#D97706", bg:"#FFFBEB", bdr:"#FCD34D" };
+      if (v >= 4.0)  return { label:"Elevated vs '23 low",  text:"Above the 4.0% historical average and well up from the 3.4% '23 trough — but that's the trend-since-low read; check the last-vs-prior print for near-term direction.", color:"#D97706", bg:"#FFFBEB", bdr:"#FCD34D" };
       return           { label:"Healthy",                   text:"Below historical average. Labour market resilient — low near-term recession risk from this indicator.",         color:"#166534", bg:"#F0FDF4", bdr:"#86EFAC" };
     },
   },
@@ -1338,6 +1338,16 @@ function ChartTip({ active, payload, label, fmt }) {
   </div>;
 }
 
+// Format a source date. Monthly series → "Jun'26"; daily → the full ISO date.
+function fmtAsOf(dateStr, monthly) {
+  if (!dateStr) return null;
+  const dt = new Date(dateStr + "T00:00:00");
+  if (isNaN(dt)) return dateStr;
+  return monthly
+    ? dt.toLocaleString("en-US", { month: "short" }) + "'" + String(dt.getFullYear()).slice(2)
+    : dateStr;
+}
+
 // ─── INDICATOR CHART ─────────────────────────────────────────────────────────
 function IndicatorChart({ ind, live }) {
   const current = ind.id === "yield" && live ? (live.yieldSpread >= 0 ? "+" : "") + live.yieldSpread.toFixed(2) + "%" :
@@ -1348,14 +1358,19 @@ function IndicatorChart({ ind, live }) {
   const statusBg    = ind.status === "GREEN" ? C.gBg   : ind.status === "RED" ? C.rBg  : C.aBg;
   const statusBdr   = ind.status === "GREEN" ? C.gBdr  : ind.status === "RED" ? C.rBdr : C.aBdr;
 
+  // Source date (asOf) for this metric — monthly for unemployment, daily otherwise.
+  const asOfKey = ind.id === "unemp" ? "unemployment" : ind.id === "yield" ? "yieldSpread" : ind.id === "credit" ? "creditSpread" : null;
+  const asOfLbl = (live && live.asOf && asOfKey) ? fmtAsOf(live.asOf[asOfKey], ind.id === "unemp") : null;
+
   return (
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
         <div>
           <SLabel>{ind.name}</SLabel>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
             <span style={{ fontSize: 28, fontWeight: 900, letterSpacing: -1, color: ind.color }}>{current}</span>
             <Pill label={ind.label} color={statusColor} bg={statusBg} bdr={statusBdr} />
+            {asOfLbl ? <span style={{ fontSize: 11, color: C.lbl, fontWeight: 700 }}>as of {asOfLbl}</span> : null}
           </div>
         </div>
         {(() => {
