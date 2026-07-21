@@ -1831,14 +1831,20 @@ function GlobalPlaybook({ data, region, setRegion, loading, error, updated, onRe
             </div>
           </Card>
 
-          {/* Macro */}
+          {/* Macro — identical on every tab (see caption); global/US rates */}
           <Card>
-            <SLabel>🛢️ Macro</SLabel>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+              <SLabel>🛢️ Macro</SLabel>
+              <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>Global · US rates (same on every region)</span>
+            </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 20 }}>
-              <MacroStat label="WTI" value={data.macro.wti?.price != null ? "$" + data.macro.wti.price : "—"} sub={data.macro.wti?.stale ? "⚠️ stale" : ""} />
+              <MacroStat label="WTI" value={data.macro.wti?.price != null ? "$" + data.macro.wti.price : "—"} sub={data.macro.wti?.stale ? "⚠️ delayed" : ""} />
               <MacroStat label="Brent" value={data.macro.brent?.price != null ? "$" + data.macro.brent.price : "—"} />
-              <MacroStat label="US 2Y" value={data.macro.us2y?.value != null ? data.macro.us2y.value + "%" : "—"} />
-              <MacroStat label="US 10Y" value={data.macro.us10y?.value != null ? data.macro.us10y.value + "%" : "—"} />
+              <MacroStat label="US 2Y" value={data.macro.us2y?.value != null ? data.macro.us2y.value + "%" : "—"} sub={data.macro.us2y?.date || ""} />
+              <MacroStat label="US 10Y" value={data.macro.us10y?.value != null ? data.macro.us10y.value + "%" : "—"} sub={data.macro.us10y?.date || ""} />
+              <MacroStat label="US 30Y" value={data.macro.us30y?.value != null ? data.macro.us30y.value + "%" : "—"} sub={data.macro.us30y?.date || ""} />
+              <MacroStat label="2s10s" value={data.macro.twos10s != null ? (data.macro.twos10s >= 0 ? "+" : "") + data.macro.twos10s + "bps" : "—"} sub={data.macro.twos10s != null && data.macro.twos10s < 0 ? "inverted" : ""} />
+              <MacroStat label="DXY" value={data.macro.dxy?.value != null ? data.macro.dxy.value.toFixed(2) : "—"} sub={data.macro.dxy?.changePct != null ? pbFmtPct(data.macro.dxy.changePct) : ""} />
               <MacroStat label="HY OAS" value={data.macro.oas?.value ?? "—"} sub={data.macro.oas?.date ? data.macro.oas.date + " · last hard print" : ""} />
             </div>
           </Card>
