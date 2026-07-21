@@ -6,6 +6,7 @@
 import { assembleRegion } from '../lib/assemble.js';
 import { structure } from '../lib/regime.js';
 import { weekHighlights } from '../lib/calendar.js';
+import { freshness } from '../lib/sessions.js';
 
 export default async function handler(req, res) {
   const region = (req.query.region || 'asia').toLowerCase();
@@ -21,8 +22,9 @@ export default async function handler(req, res) {
     role:   R.names[i].role,
     leader: !!R.names[i].leader,
     structure: structure(q),
+    freshness: freshness(q.sym, q),   // market-state-aware — not the raw feed-age flag
   }));
-  const indices = idxRaw.map((q, i) => ({ ...q, name: R.indices[i].name }));
+  const indices = idxRaw.map((q, i) => ({ ...q, name: R.indices[i].name, freshness: freshness(q.sym, q) }));
 
   // 60s edge cache so a burst of tab opens doesn't hammer the providers.
   res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=120');

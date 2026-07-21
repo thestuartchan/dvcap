@@ -6,7 +6,7 @@ import { UNIVERSE } from '../data/universe.js';
 import { assembleRegion } from '../lib/assemble.js';
 import { structure } from '../lib/regime.js';
 import { weekHighlights } from '../lib/calendar.js';
-import { marketState, localHour, halfDayLabels } from '../lib/sessions.js';
+import { marketState, localHour, halfDayLabels, freshness } from '../lib/sessions.js';
 
 const MODEL = 'claude-sonnet-5';
 
@@ -21,16 +21,15 @@ const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 //   market open + fresh              → ""                 (live)
 //   no price                         → "⚠️no print"
 function freshLabel(sym, q) {
-  if (q.price == null) return ' ⚠️no print';
-  const st = marketState(sym);
-  if (st === 'holiday') return ' · holiday';
-  if (st === 'closed') return ' · prior close';
-  if (st === 'lunch')  return ' · lunch';
-  if (q.stale) {
-    const mins = q.ts ? Math.round(Date.now() / 1000 / 60 - q.ts / 60) : null;
-    return mins != null ? ` ⏱${mins}m delayed` : ' ⏱delayed';
+  const { state, mins } = freshness(sym, q);
+  switch (state) {
+    case 'no-print':    return ' ⚠️no print';
+    case 'holiday':     return ' · holiday';
+    case 'prior-close': return ' · prior close';
+    case 'lunch':       return ' · lunch';
+    case 'delayed':     return mins != null ? ` ⏱${mins}m delayed` : ' ⏱delayed';
+    default:            return '';   // live
   }
-  return '';
 }
 
 // Pick the price/%chg/label to display. US pre/post-market override: when the US

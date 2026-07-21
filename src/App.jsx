@@ -1668,6 +1668,23 @@ const pbCreditColor = s => ({ calm: C.green, watch: C.blue, defending: C.amber, 
 const pbClusterColor = c => ({ exhausting: C.green, active: C.red, mixed: C.amber }[c] || C.muted);
 const pbBandColor  = b => ({ calm: C.green, normal: C.blue, elevated: C.amber, high: C.red, severe: C.red, panic: C.red }[b] || C.muted);
 
+// Market-state-aware freshness chip for names/indices — mirrors the Pre-Read: shows
+// "~Nm delayed" / "prior close" / "holiday" / "no print" instead of a blanket "stale"
+// badge that fires on live-but-delayed feeds. Returns null when live (no chip). The
+// backend (playbook spine) computes `freshness` via lib/sessions.js.
+function pbFresh(fr) {
+  if (!fr || fr.state === "live") return null;
+  const txt = fr.state === "delayed"     ? `~${fr.mins ?? "?"}m delayed`
+            : fr.state === "prior-close" ? "prior close"
+            : fr.state === "lunch"       ? "lunch"
+            : fr.state === "holiday"     ? "holiday"
+            : fr.state === "no-print"    ? "no print"
+            : null;
+  if (!txt) return null;
+  const color = fr.state === "delayed" ? C.amber : fr.state === "no-print" ? C.red : C.muted;
+  return { txt, color };
+}
+
 function MacroStat({ label, value, sub }) {
   return (
     <div style={{ minWidth: 90 }}>
@@ -1773,7 +1790,9 @@ function GlobalPlaybook({ data, region, setRegion, loading, error, updated, onRe
           <Card>
             <SLabel>Names</SLabel>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
-              {data.names.map(n => (
+              {data.names.map(n => {
+                const f = pbFresh(n.freshness);
+                return (
                 <div key={n.sym} style={{ background: C.bg, border: "1.5px solid " + (n.leader ? C.blBdr : C.bdr), borderRadius: 10, padding: "10px 12px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
                     <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{n.leader ? "★ " : ""}{n.name}</span>
@@ -1784,10 +1803,11 @@ function GlobalPlaybook({ data, region, setRegion, loading, error, updated, onRe
                     <span style={{ fontSize: 13, fontWeight: 800, color: pbPctColor(n.changePct) }}>{pbFmtPct(n.changePct)}</span>
                   </div>
                   <div style={{ fontSize: 11, color: C.muted }}>
-                    {n.structure || ""}{n.stale ? " · ⚠️ stale" : ""}
+                    {n.structure || ""}{f ? <span style={{ color: f.color }}>{n.structure ? " · " : ""}{f.txt}</span> : ""}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </Card>
 
@@ -1795,15 +1815,19 @@ function GlobalPlaybook({ data, region, setRegion, loading, error, updated, onRe
           <Card>
             <SLabel>Indices</SLabel>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 20 }}>
-              {data.indices.map(ix => (
+              {data.indices.map(ix => {
+                const f = pbFresh(ix.freshness);
+                return (
                 <div key={ix.sym} style={{ minWidth: 120 }}>
                   <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>{ix.name}</div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
                     <span style={{ fontSize: 18, fontWeight: 900, color: C.text }}>{ix.price ?? "—"}</span>
                     <span style={{ fontSize: 13, fontWeight: 800, color: pbPctColor(ix.changePct) }}>{pbFmtPct(ix.changePct)}</span>
                   </div>
+                  {f ? <div style={{ fontSize: 10, color: f.color }}>{f.txt}</div> : null}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </Card>
 
