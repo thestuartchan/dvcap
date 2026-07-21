@@ -6,12 +6,34 @@ export default async function handler(req, res) {
   }
 
   // ── Fetch single latest value from FRED ────────────────────────────────────
+  // Returns { value, date } — the observation DATE is the metric's real asOf (source
+  // timestamp), which the P0 staleness system needs. Never fetch-time.
   async function fredLatest(seriesId) {
     const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=2&api_key=${FRED_KEY}&file_type=json`;
     const r = await fetch(url);
     const d = await r.json();
     const obs = (d.observations || []).filter(o => o.value !== "." && o.value !== "");
-    return obs.length ? parseFloat(obs[0].value) : 0;
+    return obs.length ? { value: parseFloat(obs[0].value), date: obs[0].date } : { value: 0, date: null };
+  }
+
+  // ── ICE US Dollar Index (DXY) via Yahoo DX-Y.NYB, keyless ───────────────────
+  // NOT FRED's DTWEXBGS (Broad Dollar Index, base 2006=100, reads ~120) — that is a
+  // different index. The DXY the desk watches is ICE's (~100.8). asOf = quote time.
+  async function fetchDxy() {
+    try {
+      const r = await fetch("https://query1.finance.yahoo.com/v8/finance/chart/DX-Y.NYB?interval=1d&range=5d",
+        { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json" } });
+      const m = (await r.json())?.chart?.result?.[0]?.meta;
+      const price = m?.regularMarketPrice ?? 0;
+      return {
+        latest: price > 0 ? parseFloat(price.toFixed(3)) : null,
+        prev:   (m?.chartPreviousClose ?? m?.previousClose ?? 0) || null,
+        asOf:   m?.regularMarketTime ? new Date(m.regularMarketTime * 1000).toISOString() : null,
+      };
+    } catch (e) {
+      console.error("Yahoo DX-Y.NYB fetch error:", e.message);
+      return { latest: null, prev: null, asOf: null };
+    }
   }
 
   // ── Compute year-over-year % change from a monthly series ──────────────────
@@ -88,10 +110,11 @@ export default async function handler(req, res) {
       return {
         latest: price > 0 ? parseFloat(price.toFixed(2)) : 0,
         prev:   prev  > 0 ? parseFloat(prev.toFixed(2))  : 0,
+        asOf:   m?.regularMarketTime ? new Date(m.regularMarketTime * 1000).toISOString() : null,
       };
     } catch (e) {
       console.error("Yahoo CL=F oil fetch error:", e.message);
-      return { latest: 0, prev: 0 };
+      return { latest: 0, prev: 0, asOf: null };
     }
   }
 
@@ -177,7 +200,7 @@ export default async function handler(req, res) {
       fredLatest("CPIAUCSL"),
       fredYoY("CPIAUCSL"),
       fredLatest("GDPC1"),
-      fredLatest("DTWEXBGS"),
+      fetchDxy(),               // ICE DXY via Yahoo (was FRED DTWEXBGS = wrong index)
       fredTwo("M2SL"),
       fetchOil(),               // WTI crude oil — Yahoo Finance CL=F
       fetchAuction(),           // 10Y Treasury auction bid-to-cover (FiscalData)
@@ -211,11 +234,18 @@ export default async function handler(req, res) {
     // Proxy: current Fed funds effective rate vs the 6-month T-bill. When the 6m
     // bill yields less than Fed funds, the market is pricing rate cuts → positive
     // bps. Negative bps = market pricing hikes. Null if either fetch is missing.
-    const currentFedFunds = fedFundsRaw > 0 ? fedFundsRaw : null;
-    const tbill6m = tbill6mRaw > 0 ? tbill6mRaw : null;
+    const currentFedFunds = fedFundsRaw.value > 0 ? fedFundsRaw.value : null;
+    const tbill6m = tbill6mRaw.value > 0 ? tbill6mRaw.value : null;
     const impliedCutsBps = (currentFedFunds != null && tbill6m != null)
       ? Math.round((currentFedFunds - tbill6m) * 100)
       : null;
+
+    // ── Sanity clamp: flag any scalar outside a plausible band (don't silently render) ──
+    const BANDS = { dxy: [70, 130], tenY: [0, 10], twoY: [0, 10], unemployment: [2, 12], creditSpread: [1, 25] };
+    const sanity = {};
+    const chk = (k, v) => { if (v != null && BANDS[k] && (v < BANDS[k][0] || v > BANDS[k][1])) sanity[k] = "out-of-band"; };
+    chk("dxy", dxyRaw.latest); chk("tenY", tenY.value); chk("twoY", twoY.value);
+    chk("unemployment", unemp.value); chk("creditSpread", hySpread.value);
 
     // ── CPI inflation tracker — latest reading of each YoY series ──────────────
     const cpiHeadlineCurrent = cpiHeadlineHistory.length ? cpiHeadlineHistory[cpiHeadlineHistory.length - 1].value : null;
@@ -224,15 +254,16 @@ export default async function handler(req, res) {
 
     const result = {
       // ── Scalar values ──────────────────────────────────────────────────────
-      tenY,
-      twoY,
-      yieldSpread:  parseFloat((tenY - twoY).toFixed(3)),
-      unemployment: unemp,
-      creditSpread: hySpread,
-      cpi,
+      tenY:         tenY.value,
+      twoY:         twoY.value,
+      yieldSpread:  parseFloat((tenY.value - twoY.value).toFixed(3)),
+      unemployment: unemp.value,
+      creditSpread: hySpread.value,
+      cpi:          cpi.value,
       cpiYoY,
-      gdp,
-      dxy:      dxyRaw,
+      gdp:          gdp.value,
+      dxy:      dxyRaw.latest,
+      dxyPrev:  dxyRaw.prev,
       m2:       m2Raw.latest,
       m2Prev:   m2Raw.prev,
       m2Rising: m2Raw.latest > m2Raw.prev,
@@ -255,6 +286,23 @@ export default async function handler(req, res) {
       cpiHeadlineHistory,
       cpiCoreHistory,
       pceCoreHistory,
+      // ── Per-metric source dates (asOf) — feeds the P0 staleness system ───────
+      // FRED scalars: observation date (YYYY-MM-DD). Yahoo (dxy/oil): ISO quote time.
+      // The frontend computes stale = now − asOf > per-metric cadence, and always
+      // shows this date as subtext — mirroring the HY OAS "last hard print" model.
+      asOf: {
+        tenY: tenY.date, twoY: twoY.date, yieldSpread: tenY.date,
+        unemployment: unemp.date, creditSpread: hySpread.date,
+        cpi: cpi.date, gdp: gdp.date,
+        currentFedFunds: fedFundsRaw.date, tbill6m: tbill6mRaw.date,
+        dxy: dxyRaw.asOf, oil: oilRaw.asOf,
+        cpiYoY:             cpiHeadlineHistory.at(-1)?.date ?? null,
+        cpiHeadlineCurrent: cpiHeadlineHistory.at(-1)?.date ?? null,
+        cpiCoreCurrent:     cpiCoreHistory.at(-1)?.date ?? null,
+        pceCoreCurrent:     pceCoreHistory.at(-1)?.date ?? null,
+        auctionBidCover:    auctionRaw?.date ?? null,
+      },
+      sanity,  // { metric: "out-of-band" } for any value outside its plausible band
     };
 
     // Cache 5 minutes — allows near-fresh data without hammering FRED

@@ -92,7 +92,7 @@ function buildBlocks(region, quotes, indices, macro, regime, cal) {
         const dow = DOW[new Date(e.date + 'T00:00:00Z').getUTCDay()];
         return `• **${dow} ${e.date.slice(5)}** · ${e.title}${e.scope === 'global' ? ' 🌐' : ''}`;
       }).join('\n')
-    : '• (nothing left on the calendar this week)';
+    : '• (nothing flagged in the next 10 days)';
 
   // Half-day heads-up: a region can span several exchanges, so flag whichever are on an
   // early-close session today (the Pre-Read fires pre-open, so this is a forward warning).
@@ -163,7 +163,7 @@ function assembleDiscord(region, label, blocks, read) {
     ...(blocks.koreaLines ? [`🇰🇷 **KOREA STRESS**\n${blocks.koreaLines}`] : []),
     `🧭 **REGIME**\n${blocks.regimeLines}`,
     `📝 **READ**\n${read}`,
-    `📅 **THIS WEEK**\n${blocks.calLines}`,
+    `📅 **WEEK AHEAD**\n${blocks.calLines}`,
   ];
 
   return [
