@@ -1,14 +1,12 @@
 [
-  { "date": "2026-07-14", "title": "Warsh congressional testimony (semi-annual)", "region": "US",   "tier": 1, "scope": "global" },
-  { "date": "2026-07-15", "title": "China Q2 GDP + June retail/FAI/IP",             "region": "ASIA", "tier": 1 },
-  { "date": "2026-07-16", "title": "TSM earnings",                                  "region": "US",   "tier": 1, "scope": "global" },
-  { "date": "2026-07-16", "title": "ASML earnings (order-book read)",               "region": "EU",   "tier": 1, "scope": "global" },
-  { "date": "2026-07-23", "title": "Samsung Q2 earnings",                           "region": "ASIA", "tier": 1, "scope": "global" },
-  { "date": "2026-07-28", "title": "FOMC meeting (day 1)",                          "region": "US",   "tier": 1, "scope": "global" },
-  { "date": "2026-07-29", "title": "FOMC decision + SEP",                           "region": "US",   "tier": 1, "scope": "global" },
-  { "date": "2026-07-29", "title": "SK Hynix Q2 + new KRX shares list",             "region": "ASIA", "tier": 1, "scope": "global" },
-  { "date": "2026-07-30", "title": "US Q2 GDP advance",                             "region": "US",   "tier": 2, "scope": "global" },
-  { "date": "2026-07-31", "title": "US June PCE",                                   "region": "US",   "tier": 1, "scope": "global" },
-  { "date": "2026-08-01", "title": "US July jobs report",                           "region": "US",   "tier": 1, "scope": "global" },
-  { "date": "2026-08-26", "title": "NVDA earnings",                                 "region": "US",   "tier": 1, "scope": "global" }
+  { "date": "2026-07-22", "title": "Alphabet Q2 earnings",              "region": "US",   "tier": 1 },
+  { "date": "2026-07-23", "title": "Samsung Q2 earnings",               "region": "ASIA", "tier": 1 },
+  { "date": "2026-07-23", "title": "Intel Q2 earnings",                 "region": "US",   "tier": 1 },
+  { "date": "2026-07-28", "title": "FOMC meeting (day 1)",              "region": "US",   "tier": 1, "scope": "global" },
+  { "date": "2026-07-29", "title": "FOMC decision + SEP",               "region": "US",   "tier": 1, "scope": "global" },
+  { "date": "2026-07-29", "title": "SK Hynix Q2 + new KRX shares list", "region": "ASIA", "tier": 1 },
+  { "date": "2026-07-30", "title": "US Q2 GDP advance",                 "region": "US",   "tier": 2, "scope": "global" },
+  { "date": "2026-07-31", "title": "US June PCE",                       "region": "US",   "tier": 1, "scope": "global" },
+  { "date": "2026-08-01", "title": "US July jobs report",              "region": "US",   "tier": 1, "scope": "global" },
+  { "date": "2026-08-26", "title": "NVDA earnings",                     "region": "US",   "tier": 1 }
 ]
