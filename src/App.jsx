@@ -1751,19 +1751,55 @@ function KoreaStressPanel({ korea }) {
   );
 }
 
-function GlobalPlaybook({ data, region, setRegion, loading, error, updated, onRefresh, fmtTime }) {
+// Category (role) sort order — the thesis reads cross-region, so foundry sits with
+// foundry, memory with memory, regardless of listing venue.
+const PB_CAT_ORDER = ["foundry", "memory", "litho", "equip", "gpu", "megacap", "index"];
+const pbCatRank = c => { const i = PB_CAT_ORDER.indexOf(c); return i < 0 ? 99 : i; };
+const PB_REGION_RANK = { asia: 0, eu: 1, us: 2 };
+// Per-name geo badge from the Yahoo symbol suffix (finer than the asia/eu/us data region).
+function pbGeo(sym) {
+  if (!sym) return "US";
+  if (sym.endsWith(".HK")) return "HK";
+  if (sym.endsWith(".KS") || sym.endsWith(".KQ")) return "KR";
+  if (sym.endsWith(".TW")) return "TW";
+  if (sym.endsWith(".T")) return "JP";
+  if (/\.(AS|PA|DE|L)$/.test(sym)) return "EU";
+  return "US";
+}
+
+function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updated, onRefresh, fmtTime }) {
+  // Both All and single-region are filtered views of ONE spine. `active` = loaded data for
+  // the selected region(s); `data` (= first active) backs the global macro strip + calendar.
+  const active = regions.map(r => byRegion[r]).filter(Boolean);
+  const data = active[0];
+  const multi = regions.length > 1;
+
+  // Combined, sorted names across active regions. Sort: category → (region, ALL only) →
+  // abs(%chg); ★ leaders pinned to the top of their category group.
+  const allNames = active.flatMap(d => d.names.map(n => ({ ...n, _region: d.region })));
+  allNames.sort((a, b) =>
+    pbCatRank(a.role) - pbCatRank(b.role)
+    || (b.leader ? 1 : 0) - (a.leader ? 1 : 0)
+    || (multi ? (PB_REGION_RANK[a._region] ?? 9) - (PB_REGION_RANK[b._region] ?? 9) : 0)
+    || Math.abs(b.changePct ?? 0) - Math.abs(a.changePct ?? 0)
+  );
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Region toggle + refresh */}
+      {/* Region multi-select (default All) + refresh */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-        <div style={{ display: "flex", gap: 6 }}>
-          {PB_REGIONS.map(r => (
-            <button key={r.id} onClick={() => setRegion(r.id)} style={{
-              background: region === r.id ? C.blue : C.surf, color: region === r.id ? "#fff" : C.mid,
-              border: "1.5px solid " + (region === r.id ? C.blue : C.bdr), borderRadius: 8,
-              padding: "7px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer",
-            }}>{r.label}</button>
-          ))}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12, color: C.muted, fontWeight: 700, marginRight: 2 }}>{regions.length === 3 ? "All" : "Regions"}:</span>
+          {PB_REGIONS.map(r => {
+            const on = regions.includes(r.id);
+            return (
+              <button key={r.id} onClick={() => toggleRegion(r.id)} style={{
+                background: on ? C.blue : C.surf, color: on ? "#fff" : C.mid,
+                border: "1.5px solid " + (on ? C.blue : C.bdr), borderRadius: 8,
+                padding: "7px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: on ? 1 : 0.6,
+              }}>{on ? "✓ " : ""}{r.label}</button>
+            );
+          })}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 12, color: C.muted }}>Updated {fmtTime(updated)}</span>
@@ -1777,41 +1813,46 @@ function GlobalPlaybook({ data, region, setRegion, loading, error, updated, onRe
         <Card><div style={{ color: C.muted, fontSize: 14 }}>{loading ? "Loading…" : "No data yet — hit Refresh."}</div></Card>
       ) : (
         <>
-          {/* Regime summary — the deterministic tags */}
-          <Card>
-            <SLabel>🧭 Regime — {data.label}</SLabel>
+          {/* Regime summary — one card per active region (stacked in All view) */}
+          {active.map(d => (
+          <Card key={d.region}>
+            <SLabel>🧭 Regime — {d.label}</SLabel>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
               <div style={{ minWidth: 210 }}>
                 <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>Memory vs Foundry</div>
-                <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{data.regime.split.label}</div>
-                <div style={{ fontSize: 12, color: C.muted }}>foundry {pbFmtPct(data.regime.split.fnd)} · memory {pbFmtPct(data.regime.split.mem)}</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{d.regime.split.label}</div>
+                <div style={{ fontSize: 12, color: C.muted }}>foundry {pbFmtPct(d.regime.split.fnd)} · memory {pbFmtPct(d.regime.split.mem)}</div>
               </div>
               <div style={{ minWidth: 170 }}>
                 <div style={{ fontSize: 12, color: C.muted, fontWeight: 700, marginBottom: 4 }}>Credit — global/OAS gate</div>
-                <Pill label={data.regime.credit.state.toUpperCase()} color={pbCreditColor(data.regime.credit.state)} />
-                <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{data.regime.credit.note}</div>
+                <Pill label={d.regime.credit.state.toUpperCase()} color={pbCreditColor(d.regime.credit.state)} />
+                <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{d.regime.credit.note}</div>
               </div>
               <div style={{ minWidth: 170 }}>
                 <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>Oil</div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{data.regime.oil.label}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{d.regime.oil.label}</div>
               </div>
             </div>
+            {/* Korea-local stress gate (Asia only) */}
+            {d.regime.korea && <div style={{ marginTop: 12 }}><KoreaStressPanel korea={d.regime.korea} /></div>}
           </Card>
+          ))}
 
-          {/* Korea-local stress gate (Asia only) */}
-          {data.regime.korea && <KoreaStressPanel korea={data.regime.korea} />}
-
-          {/* Names grid — leaders starred + blue-bordered */}
+          {/* Names grid — one flat grid across active regions; sorted category → region →
+              %chg with ★ leaders pinned per category. Geo badge shown in All view. */}
           <Card>
-            <SLabel>Names</SLabel>
+            <SLabel>Names {multi ? "· all regions, grouped by category" : ""}</SLabel>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
-              {data.names.map(n => {
+              {allNames.map(n => {
                 const f = pbFresh(n.freshness);
                 return (
-                <div key={n.sym} style={{ background: C.bg, border: "1.5px solid " + (n.leader ? C.blBdr : C.bdr), borderRadius: 10, padding: "10px 12px" }}>
+                <div key={n._region + "|" + n.sym} style={{ background: C.bg, border: "1.5px solid " + (n.leader ? C.blBdr : C.bdr), borderRadius: 10, padding: "10px 12px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
                     <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{n.leader ? "★ " : ""}{n.name}</span>
-                    <span style={{ fontSize: 10, color: C.muted, fontWeight: 700, textTransform: "uppercase" }}>{n.role}</span>
+                    <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                      {multi ? <span style={{ fontSize: 9, fontWeight: 800, color: C.blue, background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 4, padding: "1px 4px" }}>{pbGeo(n.sym)}</span> : null}
+                      <span style={{ fontSize: 10, color: C.muted, fontWeight: 700, textTransform: "uppercase" }}>{n.role}</span>
+                    </span>
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 2 }}>
                     <span style={{ fontSize: 16, fontWeight: 900, color: C.text }}>{n.price ?? "—"}</span>
@@ -1826,11 +1867,14 @@ function GlobalPlaybook({ data, region, setRegion, loading, error, updated, onRe
             </div>
           </Card>
 
-          {/* Indices */}
+          {/* Indices — grouped by region */}
           <Card>
             <SLabel>Indices</SLabel>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 20 }}>
-              {data.indices.map(ix => {
+            {active.map(d => (
+            <div key={d.region} style={{ marginBottom: multi ? 12 : 0 }}>
+              {multi ? <div style={{ fontSize: 11, color: C.muted, fontWeight: 800, textTransform: "uppercase", marginBottom: 5 }}>{d.label}</div> : null}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 20 }}>
+              {d.indices.map(ix => {
                 const f = pbFresh(ix.freshness);
                 return (
                 <div key={ix.sym} style={{ minWidth: 120 }}>
@@ -1843,7 +1887,9 @@ function GlobalPlaybook({ data, region, setRegion, loading, error, updated, onRe
                 </div>
                 );
               })}
+              </div>
             </div>
+            ))}
           </Card>
 
           {/* Macro — identical on every tab (see caption); global/US rates */}
@@ -1879,7 +1925,7 @@ function GlobalPlaybook({ data, region, setRegion, loading, error, updated, onRe
           )}
 
           <div style={{ fontSize: 11, color: C.lbl, textAlign: "center" }}>
-            Same data spine as the Discord pre-reads · {data.region.toUpperCase()} · {data.tz}
+            Same data spine as the Discord pre-reads · {regions.length === 3 ? "All regions" : regions.map(r => r.toUpperCase()).join(" · ")}
           </div>
         </>
       )}
@@ -1890,7 +1936,12 @@ function GlobalPlaybook({ data, region, setRegion, loading, error, updated, onRe
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [tab, setTab]           = useState("macro");
-  const [pbRegion, setPbRegion] = useState("asia"); // Global Playbook active region
+  const [pbRegions, setPbRegions] = useState(["asia", "eu", "us"]); // Global Playbook — multi-select, default All
+  const toggleRegion = (r) => setPbRegions(prev => {
+    const next = prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r];
+    if (next.length === 0) return prev;                              // keep at least one region on
+    return PB_REGIONS.map(x => x.id).filter(id => next.includes(id)); // canonical asia→eu→us order
+  });
   const [activeAsset, setActiveAsset]   = useState(ASSETS[0]);
   const [activeIncome, setActiveIncome] = useState(INCOME_PLAYS[0]);
   const [activeRegime, setActiveRegime] = useState(REGIMES[0]);
@@ -1930,8 +1981,8 @@ export default function App() {
 
   // Fetch the Global Playbook when its tab is open or the region changes.
   useEffect(function() {
-    if (tab === "global") fetchPlaybookRegion(pbRegion);
-  }, [tab, pbRegion, fetchPlaybookRegion]);
+    if (tab === "global") pbRegions.forEach(r => fetchPlaybookRegion(r));
+  }, [tab, pbRegions, fetchPlaybookRegion]);
 
   // Load manual deploy-stage toggles + portfolio value from localStorage
   useEffect(function() {
@@ -2807,13 +2858,13 @@ export default function App() {
         {/* ── MACRO ── */}
         {tab === "global" && (
           <GlobalPlaybook
-            data={pbData[pbRegion]}
-            region={pbRegion}
-            setRegion={setPbRegion}
+            byRegion={pbData}
+            regions={pbRegions}
+            toggleRegion={toggleRegion}
             loading={pbLoading}
             error={pbError}
             updated={pbUpdated}
-            onRefresh={() => fetchPlaybookRegion(pbRegion)}
+            onRefresh={() => pbRegions.forEach(r => fetchPlaybookRegion(r))}
             fmtTime={fmtTime}
           />
         )}
