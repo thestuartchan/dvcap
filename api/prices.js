@@ -94,6 +94,8 @@ export default async function handler(req, res) {
   // Merge in dividend yield/rate (best-effort; null when unavailable).
   await fetchDividends(tickerList, results);
 
-  res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate");
+  // Edge-cache: 2 min fresh, then serve last-good for up to 10 min while revalidating in
+  // the background — so a serverless cold start / slow Yahoo upstream never blanks a panel.
+  res.setHeader("Cache-Control", "s-maxage=120, stale-while-revalidate=600");
   return res.status(200).json(results);
 }
