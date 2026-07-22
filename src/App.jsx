@@ -4,6 +4,7 @@ import {
   PolarAngleAxis, Radar, PieChart, Pie, Cell, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList,
 } from "recharts";
+import { parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, toWonTrillions } from "../lib/kofia.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
 const C = {
@@ -1751,6 +1752,99 @@ function KoreaStressPanel({ korea }) {
   );
 }
 
+// Korea manual-entry: paste the KOFIA panel → preview (with the recompute-pct guard) →
+// Save (commits data/korea_kofia.json via /api/korea-save so Pre-Reads pick it up too).
+function KoreaManualEntry({ kofia, onSaved }) {
+  const [blob, setBlob] = useState("");
+  const [u7709, setU7709] = useState("");
+  const [u7709date, setU7709date] = useState(kofia?.latest?.units7709?.asOf || "");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const parsed = blob.trim() ? parseKofia(blob) : { list: [], anyMismatch: false };
+  const latest = kofia?.latest || {};
+  const hist = kofia?.history || [];
+  const uvNum = Number(String(u7709).replace(/,/g, ""));
+  const canSave = (parsed.list.length > 0 && !parsed.anyMismatch) || (Number.isFinite(uvNum) && uvNum > 0);
+
+  async function save() {
+    setSaving(true); setMsg(null);
+    try {
+      const body = {};
+      if (blob.trim()) body.blob = blob.trim();
+      if (Number.isFinite(uvNum) && uvNum > 0) body.units7709 = { value: uvNum, asOf: u7709date || undefined };
+      const r = await fetch("/api/korea-save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), credentials: "include" });
+      const j = await r.json();
+      if (!r.ok) setMsg({ ok: false, text: j.error || ("Save failed " + r.status) });
+      else {
+        setMsg({ ok: true, text: `Saved ${j.saved.join(", ")}${j.missing?.length ? " · kept prior: " + j.missing.join(", ") : ""}. Committing (~30s); Pre-Reads pick it up on next fire.` });
+        setBlob(""); setU7709("");
+        if (onSaved) setTimeout(onSaved, 4000);
+      }
+    } catch (e) { setMsg({ ok: false, text: "Save error: " + e.message }); }
+    setSaving(false);
+  }
+
+  const mlHist = hist.map(h => ({ d: h.marginLoans?.asOf?.slice(5), v: h.marginLoans?.value != null ? +toWonTrillions(h.marginLoans.value, "백만원").toFixed(2) : null })).filter(x => x.v != null);
+
+  return (
+    <Card>
+      <SLabel>🇰🇷 Korea Manual Entry — KOFIA paste + 7709 units</SLabel>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, margin: "8px 0 12px" }}>
+        {["marginLoans", "deposits", "cma", "kr3yGovt", "kr3yCorp", "units7709"].map(k => {
+          const line = kofiaStoredLine(k, latest[k]);
+          return (
+            <div key={k} style={{ minWidth: 140 }}>
+              <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>{KOFIA_NAME_BY_KEY[k] || k}</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: line ? C.text : C.lbl }}>{line || "— not set"}</div>
+            </div>
+          );
+        })}
+      </div>
+      {mlHist.length >= 2 && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: C.muted, fontWeight: 700, marginBottom: 2 }}>Margin Loans (₩T) — history</div>
+          <ResponsiveContainer width="100%" height={60}>
+            <LineChart data={mlHist} margin={{ top: 4, right: 6, bottom: 0, left: 0 }}>
+              <Line type="monotone" dataKey="v" stroke={C.blue} strokeWidth={2} dot={false} isAnimationActive={false} />
+              <XAxis dataKey="d" tick={{ fill: C.lbl, fontSize: 9 }} axisLine={false} tickLine={false} />
+              <Tooltip />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+      <textarea value={blob} onChange={e => setBlob(e.target.value)}
+        placeholder="Paste the KOFIA summary panel here (신용융자 / 투자자예탁금 / CMA잔고 / KOSPI지수 / 국고채 3년 / 회사채 3년)…"
+        style={{ width: "100%", minHeight: 90, fontFamily: "monospace", fontSize: 12, padding: 10, border: "1.5px solid " + C.bdr, borderRadius: 8, resize: "vertical", boxSizing: "border-box" }} />
+      {parsed.list.length > 0 && (
+        <div style={{ margin: "10px 0", padding: "10px 12px", background: C.bg, border: "1.5px solid " + (parsed.anyMismatch ? C.rBdr : C.bdr), borderRadius: 8 }}>
+          <div style={{ fontSize: 11, color: C.muted, fontWeight: 800, textTransform: "uppercase", marginBottom: 6 }}>Preview — {parsed.list.length} fields (nothing saves until you click Save)</div>
+          {parsed.list.map(f => (
+            <div key={f.key} style={{ fontSize: 12.5, color: f.mismatch ? C.red : C.text, marginBottom: 3 }}>
+              {f.mismatch ? "⚠ " : "• "}<b>{f.display}</b> · {kofiaDisplay(f)} · as of {f.asOf || "??"}{f.mismatch ? `  — mismatch (recomputed ${f.recomputedPct}%)` : ""}
+            </div>
+          ))}
+          {parsed.anyMismatch && <div style={{ fontSize: 12, color: C.red, fontWeight: 700, marginTop: 4 }}>⚠ Recompute mismatch — fix the paste; save is blocked.</div>}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginTop: 8 }}>
+        <div>
+          <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>7709 Outstanding Units</div>
+          <input value={u7709} onChange={e => setU7709(e.target.value)} placeholder="e.g. 887,500,000"
+            style={{ fontSize: 13, padding: "6px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 150 }} />
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>as of (last-known, not today)</div>
+          <input type="date" value={u7709date} onChange={e => setU7709date(e.target.value)}
+            style={{ fontSize: 13, padding: "6px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6 }} />
+        </div>
+        <Btn onClick={save} disabled={saving || !canSave} color={C.blue} bgColor={C.blBg} label={saving ? "⏳ Saving…" : "💾 Save"} />
+      </div>
+      {msg && <div style={{ marginTop: 8, fontSize: 12.5, fontWeight: 700, color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
+    </Card>
+  );
+}
+
 // Category (role) sort order — the thesis reads cross-region, so foundry sits with
 // foundry, memory with memory, regardless of listing venue.
 const PB_CAT_ORDER = ["foundry", "memory", "litho", "equip", "gpu", "megacap", "index"];
@@ -1837,6 +1931,10 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
             {d.regime.korea && <div style={{ marginTop: 12 }}><KoreaStressPanel korea={d.regime.korea} /></div>}
           </Card>
           ))}
+
+          {/* Korea manual entry (KOFIA paste + 7709 units) — shown when Asia is active */}
+          {regions.includes("asia") && byRegion.asia?.kofia &&
+            <KoreaManualEntry kofia={byRegion.asia.kofia} onSaved={onRefresh} />}
 
           {/* Names grid — one flat grid across active regions; sorted category → region →
               %chg with ★ leaders pinned per category. Geo badge shown in All view. */}
