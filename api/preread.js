@@ -7,6 +7,8 @@ import { assembleRegion } from '../lib/assemble.js';
 import { structure } from '../lib/regime.js';
 import { weekHighlights } from '../lib/calendar.js';
 import { marketState, localHour, halfDayLabels, freshness } from '../lib/sessions.js';
+import { kofiaStoredLine } from '../lib/kofia.js';
+import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
 
 const MODEL = 'claude-sonnet-5';
 
@@ -115,7 +117,21 @@ function buildKorea(k) {
   const volLine = vol.level != null
     ? `• **VKOSPI fut** ${vol.level}${vol.band !== 'n/a' ? ` [${vol.band}]` : ''}${vol.changePct != null ? ` ${fmtPct(vol.changePct)}` : ''} · ${vol.flag}`
     : '• **VKOSPI fut** — no print';
-  return [wonLine, volLine, `• **Cluster:** ${k.cluster} — ${k.note}`].join('\n');
+  // KOFIA manual-entry gate: margin loans (신용융자) — the deleveraging tell that replaced
+  // 7709 — plus investor cash and KR 3Y yields. Latest from data/korea_kofia.json (server).
+  const kf = KOFIA_STORE.latest || {};
+  const kfLine = (key, label) => { const s = kofiaStoredLine(key, kf[key]); return s ? `• **${label}** ${s}` : null; };
+  const yields = (kf.kr3yGovt || kf.kr3yCorp)
+    ? `• **KR 3Y** ${kf.kr3yGovt ? `govt ${kf.kr3yGovt.value}%` : ''}${kf.kr3yGovt && kf.kr3yCorp ? ' · ' : ''}${kf.kr3yCorp ? `corp ${kf.kr3yCorp.value}%` : ''}${kf.kr3yGovt?.asOf ? ` · ${kf.kr3yGovt.asOf.slice(5)}` : ''}`
+    : null;
+  const kofiaLines = [
+    kfLine('marginLoans', 'Margin Loans'),
+    kfLine('deposits', 'Deposits'),
+    kfLine('cma', 'CMA'),
+    yields,
+    kfLine('units7709', '7709 units'),
+  ].filter(Boolean);
+  return [wonLine, volLine, ...kofiaLines, `• **Cluster:** ${k.cluster} — ${k.note}`].join('\n');
 }
 
 async function synthProse(region, blocks) {

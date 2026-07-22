@@ -7,6 +7,7 @@ import { assembleRegion } from '../lib/assemble.js';
 import { structure } from '../lib/regime.js';
 import { weekHighlights } from '../lib/calendar.js';
 import { freshness } from '../lib/sessions.js';
+import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
 
 export default async function handler(req, res) {
   const region = (req.query.region || 'asia').toLowerCase();
@@ -35,8 +36,9 @@ export default async function handler(req, res) {
     names,
     indices,
     macro,
-    regime,               // includes regime.korea (Asia only) with won/vol/etf reads
+    regime,               // includes regime.korea (Asia only) with won/vol reads
     calendar: weekHighlights(),
+    kofia: { latest: KOFIA_STORE.latest || {}, history: (KOFIA_STORE.history || []).slice(-90) },
     generatedAt: new Date().toISOString(),
   });
 }
