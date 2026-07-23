@@ -5,6 +5,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList,
 } from "recharts";
 import { parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, toWonTrillions } from "../lib/kofia.js";
+import { freshnessText } from "../lib/sessions.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
 const C = {
@@ -1689,15 +1690,10 @@ const pbBandColor  = b => ({ calm: C.green, normal: C.blue, elevated: C.amber, h
 // badge that fires on live-but-delayed feeds. Returns null when live (no chip). The
 // backend (playbook spine) computes `freshness` via lib/sessions.js.
 function pbFresh(fr) {
-  if (!fr || fr.state === "live") return null;
-  const txt = fr.state === "delayed"     ? `~${fr.mins ?? "?"}m delayed`
-            : fr.state === "prior-close" ? "prior close"
-            : fr.state === "lunch"       ? "lunch"
-            : fr.state === "holiday"     ? "holiday"
-            : fr.state === "no-print"    ? "no print"
-            : null;
+  const txt = freshnessText(fr);           // shared vocab: "" (live) / prior close / stale · Nh ago / ⚠ date
   if (!txt) return null;
-  const color = fr.state === "delayed" ? C.amber : fr.state === "no-print" ? C.red : C.muted;
+  const color = (fr.state === "no-print" || fr.state === "future") ? C.red
+              : fr.state === "stale" ? C.amber : C.muted;
   return { txt, color };
 }
 

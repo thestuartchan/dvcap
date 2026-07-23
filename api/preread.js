@@ -6,7 +6,7 @@ import { UNIVERSE } from '../data/universe.js';
 import { assembleRegion } from '../lib/assemble.js';
 import { structure } from '../lib/regime.js';
 import { weekHighlights } from '../lib/calendar.js';
-import { marketState, localHour, halfDayLabels, freshness } from '../lib/sessions.js';
+import { marketState, localHour, halfDayLabels, freshness, freshnessText } from '../lib/sessions.js';
 import { kofiaStoredLine } from '../lib/kofia.js';
 import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
 
@@ -23,15 +23,8 @@ const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 //   market open + fresh              → ""                 (live)
 //   no price                         → "⚠️no print"
 function freshLabel(sym, q) {
-  const { state, mins } = freshness(sym, q);
-  switch (state) {
-    case 'no-print':    return ' ⚠️no print';
-    case 'holiday':     return ' · holiday';
-    case 'prior-close': return ' · prior close';
-    case 'lunch':       return ' · lunch';
-    case 'delayed':     return mins != null ? ` ⏱${mins}m delayed` : ' ⏱delayed';
-    default:            return '';   // live
-  }
+  const t = freshnessText(freshness(sym, q));
+  return t ? ` · ${t}` : '';   // live → no suffix
 }
 
 // Pick the price/%chg/label to display. US pre/post-market override: when the US
