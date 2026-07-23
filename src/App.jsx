@@ -2047,6 +2047,12 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                   <div style={{ fontSize: 11, color: C.muted }}>
                     {n.structure || ""}{f ? <span style={{ color: f.color }}>{n.structure ? " · " : ""}{f.txt}</span> : ""}
                   </div>
+                  {n.ext && n.ext.price != null && (
+                    <div style={{ fontSize: 11.5, fontWeight: 800, marginTop: 2, color: pbPctColor(n.ext.changePct) }}
+                      title={"extended-hours (" + (n.ext.session === "pre" ? "pre-market" : "after-hours") + ") vs regular close"}>
+                      {n.ext.session === "pre" ? "PM" : "AH"} {withCommas(n.ext.price)} {pbFmtPct(n.ext.changePct)}
+                    </div>
+                  )}
                 </div>
                 );
               })}
