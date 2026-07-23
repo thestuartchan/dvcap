@@ -5,7 +5,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList,
 } from "recharts";
 import { parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, toWonTrillions } from "../lib/kofia.js";
-import { freshnessText } from "../lib/sessions.js";
+import { freshnessText, humanizeAge } from "../lib/sessions.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
 const C = {
@@ -1707,6 +1707,49 @@ function MacroStat({ label, value, sub }) {
   );
 }
 
+// Business days between a YYYY-MM-DD and today (UTC). For the daily-cadence stale check.
+function bizDaysAgo(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr + "T00:00:00Z");
+  const now = new Date();
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  let n = 0;
+  while (d < end) { d.setUTCDate(d.getUTCDate() + 1); const wd = d.getUTCDay(); if (wd !== 0 && wd !== 6) n++; }
+  return n;
+}
+// Cadence-based freshness for a macro field → { stale, text }. daily > 2 biz days;
+// intraday > 30m. Also flags a future-dated asOf.
+function macroFresh(field) {
+  if (!field) return { stale: false, text: "" };
+  if (field.date) {
+    if (new Date(field.date + "T00:00:00Z") > new Date()) return { stale: true, text: "⚠ date — verify" };
+    const bd = bizDaysAgo(field.date);
+    const stale = bd != null && bd > 2;
+    return { stale, text: field.date + (stale ? ` · stale · ${bd}d` : "") };
+  }
+  if (field.ts) {
+    const ageMin = Math.max(0, Math.round(Date.now() / 1000 / 60 - field.ts / 60));
+    return ageMin > 30 ? { stale: true, text: `stale · ${humanizeAge(ageMin)}` } : { stale: false, text: "" };
+  }
+  return { stale: false, text: "" };
+}
+// One macro cell: value + direction arrow (delta) + asOf/stale + source on hover.
+function MacroCell({ field, value, delta, deltaSuffix }) {
+  const mf = macroFresh(field);
+  const arrow = delta == null ? "" : delta > 0 ? "▲" : delta < 0 ? "▼" : "■";
+  const dcol = delta == null ? C.muted : delta > 0 ? C.green : delta < 0 ? C.red : C.muted;
+  return (
+    <div style={{ minWidth: 92 }} title={field?.src ? "source: " + field.src : ""}>
+      <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>{field?.name}</div>
+      <div style={{ fontSize: 18, fontWeight: 900, color: C.text }}>{value}</div>
+      <div style={{ fontSize: 11, display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {delta != null && <span style={{ color: dcol, fontWeight: 700 }}>{arrow} {Math.abs(delta)}{deltaSuffix}</span>}
+        {mf.text && <span style={{ color: mf.stale ? C.amber : C.lbl }}>{mf.text}</span>}
+      </div>
+    </div>
+  );
+}
+
 function KoreaStressPanel({ korea }) {
   const { won, vol, cluster, note } = korea;
   const cCol = pbClusterColor(cluster);
@@ -1993,15 +2036,20 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>Global · US rates (same on every region)</span>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 20 }}>
-              <MacroStat label="WTI" value={data.macro.wti?.price != null ? "$" + data.macro.wti.price : "—"} sub={data.macro.wti?.stale ? "⚠️ delayed" : ""} />
-              <MacroStat label="Brent" value={data.macro.brent?.price != null ? "$" + data.macro.brent.price : "—"} />
-              <MacroStat label="US 2Y" value={data.macro.us2y?.value != null ? data.macro.us2y.value + "%" : "—"} sub={data.macro.us2y?.date || ""} />
-              <MacroStat label="US 10Y" value={data.macro.us10y?.value != null ? data.macro.us10y.value + "%" : "—"} sub={data.macro.us10y?.date || ""} />
-              <MacroStat label="US 30Y" value={data.macro.us30y?.value != null ? data.macro.us30y.value + "%" : "—"} sub={data.macro.us30y?.date || ""} />
-              <MacroStat label="2s10s" value={data.macro.twos10s != null ? (data.macro.twos10s >= 0 ? "+" : "") + data.macro.twos10s + "bps" : "—"} sub={data.macro.twos10s != null && data.macro.twos10s < 0 ? "inverted" : ""} />
-              <MacroStat label="DXY" value={data.macro.dxy?.value != null ? data.macro.dxy.value.toFixed(2) : "—"} sub={data.macro.dxy?.changePct != null ? pbFmtPct(data.macro.dxy.changePct) : ""} />
-              <MacroStat label="HY OAS" value={data.macro.oas?.value ?? "—"} sub={data.macro.oas?.date ? data.macro.oas.date + " · last hard print" : ""} />
+              <MacroCell field={data.macro.wti}   value={data.macro.wti?.value != null ? "$" + data.macro.wti.value : "—"}     delta={data.macro.wti?.delta} deltaSuffix="" />
+              <MacroCell field={data.macro.brent} value={data.macro.brent?.value != null ? "$" + data.macro.brent.value : "—"} delta={data.macro.brent?.delta} deltaSuffix="" />
+              <MacroCell field={data.macro.us2y}  value={data.macro.us2y?.value != null ? data.macro.us2y.value + "%" : "—"}   delta={data.macro.us2y?.deltaBps} deltaSuffix="bps" />
+              <MacroCell field={data.macro.us10y} value={data.macro.us10y?.value != null ? data.macro.us10y.value + "%" : "—"} delta={data.macro.us10y?.deltaBps} deltaSuffix="bps" />
+              <MacroCell field={data.macro.us30y} value={data.macro.us30y?.value != null ? data.macro.us30y.value + "%" : "—"} delta={data.macro.us30y?.deltaBps} deltaSuffix="bps" />
+              <MacroCell field={{ name: "2s10s", src: "DGS10−DGS2", date: data.macro.us10y?.date, cadence: "daily" }} value={data.macro.twos10s != null ? (data.macro.twos10s >= 0 ? "+" : "") + data.macro.twos10s + "bps" : "—"} delta={data.macro.twos10sDeltaBps} deltaSuffix="bps" />
+              <MacroCell field={data.macro.dxy}   value={data.macro.dxy?.value != null ? data.macro.dxy.value.toFixed(2) : "—"} delta={data.macro.dxy?.delta} deltaSuffix="" />
+              <MacroCell field={data.macro.oas}   value={data.macro.oas?.value ?? "—"} delta={data.macro.oas?.deltaBps} deltaSuffix="bps" />
             </div>
+            {data.macro.sanity && data.macro.sanity.length > 0 && (
+              <div style={{ marginTop: 10, padding: "8px 12px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8, fontSize: 12, color: C.amber, fontWeight: 700 }}>
+                ⚠ Sanity: {data.macro.sanity.join(" · ")}
+              </div>
+            )}
           </Card>
 
           {/* This week's flagged events */}
