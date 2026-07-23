@@ -4,7 +4,7 @@ import {
   PolarAngleAxis, Radar, PieChart, Pie, Cell, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList,
 } from "recharts";
-import { parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, toWonTrillions, koreaFlowRead } from "../lib/kofia.js";
+import { parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, toWonTrillions, koreaFlowRead, koreaFlowImplication } from "../lib/kofia.js";
 import { freshnessText, humanizeAge } from "../lib/sessions.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
@@ -1856,8 +1856,15 @@ function KoreaManualEntry({ kofia, onSaved }) {
         })}
       </div>
       {koreaFlowRead(latest) && (
-        <div style={{ fontSize: 12.5, color: C.mid, margin: "0 0 12px", lineHeight: 1.55, padding: "8px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8 }}>
-          <b style={{ color: C.muted, fontWeight: 800 }}>READ · </b>{koreaFlowRead(latest)}
+        <div style={{ margin: "0 0 12px", padding: "8px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8 }}>
+          <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.55 }}>
+            <b style={{ color: C.muted, fontWeight: 800 }}>READ · </b>{koreaFlowRead(latest)}
+          </div>
+          {koreaFlowImplication(latest) && (
+            <div style={{ fontSize: 12.5, color: C.text, lineHeight: 1.55, marginTop: 5, paddingTop: 5, borderTop: "1px dashed " + C.bdr }}>
+              <b style={{ color: C.blue, fontWeight: 800 }}>IMPLICATION · </b>{koreaFlowImplication(latest)}
+            </div>
+          )}
         </div>
       )}
       {mlHist.length >= 2 && (
