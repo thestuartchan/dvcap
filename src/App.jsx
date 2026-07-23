@@ -4,7 +4,7 @@ import {
   PolarAngleAxis, Radar, PieChart, Pie, Cell, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList,
 } from "recharts";
-import { parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, toWonTrillions } from "../lib/kofia.js";
+import { parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, toWonTrillions, koreaFlowRead } from "../lib/kofia.js";
 import { freshnessText, humanizeAge } from "../lib/sessions.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
@@ -1803,9 +1803,10 @@ function KoreaManualEntry({ kofia, onSaved }) {
   const [iDate, setIDate] = useState(kofia?.latest?.instNet?.asOf || "");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [savedLatest, setSavedLatest] = useState(null);  // optimistic: show saved values instantly
 
   const parsed = blob.trim() ? parseKofia(blob) : { list: [], anyMismatch: false };
-  const latest = kofia?.latest || {};
+  const latest = savedLatest || kofia?.latest || {};
   const hist = kofia?.history || [];
   const uvNum = Number(String(u7709).replace(/,/g, ""));
   const fv = Number(String(fNet).replace(/,/g, ""));
@@ -1825,9 +1826,9 @@ function KoreaManualEntry({ kofia, onSaved }) {
       const j = await r.json();
       if (!r.ok) setMsg({ ok: false, text: j.error || ("Save failed " + r.status) });
       else {
-        setMsg({ ok: true, text: `Saved ${j.saved.join(", ")}${j.missing?.length ? " · kept prior: " + j.missing.join(", ") : ""}. Committing (~30s); Pre-Reads pick it up on next fire.` });
+        if (j.latest) setSavedLatest(j.latest);   // show the saved values immediately — no refresh
+        setMsg({ ok: true, text: `Saved ${j.saved.join(", ")}${j.missing?.length ? " · kept prior: " + j.missing.join(", ") : ""}. Values updated below; committing in the background so the Pre-Reads pick it up too.` });
         setBlob(""); setU7709(""); setFNet(""); setINet("");
-        if (onSaved) setTimeout(onSaved, 4000);
       }
     } catch (e) { setMsg({ ok: false, text: "Save error: " + e.message }); }
     setSaving(false);
@@ -1837,18 +1838,28 @@ function KoreaManualEntry({ kofia, onSaved }) {
 
   return (
     <Card>
-      <SLabel>🇰🇷 Korea Manual Entry — KOFIA paste + 7709 units</SLabel>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, margin: "8px 0 12px" }}>
+      <SLabel><span style={{ display: "inline-block", background: "#0F4C9B", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 4px", borderRadius: 3, marginRight: 5, letterSpacing: 0 }}>KR</span>Korea Manual Entry — KOFIA paste + 7709 units + KRX flows</SLabel>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, margin: "8px 0 10px" }}>
         {["marginLoans", "deposits", "cma", "kr3yGovt", "kr3yCorp", "units7709", "foreignNet", "instNet"].map(k => {
-          const line = kofiaStoredLine(k, latest[k]);
+          const e = latest[k];
+          const line = kofiaStoredLine(k, e);
+          // Colour by direction: currency rows by their %, flows by net sign (green up/buy, red down/sell).
+          const isCur = KOFIA_CURRENCY.includes(k), isFlow = k === "foreignNet" || k === "instNet";
+          const sig = !e ? null : isCur ? e.pct : isFlow ? e.value : null;
+          const col = sig == null ? C.text : sig > 0 ? C.green : sig < 0 ? C.red : C.muted;
           return (
             <div key={k} style={{ minWidth: 140 }}>
               <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>{KOFIA_NAME_BY_KEY[k] || k}</div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: line ? C.text : C.lbl }}>{line || "— not set"}</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: line ? ((isCur || isFlow) ? col : C.text) : C.lbl }}>{line || "— not set"}</div>
             </div>
           );
         })}
       </div>
+      {koreaFlowRead(latest) && (
+        <div style={{ fontSize: 12.5, color: C.mid, margin: "0 0 12px", lineHeight: 1.55, padding: "8px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8 }}>
+          <b style={{ color: C.muted, fontWeight: 800 }}>READ · </b>{koreaFlowRead(latest)}
+        </div>
+      )}
       {mlHist.length >= 2 && (
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 11, color: C.muted, fontWeight: 700, marginBottom: 2 }}>Margin Loans (₩T) — history</div>
