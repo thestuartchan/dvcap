@@ -1732,6 +1732,20 @@ function RegionSessionBadge({ session, tz }) {
     </span>
   );
 }
+// Constituent baskets under the AI-levered axis — same auditable pattern as the other cards.
+function AxisBaskets({ ai, non }) {
+  const line = (lbl, arr) => (
+    <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 2, lineHeight: 1.5 }}>
+      <span style={{ fontWeight: 800, color: C.muted }}>{lbl}: </span>
+      {arr && arr.length
+        ? arr.map((x, i) => (
+            <span key={x.name}>{i ? " · " : ""}<span style={{ color: C.mid, fontWeight: 700 }}>{x.name}</span> <span style={{ color: pbPctColor(x.chg) }}>{pbFmtPct(x.chg)}</span></span>
+          ))
+        : <span>—</span>}
+    </div>
+  );
+  return <div style={{ marginTop: 4 }}>{line("AI", ai)}{line("non-AI", non)}</div>;
+}
 
 function MacroStat({ label, value, sub }) {
   return (
@@ -1971,8 +1985,13 @@ function KoreaManualEntry({ kofia, onSaved }) {
 
 // Category (role) sort order — the thesis reads cross-region, so foundry sits with
 // foundry, memory with memory, regardless of listing venue.
-const PB_CAT_ORDER = ["foundry", "memory", "litho", "equip", "gpu", "megacap", "index"];
+const PB_CAT_ORDER = ["gpu", "memory", "litho", "equip", "foundry-leading", "foundry-mature", "analog", "megacap", "index"];
 const pbCatRank = c => { const i = PB_CAT_ORDER.indexOf(c); return i < 0 ? 99 : i; };
+// Compact role labels for the name-card tag (roles are now node/segment-specific).
+const PB_ROLE_LABEL = {
+  "foundry-leading": "lead fdry", "foundry-mature": "mat fdry", "analog": "analog/auto",
+  "memory": "memory", "litho": "litho", "equip": "equip", "gpu": "gpu", "megacap": "megacap", "index": "index",
+};
 const PB_REGION_RANK = { asia: 0, eu: 1, us: 2 };
 // Per-name geo badge from the Yahoo symbol suffix (finer than the asia/eu/us data region).
 function pbGeo(sym) {
@@ -2038,11 +2057,30 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               <SLabel>🧭 Regime — {d.label}</SLabel>
               <RegionSessionBadge session={d.session} tz={d.tz} />
             </div>
+            {d.regime.staleWhileOpen && (
+              <div style={{ marginBottom: 10, padding: "6px 10px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 6, fontSize: 11.5, fontWeight: 700, color: C.amber }}>
+                ⚠ Equity axes stale — {d.label} market open but prints are prior-close. Labels suppressed until live data.
+              </div>
+            )}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
               <div style={{ minWidth: 210 }}>
                 <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>Memory vs Foundry</div>
-                <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{d.regime.split.label}</div>
-                <div style={{ fontSize: 12, color: C.muted }}>foundry {pbFmtPct(d.regime.split.fnd)} · memory {pbFmtPct(d.regime.split.mem)}</div>
+                {d.regime.split.stale
+                  ? <div style={{ fontSize: 13, fontWeight: 700, color: C.amber }}>stale — market open, awaiting live data</div>
+                  : <>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{d.regime.split.label}</div>
+                      <div style={{ fontSize: 12, color: C.muted }}>foundry {pbFmtPct(d.regime.split.fnd)} · memory {pbFmtPct(d.regime.split.mem)}</div>
+                    </>}
+              </div>
+              <div style={{ minWidth: 240 }}>
+                <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>AI-levered vs non-AI</div>
+                {d.regime.aiAxis.stale
+                  ? <div style={{ fontSize: 13, fontWeight: 700, color: C.amber }}>stale — market open, awaiting live data</div>
+                  : <>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{d.regime.aiAxis.label}</div>
+                      <div style={{ fontSize: 12, color: C.muted }}>AI {pbFmtPct(d.regime.aiAxis.ai)} · non-AI {pbFmtPct(d.regime.aiAxis.non)}</div>
+                      <AxisBaskets ai={d.regime.aiAxis.aiBasket} non={d.regime.aiAxis.nonBasket} />
+                    </>}
               </div>
               <div style={{ minWidth: 170 }}>
                 <div style={{ fontSize: 12, color: C.muted, fontWeight: 700, marginBottom: 4 }}>Credit — global/OAS gate</div>
@@ -2076,7 +2114,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                     <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{n.leader ? "★ " : ""}{n.name}</span>
                     <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
                       {multi ? <span style={{ fontSize: 9, fontWeight: 800, color: C.blue, background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 4, padding: "1px 4px" }}>{pbGeo(n.sym)}</span> : null}
-                      <span style={{ fontSize: 10, color: C.muted, fontWeight: 700, textTransform: "uppercase" }}>{n.role}</span>
+                      <span style={{ fontSize: 10, color: C.muted, fontWeight: 700, textTransform: "uppercase" }}>{PB_ROLE_LABEL[n.role] || n.role}</span>
                     </span>
                   </div>
                   <div style={{ marginTop: 3 }} title={n.freshness ? freshnessText(n.freshness) || "live" : ""}>
