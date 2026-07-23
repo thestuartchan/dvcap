@@ -7,7 +7,7 @@ import { assembleRegion } from '../lib/assemble.js';
 import { structure } from '../lib/regime.js';
 import { weekHighlights } from '../lib/calendar.js';
 import { marketState, localHour, halfDayLabels, freshness, freshnessText } from '../lib/sessions.js';
-import { kofiaStoredLine } from '../lib/kofia.js';
+import { kofiaStoredLine, koreaFlowRead, koreaFlowImplication } from '../lib/kofia.js';
 import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
 
 const MODEL = 'claude-sonnet-5';
@@ -126,7 +126,14 @@ function buildKorea(k) {
     kfLine('instNet', 'Inst Net'),
     kfLine('units7709', '7709 units'),
   ].filter(Boolean);
-  return [wonLine, volLine, ...kofiaLines, `• **Cluster:** ${k.cluster} — ${k.note}`].join('\n');
+  // Flow read + macro implication (same logic as the dashboard Korea panel).
+  const read = koreaFlowRead(kf);
+  const impl = koreaFlowImplication(kf);
+  const readLines = [
+    read ? `• **Read:** ${read}` : null,
+    impl ? `• **Implication:** ${impl}` : null,
+  ].filter(Boolean);
+  return [wonLine, volLine, ...kofiaLines, `• **Cluster:** ${k.cluster} — ${k.note}`, ...readLines].join('\n');
 }
 
 async function synthProse(region, blocks) {
