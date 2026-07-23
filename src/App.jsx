@@ -1736,14 +1736,16 @@ function macroFresh(field) {
 // One macro cell: value + direction arrow (delta) + asOf/stale + source on hover.
 function MacroCell({ field, value, delta, deltaSuffix }) {
   const mf = macroFresh(field);
+  const suspect = !!field?.suspect;   // failed a sanity/relationship check → don't show clean
   const arrow = delta == null ? "" : delta > 0 ? "▲" : delta < 0 ? "▼" : "■";
   const dcol = delta == null ? C.muted : delta > 0 ? C.green : delta < 0 ? C.red : C.muted;
   return (
-    <div style={{ minWidth: 92 }} title={field?.src ? "source: " + field.src : ""}>
+    <div style={{ minWidth: 92 }} title={(field?.src ? "source: " + field.src : "") + (suspect ? " · ⚠ failed sanity check — value suspect" : "")}>
       <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>{field?.name}</div>
-      <div style={{ fontSize: 18, fontWeight: 900, color: C.text }}>{value}</div>
+      <div style={{ fontSize: 18, fontWeight: 900, color: suspect ? C.amber : C.text, textDecoration: suspect ? "line-through" : "none" }}>{suspect ? "⚠ " : ""}{value}</div>
       <div style={{ fontSize: 11, display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {delta != null && <span style={{ color: dcol, fontWeight: 700 }}>{arrow} {Math.abs(delta)}{deltaSuffix}</span>}
+        {suspect && <span style={{ color: C.amber, fontWeight: 700 }}>suspect ({field.src})</span>}
+        {!suspect && delta != null && <span style={{ color: dcol, fontWeight: 700 }}>{arrow} {Math.abs(delta)}{deltaSuffix}</span>}
         {mf.text && <span style={{ color: mf.stale ? C.amber : C.lbl }}>{mf.text}</span>}
       </div>
     </div>
