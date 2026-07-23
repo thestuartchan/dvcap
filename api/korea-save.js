@@ -51,7 +51,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'GITHUB_TOKEN / GITHUB_REPO not configured in Vercel' });
   }
 
-  const { blob, units7709 } = req.body || {};
+  const { blob, units7709, foreignNet, instNet } = req.body || {};
   const parsed = blob ? parseKofia(blob) : { list: [], anyMismatch: false };
   // The no-error guarantee: a recompute mismatch blocks the save entirely.
   if (parsed.anyMismatch) {
@@ -81,6 +81,17 @@ export default async function handler(req, res) {
     store.latest.units7709 = { value: v, asOf: units7709.asOf || prev.units7709?.asOf || null, delta: prevV != null ? v - prevV : null };
     snapshot.units7709 = { value: v, asOf: store.latest.units7709.asOf };
     saved.push('units7709');
+  }
+
+  // Foreign / institutional net flows (₩bn, manual daily) — separate de-risking from
+  // capital flight. Value may be negative (net sell). No delta (already a daily flow).
+  for (const [fk, inp] of [['foreignNet', foreignNet], ['instNet', instNet]]) {
+    if (inp && inp.value != null && Number.isFinite(Number(inp.value))) {
+      const v = Number(inp.value);
+      store.latest[fk] = { value: v, asOf: inp.asOf || prev[fk]?.asOf || null };
+      snapshot[fk] = { value: v, asOf: store.latest[fk].asOf };
+      saved.push(fk);
+    }
   }
 
   if (saved.length === 0) return res.status(400).json({ error: 'no recognizable fields in the paste' });

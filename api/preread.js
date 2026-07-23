@@ -122,6 +122,8 @@ function buildKorea(k) {
     kfLine('deposits', 'Deposits'),
     kfLine('cma', 'CMA'),
     yields,
+    kfLine('foreignNet', 'Foreign Net'),
+    kfLine('instNet', 'Inst Net'),
     kfLine('units7709', '7709 units'),
   ].filter(Boolean);
   return [wonLine, volLine, ...kofiaLines, `• **Cluster:** ${k.cluster} — ${k.note}`].join('\n');
