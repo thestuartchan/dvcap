@@ -4,7 +4,7 @@ import {
   PolarAngleAxis, Radar, PieChart, Pie, Cell, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList,
 } from "recharts";
-import { parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, toWonTrillions, koreaFlowRead, koreaFlowImplication } from "../lib/kofia.js";
+import { parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, toWonTrillions, koreaFlowRead, koreaFlowImplication, withCommas } from "../lib/kofia.js";
 import { freshnessText, humanizeAge } from "../lib/sessions.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
@@ -1839,6 +1839,12 @@ function KoreaManualEntry({ kofia, onSaved }) {
   return (
     <Card>
       <SLabel><span style={{ display: "inline-block", background: "#0F4C9B", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 4px", borderRadius: 3, marginRight: 5, letterSpacing: 0 }}>KR</span>Korea Manual Entry — KOFIA paste + 7709 units + KRX flows</SLabel>
+      <div style={{ fontSize: 11, margin: "3px 0 8px", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <span style={{ color: C.muted, fontWeight: 700 }}>Sources:</span>
+        <a href="https://freesis.kofia.or.kr/" target="_blank" rel="noopener noreferrer" style={{ color: C.blue, textDecoration: "none", fontWeight: 700 }}>KOFIA freesis ↗</a>
+        <a href="https://data.krx.co.kr/" target="_blank" rel="noopener noreferrer" style={{ color: C.blue, textDecoration: "none", fontWeight: 700 }}>KRX 투자자별 매매동향 ↗</a>
+        <a href="https://www.csopasset.com/en/products/hk-skhy-2l" target="_blank" rel="noopener noreferrer" style={{ color: C.blue, textDecoration: "none", fontWeight: 700 }}>CSOP 7709 ↗</a>
+      </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 14, margin: "8px 0 10px" }}>
         {["marginLoans", "deposits", "cma", "kr3yGovt", "kr3yCorp", "units7709", "foreignNet", "instNet"].map(k => {
           const e = latest[k];
@@ -2033,7 +2039,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                     </span>
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 2 }}>
-                    <span style={{ fontSize: 16, fontWeight: 900, color: C.text }}>{n.price ?? "—"}</span>
+                    <span style={{ fontSize: 16, fontWeight: 900, color: C.text }}>{n.price != null ? withCommas(n.price) : "—"}</span>
                     <span style={{ fontSize: 13, fontWeight: 800, color: pbPctColor(n.changePct) }}>{pbFmtPct(n.changePct)}</span>
                   </div>
                   <div style={{ fontSize: 11, color: C.muted }}>
@@ -2058,7 +2064,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                 <div key={ix.sym} style={{ minWidth: 120 }}>
                   <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>{ix.name}</div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                    <span style={{ fontSize: 18, fontWeight: 900, color: C.text }}>{ix.price ?? "—"}</span>
+                    <span style={{ fontSize: 18, fontWeight: 900, color: C.text }}>{ix.price != null ? withCommas(ix.price) : "—"}</span>
                     <span style={{ fontSize: 13, fontWeight: 800, color: pbPctColor(ix.changePct) }}>{pbFmtPct(ix.changePct)}</span>
                   </div>
                   {f ? <div style={{ fontSize: 10, color: f.color }}>{f.txt}</div> : null}
@@ -2095,7 +2101,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
             <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px dashed " + C.bdr }}>
               <div style={{ fontSize: 11, color: C.muted, fontWeight: 800, textTransform: "uppercase", marginBottom: 8 }}>Regime Inputs</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 20 }}>
-                <MacroCell field={data.macro.gold} value={data.macro.gold?.value != null ? "$" + data.macro.gold.value : "—"} delta={data.macro.gold?.delta} deltaSuffix="" />
+                <MacroCell field={data.macro.gold} value={data.macro.gold?.value != null ? "$" + withCommas(data.macro.gold.value) : "—"} delta={data.macro.gold?.delta} deltaSuffix="" />
                 <MacroCell field={data.macro.btc} value={data.macro.btc?.value != null ? "$" + Math.round(data.macro.btc.value).toLocaleString("en-US") : "—"} delta={data.macro.btc?.delta != null ? Math.round(data.macro.btc.delta) : null} deltaSuffix="" />
                 <MacroCell field={data.macro.realYield} value={data.macro.realYield?.value != null ? data.macro.realYield.value + "%" : "—"} delta={data.macro.realYield?.deltaBps} deltaSuffix="bps" />
                 <MacroCell field={data.macro.breakeven} value={data.macro.breakeven?.value != null ? data.macro.breakeven.value + "%" : "—"} delta={data.macro.breakeven?.deltaBps} deltaSuffix="bps" />

@@ -7,7 +7,7 @@ import { assembleRegion } from '../lib/assemble.js';
 import { structure } from '../lib/regime.js';
 import { weekHighlights } from '../lib/calendar.js';
 import { marketState, localHour, halfDayLabels, freshness, freshnessText } from '../lib/sessions.js';
-import { kofiaStoredLine, koreaFlowRead, koreaFlowImplication } from '../lib/kofia.js';
+import { kofiaStoredLine, koreaFlowRead, koreaFlowImplication, withCommas } from '../lib/kofia.js';
 import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
 
 const MODEL = 'claude-sonnet-5';
@@ -49,7 +49,7 @@ function buildBlocks(region, quotes, indices, macro, regime, cal) {
     const m = names[i];
     const st = structure(q);
     const d = displayQuote(q, region);
-    const bits = [`**${m.name}**`, `${d.price ?? '—'}`, fmtPct(d.changePct)];
+    const bits = [`**${m.name}**`, `${d.price != null ? withCommas(d.price) : '—'}`, fmtPct(d.changePct)];
     if (st) bits.push(st);
     let line = `• ${bits.join(' · ')}`;
     if (m.leader) line += ' ⭐';
@@ -58,7 +58,7 @@ function buildBlocks(region, quotes, indices, macro, regime, cal) {
 
   const idxLines = indices.map(q => {
     const d = displayQuote(q, region);
-    return `• **${q._name}** · ${d.price ?? '—'} · ${fmtPct(d.changePct)}${d.tail}`;
+    return `• **${q._name}** · ${d.price != null ? withCommas(d.price) : '—'} · ${fmtPct(d.changePct)}${d.tail}`;
   }).join('\n');
 
   const oil = macro.wti?.price != null
