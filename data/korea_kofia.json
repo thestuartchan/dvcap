@@ -47,6 +47,20 @@
       "asOf": "2026-07-23",
       "delta": 0.005,
       "pct": 0.11
+    },
+    "instNet": {
+      "value": 98,
+      "unit": "십억원",
+      "asOf": "2026-07-23",
+      "delta": null,
+      "pct": null
+    },
+    "foreignNet": {
+      "value": 2136,
+      "unit": "십억원",
+      "asOf": "2026-07-23",
+      "delta": null,
+      "pct": null
     }
   },
   "history": [
@@ -115,6 +129,41 @@
       },
       "kr3yCorp": {
         "value": 4.609,
+        "asOf": "2026-07-23"
+      }
+    },
+    {
+      "savedAt": "2026-07-23T09:12:02.702Z",
+      "kospi": {
+        "value": 6797.7,
+        "asOf": "2026-07-22"
+      },
+      "deposits": {
+        "value": 106692980,
+        "asOf": "2026-07-21"
+      },
+      "marginLoans": {
+        "value": 33558388,
+        "asOf": "2026-07-21"
+      },
+      "cma": {
+        "value": 107209758,
+        "asOf": "2026-07-21"
+      },
+      "kr3yGovt": {
+        "value": 3.919,
+        "asOf": "2026-07-23"
+      },
+      "kr3yCorp": {
+        "value": 4.609,
+        "asOf": "2026-07-23"
+      },
+      "instNet": {
+        "value": 98,
+        "asOf": "2026-07-23"
+      },
+      "foreignNet": {
+        "value": 2136,
         "asOf": "2026-07-23"
       }
     }
