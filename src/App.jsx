@@ -2116,15 +2116,32 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                 <MacroCell field={data.macro.move} value={data.macro.move?.value ?? "—"} delta={data.macro.move?.delta} deltaSuffix="" />
                 <MacroCell field={data.macro.ovx} value={data.macro.ovx?.value ?? "—"} delta={data.macro.ovx?.delta} deltaSuffix="" />
               </div>
-              {data.macro.regimeSignal && (
-                <div style={{ marginTop: 10, padding: "10px 12px", background: C.bg, border: "1.5px solid " + C.bdrMd, borderRadius: 8 }}>
-                  <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>Debasement / stagflation read (gold+BTC co-movement)</div>
-                  <div style={{ fontSize: 15, fontWeight: 900, color: C.text }}>{data.macro.regimeSignal.label}</div>
-                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-                    gold {data.macro.regimeSignal.inputs.gold ?? "—"} · btc {data.macro.regimeSignal.inputs.btc ?? "—"} · DXY {data.macro.regimeSignal.inputs.dxy ?? "—"} · real-yield {data.macro.regimeSignal.inputs.realYield ?? "—"} · OAS {data.macro.regimeSignal.inputs.oas ?? "—"}
+              {data.macro.regimeSignal && (() => {
+                const rs = data.macro.regimeSignal;
+                const w = rs.windows || {};
+                const arr = d => d === "up" ? "▲" : d === "down" ? "▼" : d === "flat" ? "→" : "·";
+                const col = d => d === "up" ? C.green : d === "down" ? C.red : C.muted;
+                const maCol = m => m === "below both" ? C.red : m === "above both" ? C.green : C.amber;
+                const win = o => !o ? "—" : (
+                  <>
+                    1d <span style={{ color: col(o.d1), fontWeight: 800 }}>{arr(o.d1)}</span> · 5d <span style={{ color: col(o.d5), fontWeight: 800 }}>{arr(o.d5)}</span> · 20d <span style={{ color: col(o.d20), fontWeight: 800 }}>{arr(o.d20)}</span>
+                    {o.ma ? <span style={{ color: maCol(o.ma), fontWeight: 700 }}> · {o.ma}</span> : null}
+                    {o.offHi != null ? <span style={{ color: C.muted }}> · {o.offHi > 0 ? "+" : ""}{o.offHi}% off hi</span> : null}
+                  </>
+                );
+                const unconfirmed = /UNCONFIRMED/.test(rs.label || "");
+                return (
+                  <div style={{ marginTop: 10, padding: "10px 12px", background: C.bg, border: "1.5px solid " + (unconfirmed ? C.aBdr : C.bdrMd), borderRadius: 8 }}>
+                    <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>Debasement / stagflation read (gold+BTC, 5d-smoothed)</div>
+                    <div style={{ fontSize: 15, fontWeight: 900, color: unconfirmed ? C.amber : C.text }}>{rs.label}</div>
+                    <div style={{ fontSize: 11, color: C.mid, marginTop: 4 }}>gold — {win(w.gold)}</div>
+                    <div style={{ fontSize: 11, color: C.mid, marginTop: 2 }}>btc &nbsp;— {win(w.btc)}</div>
+                    <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
+                      DXY {rs.inputs?.dxy ?? "—"} · real-yield {rs.inputs?.realYield ?? "—"} · OAS {rs.inputs?.oas ?? "—"}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           </Card>
 
