@@ -1697,6 +1697,42 @@ function pbFresh(fr) {
   return { txt, color };
 }
 
+// Explicit session-state badge for a name/index. Combines the market-state freshness with
+// the exchange PHASE so a print is never shown as clean-live when its market is shut or its
+// feed has gone stale mid-session. `bad:true` → the value itself renders struck/amber (the
+// "never green while stale/prior-close during an OPEN market" rule). Always returns a badge.
+function pbSession(fr, phase) {
+  const st = fr?.state;
+  if (st === "no-print")   return { label: "NO PRINT",         color: C.red,   bad: true };
+  if (st === "future")     return { label: "⚠ DATE",           color: C.red,   bad: true };
+  if (st === "stale")      return { label: "STALE · MKT OPEN", color: C.amber, bad: true };
+  if (st === "live")       return { label: "LIVE",             color: C.green, bad: false };
+  if (st === "lunch")      return { label: "LUNCH HALT",       color: C.amber, bad: false };
+  if (st === "holiday")    return { label: "HOLIDAY",          color: C.muted, bad: false };
+  // prior-close → disambiguate pre-open vs post-close using the exchange phase
+  if (phase === "pre")     return { label: "PRE-OPEN",         color: C.muted, bad: false };
+  if (phase === "post")    return { label: "POST-CLOSE",       color: C.muted, bad: false };
+  return { label: "PRIOR CLOSE", color: C.muted, bad: false };
+}
+
+// Region-block session pill (phase of the region's primary index) + live local clock.
+const PB_SESSION_LABEL = { live: "OPEN", lunch: "LUNCH", pre: "PRE-OPEN", post: "CLOSED", holiday: "HOLIDAY", weekend: "CLOSED", closed: "CLOSED" };
+function pbSessionColor(phase) { return phase === "live" ? C.green : (phase === "lunch" || phase === "pre") ? C.amber : C.muted; }
+// Region-block pill: session state (of the region's primary index) + a LIVE local clock
+// (computed client-side from the region tz, so it ticks between refreshes).
+function RegionSessionBadge({ session, tz }) {
+  const label = PB_SESSION_LABEL[session] || "CLOSED";
+  const color = pbSessionColor(session);
+  let clock = "";
+  try { clock = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date()); } catch { /* bad tz */ }
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color, background: color + "18", border: "1px solid " + color + "55", borderRadius: 5, padding: "2px 7px" }}>
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, display: "inline-block" }} />
+      {label}{clock ? " · " + clock + " local" : ""}
+    </span>
+  );
+}
+
 function MacroStat({ label, value, sub }) {
   return (
     <div style={{ minWidth: 90 }}>
@@ -1998,7 +2034,10 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {/* Regime summary — one card per active region (stacked in All view) */}
           {active.map(d => (
           <Card key={d.region}>
-            <SLabel>🧭 Regime — {d.label}</SLabel>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+              <SLabel>🧭 Regime — {d.label}</SLabel>
+              <RegionSessionBadge session={d.session} tz={d.tz} />
+            </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
               <div style={{ minWidth: 210 }}>
                 <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>Memory vs Foundry</div>
@@ -2030,9 +2069,9 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
             <SLabel>Names {multi ? "· all regions, grouped by category" : ""}</SLabel>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
               {allNames.map(n => {
-                const f = pbFresh(n.freshness);
+                const s = pbSession(n.freshness, n.session);
                 return (
-                <div key={n._region + "|" + n.sym} style={{ background: C.bg, border: "1.5px solid " + (n.leader ? C.blBdr : C.bdr), borderRadius: 10, padding: "10px 12px" }}>
+                <div key={n._region + "|" + n.sym} style={{ background: C.bg, border: "1.5px solid " + (s.bad ? C.aBdr : n.leader ? C.blBdr : C.bdr), borderRadius: 10, padding: "10px 12px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
                     <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{n.leader ? "★ " : ""}{n.name}</span>
                     <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
@@ -2040,13 +2079,14 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                       <span style={{ fontSize: 10, color: C.muted, fontWeight: 700, textTransform: "uppercase" }}>{n.role}</span>
                     </span>
                   </div>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 2 }}>
-                    <span style={{ fontSize: 16, fontWeight: 900, color: C.text }}>{n.price != null ? withCommas(n.price) : "—"}</span>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: pbPctColor(n.changePct) }}>{pbFmtPct(n.changePct)}</span>
+                  <div style={{ marginTop: 3 }} title={n.freshness ? freshnessText(n.freshness) || "live" : ""}>
+                    <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: s.color, background: s.bad ? C.aBg : "transparent", border: "1px solid " + s.color + "55", borderRadius: 4, padding: "1px 5px" }}>{s.label}</span>
                   </div>
-                  <div style={{ fontSize: 11, color: C.muted }}>
-                    {n.structure || ""}{f ? <span style={{ color: f.color }}>{n.structure ? " · " : ""}{f.txt}</span> : ""}
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 3 }}>
+                    <span style={{ fontSize: 16, fontWeight: 900, color: s.bad ? C.amber : C.text, textDecoration: s.bad ? "line-through" : "none" }}>{n.price != null ? withCommas(n.price) : "—"}</span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: s.bad ? C.muted : pbPctColor(n.changePct) }}>{pbFmtPct(n.changePct)}</span>
                   </div>
+                  <div style={{ fontSize: 11, color: C.muted }}>{n.structure || ""}</div>
                   {n.ext && n.ext.price != null && (
                     <div style={{ fontSize: 11.5, fontWeight: 800, marginTop: 2, color: pbPctColor(n.ext.changePct) }}
                       title={"extended-hours (" + (n.ext.session === "pre" ? "pre-market" : "after-hours") + ") vs regular close"}>
@@ -2063,19 +2103,22 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           <Card>
             <SLabel>Indices</SLabel>
             {active.map(d => (
-            <div key={d.region} style={{ marginBottom: multi ? 12 : 0 }}>
-              {multi ? <div style={{ fontSize: 11, color: C.muted, fontWeight: 800, textTransform: "uppercase", marginBottom: 5 }}>{d.label}</div> : null}
+            <div key={d.region} style={{ marginBottom: multi ? 14 : 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                {multi ? <span style={{ fontSize: 11, color: C.muted, fontWeight: 800, textTransform: "uppercase" }}>{d.label}</span> : null}
+                <RegionSessionBadge session={d.session} tz={d.tz} />
+              </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 20 }}>
               {d.indices.map(ix => {
-                const f = pbFresh(ix.freshness);
+                const s = pbSession(ix.freshness, ix.session);
                 return (
                 <div key={ix.sym} style={{ minWidth: 120 }}>
                   <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>{ix.name}</div>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                    <span style={{ fontSize: 18, fontWeight: 900, color: C.text }}>{ix.price != null ? withCommas(ix.price) : "—"}</span>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: pbPctColor(ix.changePct) }}>{pbFmtPct(ix.changePct)}</span>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 6 }} title={ix.freshness ? freshnessText(ix.freshness) || "live" : ""}>
+                    <span style={{ fontSize: 18, fontWeight: 900, color: s.bad ? C.amber : C.text, textDecoration: s.bad ? "line-through" : "none" }}>{ix.price != null ? withCommas(ix.price) : "—"}</span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: s.bad ? C.muted : pbPctColor(ix.changePct) }}>{pbFmtPct(ix.changePct)}</span>
                   </div>
-                  {f ? <div style={{ fontSize: 10, color: f.color }}>{f.txt}</div> : null}
+                  <div><span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: s.color, background: s.bad ? C.aBg : "transparent", border: "1px solid " + s.color + "55", borderRadius: 4, padding: "1px 5px" }}>{s.label}</span></div>
                 </div>
                 );
               })}
@@ -2148,7 +2191,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {/* This week's flagged events */}
           {data.calendar && data.calendar.length > 0 && (
             <Card>
-              <SLabel>📅 Calendar · past 48h → next 10 days</SLabel>
+              <SLabel>📅 Calendar — Current / Upcoming</SLabel>
               {data.calendar.map((e, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0", fontSize: 13, color: e.reported ? C.lbl : C.mid, opacity: e.reported ? 0.72 : 1, borderBottom: i < data.calendar.length - 1 ? "1px solid " + C.bdr : "none" }}>
                   <span style={{ color: C.muted, minWidth: 92 }}>{e.date}</span>

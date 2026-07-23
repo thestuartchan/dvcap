@@ -6,7 +6,7 @@
 import { assembleRegion } from '../lib/assemble.js';
 import { structure } from '../lib/regime.js';
 import { weekHighlights } from '../lib/calendar.js';
-import { freshness } from '../lib/sessions.js';
+import { freshness, sessionPhase, localClock } from '../lib/sessions.js';
 import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
 
 export default async function handler(req, res) {
@@ -17,6 +17,8 @@ export default async function handler(req, res) {
   const { R, quotes, idxRaw, macro, regime } = assembled;
 
   // Attach display metadata + structure tag to each name, and names to indices.
+  // `session` = explicit phase of that symbol's OWN exchange (live/pre/post/lunch/holiday/
+  // weekend) so the UI can badge it and never render a prior-close print as clean-live.
   const names = quotes.map((q, i) => ({
     ...q,
     name:   R.names[i].name,
@@ -24,8 +26,14 @@ export default async function handler(req, res) {
     leader: !!R.names[i].leader,
     structure: structure(q),
     freshness: freshness(q.sym, q),   // market-state-aware — not the raw feed-age flag
+    session:   sessionPhase(q.sym),
   }));
-  const indices = idxRaw.map((q, i) => ({ ...q, name: R.indices[i].name, freshness: freshness(q.sym, q) }));
+  const indices = idxRaw.map((q, i) => ({ ...q, name: R.indices[i].name, freshness: freshness(q.sym, q), session: sessionPhase(q.sym) }));
+
+  // Region-level session badge: phase of the region's primary index + a live local clock.
+  const primaryIdxSym = R.indices[0]?.sym;
+  const regionSession = primaryIdxSym ? sessionPhase(primaryIdxSym) : 'closed';
+  const regionClock   = localClock(R.tz);
 
   // 60s edge cache so a burst of tab opens doesn't hammer the providers.
   res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=120');
@@ -33,6 +41,8 @@ export default async function handler(req, res) {
     region,
     label: R.label,
     tz: R.tz,
+    session: regionSession,
+    clock: regionClock,
     names,
     indices,
     macro,
