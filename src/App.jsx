@@ -2050,6 +2050,27 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                 ⚠ Sanity: {data.macro.sanity.join(" · ")}
               </div>
             )}
+            {/* Regime inputs — gold/BTC co-movement + real yield/breakeven, drives the read below */}
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px dashed " + C.bdr }}>
+              <div style={{ fontSize: 11, color: C.muted, fontWeight: 800, textTransform: "uppercase", marginBottom: 8 }}>Regime Inputs</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 20 }}>
+                <MacroCell field={data.macro.gold} value={data.macro.gold?.value != null ? "$" + data.macro.gold.value : "—"} delta={data.macro.gold?.delta} deltaSuffix="" />
+                <MacroCell field={data.macro.btc} value={data.macro.btc?.value != null ? "$" + Math.round(data.macro.btc.value).toLocaleString("en-US") : "—"} delta={data.macro.btc?.delta != null ? Math.round(data.macro.btc.delta) : null} deltaSuffix="" />
+                <MacroCell field={data.macro.realYield} value={data.macro.realYield?.value != null ? data.macro.realYield.value + "%" : "—"} delta={data.macro.realYield?.deltaBps} deltaSuffix="bps" />
+                <MacroCell field={data.macro.breakeven} value={data.macro.breakeven?.value != null ? data.macro.breakeven.value + "%" : "—"} delta={data.macro.breakeven?.deltaBps} deltaSuffix="bps" />
+                <MacroCell field={data.macro.move} value={data.macro.move?.value ?? "—"} delta={data.macro.move?.delta} deltaSuffix="" />
+                <MacroCell field={data.macro.ovx} value={data.macro.ovx?.value ?? "—"} delta={data.macro.ovx?.delta} deltaSuffix="" />
+              </div>
+              {data.macro.regimeSignal && (
+                <div style={{ marginTop: 10, padding: "10px 12px", background: C.bg, border: "1.5px solid " + C.bdrMd, borderRadius: 8 }}>
+                  <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>Debasement / stagflation read (gold+BTC co-movement)</div>
+                  <div style={{ fontSize: 15, fontWeight: 900, color: C.text }}>{data.macro.regimeSignal.label}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                    gold {data.macro.regimeSignal.inputs.gold ?? "—"} · btc {data.macro.regimeSignal.inputs.btc ?? "—"} · DXY {data.macro.regimeSignal.inputs.dxy ?? "—"} · real-yield {data.macro.regimeSignal.inputs.realYield ?? "—"} · OAS {data.macro.regimeSignal.inputs.oas ?? "—"}
+                  </div>
+                </div>
+              )}
+            </div>
           </Card>
 
           {/* This week's flagged events */}
