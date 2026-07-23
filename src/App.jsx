@@ -2148,7 +2148,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {/* This week's flagged events */}
           {data.calendar && data.calendar.length > 0 && (
             <Card>
-              <SLabel>📅 This Week</SLabel>
+              <SLabel>📅 Calendar · past 48h → next 10 days</SLabel>
               {data.calendar.map((e, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0", fontSize: 13, color: e.reported ? C.lbl : C.mid, opacity: e.reported ? 0.72 : 1, borderBottom: i < data.calendar.length - 1 ? "1px solid " + C.bdr : "none" }}>
                   <span style={{ color: C.muted, minWidth: 92 }}>{e.date}</span>
