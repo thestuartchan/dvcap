@@ -1797,6 +1797,10 @@ function KoreaManualEntry({ kofia, onSaved }) {
   const [blob, setBlob] = useState("");
   const [u7709, setU7709] = useState("");
   const [u7709date, setU7709date] = useState(kofia?.latest?.units7709?.asOf || "");
+  const [fNet, setFNet] = useState("");
+  const [fDate, setFDate] = useState(kofia?.latest?.foreignNet?.asOf || "");
+  const [iNet, setINet] = useState("");
+  const [iDate, setIDate] = useState(kofia?.latest?.instNet?.asOf || "");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
 
@@ -1804,7 +1808,10 @@ function KoreaManualEntry({ kofia, onSaved }) {
   const latest = kofia?.latest || {};
   const hist = kofia?.history || [];
   const uvNum = Number(String(u7709).replace(/,/g, ""));
-  const canSave = (parsed.list.length > 0 && !parsed.anyMismatch) || (Number.isFinite(uvNum) && uvNum > 0);
+  const fv = Number(String(fNet).replace(/,/g, ""));
+  const iv = Number(String(iNet).replace(/,/g, ""));
+  const hasFlow = (fNet.trim() !== "" && Number.isFinite(fv)) || (iNet.trim() !== "" && Number.isFinite(iv));
+  const canSave = (parsed.list.length > 0 && !parsed.anyMismatch) || (Number.isFinite(uvNum) && uvNum > 0) || hasFlow;
 
   async function save() {
     setSaving(true); setMsg(null);
@@ -1812,12 +1819,14 @@ function KoreaManualEntry({ kofia, onSaved }) {
       const body = {};
       if (blob.trim()) body.blob = blob.trim();
       if (Number.isFinite(uvNum) && uvNum > 0) body.units7709 = { value: uvNum, asOf: u7709date || undefined };
+      if (fNet.trim() !== "" && Number.isFinite(fv)) body.foreignNet = { value: fv, asOf: fDate || undefined };
+      if (iNet.trim() !== "" && Number.isFinite(iv)) body.instNet = { value: iv, asOf: iDate || undefined };
       const r = await fetch("/api/korea-save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), credentials: "include" });
       const j = await r.json();
       if (!r.ok) setMsg({ ok: false, text: j.error || ("Save failed " + r.status) });
       else {
         setMsg({ ok: true, text: `Saved ${j.saved.join(", ")}${j.missing?.length ? " · kept prior: " + j.missing.join(", ") : ""}. Committing (~30s); Pre-Reads pick it up on next fire.` });
-        setBlob(""); setU7709("");
+        setBlob(""); setU7709(""); setFNet(""); setINet("");
         if (onSaved) setTimeout(onSaved, 4000);
       }
     } catch (e) { setMsg({ ok: false, text: "Save error: " + e.message }); }
@@ -1830,7 +1839,7 @@ function KoreaManualEntry({ kofia, onSaved }) {
     <Card>
       <SLabel>🇰🇷 Korea Manual Entry — KOFIA paste + 7709 units</SLabel>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 14, margin: "8px 0 12px" }}>
-        {["marginLoans", "deposits", "cma", "kr3yGovt", "kr3yCorp", "units7709"].map(k => {
+        {["marginLoans", "deposits", "cma", "kr3yGovt", "kr3yCorp", "units7709", "foreignNet", "instNet"].map(k => {
           const line = kofiaStoredLine(k, latest[k]);
           return (
             <div key={k} style={{ minWidth: 140 }}>
@@ -1877,6 +1886,20 @@ function KoreaManualEntry({ kofia, onSaved }) {
           <input type="date" value={u7709date} onChange={e => setU7709date(e.target.value)}
             style={{ fontSize: 13, padding: "6px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6 }} />
         </div>
+        <div>
+          <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>Foreign Net (₩bn)</div>
+          <input value={fNet} onChange={e => setFNet(e.target.value)} placeholder="e.g. -1,234"
+            style={{ fontSize: 13, padding: "6px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 110 }} />
+        </div>
+        <input type="date" value={fDate} onChange={e => setFDate(e.target.value)} title="Foreign-net date"
+          style={{ fontSize: 13, padding: "6px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6 }} />
+        <div>
+          <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>Institutional Net (₩bn)</div>
+          <input value={iNet} onChange={e => setINet(e.target.value)} placeholder="e.g. +567"
+            style={{ fontSize: 13, padding: "6px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 110 }} />
+        </div>
+        <input type="date" value={iDate} onChange={e => setIDate(e.target.value)} title="Institutional-net date"
+          style={{ fontSize: 13, padding: "6px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6 }} />
         <Btn onClick={save} disabled={saving || !canSave} color={C.blue} bgColor={C.blBg} label={saving ? "⏳ Saving…" : "💾 Save"} />
       </div>
       {msg && <div style={{ marginTop: 8, fontSize: 12.5, fontWeight: 700, color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
