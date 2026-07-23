@@ -181,7 +181,7 @@ function assembleDiscord(region, label, blocks, read) {
     ...(blocks.koreaLines ? [`🇰🇷 **KOREA STRESS**\n${blocks.koreaLines}`] : []),
     `🧭 **REGIME**\n${blocks.regimeLines}`,
     `📝 **READ**\n${read}`,
-    `📅 **CALENDAR** _(past 48h → next 10d)_\n${blocks.calLines}`,
+    `📅 **CALENDAR** _(current / upcoming)_\n${blocks.calLines}`,
   ];
 
   return [
