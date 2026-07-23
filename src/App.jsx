@@ -2150,9 +2150,10 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
             <Card>
               <SLabel>📅 This Week</SLabel>
               {data.calendar.map((e, i) => (
-                <div key={i} style={{ display: "flex", gap: 10, padding: "4px 0", fontSize: 13, color: C.mid, borderBottom: i < data.calendar.length - 1 ? "1px solid " + C.bdr : "none" }}>
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0", fontSize: 13, color: e.reported ? C.lbl : C.mid, opacity: e.reported ? 0.72 : 1, borderBottom: i < data.calendar.length - 1 ? "1px solid " + C.bdr : "none" }}>
                   <span style={{ color: C.muted, minWidth: 92 }}>{e.date}</span>
-                  <span style={{ fontWeight: 600 }}>{e.title}</span>
+                  <span style={{ fontWeight: 600, textDecoration: e.reported ? "line-through" : "none" }}>{e.title}</span>
+                  {e.reported && <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: C.lbl, border: "1px solid " + C.bdr, borderRadius: 4, padding: "1px 4px" }}>reported</span>}
                   <span style={{ color: C.lbl, marginLeft: "auto" }}>{e.region}</span>
                 </div>
               ))}

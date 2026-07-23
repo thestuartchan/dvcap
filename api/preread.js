@@ -84,6 +84,7 @@ function buildBlocks(region, quotes, indices, macro, regime, cal) {
   const calLines = cal.length
     ? cal.map(e => {
         const dow = DOW[new Date(e.date + 'T00:00:00Z').getUTCDay()];
+        if (e.reported) return `• ~~**${dow} ${e.date.slice(5)}** · ${e.title}~~ _(reported)_`;
         return `• **${dow} ${e.date.slice(5)}** · ${e.title}${e.scope === 'global' ? ' 🌐' : ''}`;
       }).join('\n')
     : '• (nothing flagged in the next 10 days)';
