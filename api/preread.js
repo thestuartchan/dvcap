@@ -72,8 +72,12 @@ function buildBlocks(region, quotes, indices, macro, regime, cal) {
 
   const koreaLines = buildKorea(regime.korea);
 
-  let regimeLines =
-    `• **Split:** ${regime.split.label} (foundry ${fmtPct(regime.split.fnd)} vs memory ${fmtPct(regime.split.mem)})\n`
+  let regimeLines = regime.staleWhileOpen
+    ? `• ⚠️ **Equity axes stale** — market open but prints are prior-close; split/AI reads suppressed\n`
+    : '';
+  regimeLines +=
+    `• **Split:** ${regime.split.stale ? 'stale — mkt open, awaiting live' : `${regime.split.label} (foundry ${fmtPct(regime.split.fnd)} vs memory ${fmtPct(regime.split.mem)})`}\n`
+    + `• **AI vs non-AI:** ${regime.aiAxis.stale ? 'stale — mkt open, awaiting live' : `${regime.aiAxis.label} (AI ${fmtPct(regime.aiAxis.ai)} vs non-AI ${fmtPct(regime.aiAxis.non)})`}\n`
     + `• **Credit** (global/OAS gate): ${regime.credit.state} — ${regime.credit.note}\n`
     + `• **Oil:** ${regime.oil.label}`;
   // Surface the Korea-local cluster to the model as a SEPARATE gate from OAS.
