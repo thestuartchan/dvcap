@@ -1731,6 +1731,22 @@ function pbFresh(fr) {
   return { txt, color };
 }
 
+// Prior-close coherence guard, recomputed AT RENDER from price/prevClose. Deliberately does
+// not just trust the payload's pctSuspect flag: a payload cached from an older build has no
+// such flag, and that is exactly how a contradiction (value below prior close showing a
+// POSITIVE %) reached the screen. Returns { ok, pct, note } — on failure the % is suppressed
+// and the caller shows the note instead of a number that cannot be true.
+function pbPctGuard(row) {
+  const { price, prevClose, changePct } = row || {};
+  if (row?.pctSuspect) return { ok: false, pct: null, note: "⚠ prior-close mismatch" };
+  if (price == null || prevClose == null || changePct == null) return { ok: true, pct: changePct, note: null };
+  const diff = price - prevClose;
+  if (Math.abs(diff) > 1e-9 && Math.abs(changePct) > 0.005 && Math.sign(diff) !== Math.sign(changePct)) {
+    return { ok: false, pct: null, note: "⚠ prior-close mismatch" };
+  }
+  return { ok: true, pct: changePct, note: null };
+}
+
 // Explicit session-state badge for a name/index. Combines the market-state freshness with
 // the exchange PHASE so a print is never shown as clean-live when its market is shut or its
 // feed has gone stale mid-session. `bad:true` → the value itself renders struck/amber (the
@@ -1807,9 +1823,19 @@ function macroFresh(field) {
   if (!field) return { stale: false, text: "" };
   if (field.date) {
     if (new Date(field.date + "T00:00:00Z") > new Date()) return { stale: true, text: "⚠ date — verify" };
+    // A DAILY series only prints on trading days, so a Sat/Sun asOf is impossible — flag it
+    // rather than presenting a weekend date as a real print. (Monthly series are exempt: their
+    // date is a PERIOD label, e.g. CPI stamped the 1st, which legitimately lands on a weekend.)
+    const wd = new Date(field.date + "T00:00:00Z").getUTCDay();
+    if (field.cadence === "daily" && (wd === 0 || wd === 6)) {
+      return { stale: true, text: `⚠ ${field.date} is a non-trading day` };
+    }
     const bd = bizDaysAgo(field.date);
     const stale = bd != null && bd > 2;
-    return { stale, text: field.date + (stale ? ` · stale · ${bd}d` : "") };
+    // Daily fields are last-hard-print series: label them as such so the date reads as
+    // "when it last printed", not "as of now".
+    const base = field.cadence === "daily" ? `last print ${field.date}` : field.date;
+    return { stale, text: base + (stale ? ` · stale · ${bd}d` : "") };
   }
   if (field.ts) {
     const ageMin = Math.max(0, Math.round(Date.now() / 1000 / 60 - field.ts / 60));
@@ -2073,7 +2099,23 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           })}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 12, color: C.muted }}>Updated {fmtTime(updated)}</span>
+          {(() => {
+            // The "Updated" stamp is rehydrated from localStorage, so it can be DAYS old while
+            // still rendering as a bare HH:MM that reads as current. Show the date whenever it
+            // is not today, and flag stale cache outright — a global stamp must never imply a
+            // freshness the per-field stamps contradict.
+            const u = updated ? new Date(updated) : null;
+            const today = u && u.toDateString() === new Date().toDateString();
+            const ageH = u ? (Date.now() - u.getTime()) / 3.6e6 : null;
+            const old = ageH != null && ageH > 12;
+            return (
+              <span style={{ fontSize: 12, color: old ? C.amber : C.muted, fontWeight: old ? 700 : 400 }}
+                title={u ? u.toString() : "never fetched"}>
+                {old ? "⚠ cached " : "Updated "}
+                {u ? (today ? fmtTime(u) : u.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + fmtTime(u)) : "—"}
+              </span>
+            );
+          })()}
           <Btn onClick={onRefresh} disabled={loading} color={C.blue} bgColor={C.blBg} label={loading ? "⏳ …" : "🔄 Refresh"} />
         </div>
       </div>
@@ -2159,7 +2201,9 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 3 }}>
                     <span style={{ fontSize: 16, fontWeight: 900, color: s.bad ? C.amber : C.text, textDecoration: s.bad ? "line-through" : "none" }}>{n.price != null ? withCommas(n.price) : "—"}</span>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: s.bad ? C.muted : pbPctColor(n.changePct) }}>{pbFmtPct(n.changePct)}</span>
+                    {(() => { const g = pbPctGuard(n); return g.ok
+                      ? <span style={{ fontSize: 13, fontWeight: 800, color: s.bad ? C.muted : pbPctColor(g.pct) }}>{pbFmtPct(g.pct)}</span>
+                      : <span style={{ fontSize: 10.5, fontWeight: 800, color: C.red }} title={"last " + n.price + " vs prior close " + n.prevClose + " — sign disagrees with the reported %"}>{g.note}</span>; })()}
                   </div>
                   <div style={{ fontSize: 11, color: C.muted }}>{n.structure || ""}</div>
                   {n.ext && n.ext.price != null && (
@@ -2191,7 +2235,9 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                   <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>{ix.name}</div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 6 }} title={ix.freshness ? freshnessText(ix.freshness) || "live" : ""}>
                     <span style={{ fontSize: 18, fontWeight: 900, color: s.bad ? C.amber : C.text, textDecoration: s.bad ? "line-through" : "none" }}>{ix.price != null ? withCommas(ix.price) : "—"}</span>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: s.bad ? C.muted : pbPctColor(ix.changePct) }}>{pbFmtPct(ix.changePct)}</span>
+                    {(() => { const g = pbPctGuard(ix); return g.ok
+                      ? <span style={{ fontSize: 13, fontWeight: 800, color: s.bad ? C.muted : pbPctColor(g.pct) }}>{pbFmtPct(g.pct)}</span>
+                      : <span style={{ fontSize: 10.5, fontWeight: 800, color: C.red }} title={"last " + ix.price + " vs prior close " + ix.prevClose + " — sign disagrees with the reported %"}>{g.note}</span>; })()}
                   </div>
                   <div><span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: s.color, background: s.bad ? C.aBg : "transparent", border: "1px solid " + s.color + "55", borderRadius: 4, padding: "1px 5px" }}>{s.label}</span></div>
                 </div>
