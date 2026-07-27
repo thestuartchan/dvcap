@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Component } from "react";
 import {
   AreaChart, Area, BarChart, Bar, RadarChart, PolarGrid,
   PolarAngleAxis, Radar, PieChart, Pie, Cell, LineChart, Line,
@@ -1105,7 +1105,10 @@ async function fetchPlaybook(region) {
 }
 
 function useLivePlaybook() {
-  const [byRegion, setByRegion] = useState(() => cacheLoad("cache_playbook_v1", {}));
+  // Cache key is VERSIONED: the playbook payload shape changes as the spine grows (v2 added
+  // regime.aiAxis + per-name session). Bumping the key retires payloads of an older shape
+  // instead of rehydrating them into a renderer that expects the new fields.
+  const [byRegion, setByRegion] = useState(() => cacheLoad("cache_playbook_v2", {}));
   const [loading, setLoading]   = useState(false);
   const [updated, setUpdated]   = useState(() => cacheLoadDate("cache_playbook_updated_v1"));
   const [error, setError]       = useState(null);
@@ -1118,7 +1121,7 @@ function useLivePlaybook() {
       if (data && data.region) {
         setByRegion(prev => {
           const merged = { ...prev, [region]: data };
-          cacheSave("cache_playbook_v1", merged);
+          cacheSave("cache_playbook_v2", merged);
           return merged;
         });
         const now = new Date();
@@ -1689,6 +1692,37 @@ const pbBandColor  = b => ({ calm: C.green, normal: C.blue, elevated: C.amber, h
 // "~Nm delayed" / "prior close" / "holiday" / "no print" instead of a blanket "stale"
 // badge that fires on live-but-delayed feeds. Returns null when live (no chip). The
 // backend (playbook spine) computes `freshness` via lib/sessions.js.
+// Error boundary — a render error in ONE tab must not tear down the whole dashboard.
+// Without this, a single bad property access blanks the entire page (header + nav included),
+// which is exactly what a shape-mismatched cached payload once did. Offers a cache-clear
+// escape hatch, since a stale localStorage payload is the most likely cause.
+class TabErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  componentDidCatch(err, info) { console.error("Render error in " + (this.props.name || "tab") + ":", err, info); }
+  render() {
+    if (!this.state.err) return this.props.children;
+    return (
+      <Card style={{ background: C.rBg, border: "1.5px solid " + C.rBdr }}>
+        <div style={{ color: C.red, fontWeight: 800, fontSize: 14, marginBottom: 6 }}>
+          ⚠ {this.props.name || "This view"} failed to render
+        </div>
+        <div style={{ color: C.mid, fontSize: 12.5, marginBottom: 10, fontFamily: "ui-monospace, monospace" }}>
+          {String(this.state.err?.message || this.state.err)}
+        </div>
+        <div style={{ color: C.muted, fontSize: 12, marginBottom: 10 }}>
+          The rest of the dashboard still works. This is usually a cached payload from an older
+          data shape — clearing the cache and refetching normally fixes it.
+        </div>
+        <Btn onClick={() => {
+          try { Object.keys(localStorage).filter(k => k.startsWith("cache_")).forEach(k => localStorage.removeItem(k)); } catch (_) {}
+          window.location.reload();
+        }} color={C.red} bgColor={C.rBg} label="🧹 Clear cache & reload" />
+      </Card>
+    );
+  }
+}
+
 function pbFresh(fr) {
   const txt = freshnessText(fr);           // shared vocab: "" (live) / prior close / stale · Nh ago / ⚠ date
   if (!txt) return null;
@@ -2057,7 +2091,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               <SLabel>🧭 Regime — {d.label}</SLabel>
               <RegionSessionBadge session={d.session} tz={d.tz} />
             </div>
-            {d.regime.staleWhileOpen && (
+            {d.regime?.staleWhileOpen && (
               <div style={{ marginBottom: 10, padding: "6px 10px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 6, fontSize: 11.5, fontWeight: 700, color: C.amber }}>
                 ⚠ Equity axes stale — {d.label} market open but prints are prior-close. Labels suppressed until live data.
               </div>
@@ -2065,35 +2099,38 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
             <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
               <div style={{ minWidth: 210 }}>
                 <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>Memory vs Foundry</div>
-                {d.regime.split.stale
+                {d.regime?.split?.stale
                   ? <div style={{ fontSize: 13, fontWeight: 700, color: C.amber }}>stale — market open, awaiting live data</div>
                   : <>
-                      <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{d.regime.split.label}</div>
-                      <div style={{ fontSize: 12, color: C.muted }}>foundry {pbFmtPct(d.regime.split.fnd)} · memory {pbFmtPct(d.regime.split.mem)}</div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{d.regime?.split?.label ?? "—"}</div>
+                      <div style={{ fontSize: 12, color: C.muted }}>foundry {pbFmtPct(d.regime?.split?.fnd)} · memory {pbFmtPct(d.regime?.split?.mem)}</div>
                     </>}
               </div>
-              <div style={{ minWidth: 240 }}>
-                <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>AI-levered vs non-AI</div>
-                {d.regime.aiAxis.stale
-                  ? <div style={{ fontSize: 13, fontWeight: 700, color: C.amber }}>stale — market open, awaiting live data</div>
-                  : <>
-                      <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{d.regime.aiAxis.label}</div>
-                      <div style={{ fontSize: 12, color: C.muted }}>AI {pbFmtPct(d.regime.aiAxis.ai)} · non-AI {pbFmtPct(d.regime.aiAxis.non)}</div>
-                      <AxisBaskets ai={d.regime.aiAxis.aiBasket} non={d.regime.aiAxis.nonBasket} />
-                    </>}
-              </div>
+              {/* AI axis renders only once the payload carries it (older cached shapes omit it) */}
+              {d.regime?.aiAxis && (
+                <div style={{ minWidth: 240 }}>
+                  <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>AI-levered vs non-AI</div>
+                  {d.regime.aiAxis.stale
+                    ? <div style={{ fontSize: 13, fontWeight: 700, color: C.amber }}>stale — market open, awaiting live data</div>
+                    : <>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{d.regime.aiAxis.label ?? "—"}</div>
+                        <div style={{ fontSize: 12, color: C.muted }}>AI {pbFmtPct(d.regime.aiAxis.ai)} · non-AI {pbFmtPct(d.regime.aiAxis.non)}</div>
+                        <AxisBaskets ai={d.regime.aiAxis.aiBasket} non={d.regime.aiAxis.nonBasket} />
+                      </>}
+                </div>
+              )}
               <div style={{ minWidth: 170 }}>
                 <div style={{ fontSize: 12, color: C.muted, fontWeight: 700, marginBottom: 4 }}>Credit — global/OAS gate</div>
-                <Pill label={d.regime.credit.state.toUpperCase()} color={pbCreditColor(d.regime.credit.state)} />
-                <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{d.regime.credit.note}</div>
+                <Pill label={(d.regime?.credit?.state ?? "unknown").toUpperCase()} color={pbCreditColor(d.regime?.credit?.state)} />
+                <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{d.regime?.credit?.note ?? ""}</div>
               </div>
               <div style={{ minWidth: 170 }}>
                 <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>Oil</div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{d.regime.oil.label}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{d.regime?.oil?.label ?? "—"}</div>
               </div>
             </div>
             {/* Korea-local stress gate (Asia only) */}
-            {d.regime.korea && <div style={{ marginTop: 12 }}><KoreaStressPanel korea={d.regime.korea} /></div>}
+            {d.regime?.korea && <div style={{ marginTop: 12 }}><KoreaStressPanel korea={d.regime.korea} /></div>}
           </Card>
           ))}
 
@@ -3174,16 +3211,18 @@ export default function App() {
 
         {/* ── MACRO ── */}
         {tab === "global" && (
-          <GlobalPlaybook
-            byRegion={pbData}
-            regions={pbRegions}
-            toggleRegion={toggleRegion}
-            loading={pbLoading}
-            error={pbError}
-            updated={pbUpdated}
-            onRefresh={() => pbRegions.forEach(r => fetchPlaybookRegion(r))}
-            fmtTime={fmtTime}
-          />
+          <TabErrorBoundary name="Global Playbook">
+            <GlobalPlaybook
+              byRegion={pbData}
+              regions={pbRegions}
+              toggleRegion={toggleRegion}
+              loading={pbLoading}
+              error={pbError}
+              updated={pbUpdated}
+              onRefresh={() => pbRegions.forEach(r => fetchPlaybookRegion(r))}
+              fmtTime={fmtTime}
+            />
+          </TabErrorBoundary>
         )}
 
         {tab === "macro" && (
