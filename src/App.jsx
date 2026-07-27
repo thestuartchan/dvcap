@@ -2441,6 +2441,12 @@ export default function App() {
       {/* ── CONTENT ── */}
       <div className="mwd-content-pad" style={{ maxWidth: 1080, margin: "0 auto", padding: "16px" }}>
 
+        {/* Every tab is fail-soft: a render error shows a scoped error card instead of blanking
+            the whole dashboard. key={tab} remounts the boundary on tab change, so an error on
+            one tab clears when you navigate away rather than sticking. The footer stays
+            OUTSIDE, so it renders even if the active tab dies. */}
+        <TabErrorBoundary key={tab} name={(TABS.find(t => t.id === tab)?.label || "This tab").replace(/^\S+\s/, "")}>
+
         {/* ── INDICATORS ── */}
         {tab === "indicators" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -3211,18 +3217,16 @@ export default function App() {
 
         {/* ── MACRO ── */}
         {tab === "global" && (
-          <TabErrorBoundary name="Global Playbook">
-            <GlobalPlaybook
-              byRegion={pbData}
-              regions={pbRegions}
-              toggleRegion={toggleRegion}
-              loading={pbLoading}
-              error={pbError}
-              updated={pbUpdated}
-              onRefresh={() => pbRegions.forEach(r => fetchPlaybookRegion(r))}
-              fmtTime={fmtTime}
-            />
-          </TabErrorBoundary>
+          <GlobalPlaybook
+            byRegion={pbData}
+            regions={pbRegions}
+            toggleRegion={toggleRegion}
+            loading={pbLoading}
+            error={pbError}
+            updated={pbUpdated}
+            onRefresh={() => pbRegions.forEach(r => fetchPlaybookRegion(r))}
+            fmtTime={fmtTime}
+          />
         )}
 
         {tab === "macro" && (
@@ -3776,6 +3780,8 @@ export default function App() {
             </Card>
           </div>
         )}
+
+        </TabErrorBoundary>
 
         {/* FOOTER */}
         <div style={{ color: C.lbl, fontSize: 12, textAlign: "center", marginTop: 20, paddingTop: 14, borderTop: "1px solid " + C.bdr }}>
