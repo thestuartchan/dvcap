@@ -1791,6 +1791,58 @@ function RegionSessionBadge({ session, tz }) {
     </span>
   );
 }
+// One cross-asset row: value + 1D delta + direction. A row with no prior close shows NO
+// direction and says why (Stage 1A) rather than implying a trend from a single print.
+function CrossRow({ r }) {
+  const dcol = r.dir === "rising" ? C.green : r.dir === "falling" ? C.red : C.muted;
+  const arrow = r.dir === "rising" ? "▲" : r.dir === "falling" ? "▼" : r.dir === "flat" ? "■" : "";
+  return (
+    <div style={{ minWidth: 104 }} title={r.note || (r.sym + " · 1D vs prior close")}>
+      <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>{r.name}</div>
+      <div style={{ fontSize: 15, fontWeight: 900, color: C.text }}>
+        {r.price != null ? withCommas(+(+r.price).toFixed(2)) : "—"}
+      </div>
+      {r.dir ? (
+        <div style={{ fontSize: 10.5, fontWeight: 700, color: dcol }}>
+          {arrow} {r.changePct != null ? `${r.changePct >= 0 ? "+" : ""}${r.changePct}%` : `${r.delta >= 0 ? "+" : "−"}${Math.abs(r.delta)}${r.unit || ""}`}
+          <span style={{ color: C.lbl }}> {r.basis || "1D"}</span>
+        </div>
+      ) : (
+        <div style={{ fontSize: 10, color: C.amber, fontWeight: 700 }}>no direction</div>
+      )}
+    </div>
+  );
+}
+
+// "Gauges leaning" — how many independent tripwires point the same way. Unavailable gauges
+// are shown as such, never counted as calm (which would understate the lean).
+function GaugesLeaning({ leaning }) {
+  if (!leaning || !leaning.items?.length) return null;
+  const hot = leaning.usable > 0 && leaning.tripped / leaning.usable >= 0.6;
+  const col = leaning.allLeaning ? C.red : hot ? C.amber : C.muted;
+  return (
+    <div style={{ marginTop: 12, padding: "10px 12px", background: leaning.allLeaning ? C.rBg : C.bg, border: "1.5px solid " + (leaning.allLeaning ? C.rBdr : C.bdrMd), borderRadius: 8 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 11, color: C.muted, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5 }}>Gauges leaning</span>
+        <span style={{ fontSize: 14, fontWeight: 900, color: col }}>{leaning.tripped}/{leaning.usable}</span>
+        {leaning.allLeaning && <span style={{ fontSize: 10, fontWeight: 800, color: C.red }}>ALL TURNED TOGETHER</span>}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+        {leaning.items.map(i => {
+          const c = i.tripped === null ? C.lbl : i.tripped ? C.red : C.green;
+          return (
+            <span key={i.name} title={i.detail}
+              style={{ fontSize: 10.5, fontWeight: 700, color: c, border: "1px solid " + c + "55", background: c + "12", borderRadius: 5, padding: "2px 6px" }}>
+              {i.tripped === null ? "· " : i.tripped ? "▲ " : "▼ "}{i.name}
+              {i.tripped === null ? <span style={{ color: C.lbl }}> n/a</span> : null}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // Constituent baskets under the AI-levered axis — same auditable pattern as the other cards.
 function AxisBaskets({ ai, non }) {
   const line = (lbl, arr) => (
@@ -1928,8 +1980,9 @@ function KoreaStressPanel({ korea }) {
       {/* Halt severity — sidecar and circuit-breaker are DIFFERENT mechanisms; show which fired */}
       {korea.halt && (korea.halt.fired?.length > 0) && (
         <div style={{ marginTop: 10, padding: "7px 10px", background: C.rBg, border: "1.5px solid " + C.rBdr, borderRadius: 6 }}>
-          <span style={{ fontSize: 11, fontWeight: 800, color: C.red, textTransform: "uppercase", letterSpacing: 0.5 }}>Halt fired · </span>
+          <span style={{ fontSize: 11, fontWeight: 800, color: C.red, textTransform: "uppercase", letterSpacing: 0.5 }}>Halt · </span>
           <span style={{ fontSize: 12, fontWeight: 700, color: C.red }}>{korea.halt.fired.join(" · ")}</span>
+          {korea.halt.note && <div style={{ fontSize: 10.5, color: C.amber, fontWeight: 700, marginTop: 2 }}>{korea.halt.note}</div>}
         </div>
       )}
     </Card>
@@ -2350,6 +2403,37 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
             </div>
             ))}
           </Card>
+
+          {/* Cross-asset coverage — the daily set, grouped by what each group answers.
+              Every row: value + 1D delta + direction (no direction without a prior close). */}
+          {data.cross && (
+            <Card>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                <SLabel>🧮 Cross-asset</SLabel>
+                <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>value · 1D delta · direction</span>
+              </div>
+              {["rates", "cyclical", "volCredit", "regime"].map(g => {
+                const grp = data.cross[g];
+                if (!grp?.rows?.length) return null;
+                return (
+                  <div key={g} style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 10.5, color: C.muted, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>{grp.label}</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+                      {grp.rows.map(r => <CrossRow key={r.sym} r={r} />)}
+                    </div>
+                  </div>
+                );
+              })}
+              {/* HYG is the live credit tell — OAS is EOD/T+1, so HYG moves first */}
+              {data.hyg && (
+                <div style={{ marginTop: 4, padding: "7px 10px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6,
+                  fontSize: 11.5, fontWeight: 700, color: !data.hyg.available ? C.amber : data.hyg.stressing ? C.red : C.mid }}>
+                  <span style={{ color: C.muted, fontWeight: 800 }}>Live credit tell · </span>{data.hyg.note}
+                </div>
+              )}
+              <GaugesLeaning leaning={data.leaning} />
+            </Card>
+          )}
 
           {/* Macro — identical on every tab (see caption); global/US rates */}
           <Card>
