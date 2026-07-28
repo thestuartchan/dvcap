@@ -1804,7 +1804,10 @@ function CrossRow({ r }) {
       </div>
       {r.dir ? (
         <div style={{ fontSize: 10.5, fontWeight: 700, color: dcol }}>
-          {arrow} {r.changePct != null ? `${r.changePct >= 0 ? "+" : ""}${r.changePct}%` : `${r.delta >= 0 ? "+" : "−"}${Math.abs(r.delta)}${r.unit || ""}`}
+          {/* Format defensively: never render a raw provider float, whatever the source did */}
+          {arrow} {r.changePct != null
+            ? `${r.changePct >= 0 ? "+" : ""}${(+r.changePct).toFixed(2)}%`
+            : `${r.delta >= 0 ? "+" : "−"}${Math.abs(+r.delta).toFixed(r.unit === "bps" ? 0 : 2)}${r.unit || ""}`}
           <span style={{ color: C.lbl }}> {r.basis || "1D"}</span>
         </div>
       ) : (
@@ -2403,6 +2406,38 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
             </div>
             ))}
           </Card>
+
+          {/* Composed READ — deterministic, from the gate state. Observational only: it
+              reports level, direction, thresholds and conflicts. No positioning language. */}
+          {data.read?.sentences?.length > 0 && (
+            <Card>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                <SLabel>📝 Read</SLabel>
+                <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>composed from gate state · deterministic, no model</span>
+                <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 800, textTransform: "uppercase",
+                  color: data.read.confidence === "clean" ? C.green : data.read.confidence === "qualified" ? C.amber : C.red,
+                  border: "1px solid currentColor", borderRadius: 4, padding: "1px 5px" }}>
+                  {data.read.confidence}
+                </span>
+              </div>
+              {data.read.sentences.map((s, i) => (
+                <div key={i} style={{ fontSize: 13, color: C.mid, lineHeight: 1.55, marginBottom: 5 }}>{s}</div>
+              ))}
+              {/* Conflicts are SURFACED, never resolved into one confident answer */}
+              {data.read.conflicts?.map((s, i) => (
+                <div key={"c" + i} style={{ fontSize: 12.5, fontWeight: 700, color: C.amber, background: C.aBg,
+                  border: "1px solid " + C.aBdr, borderRadius: 6, padding: "6px 9px", marginTop: 5, lineHeight: 1.5 }}>
+                  ⚖ {s}
+                </div>
+              ))}
+              {data.read.flip && (
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: C.blue, marginTop: 7 }}>↪ {data.read.flip}</div>
+              )}
+              {data.read.caveats?.length > 0 && (
+                <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>Caveats: {data.read.caveats.join(" · ")}</div>
+              )}
+            </Card>
+          )}
 
           {/* Cross-asset coverage — the daily set, grouped by what each group answers.
               Every row: value + 1D delta + direction (no direction without a prior close). */}
