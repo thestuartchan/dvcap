@@ -8,6 +8,19 @@ import { structure } from '../lib/regime.js';
 import { weekHighlights } from '../lib/calendar.js';
 import { freshness, sessionPhase, localClock } from '../lib/sessions.js';
 import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
+import { seriesFromHistory, normalizeSeries } from '../lib/series.js';
+
+const SERIES_KEYS = ['marginLoans', 'deposits', 'cma', 'kospi', 'kr3yGovt', 'kr3yCorp',
+                     'units7709', 'foreignNet', 'instNet', 'retailNet'];
+// Serve the dated series even for stores written before it existed: backfill from the legacy
+// savedAt-keyed snapshots, which also collapses duplicate same-date rows. Computed once at
+// module load — the store only changes on redeploy.
+const KOFIA_SERIES = (() => {
+  const base = KOFIA_STORE.series || seriesFromHistory(KOFIA_STORE.history, SERIES_KEYS);
+  const out = {};
+  for (const k of SERIES_KEYS) out[k] = normalizeSeries(base[k]);
+  return out;
+})();
 
 export default async function handler(req, res) {
   const region = (req.query.region || 'asia').toLowerCase();
@@ -48,7 +61,13 @@ export default async function handler(req, res) {
     macro,
     regime,               // includes regime.korea (Asia only) with won/vol reads
     calendar: weekHighlights(),
-    kofia: { latest: KOFIA_STORE.latest || {}, history: (KOFIA_STORE.history || []).slice(-90) },
+    // `series` is the authoritative dated store (one row per observation date, ordered);
+    // `history` stays for backward compatibility with older cached clients.
+    kofia: {
+      latest: KOFIA_STORE.latest || {},
+      series: KOFIA_SERIES,
+      history: (KOFIA_STORE.history || []).slice(-90),
+    },
     generatedAt: new Date().toISOString(),
   });
 }

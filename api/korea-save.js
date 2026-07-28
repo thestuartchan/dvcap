@@ -3,10 +3,16 @@
 // server-side Pre-Reads read one maintained series (with history). POST only.
 // Server re-parses + re-validates the blob (authoritative) before committing.
 
-import { parseKofia } from '../lib/kofia.js';
+import { parseKofia, toWonTrillions, unitSanity, KOFIA_CURRENCY } from '../lib/kofia.js';
+import { upsertObservation, seriesFromHistory, normalizeSeries } from '../lib/series.js';
 
 const DATA_PATH = 'data/korea_kofia.json';
 const KEYS = ['marginLoans', 'deposits', 'cma', 'kospi', 'kr3yGovt', 'kr3yCorp'];
+// Every manual-entry metric that carries a dated series (backs the charts + trend reads).
+const SERIES_KEYS = [
+  'marginLoans', 'deposits', 'cma', 'kospi', 'kr3yGovt', 'kr3yCorp',
+  'units7709', 'foreignNet', 'instNet', 'retailNet',
+];
 
 function ghHeaders() {
   return {
@@ -27,6 +33,11 @@ async function readStore() {
   try { store = JSON.parse(Buffer.from(meta.content, 'base64').toString('utf8')); } catch { /* keep default */ }
   store.latest ||= {};
   store.history ||= [];
+  // Dated per-key series is the authoritative trend store. Backfill it from the legacy
+  // savedAt-keyed snapshots on first touch — that migration also collapses the duplicate
+  // same-date rows (three 07-21 saves) that rendered the margin-loan chart as a flat line.
+  if (!store.series) store.series = seriesFromHistory(store.history, SERIES_KEYS);
+  for (const k of SERIES_KEYS) store.series[k] = normalizeSeries(store.series[k]);
   return { store, sha: meta.sha };
 }
 
@@ -51,7 +62,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'GITHUB_TOKEN / GITHUB_REPO not configured in Vercel' });
   }
 
-  const { blob, units7709, foreignNet, instNet } = req.body || {};
+  const { blob, units7709, foreignNet, instNet, retailNet } = req.body || {};
   const parsed = blob ? parseKofia(blob) : { list: [], anyMismatch: false };
   // The no-error guarantee: a recompute mismatch blocks the save entirely.
   if (parsed.anyMismatch) {
@@ -67,10 +78,34 @@ export default async function handler(req, res) {
   const snapshot = { savedAt };
   const saved = [];
 
+  // Unit-detection gate: convert each currency row to canonical ₩T with its OWN detected
+  // unit and compare against the prior stored reading. A >1000× swing is a mis-detected
+  // unit, not a market move — block the whole save rather than persist a plausible-looking
+  // 1,000×-wrong number. Also rejects a unit we cannot map at all.
+  const unitProblems = [];
+  for (const f of parsed.list) {
+    if (!KOFIA_CURRENCY.includes(f.key)) continue;
+    const canon = toWonTrillions(f.balance, f.unit);
+    if (canon == null) {
+      unitProblems.push({ key: f.key, unit: f.unit, error: `unrecognized unit "${f.unit}" — cannot convert to ₩T` });
+      continue;
+    }
+    const p = prev[f.key];
+    const warn = unitSanity(canon, toWonTrillions(p?.value, p?.unit));
+    if (warn) unitProblems.push({ key: f.key, unit: f.unit, error: warn });
+  }
+  if (unitProblems.length) {
+    return res.status(422).json({ error: 'unit check failed — nothing saved', unitProblems });
+  }
+
   // Merge parsed KOFIA fields — absent fields keep their prior value+asOf (never wiped).
   for (const f of parsed.list) {
     store.latest[f.key] = { value: f.balance, unit: f.unit, asOf: f.asOf, delta: f.delta ?? null, pct: f.pct ?? null };
     snapshot[f.key] = { value: f.balance, asOf: f.asOf };
+    // Dated observation keyed by the print's OWN as-of, not by save time.
+    store.series[f.key] = upsertObservation(store.series[f.key], {
+      date: f.asOf, value: f.balance, unit: f.unit, delta: f.delta ?? null, pct: f.pct ?? null,
+    });
     saved.push(f.key);
   }
 
@@ -80,18 +115,26 @@ export default async function handler(req, res) {
     const prevV = prev.units7709?.value ?? null;
     store.latest.units7709 = { value: v, asOf: units7709.asOf || prev.units7709?.asOf || null, delta: prevV != null ? v - prevV : null };
     snapshot.units7709 = { value: v, asOf: store.latest.units7709.asOf };
+    store.series.units7709 = upsertObservation(store.series.units7709, {
+      date: store.latest.units7709.asOf, value: v, unit: 'units',
+    });
     saved.push('units7709');
   }
 
-  // Foreign / institutional net flows (₩bn, manual daily) — separate de-risking from
-  // capital flight. Value may be negative (net sell). No delta (already a daily flow).
-  for (const [fk, inp] of [['foreignNet', foreignNet], ['instNet', instNet]]) {
-    if (inp && inp.value != null && Number.isFinite(Number(inp.value))) {
-      const v = Number(inp.value);
-      store.latest[fk] = { value: v, asOf: inp.asOf || prev[fk]?.asOf || null };
-      snapshot[fk] = { value: v, asOf: store.latest[fk].asOf };
-      saved.push(fk);
-    }
+  // Foreign / institutional / RETAIL net flows (십억원, manual daily) — all three actors, so
+  // absorption can be read (foreign selling that retail absorbs is a domestic unwind, not
+  // flight). Value may be negative (net sell). No delta (already a daily flow).
+  // Parsed KRX rows win; the explicit inputs are the manual fallback.
+  const parsedFlow = k => parsed.list?.find(f => f.key === k);
+  for (const [fk, inp] of [['foreignNet', foreignNet], ['instNet', instNet], ['retailNet', retailNet]]) {
+    const pf = parsedFlow(fk);
+    const v = pf ? pf.balance : (inp && inp.value != null && Number.isFinite(Number(inp.value)) ? Number(inp.value) : null);
+    if (v == null) continue;
+    const asOf = (pf ? pf.asOf : inp?.asOf) || prev[fk]?.asOf || null;
+    store.latest[fk] = { value: v, unit: pf?.unit || prev[fk]?.unit || '십억원', asOf };
+    snapshot[fk] = { value: v, asOf };
+    store.series[fk] = upsertObservation(store.series[fk], { date: asOf, value: v, unit: store.latest[fk].unit });
+    if (!saved.includes(fk)) saved.push(fk);
   }
 
   if (saved.length === 0) return res.status(400).json({ error: 'no recognizable fields in the paste' });
@@ -102,5 +145,5 @@ export default async function handler(req, res) {
   const w = await writeStore(store, sha, `Korea manual entry — ${saved.join(', ')} @ ${savedAt.slice(0, 10)}`);
   if (!w.ok) return res.status(502).json({ error: 'GitHub commit failed', detail: w });
 
-  return res.status(200).json({ ok: true, saved, missing, latest: store.latest });
+  return res.status(200).json({ ok: true, saved, missing, latest: store.latest, series: store.series });
 }

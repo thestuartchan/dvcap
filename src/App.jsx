@@ -4,7 +4,7 @@ import {
   PolarAngleAxis, Radar, PieChart, Pie, Cell, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList,
 } from "recharts";
-import { parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, toWonTrillions, koreaFlowRead, koreaFlowImplication, withCommas } from "../lib/kofia.js";
+import { parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, KOFIA_FLOWS, toWonTrillions, koreaFlowRead, koreaFlowImplication, withCommas } from "../lib/kofia.js";
 import { freshnessText, humanizeAge } from "../lib/sessions.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
@@ -1913,6 +1913,8 @@ function KoreaManualEntry({ kofia, onSaved }) {
   const [fDate, setFDate] = useState(kofia?.latest?.foreignNet?.asOf || "");
   const [iNet, setINet] = useState("");
   const [iDate, setIDate] = useState(kofia?.latest?.instNet?.asOf || "");
+  const [rNet, setRNet] = useState("");
+  const [rDate, setRDate] = useState(kofia?.latest?.retailNet?.asOf || "");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
   const [savedLatest, setSavedLatest] = useState(null);  // optimistic: show saved values instantly
@@ -1923,7 +1925,9 @@ function KoreaManualEntry({ kofia, onSaved }) {
   const uvNum = Number(String(u7709).replace(/,/g, ""));
   const fv = Number(String(fNet).replace(/,/g, ""));
   const iv = Number(String(iNet).replace(/,/g, ""));
-  const hasFlow = (fNet.trim() !== "" && Number.isFinite(fv)) || (iNet.trim() !== "" && Number.isFinite(iv));
+  const rv = Number(String(rNet).replace(/,/g, ""));
+  const hasFlow = (fNet.trim() !== "" && Number.isFinite(fv)) || (iNet.trim() !== "" && Number.isFinite(iv))
+                  || (rNet.trim() !== "" && Number.isFinite(rv));
   const canSave = (parsed.list.length > 0 && !parsed.anyMismatch) || (Number.isFinite(uvNum) && uvNum > 0) || hasFlow;
 
   async function save() {
@@ -1934,19 +1938,38 @@ function KoreaManualEntry({ kofia, onSaved }) {
       if (Number.isFinite(uvNum) && uvNum > 0) body.units7709 = { value: uvNum, asOf: u7709date || undefined };
       if (fNet.trim() !== "" && Number.isFinite(fv)) body.foreignNet = { value: fv, asOf: fDate || undefined };
       if (iNet.trim() !== "" && Number.isFinite(iv)) body.instNet = { value: iv, asOf: iDate || undefined };
+      if (rNet.trim() !== "" && Number.isFinite(rv)) body.retailNet = { value: rv, asOf: rDate || undefined };
       const r = await fetch("/api/korea-save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), credentials: "include" });
       const j = await r.json();
       if (!r.ok) setMsg({ ok: false, text: j.error || ("Save failed " + r.status) });
       else {
         if (j.latest) setSavedLatest(j.latest);   // show the saved values immediately — no refresh
         setMsg({ ok: true, text: `Saved ${j.saved.join(", ")}${j.missing?.length ? " · kept prior: " + j.missing.join(", ") : ""}. Values updated below; committing in the background so the Pre-Reads pick it up too.` });
-        setBlob(""); setU7709(""); setFNet(""); setINet("");
+        setBlob(""); setU7709(""); setFNet(""); setINet(""); setRNet("");
       }
     } catch (e) { setMsg({ ok: false, text: "Save error: " + e.message }); }
     setSaving(false);
   }
 
-  const mlHist = hist.map(h => ({ d: h.marginLoans?.asOf?.slice(5), v: h.marginLoans?.value != null ? +toWonTrillions(h.marginLoans.value, "백만원").toFixed(2) : null })).filter(x => x.v != null);
+  // Margin-loan history from the DATED series (one row per observation date, ordered), not
+  // the savedAt-keyed snapshots — three saves of the 07-21 print used to plot as three points
+  // at the same x, which is what drew the flat line across duplicate dates. Each row converts
+  // with its OWN stored unit; a row whose unit we can't map is dropped rather than guessed.
+  const mlSeries = (kofia?.series?.marginLoans || []).map(r => {
+    const t = toWonTrillions(r.value, r.unit || "백만원");
+    return t == null ? null : { d: r.date.slice(5), date: r.date, v: +t.toFixed(2) };
+  }).filter(Boolean);
+  // Legacy fallback for a cached payload that predates `series`: dedupe by asOf, then sort.
+  const mlHist = mlSeries.length ? mlSeries : (() => {
+    const byDate = new Map();
+    for (const h of hist) {
+      const c = h.marginLoans;
+      if (!c || c.value == null || !c.asOf) continue;
+      const t = toWonTrillions(c.value, c.unit || "백만원");
+      if (t != null) byDate.set(c.asOf, { d: c.asOf.slice(5), date: c.asOf, v: +t.toFixed(2) });
+    }
+    return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+  })();
 
   return (
     <Card>
@@ -1958,17 +1981,22 @@ function KoreaManualEntry({ kofia, onSaved }) {
         <a href="https://www.csopasset.com/en/products/hk-skhy-2l" target="_blank" rel="noopener noreferrer" style={{ color: C.blue, textDecoration: "none", fontWeight: 700 }}>CSOP 7709 ↗</a>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 14, margin: "8px 0 10px" }}>
-        {["marginLoans", "deposits", "cma", "kr3yGovt", "kr3yCorp", "units7709", "foreignNet", "instNet"].map(k => {
+        {["marginLoans", "deposits", "cma", "kr3yGovt", "kr3yCorp", "units7709", "foreignNet", "instNet", "retailNet"].map(k => {
           const e = latest[k];
           const line = kofiaStoredLine(k, e);
           // Colour by direction: currency rows by their %, flows by net sign (green up/buy, red down/sell).
-          const isCur = KOFIA_CURRENCY.includes(k), isFlow = k === "foreignNet" || k === "instNet";
+          const isCur = KOFIA_CURRENCY.includes(k), isFlow = KOFIA_FLOWS.includes(k);
           const sig = !e ? null : isCur ? e.pct : isFlow ? e.value : null;
           const col = sig == null ? C.text : sig > 0 ? C.green : sig < 0 ? C.red : C.muted;
+          const nObs = (kofia?.series?.[k] || []).length;
+          // Detected unit is surfaced on hover for audit — sources genuinely differ
+          // (KOFIA panel 백만원 vs KRX flow table 십억원) and a silent mismatch is 1,000× wrong.
+          const tip = e ? `detected unit: ${e.unit || "—"}${e.asOf ? ` · as-of ${e.asOf}` : ""} · ${nObs} dated obs` : "not set";
           return (
-            <div key={k} style={{ minWidth: 140 }}>
+            <div key={k} style={{ minWidth: 140 }} title={tip}>
               <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>{KOFIA_NAME_BY_KEY[k] || k}</div>
               <div style={{ fontSize: 13, fontWeight: 800, color: line ? ((isCur || isFlow) ? col : C.text) : C.lbl }}>{line || "— not set"}</div>
+              {e?.unit && <div style={{ fontSize: 9.5, color: C.lbl }}>unit {e.unit}{nObs ? ` · ${nObs} obs` : ""}</div>}
             </div>
           );
         })}
@@ -1985,16 +2013,29 @@ function KoreaManualEntry({ kofia, onSaved }) {
           )}
         </div>
       )}
-      {mlHist.length >= 2 && (
+      {mlHist.length > 0 && (
         <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 11, color: C.muted, fontWeight: 700, marginBottom: 2 }}>Margin Loans (₩T) — history</div>
-          <ResponsiveContainer width="100%" height={60}>
-            <LineChart data={mlHist} margin={{ top: 4, right: 6, bottom: 0, left: 0 }}>
-              <Line type="monotone" dataKey="v" stroke={C.blue} strokeWidth={2} dot={false} isAnimationActive={false} />
-              <XAxis dataKey="d" tick={{ fill: C.lbl, fontSize: 9 }} axisLine={false} tickLine={false} />
-              <Tooltip />
-            </LineChart>
-          </ResponsiveContainer>
+          <div style={{ fontSize: 11, color: C.muted, fontWeight: 700, marginBottom: 2 }}>
+            Margin Loans (₩T) — history
+            <span style={{ color: C.lbl, fontWeight: 400 }}> · {mlHist.length} dated observation{mlHist.length === 1 ? "" : "s"}</span>
+          </div>
+          {mlHist.length === 1 ? (
+            // One real print: show the point and say so. A 2-point line drawn from a single
+            // observation duplicated across dates is a fabricated trend — never render that.
+            <div style={{ fontSize: 12, color: C.mid }}>
+              <b>₩{mlHist[0].v.toFixed(2)}T</b> <span style={{ color: C.lbl }}>({mlHist[0].date})</span>
+              <span style={{ color: C.amber, fontWeight: 700, marginLeft: 8 }}>insufficient history</span>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={60}>
+              <LineChart data={mlHist} margin={{ top: 4, right: 6, bottom: 0, left: 0 }}>
+                <Line type="monotone" dataKey="v" stroke={C.blue} strokeWidth={2} dot={{ r: 2 }} isAnimationActive={false} />
+                <XAxis dataKey="d" tick={{ fill: C.lbl, fontSize: 9 }} axisLine={false} tickLine={false} />
+                <YAxis domain={["auto", "auto"]} hide />
+                <Tooltip formatter={v => "₩" + v + "T"} />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </div>
       )}
       <textarea value={blob} onChange={e => setBlob(e.target.value)}
@@ -2035,6 +2076,13 @@ function KoreaManualEntry({ kofia, onSaved }) {
             style={{ fontSize: 13, padding: "6px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 110 }} />
         </div>
         <input type="date" value={iDate} onChange={e => setIDate(e.target.value)} title="Institutional-net date"
+          style={{ fontSize: 13, padding: "6px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6 }} />
+        <div>
+          <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }} title="개인 — the absorption counterparty for foreign selling">Retail Net (₩bn)</div>
+          <input value={rNet} onChange={e => setRNet(e.target.value)} placeholder="e.g. +2,614"
+            style={{ fontSize: 13, padding: "6px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 110 }} />
+        </div>
+        <input type="date" value={rDate} onChange={e => setRDate(e.target.value)} title="Retail-net date"
           style={{ fontSize: 13, padding: "6px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6 }} />
         <Btn onClick={save} disabled={saving || !canSave} color={C.blue} bgColor={C.blBg} label={saving ? "⏳ Saving…" : "💾 Save"} />
       </div>
