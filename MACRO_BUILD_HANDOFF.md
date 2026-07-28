@@ -108,6 +108,18 @@ regime engine encodes). Read it before touching regime.js or universe.js.
   (`lib/ibkr.js` + spine fallback: IBKR primary when session live → Yahoo fallback with
   the honest delayed label). Do this when building the dashboard, and decide gateway-vs-OAuth
   then. Keep Yahoo as the permanent fallback regardless.
+- K200 FUTURES / SIDECAR — VERIFIED 2026-07-28, outcome: NOT usable as a live trigger.
+  Contract resolved via the IBKR MCP: underlying K200 "KOSPI200 Index" (17370939), front
+  month 202609 = contract_id `813874122` @ `KSE` (last trading 2026-09-10). Live-tick test,
+  two pulls ~40s apart inside the KRX session: the feed MOVES (ts +44s, 958.20 → 956.95,
+  volume +100 lots) so it is not frozen — but the lag vs wall clock was IDENTICAL on both
+  pulls (20.3 min each). A constant offset = a DELAYED entitlement, not real-time. The KRX
+  sidecar is a ±5% move judged in real time, so a 20-minute-old print cannot confirm it;
+  `sidecarProxy` stays a proxy rather than being promoted (a stale "confirmed" halt signal
+  is worse than an honest proxy). Two blockers to revisit together if this is wanted for
+  real: (1) a real-time KRX futures entitlement on the account, AND (2) the gateway/OAuth
+  bridge above — IBKR's lack of stateless auth means a Vercel serverless function cannot
+  hold the session regardless of entitlement. Contract id is stable; reuse it when wiring.
 - Korea stress cluster (Asia pre-read): two keyless tells now — USD/KRW (Yahoo `KRW=X`)
   and VKOSPI. VKOSPI reads the tradeable **V-KOSPI FUTURES** (KRX:VKI1!) via TradingView's
   widget scanner endpoint (`lib/tradingview.js`), NOT the spot index — spot (CNBC
