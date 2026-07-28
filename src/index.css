@@ -191,3 +191,34 @@ button, input, textarea, select { font-family: inherit; }
 @media (max-width: 380px) {
   html { font-size: 13px; }
 }
+
+/* ── Unified metric cards ───────────────────────────────────────────────────── */
+/* One grid for every metric group (Macro, Cross-Asset, Indices, Names, Korea gate).
+   Cells are wide enough that value + 1D delta + direction + timeframe never wrap.
+   Prefer fewer columns / more rows over cramming — phone is the primary surface. */
+.mwd-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--mwd-min, 200px), 1fr));
+  gap: 10px;
+}
+/* min-width:0 stops grid children from being forced wider than their track by long
+   content — the usual cause of horizontal overflow on phones. */
+.mwd-metric-grid > * { min-width: 0; }
+
+.mwd-metric-card {
+  background: #FAFBFF;
+  border: 1.5px solid #E3E7F2;
+  border-radius: 10px;
+  padding: 10px 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.mwd-metric-card .mwd-mc-value { white-space: nowrap; }
+
+/* Two columns on phones, one on very narrow screens. */
+@media (max-width: 560px) {
+  .mwd-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+}
+@media (max-width: 400px) {
+  .mwd-metric-grid { grid-template-columns: 1fr; }
+}
