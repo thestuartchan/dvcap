@@ -1791,19 +1791,55 @@ function RegionSessionBadge({ session, tz }) {
     </span>
   );
 }
+// ── Unified metric card ──────────────────────────────────────────────────────
+// ONE shell for every metric group (Macro, Cross-Asset, Indices, Names, Korea gate) so
+// styling cannot drift between sections and nothing renders as a floating label-value pair.
+// Purely presentational: callers pass already-formatted values, so no formatting logic
+// lives here and no displayed number can change by routing through it.
+function MetricGrid({ children, min = 200 }) {
+  return <div className="mwd-metric-grid" style={{ "--mwd-min": min + "px" }}>{children}</div>;
+}
+function MetricCard({ label, labelRight, value, valueColor, strike, sub, badge, accent, title, children }) {
+  return (
+    <div className="mwd-metric-card" style={accent ? { borderColor: accent } : undefined} title={title}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
+        <span style={{ fontSize: 12, color: C.muted, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+        {labelRight ? <span style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>{labelRight}</span> : null}
+      </div>
+      {badge ? <div style={{ marginTop: 3 }}>{badge}</div> : null}
+      {value !== undefined ? (
+        <div className="mwd-mc-value" style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 18, fontWeight: 900, color: valueColor || C.text, textDecoration: strike ? "line-through" : "none" }}>{value}</span>
+          {sub}
+        </div>
+      ) : null}
+      {children}
+    </div>
+  );
+}
+// Small reusable session/state chip used inside metric cards.
+function StateChip({ label, color, filled }) {
+  return (
+    <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color,
+      background: filled ? C.aBg : "transparent", border: "1px solid " + color + "55", borderRadius: 4, padding: "1px 5px", whiteSpace: "nowrap" }}>
+      {label}
+    </span>
+  );
+}
+
 // One cross-asset row: value + 1D delta + direction. A row with no prior close shows NO
 // direction and says why (Stage 1A) rather than implying a trend from a single print.
 function CrossRow({ r }) {
   const dcol = r.dir === "rising" ? C.green : r.dir === "falling" ? C.red : C.muted;
   const arrow = r.dir === "rising" ? "▲" : r.dir === "falling" ? "▼" : r.dir === "flat" ? "■" : "";
   return (
-    <div style={{ minWidth: 104 }} title={r.note || (r.sym + " · 1D vs prior close")}>
-      <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>{r.name}</div>
-      <div style={{ fontSize: 15, fontWeight: 900, color: C.text }}>
-        {r.price != null ? withCommas(+(+r.price).toFixed(2)) : "—"}
-      </div>
+    <MetricCard
+      label={r.name}
+      title={r.note || (r.sym + " · 1D vs prior close")}
+      value={r.price != null ? withCommas(+(+r.price).toFixed(2)) : "—"}
+    >
       {r.dir ? (
-        <div style={{ fontSize: 10.5, fontWeight: 700, color: dcol }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: dcol, marginTop: 2 }}>
           {/* Format defensively: never render a raw provider float, whatever the source did */}
           {arrow} {r.changePct != null
             ? `${r.changePct >= 0 ? "+" : ""}${(+r.changePct).toFixed(2)}%`
@@ -1811,24 +1847,32 @@ function CrossRow({ r }) {
           <span style={{ color: C.lbl }}> {r.basis || "1D"}</span>
         </div>
       ) : (
-        <div style={{ fontSize: 10, color: C.amber, fontWeight: 700 }}>no direction</div>
+        <div style={{ fontSize: 10, color: C.amber, fontWeight: 700, marginTop: 2 }}>no direction</div>
       )}
-    </div>
+    </MetricCard>
   );
 }
 
 // "Gauges leaning" — how many independent tripwires point the same way. Unavailable gauges
 // are shown as such, never counted as calm (which would understate the lean).
-function GaugesLeaning({ leaning }) {
+function GaugesLeaning({ leaning, prominent }) {
   if (!leaning || !leaning.items?.length) return null;
   const hot = leaning.usable > 0 && leaning.tripped / leaning.usable >= 0.6;
   const col = leaning.allLeaning ? C.red : hot ? C.amber : C.muted;
+  // `prominent` = the top-of-page placement: bigger count, own card, no top margin.
+  const wrap = prominent
+    ? { padding: "14px 18px", background: leaning.allLeaning ? C.rBg : C.surf,
+        border: "1.5px solid " + (leaning.allLeaning ? C.rBdr : C.bdr), borderRadius: 14,
+        borderLeft: "4px solid " + col, boxShadow: "0 1px 5px rgba(0,0,0,.05)" }
+    : { marginTop: 12, padding: "10px 12px", background: leaning.allLeaning ? C.rBg : C.bg,
+        border: "1.5px solid " + (leaning.allLeaning ? C.rBdr : C.bdrMd), borderRadius: 8 };
   return (
-    <div style={{ marginTop: 12, padding: "10px 12px", background: leaning.allLeaning ? C.rBg : C.bg, border: "1.5px solid " + (leaning.allLeaning ? C.rBdr : C.bdrMd), borderRadius: 8 }}>
+    <div style={wrap}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 11, color: C.muted, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5 }}>Gauges leaning</span>
-        <span style={{ fontSize: 14, fontWeight: 900, color: col }}>{leaning.tripped}/{leaning.usable}</span>
-        {leaning.allLeaning && <span style={{ fontSize: 10, fontWeight: 800, color: C.red }}>ALL TURNED TOGETHER</span>}
+        <span style={{ fontSize: prominent ? 12 : 11, color: C.muted, fontWeight: 800, textTransform: "uppercase", letterSpacing: prominent ? 2 : 0.5 }}>Gauges leaning</span>
+        <span style={{ fontSize: prominent ? 28 : 14, fontWeight: 900, color: col, lineHeight: 1.1 }}>{leaning.tripped}/{leaning.usable}</span>
+        {prominent && <span style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>tripwires leaning de-risking</span>}
+        {leaning.allLeaning && <span style={{ fontSize: prominent ? 12 : 10, fontWeight: 800, color: C.red }}>ALL TURNED TOGETHER</span>}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
         {leaning.items.map(i => {
@@ -1914,15 +1958,19 @@ function MacroCell({ field, value, delta, deltaSuffix }) {
   const arrow = delta == null ? "" : delta > 0 ? "▲" : delta < 0 ? "▼" : "■";
   const dcol = delta == null ? C.muted : delta > 0 ? C.green : delta < 0 ? C.red : C.muted;
   return (
-    <div style={{ minWidth: 92 }} title={(field?.src ? "source: " + field.src : "") + (suspect ? " · ⚠ failed sanity check — value suspect" : "")}>
-      <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>{field?.name}</div>
-      <div style={{ fontSize: 18, fontWeight: 900, color: suspect ? C.amber : C.text, textDecoration: suspect ? "line-through" : "none" }}>{suspect ? "⚠ " : ""}{value}</div>
-      <div style={{ fontSize: 11, display: "flex", gap: 6, flexWrap: "wrap" }}>
+    <MetricCard
+      label={field?.name}
+      title={(field?.src ? "source: " + field.src : "") + (suspect ? " · ⚠ failed sanity check — value suspect" : "")}
+      value={<>{suspect ? "⚠ " : ""}{value}</>}
+      valueColor={suspect ? C.amber : C.text}
+      strike={suspect}
+    >
+      <div style={{ fontSize: 11, display: "flex", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
         {suspect && <span style={{ color: C.amber, fontWeight: 700 }}>suspect ({field.src})</span>}
         {!suspect && delta != null && <span style={{ color: dcol, fontWeight: 700 }}>{arrow} {Math.abs(delta)}{deltaSuffix}</span>}
         {mf.text && <span style={{ color: mf.stale ? C.amber : C.lbl }}>{mf.text}</span>}
       </div>
-    </div>
+    </MetricCard>
   );
 }
 
@@ -1940,18 +1988,17 @@ function KoreaStressPanel({ korea }) {
         <Pill label={cluster.toUpperCase()} color={cCol} />
       </div>
       <div style={{ color: cCol, fontSize: 13, fontWeight: 700, marginBottom: 14 }}>{note}</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
+      <MetricGrid min={220}>
         {/* USD/KRW — level vs the 1,491 flip × direction vs prior close */}
-        <div style={box}>
-          <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>USD/KRW</div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-            <span style={{ fontSize: 24, fontWeight: 900, color: C.text }}>{won.level ?? "—"}</span>
-            {won.delta != null && (
-              <span style={{ fontSize: 12, fontWeight: 800, color: wonCol }}>
-                {won.delta >= 0 ? "+" : "−"}{Math.abs(won.delta)} <span style={{ color: C.lbl }}>1D</span>
-              </span>
-            )}
-          </div>
+        <MetricCard
+          label="USD/KRW"
+          value={won.level ?? "—"}
+          sub={won.delta != null && (
+            <span style={{ fontSize: 12, fontWeight: 800, color: wonCol }}>
+              {won.delta >= 0 ? "+" : "−"}{Math.abs(won.delta)} <span style={{ color: C.lbl }}>1D</span>
+            </span>
+          )}
+        >
           {/* The flip threshold is the interpretation, so state where we sit relative to it */}
           {won.flip != null && (
             <div style={{ fontSize: 10.5, fontWeight: 700, color: won.aboveFlip ? C.red : C.green, marginTop: 2 }}>
@@ -1959,27 +2006,29 @@ function KoreaStressPanel({ korea }) {
             </div>
           )}
           <div style={{ fontSize: 11.5, fontWeight: 700, color: wonCol, marginTop: 2 }}>{won.flag}</div>
-        </div>
+        </MetricCard>
         {/* VKOSPI — scale calibrated to this instrument (markers at 25/35/50, 0–60 range) */}
-        <div style={box}>
-          <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>VKOSPI fut</div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-            <span style={{ fontSize: 24, fontWeight: 900, color: vCol }}>{vol.level ?? "—"}</span>
+        <MetricCard
+          label="VKOSPI fut"
+          value={vol.level ?? "—"}
+          valueColor={vCol}
+          sub={<>
             <span style={{ fontSize: 12, fontWeight: 800, color: vCol }}>{vol.band !== "n/a" ? vol.band : ""}</span>
             {vol.changePct != null && (
               <span style={{ fontSize: 11, fontWeight: 800, color: vol.changePct > 0 ? C.red : C.green }}>
                 {vol.changePct >= 0 ? "+" : ""}{vol.changePct}% <span style={{ color: C.lbl }}>1D</span>
               </span>
             )}
-          </div>
+          </>}
+        >
           <div style={{ position: "relative", height: 6, background: C.bdr, borderRadius: 3, margin: "7px 0 5px" }}
             title="calibrated to VKOSPI's own 2017–2025 range (~15–25): 25 elevated · 35 high · 50 extreme">
             <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: Math.max(0, Math.min(100, (vol.level || 0) / 60 * 100)) + "%", background: vCol, borderRadius: 3 }} />
             {[25, 35, 50].map(m => <div key={m} style={{ position: "absolute", left: (m / 60 * 100) + "%", top: -2, bottom: -2, width: 1, background: C.muted }} />)}
           </div>
           <div style={{ fontSize: 11.5, fontWeight: 700, color: vCol }}>{vol.flag}</div>
-        </div>
-      </div>
+        </MetricCard>
+      </MetricGrid>
       {/* Halt severity — sidecar and circuit-breaker are DIFFERENT mechanisms; show which fired */}
       {korea.halt && (korea.halt.fired?.length > 0) && (
         <div style={{ marginTop: 10, padding: "7px 10px", background: C.rBg, border: "1.5px solid " + C.rBdr, borderRadius: 6 }}>
@@ -2263,6 +2312,44 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
         <Card><div style={{ color: C.muted, fontSize: 14 }}>{loading ? "Loading…" : "No data yet — hit Refresh."}</div></Card>
       ) : (
         <>
+          {/* ── TOP OF PAGE: the two highest-signal elements ──────────────────────────
+              Ordered by signal value, not by data-flow order. The tripwire count is the
+              at-a-glance "are the gauges aligning" read, and the composed READ is the
+              synthesized conclusion — both were previously buried mid-page. */}
+          <GaugesLeaning leaning={data.leaning} prominent />
+
+          {/* Composed READ — deterministic, from the gate state. Observational only: it
+              reports level, direction, thresholds and conflicts. No positioning language. */}
+          {data.read?.sentences?.length > 0 && (
+            <Card style={{ borderLeft: "4px solid " + C.blue }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                <SLabel>📝 Read</SLabel>
+                <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>composed from gate state · deterministic, no model</span>
+                <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 800, textTransform: "uppercase",
+                  color: data.read.confidence === "clean" ? C.green : data.read.confidence === "qualified" ? C.amber : C.red,
+                  border: "1px solid currentColor", borderRadius: 4, padding: "1px 5px" }}>
+                  {data.read.confidence}
+                </span>
+              </div>
+              {data.read.sentences.map((s, i) => (
+                <div key={i} style={{ fontSize: 13.5, color: C.mid, lineHeight: 1.6, marginBottom: 6 }}>{s}</div>
+              ))}
+              {/* Conflicts are SURFACED, never resolved into one confident answer */}
+              {data.read.conflicts?.map((s, i) => (
+                <div key={"c" + i} style={{ fontSize: 12.5, fontWeight: 700, color: C.amber, background: C.aBg,
+                  border: "1px solid " + C.aBdr, borderRadius: 6, padding: "6px 9px", marginTop: 5, lineHeight: 1.5 }}>
+                  ⚖ {s}
+                </div>
+              ))}
+              {data.read.flip && (
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: C.blue, marginTop: 7 }}>↪ {data.read.flip}</div>
+              )}
+              {data.read.caveats?.length > 0 && (
+                <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>Caveats: {data.read.caveats.join(" · ")}</div>
+              )}
+            </Card>
+          )}
+
           {/* Regime summary — one card per active region (stacked in All view) */}
           {active.map(d => (
           <Card key={d.region}>
@@ -2339,29 +2426,29 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               %chg with ★ leaders pinned per category. Geo badge shown in All view. */}
           <Card>
             <SLabel>Names {multi ? "· all regions, grouped by category" : ""}</SLabel>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
+            <MetricGrid min={196}>
               {allNames.map(n => {
                 const s = pbSession(n.freshness, n.session);
                 return (
-                <div key={n._region + "|" + n.sym} style={{ background: C.bg, border: "1.5px solid " + (s.bad ? C.aBdr : n.leader ? C.blBdr : C.bdr), borderRadius: 10, padding: "10px 12px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{n.leader ? "★ " : ""}{n.name}</span>
-                    <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                      {multi ? <span style={{ fontSize: 9, fontWeight: 800, color: C.blue, background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 4, padding: "1px 4px" }}>{pbGeo(n.sym)}</span> : null}
-                      <span style={{ fontSize: 10, color: C.muted, fontWeight: 700, textTransform: "uppercase" }}>{PB_ROLE_LABEL[n.role] || n.role}</span>
-                    </span>
-                  </div>
-                  <div style={{ marginTop: 3 }} title={n.freshness ? freshnessText(n.freshness) || "live" : ""}>
-                    <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: s.color, background: s.bad ? C.aBg : "transparent", border: "1px solid " + s.color + "55", borderRadius: 4, padding: "1px 5px" }}>{s.label}</span>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 3 }}>
-                    <span style={{ fontSize: 16, fontWeight: 900, color: s.bad ? C.amber : C.text, textDecoration: s.bad ? "line-through" : "none" }}>{n.price != null ? withCommas(n.price) : "—"}</span>
-                    {(() => { const g = pbPctGuard(n); return g.ok
-                      ? <span style={{ fontSize: 13, fontWeight: 800, color: s.bad ? C.muted : pbPctColor(g.pct) }}>
-                          {pbFmtPct(g.pct)}<span style={{ fontSize: 9, color: C.lbl, fontWeight: 700 }} title="daily change vs the prior session close"> 1D</span>
-                        </span>
-                      : <span style={{ fontSize: 10.5, fontWeight: 800, color: C.red }} title={"last " + n.price + " vs prior close " + n.prevClose + " — sign disagrees with the reported %"}>{g.note}</span>; })()}
-                  </div>
+                <MetricCard
+                  key={n._region + "|" + n.sym}
+                  accent={s.bad ? C.aBdr : n.leader ? C.blBdr : undefined}
+                  title={n.freshness ? freshnessText(n.freshness) || "live" : ""}
+                  label={<span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{n.leader ? "★ " : ""}{n.name}</span>}
+                  labelRight={<>
+                    {multi ? <span style={{ fontSize: 9, fontWeight: 800, color: C.blue, background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 4, padding: "1px 4px" }}>{pbGeo(n.sym)}</span> : null}
+                    <span style={{ fontSize: 10, color: C.muted, fontWeight: 700, textTransform: "uppercase" }}>{PB_ROLE_LABEL[n.role] || n.role}</span>
+                  </>}
+                  badge={<StateChip label={s.label} color={s.color} filled={s.bad} />}
+                  value={n.price != null ? withCommas(n.price) : "—"}
+                  valueColor={s.bad ? C.amber : C.text}
+                  strike={s.bad}
+                  sub={(() => { const g = pbPctGuard(n); return g.ok
+                    ? <span style={{ fontSize: 13, fontWeight: 800, color: s.bad ? C.muted : pbPctColor(g.pct) }}>
+                        {pbFmtPct(g.pct)}<span style={{ fontSize: 9, color: C.lbl, fontWeight: 700 }} title="daily change vs the prior session close"> 1D</span>
+                      </span>
+                    : <span style={{ fontSize: 10.5, fontWeight: 800, color: C.red }} title={"last " + n.price + " vs prior close " + n.prevClose + " — sign disagrees with the reported %"}>{g.note}</span>; })()}
+                >
                   <div style={{ fontSize: 11, color: C.muted }}>{n.structure || ""}</div>
                   {n.ext && n.ext.price != null && (
                     <div style={{ fontSize: 11.5, fontWeight: 800, marginTop: 2, color: pbPctColor(n.ext.changePct) }}
@@ -2369,10 +2456,10 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                       {n.ext.session === "pre" ? "PM" : "AH"} {withCommas(n.ext.price)} {pbFmtPct(n.ext.changePct)}
                     </div>
                   )}
-                </div>
+                </MetricCard>
                 );
               })}
-            </div>
+            </MetricGrid>
           </Card>
 
           {/* Indices — grouped by region */}
@@ -2384,60 +2471,32 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                 {multi ? <span style={{ fontSize: 11, color: C.muted, fontWeight: 800, textTransform: "uppercase" }}>{d.label}</span> : null}
                 <RegionSessionBadge session={d.session} tz={d.tz} />
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 20 }}>
+              <MetricGrid min={190}>
               {d.indices.map(ix => {
                 const s = pbSession(ix.freshness, ix.session);
                 return (
-                <div key={ix.sym} style={{ minWidth: 120 }}>
-                  <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>{ix.name}</div>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 6 }} title={ix.freshness ? freshnessText(ix.freshness) || "live" : ""}>
-                    <span style={{ fontSize: 18, fontWeight: 900, color: s.bad ? C.amber : C.text, textDecoration: s.bad ? "line-through" : "none" }}>{ix.price != null ? withCommas(ix.price) : "—"}</span>
-                    {(() => { const g = pbPctGuard(ix); return g.ok
-                      ? <span style={{ fontSize: 13, fontWeight: 800, color: s.bad ? C.muted : pbPctColor(g.pct) }}>
-                          {pbFmtPct(g.pct)}<span style={{ fontSize: 9, color: C.lbl, fontWeight: 700 }} title="daily change vs the prior session close"> 1D</span>
-                        </span>
-                      : <span style={{ fontSize: 10.5, fontWeight: 800, color: C.red }} title={"last " + ix.price + " vs prior close " + ix.prevClose + " — sign disagrees with the reported %"}>{g.note}</span>; })()}
-                  </div>
-                  <div><span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: s.color, background: s.bad ? C.aBg : "transparent", border: "1px solid " + s.color + "55", borderRadius: 4, padding: "1px 5px" }}>{s.label}</span></div>
-                </div>
+                <MetricCard
+                  key={ix.sym}
+                  label={ix.name}
+                  accent={s.bad ? C.aBdr : undefined}
+                  title={ix.freshness ? freshnessText(ix.freshness) || "live" : ""}
+                  value={ix.price != null ? withCommas(ix.price) : "—"}
+                  valueColor={s.bad ? C.amber : C.text}
+                  strike={s.bad}
+                  sub={(() => { const g = pbPctGuard(ix); return g.ok
+                    ? <span style={{ fontSize: 13, fontWeight: 800, color: s.bad ? C.muted : pbPctColor(g.pct) }}>
+                        {pbFmtPct(g.pct)}<span style={{ fontSize: 9, color: C.lbl, fontWeight: 700 }} title="daily change vs the prior session close"> 1D</span>
+                      </span>
+                    : <span style={{ fontSize: 10.5, fontWeight: 800, color: C.red }} title={"last " + ix.price + " vs prior close " + ix.prevClose + " — sign disagrees with the reported %"}>{g.note}</span>; })()}
+                >
+                  <div style={{ marginTop: 3 }}><StateChip label={s.label} color={s.color} filled={s.bad} /></div>
+                </MetricCard>
                 );
               })}
-              </div>
+              </MetricGrid>
             </div>
             ))}
           </Card>
-
-          {/* Composed READ — deterministic, from the gate state. Observational only: it
-              reports level, direction, thresholds and conflicts. No positioning language. */}
-          {data.read?.sentences?.length > 0 && (
-            <Card>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                <SLabel>📝 Read</SLabel>
-                <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>composed from gate state · deterministic, no model</span>
-                <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 800, textTransform: "uppercase",
-                  color: data.read.confidence === "clean" ? C.green : data.read.confidence === "qualified" ? C.amber : C.red,
-                  border: "1px solid currentColor", borderRadius: 4, padding: "1px 5px" }}>
-                  {data.read.confidence}
-                </span>
-              </div>
-              {data.read.sentences.map((s, i) => (
-                <div key={i} style={{ fontSize: 13, color: C.mid, lineHeight: 1.55, marginBottom: 5 }}>{s}</div>
-              ))}
-              {/* Conflicts are SURFACED, never resolved into one confident answer */}
-              {data.read.conflicts?.map((s, i) => (
-                <div key={"c" + i} style={{ fontSize: 12.5, fontWeight: 700, color: C.amber, background: C.aBg,
-                  border: "1px solid " + C.aBdr, borderRadius: 6, padding: "6px 9px", marginTop: 5, lineHeight: 1.5 }}>
-                  ⚖ {s}
-                </div>
-              ))}
-              {data.read.flip && (
-                <div style={{ fontSize: 12.5, fontWeight: 700, color: C.blue, marginTop: 7 }}>↪ {data.read.flip}</div>
-              )}
-              {data.read.caveats?.length > 0 && (
-                <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>Caveats: {data.read.caveats.join(" · ")}</div>
-              )}
-            </Card>
-          )}
 
           {/* Cross-asset coverage — the daily set, grouped by what each group answers.
               Every row: value + 1D delta + direction (no direction without a prior close). */}
@@ -2453,9 +2512,9 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                 return (
                   <div key={g} style={{ marginBottom: 10 }}>
                     <div style={{ fontSize: 10.5, color: C.muted, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>{grp.label}</div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+                    <MetricGrid min={175}>
                       {grp.rows.map(r => <CrossRow key={r.sym} r={r} />)}
-                    </div>
+                    </MetricGrid>
                   </div>
                 );
               })}
@@ -2466,7 +2525,6 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                   <span style={{ color: C.muted, fontWeight: 800 }}>Live credit tell · </span>{data.hyg.note}
                 </div>
               )}
-              <GaugesLeaning leaning={data.leaning} />
             </Card>
           )}
 
@@ -2476,7 +2534,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               <SLabel>🛢️ Macro</SLabel>
               <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>Global · US rates (same on every region)</span>
             </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 20 }}>
+            <MetricGrid min={180}>
               <MacroCell field={data.macro.wti}   value={data.macro.wti?.value != null ? "$" + data.macro.wti.value : "—"}     delta={data.macro.wti?.delta} deltaSuffix="" />
               <MacroCell field={data.macro.brent} value={data.macro.brent?.value != null ? "$" + data.macro.brent.value : "—"} delta={data.macro.brent?.delta} deltaSuffix="" />
               <MacroCell field={data.macro.us2y}  value={data.macro.us2y?.value != null ? data.macro.us2y.value + "%" : "—"}   delta={data.macro.us2y?.deltaBps} deltaSuffix="bps" />
@@ -2485,7 +2543,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               <MacroCell field={{ name: "2s10s", src: "DGS10−DGS2", date: data.macro.us10y?.date, cadence: "daily" }} value={data.macro.twos10s != null ? (data.macro.twos10s >= 0 ? "+" : "") + data.macro.twos10s + "bps" : "—"} delta={data.macro.twos10sDeltaBps} deltaSuffix="bps" />
               <MacroCell field={data.macro.dxy}   value={data.macro.dxy?.value != null ? data.macro.dxy.value.toFixed(2) : "—"} delta={data.macro.dxy?.delta} deltaSuffix="" />
               <MacroCell field={data.macro.oas}   value={data.macro.oas?.value ?? "—"} delta={data.macro.oas?.deltaBps} deltaSuffix="bps" />
-            </div>
+            </MetricGrid>
             {data.macro.sanity && data.macro.sanity.length > 0 && (
               <div style={{ marginTop: 10, padding: "8px 12px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8, fontSize: 12, color: C.amber, fontWeight: 700 }}>
                 ⚠ Sanity: {data.macro.sanity.join(" · ")}
@@ -2494,14 +2552,14 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
             {/* Regime inputs — gold/BTC co-movement + real yield/breakeven, drives the read below */}
             <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px dashed " + C.bdr }}>
               <div style={{ fontSize: 11, color: C.muted, fontWeight: 800, textTransform: "uppercase", marginBottom: 8 }}>Regime Inputs</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 20 }}>
+              <MetricGrid min={180}>
                 <MacroCell field={data.macro.gold} value={data.macro.gold?.value != null ? "$" + withCommas(data.macro.gold.value) : "—"} delta={data.macro.gold?.delta} deltaSuffix="" />
                 <MacroCell field={data.macro.btc} value={data.macro.btc?.value != null ? "$" + Math.round(data.macro.btc.value).toLocaleString("en-US") : "—"} delta={data.macro.btc?.delta != null ? Math.round(data.macro.btc.delta) : null} deltaSuffix="" />
                 <MacroCell field={data.macro.realYield} value={data.macro.realYield?.value != null ? data.macro.realYield.value + "%" : "—"} delta={data.macro.realYield?.deltaBps} deltaSuffix="bps" />
                 <MacroCell field={data.macro.breakeven} value={data.macro.breakeven?.value != null ? data.macro.breakeven.value + "%" : "—"} delta={data.macro.breakeven?.deltaBps} deltaSuffix="bps" />
                 <MacroCell field={data.macro.move} value={data.macro.move?.value ?? "—"} delta={data.macro.move?.delta} deltaSuffix="" />
                 <MacroCell field={data.macro.ovx} value={data.macro.ovx?.value ?? "—"} delta={data.macro.ovx?.delta} deltaSuffix="" />
-              </div>
+              </MetricGrid>
               {data.macro.regimeSignal && (() => {
                 const rs = data.macro.regimeSignal;
                 const w = rs.windows || {};
