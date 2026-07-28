@@ -1,6 +1,7 @@
 // /api/preread?region=asia|eu|us
-// Assembles live data + deterministic regime, asks Sonnet 5 ONLY for the synthesis prose,
-// formats Discord-ready (no tables, bullets, bold), optionally posts to the webhook.
+// Assembles live data + deterministic regime + the COMPOSED read (lib/read.js), formats
+// Discord-ready (no tables, bullets, bold), optionally posts to the webhook.
+// There is no model call anywhere in this path — every figure traces to a parsed field.
 
 import { UNIVERSE } from '../data/universe.js';
 import { assembleRegion } from '../lib/assemble.js';
@@ -10,7 +11,6 @@ import { marketState, localHour, halfDayLabels, freshness, freshnessText } from 
 import { kofiaStoredLine, koreaFlowRead, koreaFlowImplication, withCommas } from '../lib/kofia.js';
 import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
 
-const MODEL = 'claude-sonnet-5';
 
 function fmtPct(p) { return p == null ? '—' : `${p > 0 ? '+' : ''}${p.toFixed(1)}%`; }
 
@@ -129,6 +129,7 @@ function buildKorea(k) {
     yields,
     kfLine('foreignNet', 'Foreign Net'),
     kfLine('instNet', 'Inst Net'),
+    kfLine('retailNet', 'Retail Net'),
     kfLine('units7709', '7709 units'),
   ].filter(Boolean);
   // Flow read + macro implication (same logic as the dashboard Korea panel).
@@ -141,34 +142,11 @@ function buildKorea(k) {
   return [wonLine, volLine, ...kofiaLines, `• **Cluster:** ${k.cluster} — ${k.note}`, ...readLines].join('\n');
 }
 
-async function synthProse(region, blocks) {
-  // The model gets ONLY the computed numbers + regime, and writes the read paragraph.
-  // Standing constraints baked in: research/data only, no positions, no advice, no disclaimers.
-  const sys = `You write a terse market "read" paragraph for a private trading Discord.
-Rules: research and data only. Never mention anyone's portfolio, positions, or theses.
-No instructional guidance (no "don't short X"). No disclaimers or "not advice" footers.
-2-4 sentences max. Lead with the single most important thing. Plain, punchy, scannable.`;
-
-  const user = `Region: ${region.toUpperCase()}
-Names:\n${blocks.nameLines}
-Indices:\n${blocks.idxLines}
-Macro:\n${blocks.macroLines}
-Regime (computed, authoritative — do not contradict the numbers):\n${blocks.regimeLines}
-Write only the READ paragraph.`;
-
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({ model: MODEL, max_tokens: 400,
-      system: sys, messages: [{ role: 'user', content: user }] }),
-  });
-  const j = await r.json();
-  return (j.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
-}
+// NOTE: the model-written READ paragraph (synthProse) was removed in Round 4 Stage 4.
+// The READ is now composed deterministically in lib/read.js from the structured gate state,
+// so there is no LLM call anywhere in the read path — no latency, no cost, and no chance of
+// a hallucinated figure on a trading surface. Git history has the old implementation if a
+// prose variant is ever wanted alongside (not instead of) the composed read.
 
 function assembleDiscord(region, label, blocks, read) {
   const emoji = { asia: '🌏', eu: '🇪🇺', us: '🇺🇸' }[region] || '📊';
@@ -216,12 +194,15 @@ export default async function handler(req, res) {
     });
   }
 
-  const { quotes, idxRaw, macro, regime } = await assembleRegion(region);
+  const { quotes, idxRaw, macro, regime, read: composed } = await assembleRegion(region);
   // attach display names to indices
   const indices = idxRaw.map((q, i) => ({ ...q, _name: R.indices[i].name }));
   const cal = weekHighlights(new Date(), region, R.tz);
   const blocks = buildBlocks(region, quotes, indices, macro, regime, cal);
-  const read = await synthProse(region, blocks);
+  // The READ is the COMPOSED, deterministic one (lib/read.js) — same text the dashboard
+  // shows. No model call in the read path: every figure is traceable to a parsed field, so
+  // the Pre-Read cannot hallucinate a number or drift into positioning language.
+  const read = composed?.text || '(no gate inputs available)';
   const message = assembleDiscord(region, R.label, blocks, read);
 
   // Optional: post to Discord if a webhook is set and ?post=1.
