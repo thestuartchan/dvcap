@@ -51,16 +51,17 @@
     "instNet": {
       "value": 24,
       "unit": "십억원",
-      "asOf": "2026-07-28",
-      "delta": null,
-      "pct": null
+      "asOf": "2026-07-28"
     },
     "foreignNet": {
       "value": -2645,
       "unit": "십억원",
-      "asOf": "2026-07-28",
-      "delta": null,
-      "pct": null
+      "asOf": "2026-07-28"
+    },
+    "retailNet": {
+      "value": 2614,
+      "unit": "십억원",
+      "asOf": "2026-07-28"
     }
   },
   "history": [
@@ -240,6 +241,256 @@
         "value": -2645,
         "asOf": "2026-07-28"
       }
+    },
+    {
+      "savedAt": "2026-07-28T04:00:48.142Z",
+      "kospi": {
+        "value": 6755.75,
+        "asOf": "2026-07-27"
+      },
+      "deposits": {
+        "value": 105637070,
+        "asOf": "2026-07-24"
+      },
+      "marginLoans": {
+        "value": 32671670,
+        "asOf": "2026-07-24"
+      },
+      "cma": {
+        "value": 107795647,
+        "asOf": "2026-07-24"
+      },
+      "kr3yGovt": {
+        "value": 3.854,
+        "asOf": "2026-07-28"
+      },
+      "kr3yCorp": {
+        "value": 4.563,
+        "asOf": "2026-07-28"
+      },
+      "instNet": {
+        "value": 24,
+        "asOf": "2026-07-28"
+      },
+      "foreignNet": {
+        "value": -2645,
+        "asOf": "2026-07-28"
+      },
+      "retailNet": {
+        "value": 2614,
+        "asOf": "2026-07-28"
+      }
     }
-  ]
+  ],
+  "series": {
+    "marginLoans": [
+      {
+        "date": "2026-07-21",
+        "value": 33558388,
+        "unit": null,
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-07-23",
+        "value": 32749219,
+        "unit": null,
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-07-24",
+        "value": 32671670,
+        "unit": "백만원",
+        "delta": -77550,
+        "pct": -0.24
+      }
+    ],
+    "deposits": [
+      {
+        "date": "2026-07-21",
+        "value": 106692980,
+        "unit": null,
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-07-23",
+        "value": 104297489,
+        "unit": null,
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-07-24",
+        "value": 105637070,
+        "unit": "백만원",
+        "delta": 1339581,
+        "pct": 1.28
+      }
+    ],
+    "cma": [
+      {
+        "date": "2026-07-21",
+        "value": 107209758,
+        "unit": null,
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-07-23",
+        "value": 108022981,
+        "unit": null,
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-07-24",
+        "value": 107795647,
+        "unit": "백만원",
+        "delta": -227335,
+        "pct": -0.21
+      }
+    ],
+    "kospi": [
+      {
+        "date": "2026-07-22",
+        "value": 6797.7,
+        "unit": null,
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-07-24",
+        "value": 6690.62,
+        "unit": null,
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-07-27",
+        "value": 6755.75,
+        "unit": "P",
+        "delta": 65.13,
+        "pct": 0.97
+      }
+    ],
+    "kr3yGovt": [
+      {
+        "date": "2026-07-23",
+        "value": 3.919,
+        "unit": null,
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-07-27",
+        "value": 3.883,
+        "unit": null,
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-07-28",
+        "value": 3.854,
+        "unit": "%",
+        "delta": -0.011,
+        "pct": -0.28
+      }
+    ],
+    "kr3yCorp": [
+      {
+        "date": "2026-07-23",
+        "value": 4.609,
+        "unit": null,
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-07-27",
+        "value": 4.585,
+        "unit": null,
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-07-28",
+        "value": 4.563,
+        "unit": "%",
+        "delta": -0.013,
+        "pct": -0.28
+      }
+    ],
+    "units7709": [
+      {
+        "date": "2026-07-23",
+        "value": 857500000,
+        "unit": null,
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-07-27",
+        "value": 825000000,
+        "unit": null,
+        "delta": null,
+        "pct": null
+      }
+    ],
+    "foreignNet": [
+      {
+        "date": "2026-07-23",
+        "value": 2136,
+        "unit": null,
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-07-27",
+        "value": -1994,
+        "unit": null,
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-07-28",
+        "value": -2645,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
+      }
+    ],
+    "instNet": [
+      {
+        "date": "2026-07-23",
+        "value": 98,
+        "unit": null,
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-07-27",
+        "value": 147,
+        "unit": null,
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-07-28",
+        "value": 24,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
+      }
+    ],
+    "retailNet": [
+      {
+        "date": "2026-07-28",
+        "value": 2614,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
+      }
+    ]
+  }
 }
