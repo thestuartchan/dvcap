@@ -1684,9 +1684,11 @@ const PB_REGIONS = [
 const pbFmtPct     = p => (p == null ? "—" : `${p > 0 ? "+" : ""}${p.toFixed(1)}%`);
 const pbFmtNum     = n => (n == null ? "—" : Number(n).toLocaleString("en-US"));
 const pbPctColor   = p => (p == null ? C.muted : p > 0.15 ? C.green : p < -0.15 ? C.red : C.muted);
-const pbCreditColor = s => ({ calm: C.green, watch: C.blue, defending: C.amber, stress: C.red }[s] || C.muted);
-const pbClusterColor = c => ({ exhausting: C.green, active: C.red, mixed: C.amber }[c] || C.muted);
-const pbBandColor  = b => ({ calm: C.green, normal: C.blue, elevated: C.amber, high: C.red, severe: C.red, panic: C.red }[b] || C.muted);
+// Gate colours. Level names come from lib/gates.js (2-D gates), so accept both the
+// upper-case band labels and the lower-cased effective state.
+const pbCreditColor = s => ({ calm: C.green, watch: C.amber, defending: C.amber, stress: C.red }[String(s).toLowerCase()] || C.muted);
+const pbClusterColor = c => ({ exhausting: C.green, active: C.red, mixed: C.amber, unknown: C.muted }[c] || C.muted);
+const pbBandColor  = b => ({ normal: C.green, elevated: C.amber, high: C.red, extreme: C.red }[String(b).toLowerCase()] || C.muted);
 
 // Market-state-aware freshness chip for names/indices — mirrors the Pre-Read: shows
 // "~Nm delayed" / "prior close" / "holiday" / "no print" instead of a blanket "stale"
@@ -1763,6 +1765,13 @@ function pbSession(fr, phase) {
   if (phase === "pre")     return { label: "PRE-OPEN",         color: C.muted, bad: false };
   if (phase === "post")    return { label: "POST-CLOSE",       color: C.muted, bad: false };
   return { label: "PRIOR CLOSE", color: C.muted, bad: false };
+}
+
+// Render the delta that justifies a direction word, e.g. "+0.02 1d". Never emitted without
+// a trend object — a word with no shown delta is exactly what Stage 1A forbids.
+function fmtDelta(t, digits = 2) {
+  if (!t) return "";
+  return `${t.delta >= 0 ? "+" : "−"}${Math.abs(t.delta).toFixed(digits)} ${t.basis}`;
 }
 
 // Region-block session pill (phase of the region's primary index) + live local clock.
@@ -1877,28 +1886,52 @@ function KoreaStressPanel({ korea }) {
       </div>
       <div style={{ color: cCol, fontSize: 13, fontWeight: 700, marginBottom: 14 }}>{note}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
-        {/* USD/KRW */}
+        {/* USD/KRW — level vs the 1,491 flip × direction vs prior close */}
         <div style={box}>
           <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>USD/KRW</div>
-          <div style={{ fontSize: 24, fontWeight: 900, color: C.text }}>{won.level ?? "—"}</div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: wonCol }}>
-            {won.dir && won.dir !== "n/a" ? `${won.dir} · ` : ""}{won.flag}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+            <span style={{ fontSize: 24, fontWeight: 900, color: C.text }}>{won.level ?? "—"}</span>
+            {won.delta != null && (
+              <span style={{ fontSize: 12, fontWeight: 800, color: wonCol }}>
+                {won.delta >= 0 ? "+" : "−"}{Math.abs(won.delta)} <span style={{ color: C.lbl }}>1D</span>
+              </span>
+            )}
           </div>
+          {/* The flip threshold is the interpretation, so state where we sit relative to it */}
+          {won.flip != null && (
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: won.aboveFlip ? C.red : C.green, marginTop: 2 }}>
+              {won.aboveFlip ? "▲ above" : "▼ below"} {won.flip} · {won.aboveFlip ? "flight zone" : "mechanical zone"}
+            </div>
+          )}
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: wonCol, marginTop: 2 }}>{won.flag}</div>
         </div>
-        {/* VKOSPI with a 0–100 level bar (markers at 20/45/80) */}
+        {/* VKOSPI — scale calibrated to this instrument (markers at 25/35/50, 0–60 range) */}
         <div style={box}>
           <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>VKOSPI fut</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
             <span style={{ fontSize: 24, fontWeight: 900, color: vCol }}>{vol.level ?? "—"}</span>
             <span style={{ fontSize: 12, fontWeight: 800, color: vCol }}>{vol.band !== "n/a" ? vol.band : ""}</span>
+            {vol.changePct != null && (
+              <span style={{ fontSize: 11, fontWeight: 800, color: vol.changePct > 0 ? C.red : C.green }}>
+                {vol.changePct >= 0 ? "+" : ""}{vol.changePct}% <span style={{ color: C.lbl }}>1D</span>
+              </span>
+            )}
           </div>
-          <div style={{ position: "relative", height: 6, background: C.bdr, borderRadius: 3, margin: "7px 0 5px" }}>
-            <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: Math.max(0, Math.min(100, vol.level || 0)) + "%", background: vCol, borderRadius: 3 }} />
-            {[20, 45, 80].map(m => <div key={m} style={{ position: "absolute", left: m + "%", top: -2, bottom: -2, width: 1, background: C.muted }} />)}
+          <div style={{ position: "relative", height: 6, background: C.bdr, borderRadius: 3, margin: "7px 0 5px" }}
+            title="calibrated to VKOSPI's own 2017–2025 range (~15–25): 25 elevated · 35 high · 50 extreme">
+            <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: Math.max(0, Math.min(100, (vol.level || 0) / 60 * 100)) + "%", background: vCol, borderRadius: 3 }} />
+            {[25, 35, 50].map(m => <div key={m} style={{ position: "absolute", left: (m / 60 * 100) + "%", top: -2, bottom: -2, width: 1, background: C.muted }} />)}
           </div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: vCol }}>{vol.flag}</div>
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: vCol }}>{vol.flag}</div>
         </div>
       </div>
+      {/* Halt severity — sidecar and circuit-breaker are DIFFERENT mechanisms; show which fired */}
+      {korea.halt && (korea.halt.fired?.length > 0) && (
+        <div style={{ marginTop: 10, padding: "7px 10px", background: C.rBg, border: "1.5px solid " + C.rBdr, borderRadius: 6 }}>
+          <span style={{ fontSize: 11, fontWeight: 800, color: C.red, textTransform: "uppercase", letterSpacing: 0.5 }}>Halt fired · </span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.red }}>{korea.halt.fired.join(" · ")}</span>
+        </div>
+      )}
     </Card>
   );
 }
@@ -2209,10 +2242,28 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                       </>}
                 </div>
               )}
-              <div style={{ minWidth: 170 }}>
+              <div style={{ minWidth: 210 }}>
                 <div style={{ fontSize: 12, color: C.muted, fontWeight: 700, marginBottom: 4 }}>Credit — global/OAS gate</div>
-                <Pill label={(d.regime?.credit?.state ?? "unknown").toUpperCase()} color={pbCreditColor(d.regime?.credit?.state)} />
-                <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{d.regime?.credit?.note ?? ""}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+                  <Pill label={(d.regime?.credit?.state ?? "unknown").toUpperCase()} color={pbCreditColor(d.regime?.credit?.state)} />
+                  {d.regime?.credit?.word && (
+                    <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.4, color: d.regime.credit.dir === "rising" ? C.red : d.regime.credit.dir === "falling" ? C.green : C.muted }}>
+                      · {d.regime.credit.word}
+                    </span>
+                  )}
+                  {d.regime?.credit?.escalated && (
+                    <span style={{ fontSize: 9, fontWeight: 800, color: C.amber, background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 4, padding: "1px 4px" }}>
+                      ↑{d.regime.credit.runs} SESSIONS
+                    </span>
+                  )}
+                </div>
+                {/* The deltas that JUSTIFY the direction word (Stage 1A rule) */}
+                <div style={{ fontSize: 11, color: C.mid, marginTop: 3 }}>
+                  {d.regime?.credit?.d1
+                    ? <>{fmtDelta(d.regime.credit.d1)} · {d.regime.credit.d5 ? fmtDelta(d.regime.credit.d5) : "5d n/a"}</>
+                    : <span style={{ color: C.amber }}>no prior print — direction unavailable</span>}
+                </div>
+                <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{d.regime?.credit?.note ?? ""}</div>
               </div>
               <div style={{ minWidth: 170 }}>
                 <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>Oil</div>
@@ -2250,7 +2301,9 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                   <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 3 }}>
                     <span style={{ fontSize: 16, fontWeight: 900, color: s.bad ? C.amber : C.text, textDecoration: s.bad ? "line-through" : "none" }}>{n.price != null ? withCommas(n.price) : "—"}</span>
                     {(() => { const g = pbPctGuard(n); return g.ok
-                      ? <span style={{ fontSize: 13, fontWeight: 800, color: s.bad ? C.muted : pbPctColor(g.pct) }}>{pbFmtPct(g.pct)}</span>
+                      ? <span style={{ fontSize: 13, fontWeight: 800, color: s.bad ? C.muted : pbPctColor(g.pct) }}>
+                          {pbFmtPct(g.pct)}<span style={{ fontSize: 9, color: C.lbl, fontWeight: 700 }} title="daily change vs the prior session close"> 1D</span>
+                        </span>
                       : <span style={{ fontSize: 10.5, fontWeight: 800, color: C.red }} title={"last " + n.price + " vs prior close " + n.prevClose + " — sign disagrees with the reported %"}>{g.note}</span>; })()}
                   </div>
                   <div style={{ fontSize: 11, color: C.muted }}>{n.structure || ""}</div>
@@ -2284,7 +2337,9 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                   <div style={{ display: "flex", alignItems: "baseline", gap: 6 }} title={ix.freshness ? freshnessText(ix.freshness) || "live" : ""}>
                     <span style={{ fontSize: 18, fontWeight: 900, color: s.bad ? C.amber : C.text, textDecoration: s.bad ? "line-through" : "none" }}>{ix.price != null ? withCommas(ix.price) : "—"}</span>
                     {(() => { const g = pbPctGuard(ix); return g.ok
-                      ? <span style={{ fontSize: 13, fontWeight: 800, color: s.bad ? C.muted : pbPctColor(g.pct) }}>{pbFmtPct(g.pct)}</span>
+                      ? <span style={{ fontSize: 13, fontWeight: 800, color: s.bad ? C.muted : pbPctColor(g.pct) }}>
+                          {pbFmtPct(g.pct)}<span style={{ fontSize: 9, color: C.lbl, fontWeight: 700 }} title="daily change vs the prior session close"> 1D</span>
+                        </span>
                       : <span style={{ fontSize: 10.5, fontWeight: 800, color: C.red }} title={"last " + ix.price + " vs prior close " + ix.prevClose + " — sign disagrees with the reported %"}>{g.note}</span>; })()}
                   </div>
                   <div><span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: s.color, background: s.bad ? C.aBg : "transparent", border: "1px solid " + s.color + "55", borderRadius: 4, padding: "1px 5px" }}>{s.label}</span></div>
