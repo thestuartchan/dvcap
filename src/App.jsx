@@ -711,6 +711,33 @@ const REGIMES = [
   },
 ];
 
+// ─── ANNOUNCED PRINTS (published, but not yet in FRED) ────────────────────────
+// BEA/BLS release ahead of FRED's ingest, so on release day the live series still shows the
+// PRIOR period. Rather than hardcode a number over a live field (which would fabricate a
+// "FRED" value) or show a stale figure as current (which would misread the trend), announced
+// prints live here with their source and release date, render as an explicitly-labelled
+// overlay, and AUTO-RETIRE the moment FRED's own asOf reaches the same period.
+const ANNOUNCED_PRINTS = {
+  pceCore: {
+    period: "2026-06-01", label: "June core PCE", value: 3.3, mom: 0.1,
+    headline: 3.7, headlineMom: -0.1, prev: 3.4,
+    source: "BEA", released: "2026-07-30",
+    note: "cooled from May's 3.4% (~3-year high)",
+  },
+  gdpGrowth: {
+    period: "2026-04-01", label: "Q2 2026 advance GDP", value: 1.5, prev: 2.1,
+    source: "BEA advance estimate", released: "2026-07-30",
+    note: "decelerating from Q1's +2.1%, below consensus — drag from government spending and inventories; consumer spending accelerated",
+  },
+};
+// Return the announced print only while it is NEWER than what the live series carries.
+function announced(key, fredAsOf) {
+  const a = ANNOUNCED_PRINTS[key];
+  if (!a) return null;
+  if (fredAsOf && String(fredAsOf) >= a.period) return null;   // FRED caught up → retire
+  return a;
+}
+
 // ─── FED LANGUAGE STATUS ──────────────────────────────────────────────────────
 // Manually-updated status card (no live fetch). Update the STATUS fields below
 // after each FOMC meeting / significant Fed communication. The five STATES
@@ -786,14 +813,14 @@ const FED_LANGUAGE_STATES = {
 // deal + June FOMC). `color` drives the probability cell colour; `year` and
 // `name` are used by the regime-probability derivation.
 const RECESSION_SOURCES = [
-  { name: "Goldman Sachs",             probability: "15%",    timeframe: "12-month", year: 2026, notes: "Cut from 25% (pre-Iran war) → 30% (March peak Hormuz) → 15% (June 26, post peace deal). Cites lower oil, higher real income, AI wealth effect, solid capex. GDP forecast H2 2026: 2.0%. Flags Fed rate hike risk as new variable — half of FOMC penciled in at least one hike.", color: "green" },
-  { name: "NY Fed Yield Curve Model",  probability: "~15%",   timeframe: "12-month", year: 2026, notes: "May 2026 data. Based on 3M/10Y spread. Below historical alarm threshold of 30%. Yield curve now upward sloping: 10Y at 4.37%, 3M at 3.75%, spread +62bps. Structural improvement from prior inversion.", color: "green" },
-  { name: "NY Fed DSGE Model",         probability: "35.8%",  timeframe: "12-month", year: 2026, notes: "March 2026, latest published. Recession = 4Q output growth below -1%. Down from 37.5% in December. Next update expected Q3 2026.", color: "amber" },
-  { name: "JPMorgan",                  probability: "35%",    timeframe: "12-month", year: 2026, notes: "March 2026. Warned markets complacent over sustained oil shock. No updated June figure available — figure may have declined post peace deal. Watch for mid-year update.", color: "amber" },
-  { name: "EY-Parthenon (Daco)",       probability: "40%",    timeframe: "12-month", year: 2026, notes: "March 2026. Risks rising if geopolitical tensions persist. New source added June 2026.", color: "amber" },
-  { name: "Moody's Analytics (Zandi)", probability: "~49%",   timeframe: "12-month", year: 2026, notes: "March 2026 peak — 'on the precipice.' Driven by weak labor data and soft economic indicators since late 2025. Most bearish major forecaster. No updated post-peace-deal figure available.", color: "red" },
-  { name: "Kalshi prediction market",  probability: "22%",    timeframe: "End-2026", year: 2026, notes: "June 2026. Up from 17.5% last month. Real-money market. CFTC-regulated. Slight uptick despite Iran peace deal — reflects lingering growth concerns.", color: "green" },
-  { name: "Kalshi prediction market",  probability: "41%",    timeframe: "End-2027", year: 2027, notes: "Investors pricing delayed reckoning — debt refinancing at 5-7% vs near-zero rates, $1.3T consumer revolving credit, corporate capex compression. More concerning than 2026 figure.", color: "amber" },
+  { name: "Goldman Sachs",             probability: "15%",    timeframe: "12-month", year: 2026, notes: "Cut from 25% (pre-Iran war) → 30% (March peak Hormuz) → 15% (June 26, post peace deal). Cites lower oil, higher real income, AI wealth effect, solid capex. GDP forecast H2 2026: 2.0%. Flags Fed rate hike risk as new variable — half of FOMC penciled in at least one hike.", asOf: "2026-06-26", color: "green" },
+  { name: "NY Fed Yield Curve Model",  probability: "~15%",   timeframe: "12-month", year: 2026, notes: "May 2026 data. Based on 3M/10Y spread. Below historical alarm threshold of 30%. Yield curve now upward sloping: 10Y at 4.37%, 3M at 3.75%, spread +62bps. Structural improvement from prior inversion.", asOf: "2026-05-01", color: "green" },
+  { name: "NY Fed DSGE Model",         probability: "35.8%",  timeframe: "12-month", year: 2026, notes: "March 2026, latest published. Recession = 4Q output growth below -1%. Down from 37.5% in December. Next update expected Q3 2026.", asOf: "2026-03-01", color: "amber" },
+  { name: "JPMorgan",                  probability: "35%",    timeframe: "12-month", year: 2026, notes: "March 2026. Warned markets complacent over sustained oil shock. No updated June figure available — figure may have declined post peace deal. Watch for mid-year update.", asOf: "2026-03-01", color: "amber" },
+  { name: "EY-Parthenon (Daco)",       probability: "40%",    timeframe: "12-month", year: 2026, notes: "March 2026. Risks rising if geopolitical tensions persist. New source added June 2026.", asOf: "2026-03-01", color: "amber" },
+  { name: "Moody's Analytics (Zandi)", probability: "~49%",   timeframe: "12-month", year: 2026, notes: "March 2026 peak — 'on the precipice.' Driven by weak labor data and soft economic indicators since late 2025. Most bearish major forecaster. No updated post-peace-deal figure available.", asOf: "2026-03-01", color: "red" },
+  { name: "Kalshi prediction market",  probability: "22%",    timeframe: "End-2026", year: 2026, notes: "June 2026. Up from 17.5% last month. Real-money market. CFTC-regulated. Slight uptick despite Iran peace deal — reflects lingering growth concerns.", asOf: "2026-06-01", color: "green" },
+  { name: "Kalshi prediction market",  probability: "41%",    timeframe: "End-2027", year: 2027, notes: "Investors pricing delayed reckoning — debt refinancing at 5-7% vs near-zero rates, $1.3T consumer revolving credit, corporate capex compression. More concerning than 2026 figure.", asOf: "2026-06-01", color: "amber" },
   { name: "Polymarket",                probability: "~12.5%", timeframe: "End-2026", year: 2026, notes: "June 2026. Market-implied. 87.5% probability on No recession. Sahm Rule at 0.10 — well below 0.50 threshold. Lowest of all sources.", color: "green" },
   { name: "BNP Paribas",               probability: "Low",    timeframe: "12-month", year: 2026, notes: "Qualitative only — excluded from weighted average. 'Well-positioned to absorb shock.' US net energy exporter status cited. No numeric update available.", color: "green" },
   { name: "June FOMC Minutes", probability: "Elevated", timeframe: "qualitative", year: 2026, notes: "July 8, 2026. 'Only a few' members saw a case to hike — mildly dovish vs. the June dot plot (9/18 penciled a hike). Warsh withheld his own dot. PCE revised to 3.6%. Minutes predate July 7–8 Hormuz attacks entirely — the hawkish oil impulse is not yet in any official Fed communication.", color: "amber" },
@@ -3772,21 +3799,49 @@ export default function App() {
               const realYield = (liveInd && liveInd.currentFedFunds && headline != null)
                 ? (liveInd.currentFedFunds - headline)
                 : null;
-              const reading = (label, val, sub) => (
+              // Direction from the stored history (prior print), never asserted from one value.
+              const trendOf = h => {
+                if (!Array.isArray(h) || h.length < 2) return null;
+                const last = h[h.length - 1], prev = h[h.length - 2];
+                const d = +(last.value - prev.value).toFixed(2);
+                return { d, dir: d < 0 ? "cooling" : d > 0 ? "rising" : "flat", from: prev.value, fromDate: prev.date, toDate: last.date };
+              };
+              const pceAnn = announced("pceCore", liveInd?.asOf?.pceCoreCurrent);
+              const trendChip = t => t && (
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: t.dir === "cooling" ? C.green : t.dir === "rising" ? C.red : C.muted }}>
+                  {t.dir === "cooling" ? "▼" : t.dir === "rising" ? "▲" : "■"} {t.d >= 0 ? "+" : "−"}{Math.abs(t.d)}pp vs prior
+                </span>
+              );
+              const reading = (label, val, sub, trend) => (
                 <div>
                   <div style={{ fontSize: 10, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>{label}</div>
                   <div style={{ fontSize: 24, fontWeight: 700, color: getCpiColor(val) }}>{val != null ? val.toFixed(1) + "%" : "—"}</div>
                   <div style={{ fontSize: 11, color: "#888" }}>{sub}</div>
+                  {trendChip(trend)}
                 </div>
               );
               return (
                 <Card>
                   <SLabel>CPI Inflation Tracker</SLabel>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 4, marginBottom: 16 }}>
-                    {reading("Headline CPI", headline, "YoY · BLS")}
-                    {reading("Core CPI", core, "Ex food & energy · BLS")}
-                    {reading("Core PCE", pce, "Fed's preferred · BEA")}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 4, marginBottom: 10 }}>
+                    {reading("Headline CPI", headline, "YoY · BLS", trendOf(hHist))}
+                    {reading("Core CPI", core, "Ex food & energy · BLS", trendOf(cHist))}
+                    {reading("Core PCE", pce, "Fed's preferred · BEA", trendOf(pHist))}
                   </div>
+                  {/* Announced-but-not-yet-in-FRED print, explicitly labelled with its source.
+                      Auto-retires once FRED's own asOf reaches the same period. */}
+                  {pceAnn && (
+                    <div style={{ marginBottom: 12, padding: "8px 11px", background: C.blBg, border: "1.5px solid " + C.blBdr, borderRadius: 8 }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: C.blue, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                        Announced {pceAnn.released} · not yet in FRED
+                      </div>
+                      <div style={{ fontSize: 13, color: C.mid, marginTop: 3, lineHeight: 1.5 }}>
+                        <b>{pceAnn.label} {pceAnn.value}% YoY</b> ({pceAnn.mom >= 0 ? "+" : ""}{pceAnn.mom}% MoM) — {pceAnn.note}.
+                        Headline PCE {pceAnn.headline}% YoY ({pceAnn.headlineMom >= 0 ? "+" : ""}{pceAnn.headlineMom}% MoM).
+                        <span style={{ color: C.lbl }}> Source: {pceAnn.source}. The tile above still shows FRED's last ingested print ({liveInd?.asOf?.pceCoreCurrent ?? "—"}).</span>
+                      </div>
+                    </div>
+                  )}
                   {realYield != null && (
                     <div style={{ padding: "8px 12px", borderRadius: 6, backgroundColor: realYield > 0 ? "#f0fdf4" : "#fef2f2", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
                       <span style={{ fontSize: 12, fontWeight: 600, color: C.mid }}>
@@ -3852,11 +3907,20 @@ export default function App() {
                   </div>
                 );
               })()}
+              {/* Provenance: these are hand-maintained. There is no keyless feed for broker
+                  recession odds, so they are NOT auto-refreshed — each row carries its own
+                  as-of and is flagged stale past 45 days rather than being silently updated. */}
+              <div style={{ marginBottom: 10, padding: "8px 11px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, fontSize: 12, color: C.mid, lineHeight: 1.55 }}>
+                <b style={{ color: C.muted }}>Provenance: </b>
+                hand-maintained — no live feed exists for these estimates, so they were <b>not</b> auto-refreshed
+                after the Jul 29 FOMC. Each row shows its own as-of; anything past 45 days is flagged stale.
+                <span style={{ color: C.amber, fontWeight: 700 }}> Q2 GDP at +1.5% (vs Q1 +2.1%) is the input most likely to push these up — expect revisions at the next publication, not before.</span>
+              </div>
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 400 }}>
                   <thead>
                     <tr style={{ background: C.bg }}>
-                      {["Source", "Probability", "Timeframe", "Notes"].map(h => (
+                      {["Source", "Probability", "As of", "Timeframe", "Notes"].map(h => (
                         <th key={h} style={{ textAlign: "left", color: C.mid, padding: "8px 12px", borderBottom: "2px solid " + C.bdr, fontSize: 13, fontWeight: 700 }}>{h}</th>
                       ))}
                     </tr>
@@ -3869,6 +3933,21 @@ export default function App() {
                         <td style={{ padding: "8px 12px", color: C.text, fontSize: 14, fontWeight: 600, borderBottom: "1px solid " + C.bdr }}>{r.name}</td>
                         <td style={{ padding: "8px 12px", borderBottom: "1px solid " + C.bdr }}>
                           <span style={{ color: pCol, fontWeight: 800, fontSize: 15 }}>{r.probability}</span>
+                        </td>
+                        {/* As-of + staleness. These are hand-maintained (no live feed exists
+                            for broker recession odds), so an old figure must never read as a
+                            current post-FOMC one. */}
+                        <td style={{ padding: "8px 12px", fontSize: 12, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap" }}>
+                          {(() => {
+                            if (!r.asOf) return <span style={{ color: C.lbl }}>—</span>;
+                            const days = Math.round((Date.now() - new Date(r.asOf + "T00:00:00Z")) / 864e5);
+                            const stale = days > 45;
+                            return (
+                              <span style={{ color: stale ? C.amber : C.muted, fontWeight: stale ? 700 : 400 }}>
+                                {r.asOf}{stale ? ` · ${days}d stale` : ""}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td style={{ padding: "8px 12px", color: C.muted, fontSize: 13, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap" }}>{r.timeframe}</td>
                         <td style={{ padding: "8px 12px", color: C.muted, fontSize: 13, borderBottom: "1px solid " + C.bdr }}>{r.notes}</td>
@@ -3964,9 +4043,22 @@ export default function App() {
                 const cpiNote = cpi && cpi > 100
                   ? `CPI index at ${cpi.toFixed(1)} (latest BLS release via FRED — reflects most recently published monthly figure)`
                   : "CPI: fetching from FRED…";
-                const gdpNote = gdp && gdp > 0
-                  ? `Real GDP: $${(gdp/1000).toFixed(1)}T (latest BEA quarterly release via FRED)`
-                  : "GDP: fetching from FRED…";
+                // GROWTH, not just the level — a level cannot answer "is growth decelerating".
+                // Prefers the announced advance estimate while FRED still lags it, labelled as such.
+                const gAnn = announced("gdpGrowth", liveInd?.asOf?.gdpGrowth);
+                const gNow = gAnn ? gAnn.value : liveInd?.gdpGrowth;
+                const gPrev = gAnn ? gAnn.prev : liveInd?.gdpGrowthPrev;
+                const gdpNote = (() => {
+                  if (gNow == null) return gdp && gdp > 0
+                    ? `Real GDP: $${(gdp/1000).toFixed(1)}T (level only — growth rate not yet available)`
+                    : "GDP: fetching from FRED…";
+                  const dir = (gPrev != null) ? (gNow < gPrev ? "decelerating" : gNow > gPrev ? "accelerating" : "flat") : null;
+                  const src = gAnn ? `${gAnn.source}, announced ${gAnn.released} — not yet in FRED` : "BEA via FRED";
+                  return `Real GDP growth: ${gNow > 0 ? "+" : ""}${gNow}% annualised`
+                    + (dir && gPrev != null ? `, ${dir} from ${gPrev > 0 ? "+" : ""}${gPrev}%` : "")
+                    + ` (${src})`
+                    + (gdp && gdp > 0 ? ` · level $${(gdp/1000).toFixed(1)}T` : "");
+                })();
 
                 // SignalBar — with analyst context sentence below the bar
                 function SignalBar({ label, value, unit, threshold, thresholdLabel, good, fmtVal, context }) {
