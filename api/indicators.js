@@ -62,6 +62,28 @@ export default async function handler(req, res) {
       : { latest: 0, prev: 0 };
   }
 
+  // Latest TWO observations WITH their dates, nulling out on failure. Deliberately not
+  // fredTwo(): that returns {latest:0, prev:0} on failure, which would render a real-looking
+  // "0.0%" growth print. A missing series must read as missing, never as zero.
+  async function fredPair(seriesId) {
+    try {
+      const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=6&api_key=${FRED_KEY}&file_type=json`;
+      const r = await fetch(url);
+      if (!r.ok) return { value: null, date: null, prev: null, prevDate: null };
+      const d = await r.json();
+      const obs = (d.observations || [])
+        .filter(o => o.value !== "." && o.value != null && o.value !== "")
+        .map(o => ({ value: parseFloat(o.value), date: o.date }))
+        .filter(o => Number.isFinite(o.value));
+      return {
+        value: obs[0]?.value ?? null, date: obs[0]?.date ?? null,
+        prev:  obs[1]?.value ?? null, prevDate: obs[1]?.date ?? null,
+      };
+    } catch {
+      return { value: null, date: null, prev: null, prevDate: null };
+    }
+  }
+
   // ── Fetch history for chart — returns [{d, v}] array ──────────────────────
   // observationStart: earliest date to fetch from
   // transform: optional function to post-process the value
@@ -189,7 +211,7 @@ export default async function handler(req, res) {
     // ── Fetch all data in parallel ────────────────────────────────────────────
     const [
       tenY, twoY, unemp, hySpread, cpi, cpiYoY, gdp, dxyRaw, m2Raw, oilRaw, auctionRaw,
-      fedFundsRaw, tbill6mRaw,
+      fedFundsRaw, tbill6mRaw, gdpGrowthRaw,
       tenYHistory, twoYHistory, unempHistory, creditHistory,
       cpiHeadlineHistory, cpiCoreHistory, pceCoreHistory,
     ] = await Promise.all([
@@ -206,6 +228,10 @@ export default async function handler(req, res) {
       fetchAuction(),           // 10Y Treasury auction bid-to-cover (FiscalData)
       fredLatest("FEDFUNDS"),   // Current Fed funds effective rate
       fredLatest("DTB6"),       // 6-month T-bill — forward policy-rate proxy
+      // Real GDP GROWTH (% change from preceding quarter, SAAR) — the growth INPUT. GDPC1
+      // above is a level ($T) and cannot answer "is growth decelerating"; this can, and it
+      // carries the prior quarter so the direction is computed from a real prior print.
+      fredPair("A191RL1Q225SBEA"),
       // History series for charts
       fredHistory("DGS10", START_DATE),
       fredHistory("DGS2",  START_DATE),
@@ -262,6 +288,12 @@ export default async function handler(req, res) {
       cpi:          cpi.value,
       cpiYoY,
       gdp:          gdp.value,
+      // Real GDP growth (% SAAR) + the prior quarter, so the card can state DIRECTION from a
+      // real prior print rather than asserting deceleration from a single number.
+      gdpGrowth:      gdpGrowthRaw.value,
+      gdpGrowthPrev:  gdpGrowthRaw.prev,
+      gdpGrowthDate:  gdpGrowthRaw.date,
+      gdpGrowthPrevDate: gdpGrowthRaw.prevDate,
       dxy:      dxyRaw.latest,
       dxyPrev:  dxyRaw.prev,
       m2:       m2Raw.latest,
@@ -293,7 +325,7 @@ export default async function handler(req, res) {
       asOf: {
         tenY: tenY.date, twoY: twoY.date, yieldSpread: tenY.date,
         unemployment: unemp.date, creditSpread: hySpread.date,
-        cpi: cpi.date, gdp: gdp.date,
+        cpi: cpi.date, gdp: gdp.date, gdpGrowth: gdpGrowthRaw.date,
         currentFedFunds: fedFundsRaw.date, tbill6m: tbill6mRaw.date,
         dxy: dxyRaw.asOf, oil: oilRaw.asOf,
         cpiYoY:             cpiHeadlineHistory.at(-1)?.date ?? null,

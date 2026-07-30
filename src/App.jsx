@@ -717,10 +717,16 @@ const REGIMES = [
 // definitions are stable and only change on explicit request.
 const FED_LANGUAGE_STATUS = {
   status: "hawkish_hold", // current state — update manually
-  lastUpdated: "2026-06-29",
-  lastEvent: "FOMC June 2026",
-  summary: "Warsh maintaining higher for longer stance. No acknowledgment of downside risks. Rate cuts explicitly off the table until CPI shows sustained progress toward 2%.",
-  nextEvent: "FOMC July 30, 2026",
+  lastUpdated: "2026-07-29",
+  lastEvent: "FOMC July 2026 — hawkish hold",
+  decision: "HELD at 3.50–3.75% — fifth consecutive hold",
+  vote: "9–3",
+  dissents: "Hammack (Cleveland), Kashkari (Minneapolis), Logan (Dallas) — all three dissented FOR a 25bp HIKE",
+  dissentNote: "Most one-directional dissent since Sept 2016",
+  guidance: "NONE — Warsh continues removing forward guidance (\"family fight\", data-dependent). No new dot plot; next SEP is September.",
+  summary: "Hawkish hold. Warsh framed inflation as \"a choice\", reaffirmed the 2% target and rejected any \"soft or implicit\" target, keeping the focus on the direction of the data. He explicitly flagged labour-market downside as the two-sided risk. With three regional presidents dissenting for a hike and no guidance offered, September is live in both directions.",
+  bias: "Hold, hawkish bias, data-dependent — September live",
+  nextEvent: "FOMC Sept 15–16, 2026 (decision Sept 16) · Jackson Hole (Warsh) late Aug",
 };
 const FED_LANGUAGE_STATES = {
   hawkish_hold: {
@@ -2574,10 +2580,23 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                   </>
                 );
                 const unconfirmed = /UNCONFIRMED/.test(rs.label || "");
+                const mismatch = rs.mismatch;
                 return (
-                  <div style={{ marginTop: 10, padding: "10px 12px", background: C.bg, border: "1.5px solid " + (unconfirmed ? C.aBdr : C.bdrMd), borderRadius: 8 }}>
+                  <div style={{ marginTop: 10, padding: "10px 12px", background: C.bg, border: "1.5px solid " + (mismatch ? C.rBdr : unconfirmed ? C.aBdr : C.bdrMd), borderRadius: 8 }}>
                     <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>Debasement / stagflation read (gold+BTC, 5d-smoothed)</div>
-                    <div style={{ fontSize: 15, fontWeight: 900, color: unconfirmed ? C.amber : C.text }}>{rs.label}</div>
+                    {/* A label that contradicts the deltas shown beneath it is suppressed — the
+                        mismatch is reported instead, never a confident-but-inconsistent read. */}
+                    {mismatch ? (
+                      <>
+                        <div style={{ fontSize: 12.5, fontWeight: 800, color: C.red, marginTop: 2 }}>{mismatch}</div>
+                        <div style={{ fontSize: 11.5, color: C.muted, marginTop: 2 }}>suppressed label: <s>{rs.label}</s></div>
+                      </>
+                    ) : (
+                      <div style={{ fontSize: 15, fontWeight: 900, color: unconfirmed ? C.amber : C.text }}>{rs.label}</div>
+                    )}
+                    {!mismatch && rs.windowSplit && (
+                      <div style={{ fontSize: 10.5, color: C.amber, fontWeight: 700, marginTop: 2 }}>⚖ {rs.windowSplit}</div>
+                    )}
                     <div style={{ fontSize: 11, color: C.mid, marginTop: 4 }}>gold — {win(w.gold)}</div>
                     <div style={{ fontSize: 11, color: C.mid, marginTop: 2 }}>btc &nbsp;— {win(w.btc)}</div>
                     <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
@@ -3691,6 +3710,36 @@ export default function App() {
                     </div>
                     <div style={{ fontSize: 11, color: "#888", textAlign: "right" }}>Next: {FED_LANGUAGE_STATUS.nextEvent}</div>
                   </div>
+                  {/* Decision + vote + dissent + guidance — the meeting's actual character,
+                      not just the state label. Dissent direction is the hawkish/dovish tell. */}
+                  {FED_LANGUAGE_STATUS.decision && (
+                    <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: C.text, background: C.bg, border: "1.5px solid " + C.bdr, borderRadius: 6, padding: "4px 9px" }}>
+                        {FED_LANGUAGE_STATUS.decision}
+                      </span>
+                      {FED_LANGUAGE_STATUS.vote && (
+                        <span style={{ fontSize: 12, fontWeight: 800, color: currentState.color, background: currentState.bg, border: "1.5px solid " + currentState.color + "55", borderRadius: 6, padding: "4px 9px" }}>
+                          Vote {FED_LANGUAGE_STATUS.vote} · 3 dissents to HIKE
+                        </span>
+                      )}
+                      {FED_LANGUAGE_STATUS.bias && (
+                        <span style={{ fontSize: 12, fontWeight: 800, color: C.blue, background: C.blBg, border: "1.5px solid " + C.blBdr, borderRadius: 6, padding: "4px 9px" }}>
+                          {FED_LANGUAGE_STATUS.bias}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {FED_LANGUAGE_STATUS.dissents && (
+                    <div style={{ fontSize: 12, color: C.mid, marginTop: 8, lineHeight: 1.5 }}>
+                      <b style={{ color: C.muted }}>Dissents: </b>{FED_LANGUAGE_STATUS.dissents}
+                      {FED_LANGUAGE_STATUS.dissentNote && <span style={{ color: C.amber, fontWeight: 700 }}> — {FED_LANGUAGE_STATUS.dissentNote}</span>}
+                    </div>
+                  )}
+                  {FED_LANGUAGE_STATUS.guidance && (
+                    <div style={{ fontSize: 12, color: C.mid, marginTop: 5, lineHeight: 1.5 }}>
+                      <b style={{ color: C.muted }}>Guidance: </b>{FED_LANGUAGE_STATUS.guidance}
+                    </div>
+                  )}
                   <p style={{ fontSize: 13, marginTop: 10, color: C.mid, lineHeight: 1.6 }}>{FED_LANGUAGE_STATUS.summary}</p>
                   <div className="mwd-grid-2" style={{ gap: 12, marginTop: 12, background: currentState.bg, borderRadius: 8, padding: 12 }}>
                     {cell("SGOV / USFR", currentState.sgov_usfr)}
