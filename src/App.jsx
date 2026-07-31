@@ -711,6 +711,10 @@ const REGIMES = [
   },
 ];
 
+// CPI tracker series colours — ONE definition shared by the headline tiles, the chart lines
+// and the legend, so a tile can never drift out of sync with the line it labels.
+const CPI_SERIES = { headline: "#ef4444", core: "#f97316", pce: "#8b5cf6" };
+
 // ─── ANNOUNCED PRINTS (published, but not yet in FRED) ────────────────────────
 // BEA/BLS release ahead of FRED's ingest, so on release day the live series still shows the
 // PRIOR period. Rather than hardcode a number over a live field (which would fabricate a
@@ -3781,14 +3785,8 @@ export default function App() {
 
             {/* CPI Inflation Tracker — Headline/Core CPI + Core PCE YoY, real-yield-on-cash */}
             {(() => {
-              const getCpiColor = (value) => {
-                if (!value) return "#888";
-                if (value >= 4.0) return "#ef4444";  // red — well above target
-                if (value >= 3.0) return "#f97316";  // orange — elevated
-                if (value >= 2.5) return "#eab308";  // amber — above target
-                if (value >= 1.5) return "#22c55e";  // green — near target
-                return "#3b82f6";                    // blue — below target, deflation risk
-              };
+              // (level→colour lookup now lives in bandOf() below — the tile numbers carry their
+              // SERIES colour, and the level read moved to the band chip.)
               const headline = liveInd ? liveInd.cpiHeadlineCurrent : null;
               const core     = liveInd ? liveInd.cpiCoreCurrent : null;
               const pce      = liveInd ? liveInd.pceCoreCurrent : null;
@@ -3807,26 +3805,45 @@ export default function App() {
                 return { d, dir: d < 0 ? "cooling" : d > 0 ? "rising" : "flat", from: prev.value, fromDate: prev.date, toDate: last.date };
               };
               const pceAnn = announced("pceCore", liveInd?.asOf?.pceCoreCurrent);
+              // Live floating-cash yield proxy for the chart's reference line (see below).
+              const cashYield = liveInd?.tbill6m != null
+                ? { value: liveInd.tbill6m, src: "6M T-bill" }
+                : liveInd?.currentFedFunds != null
+                  ? { value: liveInd.currentFedFunds, src: "Fed funds" }
+                  : null;
               const trendChip = t => t && (
                 <span style={{ fontSize: 10.5, fontWeight: 800, color: t.dir === "cooling" ? C.green : t.dir === "rising" ? C.red : C.muted }}>
                   {t.dir === "cooling" ? "▼" : t.dir === "rising" ? "▲" : "■"} {t.d >= 0 ? "+" : "−"}{Math.abs(t.d)}pp vs prior
                 </span>
               );
-              const reading = (label, val, sub, trend) => (
-                <div>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>{label}</div>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: getCpiColor(val) }}>{val != null ? val.toFixed(1) + "%" : "—"}</div>
-                  <div style={{ fontSize: 11, color: "#888" }}>{sub}</div>
-                  {trendChip(trend)}
-                </div>
-              );
+              // Each headline number carries its SERIES colour, matching the chart line and the
+              // legend below, so the eye maps tile → line without a lookup. The level read
+              // (how far above target) hasn't been lost — it moves to a small band chip.
+              const bandOf = v => v == null ? null
+                : v >= 4.0 ? { t: "well above target", c: "#ef4444" }
+                : v >= 3.0 ? { t: "elevated",          c: "#f97316" }
+                : v >= 2.5 ? { t: "above target",      c: "#eab308" }
+                : v >= 1.5 ? { t: "near target",       c: "#22c55e" }
+                :            { t: "below target",      c: "#3b82f6" };
+              const reading = (label, val, sub, trend, seriesColor) => {
+                const band = bandOf(val);
+                return (
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>{label}</div>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: seriesColor }}>{val != null ? val.toFixed(1) + "%" : "—"}</div>
+                    <div style={{ fontSize: 11, color: "#888" }}>{sub}</div>
+                    {trendChip(trend)}
+                    {band && <div style={{ fontSize: 10, fontWeight: 700, color: band.c, marginTop: 1 }}>● {band.t}</div>}
+                  </div>
+                );
+              };
               return (
                 <Card>
                   <SLabel>CPI Inflation Tracker</SLabel>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 4, marginBottom: 10 }}>
-                    {reading("Headline CPI", headline, "YoY · BLS", trendOf(hHist))}
-                    {reading("Core CPI", core, "Ex food & energy · BLS", trendOf(cHist))}
-                    {reading("Core PCE", pce, "Fed's preferred · BEA", trendOf(pHist))}
+                    {reading("Headline CPI", headline, "YoY · BLS", trendOf(hHist), CPI_SERIES.headline)}
+                    {reading("Core CPI", core, "Ex food & energy · BLS", trendOf(cHist), CPI_SERIES.core)}
+                    {reading("Core PCE", pce, "Fed's preferred · BEA", trendOf(pHist), CPI_SERIES.pce)}
                   </div>
                   {/* Announced-but-not-yet-in-FRED print, explicitly labelled with its source.
                       Auto-retires once FRED's own asOf reaches the same period. */}
@@ -3874,12 +3891,19 @@ export default function App() {
                         <Legend iconType="line" iconSize={10} wrapperStyle={{ fontSize: "11px" }} />
                         {/* Fed 2% target line — extendDomain so it stays visible when CPI sits above it */}
                         <ReferenceLine y={2} stroke="#22c55e" strokeDasharray="4 3" ifOverflow="extendDomain" label={{ value: "2% target", position: "right", fontSize: 9, fill: "#22c55e" }} />
-                        {/* USFR yield reference — hardcoded; update manually when rates move materially.
-                            extendDomain keeps it on-chart; when a CPI line crosses above it, real yield on cash turns negative. */}
-                        <ReferenceLine y={5.3} stroke="#3b82f6" strokeDasharray="4 3" ifOverflow="extendDomain" label={{ value: "USFR ~5.3%", position: "right", fontSize: 9, fill: "#3b82f6" }} />
-                        <Line data={hHist} type="monotone" dataKey="value" name="Headline CPI" stroke="#ef4444" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                        <Line data={cHist} type="monotone" dataKey="value" name="Core CPI" stroke="#f97316" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                        <Line data={pHist} type="monotone" dataKey="value" name="Core PCE" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="5 3" dot={false} activeDot={{ r: 4 }} />
+                        {/* Cash-yield reference — DERIVED LIVE, not hardcoded. USFR holds floating-rate
+                            Treasuries that reset off T-bill auctions, so the 6M bill is the closest
+                            keyless proxy (Fed funds is the fallback). The old hardcoded 5.3% was a
+                            2023-24 level: it sat ~1.7pp above reality and contradicted the live
+                            "real yield on cash" figure shown directly above the chart. When no live
+                            rate is available the line is omitted rather than drawn at a stale guess. */}
+                        {cashYield != null && (
+                          <ReferenceLine y={cashYield.value} stroke="#3b82f6" strokeDasharray="4 3" ifOverflow="extendDomain"
+                            label={{ value: `cash ~${cashYield.value.toFixed(2)}% (${cashYield.src})`, position: "right", fontSize: 9, fill: "#3b82f6" }} />
+                        )}
+                        <Line data={hHist} type="monotone" dataKey="value" name="Headline CPI" stroke={CPI_SERIES.headline} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                        <Line data={cHist} type="monotone" dataKey="value" name="Core CPI" stroke={CPI_SERIES.core} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                        <Line data={pHist} type="monotone" dataKey="value" name="Core PCE" stroke={CPI_SERIES.pce} strokeWidth={2} strokeDasharray="5 3" dot={false} activeDot={{ r: 4 }} />
                       </LineChart>
                     </ResponsiveContainer>
                   ) : (
