@@ -142,7 +142,7 @@ const ASSETS = [
       {t:"TLT",  name:"iShares 20+ Year Treasury", type:"ETF", note:"Max duration. ~16% price sensitivity per 1% rate move."},
       {t:"IEF",  name:"iShares 7-10 Year Treasury",type:"ETF", note:"Lower duration alternative to TLT. Use if uncertain about crash depth or speed of recovery. 100bps cut ≈ 7-8% NAV appreciation vs TLT's 15-18%. Less reward, less risk."},
       {t:"ZROZ", name:"PIMCO 25+ Zero Coupon",     type:"ETF", note:"Maximum duration. High conviction rate cut only."},
-      {t:"BIL",  name:"SPDR 1-3 Month T-Bill",     type:"ETF", note:"Essentially cash. ~4.2% yield."},
+      {t:"BIL",  name:"SPDR 1-3 Month T-Bill",     type:"ETF", note:"Essentially cash. Yield tracks the T-bill curve — see the Income tab for the live rate."},
     ],
   },
   {
@@ -298,7 +298,7 @@ function getCrashSignalRead(liveInd, activeRegime) {
 // toggles — allocations = regime, stages = where we are in the cycle.
 const POSTURE_ALLOCATIONS = {
   baseline: {
-    cash:            { range: "55–65%", status: "HOLD",       note: "Core liquidity. Floor: never below 25%. Current optimal hold: USFR (WisdomTree Floating Rate Treasury ETF) for bulk — yield resets weekly, tracks Fed funds rate, currently ~5.3% annualized. SGOV for trading-ready portion — marginally lower yield but identical liquidity. IBKR cash sweep (~4.83%) for active trading float — automatic, zero friction. UAE bank account for AED living expenses only. Do not hold investment capital in bank accounts earning 2-3%." },
+    cash:            { range: "55–65%", status: "HOLD",       note: "Core liquidity. Floor: never below 25%. Current optimal hold: USFR (WisdomTree Floating Rate Treasury ETF) for bulk — yield resets weekly, tracks T-bill/Fed funds, currently {{CASH}} annualized. SGOV for trading-ready portion — marginally lower yield but identical liquidity. IBKR cash sweep for active trading float (tracks Fed funds less a spread) — automatic, zero friction. UAE bank account for AED living expenses only. Do not hold investment capital in bank accounts earning 2-3%." },
     insurance:       { range: "0–3%",   status: "PREPARE",    note: "Insurance is cheap now (VIX <20). Begin sizing positions. Don't activate yet." },
     income:          { range: "8–12%",  status: "HOLD",       note: "Regime-agnostic yield plays. Pipelines, utilities, dividend aristocrats." },
     longTermHolds:   { range: "15–20%", status: "HOLD",       note: "AI infrastructure hardware. Quality compounders. Hold through volatility." },
@@ -306,7 +306,7 @@ const POSTURE_ALLOCATIONS = {
     categoryNote:    "AI infrastructure hardware (semiconductors, compute) and highest-quality compounders with pricing power.",
   },
   stag: {
-    cash:            { range: "50–60%", status: "HOLD",       note: "Preserve optionality. Real yield eroding in real terms but cash dominates over equity drawdowns. Hold USFR — floating rate means yield stays elevated as long as rates hold. Warsh holding at 4.2% CPI means USFR continues earning ~5.3%. Do not rotate out of USFR until Fed pivot is confirmed. Bank AED expenses only." },
+    cash:            { range: "50–60%", status: "HOLD",       note: "Preserve optionality. Real yield eroding in real terms but cash dominates over equity drawdowns. Hold USFR — floating rate means yield stays elevated as long as rates hold. With the Fed on hold, USFR continues earning {{CASH}}. Do not rotate out of USFR until Fed pivot is confirmed. Bank AED expenses only." },
     insurance:       { range: "8–15%",  status: "ACTIVATE",   note: "Gold miners, GLD, put spreads. TLT is a trap in stagflation — avoid bonds here." },
     income:          { range: "12–18%", status: "ACCUMULATE", note: "Pipelines and utilities with inflation pass-through contracts. Real asset income only." },
     longTermHolds:   { range: "12–18%", status: "HOLD",       note: "Hardware only. Avoid high-multiple software — multiples compress with sticky inflation." },
@@ -454,9 +454,9 @@ const INCOME_PLAYS = [
     globalNote:"Best for all your family members as safe USD yield. Fully liquid. No withholding tax complexity.",
     risks:"Yield falls when Fed cuts. No capital appreciation. Inflation erodes real returns over time.",
     tickers:[
-      {t:"BIL",  name:"SPDR 1-3 Month T-Bill ETF",          yield:"4.2%", note:"Safest USD yield. Essentially cash with income."},
-      {t:"SGOV", name:"iShares 0-3 Month T-Bill",           yield:"4.3%", note:"Minimal duration risk."},
-      {t:"USFR", name:"WisdomTree Floating Rate Treasury",  yield:"4.4%", note:"Adjusts with Fed. Rate rise protection."},
+      {t:"BIL",  name:"SPDR 1-3 Month T-Bill ETF",          rateLinked:true, note:"Safest USD yield. Essentially cash with income."},
+      {t:"SGOV", name:"iShares 0-3 Month T-Bill",           rateLinked:true, note:"Minimal duration risk."},
+      {t:"USFR", name:"WisdomTree Floating Rate Treasury",  rateLinked:true, note:"Adjusts with Fed. Rate rise protection."},
     ],
   },
 ];
@@ -714,6 +714,27 @@ const REGIMES = [
 // CPI tracker series colours — ONE definition shared by the headline tiles, the chart lines
 // and the legend, so a tile can never drift out of sync with the line it labels.
 const CPI_SERIES = { headline: "#ef4444", core: "#f97316", pce: "#8b5cf6" };
+
+// ─── LIVE CASH YIELD ──────────────────────────────────────────────────────────
+// Single source of truth for "what does cash earn right now". Short-Treasury vehicles
+// (USFR / SGOV / BIL) and the CPI chart's reference line all resolve through this, so a
+// rate move updates every mention at once instead of leaving hardcoded figures behind —
+// the previous hardcoded set had drifted ~1.7pp and disagreed with each other (5.3% in two
+// posture notes, 4.4% in the ETF list, while Fed funds was 3.63%).
+// USFR holds floating-rate Treasuries that reset off T-bill auctions, so the 6M bill is the
+// closest keyless proxy; Fed funds is the fallback. Returns null when neither is available —
+// callers must then omit the figure rather than print a stale one.
+function liveCashYield(liveInd) {
+  if (liveInd?.tbill6m != null) return { value: liveInd.tbill6m, src: "6M T-bill", asOf: liveInd?.asOf?.tbill6m ?? null };
+  if (liveInd?.currentFedFunds != null) return { value: liveInd.currentFedFunds, src: "Fed funds", asOf: liveInd?.asOf?.currentFedFunds ?? null };
+  return null;
+}
+// Substitute {{CASH}} in authored prose with the live rate. With no live rate the sentence
+// degrades to a rate-free phrasing instead of emitting a stale number.
+function fillLiveRates(text, cy) {
+  if (typeof text !== "string") return text;
+  return text.replace(/\{\{CASH\}\}/g, cy ? `~${cy.value.toFixed(2)}% (live, ${cy.src})` : "the prevailing T-bill rate");
+}
 
 // ─── ANNOUNCED PRINTS (published, but not yet in FRED) ────────────────────────
 // BEA/BLS release ahead of FRED's ingest, so on release day the live series still shows the
@@ -3086,7 +3107,9 @@ export default function App() {
                           {dollarRange(a.range) && (
                             <div style={{ color: C.mid, fontSize: 13, fontWeight: 800, marginBottom: 6, whiteSpace: "nowrap" }}>{dollarRange(a.range)}</div>
                           )}
-                          <div style={{ color: C.mid, fontSize: 12, lineHeight: 1.55 }}>{a.note}</div>
+                          {/* Rate figures in authored prose resolve through the live cash yield
+                              ({{CASH}}), so they can't go stale independently of the feed. */}
+                          <div style={{ color: C.mid, fontSize: 12, lineHeight: 1.55 }}>{fillLiveRates(a.note, liveCashYield(liveInd))}</div>
                         </Card>
                       );
                     })}
@@ -3432,7 +3455,21 @@ export default function App() {
                         <div key={tk.t} style={{ display: "flex", gap: 12, padding: "10px 0", borderBottom: i < activeIncome.tickers.length - 1 ? "1px solid " + C.bdr : "none", alignItems: "flex-start" }}>
                           <div style={{ flexShrink: 0, width: 70 }}>
                             <span title={tk.t} style={{ background: activeIncome.bg, color: activeIncome.color, border: "1.5px solid " + activeIncome.color + "40", borderRadius: 6, padding: "3px 5px", fontSize: tk.t.length > 8 ? 9 : tk.t.length > 5 ? 11 : 13, fontWeight: 800, display: "block", textAlign: "center", whiteSpace: "nowrap", maxWidth: 72, overflow: "hidden", textOverflow: "ellipsis" }}>{tk.t}</span>
-                            {tk.yield && <span style={{ background: C.gBg, color: C.green, border: "1px solid " + C.gBdr, borderRadius: 4, padding: "1px 5px", fontSize: 11, fontWeight: 700, display: "block", textAlign: "center", marginTop: 3 }}>{tk.yield}</span>}
+                            {/* Rate-linked cash vehicles (BIL/SGOV/USFR) resolve their yield from
+                                the live short rate rather than a hardcoded string — they all track
+                                the same T-bill curve, so one live number keeps them consistent.
+                                Equity/MLP yields below stay authored: they aren't rate-driven. */}
+                            {(() => {
+                              const cy = tk.rateLinked ? liveCashYield(liveInd) : null;
+                              const txt = tk.rateLinked ? (cy ? `~${cy.value.toFixed(2)}%` : "—") : tk.yield;
+                              if (!txt) return null;
+                              return (
+                                <span title={tk.rateLinked ? (cy ? `live ${cy.src}${cy.asOf ? " · " + cy.asOf : ""} — tracks the T-bill curve` : "no live short rate available") : "authored estimate"}
+                                  style={{ background: C.gBg, color: C.green, border: "1px solid " + C.gBdr, borderRadius: 4, padding: "1px 5px", fontSize: 11, fontWeight: 700, display: "block", textAlign: "center", marginTop: 3 }}>
+                                  {txt}{tk.rateLinked && cy ? "*" : ""}
+                                </span>
+                              );
+                            })()}
                           </div>
                           <div style={{ flex: 1 }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
@@ -3450,7 +3487,7 @@ export default function App() {
                                 )}
                               </div>
                             </div>
-                            <div style={{ color: C.muted, fontSize: 14, marginTop: 3, lineHeight: 1.6 }}>{tk.note}</div>
+                            <div style={{ color: C.muted, fontSize: 14, marginTop: 3, lineHeight: 1.6 }}>{fillLiveRates(tk.note, liveCashYield(liveInd))}</div>
                           </div>
                         </div>
                       ))}
@@ -3805,12 +3842,8 @@ export default function App() {
                 return { d, dir: d < 0 ? "cooling" : d > 0 ? "rising" : "flat", from: prev.value, fromDate: prev.date, toDate: last.date };
               };
               const pceAnn = announced("pceCore", liveInd?.asOf?.pceCoreCurrent);
-              // Live floating-cash yield proxy for the chart's reference line (see below).
-              const cashYield = liveInd?.tbill6m != null
-                ? { value: liveInd.tbill6m, src: "6M T-bill" }
-                : liveInd?.currentFedFunds != null
-                  ? { value: liveInd.currentFedFunds, src: "Fed funds" }
-                  : null;
+              // Same single source the posture notes and cash-ETF rows resolve through.
+              const cashYield = liveCashYield(liveInd);
               const trendChip = t => t && (
                 <span style={{ fontSize: 10.5, fontWeight: 800, color: t.dir === "cooling" ? C.green : t.dir === "rising" ? C.red : C.muted }}>
                   {t.dir === "cooling" ? "▼" : t.dir === "rising" ? "▲" : "■"} {t.d >= 0 ? "+" : "−"}{Math.abs(t.d)}pp vs prior
