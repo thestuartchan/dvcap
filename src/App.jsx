@@ -2787,8 +2787,19 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>Global · US rates (same on every region)</span>
             </div>
             <MetricGrid min={180}>
+              {/* P3.2 — oil carries an explicit TICK TIMESTAMP. Futures run the globex week
+                  (Sun 18:00 → Fri 17:00 ET), so freshness is now scored against that, not NYSE
+                  hours: a Friday settle served after Sunday's reopen reads STALE rather than
+                  passing as a live tick. WTI and Brent both shown — the spread is itself a
+                  read on waterborne supply stress. */}
               <MacroCell field={data.macro.wti}   value={data.macro.wti?.value != null ? "$" + data.macro.wti.value : "—"}     delta={data.macro.wti?.delta} deltaSuffix="" />
               <MacroCell field={data.macro.brent} value={data.macro.brent?.value != null ? "$" + data.macro.brent.value : "—"} delta={data.macro.brent?.delta} deltaSuffix="" />
+              {(data.macro.wti?.value != null && data.macro.brent?.value != null) && (
+                <MetricCard label="Brent − WTI"
+                  title="waterborne vs landlocked crude — widens on shipping/supply stress"
+                  value={"$" + (data.macro.brent.value - data.macro.wti.value).toFixed(2)}
+                  sub={<span style={{ fontSize: 10.5, color: C.lbl, fontWeight: 700 }}>spread</span>} />
+              )}
               <MacroCell field={data.macro.us2y}  value={data.macro.us2y?.value != null ? data.macro.us2y.value + "%" : "—"}   delta={data.macro.us2y?.deltaBps} deltaSuffix="bps" />
               <MacroCell field={data.macro.us10y} value={data.macro.us10y?.value != null ? data.macro.us10y.value + "%" : "—"} delta={data.macro.us10y?.deltaBps} deltaSuffix="bps" />
               <MacroCell field={data.macro.us30y} value={data.macro.us30y?.value != null ? data.macro.us30y.value + "%" : "—"} delta={data.macro.us30y?.deltaBps} deltaSuffix="bps" />
