@@ -3831,6 +3831,23 @@ export default function App() {
               const cHist = liveInd && Array.isArray(liveInd.cpiCoreHistory)     ? liveInd.cpiCoreHistory     : [];
               const pHist = liveInd && Array.isArray(liveInd.pceCoreHistory)     ? liveInd.pceCoreHistory     : [];
               const hasChartData = [hHist, cHist, pHist].some(a => a.length >= 2);
+              // Merge the three monthly series onto ONE date axis, union of dates, sorted.
+              // They are published on separate schedules and do NOT always cover the same
+              // months (PCE carried 2025-10-01 while the CPI series did not). Giving each
+              // <Line> its own `data` prop makes Recharts build categories from the first
+              // series and APPEND any unmatched date to the end of the axis — which is what
+              // rendered a stray Oct-2025 point after Mar-2026. One dataset makes that
+              // structurally impossible: every row is a date, every series a column.
+              const chartData = (() => {
+                const byDate = new Map();
+                const put = (rows, key) => (rows || []).forEach(r => {
+                  if (!r?.date || r.value == null || !Number.isFinite(+r.value)) return;
+                  if (!byDate.has(r.date)) byDate.set(r.date, { date: r.date });
+                  byDate.get(r.date)[key] = +Number(r.value).toFixed(2);
+                });
+                put(hHist, "headline"); put(cHist, "core"); put(pHist, "pce");
+                return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+              })();
               const realYield = (liveInd && liveInd.currentFedFunds && headline != null)
                 ? (liveInd.currentFedFunds - headline)
                 : null;
@@ -3907,40 +3924,66 @@ export default function App() {
                   )}
                   {hasChartData ? (
                     <ResponsiveContainer width="100%" height={160}>
-                      <LineChart margin={{ top: 4, right: 52, bottom: 4, left: 0 }}>
+                      <LineChart data={chartData} margin={{ top: 8, right: 46, bottom: 4, left: 0 }}>
                         <XAxis
                           dataKey="date"
                           type="category"
-                          allowDuplicatedCategory={false}
                           tick={{ fontSize: 10 }}
                           tickFormatter={(d) => {
-                            const date = new Date(d);
-                            return date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+                            // Format from the STRING parts. new Date("2024-06-01") is parsed as
+                            // UTC midnight, so toLocaleDateString in a negative-offset timezone
+                            // rolls it back a day and mislabels the month (Jun 24 → May 24).
+                            const [y, m] = String(d).split("-");
+                            const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                            return `${MON[+m - 1] ?? "?"} ${String(y).slice(2)}`;
                           }}
                           interval={3}
                         />
                         <YAxis tick={{ fontSize: 10 }} width={32} tickFormatter={(v) => `${v}%`} domain={["auto", "auto"]} />
-                        <Tooltip formatter={(value, name) => [`${value.toFixed(2)}%`, name]} labelFormatter={(label) => label} />
+                        <Tooltip
+                          formatter={(value, name) => [`${Number(value).toFixed(2)}%`, name]}
+                          labelFormatter={(d) => {
+                            const [y, m] = String(d).split("-");
+                            const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                            return `${MON[+m - 1] ?? "?"} ${y}`;
+                          }}
+                        />
                         <Legend iconType="line" iconSize={10} wrapperStyle={{ fontSize: "11px" }} />
-                        {/* Fed 2% target line — extendDomain so it stays visible when CPI sits above it */}
-                        <ReferenceLine y={2} stroke="#22c55e" strokeDasharray="4 3" ifOverflow="extendDomain" label={{ value: "2% target", position: "right", fontSize: 9, fill: "#22c55e" }} />
-                        {/* Cash-yield reference — DERIVED LIVE, not hardcoded. USFR holds floating-rate
-                            Treasuries that reset off T-bill auctions, so the 6M bill is the closest
-                            keyless proxy (Fed funds is the fallback). The old hardcoded 5.3% was a
-                            2023-24 level: it sat ~1.7pp above reality and contradicted the live
-                            "real yield on cash" figure shown directly above the chart. When no live
-                            rate is available the line is omitted rather than drawn at a stale guess. */}
+                        {/* Reference-line labels are kept SHORT and pinned inside the plot area:
+                            position:"right" renders outside the axis and gets clipped by the
+                            container (the long "cash ~3.82% (6M T-bill)" string was cut off).
+                            The full definition of each line lives in the caption below the chart. */}
+                        <ReferenceLine y={2} stroke="#22c55e" strokeDasharray="4 3" ifOverflow="extendDomain"
+                          label={{ value: "2% target", position: "insideRight", fontSize: 9, fill: "#22c55e" }} />
                         {cashYield != null && (
                           <ReferenceLine y={cashYield.value} stroke="#3b82f6" strokeDasharray="4 3" ifOverflow="extendDomain"
-                            label={{ value: `cash ~${cashYield.value.toFixed(2)}% (${cashYield.src})`, position: "right", fontSize: 9, fill: "#3b82f6" }} />
+                            label={{ value: `cash ${cashYield.value.toFixed(2)}%`, position: "insideRight", fontSize: 9, fill: "#3b82f6" }} />
                         )}
-                        <Line data={hHist} type="monotone" dataKey="value" name="Headline CPI" stroke={CPI_SERIES.headline} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                        <Line data={cHist} type="monotone" dataKey="value" name="Core CPI" stroke={CPI_SERIES.core} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                        <Line data={pHist} type="monotone" dataKey="value" name="Core PCE" stroke={CPI_SERIES.pce} strokeWidth={2} strokeDasharray="5 3" dot={false} activeDot={{ r: 4 }} />
+                        {/* connectNulls: a series missing a single month is a publication gap
+                            (BLS/BEA schedules), not a break in the underlying series. */}
+                        <Line type="monotone" dataKey="headline" name="Headline CPI" stroke={CPI_SERIES.headline} strokeWidth={2} dot={false} activeDot={{ r: 4 }} connectNulls />
+                        <Line type="monotone" dataKey="core" name="Core CPI" stroke={CPI_SERIES.core} strokeWidth={2} dot={false} activeDot={{ r: 4 }} connectNulls />
+                        <Line type="monotone" dataKey="pce" name="Core PCE" stroke={CPI_SERIES.pce} strokeWidth={2} strokeDasharray="5 3" dot={false} activeDot={{ r: 4 }} connectNulls />
                       </LineChart>
                     </ResponsiveContainer>
                   ) : (
                     <div style={{ color: C.muted, fontSize: 13, fontStyle: "italic", marginTop: 8 }}>Awaiting data</div>
+                  )}
+                  {/* Caption defines the reference lines in full — the in-chart labels are kept
+                      short so they cannot be clipped, and "cash" needs saying properly: it is a
+                      RATE, not a specific fund. USFR/SGOV/BIL all track this curve. */}
+                  {hasChartData && (
+                    <div style={{ marginTop: 6, fontSize: 11, color: C.lbl, lineHeight: 1.6 }}>
+                      <span style={{ color: "#22c55e", fontWeight: 800 }}>— 2% target</span>
+                      <span> Fed's stated inflation goal. </span>
+                      {cashYield && (
+                        <>
+                          <span style={{ color: "#3b82f6", fontWeight: 800 }}>— cash {cashYield.value.toFixed(2)}%</span>
+                          <span> what cash earns today: the <b>{cashYield.src}</b> rate (live{cashYield.asOf ? `, as of ${cashYield.asOf}` : ""}). Not a specific fund — USFR, SGOV and BIL all track this curve, so the line sits where any of them yields. Where a CPI line is <i>above</i> it, cash is losing to inflation.</span>
+                        </>
+                      )}
+                      <span> · {chartData.length} monthly observations, {chartData[0]?.date} → {chartData[chartData.length - 1]?.date}.</span>
+                    </div>
                   )}
                 </Card>
               );
