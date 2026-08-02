@@ -7,6 +7,7 @@ import {
 import { kofiaStale, parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, KOFIA_FLOWS, toWonTrillions, koreaFlowRead, koreaFlowImplication, withCommas } from "../lib/kofia.js";
 import { freshnessText, humanizeAge } from "../lib/sessions.js";
 import { pendingReconciliations, reconStats } from "../lib/recon.js";
+import { deriveRegimeProbabilities, CONTESTED_GAP } from "../lib/regimeProb.js";
 import { laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead } from "../lib/labor.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
@@ -1025,6 +1026,15 @@ const FED_LANGUAGE_STATES = {
   },
 };
 
+// Section A — the consensus inputs are a VINTAGE, not a live feed. The refresh is deliberately
+// deferred (Aug 7 jobs, Aug 28 BLS benchmark), but the engine keeps producing live-looking
+// output in the meantime, so the vintage is stamped on the regime block itself rather than
+// only in the table below it.
+const CONSENSUS_VINTAGE = {
+  asOf: "2026-06-30", label: "as of Jun 2026", staleNote: "2 months stale",
+  deferredUntil: "Aug 7 (July Employment Situation) and Aug 28 (BLS benchmark revision)",
+};
+
 // ─── WALL STREET RECESSION PROBABILITY ────────────────────────────────────────
 // Manually-updated source table. Last refreshed June 29, 2026 (post Iran peace
 // deal + June FOMC). `color` drives the probability cell colour; `year` and
@@ -1083,43 +1093,8 @@ const computeWeightedRecessionProb = (sources) => {
 };
 
 // Map weighted recession prob (+ live CPI + Kalshi 2027) to regime probabilities.
-const deriveRegimeProbabilities = (weightedAvg, cpi, kalshi2027) => {
-  if (weightedAvg === null) return null;
-
-  let base;
-  if (weightedAvg < 15)      base = { reflationary: 60, stagflation: 25, deflationary: 10, inflationary: 5 };
-  else if (weightedAvg < 30) base = { reflationary: 40, stagflation: 35, deflationary: 20, inflationary: 5 };
-  else if (weightedAvg < 45) base = { reflationary: 25, stagflation: 45, deflationary: 25, inflationary: 5 };
-  else                       base = { reflationary: 15, stagflation: 40, deflationary: 35, inflationary: 10 };
-
-  // CPI modifier — shift points from deflationary to stagflation when CPI > 3.5%
-  if (cpi && cpi > 3.5) {
-    const inflationShift = Math.min(10, Math.round((cpi - 3.5) * 4));
-    base.deflationary = Math.max(5, base.deflationary - inflationShift);
-    base.stagflation = base.stagflation + inflationShift;
-  }
-
-  // 2027 delayed-reckoning modifier — threshold raised to <30 (from <25) so it
-  // engages while the realized weighted average sits in the mid-20s.
-  if (kalshi2027 && kalshi2027 > 35 && weightedAvg < 30) {
-    const delayedShift = Math.min(8, Math.round((kalshi2027 - 35) / 3));
-    base.reflationary = Math.max(10, base.reflationary - delayedShift);
-    base.stagflation = base.stagflation + delayedShift;
-  }
-
-  // Normalize to exactly 100%
-  const total = base.reflationary + base.stagflation + base.deflationary + base.inflationary;
-  const scale = 100 / total;
-  return {
-    reflationary: Math.round(base.reflationary * scale),
-    stagflation: Math.round(base.stagflation * scale),
-    deflationary: Math.round(base.deflationary * scale),
-    inflationary: Math.round(base.inflationary * scale),
-    weightedAvg: Math.round(weightedAvg),
-    kalshi2027,
-    derivedFrom: `Weighted recession prob: ${Math.round(weightedAvg)}% | CPI: ${cpi?.toFixed(1) ?? "N/A"}% | Kalshi 2027: ${kalshi2027 ?? "N/A"}%`,
-  };
-};
+// (regime probability mapping + contested guard now live in lib/regimeProb.js — see there
+//  for why the reflationary share must be EARNED rather than granted.)
 
 // ─── DATA SOURCE CONFIG ───────────────────────────────────────────────────────
 //
@@ -3056,7 +3031,16 @@ export default function App() {
   const fallbackRegimes = { stagflation: 48, reflationary: 17, deflationary: 30, inflationary: 5 };
   const { weightedAvg: recWeightedAvg, kalshi2027: recKalshi2027 } = computeWeightedRecessionProb(RECESSION_SOURCES);
   const cpiForRegime = liveInd?.cpiHeadlineCurrent ?? liveInd?.cpi ?? null;
-  const derivedRegimes = deriveRegimeProbabilities(recWeightedAvg, cpiForRegime, recKalshi2027);
+  // Section A — the growth/inflation context that decides whether a falling recession
+  // probability is a GROWTH story or a STAGFLATION story. Both legs are live.
+  const coreHist = liveInd?.pceCoreHistory || [];
+  const regimeCtx = {
+    gdpGrowth: (announced("gdpGrowth", liveInd?.asOf?.gdpGrowth)?.value) ?? liveInd?.gdpGrowth ?? null,
+    gdpGrowthPrev: (announced("gdpGrowth", liveInd?.asOf?.gdpGrowth)?.prev) ?? liveInd?.gdpGrowthPrev ?? null,
+    coreInflation: (announced("pceCore", liveInd?.asOf?.pceCoreCurrent)?.value) ?? liveInd?.pceCoreCurrent ?? null,
+    coreCooling: coreHist.length >= 2 ? coreHist[coreHist.length - 1].value < coreHist[coreHist.length - 2].value : null,
+  };
+  const derivedRegimes = deriveRegimeProbabilities(recWeightedAvg, cpiForRegime, recKalshi2027, regimeCtx);
   const regimeProbFor = (id) => (derivedRegimes || fallbackRegimes)[
     { stag: "stagflation", ref: "reflationary", def: "deflationary", inf: "inflationary" }[id]
   ];
@@ -3319,22 +3303,38 @@ export default function App() {
                            "🔄 Watch for credit spread re-widening as the signal to rotate back defensive."] },
               };
               const cfg = CONFIGS[sigLabel];
+              // ── Section A — contested guard ──
+              // A 1pp separation between the top two states is a tie. A tie cannot support a
+              // capital-deployment instruction, so the directional recommendation is
+              // SUPPRESSED entirely — no "Risk-On", no "Deploy", no defensive equivalent.
+              const contested = !!derivedRegimes?.contested;
+              const gapPP = derivedRegimes?.topTwoGap;
+              const topTwoLabels = (derivedRegimes?.topTwo || [])
+                .map(id => REGIMES.find(r => r.id === id)?.label).filter(Boolean);
               return (
                 <>
-                  <div style={{ background: `linear-gradient(135deg, ${cfg.g1}, ${cfg.g2})`, borderRadius: 14, padding: "18px 22px", color: "#fff", boxShadow: `0 4px 24px ${cfg.shadow}`, transition: "background 0.4s" }}>
+                  <div style={{ background: contested ? "linear-gradient(135deg, #4B5068, #2F3444)" : `linear-gradient(135deg, ${cfg.g1}, ${cfg.g2})`, borderRadius: 14, padding: "18px 22px", color: "#fff", boxShadow: `0 4px 24px ${contested ? "rgba(75,80,104,0.35)" : cfg.shadow}`, transition: "background 0.4s" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
                       <div>
-                        <div style={{ fontSize: 11, letterSpacing: 3, textTransform: "uppercase", opacity: 0.7, fontWeight: 700, marginBottom: 5 }}>Recommended Action · Jun 2026</div>
-                        <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1.2 }}>{cfg.action}</div>
+                        <div style={{ fontSize: 11, letterSpacing: 3, textTransform: "uppercase", opacity: 0.7, fontWeight: 700, marginBottom: 5 }}>
+                          {contested ? "No directional signal" : "Recommended Action"} · consensus inputs {CONSENSUS_VINTAGE.label}
+                        </div>
+                        <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1.2 }}>
+                          {contested ? `REGIME CONTESTED — no clear signal. Top two states within ${gapPP}pp.` : cfg.action}
+                        </div>
                       </div>
                       <div style={{ background: "rgba(255,255,255,0.18)", borderRadius: 10, padding: "8px 16px", textAlign: "center", backdropFilter: "blur(4px)", minWidth: 90 }}>
                         <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", opacity: 0.8, marginBottom: 2 }}>Signal</div>
-                        <div style={{ fontSize: 22, fontWeight: 900, color: "#fff", lineHeight: 1 }}>{sigLabel}</div>
-                        <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>{activeRegime.label}</div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: "#fff", lineHeight: 1 }}>{contested ? "—" : sigLabel}</div>
+                        <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>{contested ? topTwoLabels.join(" / ") : activeRegime.label}</div>
                       </div>
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                      {cfg.bullets.map((t, i) => (
+                      {(contested
+                        ? [`⚖️ ${topTwoLabels.join(" and ")} are separated by ${gapPP}pp — that is a tie, not a winner.`,
+                           "🚫 Directional recommendation suppressed. A 1-in-2 call cannot support a deployment instruction.",
+                           `🗓️ Consensus inputs are ${CONSENSUS_VINTAGE.label} (${CONSENSUS_VINTAGE.staleNote}); refresh is deferred to after Aug 7 and Aug 28.`]
+                        : cfg.bullets).map((t, i) => (
                         <div key={i} style={{ flex: "1 1 200px" }}>
                           <span style={{ color: "#fff", fontSize: 14, lineHeight: 1.7, opacity: 0.92 }}>{t}</span>
                         </div>
@@ -4589,14 +4589,39 @@ export default function App() {
             </Card>
 
             <Card>
-              <SLabel>Regime Probability — Derived from Recession Consensus + Live CPI</SLabel>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                <SLabel>Regime Probability — Derived from Recession Consensus + Live CPI</SLabel>
+                {/* Section A — vintage stamped ON the regime block, because the engine keeps
+                    producing live-looking output from inputs that are months old. */}
+                <span style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 800, color: C.amber, background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 5, padding: "2px 7px" }}>
+                  Consensus inputs {CONSENSUS_VINTAGE.label} — {CONSENSUS_VINTAGE.staleNote}
+                </span>
+              </div>
+              {derivedRegimes?.contested && (
+                <div style={{ marginBottom: 10, padding: "8px 11px", background: C.bg, border: "1.5px solid " + C.bdrMd, borderRadius: 8, fontSize: 12.5, fontWeight: 700, color: C.mid, lineHeight: 1.55 }}>
+                  ⚖️ <b>CONTESTED</b> — top two states within {derivedRegimes.topTwoGap}pp. Neither is highlighted as a winner and the directional recommendation is suppressed.
+                </div>
+              )}
+              {derivedRegimes?.mapping?.known && !derivedRegimes.mapping.earned && (
+                <div style={{ marginBottom: 10, padding: "8px 11px", background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 8, fontSize: 11.5, color: C.mid, lineHeight: 1.55 }}>
+                  <b style={{ color: C.blue }}>Mapping: </b>{derivedRegimes.mapping.reason} — {derivedRegimes.mapping.redirected}pp moved from growth to stagflation.
+                </div>
+              )}
               <div className="mwd-regime-grid" style={{ marginBottom: 14 }}>
-                {REGIMES.map(r => (
-                  <button key={r.id} onClick={() => { setActiveRegime(r); keepPinned(); }} style={{ background: activeRegime.id === r.id ? r.bg : C.surf, border: "1.5px solid " + (activeRegime.id === r.id ? r.color : C.bdr), borderTop: "4px solid " + r.color, borderRadius: 10, padding: "12px 14px", cursor: "pointer", textAlign: "left", width: "100%" }}>
+                {REGIMES.map(r => {
+                  // When contested, the top TWO share the highlight — no single winner.
+                  const inTopTwo = (derivedRegimes?.topTwo || []).includes(r.id);
+                  const highlighted = derivedRegimes?.contested ? inTopTwo : activeRegime.id === r.id;
+                  return (
+                  <button key={r.id} onClick={() => { setActiveRegime(r); keepPinned(); }} style={{ background: highlighted ? r.bg : C.surf, border: "1.5px solid " + (highlighted ? r.color : C.bdr), borderTop: "4px solid " + r.color, borderRadius: 10, padding: "12px 14px", cursor: "pointer", textAlign: "left", width: "100%" }}>
                     <div style={{ fontSize: 22, fontWeight: 900, color: r.color }}>{regimeProbFor(r.id)}%</div>
                     <div style={{ color: r.color, fontWeight: 700, fontSize: 13, marginTop: 3, lineHeight: 1.3 }}>{r.label}</div>
+                    {derivedRegimes?.contested && inTopTwo && (
+                      <div style={{ fontSize: 9.5, fontWeight: 800, color: C.muted, marginTop: 2 }}>TIED</div>
+                    )}
                   </button>
-                ))}
+                  );
+                })}
               </div>
               <div style={{ display: "flex", height: 12, borderRadius: 6, overflow: "hidden", border: "1px solid " + C.bdr }}>
                 {REGIMES.map(r => (
