@@ -4,7 +4,7 @@ import {
   PolarAngleAxis, Radar, PieChart, Pie, Cell, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, LabelList,
 } from "recharts";
-import { parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, KOFIA_FLOWS, toWonTrillions, koreaFlowRead, koreaFlowImplication, withCommas } from "../lib/kofia.js";
+import { kofiaStale, parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, KOFIA_FLOWS, toWonTrillions, koreaFlowRead, koreaFlowImplication, withCommas } from "../lib/kofia.js";
 import { freshnessText, humanizeAge } from "../lib/sessions.js";
 import { laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead } from "../lib/labor.js";
 
@@ -735,6 +735,86 @@ function liveCashYield(liveInd) {
 function fillLiveRates(text, cy) {
   if (typeof text !== "string") return text;
   return text.replace(/\{\{CASH\}\}/g, cy ? `~${cy.value.toFixed(2)}% (live, ${cy.src})` : "the prevailing T-bill rate");
+}
+
+// ─── FED PATH — market-implied (P6.2) ─────────────────────────────────────────
+// The Fed Language card is the QUALITATIVE read; this is the quantitative one beside it.
+// There is no free feed for 30-day fed funds futures (ZQ): IBKR has no stateless auth and its
+// futures data is ~20-min delayed, so this is a daily hand entry — same pattern as KOFIA.
+// ZQ is quoted as 100 − the implied average fed funds rate for the contract month.
+function FedPathCard({ effr }) {
+  const [data, setData] = useState(null);
+  const [price, setPrice] = useState("");
+  const [contract, setContract] = useState("Dec-2026");
+  const [msg, setMsg] = useState(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { fetch("/api/manual-entry").then(r => r.json()).then(j => setData(j.fedPath || null)).catch(() => {}); }, []);
+
+  const px = Number(String(price).replace(/,/g, ""));
+  const preview = Number.isFinite(px) && px > 90 && px < 101 ? +(100 - px).toFixed(4) : null;
+  const previewMoves = (preview != null && effr != null) ? +((preview - effr) / 0.25).toFixed(2) : null;
+
+  async function save() {
+    setSaving(true); setMsg(null);
+    try {
+      const r = await fetch("/api/manual-entry", {
+        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+        body: JSON.stringify({ fedPath: { price: px, contract, effr: effr ?? null, date: new Date().toISOString().slice(0, 10) } }),
+      });
+      const j = await r.json();
+      if (r.ok) { setData(d => ({ ...(d || {}), latest: j.fedPath })); setPrice(""); setMsg({ ok: true, text: `Saved — implied ${j.fedPath?.impliedRate}%` }); }
+      else setMsg({ ok: false, text: j.error || "save failed" });
+    } catch (e) { setMsg({ ok: false, text: String(e.message) }); }
+    setSaving(false);
+  }
+
+  const L = data?.latest;
+  // The divergence between this and the qualitative Fed read IS the story when they disagree.
+  const diverges = L?.movesPriced != null && Math.abs(L.movesPriced) >= 1;
+  return (
+    <Card style={{ borderLeft: "4px solid " + (diverges ? C.amber : C.bdrMd) }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <SLabel>📈 Market-implied Fed path</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>ZQ 30-day fed funds futures · manual entry (no free feed)</span>
+      </div>
+      {L ? (
+        <>
+          <div style={{ fontSize: 20, fontWeight: 900, color: C.text }}>
+            {L.impliedRate}% <span style={{ fontSize: 12, fontWeight: 700, color: C.muted }}>implied · {L.contract || "—"}</span>
+          </div>
+          <div style={{ fontSize: 12.5, color: diverges ? C.amber : C.mid, fontWeight: diverges ? 800 : 600, marginTop: 2 }}>
+            {L.movesPriced == null ? "no EFFR to compare against"
+              : `${Math.abs(L.movesPriced).toFixed(1)} × 25bp ${L.movesPriced >= 0 ? "HIKES" : "CUTS"} priced vs EFFR ${L.effr}%`}
+          </div>
+          <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 2 }}>
+            ZQ {L.price} (100 − price = implied rate) · entered {L.date}
+            {kofiaStale(L.date) ? <span style={{ color: C.amber, fontWeight: 700 }}> · ⚠ stale, re-enter</span> : null}
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: 12.5, color: C.muted }}>No entry yet — add today's ZQ settle below.</div>
+      )}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-end", marginTop: 10 }}>
+        <div>
+          <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>ZQ price</div>
+          <input value={price} onChange={e => setPrice(e.target.value)} placeholder="96.040"
+            style={{ fontSize: 13, padding: "6px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 110 }} />
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>Contract</div>
+          <input value={contract} onChange={e => setContract(e.target.value)} placeholder="Dec-2026"
+            style={{ fontSize: 13, padding: "6px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 110 }} />
+        </div>
+        {preview != null && (
+          <div style={{ fontSize: 12, color: C.mid, fontWeight: 700, paddingBottom: 6 }}>
+            → {preview}%{previewMoves != null ? ` · ${Math.abs(previewMoves).toFixed(1)}×25bp ${previewMoves >= 0 ? "hikes" : "cuts"}` : ""}
+          </div>
+        )}
+        <Btn onClick={save} disabled={saving || preview == null} color={C.blue} bgColor={C.blBg} label={saving ? "⏳ Saving…" : "💾 Save"} />
+      </div>
+      {msg && <div style={{ marginTop: 8, fontSize: 12.5, fontWeight: 700, color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
+    </Card>
+  );
 }
 
 // ─── LABOUR PANEL (P1) ────────────────────────────────────────────────────────
@@ -2749,17 +2829,58 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                   an equity move is the case a single HYG print cannot surface. */}
               {data.hyg && (
                 <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 8 }}>
-                  <div style={{ padding: "8px 11px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6 }}>
-                    <div style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                      HY OAS · official
-                    </div>
-                    <div style={{ fontSize: 16, fontWeight: 900, color: C.text }}>
-                      {data.macro?.oas?.value ?? "—"}
-                      <span style={{ fontSize: 10.5, fontWeight: 700, color: C.amber, marginLeft: 6 }}>
-                        as of {data.macro?.oas?.date ?? "—"} · publishes T+1
-                      </span>
-                    </div>
-                  </div>
+                  {/* P2.1 — the observation date comes from FRED and is rendered adjacent to
+                      the value at the same weight, never in a tooltip and never computed as
+                      today−n. The lag is TWO days and variable (it stretches across weekends
+                      and holidays), so an assumed lag would misdate the print. Past 4 calendar
+                      days we stop showing a number at all rather than style a stale one as
+                      current. P2.2 — trend, not level, is the signal at these tights. */}
+                  {(() => {
+                    const cr = data.regime?.credit;
+                    const obs = cr?.obs;
+                    const chipCol = obs?.chip === "red" ? C.red : obs?.chip === "amber" ? C.amber : C.muted;
+                    return (
+                      <div style={{ padding: "8px 11px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6 }}>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                          HY OAS · official {cr?.level ? `· ${cr.level}` : ""}
+                        </div>
+                        {obs?.awaiting ? (
+                          <div style={{ fontSize: 14, fontWeight: 900, color: C.red }}>
+                            AWAITING PUBLICATION
+                            <span style={{ fontSize: 10.5, fontWeight: 700, color: C.muted, marginLeft: 6 }}>
+                              last obs {obs.obsDate} · {obs.calendarDays}d
+                            </span>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 16, fontWeight: 900, color: C.text }}>
+                            {data.macro?.oas?.value ?? "—"}
+                            <span style={{ fontSize: 13, fontWeight: 900, color: chipCol, marginLeft: 8 }}>
+                              {obs?.label ?? `obs ${data.macro?.oas?.date ?? "—"}`}
+                            </span>
+                          </div>
+                        )}
+                        {cr?.trend && (
+                          <div style={{ fontSize: 11.5, color: C.mid, marginTop: 3 }}>
+                            {["d5", "d20", "d60"].map((k, i) => {
+                              const v = cr.trend[k];
+                              return (
+                                <span key={k}>
+                                  {i ? " · " : ""}
+                                  <span style={{ color: C.lbl }}>{k.slice(1)}d </span>
+                                  {v == null ? <span style={{ color: C.lbl }}>n/a</span>
+                                    : <span style={{ fontWeight: 800, color: v > 0 ? C.red : v < 0 ? C.green : C.muted }}>{v >= 0 ? "+" : ""}{v}bp</span>}
+                                </span>
+                              );
+                            })}
+                            <span style={{ color: C.lbl }}> — at these tights the trend is the signal, not the level</span>
+                          </div>
+                        )}
+                        <div style={{ fontSize: 10, color: C.lbl, marginTop: 3 }}>
+                          3Y rolling window (FRED restricts ICE BofA series). Reference constants: {cr?.historical?.recordTight?.value ?? 2.41} ({cr?.historical?.recordTight?.when ?? "Jun 2007"}) · {cr?.historical?.gfcPeak?.value ?? 21.82} ({cr?.historical?.gfcPeak?.when ?? "Dec 2008"}) — static, not series data.
+                        </div>
+                      </div>
+                    );
+                  })()}
                   <div style={{ padding: "8px 11px", background: data.hyg.divergence?.alert ? C.aBg : C.bg,
                     border: "1px solid " + (data.hyg.divergence?.alert ? C.aBdr : C.bdr), borderRadius: 6 }}>
                     <div style={{ fontSize: 10, fontWeight: 800, color: C.blue, textTransform: "uppercase", letterSpacing: 0.5 }}>
@@ -2774,6 +2895,11 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                         {data.hyg.divergence.alert ? "⚠ " : ""}{data.hyg.divergence.note}
                       </div>
                     )}
+                    {/* P2.4 caveat — the proxy is an ETF, not the spread. */}
+                    <div style={{ fontSize: 10, color: C.lbl, marginTop: 4, lineHeight: 1.5 }}>
+                      HYG is an ETF with its own flow, liquidity and NAV-premium dynamics.
+                      Directionally useful same-day; not a substitute for the published spread.
+                    </div>
                   </div>
                 </div>
               )}
@@ -4103,6 +4229,8 @@ export default function App() {
                 </Card>
               );
             })()}
+
+            <FedPathCard effr={liveInd?.currentFedFunds ?? null} />
 
             {/* CPI Inflation Tracker — Headline/Core CPI + Core PCE YoY, real-yield-on-cash */}
             {(() => {
