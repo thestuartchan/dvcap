@@ -8,7 +8,15 @@ import { kofiaStale, parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KE
 import { freshnessText, humanizeAge } from "../lib/sessions.js";
 import { pendingReconciliations, reconStats } from "../lib/recon.js";
 import { deriveRegimeProbabilities, CONTESTED_GAP } from "../lib/regimeProb.js";
-import { laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead } from "../lib/labor.js";
+import { trend as trendOf } from "../lib/series.js";
+
+// Change over N sessions, in basis points, from a dated FRED series. Returns null rather than
+// approximating when the series does not reach back far enough.
+function trendBps(series, lookbackDays) {
+  const t = trendOf(series, { lookbackDays });
+  return t ? Math.round(t.delta * 100) : null;
+}
+import { laborStress, sahmAnnotation, laborVerdict, laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead } from "../lib/labor.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
 const C = {
@@ -819,6 +827,14 @@ function FedPathCard({ effr }) {
   );
 }
 
+// The 2x2 verdict for a live indicators payload — shared so the Sahm annotation and the
+// labour panel can never disagree about whether the print is AMBER.
+function laborVerdictFor(liveInd) {
+  const u3 = liveInd?.labor?.u3, ep = liveInd?.labor?.empPop;
+  if (!u3?.ok || !ep?.ok) return null;
+  return laborVerdict(u3.delta, ep.delta).verdict;
+}
+
 // ─── LABOUR PANEL (P1) ────────────────────────────────────────────────────────
 // One component, rendered on BOTH the Macro and Indicators tabs. All scoring logic lives in
 // lib/labor.js; this only renders. The headline point: U3 is NOT scored in isolation — the
@@ -843,17 +859,22 @@ function LaborPanel({ labor, compact }) {
   const VC = { GREEN: C.green, AMBER: C.amber, RED: C.red, muted: C.muted, green: C.green, amber: C.amber, red: C.red };
   const vc = VC[sum.verdict.color] || C.muted;
 
-  // Interpretation lines — each computed from its own value/delta, so they update.
-  const lines = [
+  // C.4 — six interpretation bullets is more than the card can carry. The two that earn their
+  // place are the DEMOGRAPHICS CONTROL (prime-age) and the SURVEY DIVERGENCE (household vs
+  // payrolls); the rest move behind a disclosure toggle rather than being deleted.
+  const primaryLines = [
     s.primeAge && primeAgeRead(s.primeAge.value, s.primeAge.delta, s.participation?.delta),
+    (s.payrolls && s.household) && surveyDivergenceRead(s.payrolls.delta, s.household.delta),
+  ].filter(x => x && x.text);
+  const detailLines = [
     // y/y COUNT passed alongside the share — a falling share on a rising count still flags.
     s.longTerm && longTermRead(s.longTerm.value, s.longTerm.delta,
       (g("longTermCount")?.value != null && g("longTermCount")?.yearAgo != null)
         ? Math.round(g("longTermCount").value - g("longTermCount").yearAgo) : null),
     (s.u6 && s.u3) && u6SpreadRead(s.u6.value, s.u3.value, (s.u6.prev != null && s.u3.prev != null) ? +(s.u6.prev - s.u3.prev).toFixed(1) : null),
     s.payrolls && payrollsRead(s.payrolls.delta, null),
-    (s.payrolls && s.household) && surveyDivergenceRead(s.payrolls.delta, s.household.delta),
   ].filter(x => x && x.text);
+  const sahmNote = sahmAnnotation(sum.verdict.verdict);
 
   // Any series whose FRED identity check failed must be surfaced, not quietly rendered.
   const unverified = Object.entries(labor).filter(([, v]) => v && v.ok && v.verified === false);
@@ -882,37 +903,70 @@ function LaborPanel({ labor, compact }) {
           {sum.verdict.verdict}
         </span>
       </div>
-      {/* The 2×2 result, stated as the joint direction that produced it */}
-      <div style={{ fontSize: 13.5, fontWeight: 800, color: C.text, marginTop: 4 }}>{sum.headline}</div>
-      <div style={{ fontSize: 12, color: vc, fontWeight: 700, marginTop: 3 }}>
+      {/* C.2 — what the module answers, before any numbers. */}
+      <div style={{ marginTop: 6, padding: "8px 11px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6, fontSize: 12, color: C.mid, lineHeight: 1.6 }}>
+        <b style={{ color: C.muted }}>What this answers: </b>
+        is the labour market deteriorating enough to push the Fed toward cutting, and to tip the regime toward deflationary recession?
+        <div style={{ marginTop: 3 }}>
+          <b style={{ color: C.muted }}>Currently: </b>
+          <span style={{ color: vc, fontWeight: 700 }}>{sum.headline}</span>
+        </div>
+      </div>
+
+      <div style={{ fontSize: 12, color: vc, fontWeight: 700, marginTop: 6 }}>
         U3 {sum.verdict.u3} · emp-pop {sum.verdict.empPop} → {sum.verdict.read}
       </div>
-      {sum.body && <div style={{ fontSize: 12.5, color: C.mid, marginTop: 5, lineHeight: 1.6 }}>{sum.body}</div>}
+      {sum.body && <div style={{ fontSize: 12.5, color: C.mid, marginTop: 4, lineHeight: 1.6 }}>{sum.body}</div>}
 
-      {!compact && (
-        <div style={{ marginTop: 10 }}>
-          <MetricGrid min={165}>
-            {tile("u3", "U3 rate")}
-            {tile("empPop", "Emp–pop ratio")}
-            {tile("participation", "Participation")}
-            {tile("primeAge", "Prime-age (25–54)")}
-            {tile("u6", "U-6")}
-            {tile("longTerm", "LT unemployed share")}
-            {tile("longTermCount", "LT unemployed (27wk+)", null, null, "k")}
-            {tile("payrolls", "Payrolls", null, null, "k")}
-            {tile("household", "Household emp", null, null, "k")}
-          </MetricGrid>
-        </div>
-      )}
+      {/* C.3 — four primary tiles. Each earns its space; the rest are behind the toggle. */}
+      <div style={{ marginTop: 10 }}>
+        <MetricGrid min={165}>
+          {tile("empPop", "Emp–pop ratio")}
+          {tile("u3", "U3 rate")}
+          {tile("primeAge", "Prime-age (25–54)")}
+          {tile("payrolls", "Payrolls", null, null, "k")}
+        </MetricGrid>
+      </div>
 
-      {lines.length > 0 && (
+      {/* C.4 — two bullets: the demographics control and the survey divergence. */}
+      {primaryLines.length > 0 && (
         <div style={{ marginTop: 10 }}>
-          {lines.map((l, i) => (
+          {primaryLines.map((l, i) => (
             <div key={i} style={{ fontSize: 12, color: C.mid, lineHeight: 1.6, marginTop: 5, paddingLeft: 10, borderLeft: "2px solid " + (l.flag === "AMBER" ? C.aBdr : C.bdr) }}>
               {l.flag === "AMBER" && <span style={{ color: C.amber, fontWeight: 800 }}>⚠ </span>}{l.text}
             </div>
           ))}
         </div>
+      )}
+
+      {/* C.5 — Sahm stays, annotated. It triggers on U3 RISING 0.5pp above its trailing low,
+          so a rate that fell on labour-force exit actively suppresses it — the same blindness
+          P1.4 fixed for the regime trigger. */}
+      {sahmNote && (
+        <div style={{ marginTop: 8, padding: "7px 10px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 6, fontSize: 11.5, lineHeight: 1.55, color: C.amber }}>
+          <b>Sahm Rule — </b>{sahmNote}
+        </div>
+      )}
+
+      {/* Detail row, collapsed by default. */}
+      {(detailLines.length > 0 || !compact) && (
+        <details style={{ marginTop: 8 }}>
+          <summary style={{ fontSize: 11.5, color: C.blue, fontWeight: 700, cursor: "pointer" }}>Detail — participation, U-6, long-term unemployed, household survey</summary>
+          <div style={{ marginTop: 8 }}>
+            <MetricGrid min={160}>
+              {tile("participation", "Participation")}
+              {tile("u6", "U-6")}
+              {tile("longTerm", "LT unemployed share")}
+              {tile("longTermCount", "LT unemployed (27wk+)", null, null, "k")}
+              {tile("household", "Household emp", null, null, "k")}
+            </MetricGrid>
+            {detailLines.map((l, i) => (
+              <div key={i} style={{ fontSize: 12, color: C.mid, lineHeight: 1.6, marginTop: 5, paddingLeft: 10, borderLeft: "2px solid " + (l.flag === "AMBER" ? C.aBdr : C.bdr) }}>
+                {l.flag === "AMBER" && <span style={{ color: C.amber, fontWeight: 800 }}>⚠ </span>}{l.text}
+              </div>
+            ))}
+          </div>
+        </details>
       )}
 
       {/* P1.4 — the trigger now keys off employment, not the headline rate */}
@@ -2913,6 +2967,33 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               <MacroCell field={data.macro.us2y}  value={data.macro.us2y?.value != null ? data.macro.us2y.value + "%" : "—"}   delta={data.macro.us2y?.deltaBps} deltaSuffix="bps" />
               <MacroCell field={data.macro.us10y} value={data.macro.us10y?.value != null ? data.macro.us10y.value + "%" : "—"} delta={data.macro.us10y?.deltaBps} deltaSuffix="bps" />
               <MacroCell field={data.macro.us30y} value={data.macro.us30y?.value != null ? data.macro.us30y.value + "%" : "—"} delta={data.macro.us30y?.deltaBps} deltaSuffix="bps" />
+              {/* Section E — replaces the deleted auction card. The 30Y's 20d move is the
+                  transmission channel that actually matters for duration, and it updates
+                  daily rather than monthly. Highlighted beyond ±20bp. */}
+              {(() => {
+                const s30 = data.macro.us30y?.series;
+                const t20 = s30 ? trendBps(s30, 20) : null;
+                if (t20 == null) return null;
+                const hot = Math.abs(t20) > 20;
+                return (
+                  <MetricCard label="30Y · 20d change"
+                    title="long-end move over 20 sessions — the duration transmission channel"
+                    value={`${t20 >= 0 ? "+" : "−"}${Math.abs(t20)}bp`}
+                    valueColor={hot ? C.amber : C.text}
+                    accent={hot ? C.aBdr : undefined}
+                    sub={hot ? <span style={{ fontSize: 10.5, fontWeight: 800, color: C.amber }}>&gt;±20bp</span> : null} />
+                );
+              })()}
+              {data.macro.fives30s != null && (
+                <MetricCard label="5s30s slope"
+                  title="long-end steepening is the funding-stress shape — distinct from a parallel hawkish shift"
+                  value={`${data.macro.fives30s >= 0 ? "+" : ""}${data.macro.fives30s}bp`}
+                  sub={data.macro.fives30sDeltaBps != null && (
+                    <span style={{ fontSize: 11.5, fontWeight: 800, color: data.macro.fives30sDeltaBps > 0 ? C.amber : C.muted }}>
+                      {data.macro.fives30sDeltaBps >= 0 ? "+" : "−"}{Math.abs(data.macro.fives30sDeltaBps)}bp 1D
+                    </span>
+                  )} />
+              )}
               <MacroCell field={{ name: "2s10s", src: "DGS10−DGS2", date: data.macro.us10y?.date, cadence: "daily" }} value={data.macro.twos10s != null ? (data.macro.twos10s >= 0 ? "+" : "") + data.macro.twos10s + "bps" : "—"} delta={data.macro.twos10sDeltaBps} deltaSuffix="bps" />
               <MacroCell field={data.macro.dxy}   value={data.macro.dxy?.value != null ? data.macro.dxy.value.toFixed(2) : "—"} delta={data.macro.dxy?.delta} deltaSuffix="" />
               <MacroCell field={data.macro.oas}   value={data.macro.oas?.value ?? "—"} delta={data.macro.oas?.deltaBps} deltaSuffix="bps" />
@@ -3041,6 +3122,11 @@ export default function App() {
     coreCooling: coreHist.length >= 2 ? coreHist[coreHist.length - 1].value < coreHist[coreHist.length - 2].value : null,
   };
   const derivedRegimes = deriveRegimeProbabilities(recWeightedAvg, cpiForRegime, recKalshi2027, regimeCtx);
+  // Section D — one labour-stress read, replacing every unemployment-RATE tripwire.
+  const labStress = laborStress({
+    empPop: { delta: liveInd?.labor?.empPop?.delta ?? null },
+    household: { changeK: liveInd?.labor?.household?.delta ?? null },
+  });
   const regimeProbFor = (id) => (derivedRegimes || fallbackRegimes)[
     { stag: "stagflation", ref: "reflationary", def: "deflationary", inf: "inflationary" }[id]
   ];
@@ -3196,8 +3282,8 @@ export default function App() {
               {(() => {
                 const cs = liveInd ? liveInd.creditSpread : 2.75;
                 const ue = liveInd ? liveInd.unemployment : 4.4;
-                const isDeflationary = cs > 6.0 || ue > 5.5;
-                const isDanger       = cs > 4.5 || ue > 5.0;
+                const isDeflationary = cs > 6.0 || labStress.severe;
+                const isDanger       = cs > 4.5 || labStress.deteriorating;
                 const isRef          = activeRegime.id === "ref";
                 const lbl  = isDeflationary ? "DANGER" : isDanger ? "ALERT" : isRef ? "NEUTRAL" : "WATCH";
                 const col  = isDeflationary ? C.red    : isDanger ? "#D97706" : isRef ? C.green   : C.amber;
@@ -3268,16 +3354,13 @@ export default function App() {
         {tab === "indicators" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
-            {/* P1 — shared labour panel. Same module renders on the Macro tab, so the
-                U3-vs-emp-pop scoring can never diverge between the two views. */}
-            <LaborPanel labor={liveInd?.labor} />
 
             {/* ACTION CARD — top, high-emphasis, colorizes with signal */}
             {(() => {
               const cs = liveInd ? liveInd.creditSpread : 2.75;
               const ue = liveInd ? liveInd.unemployment : 4.4;
-              const isDanger  = cs > 6.0 || ue > 5.5;
-              const isAlert   = !isDanger && (cs > 4.5 || ue > 5.0);
+              const isDanger  = cs > 6.0 || labStress.severe;
+              const isAlert   = !isDanger && (cs > 4.5 || labStress.deteriorating);
               const isNeutral = !isDanger && !isAlert && activeRegime.id === "ref";
               const sigLabel  = isDanger ? "DANGER" : isAlert ? "ALERT" : isNeutral ? "NEUTRAL" : "WATCH";
               const CONFIGS = {
@@ -3372,7 +3455,14 @@ export default function App() {
                 {[
                   { icon: liveInd && liveInd.creditSpread >= 4.5 ? "🚨" : liveInd && liveInd.creditSpread >= 3.5 ? "⚠️" : "✅", text: `Credit spreads at ${liveInd ? liveInd.creditSpread.toFixed(2) : "2.75"}%. ${liveInd && liveInd.creditSpread >= 4.5 ? "ALERT THRESHOLD BREACHED — rotate defensive now." : liveInd && liveInd.creditSpread >= 3.5 ? "Widening toward alert zone. Build insurance." : "Markets not pricing stress. Trip wire: 4.5%."}` },
                   { icon: "⚠️", text: `Yield curve at ${liveInd ? (liveInd.yieldSpread >= 0 ? "+" : "") + liveInd.yieldSpread.toFixed(2) + "%" : "+0.38%"} — ${liveInd && liveInd.yieldSpread < 0 ? "still inverted, pricing recession ahead." : liveInd && liveInd.yieldSpread < 0.5 ? "re-normalized but in the danger window (avg 4–11 months to recession after un-inversion)." : "steepening toward normal. Danger window still open until spread exceeds +1.0%."}` },
-                  { icon: liveInd && liveInd.unemployment >= 5.0 ? "🚨" : "⚠️", text: `Unemployment at ${liveInd ? liveInd.unemployment.toFixed(1) : "4.4"}% — risen from 3.4% trough${liveInd ? ", a " + (liveInd.unemployment - 3.4).toFixed(1) + "pp rise" : ""}. ${liveInd && liveInd.unemployment >= 5.0 ? "Recession confirmed by this indicator." : liveInd && liveInd.unemployment >= 4.5 ? "Sahm Rule triggered. Defensive positioning warranted." : "Sahm Rule borderline. Direction is the concern."}` },
+                  // Section D + C.5 — the icon is keyed on the EMPLOYMENT measures, not the
+                  // unemployment rate, and the Sahm reference carries its understatement
+                  // caveat: a rate that fell on labour-force exit suppresses the rule.
+                  { icon: labStress.severe ? "🚨" : "⚠️",
+                    text: `Unemployment at ${liveInd ? liveInd.unemployment.toFixed(1) : "4.4"}%`
+                      + `${liveInd?.labor?.empPop?.value != null ? `, emp-pop ${liveInd.labor.empPop.value.toFixed(1)}% (${liveInd.labor.empPop.delta >= 0 ? "+" : "−"}${Math.abs(liveInd.labor.empPop.delta ?? 0).toFixed(1)}pp)` : ""}. `
+                      + `${labStress.known ? labStress.note[0].toUpperCase() + labStress.note.slice(1) + "." : "Employment print unavailable."}`
+                      + `${sahmAnnotation(laborVerdictFor(liveInd)) ? ` Sahm Rule: ${sahmAnnotation(laborVerdictFor(liveInd))}` : ""}` },
                 ].map((r, i) => (
                   <div key={i} style={{ flex: "1 1 200px", display: "flex", gap: 10 }}>
                     <span style={{ fontSize: 17, flexShrink: 0 }}>{r.icon}</span>
@@ -3382,7 +3472,13 @@ export default function App() {
               </div>
             </Card>
 
-            {INDICATORS.map(ind => <IndicatorChart key={ind.id} ind={ind} live={liveInd} />)}
+            {/* C.1 — "unemp" is deliberately excluded: the labour module above is the single
+                definition for that topic. Three renderings of one subject is what this removes. */}
+            {INDICATORS.filter(ind => ind.id !== "unemp").map(ind => <IndicatorChart key={ind.id} ind={ind} live={liveInd} />)}
+
+            {/* G.2 — labour renders BELOW credit spreads and the yield curve. G.3 — this is
+                the SHARED definition (LaborPanel), not a reimplementation; two copies drift. */}
+            <LaborPanel labor={liveInd?.labor} />
           </div>
         )}
 
@@ -3394,8 +3490,8 @@ export default function App() {
               const ue = liveInd ? liveInd.unemployment : 4.4;
               // Live crash signal — identical thresholds to the Indicators action card.
               // Drives stages 1–3. Allocations are regime-driven (separate axis).
-              const sigDanger = cs > 6.0 || ue > 5.5;
-              const sigAlert  = !sigDanger && (cs > 4.5 || ue > 5.0);
+              const sigDanger = cs > 6.0 || labStress.severe;
+              const sigAlert  = !sigDanger && (cs > 4.5 || labStress.deteriorating);
               const signalStage = sigDanger ? 3 : sigAlert ? 2 : 1;
               const sigLabel = sigDanger ? "DANGER" : sigAlert ? "ALERT" : "WATCH";
               const sigColor = sigDanger ? C.red : sigAlert ? "#D97706" : C.amber;
@@ -4085,81 +4181,12 @@ export default function App() {
 
         {tab === "macro" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {/* P1 — shared labour panel (same module as the Indicators tab) */}
-            <LaborPanel labor={liveInd?.labor} />
-            {/* 10Y Treasury auction health — number + 12-auction trend chart */}
-            {(() => {
-              const bc = liveInd ? liveInd.auctionBidCover : null;
-              const ad = liveInd ? liveInd.auctionDate : null;
-              const hist = liveInd && Array.isArray(liveInd.auctionHistory) ? liveInd.auctionHistory : [];
-              let col = C.muted, bg = C.bg, bd = C.bdr, msg = "Unavailable — check TreasuryDirect manually";
-              if (bc != null) {
-                if (bc >= 2.5)      { col = C.green; bg = C.gBg; bd = C.gBdr; msg = "Strong demand. No stress."; }
-                else if (bc >= 2.3) { col = C.amber; bg = C.aBg; bd = C.aBdr; msg = "Softening. Monitor closely."; }
-                else                { col = C.red;   bg = C.rBg; bd = C.rBdr; msg = "Stress signal. Weak auction demand. Watch for Fed intervention."; }
-              }
-              const lineColor = bc != null ? (bc >= 2.5 ? "#22c55e" : bc >= 2.3 ? "#f59e0b" : "#ef4444") : "#9ca3af";
-              return (
-                <Card style={{ background: bg, border: "1.5px solid " + bd }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-                    <div>
-                      <SLabel>10Y Treasury Auction Health</SLabel>
-                      {bc != null ? (
-                        <>
-                          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-                            <span style={{ fontSize: 30, fontWeight: 900, letterSpacing: -1, color: col }}>{bc.toFixed(2)}x</span>
-                            <span style={{ color: col, fontSize: 14, fontWeight: 700 }}>{msg}</span>
-                          </div>
-                          <div style={{ color: C.lbl, fontSize: 12, marginTop: 3 }}>Last auction: {ad || "—"}</div>
-                        </>
-                      ) : (
-                        <div style={{ color: C.muted, fontSize: 14 }}>{msg}</div>
-                      )}
-                    </div>
-                    <div style={{ maxWidth: 240, color: C.muted, fontSize: 12, lineHeight: 1.6 }}>
-                      Threshold: &lt;2.3x = stress signal. Weak foreign/institutional demand for US debt.
-                    </div>
-                  </div>
-                  {/* Trend chart — last 12 auctions, oldest → newest */}
-                  {hist.length >= 2 ? (
-                    <div style={{ marginTop: 12 }}>
-                      <ResponsiveContainer width="100%" height={120}>
-                        <LineChart data={hist} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
-                          <XAxis
-                            dataKey="date"
-                            tick={{ fontSize: 10 }}
-                            tickFormatter={(d) => {
-                              const date = new Date(d);
-                              return date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
-                            }}
-                            interval="preserveStartEnd"
-                          />
-                          <YAxis
-                            domain={["auto", "auto"]}
-                            tick={{ fontSize: 10 }}
-                            width={44}
-                            tickFormatter={(v) => `${v.toFixed(2)}x`}
-                          />
-                          <Tooltip
-                            formatter={(value) => [`${value}x`, "Bid-to-Cover"]}
-                            labelFormatter={(label) => `Auction: ${label}`}
-                          />
-                          {/* Stress threshold — red dotted */}
-                          <ReferenceLine y={2.3} stroke="#ef4444" strokeDasharray="4 3" label={{ value: "2.3x stress", position: "right", fontSize: 9, fill: "#ef4444" }} />
-                          {/* Strong demand threshold — green dotted */}
-                          <ReferenceLine y={2.5} stroke="#22c55e" strokeDasharray="4 3" label={{ value: "2.5x strong", position: "right", fontSize: 9, fill: "#22c55e" }} />
-                          <Line type="monotone" dataKey="value" stroke={lineColor} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  ) : (
-                    <div style={{ marginTop: 12, color: C.muted, fontSize: 13, fontStyle: "italic" }}>
-                      Insufficient history — check back after next auction
-                    </div>
-                  )}
-                </Card>
-              );
-            })()}
+            {/* Section E — the 10Y auction-health card is DELETED (the P7 spec is void).
+                10Y auctions are roughly monthly while this page is read daily, so a card whose
+                value is 3-25 days old, styled like the live ones, invites a stale impression to
+                form. Fixing the metrics does not fix that — the update frequency was the defect.
+                Transmission to duration shows up in the 30Y and 5s30s rows below, which move
+                daily and are early enough for the positions actually held. */}
 
             {/* Market-Implied Fed Cuts (6-Month) — Fed funds vs 6m T-bill proxy (Update 1) */}
             {(() => {
@@ -4514,8 +4541,17 @@ export default function App() {
               );
             })()}
 
+            {/* F.5 — the labour module is a paragraph of interpretation, so it sits where the
+                user is already reading rather than glancing. Same shared definition as the
+                Indicators tab (G.3) — one module, rendered once per tab. */}
+            <LaborPanel labor={liveInd?.labor} />
+
             <Card>
-              <SLabel>Wall Street Recession Probability (July 8, 2026)</SLabel>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                <SLabel>Wall Street Recession Probability</SLabel>
+                {/* F.6 — the slowest input on the page, marked as such. */}
+                <span style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>slowest input · {CONSENSUS_VINTAGE.label}, {CONSENSUS_VINTAGE.staleNote}</span>
+              </div>
               {(() => {
                 const lastUpdate = new Date("2026-06-29");
                 const daysStale = Math.floor((Date.now() - lastUpdate.getTime()) / 86400000);
