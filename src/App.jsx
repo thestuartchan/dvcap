@@ -6,6 +6,7 @@ import {
 } from "recharts";
 import { parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, KOFIA_FLOWS, toWonTrillions, koreaFlowRead, koreaFlowImplication, withCommas } from "../lib/kofia.js";
 import { freshnessText, humanizeAge } from "../lib/sessions.js";
+import { laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead } from "../lib/labor.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
 const C = {
@@ -734,6 +735,112 @@ function liveCashYield(liveInd) {
 function fillLiveRates(text, cy) {
   if (typeof text !== "string") return text;
   return text.replace(/\{\{CASH\}\}/g, cy ? `~${cy.value.toFixed(2)}% (live, ${cy.src})` : "the prevailing T-bill rate");
+}
+
+// ─── LABOUR PANEL (P1) ────────────────────────────────────────────────────────
+// One component, rendered on BOTH the Macro and Indicators tabs. All scoring logic lives in
+// lib/labor.js; this only renders. The headline point: U3 is NOT scored in isolation — the
+// verdict comes from the joint direction of U3 and the employment–population ratio, because
+// emp-pop cannot be gamed by labour-force exit.
+function LaborPanel({ labor, compact }) {
+  if (!labor) return null;
+  const g = k => labor[k] && labor[k].ok ? labor[k] : null;
+  const s = {
+    u3: g("u3"), participation: g("participation"), primeAge: g("primeAge"), empPop: g("empPop"),
+    u6: g("u6"), longTerm: g("longTerm"), payrolls: g("payrolls"), household: g("household"),
+  };
+  if (!s.u3 || !s.empPop) return null;
+
+  const state = {
+    u3: { value: s.u3.value, delta: s.u3.delta },
+    empPop: { value: s.empPop.value, delta: s.empPop.delta },
+    household: { changeK: s.household?.delta ?? null },
+  };
+  const sum = laborSummary(state);
+  const trig = laborDeteriorationTrigger(state);
+  const VC = { GREEN: C.green, AMBER: C.amber, RED: C.red, muted: C.muted, green: C.green, amber: C.amber, red: C.red };
+  const vc = VC[sum.verdict.color] || C.muted;
+
+  // Interpretation lines — each computed from its own value/delta, so they update.
+  const lines = [
+    s.primeAge && primeAgeRead(s.primeAge.value, s.primeAge.delta, s.participation?.delta),
+    s.longTerm && longTermRead(s.longTerm.value, s.longTerm.delta),
+    (s.u6 && s.u3) && u6SpreadRead(s.u6.value, s.u3.value, (s.u6.prev != null && s.u3.prev != null) ? +(s.u6.prev - s.u3.prev).toFixed(1) : null),
+    s.payrolls && payrollsRead(s.payrolls.delta, null),
+    (s.payrolls && s.household) && surveyDivergenceRead(s.payrolls.delta, s.household.delta),
+  ].filter(x => x && x.text);
+
+  // Any series whose FRED identity check failed must be surfaced, not quietly rendered.
+  const unverified = Object.entries(labor).filter(([, v]) => v && v.ok && v.verified === false);
+
+  const tile = (key, lab, val, delta, unit = "%") => {
+    const row = g(key); if (!row) return null;
+    const d = delta ?? row.delta;
+    return (
+      <MetricCard key={key} label={lab}
+        title={`${row.id} · ${row.title || ""} · asOf ${row.date}`}
+        value={unit === "k" ? withCommas(Math.round(row.value)) : row.value?.toFixed(1) + "%"}
+        sub={d == null ? null : (
+          <span style={{ fontSize: 12, fontWeight: 800, color: unit === "k" ? (d >= 0 ? C.green : C.red) : (d >= 0 ? C.mid : C.mid) }}>
+            {d >= 0 ? "+" : "−"}{Math.abs(d).toFixed(unit === "k" ? 0 : 1)}{unit === "k" ? "k" : "pp"}
+          </span>
+        )} />
+    );
+  };
+
+  return (
+    <Card style={{ borderLeft: "4px solid " + vc }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <SLabel>👷 Labour market</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>U3 scored against emp-pop, not alone</span>
+        <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 900, letterSpacing: 0.5, color: vc, border: "1.5px solid " + vc, borderRadius: 5, padding: "2px 8px" }}>
+          {sum.verdict.verdict}
+        </span>
+      </div>
+      {/* The 2×2 result, stated as the joint direction that produced it */}
+      <div style={{ fontSize: 13.5, fontWeight: 800, color: C.text, marginTop: 4 }}>{sum.headline}</div>
+      <div style={{ fontSize: 12, color: vc, fontWeight: 700, marginTop: 3 }}>
+        U3 {sum.verdict.u3} · emp-pop {sum.verdict.empPop} → {sum.verdict.read}
+      </div>
+      {sum.body && <div style={{ fontSize: 12.5, color: C.mid, marginTop: 5, lineHeight: 1.6 }}>{sum.body}</div>}
+
+      {!compact && (
+        <div style={{ marginTop: 10 }}>
+          <MetricGrid min={165}>
+            {tile("u3", "U3 rate")}
+            {tile("empPop", "Emp–pop ratio")}
+            {tile("participation", "Participation")}
+            {tile("primeAge", "Prime-age (25–54)")}
+            {tile("u6", "U-6")}
+            {tile("longTerm", "LT unemployed share")}
+            {tile("payrolls", "Payrolls", null, null, "k")}
+            {tile("household", "Household emp", null, null, "k")}
+          </MetricGrid>
+        </div>
+      )}
+
+      {lines.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          {lines.map((l, i) => (
+            <div key={i} style={{ fontSize: 12, color: C.mid, lineHeight: 1.6, marginTop: 5, paddingLeft: 10, borderLeft: "2px solid " + (l.flag === "AMBER" ? C.aBdr : C.bdr) }}>
+              {l.flag === "AMBER" && <span style={{ color: C.amber, fontWeight: 800 }}>⚠ </span>}{l.text}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* P1.4 — the trigger now keys off employment, not the headline rate */}
+      <div style={{ marginTop: 10, padding: "7px 10px", background: trig.fired ? C.aBg : C.bg, border: "1px solid " + (trig.fired ? C.aBdr : C.bdr), borderRadius: 6, fontSize: 11.5, fontWeight: 700, color: trig.fired ? C.amber : C.muted }}>
+        {trig.note}
+      </div>
+
+      {unverified.length > 0 && (
+        <div style={{ marginTop: 8, padding: "7px 10px", background: C.rBg, border: "1px solid " + C.rBdr, borderRadius: 6, fontSize: 11.5, fontWeight: 700, color: C.red }}>
+          ⚠ Series identity check FAILED: {unverified.map(([k, v]) => `${k} (${v.id}) — ${v.mismatch}`).join(" · ")}
+        </div>
+      )}
+    </Card>
+  );
 }
 
 // ─── ANNOUNCED PRINTS (published, but not yet in FRED) ────────────────────────
@@ -2895,6 +3002,10 @@ export default function App() {
         {tab === "indicators" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
+            {/* P1 — shared labour panel. Same module renders on the Macro tab, so the
+                U3-vs-emp-pop scoring can never diverge between the two views. */}
+            <LaborPanel labor={liveInd?.labor} />
+
             {/* ACTION CARD — top, high-emphasis, colorizes with signal */}
             {(() => {
               const cs = liveInd ? liveInd.creditSpread : 2.75;
@@ -3691,6 +3802,8 @@ export default function App() {
 
         {tab === "macro" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {/* P1 — shared labour panel (same module as the Indicators tab) */}
+            <LaborPanel labor={liveInd?.labor} />
             {/* 10Y Treasury auction health — number + 12-auction trend chart */}
             {(() => {
               const bc = liveInd ? liveInd.auctionBidCover : null;
@@ -4333,13 +4446,33 @@ export default function App() {
                           ? `At ${v.toFixed(2)}%, credit markets are pricing stress. Companies are struggling to refinance debt — this is the classic deflationary warning. Act now.`
                           : `At ${v.toFixed(2)}%, credit markets are calm — investors aren't panicking yet. This scenario needs spreads to widen to 4.5%+ before it becomes probable. Watch weekly.`,
                       },
-                      {
-                        label: "Unemployment", value: ue, unit: "%", threshold: 5.0,
-                        thresholdLabel: "recession >5%", good: "below", fmtVal: v => v.toFixed(1),
-                        context: (v, breached) => breached
-                          ? `At ${v.toFixed(1)}%, unemployment has crossed the recession confirmation threshold. Demand destruction is underway.`
-                          : `At ${v.toFixed(1)}%, unemployment is elevated but hasn't hit the 5% recession zone yet. Rising trend is the concern — direction matters more than the level.`,
-                      },
+                      // P1.4 — the trigger is the EMPLOYMENT–POPULATION RATIO, not U3.
+                      // U3 can FALL during exactly the deterioration this scenario exists to
+                      // catch, because people leaving the labour force shrink the numerator
+                      // without anyone being hired (June 2026: U3 4.3→4.2 while emp-pop fell
+                      // 0.2pp). Emp-pop cannot be gamed that way. U3 is still displayed — in
+                      // the labour panel above and in the stagflation scenario — it just no
+                      // longer decides whether this transition has fired.
+                      (() => {
+                        const ep = liveInd?.labor?.empPop;
+                        if (ep?.ok && ep.value != null && ep.prev != null) {
+                          return {
+                            label: "Emp–pop ratio", value: ep.value, unit: "%",
+                            // "Breached" = below the prior print, i.e. FALLING.
+                            threshold: ep.prev, thresholdLabel: `falling vs prior ${ep.prev.toFixed(1)}%`,
+                            good: "above", fmtVal: v => v.toFixed(1),
+                            context: (v, breached) => breached
+                              ? `Emp-pop at ${v.toFixed(1)}%, down from ${ep.prev.toFixed(1)}% — a smaller share of the working-age population is employed. This is the trigger, not the unemployment rate: U3 can fall while this falls, and in June it did exactly that.`
+                              : `Emp-pop at ${v.toFixed(1)}%, holding at or above the prior ${ep.prev.toFixed(1)}%. The employed share of the population is not shrinking, so the transition has not fired regardless of what the headline rate does.`,
+                          };
+                        }
+                        // No emp-pop print → show U3 but say plainly it is not the trigger.
+                        return {
+                          label: "Unemployment (not the trigger)", value: ue, unit: "%", threshold: 5.0,
+                          thresholdLabel: "emp-pop unavailable", good: "below", fmtVal: v => v.toFixed(1),
+                          context: v => `Emp-pop ratio unavailable, so the transition trigger cannot be evaluated. U3 ${v.toFixed(1)}% is shown for reference only — it is deliberately not the trigger, because it can fall on labour-force exit.`,
+                        };
+                      })(),
                     ],
                     tip: liveInd
                       ? (hy > 4.5 ? "⚠️ Credit spreads have breached the alert level. Deflationary recession risk is now elevated — consider rotating toward Treasuries and cash."
