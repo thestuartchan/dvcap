@@ -1,0 +1,25 @@
+{
+  "fedPath": {
+    "latest": {
+      "date": "2026-08-02",
+      "contract": "Dec-2026",
+      "price": 96.04,
+      "impliedRate": 3.96,
+      "effr": 3.63,
+      "movesPriced": 1.32,
+      "enteredAt": "2026-08-02T11:55:12.247Z"
+    },
+    "series": [
+      {
+        "date": "2026-08-02",
+        "contract": "Dec-2026",
+        "price": 96.04,
+        "impliedRate": 3.96,
+        "effr": 3.63,
+        "movesPriced": 1.32,
+        "enteredAt": "2026-08-02T11:55:12.247Z"
+      }
+    ]
+  },
+  "oasRecon": []
+}
