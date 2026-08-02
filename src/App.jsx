@@ -3848,9 +3848,8 @@ export default function App() {
                 put(hHist, "headline"); put(cHist, "core"); put(pHist, "pce");
                 return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
               })();
-              const realYield = (liveInd && liveInd.currentFedFunds && headline != null)
-                ? (liveInd.currentFedFunds - headline)
-                : null;
+              // (realYield is computed below, AFTER the cash marks — it must use the same cash
+              // basis the chart band draws, or the card contradicts its own chart.)
               // Direction from the stored history (prior print), never asserted from one value.
               const trendOf = h => {
                 if (!Array.isArray(h) || h.length < 2) return null;
@@ -3878,6 +3877,18 @@ export default function App() {
               // band, and give each its exact value in the legend row beneath the chart.
               const cashLo = cashMarks.length ? Math.min(...cashMarks.map(m => m.value)) : null;
               const cashHi = cashMarks.length ? Math.max(...cashMarks.map(m => m.value)) : null;
+
+              // Real yield on cash, on the SAME basis the chart band draws. Previously this used
+              // Fed funds (3.63%) while the band used the bill/fund yields (~3.8%), so the
+              // headline figure and the chart directly beneath it answered the same question
+              // differently. Both are defensible in isolation; showing both on one card is not.
+              // Falls back to Fed funds only when no cash mark exists, and says so.
+              const ryBasis = cashYield ?? (liveInd?.currentFedFunds != null
+                ? { value: liveInd.currentFedFunds, src: "Fed funds", asOf: liveInd?.asOf?.currentFedFunds ?? null } : null);
+              const realYield = (ryBasis && headline != null) ? (ryBasis.value - headline) : null;
+              // Spread across every cash instrument, so the single number isn't read as exact.
+              const ryRange = (headline != null && cashLo != null && cashHi != null)
+                ? { lo: cashLo - headline, hi: cashHi - headline } : null;
               const trendChip = t => t && (
                 <span style={{ fontSize: 10.5, fontWeight: 800, color: t.dir === "cooling" ? C.green : t.dir === "rising" ? C.red : C.muted }}>
                   {t.dir === "cooling" ? "▼" : t.dir === "rising" ? "▲" : "■"} {t.d >= 0 ? "+" : "−"}{Math.abs(t.d)}pp vs prior
@@ -3929,13 +3940,20 @@ export default function App() {
                   {realYield != null && (
                     <div style={{ padding: "8px 12px", borderRadius: 6, backgroundColor: realYield > 0 ? "#f0fdf4" : "#fef2f2", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
                       <span style={{ fontSize: 12, fontWeight: 600, color: C.mid }}>
-                        Real Yield on Cash (Fed Funds − CPI):
+                        Real Yield on Cash ({ryBasis.src} − Headline CPI):
                         <span style={{ color: realYield > 0 ? "#22c55e" : "#ef4444", marginLeft: 8, fontWeight: 800 }}>
                           {realYield > 0 ? "+" : ""}{realYield.toFixed(2)}%
                         </span>
+                        {/* Range across every cash instrument on the chart, so the single figure
+                            reads as representative rather than exact. */}
+                        {ryRange && Math.abs(ryRange.hi - ryRange.lo) >= 0.01 && (
+                          <span style={{ color: "#888", marginLeft: 8, fontWeight: 600 }}>
+                            ({ryRange.lo > 0 ? "+" : ""}{ryRange.lo.toFixed(2)} to {ryRange.hi > 0 ? "+" : ""}{ryRange.hi.toFixed(2)} across {cashMarks.map(m => m.label).join(" / ")})
+                          </span>
+                        )}
                       </span>
                       <span style={{ fontSize: 11, color: "#888", fontStyle: "italic" }}>
-                        {realYield > 0 ? "SGOV/USFR earning above inflation. Hold." : "Inflation exceeding cash yield. Real erosion active."}
+                        {realYield > 0 ? "Cash yielding above headline inflation." : "Headline inflation exceeding cash yield — real erosion."}
                       </span>
                     </div>
                   )}
