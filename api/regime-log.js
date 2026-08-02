@@ -72,6 +72,11 @@ export default async function handler(req, res) {
     live_regime: b.live_regime ?? null,
     view_regime: b.view_regime ?? null,
     pinned: !!b.pinned,
+    // HYG reading for THIS date — stored so the OAS/HYG reconciliation (P2.5) can score it
+    // once the delayed spread publishes ~2 business days later. Without a same-day record
+    // there is nothing to reconcile against; the proxy could only ever be trusted on vibes.
+    hyg_chg: b.hyg_chg ?? null,
+    hyg_qqq_divergence: b.hyg_qqq_divergence ?? null,
     // RAW CLASSIFIER INPUTS — the part that makes the log re-runnable. Without these a logic
     // change can only be tested going forward, which defeats the purpose.
     inputs: b.inputs ?? null,
