@@ -2881,6 +2881,10 @@ export default function App() {
   const [activeAsset, setActiveAsset]   = useState(ASSETS[0]);
   const [activeIncome, setActiveIncome] = useState(INCOME_PLAYS[0]);
   const [activeRegime, setActiveRegime] = useState(REGIMES[0]);
+  // Pin survives reloads — an override you forgot about is exactly what the banner exists to
+  // make visible, so it must not silently reset.
+  const [regimePin, setRegimePin] = useState(() => cacheLoad("regime_pin_v1", { pinned: false, note: "", setAt: null }));
+  const savePin = (p) => { setRegimePin(p); cacheSave("regime_pin_v1", p); };
   const [insurancePhase, setInsurancePhase] = useState("onset"); // Insurance tab — "onset" | "deflationary" | "inflationary" | "stagflation"
   const [stage4, setStage4] = useState(false); // Posture deploy stage 4 — manual, persisted
   const [stage5, setStage5] = useState(false); // Posture deploy stage 5 — manual, persisted
@@ -2901,6 +2905,54 @@ export default function App() {
   const regimeProbFor = (id) => (derivedRegimes || fallbackRegimes)[
     { stag: "stagflation", ref: "reflationary", def: "deflationary", inf: "inflationary" }[id]
   ];
+
+  // ── P0.2 — computed regime vs displayed regime, deliberately separate ────────
+  // liveRegime is ALWAYS what the engine computes; it is never user-editable. viewRegime is
+  // what the page renders (best/worst assets, roadmap, sorting) and IS user-selectable.
+  // Full auto-switch would change the page underneath you with no record; full manual drifts
+  // and goes stale silently. Keeping both, and showing the gap, is the point.
+  const liveRegimeId = (() => {
+    const src = derivedRegimes || fallbackRegimes;
+    const byId = { stag: src.stagflation, ref: src.reflationary, def: src.deflationary, inf: src.inflationary };
+    return Object.entries(byId).filter(([, v]) => v != null).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  })();
+  const liveRegime = REGIMES.find(r => r.id === liveRegimeId) || REGIMES[0];
+  // The pin carries WHY and WHEN, so a stale override is self-explaining rather than a mystery.
+  const regimeDiverged = regimePin.pinned && activeRegime.id !== liveRegime.id;
+  const switchToLive = () => { setActiveRegime(liveRegime); savePin({ pinned: false, note: "", setAt: null }); };
+  const keepPinned = (note) => savePin({ pinned: true, note: note ?? regimePin.note ?? "", setAt: regimePin.setAt || new Date().toISOString().slice(0, 10) });
+
+  // Follow the engine unless the user has explicitly pinned a view.
+  useEffect(() => {
+    if (!regimePin.pinned && liveRegime && activeRegime.id !== liveRegime.id) setActiveRegime(liveRegime);
+  }, [liveRegime?.id, regimePin.pinned]);
+
+  // ── P0.3 — append one row per day, with the RAW INPUTS so logic changes stay backtestable.
+  // Guarded by a local marker so a day's worth of refreshes produces one write, not hundreds.
+  const [regimeHistory, setRegimeHistory] = useState([]);
+  useEffect(() => { fetch("/api/regime-log?limit=90").then(r => r.json()).then(j => setRegimeHistory(j.rows || [])).catch(() => {}); }, []);
+  useEffect(() => {
+    if (!derivedRegimes || !liveRegime) return;
+    const today = new Date().toISOString().slice(0, 10);
+    if (cacheLoad("regime_log_last_v1", null) === today) return;   // already logged today
+    const body = {
+      date: today,
+      stagflation_p: derivedRegimes.stagflation, reflationary_p: derivedRegimes.reflationary,
+      deflationary_p: derivedRegimes.deflationary, inflationary_p: derivedRegimes.inflationary,
+      hawkish_repricing: pbData?.us?.marketRegime?.state ?? null,
+      live_regime: liveRegime.id, view_regime: activeRegime.id, pinned: !!regimePin.pinned,
+      inputs: {
+        weightedRecessionProb: recWeightedAvg, cpi: cpiForRegime, kalshi2027: recKalshi2027,
+        tape: pbData?.us?.marketRegime?.inputs ?? null,
+        ladderSpread: pbData?.us?.ladder?.spread ?? null,
+        u3: liveInd?.labor?.u3?.value ?? null, empPop: liveInd?.labor?.empPop?.value ?? null,
+        oas: liveInd?.creditSpread ?? null, tenY: liveInd?.tenY ?? null, twoY: liveInd?.twoY ?? null,
+      },
+    };
+    fetch("/api/regime-log", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), credentials: "include" })
+      .then(r => r.ok ? cacheSave("regime_log_last_v1", today) : null)
+      .catch(() => {});
+  }, [derivedRegimes?.stagflation, liveRegime?.id, activeRegime.id]);
 
   useEffect(function() {
     loadFunds().then(function(saved) {
@@ -3027,6 +3079,27 @@ export default function App() {
             the whole dashboard. key={tab} remounts the boundary on tab change, so an error on
             one tab clears when you navigate away rather than sticking. The footer stays
             OUTSIDE, so it renders even if the active tab dies. */}
+        {/* P0.2 — divergence banner. Persistent and on EVERY tab, because a pinned view that
+            no longer matches the engine is exactly the thing you stop noticing. Carries the
+            note and the date it was set, so a stale override explains itself. */}
+        {regimeDiverged && (
+          <div style={{ marginBottom: 14, padding: "10px 14px", background: C.aBg, border: "1.5px solid " + C.aBdr, borderRadius: 10,
+            display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+            <span style={{ fontSize: 13, color: C.amber, fontWeight: 700, lineHeight: 1.5 }}>
+              📌 Viewing <b>{activeRegime.label}</b> (pinned{regimePin.setAt ? ` ${regimePin.setAt}` : ""}).
+              Live engine reads <b>{liveRegime.label}</b> ({regimeProbFor(liveRegime.id)}%).
+              {regimePin.note ? <span style={{ fontStyle: "italic", color: C.mid }}> — “{regimePin.note}”</span> : null}
+            </span>
+            <span style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+              <Btn onClick={switchToLive} color="#fff" bgColor={C.blue} label="Switch to live" />
+              <Btn onClick={() => {
+                const n = window.prompt("Why keep this pinned? (shown in the banner)", regimePin.note || "");
+                if (n !== null) keepPinned(n);
+              }} color={C.amber} bgColor={C.aBg} label="Keep pinned…" />
+            </span>
+          </div>
+        )}
+
         <TabErrorBoundary key={tab} name={(TABS.find(t => t.id === tab)?.label || "This tab").replace(/^\S+\s/, "")}>
 
         {/* ── INDICATORS ── */}
@@ -4338,7 +4411,7 @@ export default function App() {
               <SLabel>Regime Probability — Derived from Recession Consensus + Live CPI</SLabel>
               <div className="mwd-regime-grid" style={{ marginBottom: 14 }}>
                 {REGIMES.map(r => (
-                  <button key={r.id} onClick={() => setActiveRegime(r)} style={{ background: activeRegime.id === r.id ? r.bg : C.surf, border: "1.5px solid " + (activeRegime.id === r.id ? r.color : C.bdr), borderTop: "4px solid " + r.color, borderRadius: 10, padding: "12px 14px", cursor: "pointer", textAlign: "left", width: "100%" }}>
+                  <button key={r.id} onClick={() => { setActiveRegime(r); keepPinned(); }} style={{ background: activeRegime.id === r.id ? r.bg : C.surf, border: "1.5px solid " + (activeRegime.id === r.id ? r.color : C.bdr), borderTop: "4px solid " + r.color, borderRadius: 10, padding: "12px 14px", cursor: "pointer", textAlign: "left", width: "100%" }}>
                     <div style={{ fontSize: 22, fontWeight: 900, color: r.color }}>{regimeProbFor(r.id)}%</div>
                     <div style={{ color: r.color, fontWeight: 700, fontSize: 13, marginTop: 3, lineHeight: 1.3 }}>{r.label}</div>
                   </button>
@@ -4354,6 +4427,32 @@ export default function App() {
                   <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5 }}>Weighted Wall Street recession probability: <b style={{ color: C.muted }}>{derivedRegimes.weightedAvg}%</b> | Derived from analyst consensus + live CPI</div>
                   <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5, marginTop: 2 }}>{derivedRegimes.derivedFrom}</div>
                   <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5, marginTop: 2, fontStyle: "italic" }}>Updates automatically when recession table is refreshed or CPI changes.</div>
+                  {/* P0.3 — trailing history. The engine is unfalsifiable without it: this is
+                      how you answer "has the classifier actually been right". Raw inputs are
+                      stored server-side alongside these probabilities so a change to the
+                      discriminator can be re-run against days already recorded. */}
+                  {regimeHistory.length >= 2 ? (
+                    <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px dashed " + C.bdr }}>
+                      <div style={{ fontSize: 10.5, color: C.muted, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>
+                        Regime history · {regimeHistory.length} days logged
+                      </div>
+                      <ResponsiveContainer width="100%" height={70}>
+                        <LineChart data={regimeHistory} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                          <XAxis dataKey="date" tick={{ fontSize: 9, fill: C.lbl }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                          <YAxis domain={[0, 100]} hide />
+                          <Tooltip formatter={(v, n) => [`${v}%`, n]} />
+                          <Line type="monotone" dataKey="stagflation_p"  name="Stagflation"  stroke="#B45309" strokeWidth={1.5} dot={false} connectNulls />
+                          <Line type="monotone" dataKey="reflationary_p" name="Reflationary" stroke="#166534" strokeWidth={1.5} dot={false} connectNulls />
+                          <Line type="monotone" dataKey="deflationary_p" name="Deflationary" stroke="#1D4ED8" strokeWidth={1.5} dot={false} connectNulls />
+                          <Line type="monotone" dataKey="inflationary_p" name="Inflationary" stroke="#7C3AED" strokeWidth={1.5} dot={false} connectNulls />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 8, fontStyle: "italic" }}>
+                      Regime history: {regimeHistory.length} day{regimeHistory.length === 1 ? "" : "s"} logged — insufficient for a trend. One row is appended per day.
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div style={{ color: C.lbl, fontSize: 11, marginTop: 10, fontStyle: "italic" }}>Using fallback regime probabilities — live recession data unavailable.</div>
