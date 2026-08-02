@@ -2374,6 +2374,53 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               Ordered by signal value, not by data-flow order. The tripwire count is the
               at-a-glance "are the gauges aligning" read, and the composed READ is the
               synthesized conclusion — both were previously buried mid-page. */}
+          {/* Cross-asset regime read (P0.1). Separate from the probability model on the Macro
+              tab: this reads today's TAPE. Its value is the discriminator line — defensives
+              sold vs bid is what separates a rates repricing from a deleveraging, and gold
+              and bonds alone cannot tell them apart. */}
+          {data.marketRegime && data.marketRegime.state !== "INSUFFICIENT_DATA" && (
+            <Card style={{ borderLeft: "4px solid " + data.marketRegime.color }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                <SLabel>🎛️ Tape regime</SLabel>
+                <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>cross-asset, today's price action</span>
+              </div>
+              <div style={{ fontSize: 17, fontWeight: 900, color: data.marketRegime.color }}>{data.marketRegime.label}</div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: C.mid, marginTop: 2 }}>{data.marketRegime.discriminator}</div>
+              {data.marketRegime.reasons?.map((s, i) => (
+                <div key={i} style={{ fontSize: 12, color: C.muted, marginTop: 3, lineHeight: 1.5 }}>· {s}</div>
+              ))}
+              {data.marketRegime.corroboration && !data.marketRegime.corroboration.available && (
+                <div style={{ fontSize: 11, color: C.amber, fontWeight: 700, marginTop: 4 }}>{data.marketRegime.corroboration.note}</div>
+              )}
+            </Card>
+          )}
+
+          {/* Concentration ladder (P5) — fixed order, widest beta to narrowest. */}
+          {data.ladder && data.ladder.spread != null && (
+            <Card style={{ borderLeft: "4px solid " + (data.ladder.alert ? C.amber : C.bdrMd) }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                <SLabel>🪜 Breadth ladder</SLabel>
+                <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>SMH → QQQ → SPY → IWM → HYG</span>
+                <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 900, color: data.ladder.alert ? C.amber : C.mid }}>
+                  spread {data.ladder.spread}pp
+                </span>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 4 }}>
+                {data.ladder.rungs.map(r => (
+                  <span key={r.sym} style={{ fontSize: 12.5, fontWeight: 700 }}>
+                    <span style={{ color: C.muted }}>{r.sym}</span>{" "}
+                    <span style={{ color: r.pct == null ? C.lbl : pbPctColor(r.pct) }}>
+                      {r.pct == null ? "—" : `${r.pct >= 0 ? "+" : ""}${r.pct}%`}
+                    </span>
+                  </span>
+                ))}
+              </div>
+              <div style={{ fontSize: 11.5, color: data.ladder.alert ? C.amber : C.muted, fontWeight: data.ladder.alert ? 700 : 400, marginTop: 4 }}>
+                {data.ladder.alert ? "⚠ " : ""}{data.ladder.note}
+              </div>
+            </Card>
+          )}
+
           <GaugesLeaning leaning={data.leaning} prominent />
 
           {/* Composed READ — deterministic, from the gate state. Observational only: it
@@ -3955,6 +4002,34 @@ export default function App() {
                       <span style={{ fontSize: 11, color: "#888", fontStyle: "italic" }}>
                         {realYield > 0 ? "Cash yielding above headline inflation." : "Headline inflation exceeding cash yield — real erosion."}
                       </span>
+                    </div>
+                  )}
+                  {/* Flip threshold + buffer against each measure. The headline read is the
+                      thinnest and the most volatile (energy), so a single "positive real yield"
+                      badge overstates how settled this is — state what would flip it, and how
+                      much cushion exists on the less jumpy measures. */}
+                  {realYield != null && ryBasis && (
+                    <div style={{ marginTop: -6, marginBottom: 12, padding: "7px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6, fontSize: 11.5, color: C.mid, lineHeight: 1.6 }}>
+                      <b style={{ color: C.muted }}>↪ Flips if </b>
+                      headline CPI ≥ <b>{ryBasis.value.toFixed(2)}%</b> ({realYield >= 0 ? "+" : ""}{realYield.toFixed(2)}pp from here)
+                      {" or "}cash ≤ <b>{headline.toFixed(2)}%</b>
+                      {realYield > 0 && <> (~{Math.max(1, Math.ceil(realYield / 0.25))} × 25bp of cuts)</>}.
+                      <div style={{ marginTop: 3 }}>
+                        <span style={{ color: C.muted, fontWeight: 700 }}>Buffer: </span>
+                        {[["headline CPI", headline], ["core PCE", pce], ["core CPI", core]]
+                          .filter(([, v]) => v != null)
+                          .map(([n, v], i) => {
+                            const b = ryBasis.value - v;
+                            return (
+                              <span key={n}>
+                                {i ? " · " : ""}
+                                <span style={{ color: b > 0 ? C.green : C.red, fontWeight: 800 }}>{b >= 0 ? "+" : ""}{b.toFixed(2)}pp</span>
+                                <span style={{ color: C.lbl }}> vs {n}</span>
+                              </span>
+                            );
+                          })}
+                        <span style={{ color: C.lbl }}> — headline is the thinnest and the most energy-sensitive; it last went negative at May's 4.17% print.</span>
+                      </div>
                     </div>
                   )}
                   {hasChartData ? (
