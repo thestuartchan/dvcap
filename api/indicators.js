@@ -84,6 +84,37 @@ export default async function handler(req, res) {
     }
   }
 
+  // Cash-ETF yield from the KEYLESS dividend history. Yahoo's v7 quote field
+  // (trailingAnnualDividendYield) needs a crumb and currently returns null for these, so the
+  // yield is computed from actual distributions instead: TTM = sum of the last 12 months of
+  // dividends / price. Also returns the latest monthly distribution annualised, which reacts
+  // faster to rate moves but is noisier (one odd payment date swings it). Both are reported so
+  // the caller can label which is which — neither is an SEC 30-day yield, and we don't claim to be.
+  async function fetchEtfYield(symbol) {
+    try {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1y&events=div`;
+      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" }, signal: AbortSignal.timeout(9000) });
+      if (!r.ok) return null;
+      const res = (await r.json())?.chart?.result?.[0];
+      const price = res?.meta?.regularMarketPrice;
+      const divs = Object.values(res?.events?.dividends || {})
+        .filter(d => typeof d?.amount === "number" && d.amount > 0)
+        .sort((a, b) => a.date - b.date);
+      if (!price || !divs.length) return null;
+      const ttmSum = divs.reduce((a, d) => a + d.amount, 0);
+      const last = divs[divs.length - 1];
+      return {
+        symbol, price,
+        ttmYield: +((ttmSum / price) * 100).toFixed(2),
+        annualizedLatest: +(((last.amount * 12) / price) * 100).toFixed(2),
+        lastDivDate: new Date(last.date * 1000).toISOString().slice(0, 10),
+        payments: divs.length,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   // ── Fetch history for chart — returns [{d, v}] array ──────────────────────
   // observationStart: earliest date to fetch from
   // transform: optional function to post-process the value
@@ -211,7 +242,7 @@ export default async function handler(req, res) {
     // ── Fetch all data in parallel ────────────────────────────────────────────
     const [
       tenY, twoY, unemp, hySpread, cpi, cpiYoY, gdp, dxyRaw, m2Raw, oilRaw, auctionRaw,
-      fedFundsRaw, tbill6mRaw, gdpGrowthRaw,
+      fedFundsRaw, tbill6mRaw, gdpGrowthRaw, usfrYield, sgovYield,
       tenYHistory, twoYHistory, unempHistory, creditHistory,
       cpiHeadlineHistory, cpiCoreHistory, pceCoreHistory,
     ] = await Promise.all([
@@ -232,6 +263,8 @@ export default async function handler(req, res) {
       // above is a level ($T) and cannot answer "is growth decelerating"; this can, and it
       // carries the prior quarter so the direction is computed from a real prior print.
       fredPair("A191RL1Q225SBEA"),
+      fetchEtfYield("USFR"),   // cash-ETF yields, computed from real distributions
+      fetchEtfYield("SGOV"),
       // History series for charts
       fredHistory("DGS10", START_DATE),
       fredHistory("DGS2",  START_DATE),
@@ -294,6 +327,8 @@ export default async function handler(req, res) {
       gdpGrowthPrev:  gdpGrowthRaw.prev,
       gdpGrowthDate:  gdpGrowthRaw.date,
       gdpGrowthPrevDate: gdpGrowthRaw.prevDate,
+      // Cash-ETF yields (null when the dividend history is unavailable — never faked).
+      etfYields: { USFR: usfrYield, SGOV: sgovYield },
       dxy:      dxyRaw.latest,
       dxyPrev:  dxyRaw.prev,
       m2:       m2Raw.latest,
