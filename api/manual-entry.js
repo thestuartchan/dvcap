@@ -1,0 +1,128 @@
+// api/manual-entry.js — manual/derived series that have no keyless feed.
+//   • fedPath  (P6.2) — 30-day fed funds futures (ZQ). No free feed exists: IBKR has no
+//     stateless auth and its futures data is ~20-min delayed, so this is a daily hand entry.
+//   • oasRecon (P2.5) — the OAS/HYG reconciliation log. Establishes whether the live proxy is
+//     actually predictive, so the card can be demoted or dropped on evidence rather than
+//     trusted by habit.
+// Both live in one endpoint to stay inside the 12-function Hobby cap (this is the 8th).
+
+const DATA_PATH = 'data/manual_entry.json';
+
+function ghHeaders() {
+  return {
+    Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'dvcap-manual-entry',
+  };
+}
+
+async function readStore() {
+  const repo = process.env.GITHUB_REPO;
+  const branch = process.env.GITHUB_BRANCH || 'main';
+  const r = await fetch(`https://api.github.com/repos/${repo}/contents/${DATA_PATH}?ref=${encodeURIComponent(branch)}`, { headers: ghHeaders() });
+  if (!r.ok) return { store: { fedPath: { latest: null, series: [] }, oasRecon: [] }, sha: null };
+  const meta = await r.json();
+  let store = { fedPath: { latest: null, series: [] }, oasRecon: [] };
+  try { store = JSON.parse(Buffer.from(meta.content, 'base64').toString('utf8')); } catch { /* default */ }
+  store.fedPath ||= { latest: null, series: [] };
+  store.fedPath.series ||= [];
+  store.oasRecon ||= [];
+  return { store, sha: meta.sha };
+}
+
+// ZQ is quoted as 100 − implied average fed funds for the contract month.
+export function zqImpliedRate(price) {
+  if (price == null || !Number.isFinite(+price)) return null;
+  return +(100 - Number(price)).toFixed(4);
+}
+// Moves vs current EFFR, in 25bp increments. Sign carries direction: + = hikes priced.
+export function zqMovesPriced(impliedRate, effr) {
+  if (impliedRate == null || effr == null) return null;
+  return +((impliedRate - effr) / 0.25).toFixed(2);
+}
+
+export default async function handler(req, res) {
+  if (req.method === 'GET') {
+    if (!process.env.GITHUB_TOKEN || !process.env.GITHUB_REPO) {
+      return res.status(200).json({ fedPath: { latest: null, series: [] }, oasRecon: [], note: 'store not configured' });
+    }
+    try {
+      const { store } = await readStore();
+      res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=600');
+      return res.status(200).json({
+        fedPath: { latest: store.fedPath.latest, series: store.fedPath.series.slice(-120) },
+        oasRecon: store.oasRecon.slice(-180),
+      });
+    } catch (e) {
+      return res.status(200).json({ fedPath: { latest: null, series: [] }, oasRecon: [], error: String(e?.message || e) });
+    }
+  }
+
+  if (req.method !== 'POST') return res.status(405).json({ error: 'GET or POST only' });
+  if (!/(^|;\s*)mwd_auth=true(;|$)/.test(req.headers.cookie || '')) {
+    return res.status(401).json({ error: 'not authenticated — log in to the dashboard first' });
+  }
+  if (!process.env.GITHUB_TOKEN || !process.env.GITHUB_REPO) {
+    return res.status(500).json({ error: 'GITHUB_TOKEN / GITHUB_REPO not configured' });
+  }
+
+  const { fedPath, oasRecon } = req.body || {};
+  const { store, sha } = await readStore();
+  const saved = [];
+
+  // ── P6.2 fed path ──
+  if (fedPath && fedPath.price != null) {
+    const price = Number(fedPath.price);
+    if (!Number.isFinite(price) || price <= 90 || price >= 101) {
+      return res.status(422).json({ error: `ZQ price ${fedPath.price} is out of range — expected ~90–101 (100 minus the implied rate)` });
+    }
+    const date = String(fedPath.date || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const impliedRate = zqImpliedRate(price);
+    const row = {
+      date, contract: fedPath.contract || null, price, impliedRate,
+      effr: fedPath.effr ?? null,
+      movesPriced: zqMovesPriced(impliedRate, fedPath.effr ?? null),
+      enteredAt: new Date().toISOString(),
+    };
+    store.fedPath.series = [...store.fedPath.series.filter(r => r.date !== date), row]
+      .sort((a, b) => a.date.localeCompare(b.date)).slice(-400);
+    store.fedPath.latest = row;
+    saved.push('fedPath');
+  }
+
+  // ── P2.5 reconciliation ──
+  // Appended when a delayed OAS observation finally publishes: compare its direction to what
+  // the HYG proxy said on that same date.
+  if (Array.isArray(oasRecon) && oasRecon.length) {
+    for (const r of oasRecon) {
+      if (!r?.date) continue;
+      const row = {
+        date: String(r.date).slice(0, 10),
+        hyg_chg: r.hyg_chg ?? null,
+        hyg_qqq_divergence: r.hyg_qqq_divergence ?? null,
+        oas_actual_chg: r.oas_actual_chg ?? null,
+        direction_agreed: (r.hyg_chg != null && r.oas_actual_chg != null)
+          // HYG DOWN implies credit stress => OAS should WIDEN. Opposite signs = agreement.
+          ? (Math.sign(r.hyg_chg) !== Math.sign(r.oas_actual_chg))
+          : null,
+        loggedAt: new Date().toISOString(),
+      };
+      store.oasRecon = [...store.oasRecon.filter(x => x.date !== row.date), row]
+        .sort((a, b) => a.date.localeCompare(b.date)).slice(-400);
+    }
+    saved.push('oasRecon');
+  }
+
+  if (!saved.length) return res.status(400).json({ error: 'nothing to save' });
+
+  const content = Buffer.from(JSON.stringify(store, null, 2) + '\n', 'utf8').toString('base64');
+  const w = await fetch(`https://api.github.com/repos/${process.env.GITHUB_REPO}/contents/${DATA_PATH}`, {
+    method: 'PUT', headers: ghHeaders(),
+    body: JSON.stringify({
+      message: `Manual entry — ${saved.join(', ')} @ ${new Date().toISOString().slice(0, 10)}`,
+      content, branch: process.env.GITHUB_BRANCH || 'main', ...(sha ? { sha } : {}),
+    }),
+  });
+  if (!w.ok) return res.status(502).json({ error: 'GitHub commit failed', detail: (await w.text()).slice(0, 300) });
+  return res.status(200).json({ ok: true, saved, fedPath: store.fedPath.latest, reconRows: store.oasRecon.length });
+}
