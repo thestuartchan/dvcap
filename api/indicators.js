@@ -1,3 +1,5 @@
+import { LABOR_SERIES } from "../lib/labor.js";
+
 export default async function handler(req, res) {
   const FRED_KEY = process.env.FRED_API_KEY;
 
@@ -112,6 +114,40 @@ export default async function handler(req, res) {
       };
     } catch {
       return null;
+    }
+  }
+
+  // Labour series with an IDENTITY ASSERTION. The spec flagged LNS11300060 and LNS13025703 as
+  // the IDs most likely to be wrong, so rather than trusting them once we verify on every
+  // fetch: FRED's own series metadata title must contain the expected fragment. A repurposed
+  // or mistyped ID yields verified:false and a named mismatch, which the UI surfaces — it
+  // never silently renders the wrong series as if it were the right one.
+  async function fredLabor(id, expectTitle) {
+    const base = `api_key=${FRED_KEY}&file_type=json`;
+    try {
+      const [metaR, obsR] = await Promise.all([
+        fetch(`https://api.stlouisfed.org/fred/series?series_id=${id}&${base}`),
+        fetch(`https://api.stlouisfed.org/fred/series/observations?series_id=${id}&sort_order=desc&limit=16&${base}`),
+      ]);
+      if (!metaR.ok || !obsR.ok) return { id, ok: false, error: `HTTP ${metaR.status}/${obsR.status}` };
+      const title = (await metaR.json())?.seriess?.[0]?.title ?? null;
+      const obs = ((await obsR.json())?.observations || [])
+        .filter(o => o.value !== '.' && o.value != null && o.value !== '')
+        .map(o => ({ date: o.date, value: parseFloat(o.value) }))
+        .filter(o => Number.isFinite(o.value));
+      const verified = !!(title && expectTitle && title.toLowerCase().includes(expectTitle.toLowerCase()));
+      return {
+        id, ok: obs.length > 0, title, verified,
+        mismatch: verified ? null : `expected title containing "${expectTitle}", FRED returned "${title}"`,
+        value: obs[0]?.value ?? null, date: obs[0]?.date ?? null,
+        prev: obs[1]?.value ?? null, prevDate: obs[1]?.date ?? null,
+        delta: (obs[0] && obs[1]) ? +(obs[0].value - obs[1].value).toFixed(2) : null,
+        // Year-ago value for level series that need a y/y read.
+        yearAgo: obs[12]?.value ?? null,
+        history: obs.slice(0, 16).reverse(),
+      };
+    } catch (e) {
+      return { id, ok: false, error: String(e?.message || e) };
     }
   }
 
@@ -242,7 +278,7 @@ export default async function handler(req, res) {
     // ── Fetch all data in parallel ────────────────────────────────────────────
     const [
       tenY, twoY, unemp, hySpread, cpi, cpiYoY, gdp, dxyRaw, m2Raw, oilRaw, auctionRaw,
-      fedFundsRaw, tbill6mRaw, gdpGrowthRaw, usfrYield, sgovYield,
+      fedFundsRaw, tbill6mRaw, gdpGrowthRaw, usfrYield, sgovYield, laborRaw,
       tenYHistory, twoYHistory, unempHistory, creditHistory,
       cpiHeadlineHistory, cpiCoreHistory, pceCoreHistory,
     ] = await Promise.all([
@@ -265,6 +301,9 @@ export default async function handler(req, res) {
       fredPair("A191RL1Q225SBEA"),
       fetchEtfYield("USFR"),   // cash-ETF yields, computed from real distributions
       fetchEtfYield("SGOV"),
+      // P1 — every labour series, each identity-checked against FRED's own metadata title.
+      Promise.all(Object.entries(LABOR_SERIES).map(async ([key, m]) => [key, await fredLabor(m.id, m.expectTitle)]))
+        .then(Object.fromEntries),
       // History series for charts
       fredHistory("DGS10", START_DATE),
       fredHistory("DGS2",  START_DATE),
@@ -329,6 +368,8 @@ export default async function handler(req, res) {
       gdpGrowthPrevDate: gdpGrowthRaw.prevDate,
       // Cash-ETF yields (null when the dividend history is unavailable — never faked).
       etfYields: { USFR: usfrYield, SGOV: sgovYield },
+      // P1 — labour block. Each series carries its own verified flag + mismatch reason.
+      labor: laborRaw,
       dxy:      dxyRaw.latest,
       dxyPrev:  dxyRaw.prev,
       m2:       m2Raw.latest,
