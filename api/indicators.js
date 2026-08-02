@@ -278,7 +278,7 @@ export default async function handler(req, res) {
     // ── Fetch all data in parallel ────────────────────────────────────────────
     const [
       tenY, twoY, unemp, hySpread, cpi, cpiYoY, gdp, dxyRaw, m2Raw, oilRaw, auctionRaw,
-      fedFundsRaw, tbill6mRaw, gdpGrowthRaw, usfrYield, sgovYield, laborRaw,
+      fedFundsRaw, tbill6mRaw, gdpGrowthRaw, usfrYield, sgovYield, termPremiumRaw, laborRaw,
       tenYHistory, twoYHistory, unempHistory, creditHistory,
       cpiHeadlineHistory, cpiCoreHistory, pceCoreHistory,
     ] = await Promise.all([
@@ -301,6 +301,9 @@ export default async function handler(req, res) {
       fredPair("A191RL1Q225SBEA"),
       fetchEtfYield("USFR"),   // cash-ETF yields, computed from real distributions
       fetchEtfYield("SGOV"),
+      // Section B — ACM 10Y term premium. MODEL ESTIMATE, not a market price: direction and
+      // trend only, never the absolute level. ID verified against FRED metadata on every fetch.
+      fredLabor("THREEFYTP10", "term premium"),
       // P1 — every labour series, each identity-checked against FRED's own metadata title.
       Promise.all(Object.entries(LABOR_SERIES).map(async ([key, m]) => [key, await fredLabor(m.id, m.expectTitle)]))
         .then(Object.fromEntries),
@@ -370,6 +373,7 @@ export default async function handler(req, res) {
       etfYields: { USFR: usfrYield, SGOV: sgovYield },
       // P1 — labour block. Each series carries its own verified flag + mismatch reason.
       labor: laborRaw,
+      termPremium: termPremiumRaw,   // Section B — model estimate; use direction/trend only
       dxy:      dxyRaw.latest,
       dxyPrev:  dxyRaw.prev,
       m2:       m2Raw.latest,
