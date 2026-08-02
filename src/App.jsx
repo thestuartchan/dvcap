@@ -2722,7 +2722,16 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                 <SLabel>🧮 Cross-asset</SLabel>
                 <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>value · 1D delta · direction</span>
               </div>
-              {["rates", "cyclical", "volCredit", "regime"].map(g => {
+              {/* P4 — DXY reliability. Surfaced above the legs because the index is only
+                  trustworthy when EUR and JPY point the same way. */}
+              {data.fx?.available && (
+                <div style={{ marginBottom: 8, padding: "7px 10px", background: data.fx.diverging ? C.aBg : C.bg,
+                  border: "1px solid " + (data.fx.diverging ? C.aBdr : C.bdr), borderRadius: 6,
+                  fontSize: 11.5, fontWeight: data.fx.diverging ? 700 : 400, color: data.fx.diverging ? C.amber : C.muted, lineHeight: 1.55 }}>
+                  {data.fx.note}
+                </div>
+              )}
+              {["rates", "cyclical", "volCredit", "fx", "regime"].map(g => {
                 const grp = data.cross[g];
                 if (!grp?.rows?.length) return null;
                 return (
