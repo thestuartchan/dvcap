@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, Component } from "react";
 import {
   AreaChart, Area, BarChart, Bar, RadarChart, PolarGrid,
   PolarAngleAxis, Radar, PieChart, Pie, Cell, LineChart, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, LabelList,
 } from "recharts";
 import { parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, KOFIA_FLOWS, toWonTrillions, koreaFlowRead, koreaFlowImplication, withCommas } from "../lib/kofia.js";
 import { freshnessText, humanizeAge } from "../lib/sessions.js";
@@ -3861,6 +3861,23 @@ export default function App() {
               const pceAnn = announced("pceCore", liveInd?.asOf?.pceCoreCurrent);
               // Same single source the posture notes and cash-ETF rows resolve through.
               const cashYield = liveCashYield(liveInd);
+              // Cash-yield markers drawn on the chart: the two funds actually held plus the
+              // spot bill rate. Each is only included when its live value exists — a missing
+              // one is dropped, never defaulted.
+              const ey = liveInd?.etfYields || {};
+              const cashMarks = [
+                ey.USFR?.ttmYield != null && { key: "USFR", label: "USFR", value: ey.USFR.ttmYield, color: "#0EA5E9",
+                  detail: `TTM from ${ey.USFR.payments} distributions, latest ${ey.USFR.lastDivDate}${ey.USFR.annualizedLatest != null ? ` · latest month annualised ${ey.USFR.annualizedLatest}%` : ""}` },
+                ey.SGOV?.ttmYield != null && { key: "SGOV", label: "SGOV", value: ey.SGOV.ttmYield, color: "#6366F1",
+                  detail: `TTM from ${ey.SGOV.payments} distributions, latest ${ey.SGOV.lastDivDate}${ey.SGOV.annualizedLatest != null ? ` · latest month annualised ${ey.SGOV.annualizedLatest}%` : ""}` },
+                cashYield && { key: "bill", label: cashYield.src, value: cashYield.value, color: "#3b82f6",
+                  detail: `spot policy-linked rate${cashYield.asOf ? `, as of ${cashYield.asOf}` : ""}` },
+              ].filter(Boolean);
+              // These three sit within a few bps of each other, so drawing three separate
+              // labelled lines would overprint into an unreadable smear. Draw the range as a
+              // band, and give each its exact value in the legend row beneath the chart.
+              const cashLo = cashMarks.length ? Math.min(...cashMarks.map(m => m.value)) : null;
+              const cashHi = cashMarks.length ? Math.max(...cashMarks.map(m => m.value)) : null;
               const trendChip = t => t && (
                 <span style={{ fontSize: 10.5, fontWeight: 800, color: t.dir === "cooling" ? C.green : t.dir === "rising" ? C.red : C.muted }}>
                   {t.dir === "cooling" ? "▼" : t.dir === "rising" ? "▲" : "■"} {t.d >= 0 ? "+" : "−"}{Math.abs(t.d)}pp vs prior
@@ -3949,15 +3966,16 @@ export default function App() {
                           }}
                         />
                         <Legend iconType="line" iconSize={10} wrapperStyle={{ fontSize: "11px" }} />
-                        {/* Reference-line labels are kept SHORT and pinned inside the plot area:
-                            position:"right" renders outside the axis and gets clipped by the
-                            container (the long "cash ~3.82% (6M T-bill)" string was cut off).
-                            The full definition of each line lives in the caption below the chart. */}
-                        <ReferenceLine y={2} stroke="#22c55e" strokeDasharray="4 3" ifOverflow="extendDomain"
-                          label={{ value: "2% target", position: "insideRight", fontSize: 9, fill: "#22c55e" }} />
-                        {cashYield != null && (
-                          <ReferenceLine y={cashYield.value} stroke="#3b82f6" strokeDasharray="4 3" ifOverflow="extendDomain"
-                            label={{ value: `cash ${cashYield.value.toFixed(2)}%`, position: "insideRight", fontSize: 9, fill: "#3b82f6" }} />
+                        {/* NO in-chart text labels. Both previous attempts failed: position
+                            "right" clipped at the container edge, "insideRight" overprinted the
+                            data lines. Every reference is identified in the legend row beneath
+                            the chart instead, which has room for the exact value and method. */}
+                        <ReferenceLine y={2} stroke="#22c55e" strokeDasharray="4 3" ifOverflow="extendDomain" />
+                        {/* Cash band: the funds and the bill rate sit within a few bps, so the
+                            range is shaded once rather than drawn as three overlapping lines. */}
+                        {cashLo != null && (
+                          <ReferenceArea y1={cashLo} y2={cashHi} ifOverflow="extendDomain"
+                            fill="#3b82f6" fillOpacity={0.10} stroke="#3b82f6" strokeOpacity={0.35} strokeDasharray="4 3" />
                         )}
                         {/* connectNulls: a series missing a single month is a publication gap
                             (BLS/BEA schedules), not a break in the underlying series. */}
@@ -3969,20 +3987,36 @@ export default function App() {
                   ) : (
                     <div style={{ color: C.muted, fontSize: 13, fontStyle: "italic", marginTop: 8 }}>Awaiting data</div>
                   )}
-                  {/* Caption defines the reference lines in full — the in-chart labels are kept
-                      short so they cannot be clipped, and "cash" needs saying properly: it is a
-                      RATE, not a specific fund. USFR/SGOV/BIL all track this curve. */}
+                  {/* Reference legend — carries the labels that used to sit (illegibly) on the
+                      plot. Each entry names the instrument, its exact live yield, and how that
+                      yield was derived, on hover. */}
                   {hasChartData && (
-                    <div style={{ marginTop: 6, fontSize: 11, color: C.lbl, lineHeight: 1.6 }}>
-                      <span style={{ color: "#22c55e", fontWeight: 800 }}>— 2% target</span>
-                      <span> Fed's stated inflation goal. </span>
-                      {cashYield && (
-                        <>
-                          <span style={{ color: "#3b82f6", fontWeight: 800 }}>— cash {cashYield.value.toFixed(2)}%</span>
-                          <span> what cash earns today: the <b>{cashYield.src}</b> rate (live{cashYield.asOf ? `, as of ${cashYield.asOf}` : ""}). Not a specific fund — USFR, SGOV and BIL all track this curve, so the line sits where any of them yields. Where a CPI line is <i>above</i> it, cash is losing to inflation.</span>
-                        </>
-                      )}
-                      <span> · {chartData.length} monthly observations, {chartData[0]?.date} → {chartData[chartData.length - 1]?.date}.</span>
+                    <div style={{ marginTop: 8, borderTop: "1px solid " + C.bdr, paddingTop: 8 }}>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5 }} title="The Fed's stated inflation goal">
+                          <span style={{ width: 14, height: 0, borderTop: "2px dashed #22c55e", display: "inline-block" }} />
+                          <b style={{ color: "#22c55e" }}>2%</b><span style={{ color: C.muted }}>Fed target</span>
+                        </span>
+                        {cashLo != null && (
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5 }}
+                            title="Shaded band spans the cash yields below — they sit within a few bps of each other">
+                            <span style={{ width: 14, height: 9, background: "#3b82f6", opacity: 0.18, border: "1px dashed #3b82f6", display: "inline-block", borderRadius: 2 }} />
+                            <span style={{ color: C.muted }}>cash band {cashLo.toFixed(2)}–{cashHi.toFixed(2)}%</span>
+                          </span>
+                        )}
+                        {cashMarks.map(m => (
+                          <span key={m.key} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5 }} title={m.detail}>
+                            <span style={{ width: 8, height: 8, borderRadius: "50%", background: m.color, display: "inline-block" }} />
+                            <b style={{ color: m.color }}>{m.label}</b>
+                            <span style={{ color: C.text, fontWeight: 700 }}>{m.value.toFixed(2)}%</span>
+                          </span>
+                        ))}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 5, lineHeight: 1.55 }}>
+                        Fund yields are <b>trailing 12-month</b>, computed from actual distributions (not an SEC 30-day yield);
+                        the {cashYield?.src ?? "bill"} figure is the spot rate. Where a CPI line sits <i>above</i> the band, cash is losing to inflation.
+                        {" · "}{chartData.length} monthly observations, {chartData[0]?.date} → {chartData[chartData.length - 1]?.date}.
+                      </div>
                     </div>
                   )}
                 </Card>
