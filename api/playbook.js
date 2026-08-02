@@ -27,7 +27,7 @@ export default async function handler(req, res) {
   const assembled = await assembleRegion(region);
   if (!assembled) return res.status(400).json({ error: 'bad region' });
 
-  const { R, quotes, idxRaw, macro, regime, cross, hyg, leaning, read } = assembled;
+  const { R, quotes, idxRaw, macro, regime, cross, hyg, leaning, read, marketRegime, ladder } = assembled;
 
   // Attach display metadata + structure tag to each name, and names to indices.
   // `session` = explicit phase of that symbol's OWN exchange (live/pre/post/lunch/holiday/
@@ -64,6 +64,8 @@ export default async function handler(req, res) {
     hyg,                  // Stage 3B — live intraday credit tell (leads the EOD OAS print)
     leaning,              // Stage 3B — how many regime tripwires point the same way
     read,                 // Stage 4 — composed deterministic READ (no model call)
+    marketRegime,         // P0.1 — cross-asset regime read (incl. HAWKISH_RATES_REPRICING)
+    ladder,               // P5  — concentration ladder + single-theme alert
     calendar: weekHighlights(),
     // `series` is the authoritative dated store (one row per observation date, ordered);
     // `history` stays for backward compatibility with older cached clients.
