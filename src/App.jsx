@@ -764,7 +764,10 @@ function LaborPanel({ labor, compact }) {
   // Interpretation lines — each computed from its own value/delta, so they update.
   const lines = [
     s.primeAge && primeAgeRead(s.primeAge.value, s.primeAge.delta, s.participation?.delta),
-    s.longTerm && longTermRead(s.longTerm.value, s.longTerm.delta),
+    // y/y COUNT passed alongside the share — a falling share on a rising count still flags.
+    s.longTerm && longTermRead(s.longTerm.value, s.longTerm.delta,
+      (g("longTermCount")?.value != null && g("longTermCount")?.yearAgo != null)
+        ? Math.round(g("longTermCount").value - g("longTermCount").yearAgo) : null),
     (s.u6 && s.u3) && u6SpreadRead(s.u6.value, s.u3.value, (s.u6.prev != null && s.u3.prev != null) ? +(s.u6.prev - s.u3.prev).toFixed(1) : null),
     s.payrolls && payrollsRead(s.payrolls.delta, null),
     (s.payrolls && s.household) && surveyDivergenceRead(s.payrolls.delta, s.household.delta),
@@ -813,6 +816,7 @@ function LaborPanel({ labor, compact }) {
             {tile("primeAge", "Prime-age (25–54)")}
             {tile("u6", "U-6")}
             {tile("longTerm", "LT unemployed share")}
+            {tile("longTermCount", "LT unemployed (27wk+)", null, null, "k")}
             {tile("payrolls", "Payrolls", null, null, "k")}
             {tile("household", "Household emp", null, null, "k")}
           </MetricGrid>
@@ -2730,11 +2734,38 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                   </div>
                 );
               })}
-              {/* HYG is the live credit tell — OAS is EOD/T+1, so HYG moves first */}
+              {/* P2 — the master credit gauge (OAS) publishes with a one-day lag, so it is
+                  shown WITH its as-of date beside a live proxy that is explicitly not OAS.
+                  The HYG-minus-QQQ spread is the actionable part: credit refusing to confirm
+                  an equity move is the case a single HYG print cannot surface. */}
               {data.hyg && (
-                <div style={{ marginTop: 4, padding: "7px 10px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6,
-                  fontSize: 11.5, fontWeight: 700, color: !data.hyg.available ? C.amber : data.hyg.stressing ? C.red : C.mid }}>
-                  <span style={{ color: C.muted, fontWeight: 800 }}>Live credit tell · </span>{data.hyg.note}
+                <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 8 }}>
+                  <div style={{ padding: "8px 11px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6 }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                      HY OAS · official
+                    </div>
+                    <div style={{ fontSize: 16, fontWeight: 900, color: C.text }}>
+                      {data.macro?.oas?.value ?? "—"}
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: C.amber, marginLeft: 6 }}>
+                        as of {data.macro?.oas?.date ?? "—"} · publishes T+1
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ padding: "8px 11px", background: data.hyg.divergence?.alert ? C.aBg : C.bg,
+                    border: "1px solid " + (data.hyg.divergence?.alert ? C.aBdr : C.bdr), borderRadius: 6 }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: C.blue, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                      HYG intraday · PROXY — not OAS
+                    </div>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: !data.hyg.available ? C.amber : data.hyg.stressing ? C.red : C.mid, marginTop: 2 }}>
+                      {data.hyg.note}
+                    </div>
+                    {data.hyg.divergence && (
+                      <div style={{ fontSize: 11.5, fontWeight: data.hyg.divergence.alert ? 800 : 400,
+                        color: data.hyg.divergence.alert ? C.amber : C.muted, marginTop: 3, lineHeight: 1.5 }}>
+                        {data.hyg.divergence.alert ? "⚠ " : ""}{data.hyg.divergence.note}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </Card>
