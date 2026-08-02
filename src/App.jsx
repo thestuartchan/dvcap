@@ -6,6 +6,7 @@ import {
 } from "recharts";
 import { kofiaStale, parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, KOFIA_FLOWS, toWonTrillions, koreaFlowRead, koreaFlowImplication, withCommas } from "../lib/kofia.js";
 import { freshnessText, humanizeAge } from "../lib/sessions.js";
+import { pendingReconciliations, reconStats } from "../lib/recon.js";
 import { laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead } from "../lib/labor.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
@@ -2499,7 +2500,7 @@ function pbGeo(sym) {
   return "US";
 }
 
-function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updated, onRefresh, fmtTime }) {
+function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updated, onRefresh, fmtTime, reconSummary }) {
   // Both All and single-region are filtered views of ONE spine. `active` = loaded data for
   // the selected region(s); `data` (= first active) backs the global macro strip + calendar.
   const active = regions.map(r => byRegion[r]).filter(Boolean);
@@ -2900,6 +2901,14 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                       HYG is an ETF with its own flow, liquidity and NAV-premium dynamics.
                       Directionally useful same-day; not a substitute for the published spread.
                     </div>
+                    {/* P2.5 — has the proxy actually been right? Shown ON the card, because a
+                        card that cannot show its own hit rate gets trusted by habit. */}
+                    {reconSummary && (
+                      <div style={{ fontSize: 10.5, marginTop: 4, fontWeight: reconSummary.belowChance ? 800 : 600,
+                        color: reconSummary.belowChance ? C.red : reconSummary.sufficient ? C.green : C.lbl }}>
+                        Track record: {reconSummary.verdict}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -3087,6 +3096,9 @@ export default function App() {
       deflationary_p: derivedRegimes.deflationary, inflationary_p: derivedRegimes.inflationary,
       hawkish_repricing: pbData?.us?.marketRegime?.state ?? null,
       live_regime: liveRegime.id, view_regime: activeRegime.id, pinned: !!regimePin.pinned,
+      // Same-day HYG reading — the thing the delayed OAS print will later be scored against.
+      hyg_chg: pbData?.us?.hyg?.changePct ?? null,
+      hyg_qqq_divergence: pbData?.us?.hyg?.divergence?.spread ?? null,
       inputs: {
         weightedRecessionProb: recWeightedAvg, cpi: cpiForRegime, kalshi2027: recKalshi2027,
         tape: pbData?.us?.marketRegime?.inputs ?? null,
@@ -3099,6 +3111,26 @@ export default function App() {
       .then(r => r.ok ? cacheSave("regime_log_last_v1", today) : null)
       .catch(() => {});
   }, [derivedRegimes?.stagflation, liveRegime?.id, activeRegime.id]);
+
+  // ── P2.5 — OAS/HYG reconciliation, run on the same daily hook ───────────────
+  // Necessarily retrospective: HY OAS for date D publishes ~2 business days later, so each
+  // day we look BACK for logged days whose observation has since landed and score them.
+  // Scoring only happens when BOTH sides exist — never on an assumed or interpolated print.
+  const [oasRecon, setOasRecon] = useState([]);
+  useEffect(() => { fetch("/api/manual-entry").then(r => r.json()).then(j => setOasRecon(j.oasRecon || [])).catch(() => {}); }, []);
+  useEffect(() => {
+    const oasSeries = pbData?.us?.macro?.oas?.series;
+    if (!oasSeries?.length || !regimeHistory.length) return;
+    const pending = pendingReconciliations(regimeHistory, oasSeries, oasRecon);
+    if (!pending.length) return;
+    fetch("/api/manual-entry", {
+      method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+      body: JSON.stringify({ oasRecon: pending }),
+    })
+      .then(r => r.ok ? fetch("/api/manual-entry").then(x => x.json()).then(j => setOasRecon(j.oasRecon || [])) : null)
+      .catch(() => {});
+  }, [regimeHistory.length, pbData?.us?.macro?.oas?.date, oasRecon.length]);
+  const reconSummary = reconStats(oasRecon);
 
   useEffect(function() {
     loadFunds().then(function(saved) {
@@ -4039,6 +4071,7 @@ export default function App() {
         {/* ── MACRO ── */}
         {tab === "global" && (
           <GlobalPlaybook
+            reconSummary={reconSummary}
             byRegion={pbData}
             regions={pbRegions}
             toggleRegion={toggleRegion}
