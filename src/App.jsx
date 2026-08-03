@@ -64,11 +64,11 @@ const INDICATORS = [
     // Returns independent assessment based on this indicator's own live value
     signal(liveVal) {
       const v = liveVal ?? 0.38;
-      if (v < -0.5)  return { label:"Deep Inversion", text:"Severe inversion — historically the strongest recession predictor. Average lead time: 12–18 months.",       color:"#991B1B", bg:"#FEF2F2", bdr:"#FCA5A5" };
-      if (v < 0)     return { label:"Inverted",        text:"Curve still inverted — markets pricing Fed cuts ahead of deteriorating growth.",                            color:"#DC2626", bg:"#FEF2F2", bdr:"#FCA5A5" };
-      if (v < 0.5)   return { label:"Danger Window",   text:"Just re-normalized. Recessions historically strike 4–11 months after un-inversion. This is the risk zone.", color:"#92400E", bg:"#FFFBEB", bdr:"#FCD34D" };
-      if (v < 1.0)   return { label:"Steepening",      text:"Curve steepening — consistent with either reflationary recovery or stagflation. Watch credit spreads to differentiate.", color:"#D97706", bg:"#FFFBEB", bdr:"#FCD34D" };
-      return           { label:"Normal",               text:"Curve fully normalized. Historical recession risk low based on this indicator alone.",                       color:"#166534", bg:"#F0FDF4", bdr:"#86EFAC" };
+      if (v < -0.5)  return { label:"Deep Inversion", text:"Severe inversion — historically the strongest recession predictor. Average lead time: 12–18 months.",       state:"DANGER" };
+      if (v < 0)     return { label:"Inverted",        text:"Curve still inverted — markets pricing Fed cuts ahead of deteriorating growth.",                            state:"DANGER" };
+      if (v < 0.5)   return { label:"Danger Window",   text:"Just re-normalized. Recessions historically strike 4–11 months after un-inversion. This is the risk zone.", state:"WATCH" };
+      if (v < 1.0)   return { label:"Steepening",      text:"Curve steepening — consistent with either reflationary recovery or stagflation. Watch credit spreads to differentiate.", state:"ELEVATED" };
+      return           { label:"Normal",               text:"Curve fully normalized. Historical recession risk low based on this indicator alone.",                       state:"BENIGN" };
     },
   },
   {
@@ -85,11 +85,11 @@ const INDICATORS = [
     ],
     signal(liveVal) {
       const v = liveVal ?? 4.4;
-      if (v >= 5.5)  return { label:"Recession Confirmed",  text:"Unemployment above 5.5% — recession is underway by historical standards. Capital preservation is the priority.", color:"#991B1B", bg:"#FEF2F2", bdr:"#FCA5A5" };
-      if (v >= 5.0)  return { label:"Recession Zone",       text:"Crossed 5.0% — recession historically confirmed at this level. Defensive positioning warranted.",              color:"#DC2626", bg:"#FEF2F2", bdr:"#FCA5A5" };
-      if (v >= 4.5)  return { label:"Sahm Rule Triggered",  text:"At or above the Sahm Rule threshold. Labour market deteriorating — leading indicator for recession.",           color:"#92400E", bg:"#FFFBEB", bdr:"#FCD34D" };
-      if (v >= 4.0)  return { label:"Elevated vs '23 low",  text:"Above the 4.0% historical average and well up from the 3.4% '23 trough — but that's the trend-since-low read; check the last-vs-prior print for near-term direction.", color:"#D97706", bg:"#FFFBEB", bdr:"#FCD34D" };
-      return           { label:"Healthy",                   text:"Below historical average. Labour market resilient — low near-term recession risk from this indicator.",         color:"#166534", bg:"#F0FDF4", bdr:"#86EFAC" };
+      if (v >= 5.5)  return { label:"Recession Confirmed",  text:"Unemployment above 5.5% — recession is underway by historical standards. Capital preservation is the priority.", state:"DANGER" };
+      if (v >= 5.0)  return { label:"Recession Zone",       text:"Crossed 5.0% — recession historically confirmed at this level. Defensive positioning warranted.",              state:"DANGER" };
+      if (v >= 4.5)  return { label:"Sahm Rule Triggered",  text:"At or above the Sahm Rule threshold. Labour market deteriorating — leading indicator for recession.",           state:"WATCH" };
+      if (v >= 4.0)  return { label:"Elevated vs '23 low",  text:"Above the 4.0% historical average and well up from the 3.4% '23 trough — but that's the trend-since-low read; check the last-vs-prior print for near-term direction.", state:"ELEVATED" };
+      return           { label:"Healthy",                   text:"Below historical average. Labour market resilient — low near-term recession risk from this indicator.",         state:"BENIGN" };
     },
   },
   {
@@ -105,11 +105,11 @@ const INDICATORS = [
     ],
     signal(liveVal) {
       const v = liveVal ?? 2.75;
-      if (v >= 6.0)  return { label:"Recession Imminent",  text:"Spreads above 6% — markets pricing systemic stress. This is the deflationary trip wire. Rotate to Treasuries and cash immediately.", color:"#991B1B", bg:"#FEF2F2", bdr:"#FCA5A5" };
-      if (v >= 4.5)  return { label:"Alert — Act Now",     text:"Breached the 4.5% alert threshold. Insurance accumulation phase is over — full defensive rotation warranted.",                      color:"#DC2626", bg:"#FEF2F2", bdr:"#FCA5A5" };
-      if (v >= 3.5)  return { label:"Widening — Watch",    text:"Spreads widening toward the alert zone. Begin building insurance positions. Don't wait for 4.5% to confirm.",                       color:"#92400E", bg:"#FFFBEB", bdr:"#FCD34D" };
-      if (v >= 3.0)  return { label:"Mild Stress",         text:"Mild stress appearing. Markets slightly nervous but not panicking. Monitor weekly.",                                                  color:"#D97706", bg:"#FFFBEB", bdr:"#FCD34D" };
-      return           { label:"Benign — No Stress",       text:"Markets are calm. No credit stress priced. This is the window to accumulate insurance cheaply before spreads move.",                 color:"#166534", bg:"#F0FDF4", bdr:"#86EFAC" };
+      if (v >= 6.0)  return { label:"Recession Imminent",  text:"Spreads above 6% — markets pricing systemic stress. This is the deflationary trip wire. Rotate to Treasuries and cash immediately.", state:"DANGER" };
+      if (v >= 4.5)  return { label:"Alert — Act Now",     text:"Breached the 4.5% alert threshold. Insurance accumulation phase is over — full defensive rotation warranted.",                      state:"DANGER" };
+      if (v >= 3.5)  return { label:"Widening — Watch",    text:"Spreads widening toward the alert zone. Begin building insurance positions. Don't wait for 4.5% to confirm.",                       state:"WATCH" };
+      if (v >= 3.0)  return { label:"Mild Stress",         text:"Mild stress appearing. Markets slightly nervous but not panicking. Monitor weekly.",                                                  state:"ELEVATED" };
+      return           { label:"Benign — No Stress",       text:"Markets are calm. No credit stress priced. This is the window to accumulate insurance cheaply before spreads move.",                 state:"BENIGN" };
     },
   },
 ];
@@ -117,7 +117,7 @@ const INDICATORS = [
 // ─── INSURANCE ASSETS ─────────────────────────────────────────────────────────
 const ASSETS = [
   {
-    id:"miners", name:"Gold Miners", icon:"⛏️", color:"#92400E", bg:"#FFFBEB", bdr:"#FCD34D",
+    id:"miners", name:"Gold Miners", icon:"⛏️", state:"WATCH",
     stagRank:1, defRank:4, refRank:3, infRank:1, volatility:"HIGH",
     stagNote:"Best stagflation asset. Gold benefits from both inflation AND growth fear. Miners are 2–3× levered to gold price.",
     crisisScore:85, inflationScore:90, deflationScore:30, liquidityScore:75, stagScore:95,
@@ -135,7 +135,7 @@ const ASSETS = [
     regionalNote:"Physical Gold (Dubai): 0% VAT on gold purchases in UAE. Available via Dubai Gold Souk, DMCC dealers, or Emirates NBD/ADCB gold savings accounts. No FX risk given AED/USD peg. Best local debasement hedge for UAE residents.",
   },
   {
-    id:"farmland", name:"Farmland", icon:"🌾", color:"#166534", bg:"#F0FDF4", bdr:"#86EFAC",
+    id:"farmland", name:"Farmland", icon:"🌾", state:"BENIGN",
     stagRank:3, defRank:3, refRank:2, infRank:2, volatility:"LOW",
     stagNote:"Good inflation hedge — food prices sticky in all environments. Illiquid. Multi-year hold.",
     crisisScore:60, inflationScore:85, deflationScore:50, liquidityScore:20, stagScore:75,
@@ -252,7 +252,7 @@ const PHASE_NOTES = {
 // `col` maps each phase to its SCENARIO_MATRIX field; colour set is reused by the
 // interactive guide (active column) and the phase-note callouts.
 const INSURANCE_PHASES = [
-  { k:"onset",        col:"onset", label:"Crash Onset",               short:"Crash Onset",  color:"#92400E", bg:"#FFFBEB", bdr:"#FCD34D", desc:"Signals deteriorating. Buy protection before confirmation. Puts, spreads, GLD." },
+  { k:"onset",        col:"onset", label:"Crash Onset",               short:"Crash Onset",  state:"WATCH", desc:"Signals deteriorating. Buy protection before confirmation. Puts, spreads, GLD." },
   { k:"deflationary", col:"def",   label:"Deflationary Resolution",   short:"Deflationary", color:"#1E40AF", bg:"#EFF6FF", bdr:"#BFDBFE", desc:"Debt deflation, falling prices, Japan-style. TLT wins. Gold moderate. BTC loses." },
   { k:"inflationary", col:"inf",   label:"Inflationary / Debasement", short:"Inflationary", color:"#7C3AED", bg:"#F5F3FF", bdr:"#C4B5FD", desc:"Fed prints to reflate. Dollar credibility erodes. Gold and BTC win. TLT is a trap." },
   { k:"stagflation",  col:"stag",  label:"Persistent Stagflation",    short:"Stagflation",  color:"#0F766E", bg:"#F0FDFA", bdr:"#5EEAD1", desc:"Persistent Stagflation — slow grind, not a sharp crash. Favour passive real-asset hedges (GLD, XLP, farmland, HYG puts) over active short instruments. Avoid VIX calls (contango) and SQQQ (daily decay). Puts are expensive to roll monthly over 18-24 months — size conservatively and favour longer-dated instruments to reduce theta bleed." },
@@ -361,13 +361,13 @@ const POSTURE_BUCKET_META = [
 const POSTURE_STATUS = {
   HOLD:       { color:"#6B7280", bg:"#F9FAFB", bdr:"#E5E7EB" },
   PREPARE:    { color:"#1E40AF", bg:"#EFF6FF", bdr:"#BFDBFE" },
-  WATCH:      { color:"#92400E", bg:"#FFFBEB", bdr:"#FCD34D" },
-  ACTIVATE:   { color:"#166534", bg:"#F0FDF4", bdr:"#86EFAC" },
-  ACCUMULATE: { color:"#166534", bg:"#F0FDF4", bdr:"#86EFAC" },
-  DEPLOY:     { color:"#166534", bg:"#F0FDF4", bdr:"#86EFAC" },
-  SELECTIVE:  { color:"#92400E", bg:"#FFFBEB", bdr:"#FCD34D" },
+  WATCH:      { state:"WATCH" },
+  ACTIVATE:   { state:"BENIGN" },
+  ACCUMULATE: { state:"BENIGN" },
+  DEPLOY:     { state:"BENIGN" },
+  SELECTIVE:  { state:"WATCH" },
   REDUCE:     { color:"#B45309", bg:"#FFF7ED", bdr:"#FED7AA" },
-  PAUSE:      { color:"#991B1B", bg:"#FEF2F2", bdr:"#FCA5A5" },
+  PAUSE:      { state:"DANGER" },
 };
 // Midpoint of a "60–70%" style range, for the allocation donut.
 function postureMid(range) {
@@ -695,14 +695,14 @@ const CONSENSUS_ROWS = [
 
 const REGIMES = [
   {
-    id:"stag",label:"Stagflation",prob:45,color:"#B45309",bg:"#FFFBEB",bdr:"#FCD34D",
+    id:"stag",label:"Stagflation",prob:45,state:"WATCH",
     desc:"High inflation + slowing growth. Iran war oil shock, tariffs embedding in CPI, Fed trapped.",
     best:["Gold Miners (GDX, AEM)","Consumer Staples (XLP, PG, KO)","Energy Pipelines (EPD, ET)","Farmland","Short-duration T-bills"],
     worst:["Long-Duration Bonds (TLT)","Growth / high-multiple tech","Unprofitable tech"],
     trigger:"Supply shock resolves → reflationary growth  OR  demand destruction → deflationary recession",
   },
   {
-    id:"ref",label:"Reflationary Growth",prob:30,color:"#166534",bg:"#F0FDF4",bdr:"#86EFAC",
+    id:"ref",label:"Reflationary Growth",prob:30,state:"BENIGN",
     desc:"Gulf peace deal → oil falls. Fed resumes cutting. AI capex starts generating productivity gains.",
     best:["Broad equities (SPY, QQQ)","AI infrastructure (NVDA, AVGO)","REITs","Emerging markets"],
     worst:["Gold (risk-on removes safe haven bid)","Short-duration T-bills (yield falls)","Defensive staples"],
@@ -1881,7 +1881,11 @@ function IndicatorChart({ ind, live }) {
                         : ind.id === "unemp"  && live ? live.unemployment
                         : ind.id === "credit" && live ? live.creditSpread
                         : null;
-          const sig = ind.signal(liveVal);
+          const sigRaw = ind.signal(liveVal);
+          // I.5 — status colours come from the token set, never from a hardcoded hex.
+          const sig = sigRaw.state && STATUS[sigRaw.state]
+            ? { ...sigRaw, color: STATUS[sigRaw.state].color, bg: STATUS[sigRaw.state].bg, bdr: STATUS[sigRaw.state].bdr }
+            : sigRaw;
           return (
             <div style={{ background: sig.bg, border: "1px solid " + sig.bdr, borderRadius: 8, padding: "8px 12px", maxWidth: 260 }}>
               <div style={{ color: sig.color, fontSize: 11, letterSpacing: 1.5, fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>Signal: {sig.label}</div>
