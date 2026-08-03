@@ -837,13 +837,20 @@ function laborVerdictFor(liveInd) {
   return laborVerdict(u3.delta, ep.delta).verdict;
 }
 
+// Credit thresholds — one definition for both the reference lines and the legend.
+const CREDIT_MARKS = [
+  { val: 3.0, label: "Mild stress",       color: "#D97706", dash: "4 2" },
+  { val: 4.5, label: "Alert threshold",   color: "#F97316", dash: "5 3" },
+  { val: 6.0, label: "Recession likely",  color: "#DC2626", dash: "4 2" },
+];
+
 // ─── CREDIT BLOCK (P2 / F.2) ──────────────────────────────────────────────────
 // The master credit gauge: the published OAS with its real observation date, beside a live
 // HYG proxy that is explicitly NOT the spread. Defined ONCE and rendered once. It used to sit
 // nested inside the Global Playbook cross-asset card; F.2 puts it near the top of the Macro
 // tab. Keeping a second copy on Playbook would reintroduce exactly the drift section C removed
 // for the labour module, so this MOVED rather than being duplicated.
-function CreditBlock({ credit, oas, hyg, reconSummary, depth = "full" }) {
+function CreditBlock({ credit, oas, hyg, reconSummary, history, depth = "full" }) {
   if (!hyg) return null;
   // I.1/I.2 — the master gauge carries a status badge, so it carries a matching accent bar.
   const cst = creditStatus(oas?.value) ?? "BENIGN";
@@ -883,6 +890,39 @@ function CreditBlock({ credit, oas, hyg, reconSummary, depth = "full" }) {
             )}
           </div>
         </div>
+        {/* The old standalone credit indicator carried the threshold chart; it is folded in
+            here so ONE component covers the topic (M.1) without losing what it showed. */}
+        {history && history.length >= 2 && (
+          <>
+            <ResponsiveContainer width="100%" height={148}>
+              <AreaChart data={history} margin={{ top: 6, right: 8, bottom: 0, left: 0 }}>
+                <defs>
+                  <linearGradient id="oasFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={ctok.color} stopOpacity={0.28} />
+                    <stop offset="100%" stopColor={ctok.color} stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="d" tick={{ fontSize: 9, fill: C.lbl }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                <YAxis domain={[1.5, 7.0]} tick={{ fontSize: 9, fill: C.lbl }} width={34} tickFormatter={v => v.toFixed(2) + "%"} />
+                <Tooltip formatter={v => [`${Number(v).toFixed(2)}%`, "HY OAS"]} />
+                {CREDIT_MARKS.map(t => (
+                  <ReferenceLine key={t.val} y={t.val} stroke={t.color} strokeDasharray={t.dash} strokeWidth={1.5} />
+                ))}
+                <Area type="monotone" dataKey="v" stroke={ctok.color} strokeWidth={2} fill="url(#oasFill)" />
+              </AreaChart>
+            </ResponsiveContainer>
+            {/* Threshold legend, matching the yield-curve card's shape. */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginTop: 4 }}>
+              {CREDIT_MARKS.map(t => (
+                <span key={t.val} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+                  <span style={{ width: 14, borderTop: `2px ${t.dash ? "dashed" : "solid"} ${t.color}`, display: "inline-block" }} />
+                  <span style={{ color: C.mid }}>{t.label}</span>
+                  <b style={{ color: t.color }}>{t.val.toFixed(2)}%</b>
+                </span>
+              ))}
+            </div>
+          </>
+        )}
         <div style={{ fontSize: 11, color: C.lbl, marginTop: 6, lineHeight: 1.5 }}>
           Level bands: &lt;3.0 benign · 3.0–4.5 watchful · 4.5–8.0 stressed · &gt;8.0 recessionary.
           Trend and the 3Y-window caveat on the Macro tab.
@@ -1100,11 +1140,41 @@ function LaborPanel({ labor, depth = "full" }) {
               <YAxis yAxisId="ep" domain={["auto", "auto"]} tick={{ fontSize: 9, fill: C.lbl }} width={34} tickFormatter={v => v.toFixed(1)} />
               <YAxis yAxisId="u3" orientation="right" domain={["auto", "auto"]} tick={{ fontSize: 9, fill: C.lbl }} width={30} tickFormatter={v => v.toFixed(1)} />
               <Tooltip formatter={(v, n) => [`${Number(v).toFixed(1)}%`, n === "empPop" ? "Emp–pop" : "U3"]} />
+              {(() => {
+                const hi = Math.max(...chart.map(r => r.empPop).filter(v => v != null));
+                return [
+                  { y: hi, c: "#166534", d: "4 2" },
+                  { y: hi - 0.25, c: "#D97706", d: "5 3" },
+                  { y: hi - 0.5, c: "#DC2626", d: "4 2" },
+                ].map(t => <ReferenceLine key={t.y} yAxisId="ep" y={t.y} stroke={t.c} strokeDasharray={t.d} strokeWidth={1.5} />);
+              })()}
               <Line yAxisId="ep" type="monotone" dataKey="empPop" name="empPop" stroke={tok.color} strokeWidth={2.5} dot={false} connectNulls />
               <Line yAxisId="u3" type="monotone" dataKey="u3" name="u3" stroke={C.muted} strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
             </LineChart>
           </ResponsiveContainer>
         )}
+        {/* Threshold legend, matching the yield-curve and credit cards. Computed from the
+            trailing-12m high rather than hardcoded, so the benchmarks move with the data:
+            Sahm's equivalent for emp-pop is −0.5pp off that high. */}
+        {chart.length >= 2 && (() => {
+          const hi = Math.max(...chart.map(r => r.empPop).filter(v => v != null));
+          const marks = [
+            { val: +hi.toFixed(2), label: "12m high", color: "#166534", dash: "4 2" },
+            { val: +(hi - 0.25).toFixed(2), label: "Watch −0.25pp", color: "#D97706", dash: "5 3" },
+            { val: +(hi - 0.5).toFixed(2), label: "Sahm equiv −0.5pp", color: "#DC2626", dash: "4 2" },
+          ];
+          return (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginTop: 4 }}>
+              {marks.map(t => (
+                <span key={t.label} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+                  <span style={{ width: 14, borderTop: `2px dashed ${t.color}`, display: "inline-block" }} />
+                  <span style={{ color: C.mid }}>{t.label}</span>
+                  <b style={{ color: t.color }}>{t.val.toFixed(2)}%</b>
+                </span>
+              ))}
+            </div>
+          );
+        })()}
         {/* K.3 — Indicators is the glance tab; the full interpretation lives on Macro. */}
         <div style={{ fontSize: 11, color: C.lbl, marginTop: 6, lineHeight: 1.5 }}>
           Emp–pop (solid, left axis) vs U3 (dashed, right). {watchLine} Full interpretation on the Macro tab.
@@ -3419,19 +3489,24 @@ export default function App() {
                 {(pricesLoading || indLoading) ? "⏳ Refreshing…" : "🔄 Refresh All"}
               </button>
               {(() => {
+                // M.4 — the header is a STATED FUNCTION of named inputs, not a separate
+                // judgement. It previously ran `cs > 6.0 || labStress.severe`, so a severe
+                // labour print alone printed DANGER / "threshold breached" while HY OAS sat at
+                // 2.84 with no threshold breached at all — section H in miniature, and the
+                // reason the header disagreed with the action card directly beneath it.
+                // headerSignal() applies credit's veto FIRST, then takes the more severe of
+                // (regime, credit).
                 const cs = liveInd ? liveInd.creditSpread : 2.75;
-                const ue = liveInd ? liveInd.unemployment : 4.4;
-                const isDeflationary = cs > 6.0 || labStress.severe;
-                const isDanger       = cs > 4.5 || labStress.deteriorating;
-                const isRef          = activeRegime.id === "ref";
-                const lbl  = isDeflationary ? "DANGER" : isDanger ? "ALERT" : isRef ? "NEUTRAL" : "WATCH";
-                const col  = isDeflationary ? C.red    : isDanger ? "#D97706" : isRef ? C.green   : C.amber;
-                const bg   = isDeflationary ? C.rBg    : isDanger ? C.aBg     : isRef ? C.gBg     : C.aBg;
-                const bdr  = isDeflationary ? C.rBdr   : isDanger ? C.aBdr    : isRef ? C.gBdr    : C.aBdr;
-                const sub  = isDeflationary ? "threshold breached"
-                           : isDanger       ? "approaching alert zone"
-                           : isRef          ? "regime: recovery"
-                           : "2/3 amber · " + activeRegime.label;
+                const regimeStatus = derivedRegimes?.contested ? "WATCH"
+                  : (liveRegime?.id === "def" ? "ELEVATED" : liveRegime?.id === "stag" ? "WATCH" : "BENIGN");
+                const hs = headerSignal({ oas: cs, regimeStatus });
+                const tokH = STATUS[hs.signal] || STATUS.WATCH;
+                const lbl = hs.signal || "WATCH";
+                const col = tokH.color, bg = tokH.bg, bdr = tokH.bdr;
+                // The subtitle names the binding input rather than asserting a breach.
+                const sub = hs.credit === "BENIGN"
+                  ? `credit benign · ${liveRegime?.label ?? "regime"}`
+                  : `OAS ${cs} · ${liveRegime?.label ?? "regime"}`;
                 return (
                   <div style={{ background: bg, border: "1.5px solid " + bdr, borderRadius: 10, padding: "6px 14px", textAlign: "center", minWidth: 90 }}>
                     <div style={{ color: C.lbl, fontSize: 10, letterSpacing: 2, textTransform: "uppercase", fontWeight: 700 }}>Signal</div>
@@ -3653,12 +3728,13 @@ export default function App() {
 
             {/* C.1 — "unemp" is deliberately excluded: the labour module above is the single
                 definition for that topic. Three renderings of one subject is what this removes. */}
-            {INDICATORS.filter(ind => ind.id !== "unemp").map(ind => <IndicatorChart key={ind.id} ind={ind} live={liveInd} />)}
+            {INDICATORS.filter(ind => ind.id !== "unemp" && ind.id !== "credit").map(ind => <IndicatorChart key={ind.id} ind={ind} live={liveInd} />)}
 
             {/* M.2 — credit renders on BOTH tabs from the same component, so the age chip and
                 the HYG proxy exist here by construction rather than by duplication. */}
             <CreditBlock
               depth="glance"
+              history={liveInd?.creditHistory}
               credit={pbData?.us?.regime?.credit}
               oas={pbData?.us?.macro?.oas}
               hyg={pbData?.us?.hyg}
