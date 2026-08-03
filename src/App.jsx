@@ -835,6 +835,106 @@ function laborVerdictFor(liveInd) {
   return laborVerdict(u3.delta, ep.delta).verdict;
 }
 
+// ─── CREDIT BLOCK (P2 / F.2) ──────────────────────────────────────────────────
+// The master credit gauge: the published OAS with its real observation date, beside a live
+// HYG proxy that is explicitly NOT the spread. Defined ONCE and rendered once. It used to sit
+// nested inside the Global Playbook cross-asset card; F.2 puts it near the top of the Macro
+// tab. Keeping a second copy on Playbook would reintroduce exactly the drift section C removed
+// for the labour module, so this MOVED rather than being duplicated.
+function CreditBlock({ credit, oas, hyg, reconSummary }) {
+  if (!hyg) return null;
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 2 }}>
+        <SLabel>💳 Credit — master gauge</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>published spread + live proxy</span>
+      </div>
+                <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 8 }}>
+                  {/* P2.1 — the observation date comes from FRED and is rendered adjacent to
+                      the value at the same weight, never in a tooltip and never computed as
+                      today−n. The lag is TWO days and variable (it stretches across weekends
+                      and holidays), so an assumed lag would misdate the print. Past 4 calendar
+                      days we stop showing a number at all rather than style a stale one as
+                      current. P2.2 — trend, not level, is the signal at these tights. */}
+                  {(() => {
+                    const cr = credit;
+                    const obs = cr?.obs;
+                    const chipCol = obs?.chip === "red" ? C.red : obs?.chip === "amber" ? C.amber : C.muted;
+                    return (
+                      <div style={{ padding: "8px 11px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6 }}>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                          HY OAS · official {cr?.level ? `· ${cr.level}` : ""}
+                        </div>
+                        {obs?.awaiting ? (
+                          <div style={{ fontSize: 14, fontWeight: 900, color: C.red }}>
+                            AWAITING PUBLICATION
+                            <span style={{ fontSize: 10.5, fontWeight: 700, color: C.muted, marginLeft: 6 }}>
+                              last obs {obs.obsDate} · {obs.calendarDays}d
+                            </span>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 16, fontWeight: 900, color: C.text }}>
+                            {oas?.value ?? "—"}
+                            <span style={{ fontSize: 13, fontWeight: 900, color: chipCol, marginLeft: 8 }}>
+                              {obs?.label ?? `obs ${oas?.date ?? "—"}`}
+                            </span>
+                          </div>
+                        )}
+                        {cr?.trend && (
+                          <div style={{ fontSize: 11.5, color: C.mid, marginTop: 3 }}>
+                            {["d5", "d20", "d60"].map((k, i) => {
+                              const v = cr.trend[k];
+                              return (
+                                <span key={k}>
+                                  {i ? " · " : ""}
+                                  <span style={{ color: C.lbl }}>{k.slice(1)}d </span>
+                                  {v == null ? <span style={{ color: C.lbl }}>n/a</span>
+                                    : <span style={{ fontWeight: 800, color: v > 0 ? C.red : v < 0 ? C.green : C.muted }}>{v >= 0 ? "+" : ""}{v}bp</span>}
+                                </span>
+                              );
+                            })}
+                            <span style={{ color: C.lbl }}> — at these tights the trend is the signal, not the level</span>
+                          </div>
+                        )}
+                        <div style={{ fontSize: 10, color: C.lbl, marginTop: 3 }}>
+                          3Y rolling window (FRED restricts ICE BofA series). Reference constants: {cr?.historical?.recordTight?.value ?? 2.41} ({cr?.historical?.recordTight?.when ?? "Jun 2007"}) · {cr?.historical?.gfcPeak?.value ?? 21.82} ({cr?.historical?.gfcPeak?.when ?? "Dec 2008"}) — static, not series data.
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  <div style={{ padding: "8px 11px", background: hyg.divergence?.alert ? C.aBg : C.bg,
+                    border: "1px solid " + (hyg.divergence?.alert ? C.aBdr : C.bdr), borderRadius: 6 }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: C.blue, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                      HYG intraday · PROXY — not OAS
+                    </div>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: !hyg.available ? C.amber : hyg.stressing ? C.red : C.mid, marginTop: 2 }}>
+                      {hyg.note}
+                    </div>
+                    {hyg.divergence && (
+                      <div style={{ fontSize: 11.5, fontWeight: hyg.divergence.alert ? 800 : 400,
+                        color: hyg.divergence.alert ? C.amber : C.muted, marginTop: 3, lineHeight: 1.5 }}>
+                        {hyg.divergence.alert ? "⚠ " : ""}{hyg.divergence.note}
+                      </div>
+                    )}
+                    {/* P2.4 caveat — the proxy is an ETF, not the spread. */}
+                    <div style={{ fontSize: 10, color: C.lbl, marginTop: 4, lineHeight: 1.5 }}>
+                      HYG is an ETF with its own flow, liquidity and NAV-premium dynamics.
+                      Directionally useful same-day; not a substitute for the published spread.
+                    </div>
+                    {/* P2.5 — has the proxy actually been right? Shown ON the card, because a
+                        card that cannot show its own hit rate gets trusted by habit. */}
+                    {reconSummary && (
+                      <div style={{ fontSize: 10.5, marginTop: 4, fontWeight: reconSummary.belowChance ? 800 : 600,
+                        color: reconSummary.belowChance ? C.red : reconSummary.sufficient ? C.green : C.lbl }}>
+                        Track record: {reconSummary.verdict}
+                      </div>
+                    )}
+                  </div>
+                </div>
+    </Card>
+  );
+}
+
 // ─── LABOUR PANEL (P1) ────────────────────────────────────────────────────────
 // One component, rendered on BOTH the Macro and Indicators tabs. All scoring logic lives in
 // lib/labor.js; this only renders. The headline point: U3 is NOT scored in isolation — the
@@ -2857,90 +2957,6 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                   shown WITH its as-of date beside a live proxy that is explicitly not OAS.
                   The HYG-minus-QQQ spread is the actionable part: credit refusing to confirm
                   an equity move is the case a single HYG print cannot surface. */}
-              {data.hyg && (
-                <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 8 }}>
-                  {/* P2.1 — the observation date comes from FRED and is rendered adjacent to
-                      the value at the same weight, never in a tooltip and never computed as
-                      today−n. The lag is TWO days and variable (it stretches across weekends
-                      and holidays), so an assumed lag would misdate the print. Past 4 calendar
-                      days we stop showing a number at all rather than style a stale one as
-                      current. P2.2 — trend, not level, is the signal at these tights. */}
-                  {(() => {
-                    const cr = data.regime?.credit;
-                    const obs = cr?.obs;
-                    const chipCol = obs?.chip === "red" ? C.red : obs?.chip === "amber" ? C.amber : C.muted;
-                    return (
-                      <div style={{ padding: "8px 11px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6 }}>
-                        <div style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                          HY OAS · official {cr?.level ? `· ${cr.level}` : ""}
-                        </div>
-                        {obs?.awaiting ? (
-                          <div style={{ fontSize: 14, fontWeight: 900, color: C.red }}>
-                            AWAITING PUBLICATION
-                            <span style={{ fontSize: 10.5, fontWeight: 700, color: C.muted, marginLeft: 6 }}>
-                              last obs {obs.obsDate} · {obs.calendarDays}d
-                            </span>
-                          </div>
-                        ) : (
-                          <div style={{ fontSize: 16, fontWeight: 900, color: C.text }}>
-                            {data.macro?.oas?.value ?? "—"}
-                            <span style={{ fontSize: 13, fontWeight: 900, color: chipCol, marginLeft: 8 }}>
-                              {obs?.label ?? `obs ${data.macro?.oas?.date ?? "—"}`}
-                            </span>
-                          </div>
-                        )}
-                        {cr?.trend && (
-                          <div style={{ fontSize: 11.5, color: C.mid, marginTop: 3 }}>
-                            {["d5", "d20", "d60"].map((k, i) => {
-                              const v = cr.trend[k];
-                              return (
-                                <span key={k}>
-                                  {i ? " · " : ""}
-                                  <span style={{ color: C.lbl }}>{k.slice(1)}d </span>
-                                  {v == null ? <span style={{ color: C.lbl }}>n/a</span>
-                                    : <span style={{ fontWeight: 800, color: v > 0 ? C.red : v < 0 ? C.green : C.muted }}>{v >= 0 ? "+" : ""}{v}bp</span>}
-                                </span>
-                              );
-                            })}
-                            <span style={{ color: C.lbl }}> — at these tights the trend is the signal, not the level</span>
-                          </div>
-                        )}
-                        <div style={{ fontSize: 10, color: C.lbl, marginTop: 3 }}>
-                          3Y rolling window (FRED restricts ICE BofA series). Reference constants: {cr?.historical?.recordTight?.value ?? 2.41} ({cr?.historical?.recordTight?.when ?? "Jun 2007"}) · {cr?.historical?.gfcPeak?.value ?? 21.82} ({cr?.historical?.gfcPeak?.when ?? "Dec 2008"}) — static, not series data.
-                        </div>
-                      </div>
-                    );
-                  })()}
-                  <div style={{ padding: "8px 11px", background: data.hyg.divergence?.alert ? C.aBg : C.bg,
-                    border: "1px solid " + (data.hyg.divergence?.alert ? C.aBdr : C.bdr), borderRadius: 6 }}>
-                    <div style={{ fontSize: 10, fontWeight: 800, color: C.blue, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                      HYG intraday · PROXY — not OAS
-                    </div>
-                    <div style={{ fontSize: 12.5, fontWeight: 700, color: !data.hyg.available ? C.amber : data.hyg.stressing ? C.red : C.mid, marginTop: 2 }}>
-                      {data.hyg.note}
-                    </div>
-                    {data.hyg.divergence && (
-                      <div style={{ fontSize: 11.5, fontWeight: data.hyg.divergence.alert ? 800 : 400,
-                        color: data.hyg.divergence.alert ? C.amber : C.muted, marginTop: 3, lineHeight: 1.5 }}>
-                        {data.hyg.divergence.alert ? "⚠ " : ""}{data.hyg.divergence.note}
-                      </div>
-                    )}
-                    {/* P2.4 caveat — the proxy is an ETF, not the spread. */}
-                    <div style={{ fontSize: 10, color: C.lbl, marginTop: 4, lineHeight: 1.5 }}>
-                      HYG is an ETF with its own flow, liquidity and NAV-premium dynamics.
-                      Directionally useful same-day; not a substitute for the published spread.
-                    </div>
-                    {/* P2.5 — has the proxy actually been right? Shown ON the card, because a
-                        card that cannot show its own hit rate gets trusted by habit. */}
-                    {reconSummary && (
-                      <div style={{ fontSize: 10.5, marginTop: 4, fontWeight: reconSummary.belowChance ? 800 : 600,
-                        color: reconSummary.belowChance ? C.red : reconSummary.sufficient ? C.green : C.lbl }}>
-                        Track record: {reconSummary.verdict}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
             </Card>
           )}
 
@@ -4301,6 +4317,16 @@ export default function App() {
                 </Card>
               </div>
             </div>
+
+            {/* F.2 — credit is the master gauge and sits directly under regime. Reads the
+                Playbook payload (pbData.us) because OAS/HYG come from /api/playbook, not
+                /api/indicators which feeds the rest of this tab. */}
+            <CreditBlock
+              credit={pbData?.us?.regime?.credit}
+              oas={pbData?.us?.macro?.oas}
+              hyg={pbData?.us?.hyg}
+              reconSummary={reconSummary}
+            />
 
             {/* Market-Implied Fed Cuts (6-Month) — Fed funds vs 6m T-bill proxy (Update 1) */}
             {(() => {
