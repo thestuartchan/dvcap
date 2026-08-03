@@ -9,6 +9,7 @@ import { freshnessText, humanizeAge } from "../lib/sessions.js";
 import { pendingReconciliations, reconStats } from "../lib/recon.js";
 import { deriveRegimeProbabilities, CONTESTED_GAP } from "../lib/regimeProb.js";
 import { STATUS, creditStatus, deriveAction, headerSignal, STAGES } from "../lib/status.js";
+import { observationAge } from "../lib/gates.js";
 import { trend as trendOf } from "../lib/series.js";
 
 // Change over N sessions, in basis points, from a dated FRED series. Returns null rather than
@@ -859,7 +860,15 @@ function CreditBlock({ credit, oas, hyg, reconSummary }) {
                       current. P2.2 — trend, not level, is the signal at these tights. */}
                   {(() => {
                     const cr = credit;
-                    const obs = cr?.obs;
+                    // M.3 — the age is RECOMPUTED here at render, not read from the payload.
+                    // creditState() computes it server-side at fetch time, and the client
+                    // renders from a localStorage cache on load — so a payload cached
+                    // yesterday would display yesterday's age against today's date. The
+                    // observation DATE is stable data; the age is a function of (date, now),
+                    // so it must be derived where "now" is actually current.
+                    const obs = cr?.obs?.obsDate
+                      ? observationAge(cr.obs.obsDate)
+                      : (oas?.date ? observationAge(oas.date) : cr?.obs);
                     const chipCol = obs?.chip === "red" ? C.red : obs?.chip === "amber" ? C.amber : C.muted;
                     return (
                       <div style={{ padding: "8px 11px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6 }}>
