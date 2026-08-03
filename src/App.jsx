@@ -4188,6 +4188,120 @@ export default function App() {
                 Transmission to duration shows up in the 30Y and 5s30s rows below, which move
                 daily and are early enough for the positions actually held. */}
 
+            {/* ── F.1 — REGIME first. Ordered by decision relevance, fast-moving above
+                slow-moving: regime + contested guard, then rates, then CPI, then the
+                labour module, then the consensus block (slowest). Credit stays on the
+                Global Playbook tab where it already lives. ── */}
+            <Card>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                <SLabel>Regime Probability — Derived from Recession Consensus + Live CPI</SLabel>
+                {/* Section A — vintage stamped ON the regime block, because the engine keeps
+                    producing live-looking output from inputs that are months old. */}
+                <span style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 800, color: C.amber, background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 5, padding: "2px 7px" }}>
+                  Consensus inputs {CONSENSUS_VINTAGE.label} — {CONSENSUS_VINTAGE.staleNote}
+                </span>
+              </div>
+              {derivedRegimes?.contested && (
+                <div style={{ marginBottom: 10, padding: "8px 11px", background: C.bg, border: "1.5px solid " + C.bdrMd, borderRadius: 8, fontSize: 12.5, fontWeight: 700, color: C.mid, lineHeight: 1.55 }}>
+                  ⚖️ <b>CONTESTED</b> — top two states within {derivedRegimes.topTwoGap}pp. Neither is highlighted as a winner and the directional recommendation is suppressed.
+                </div>
+              )}
+              {derivedRegimes?.mapping?.known && !derivedRegimes.mapping.earned && (
+                <div style={{ marginBottom: 10, padding: "8px 11px", background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 8, fontSize: 11.5, color: C.mid, lineHeight: 1.55 }}>
+                  <b style={{ color: C.blue }}>Mapping: </b>{derivedRegimes.mapping.reason} — {derivedRegimes.mapping.redirected}pp moved from growth to stagflation.
+                </div>
+              )}
+              <div className="mwd-regime-grid" style={{ marginBottom: 14 }}>
+                {REGIMES.map(r => {
+                  // When contested, the top TWO share the highlight — no single winner.
+                  const inTopTwo = (derivedRegimes?.topTwo || []).includes(r.id);
+                  const highlighted = derivedRegimes?.contested ? inTopTwo : activeRegime.id === r.id;
+                  return (
+                  <button key={r.id} onClick={() => { setActiveRegime(r); keepPinned(); }} style={{ background: highlighted ? r.bg : C.surf, border: "1.5px solid " + (highlighted ? r.color : C.bdr), borderTop: "4px solid " + r.color, borderRadius: 10, padding: "12px 14px", cursor: "pointer", textAlign: "left", width: "100%" }}>
+                    <div style={{ fontSize: 22, fontWeight: 900, color: r.color }}>{regimeProbFor(r.id)}%</div>
+                    <div style={{ color: r.color, fontWeight: 700, fontSize: 13, marginTop: 3, lineHeight: 1.3 }}>{r.label}</div>
+                    {derivedRegimes?.contested && inTopTwo && (
+                      <div style={{ fontSize: 9.5, fontWeight: 800, color: C.muted, marginTop: 2 }}>TIED</div>
+                    )}
+                  </button>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", height: 12, borderRadius: 6, overflow: "hidden", border: "1px solid " + C.bdr }}>
+                {REGIMES.map(r => (
+                  <div key={r.id} style={{ width: regimeProbFor(r.id) + "%", background: r.color, fontSize: 10, color: "#fff", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }} title={r.label}>{regimeProbFor(r.id)}%</div>
+                ))}
+              </div>
+              {derivedRegimes ? (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5 }}>Weighted Wall Street recession probability: <b style={{ color: C.muted }}>{derivedRegimes.weightedAvg}%</b> | Derived from analyst consensus + live CPI</div>
+                  <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5, marginTop: 2 }}>{derivedRegimes.derivedFrom}</div>
+                  <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5, marginTop: 2, fontStyle: "italic" }}>Updates automatically when recession table is refreshed or CPI changes.</div>
+                  {/* P0.3 — trailing history. The engine is unfalsifiable without it: this is
+                      how you answer "has the classifier actually been right". Raw inputs are
+                      stored server-side alongside these probabilities so a change to the
+                      discriminator can be re-run against days already recorded. */}
+                  {regimeHistory.length >= 2 ? (
+                    <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px dashed " + C.bdr }}>
+                      <div style={{ fontSize: 10.5, color: C.muted, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>
+                        Regime history · {regimeHistory.length} days logged
+                      </div>
+                      <ResponsiveContainer width="100%" height={70}>
+                        <LineChart data={regimeHistory} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                          <XAxis dataKey="date" tick={{ fontSize: 9, fill: C.lbl }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                          <YAxis domain={[0, 100]} hide />
+                          <Tooltip formatter={(v, n) => [`${v}%`, n]} />
+                          <Line type="monotone" dataKey="stagflation_p"  name="Stagflation"  stroke="#B45309" strokeWidth={1.5} dot={false} connectNulls />
+                          <Line type="monotone" dataKey="reflationary_p" name="Reflationary" stroke="#166534" strokeWidth={1.5} dot={false} connectNulls />
+                          <Line type="monotone" dataKey="deflationary_p" name="Deflationary" stroke="#1D4ED8" strokeWidth={1.5} dot={false} connectNulls />
+                          <Line type="monotone" dataKey="inflationary_p" name="Inflationary" stroke="#7C3AED" strokeWidth={1.5} dot={false} connectNulls />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 8, fontStyle: "italic" }}>
+                      Regime history: {regimeHistory.length} day{regimeHistory.length === 1 ? "" : "s"} logged — insufficient for a trend. One row is appended per day.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ color: C.lbl, fontSize: 11, marginTop: 10, fontStyle: "italic" }}>Using fallback regime probabilities — live recession data unavailable.</div>
+              )}
+            </Card>
+
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+              <Card style={{ flex: "1 1 240px", background: activeRegime.bg, border: "1.5px solid " + activeRegime.bdr, borderTop: "4px solid " + activeRegime.color }}>
+                <div style={{ fontSize: 18, fontWeight: 900, color: activeRegime.color, marginBottom: 4 }}>{activeRegime.label}</div>
+                <div style={{ color: C.muted, fontSize: 13, fontStyle: "italic", lineHeight: 1.6, marginBottom: 10 }}>
+                  {{
+                    stag: "Prioritise insurance (miners, staples). Hold cash. Avoid new software/growth entries. TLT is a trap here.",
+                    def:  "TLT and cash are primary hedges. Reduce equity exposure. Watch for Fed pivot signal before deploying.",
+                    ref:  "Gradual equity deployment appropriate. REITs and growth names benefit. Begin filling long-term positions in tranches.",
+                    inf:  "Real assets and pipelines outperform. Equities with pricing power hold. Avoid long-duration bonds.",
+                  }[activeRegime.id]}
+                </div>
+                <p style={{ color: C.mid, fontSize: 15, lineHeight: 1.75, margin: "0 0 12px" }}>{activeRegime.desc}</p>
+                <div style={{ padding: "10px 13px", background: "#fff", border: "1px solid " + activeRegime.bdr, borderRadius: 8 }}>
+                  <div style={{ color: activeRegime.color, fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Transition trigger</div>
+                  <div style={{ color: C.mid, fontSize: 14 }}>{activeRegime.trigger}</div>
+                </div>
+              </Card>
+              <div style={{ flex: "1 1 240px", display: "flex", flexDirection: "column", gap: 12 }}>
+                <Card style={{ background: C.gBg, border: "1.5px solid " + C.gBdr }}>
+                  <SLabel color={C.green}>Best Assets</SLabel>
+                  {activeRegime.best.map((a, i) => (
+                    <div key={i} style={{ color: C.green, fontSize: 14, padding: "4px 0", borderBottom: i < activeRegime.best.length - 1 ? "1px solid " + C.gBdr : "none" }}>✅ {a}</div>
+                  ))}
+                </Card>
+                <Card style={{ background: C.rBg, border: "1.5px solid " + C.rBdr }}>
+                  <SLabel color={C.red}>Worst Assets</SLabel>
+                  {activeRegime.worst.map((a, i) => (
+                    <div key={i} style={{ color: C.red, fontSize: 14, padding: "4px 0", borderBottom: i < activeRegime.worst.length - 1 ? "1px solid " + C.rBdr : "none" }}>❌ {a}</div>
+                  ))}
+                </Card>
+              </div>
+            </div>
+
             {/* Market-Implied Fed Cuts (6-Month) — Fed funds vs 6m T-bill proxy (Update 1) */}
             {(() => {
               const bps = liveInd ? liveInd.impliedCutsBps : null;
@@ -4624,115 +4738,6 @@ export default function App() {
               </div>
             </Card>
 
-            <Card>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                <SLabel>Regime Probability — Derived from Recession Consensus + Live CPI</SLabel>
-                {/* Section A — vintage stamped ON the regime block, because the engine keeps
-                    producing live-looking output from inputs that are months old. */}
-                <span style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 800, color: C.amber, background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 5, padding: "2px 7px" }}>
-                  Consensus inputs {CONSENSUS_VINTAGE.label} — {CONSENSUS_VINTAGE.staleNote}
-                </span>
-              </div>
-              {derivedRegimes?.contested && (
-                <div style={{ marginBottom: 10, padding: "8px 11px", background: C.bg, border: "1.5px solid " + C.bdrMd, borderRadius: 8, fontSize: 12.5, fontWeight: 700, color: C.mid, lineHeight: 1.55 }}>
-                  ⚖️ <b>CONTESTED</b> — top two states within {derivedRegimes.topTwoGap}pp. Neither is highlighted as a winner and the directional recommendation is suppressed.
-                </div>
-              )}
-              {derivedRegimes?.mapping?.known && !derivedRegimes.mapping.earned && (
-                <div style={{ marginBottom: 10, padding: "8px 11px", background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 8, fontSize: 11.5, color: C.mid, lineHeight: 1.55 }}>
-                  <b style={{ color: C.blue }}>Mapping: </b>{derivedRegimes.mapping.reason} — {derivedRegimes.mapping.redirected}pp moved from growth to stagflation.
-                </div>
-              )}
-              <div className="mwd-regime-grid" style={{ marginBottom: 14 }}>
-                {REGIMES.map(r => {
-                  // When contested, the top TWO share the highlight — no single winner.
-                  const inTopTwo = (derivedRegimes?.topTwo || []).includes(r.id);
-                  const highlighted = derivedRegimes?.contested ? inTopTwo : activeRegime.id === r.id;
-                  return (
-                  <button key={r.id} onClick={() => { setActiveRegime(r); keepPinned(); }} style={{ background: highlighted ? r.bg : C.surf, border: "1.5px solid " + (highlighted ? r.color : C.bdr), borderTop: "4px solid " + r.color, borderRadius: 10, padding: "12px 14px", cursor: "pointer", textAlign: "left", width: "100%" }}>
-                    <div style={{ fontSize: 22, fontWeight: 900, color: r.color }}>{regimeProbFor(r.id)}%</div>
-                    <div style={{ color: r.color, fontWeight: 700, fontSize: 13, marginTop: 3, lineHeight: 1.3 }}>{r.label}</div>
-                    {derivedRegimes?.contested && inTopTwo && (
-                      <div style={{ fontSize: 9.5, fontWeight: 800, color: C.muted, marginTop: 2 }}>TIED</div>
-                    )}
-                  </button>
-                  );
-                })}
-              </div>
-              <div style={{ display: "flex", height: 12, borderRadius: 6, overflow: "hidden", border: "1px solid " + C.bdr }}>
-                {REGIMES.map(r => (
-                  <div key={r.id} style={{ width: regimeProbFor(r.id) + "%", background: r.color, fontSize: 10, color: "#fff", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }} title={r.label}>{regimeProbFor(r.id)}%</div>
-                ))}
-              </div>
-              {derivedRegimes ? (
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5 }}>Weighted Wall Street recession probability: <b style={{ color: C.muted }}>{derivedRegimes.weightedAvg}%</b> | Derived from analyst consensus + live CPI</div>
-                  <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5, marginTop: 2 }}>{derivedRegimes.derivedFrom}</div>
-                  <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5, marginTop: 2, fontStyle: "italic" }}>Updates automatically when recession table is refreshed or CPI changes.</div>
-                  {/* P0.3 — trailing history. The engine is unfalsifiable without it: this is
-                      how you answer "has the classifier actually been right". Raw inputs are
-                      stored server-side alongside these probabilities so a change to the
-                      discriminator can be re-run against days already recorded. */}
-                  {regimeHistory.length >= 2 ? (
-                    <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px dashed " + C.bdr }}>
-                      <div style={{ fontSize: 10.5, color: C.muted, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>
-                        Regime history · {regimeHistory.length} days logged
-                      </div>
-                      <ResponsiveContainer width="100%" height={70}>
-                        <LineChart data={regimeHistory} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-                          <XAxis dataKey="date" tick={{ fontSize: 9, fill: C.lbl }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                          <YAxis domain={[0, 100]} hide />
-                          <Tooltip formatter={(v, n) => [`${v}%`, n]} />
-                          <Line type="monotone" dataKey="stagflation_p"  name="Stagflation"  stroke="#B45309" strokeWidth={1.5} dot={false} connectNulls />
-                          <Line type="monotone" dataKey="reflationary_p" name="Reflationary" stroke="#166534" strokeWidth={1.5} dot={false} connectNulls />
-                          <Line type="monotone" dataKey="deflationary_p" name="Deflationary" stroke="#1D4ED8" strokeWidth={1.5} dot={false} connectNulls />
-                          <Line type="monotone" dataKey="inflationary_p" name="Inflationary" stroke="#7C3AED" strokeWidth={1.5} dot={false} connectNulls />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 8, fontStyle: "italic" }}>
-                      Regime history: {regimeHistory.length} day{regimeHistory.length === 1 ? "" : "s"} logged — insufficient for a trend. One row is appended per day.
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div style={{ color: C.lbl, fontSize: 11, marginTop: 10, fontStyle: "italic" }}>Using fallback regime probabilities — live recession data unavailable.</div>
-              )}
-            </Card>
-
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-              <Card style={{ flex: "1 1 240px", background: activeRegime.bg, border: "1.5px solid " + activeRegime.bdr, borderTop: "4px solid " + activeRegime.color }}>
-                <div style={{ fontSize: 18, fontWeight: 900, color: activeRegime.color, marginBottom: 4 }}>{activeRegime.label}</div>
-                <div style={{ color: C.muted, fontSize: 13, fontStyle: "italic", lineHeight: 1.6, marginBottom: 10 }}>
-                  {{
-                    stag: "Prioritise insurance (miners, staples). Hold cash. Avoid new software/growth entries. TLT is a trap here.",
-                    def:  "TLT and cash are primary hedges. Reduce equity exposure. Watch for Fed pivot signal before deploying.",
-                    ref:  "Gradual equity deployment appropriate. REITs and growth names benefit. Begin filling long-term positions in tranches.",
-                    inf:  "Real assets and pipelines outperform. Equities with pricing power hold. Avoid long-duration bonds.",
-                  }[activeRegime.id]}
-                </div>
-                <p style={{ color: C.mid, fontSize: 15, lineHeight: 1.75, margin: "0 0 12px" }}>{activeRegime.desc}</p>
-                <div style={{ padding: "10px 13px", background: "#fff", border: "1px solid " + activeRegime.bdr, borderRadius: 8 }}>
-                  <div style={{ color: activeRegime.color, fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Transition trigger</div>
-                  <div style={{ color: C.mid, fontSize: 14 }}>{activeRegime.trigger}</div>
-                </div>
-              </Card>
-              <div style={{ flex: "1 1 240px", display: "flex", flexDirection: "column", gap: 12 }}>
-                <Card style={{ background: C.gBg, border: "1.5px solid " + C.gBdr }}>
-                  <SLabel color={C.green}>Best Assets</SLabel>
-                  {activeRegime.best.map((a, i) => (
-                    <div key={i} style={{ color: C.green, fontSize: 14, padding: "4px 0", borderBottom: i < activeRegime.best.length - 1 ? "1px solid " + C.gBdr : "none" }}>✅ {a}</div>
-                  ))}
-                </Card>
-                <Card style={{ background: C.rBg, border: "1.5px solid " + C.rBdr }}>
-                  <SLabel color={C.red}>Worst Assets</SLabel>
-                  {activeRegime.worst.map((a, i) => (
-                    <div key={i} style={{ color: C.red, fontSize: 14, padding: "4px 0", borderBottom: i < activeRegime.worst.length - 1 ? "1px solid " + C.rBdr : "none" }}>❌ {a}</div>
-                  ))}
-                </Card>
-              </div>
-            </div>
 
             <Card>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 4 }}>
