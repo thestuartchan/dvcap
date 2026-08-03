@@ -8,6 +8,7 @@ import { kofiaStale, parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KE
 import { freshnessText, humanizeAge } from "../lib/sessions.js";
 import { pendingReconciliations, reconStats } from "../lib/recon.js";
 import { deriveRegimeProbabilities, CONTESTED_GAP } from "../lib/regimeProb.js";
+import { STATUS, creditStatus, deriveAction, headerSignal, STAGES } from "../lib/status.js";
 import { trend as trendOf } from "../lib/series.js";
 
 // Change over N sessions, in basis points, from a dated FRED series. Returns null rather than
@@ -3374,11 +3375,28 @@ export default function App() {
             {/* ACTION CARD — top, high-emphasis, colorizes with signal */}
             {(() => {
               const cs = liveInd ? liveInd.creditSpread : 2.75;
-              const ue = liveInd ? liveInd.unemployment : 4.4;
-              const isDanger  = cs > 6.0 || labStress.severe;
-              const isAlert   = !isDanger && (cs > 4.5 || labStress.deteriorating);
-              const isNeutral = !isDanger && !isAlert && activeRegime.id === "ref";
-              const sigLabel  = isDanger ? "DANGER" : isAlert ? "ALERT" : isNeutral ? "NEUTRAL" : "WATCH";
+              // ── Sections H + L — derived, with CREDIT'S VETO applied ──
+              // Previously: isDanger = cs > 6.0 || labStress.severe, which let a severe labour
+              // print alone print "Stage 3 — Full Insurance Active" while the master gauge
+              // directly beneath read BENIGN at 2.84. Those describe different worlds: Stage 3
+              // means insurance is already ON, benign credit means nothing has happened yet.
+              // HY OAS is the master gauge, so it now vetoes a full-defensive call.
+              const act = deriveAction({
+                oas: cs,
+                regimeLabel: liveRegime?.label, regimePct: regimeProbFor(liveRegime?.id),
+                regimeContested: !!derivedRegimes?.contested,
+                labourVerdict: laborVerdictFor(liveInd), labourSevere: labStress.severe,
+                ratesNote: liveInd?.yieldSpread != null ? `curve ${liveInd.yieldSpread >= 0 ? "+" : ""}${liveInd.yieldSpread.toFixed(2)}%` : null,
+                vintages: {
+                  regime: `${CONSENSUS_VINTAGE.label}, ${CONSENSUS_VINTAGE.staleNote}`,
+                  credit: liveInd?.asOf?.creditSpread ? `obs ${liveInd.asOf.creditSpread}` : null,
+                  labour: liveInd?.labor?.empPop?.date ? `obs ${liveInd.labor.empPop.date}` : null,
+                },
+              });
+              const isDanger  = act.status === "DANGER";
+              const isAlert   = act.status === "ELEVATED";
+              const isNeutral = act.stage === 1 && activeRegime.id === "ref";
+              const sigLabel  = act.status === "ELEVATED" ? "ALERT" : act.status === "BENIGN" && isNeutral ? "NEUTRAL" : act.status === "BENIGN" ? "WATCH" : act.status;
               const CONFIGS = {
                 DANGER:  { g1:"#991B1B", g2:"#B91C1C", shadow:"rgba(153,27,27,0.35)",
                   action:"Stage 3 — Full Insurance Active. Let Puts Work.",
@@ -3419,8 +3437,10 @@ export default function App() {
                           {contested ? "No directional signal" : "Recommended Action"} · consensus inputs {CONSENSUS_VINTAGE.label}
                         </div>
                         <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1.2 }}>
-                          {contested ? `REGIME CONTESTED — no clear signal. Top two states within ${gapPP}pp.` : cfg.action}
+                          {contested ? `REGIME CONTESTED — no clear signal. Top two states within ${gapPP}pp.` : act.label}
                         </div>
+                        {/* L.3 — the stage definition, so "Stage 3" is never unexplained. */}
+                        {!contested && <div style={{ fontSize: 12, opacity: 0.82, marginTop: 3, lineHeight: 1.5 }}>{act.desc}</div>}
                       </div>
                       <div style={{ background: "rgba(255,255,255,0.18)", borderRadius: 10, padding: "8px 16px", textAlign: "center", backdropFilter: "blur(4px)", minWidth: 90 }}>
                         <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", opacity: 0.8, marginBottom: 2 }}>Signal</div>
@@ -3439,6 +3459,25 @@ export default function App() {
                         </div>
                       ))}
                     </div>
+                    {/* L.2 — when credit vetoes, say so on the card. A capped recommendation
+                        with no explanation is the same opacity L.1 exists to remove. */}
+                    {act.vetoed && !contested && (
+                      <div style={{ marginTop: 10, padding: "8px 11px", background: "rgba(255,255,255,0.16)", borderRadius: 8, fontSize: 12.5, lineHeight: 1.55 }}>
+                        🛑 <b>Credit veto:</b> {act.vetoNote}
+                      </div>
+                    )}
+                    {/* L.1 — the derivation, with each input's vintage inline. */}
+                    {act.inputs.length > 0 && (
+                      <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.22)", fontSize: 11.5, lineHeight: 1.6, opacity: 0.9 }}>
+                        <b style={{ opacity: 0.75 }}>Derived from: </b>
+                        {act.inputs.map((inp, i) => (
+                          <span key={inp.name}>
+                            {i ? " · " : ""}{inp.name} ({inp.value}
+                            {inp.vintage ? <span style={{ opacity: 0.7 }}> — {inp.vintage}</span> : null})
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   {/* Separator */}
                   <div style={{ display: "flex", alignItems: "center", gap: 14, margin: "4px 0" }}>
@@ -3503,14 +3542,19 @@ export default function App() {
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {(() => {
               const cs = liveInd ? liveInd.creditSpread : 2.75;
-              const ue = liveInd ? liveInd.unemployment : 4.4;
-              // Live crash signal — identical thresholds to the Indicators action card.
-              // Drives stages 1–3. Allocations are regime-driven (separate axis).
-              const sigDanger = cs > 6.0 || labStress.severe;
-              const sigAlert  = !sigDanger && (cs > 4.5 || labStress.deteriorating);
-              const signalStage = sigDanger ? 3 : sigAlert ? 2 : 1;
-              const sigLabel = sigDanger ? "DANGER" : sigAlert ? "ALERT" : "WATCH";
-              const sigColor = sigDanger ? C.red : sigAlert ? "#D97706" : C.amber;
+              // Same derivation as the Indicators action card — ONE rule, so the two surfaces
+              // cannot disagree about the stage. Credit's veto (L.2) applies here identically:
+              // a severe labour print alone cannot put the book at Stage 3 while the master
+              // gauge reads benign.
+              const pAct = deriveAction({
+                oas: cs,
+                regimeLabel: liveRegime?.label, regimePct: regimeProbFor(liveRegime?.id),
+                regimeContested: !!derivedRegimes?.contested,
+                labourVerdict: laborVerdictFor(liveInd), labourSevere: labStress.severe,
+              });
+              const signalStage = pAct.stage;
+              const sigLabel = pAct.status === "ELEVATED" ? "ALERT" : pAct.status;
+              const sigColor = STATUS[pAct.status]?.color ?? C.amber;
               // Manual stages 4–5 override the auto signal stage as the cycle marker.
               const activeStage = stage5 ? 5 : stage4 ? 4 : signalStage;
               // Allocations: regime-driven fund-manager framework.
@@ -4303,16 +4347,17 @@ export default function App() {
                 </div>
               </Card>
               <div style={{ flex: "1 1 240px", display: "flex", flexDirection: "column", gap: 12 }}>
-                <Card style={{ background: C.gBg, border: "1.5px solid " + C.gBdr }}>
-                  <SLabel color={C.green}>Best Assets</SLabel>
+                <Card>
+                  {/* I.3 — no fill, no accent: this is a CATEGORY panel, not a status one. */}
+                  <SLabel>✓ Best Assets</SLabel>
                   {activeRegime.best.map((a, i) => (
-                    <div key={i} style={{ color: C.green, fontSize: 14, padding: "4px 0", borderBottom: i < activeRegime.best.length - 1 ? "1px solid " + C.gBdr : "none" }}>✅ {a}</div>
+                    <div key={i} style={{ color: C.mid, fontSize: 14, padding: "4px 0", borderBottom: i < activeRegime.best.length - 1 ? "1px solid " + C.gBdr : "none" }}>✅ {a}</div>
                   ))}
                 </Card>
-                <Card style={{ background: C.rBg, border: "1.5px solid " + C.rBdr }}>
-                  <SLabel color={C.red}>Worst Assets</SLabel>
+                <Card>
+                  <SLabel>✗ Worst Assets</SLabel>
                   {activeRegime.worst.map((a, i) => (
-                    <div key={i} style={{ color: C.red, fontSize: 14, padding: "4px 0", borderBottom: i < activeRegime.worst.length - 1 ? "1px solid " + C.rBdr : "none" }}>❌ {a}</div>
+                    <div key={i} style={{ color: C.mid, fontSize: 14, padding: "4px 0", borderBottom: i < activeRegime.worst.length - 1 ? "1px solid " + C.rBdr : "none" }}>❌ {a}</div>
                   ))}
                 </Card>
               </div>
