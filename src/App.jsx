@@ -936,12 +936,16 @@ function CreditBlock({ credit, oas, hyg, reconSummary }) {
   );
 }
 
-// ─── LABOUR PANEL (P1) ────────────────────────────────────────────────────────
-// One component, rendered on BOTH the Macro and Indicators tabs. All scoring logic lives in
-// lib/labor.js; this only renders. The headline point: U3 is NOT scored in isolation — the
-// verdict comes from the joint direction of U3 and the employment–population ratio, because
-// emp-pop cannot be gamed by labour-force exit.
-function LaborPanel({ labor, compact }) {
+// ─── LABOUR MODULE (P1 / J / K / M.1) ─────────────────────────────────────────
+// ONE component, rendered on both tabs with a `depth` prop — `full` on Macro (the
+// interpretation lives there) and `glance` on Indicators (which conforms to that tab's card
+// pattern: big number · badge · as-of · chart · right panel). Two implementations drift, and
+// already had: this replaces both.
+//
+// The scoring rule is unchanged and lives in lib/labor.js: U3 is never scored alone, because
+// the rate can FALL on labour-force exit. Emp-pop is the control — employed ÷ working-age
+// population — and it cannot be gamed that way. That is why it is the hero metric.
+function LaborPanel({ labor, depth = "full" }) {
   if (!labor) return null;
   const g = k => labor[k] && labor[k].ok ? labor[k] : null;
   const s = {
@@ -957,79 +961,144 @@ function LaborPanel({ labor, compact }) {
   };
   const sum = laborSummary(state);
   const trig = laborDeteriorationTrigger(state);
-  const VC = { GREEN: C.green, AMBER: C.amber, RED: C.red, muted: C.muted, green: C.green, amber: C.amber, red: C.red };
-  const vc = VC[sum.verdict.color] || C.muted;
+  const sahmNote = sahmAnnotation(sum.verdict.verdict);
+  // I.1 — the verdict maps onto the four status states; no ad-hoc vocabulary.
+  const st = sum.verdict.verdict === "RED" ? "ELEVATED"
+    : sum.verdict.verdict === "AMBER" ? "WATCH"
+    : sum.verdict.verdict === "GREEN" ? "BENIGN" : "WATCH";
+  const tok = STATUS[st];
 
-  // C.4 — six interpretation bullets is more than the card can carry. The two that earn their
-  // place are the DEMOGRAPHICS CONTROL (prime-age) and the SURVEY DIVERGENCE (household vs
-  // payrolls); the rest move behind a disclosure toggle rather than being deleted.
   const primaryLines = [
     s.primeAge && primeAgeRead(s.primeAge.value, s.primeAge.delta, s.participation?.delta),
     (s.payrolls && s.household) && surveyDivergenceRead(s.payrolls.delta, s.household.delta),
   ].filter(x => x && x.text);
   const detailLines = [
-    // y/y COUNT passed alongside the share — a falling share on a rising count still flags.
     s.longTerm && longTermRead(s.longTerm.value, s.longTerm.delta,
       (g("longTermCount")?.value != null && g("longTermCount")?.yearAgo != null)
         ? Math.round(g("longTermCount").value - g("longTermCount").yearAgo) : null),
     (s.u6 && s.u3) && u6SpreadRead(s.u6.value, s.u3.value, (s.u6.prev != null && s.u3.prev != null) ? +(s.u6.prev - s.u3.prev).toFixed(1) : null),
     s.payrolls && payrollsRead(s.payrolls.delta, null),
   ].filter(x => x && x.text);
-  const sahmNote = sahmAnnotation(sum.verdict.verdict);
-
-  // Any series whose FRED identity check failed must be surfaced, not quietly rendered.
   const unverified = Object.entries(labor).filter(([, v]) => v && v.ok && v.verified === false);
 
-  const tile = (key, lab, val, delta, unit = "%") => {
+  const pp = d => d == null ? "" : `${d >= 0 ? "+" : "−"}${Math.abs(d).toFixed(1)}pp`;
+  const badge = (
+    <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: 0.5, color: tok.color, background: tok.bg, border: "1px solid " + tok.bdr, borderRadius: 5, padding: "2px 8px" }}>
+      {sum.verdict.verdict} / {st}
+    </span>
+  );
+  // J.2 / K.2 — one line naming what would change the verdict. Not a paragraph.
+  const watchLine = "Watch: emp-pop ratio. A second consecutive monthly decline confirms exit-driven deterioration. Next print Aug 7.";
+
+  const tile = (key, lab, unit = "%") => {
     const row = g(key); if (!row) return null;
-    const d = delta ?? row.delta;
     return (
       <MetricCard key={key} label={lab}
         title={`${row.id} · ${row.title || ""} · asOf ${row.date}`}
         value={unit === "k" ? withCommas(Math.round(row.value)) : row.value?.toFixed(1) + "%"}
-        sub={d == null ? null : (
-          <span style={{ fontSize: 12, fontWeight: 800, color: unit === "k" ? (d >= 0 ? C.green : C.red) : (d >= 0 ? C.mid : C.mid) }}>
-            {d >= 0 ? "+" : "−"}{Math.abs(d).toFixed(unit === "k" ? 0 : 1)}{unit === "k" ? "k" : "pp"}
+        sub={row.delta == null ? null : (
+          <span style={{ fontSize: 12, fontWeight: 800, color: C.mid }}>
+            {row.delta >= 0 ? "+" : "−"}{Math.abs(row.delta).toFixed(unit === "k" ? 0 : 1)}{unit === "k" ? "k" : "pp"}
           </span>
         )} />
     );
   };
 
+  // ── K — glance depth: conform to the Indicators card pattern element for element ──
+  if (depth === "glance") {
+    // The emp-pop / U3 divergence IS the story, so it must be visible without reading.
+    const eh = (s.empPop.history || []).map(r => ({ date: r.date, empPop: r.value }));
+    const uh = new Map((s.u3.history || []).map(r => [r.date, r.value]));
+    const chart = eh.map(r => ({ ...r, u3: uh.get(r.date) ?? null }));
+    return (
+      <Card style={{ borderLeft: "4px solid " + tok.color }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+          <div>
+            <SLabel>Labour Market</SLabel>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 28, fontWeight: 900, letterSpacing: -1, color: tok.color }}>{s.empPop.value.toFixed(1)}%</span>
+              {badge}
+              <span style={{ fontSize: 11, color: C.lbl, fontWeight: 700 }}>as of {s.empPop.date}</span>
+            </div>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Employment–population ratio · {pp(s.empPop.delta)}</div>
+          </div>
+          {/* Right panel — thresholds then short prose, matching the credit/yield cards. */}
+          <div style={{ background: tok.bg, border: "1px solid " + tok.bdr, borderRadius: 8, padding: "8px 12px", maxWidth: 340 }}>
+            <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: C.mid, lineHeight: 1.7 }}>
+              <div>Healthy trend:&nbsp;&nbsp;&nbsp;&nbsp;rising</div>
+              <div>Watch:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1 monthly decline</div>
+              <div>Deterioration:&nbsp;&nbsp;&nbsp;2+ consecutive declines</div>
+              <div>Sahm equivalent: −0.5pp from 12m high</div>
+            </div>
+            <div style={{ fontSize: 12, color: tok.color, lineHeight: 1.6, marginTop: 6 }}>
+              U3 fell to {s.u3.value.toFixed(1)}% while emp-pop also fell to {s.empPop.value.toFixed(1)}%. That combination means the decline was
+              exit-driven, not hiring-driven. Sahm is understated for the same reason and cannot see it.
+            </div>
+          </div>
+        </div>
+        {chart.length >= 2 && (
+          <ResponsiveContainer width="100%" height={148}>
+            <LineChart data={chart} margin={{ top: 6, right: 8, bottom: 0, left: 0 }}>
+              <XAxis dataKey="date" tick={{ fontSize: 9, fill: C.lbl }} axisLine={false} tickLine={false} interval="preserveStartEnd"
+                tickFormatter={d => { const [y, m] = String(d).split("-"); return `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m - 1]} ${String(y).slice(2)}`; }} />
+              <YAxis yAxisId="ep" domain={["auto", "auto"]} tick={{ fontSize: 9, fill: C.lbl }} width={34} tickFormatter={v => v.toFixed(1)} />
+              <YAxis yAxisId="u3" orientation="right" domain={["auto", "auto"]} tick={{ fontSize: 9, fill: C.lbl }} width={30} tickFormatter={v => v.toFixed(1)} />
+              <Tooltip formatter={(v, n) => [`${Number(v).toFixed(1)}%`, n === "empPop" ? "Emp–pop" : "U3"]} />
+              <Line yAxisId="ep" type="monotone" dataKey="empPop" name="empPop" stroke={tok.color} strokeWidth={2.5} dot={false} connectNulls />
+              <Line yAxisId="u3" type="monotone" dataKey="u3" name="u3" stroke={C.muted} strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+        {/* K.3 — Indicators is the glance tab; the full interpretation lives on Macro. */}
+        <div style={{ fontSize: 11, color: C.lbl, marginTop: 6, lineHeight: 1.5 }}>
+          Emp–pop (solid, left axis) vs U3 (dashed, right). {watchLine} Full interpretation on the Macro tab.
+        </div>
+      </Card>
+    );
+  }
+
+  // ── J — full depth: hero metric, watch line, then the supporting rows ──
   return (
-    <Card style={{ borderLeft: "4px solid " + vc }}>
+    <Card style={{ borderLeft: "4px solid " + tok.color }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <SLabel>👷 Labour market</SLabel>
         <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>U3 scored against emp-pop, not alone</span>
-        <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 900, letterSpacing: 0.5, color: vc, border: "1.5px solid " + vc, borderRadius: 5, padding: "2px 8px" }}>
-          {sum.verdict.verdict}
-        </span>
       </div>
-      {/* C.2 — what the module answers, before any numbers. */}
+
       <div style={{ marginTop: 6, padding: "8px 11px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6, fontSize: 12, color: C.mid, lineHeight: 1.6 }}>
         <b style={{ color: C.muted }}>What this answers: </b>
         is the labour market deteriorating enough to push the Fed toward cutting, and to tip the regime toward deflationary recession?
-        <div style={{ marginTop: 3 }}>
-          <b style={{ color: C.muted }}>Currently: </b>
-          <span style={{ color: vc, fontWeight: 700 }}>{sum.headline}</span>
-        </div>
       </div>
 
-      <div style={{ fontSize: 12, color: vc, fontWeight: 700, marginTop: 6 }}>
+      {/* J.1 — emp-pop is the HERO: ~2x the other tiles, first, badge attached to it. */}
+      <div style={{ marginTop: 10, padding: "12px 14px", background: tok.bg, border: "1.5px solid " + tok.bdr, borderRadius: 10 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 40, fontWeight: 900, letterSpacing: -1.5, color: tok.color, lineHeight: 1 }}>{s.empPop.value.toFixed(1)}%</span>
+          <span style={{ fontSize: 15, fontWeight: 800, color: tok.color }}>{pp(s.empPop.delta)}</span>
+          {badge}
+        </div>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: C.mid, marginTop: 3 }}>Employment–population ratio · as of {s.empPop.date}</div>
+        <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3, lineHeight: 1.55 }}>
+          Emp-pop cannot be gamed by labour-force exit — it is employed ÷ working-age population.
+        </div>
+        {/* J.2 — the single watch line. */}
+        <div style={{ fontSize: 12, fontWeight: 700, color: tok.color, marginTop: 6 }}>↪ {watchLine}</div>
+      </div>
+
+      <div style={{ fontSize: 12, color: tok.color, fontWeight: 700, marginTop: 8 }}>
         U3 {sum.verdict.u3} · emp-pop {sum.verdict.empPop} → {sum.verdict.read}
       </div>
       {sum.body && <div style={{ fontSize: 12.5, color: C.mid, marginTop: 4, lineHeight: 1.6 }}>{sum.body}</div>}
 
-      {/* C.3 — four primary tiles. Each earns its space; the rest are behind the toggle. */}
+      {/* J.3 — secondary row, visibly smaller than the hero. */}
       <div style={{ marginTop: 10 }}>
-        <MetricGrid min={165}>
-          {tile("empPop", "Emp–pop ratio")}
+        <MetricGrid min={155}>
           {tile("u3", "U3 rate")}
           {tile("primeAge", "Prime-age (25–54)")}
-          {tile("payrolls", "Payrolls", null, null, "k")}
+          {tile("payrolls", "Payrolls", "k")}
         </MetricGrid>
       </div>
 
-      {/* C.4 — two bullets: the demographics control and the survey divergence. */}
       {primaryLines.length > 0 && (
         <div style={{ marginTop: 10 }}>
           {primaryLines.map((l, i) => (
@@ -1040,37 +1109,30 @@ function LaborPanel({ labor, compact }) {
         </div>
       )}
 
-      {/* C.5 — Sahm stays, annotated. It triggers on U3 RISING 0.5pp above its trailing low,
-          so a rate that fell on labour-force exit actively suppresses it — the same blindness
-          P1.4 fixed for the regime trigger. */}
       {sahmNote && (
         <div style={{ marginTop: 8, padding: "7px 10px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 6, fontSize: 11.5, lineHeight: 1.55, color: C.amber }}>
           <b>Sahm Rule — </b>{sahmNote}
         </div>
       )}
 
-      {/* Detail row, collapsed by default. */}
-      {(detailLines.length > 0 || !compact) && (
-        <details style={{ marginTop: 8 }}>
-          <summary style={{ fontSize: 11.5, color: C.blue, fontWeight: 700, cursor: "pointer" }}>Detail — participation, U-6, long-term unemployed, household survey</summary>
-          <div style={{ marginTop: 8 }}>
-            <MetricGrid min={160}>
-              {tile("participation", "Participation")}
-              {tile("u6", "U-6")}
-              {tile("longTerm", "LT unemployed share")}
-              {tile("longTermCount", "LT unemployed (27wk+)", null, null, "k")}
-              {tile("household", "Household emp", null, null, "k")}
-            </MetricGrid>
-            {detailLines.map((l, i) => (
-              <div key={i} style={{ fontSize: 12, color: C.mid, lineHeight: 1.6, marginTop: 5, paddingLeft: 10, borderLeft: "2px solid " + (l.flag === "AMBER" ? C.aBdr : C.bdr) }}>
-                {l.flag === "AMBER" && <span style={{ color: C.amber, fontWeight: 800 }}>⚠ </span>}{l.text}
-              </div>
-            ))}
-          </div>
-        </details>
-      )}
+      <details style={{ marginTop: 8 }}>
+        <summary style={{ fontSize: 11.5, color: C.blue, fontWeight: 700, cursor: "pointer" }}>Detail — participation, U-6, long-term unemployed, household survey</summary>
+        <div style={{ marginTop: 8 }}>
+          <MetricGrid min={160}>
+            {tile("participation", "Participation")}
+            {tile("u6", "U-6")}
+            {tile("longTerm", "LT unemployed share")}
+            {tile("longTermCount", "LT unemployed (27wk+)", "k")}
+            {tile("household", "Household emp", "k")}
+          </MetricGrid>
+          {detailLines.map((l, i) => (
+            <div key={i} style={{ fontSize: 12, color: C.mid, lineHeight: 1.6, marginTop: 5, paddingLeft: 10, borderLeft: "2px solid " + (l.flag === "AMBER" ? C.aBdr : C.bdr) }}>
+              {l.flag === "AMBER" && <span style={{ color: C.amber, fontWeight: 800 }}>⚠ </span>}{l.text}
+            </div>
+          ))}
+        </div>
+      </details>
 
-      {/* P1.4 — the trigger now keys off employment, not the headline rate */}
       <div style={{ marginTop: 10, padding: "7px 10px", background: trig.fired ? C.aBg : C.bg, border: "1px solid " + (trig.fired ? C.aBdr : C.bdr), borderRadius: 6, fontSize: 11.5, fontWeight: 700, color: trig.fired ? C.amber : C.muted }}>
         {trig.note}
       </div>
@@ -3492,7 +3554,9 @@ export default function App() {
             {/* OVERALL READ — context above charts */}
             <Card style={{ background: C.aBg, border: "1.5px solid " + C.aBdr }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-                <SLabel>Overall Read · Jun 2026</SLabel>
+                {/* M.2 — vintage removed: this composite reads LIVE data. Stale stamps go on
+                    the individual stale inputs (regime consensus), never on the composite. */}
+                <SLabel>Overall Read</SLabel>
                 <Btn onClick={fetchIndicators} disabled={indLoading} color="#fff" bgColor={C.blue} label={indLoading ? "Fetching…" : "🔄 Refresh Live Data"} />
               </div>
               {liveInd && (
@@ -3533,7 +3597,7 @@ export default function App() {
 
             {/* G.2 — labour renders BELOW credit spreads and the yield curve. G.3 — this is
                 the SHARED definition (LaborPanel), not a reimplementation; two copies drift. */}
-            <LaborPanel labor={liveInd?.labor} />
+            <LaborPanel labor={liveInd?.labor} depth="glance" />
           </div>
         )}
 
