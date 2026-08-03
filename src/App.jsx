@@ -784,7 +784,7 @@ function FedPathCard({ effr }) {
   // The divergence between this and the qualitative Fed read IS the story when they disagree.
   const diverges = L?.movesPriced != null && Math.abs(L.movesPriced) >= 1;
   return (
-    <Card style={{ borderLeft: "4px solid " + (diverges ? C.amber : C.bdrMd) }}>
+    <Card>{/* I.2 — informational: no status badge, so no accent bar. */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <SLabel>📈 Market-implied Fed path</SLabel>
         <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>ZQ 30-day fed funds futures · manual entry (no free feed)</span>
@@ -843,12 +843,59 @@ function laborVerdictFor(liveInd) {
 // nested inside the Global Playbook cross-asset card; F.2 puts it near the top of the Macro
 // tab. Keeping a second copy on Playbook would reintroduce exactly the drift section C removed
 // for the labour module, so this MOVED rather than being duplicated.
-function CreditBlock({ credit, oas, hyg, reconSummary }) {
+function CreditBlock({ credit, oas, hyg, reconSummary, depth = "full" }) {
   if (!hyg) return null;
+  // I.1/I.2 — the master gauge carries a status badge, so it carries a matching accent bar.
+  const cst = creditStatus(oas?.value) ?? "BENIGN";
+  const ctok = STATUS[cst];
+
+  // ── M.2 — glance depth for the Indicators tab ──
+  // Rendered from the SAME component rather than reimplemented, so the age chip and the HYG
+  // proxy exist on both tabs by construction. Depth changes the density, never the numbers.
+  if (depth === "glance") {
+    const obs = oas?.date ? observationAge(oas.date) : null;
+    const chipCol = obs?.chip === "red" ? C.red : obs?.chip === "amber" ? C.amber : C.muted;
+    const dv = hyg.divergence;
+    return (
+      <Card style={{ borderLeft: "4px solid " + ctok.color }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
+          <div>
+            <SLabel>HY Credit Spread — master gauge</SLabel>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 28, fontWeight: 900, letterSpacing: -1, color: ctok.color }}>
+                {obs?.awaiting ? "—" : (oas?.value ?? "—")}
+              </span>
+              <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: 0.5, color: ctok.color, background: ctok.bg, border: "1px solid " + ctok.bdr, borderRadius: 5, padding: "2px 8px" }}>{cst}</span>
+              {obs && <span style={{ fontSize: 12, fontWeight: 800, color: chipCol }}>{obs.awaiting ? "AWAITING PUBLICATION" : obs.label}</span>}
+            </div>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+              ICE BofA HY OAS · publishes with a ~2-day variable lag
+            </div>
+          </div>
+          {/* The live proxy belongs anywhere credit appears — it is the only same-day read. */}
+          <div style={{ background: dv?.alert ? C.aBg : C.bg, border: "1px solid " + (dv?.alert ? C.aBdr : C.bdr), borderRadius: 8, padding: "8px 12px", maxWidth: 330 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: C.blue, textTransform: "uppercase", letterSpacing: 0.5 }}>HYG intraday · PROXY — not OAS</div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: hyg.stressing ? C.red : C.mid, marginTop: 2 }}>{hyg.note}</div>
+            {dv && (
+              <div style={{ fontSize: 11.5, fontWeight: dv.alert ? 800 : 400, color: dv.alert ? C.amber : C.muted, marginTop: 3, lineHeight: 1.5 }}>
+                {dv.alert ? "⚠ " : ""}{dv.note}
+              </div>
+            )}
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: C.lbl, marginTop: 6, lineHeight: 1.5 }}>
+          Level bands: &lt;3.0 benign · 3.0–4.5 watchful · 4.5–8.0 stressed · &gt;8.0 recessionary.
+          Trend and the 3Y-window caveat on the Macro tab.
+        </div>
+      </Card>
+    );
+  }
+
   return (
-    <Card>
+    <Card style={{ borderLeft: "4px solid " + ctok.color }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 2 }}>
         <SLabel>💳 Credit — master gauge</SLabel>
+        <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: 0.5, color: ctok.color, background: ctok.bg, border: "1px solid " + ctok.bdr, borderRadius: 5, padding: "2px 8px" }}>{cst}</span>
         <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>published spread + live proxy</span>
       </div>
                 <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 8 }}>
@@ -2314,7 +2361,7 @@ function GaugesLeaning({ leaning, prominent }) {
   const wrap = prominent
     ? { padding: "14px 18px", background: leaning.allLeaning ? C.rBg : C.surf,
         border: "1.5px solid " + (leaning.allLeaning ? C.rBdr : C.bdr), borderRadius: 14,
-        borderLeft: "4px solid " + col, boxShadow: "0 1px 5px rgba(0,0,0,.05)" }
+        boxShadow: "0 1px 5px rgba(0,0,0,.05)" }   // I.2 — a count is not a status badge: no accent bar
     : { marginTop: 12, padding: "10px 12px", background: leaning.allLeaning ? C.rBg : C.bg,
         border: "1.5px solid " + (leaning.allLeaning ? C.rBdr : C.bdrMd), borderRadius: 8 };
   return (
@@ -2772,7 +2819,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               sold vs bid is what separates a rates repricing from a deleveraging, and gold
               and bonds alone cannot tell them apart. */}
           {data.marketRegime && data.marketRegime.state !== "INSUFFICIENT_DATA" && (
-            <Card style={{ borderLeft: "4px solid " + data.marketRegime.color }}>
+            <Card>{/* I.2 — regime state is not a status token; no badge, no bar. */}
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                 <SLabel>🎛️ Tape regime</SLabel>
                 <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>cross-asset, today's price action</span>
@@ -2790,7 +2837,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
 
           {/* Concentration ladder (P5) — fixed order, widest beta to narrowest. */}
           {data.ladder && data.ladder.spread != null && (
-            <Card style={{ borderLeft: "4px solid " + (data.ladder.alert ? C.amber : C.bdrMd) }}>
+            <Card>{/* I.2 — alert flag is not a status badge; no bar. */}
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                 <SLabel>🪜 Breadth ladder</SLabel>
                 <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>SMH → QQQ → SPY → IWM → HYG</span>
@@ -2819,7 +2866,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {/* Composed READ — deterministic, from the gate state. Observational only: it
               reports level, direction, thresholds and conflicts. No positioning language. */}
           {data.read?.sentences?.length > 0 && (
-            <Card style={{ borderLeft: "4px solid " + C.blue }}>
+            <Card>{/* I.2 — composite read: informational, no status badge, no bar. */}
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                 <SLabel>📝 Read</SLabel>
                 <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>composed from gate state · deterministic, no model</span>
@@ -3603,6 +3650,16 @@ export default function App() {
             {/* C.1 — "unemp" is deliberately excluded: the labour module above is the single
                 definition for that topic. Three renderings of one subject is what this removes. */}
             {INDICATORS.filter(ind => ind.id !== "unemp").map(ind => <IndicatorChart key={ind.id} ind={ind} live={liveInd} />)}
+
+            {/* M.2 — credit renders on BOTH tabs from the same component, so the age chip and
+                the HYG proxy exist here by construction rather than by duplication. */}
+            <CreditBlock
+              depth="glance"
+              credit={pbData?.us?.regime?.credit}
+              oas={pbData?.us?.macro?.oas}
+              hyg={pbData?.us?.hyg}
+              reconSummary={reconSummary}
+            />
 
             {/* G.2 — labour renders BELOW credit spreads and the yield curve. G.3 — this is
                 the SHARED definition (LaborPanel), not a reimplementation; two copies drift. */}
