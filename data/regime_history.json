@@ -1,28 +1,39 @@
 {
   "rows": [
     {
-      "date": "2026-08-02",
-      "unit": null,
-      "delta": null,
-      "pct": null
-    },
-    {
-      "date": "2026-08-03",
-      "unit": null,
-      "delta": null,
-      "pct": null
-    },
-    {
-      "date": "2026-08-04",
-      "unit": null,
-      "delta": null,
-      "pct": null
-    },
-    {
       "date": "2026-08-05",
-      "unit": null,
-      "delta": null,
-      "pct": null
+      "stagflation_p": 55,
+      "reflationary_p": 20,
+      "deflationary_p": 20,
+      "inflationary_p": 5,
+      "hawkish_repricing": "INSUFFICIENT_DATA",
+      "live_regime": "stag",
+      "view_regime": "stag",
+      "pinned": false,
+      "hyg_chg": 0.26,
+      "hyg_qqq_divergence": -1.96,
+      "inputs": {
+        "weightedRecessionProb": 26.22181818181818,
+        "cpi": 3.46353,
+        "kalshi2027": 41,
+        "tape": {
+          "gold": "up",
+          "tlt": "up",
+          "xlu": "down",
+          "xlp": "down",
+          "spy": "up",
+          "qqq": "up",
+          "iwm": "up",
+          "btc": "up"
+        },
+        "ladderSpread": 4,
+        "u3": 4.2,
+        "empPop": 59,
+        "oas": 2.85,
+        "tenY": 4.75,
+        "twoY": 4.28
+      },
+      "loggedAt": "2026-08-05T10:05:56.292Z"
     }
   ]
 }
