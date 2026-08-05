@@ -27,7 +27,7 @@ export default async function handler(req, res) {
   const assembled = await assembleRegion(region);
   if (!assembled) return res.status(400).json({ error: 'bad region' });
 
-  const { R, quotes, idxRaw, macro, regime, cross, hyg, leaning, read, marketRegime, ladder, fx } = assembled;
+  const { R, quotes, idxRaw, macro, regime, cross, hyg, leaning, read, marketRegime, ladder, fx, won, intervention } = assembled;
 
   // Attach display metadata + structure tag to each name, and names to indices.
   // `session` = explicit phase of that symbol's OWN exchange (live/pre/post/lunch/holiday/
@@ -67,6 +67,8 @@ export default async function handler(req, res) {
     marketRegime,         // P0.1 — cross-asset regime read (incl. HAWKISH_RATES_REPRICING)
     ladder,               // P5  — concentration ladder + single-theme alert
     fx,                   // P4  — FX leg decomposition + DXY reliability flag
+    won,                  // F4  — USD/KRW attribution: macro move vs Korea-specific (Gate 2)
+    intervention,         // F3  — manual intervention flag + DXY yen-leg attribution
     calendar: weekHighlights(),
     // `series` is the authoritative dated store (one row per observation date, ordered);
     // `history` stays for backward compatibility with older cached clients.
