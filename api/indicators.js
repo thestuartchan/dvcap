@@ -281,6 +281,7 @@ export default async function handler(req, res) {
     const [
       tenY, twoY, unemp, hySpread, cpi, cpiYoY, gdp, dxyRaw, m2Raw, oilRaw, auctionRaw,
       fedFundsRaw, tbill6mRaw, gdpGrowthRaw, usfrYield, sgovYield, termPremiumRaw, laborRaw,
+      spreadPublished, spreadHistoryRaw,
       tenYHistory, twoYHistory, unempHistory, creditHistory,
       cpiHeadlineHistory, cpiCoreHistory, pceCoreHistory,
     ] = await Promise.all([
@@ -310,6 +311,12 @@ export default async function handler(req, res) {
       Promise.all(Object.entries(LABOR_SERIES).map(async ([key, m]) => [key, await fredLabor(m.id, m.expectTitle)]))
         .then(Object.fromEntries),
       // History series for charts
+      // T10Y2Y is FRED's OWN published 10Y−2Y spread, and it lands a full business day
+      // ahead of DGS10/DGS2 — on 2026-08-05 it carried 08-04 while both constituents stopped
+      // at 08-03. Deriving the spread from the legs therefore inherited their lag for no
+      // reason. Fetched as a first-class series so the card can show the newest print.
+      fredLatest("T10Y2Y"),
+      fredHistory("T10Y2Y", START_DATE),
       fredHistory("DGS10", START_DATE),
       fredHistory("DGS2",  START_DATE),
       fredHistory("UNRATE", START_DATE),
@@ -320,17 +327,39 @@ export default async function handler(req, res) {
       fredPc1History("PCEPILFE"),  // Core PCE (Fed's preferred)
     ]);
 
-    // ── Compute yield spread history by merging 10Y and 2Y arrays ─────────────
-    const yieldSpreadHistory = [];
+    // ── Yield spread history: prefer FRED's published series ──────────────────
+    // The merge below is kept as a fallback only. Merging DGS10 and DGS2 requires both legs
+    // to carry the same date, so any per-leg publication lag silently truncates the spread —
+    // which is exactly what made the card sit a business day behind.
+    const derivedSpreadHistory = [];
     const twoYMap = {};
     for (const pt of twoYHistory) twoYMap[pt.d] = pt.v;
     for (const pt of tenYHistory) {
       if (twoYMap[pt.d] !== undefined) {
-        yieldSpreadHistory.push({
-          d: pt.d,
+        derivedSpreadHistory.push({
+          d: pt.d, iso: pt.iso ?? null,
           v: parseFloat((pt.v - twoYMap[pt.d]).toFixed(4)),
         });
       }
+    }
+    const yieldSpreadHistory = (spreadHistoryRaw && spreadHistoryRaw.length >= derivedSpreadHistory.length)
+      ? spreadHistoryRaw : derivedSpreadHistory;
+
+    // Which spread is newest, and do the two sources agree where they overlap?
+    const derivedSpread = (tenY.value != null && twoY.value != null)
+      ? parseFloat((tenY.value - twoY.value).toFixed(3)) : null;
+    const derivedDate = (tenY.date && twoY.date && tenY.date === twoY.date) ? tenY.date : null;
+    const publishedNewer = !!(spreadPublished?.date && (!derivedDate || spreadPublished.date > derivedDate));
+    const yieldSpread = publishedNewer ? spreadPublished.value : (derivedSpread ?? spreadPublished?.value ?? null);
+    const yieldSpreadDate = publishedNewer ? spreadPublished.date : (derivedDate ?? spreadPublished?.date ?? null);
+    const yieldSpreadSource = publishedNewer ? "T10Y2Y (published)" : "DGS10 − DGS2 (derived)";
+    // Coherence: on a SHARED date the two must agree. A gap means one leg is mis-mapped or
+    // stale, and silently preferring the newer number would hide that.
+    let yieldSpreadCoherence = null;
+    if (spreadPublished?.value != null && derivedSpread != null && derivedDate && spreadPublished.date === derivedDate) {
+      const gapBp = Math.round(Math.abs(spreadPublished.value - derivedSpread) * 100);
+      yieldSpreadCoherence = { sharedDate: derivedDate, gapBp, agree: gapBp <= 2, note: null };
+      yieldSpreadCoherence.note = `published T10Y2Y ${spreadPublished.value}% vs derived ${derivedSpread}% on ${derivedDate} (${gapBp}bp apart)`;
     }
 
     // ── Market-implied Fed policy change ──────────────────────────────────────
@@ -347,6 +376,10 @@ export default async function handler(req, res) {
     const BANDS = { dxy: [70, 130], tenY: [0, 10], twoY: [0, 10], unemployment: [2, 12], creditSpread: [1, 25] };
     const sanity = {};
     const chk = (k, v) => { if (v != null && BANDS[k] && (v < BANDS[k][0] || v > BANDS[k][1])) sanity[k] = "out-of-band"; };
+    // Registered here rather than where it is computed: sanity is declared below that block,
+    // so assigning into it earlier is a temporal-dead-zone ReferenceError on the one path
+    // that matters — the sources disagreeing.
+    if (yieldSpreadCoherence && !yieldSpreadCoherence.agree) sanity.yieldSpread = yieldSpreadCoherence.note;
     chk("dxy", dxyRaw.latest); chk("tenY", tenY.value); chk("twoY", twoY.value);
     chk("unemployment", unemp.value); chk("creditSpread", hySpread.value);
 
@@ -359,7 +392,9 @@ export default async function handler(req, res) {
       // ── Scalar values ──────────────────────────────────────────────────────
       tenY:         tenY.value,
       twoY:         twoY.value,
-      yieldSpread:  parseFloat((tenY.value - twoY.value).toFixed(3)),
+      yieldSpread,
+      yieldSpreadSource,
+      yieldSpreadCoherence,
       unemployment: unemp.value,
       creditSpread: hySpread.value,
       cpi:          cpi.value,
@@ -405,7 +440,9 @@ export default async function handler(req, res) {
       // The frontend computes stale = now − asOf > per-metric cadence, and always
       // shows this date as subtext — mirroring the HY OAS "last hard print" model.
       asOf: {
-        tenY: tenY.date, twoY: twoY.date, yieldSpread: tenY.date,
+        // The spread carries its OWN date. It can legitimately be a day ahead of the legs,
+        // and stamping it with tenY.date would have understated it by a business day.
+        tenY: tenY.date, twoY: twoY.date, yieldSpread: yieldSpreadDate,
         unemployment: unemp.date, creditSpread: hySpread.date,
         cpi: cpi.date, gdp: gdp.date, gdpGrowth: gdpGrowthRaw.date,
         currentFedFunds: fedFundsRaw.date, tbill6m: tbill6mRaw.date,
@@ -419,8 +456,10 @@ export default async function handler(req, res) {
       sanity,  // { metric: "out-of-band" } for any value outside its plausible band
     };
 
-    // Cache 5 minutes — allows near-fresh data without hammering FRED
-    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=60");
+    // 60s edge cache with a 5-minute stale window: a new FRED print shows up within a
+    // minute, while stale-while-revalidate keeps the response instant and means FRED still
+    // sees at most ~1 origin fetch a minute regardless of traffic.
+    res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
     return res.status(200).json(result);
   } catch (e) {
     console.error("Indicator fetch error:", e.message);
