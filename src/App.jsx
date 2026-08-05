@@ -7,6 +7,7 @@ import {
 import { kofiaStale, parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, KOFIA_FLOWS, toWonTrillions, koreaFlowRead, koreaFlowImplication, withCommas } from "../lib/kofia.js";
 import { freshnessText, humanizeAge } from "../lib/sessions.js";
 import { interventionAnnotation } from "../lib/fx.js";
+import { unInversionPhase, yieldCurveStatus, NORMAL_SPREAD } from "../lib/yieldcurve.js";
 import { pendingReconciliations, reconStats } from "../lib/recon.js";
 import { deriveRegimeProbabilities, CONTESTED_GAP } from "../lib/regimeProb.js";
 import { STATUS, creditStatus, deriveAction, headerSignal, STAGES } from "../lib/status.js";
@@ -56,20 +57,32 @@ const INDICATORS = [
     status:"AMBER", label:"Watch", color:"#92400E", areaColor:"#F59E0B",
     dataKey:"yieldHistory", data:YIELD_DATA, refLine:0, yDomain:[-1.2,1.0],
     yFmt: v=>`${v>=0?"+":""}${v.toFixed(2)}%`,
-    detail: (v) => `Currently ${v >= 0 ? "+" : ""}${v.toFixed(2)}% after the longest inversion (Oct 2022–Dec 2024) in modern history. Recessions historically arrive 4–11 months AFTER the curve un-inverts — the re-steepening phase is the danger window. A fully normal curve is above +1.0%.`,
+    // The un-inversion narrative is DATE arithmetic, so it is computed from the history
+    // (second arg) rather than stated. Falls back to a level-only sentence when the history
+    // is absent, instead of asserting a window it cannot locate.
+    detail: (v, hist) => {
+      const ph = unInversionPhase(hist || []);
+      const head = `Currently ${v >= 0 ? "+" : ""}${v.toFixed(2)}% after the longest inversion in modern history. `;
+      const tail = ` A fully normal curve is above +${NORMAL_SPREAD.toFixed(1)}%.`;
+      return head + ph.note + tail;
+    },
     thresholds:[
       {val:-0.5, label:"Deep inversion", color:"#DC2626", dash:"4 2"},
       {val:0,    label:"Inversion line",  color:"#D97706", dash:"5 3"},
       {val:1.0,  label:"Normal",          color:"#16A34A", dash:"4 2"},
     ],
     // Returns independent assessment based on this indicator's own live value
-    signal(liveVal) {
+    signal(liveVal, hist) {
       const v = liveVal ?? 0.38;
-      if (v < -0.5)  return { label:"Deep Inversion", text:"Severe inversion — historically the strongest recession predictor. Average lead time: 12–18 months.",       state:"DANGER" };
-      if (v < 0)     return { label:"Inverted",        text:"Curve still inverted — markets pricing Fed cuts ahead of deteriorating growth.",                            state:"DANGER" };
-      if (v < 0.5)   return { label:"Danger Window",   text:"Just re-normalized. Recessions historically strike 4–11 months after un-inversion. This is the risk zone.", state:"WATCH" };
-      if (v < 1.0)   return { label:"Steepening",      text:"Curve steepening — consistent with either reflationary recovery or stagflation. Watch credit spreads to differentiate.", state:"ELEVATED" };
-      return           { label:"Normal",               text:"Curve fully normalized. Historical recession risk low based on this indicator alone.",                       state:"BENIGN" };
+      if (v < -0.5) return { label: "Deep Inversion", text: "Severe inversion — historically the strongest recession predictor. Average lead time: 12–18 months.", state: "DANGER" };
+      if (v < 0)    return { label: "Inverted", text: "Curve still inverted — markets pricing Fed cuts ahead of deteriorating growth.", state: "DANGER" };
+      // Positive but not yet normal. WHICH reading this is depends on how long ago the curve
+      // un-inverted, not on the level — inside the window and past it are opposite calls, and
+      // the old level-only test could not tell them apart.
+      const ph = unInversionPhase(hist || []);
+      const st = yieldCurveStatus(v, ph);
+      if (v < NORMAL_SPREAD) return { label: st.label, text: ph.note, state: st.state };
+      return { label: "Normal", text: `Curve fully normalized (above +${NORMAL_SPREAD.toFixed(1)}%). ` + ph.note, state: "BENIGN" };
     },
   },
   {
@@ -2096,7 +2109,10 @@ function IndicatorChart({ ind, live }) {
                         : ind.id === "unemp"  && live ? live.unemployment
                         : ind.id === "credit" && live ? live.creditSpread
                         : null;
-          const sigRaw = ind.signal(liveVal);
+          // The un-inversion window is date arithmetic over the SAME series the chart draws,
+          // so the signal reads it rather than being told a level in isolation.
+          const sigHist = (live && live[ind.dataKey]) || ind.data || [];
+          const sigRaw = ind.signal(liveVal, sigHist);
           // I.5 — status colours come from the token set, never from a hardcoded hex.
           const sig = sigRaw.state && STATUS[sigRaw.state]
             ? { ...sigRaw, color: STATUS[sigRaw.state].color, bg: STATUS[sigRaw.state].bg, bdr: STATUS[sigRaw.state].bdr }
@@ -2120,7 +2136,7 @@ function IndicatorChart({ ind, live }) {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke={C.bdr} vertical={false} />
-              <XAxis dataKey="d" tick={{ fill: C.lbl, fontSize: 10 }} axisLine={false} tickLine={false} interval={2} />
+              <XAxis dataKey="d" tick={{ fill: C.lbl, fontSize: 10 }} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={26} />
               <YAxis domain={ind.yDomain} tick={{ fill: C.lbl, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={ind.yFmt} width={52} />
               <Tooltip content={<ChartTip fmt={ind.yFmt} />} />
               {ind.thresholds.map((th, i) => (
@@ -2137,7 +2153,8 @@ function IndicatorChart({ ind, live }) {
                   ? ind.detail(ind.id === "yield"  && live ? live.yieldSpread
                               : ind.id === "unemp"  && live ? live.unemployment
                               : ind.id === "credit" && live ? live.creditSpread
-                              : (ind.id === "yield" ? 0.38 : ind.id === "unemp" ? 4.4 : 2.75))
+                              : (ind.id === "yield" ? 0.38 : ind.id === "unemp" ? 4.4 : 2.75),
+                              (live && live[ind.dataKey]) || ind.data || [])
                   : ind.detail}
               </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -3923,7 +3940,19 @@ export default function App() {
               <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
                 {[
                   { icon: liveInd && liveInd.creditSpread >= 4.5 ? "🚨" : liveInd && liveInd.creditSpread >= 3.5 ? "⚠️" : "✅", text: `Credit spreads at ${liveInd ? liveInd.creditSpread.toFixed(2) : "2.75"}%. ${liveInd && liveInd.creditSpread >= 4.5 ? "ALERT THRESHOLD BREACHED — rotate defensive now." : liveInd && liveInd.creditSpread >= 3.5 ? "Widening toward alert zone. Build insurance." : "Markets not pricing stress. Trip wire: 4.5%."}` },
-                  { icon: "⚠️", text: `Yield curve at ${liveInd ? (liveInd.yieldSpread >= 0 ? "+" : "") + liveInd.yieldSpread.toFixed(2) + "%" : "+0.38%"} — ${liveInd && liveInd.yieldSpread < 0 ? "still inverted, pricing recession ahead." : liveInd && liveInd.yieldSpread < 0.5 ? "re-normalized but in the danger window (avg 4–11 months to recession after un-inversion)." : "steepening toward normal. Danger window still open until spread exceeds +1.0%."}` },
+                  // The un-inversion window is elapsed time since a dated event, so this bullet
+                  // reads the same computation as the card rather than restating a level test.
+                  (() => {
+                    const yph = unInversionPhase(liveInd?.yieldHistory || []);
+                    const lvl = liveInd ? (liveInd.yieldSpread >= 0 ? "+" : "") + liveInd.yieldSpread.toFixed(2) + "%" : "+0.38%";
+                    const tail = liveInd && liveInd.yieldSpread < 0
+                      ? "still inverted, pricing recession ahead."
+                      : yph.phase === "IN_WINDOW" ? `inside the historical 4–11 month post-un-inversion window (${yph.monthsSince} months in).`
+                      : yph.phase === "ELAPSED"   ? `${yph.monthsSince} months past un-inversion — the historical 4–11 month window has closed.`
+                      : yph.phase === "PRE_WINDOW" ? `un-inverted ${yph.monthsSince} month${yph.monthsSince === 1 ? "" : "s"} ago; the historical window has not opened yet.`
+                      : "un-inversion date not locatable from the loaded history.";
+                    return { icon: yph.phase === "IN_WINDOW" ? "⚠️" : "•", text: `Yield curve at ${lvl} — ${tail}` };
+                  })(),
                   // Section D + C.5 — the icon is keyed on the EMPLOYMENT measures, not the
                   // unemployment rate, and the Sahm reference carries its understatement
                   // caveat: a rate that fell on labour-force exit suppresses the rule.
