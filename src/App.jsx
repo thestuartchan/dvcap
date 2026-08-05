@@ -3826,29 +3826,42 @@ export default function App() {
               const isAlert   = act.status === "ELEVATED";
               const isNeutral = act.stage === 1 && activeRegime.id === "ref";
               const sigLabel  = act.status === "ELEVATED" ? "ALERT" : act.status === "BENIGN" && isNeutral ? "NEUTRAL" : act.status === "BENIGN" ? "WATCH" : act.status;
-              const CONFIGS = {
-                DANGER:  { g1:"#991B1B", g2:"#B91C1C", shadow:"rgba(153,27,27,0.35)",
-                  action:"Stage 3 — Full Insurance Active. Let Puts Work.",
-                  bullets:["🚨 Stage 3 triggered — Full insurance active. No new equity.",
-                           "⏳ Do not deploy cash yet — Path 2 corrections average 18 months.",
-                           "📈 Wait for VIX peak before Stage 4."] },
-                ALERT:   { g1:"#92400E", g2:"#B45309", shadow:"rgba(146,64,14,0.35)",
-                  action:"Stage 2 — Buy First Insurance Tranche.",
-                  bullets:["🛡️ Stage 2 triggered — Buy first insurance tranche.",
-                           "🎯 SPY puts at 90% strike, 90-day expiry, 1.5% of portfolio in premium.",
-                           "📉 Reduce any leveraged positions now."] },
-                WATCH:   { g1:"#334155", g2:"#1E293B", shadow:"rgba(30,41,59,0.35)",
-                  action:"Stage 1 — Surveillance. Prepare, Don't Deploy.",
-                  bullets:["🔍 Stage 1 active — Surveillance. No insurance purchases yet.",
-                           "📉 VIX below 20 means insurance is cheap — this is the preparation window, not the activation window.",
-                           "💵 Berkshire's playbook: T-bills at ~4.2% while waiting. Optionality > yield."] },
-                NEUTRAL: { g1:"#166534", g2:"#15803D", shadow:"rgba(22,101,52,0.30)",
-                  action:"Risk-On. Deploy Capital Selectively.",
-                  bullets:["🌱 Reflationary recovery underway. AI infrastructure, broad equities, and REITs leading.",
-                           "📈 Reduce insurance overweight — defensive positioning gives way to growth assets.",
-                           "🔄 Watch for credit spread re-widening as the signal to rotate back defensive."] },
+              // Colour tracks STATUS; the instruction tracks STAGE. Keeping both on one
+              // status-keyed map is what put "Stage 1 active — Surveillance. No insurance
+              // purchases yet." underneath a "Stage 2 — Accumulate insurance" headline:
+              // deriveAction compresses stage 2 to WATCH and stage 3 to ELEVATED, so a map
+              // that assumed WATCH=1 / ALERT=2 / DANGER=3 was one stage behind at every level
+              // above 1. The card contradicted itself, and the bullets were the wrong advice.
+              const GRADIENTS = {
+                DANGER:  { g1: "#991B1B", g2: "#B91C1C", shadow: "rgba(153,27,27,0.35)" },
+                ALERT:   { g1: "#92400E", g2: "#B45309", shadow: "rgba(146,64,14,0.35)" },
+                WATCH:   { g1: "#334155", g2: "#1E293B", shadow: "rgba(30,41,59,0.35)" },
+                NEUTRAL: { g1: "#166534", g2: "#15803D", shadow: "rgba(22,101,52,0.30)" },
               };
-              const cfg = CONFIGS[sigLabel];
+              const STAGE_BULLETS = {
+                1: ["🔍 Stage 1 — Surveillance. No insurance purchases yet.",
+                    "📉 VIX below 20 means insurance is cheap — this is the preparation window, not the activation window.",
+                    "💵 Berkshire's playbook: T-bills at ~4.2% while waiting. Optionality > yield."],
+                2: ["🛡️ Stage 2 — Accumulate insurance. Build the position while it is cheap.",
+                    "🎯 SPY puts at 90% strike, 90-day expiry, ~1.5% of portfolio in premium. Scale in; do not size it all at once.",
+                    "📉 Reduce leveraged positions. This is a preparation stance, not a defensive one — equity exposure stays on."],
+                3: ["🚨 Stage 3 — Full insurance active. No new equity.",
+                    "⏳ Do not deploy cash yet — Path 2 corrections average 18 months.",
+                    "📈 Wait for a VIX peak before Stage 4."],
+                4: ["🚀 Stage 4 — Deploy. Rotate from insurance into risk.",
+                    "📊 Harvest puts into the peak; recycle premium into equities in tranches.",
+                    "🔄 Re-establish the long-term book before the recovery is obvious."],
+              };
+              const NEUTRAL_BULLETS = [
+                "🌱 Reflationary recovery underway. AI infrastructure, broad equities, and REITs leading.",
+                "📈 Reduce insurance overweight — defensive positioning gives way to growth assets.",
+                "🔄 Watch for credit spread re-widening as the signal to rotate back defensive.",
+              ];
+              const cfg = {
+                ...(GRADIENTS[sigLabel] || GRADIENTS.WATCH),
+                action: act.label,
+                bullets: sigLabel === "NEUTRAL" ? NEUTRAL_BULLETS : (STAGE_BULLETS[act.stage] || STAGE_BULLETS[1]),
+              };
               // ── Section A — contested guard ──
               // A 1pp separation between the top two states is a tie. A tie cannot support a
               // capital-deployment instruction, so the directional recommendation is
@@ -3899,12 +3912,20 @@ export default function App() {
                     {act.inputs.length > 0 && (
                       <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.22)", fontSize: 11.5, lineHeight: 1.6, opacity: 0.9 }}>
                         <b style={{ opacity: 0.75 }}>Derived from: </b>
-                        {act.inputs.map((inp, i) => (
+                        {/* Drivers first, then context. Listing a non-input in the same run as the
+                            gauges that actually set the stage implies a weight it does not have. */}
+                        {act.inputs.filter(x => x.weight !== "context").map((inp, i) => (
                           <span key={inp.name}>
                             {i ? " · " : ""}{inp.name} ({inp.value}
                             {inp.vintage ? <span style={{ opacity: 0.7 }}> — {inp.vintage}</span> : null})
                           </span>
                         ))}
+                        {act.inputs.some(x => x.weight === "context") && (
+                          <span style={{ opacity: 0.62 }}>
+                            {" · context (not weighted): "}
+                            {act.inputs.filter(x => x.weight === "context").map(x => x.name + " " + x.value).join(", ")}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
