@@ -1,6 +1,9 @@
 // api/manual-entry.js — manual/derived series that have no keyless feed.
 //   • fedPath  (P6.2) — 30-day fed funds futures (ZQ). No free feed exists: IBKR has no
 //     stateless auth and its futures data is ~20-min delayed, so this is a daily hand entry.
+//   • intervention (F3) — coordinated-FX-intervention flag. Manual because no keyless feed
+//     reports intervention in real time; MOF/BOK confirmations arrive after the fact, so an
+//     inferred flag would manufacture certainty from a wide daily move.
 //   • oasRecon (P2.5) — the OAS/HYG reconciliation log. Establishes whether the live proxy is
 //     actually predictive, so the card can be demoted or dropped on evidence rather than
 //     trusted by habit.
@@ -20,13 +23,14 @@ async function readStore() {
   const repo = process.env.GITHUB_REPO;
   const branch = process.env.GITHUB_BRANCH || 'main';
   const r = await fetch(`https://api.github.com/repos/${repo}/contents/${DATA_PATH}?ref=${encodeURIComponent(branch)}`, { headers: ghHeaders() });
-  if (!r.ok) return { store: { fedPath: { latest: null, series: [] }, oasRecon: [] }, sha: null };
+  if (!r.ok) return { store: { fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null }, sha: null };
   const meta = await r.json();
-  let store = { fedPath: { latest: null, series: [] }, oasRecon: [] };
+  let store = { fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null };
   try { store = JSON.parse(Buffer.from(meta.content, 'base64').toString('utf8')); } catch { /* default */ }
   store.fedPath ||= { latest: null, series: [] };
   store.fedPath.series ||= [];
   store.oasRecon ||= [];
+  store.intervention ??= null;
   return { store, sha: meta.sha };
 }
 
@@ -44,7 +48,7 @@ export function zqMovesPriced(impliedRate, effr) {
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     if (!process.env.GITHUB_TOKEN || !process.env.GITHUB_REPO) {
-      return res.status(200).json({ fedPath: { latest: null, series: [] }, oasRecon: [], note: 'store not configured' });
+      return res.status(200).json({ fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, note: 'store not configured' });
     }
     try {
       const { store } = await readStore();
@@ -52,9 +56,10 @@ export default async function handler(req, res) {
       return res.status(200).json({
         fedPath: { latest: store.fedPath.latest, series: store.fedPath.series.slice(-120) },
         oasRecon: store.oasRecon.slice(-180),
+        intervention: store.intervention,
       });
     } catch (e) {
-      return res.status(200).json({ fedPath: { latest: null, series: [] }, oasRecon: [], error: String(e?.message || e) });
+      return res.status(200).json({ fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, error: String(e?.message || e) });
     }
   }
 
@@ -66,7 +71,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'GITHUB_TOKEN / GITHUB_REPO not configured' });
   }
 
-  const { fedPath, oasRecon } = req.body || {};
+  const { fedPath, oasRecon, intervention } = req.body || {};
   const { store, sha } = await readStore();
   const saved = [];
 
@@ -111,6 +116,26 @@ export default async function handler(req, res) {
         .sort((a, b) => a.date.localeCompare(b.date)).slice(-400);
     }
     saved.push('oasRecon');
+  }
+
+  // ── F3 intervention flag ──
+  // Tested with != null rather than truthiness: this is a TOGGLE, so an explicit false must be
+  // storable. A truthy test would accept turning it on and silently no-op turning it off.
+  if (intervention != null) {
+    const active = !!intervention.active;
+    const since = intervention.since ? String(intervention.since).slice(0, 10) : null;
+    if (since && !/^\d{4}-\d{2}-\d{2}$/.test(since)) {
+      return res.status(422).json({ error: `intervention.since '${intervention.since}' is not YYYY-MM-DD` });
+    }
+    store.intervention = active
+      ? { active: true, since: since || new Date().toISOString().slice(0, 10),
+          note: intervention.note ? String(intervention.note).slice(0, 300) : null,
+          setAt: new Date().toISOString() }
+      // Clearing records WHEN it was cleared and what window it closed. A flag that simply
+      // vanishes leaves the episode unauditable afterwards, and the window is the useful part.
+      : { active: false, since: null, note: null, clearedAt: new Date().toISOString(),
+          previousSince: store.intervention?.since ?? null };
+    saved.push(active ? 'intervention:on' : 'intervention:off');
   }
 
   if (!saved.length) return res.status(400).json({ error: 'nothing to save' });
