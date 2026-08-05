@@ -3386,6 +3386,12 @@ export default function App() {
   // Guarded by a local marker so a day's worth of refreshes produces one write, not hundreds.
   const [regimeHistory, setRegimeHistory] = useState([]);
   useEffect(() => { fetch("/api/regime-log?limit=90").then(r => r.json()).then(j => setRegimeHistory(j.rows || [])).catch(() => {}); }, []);
+  // Only rows carrying a reading can be plotted. Counting rows the chart cannot draw is how
+  // an empty chart came to announce "3 days logged" — the label must describe the picture.
+  const plottableHistory = useMemo(
+    () => (regimeHistory || []).filter(r => r && r.stagflation_p != null),
+    [regimeHistory],
+  );
   useEffect(() => {
     if (!derivedRegimes || !liveRegime) return;
     const today = new Date().toISOString().slice(0, 10);
@@ -4532,26 +4538,26 @@ export default function App() {
                       how you answer "has the classifier actually been right". Raw inputs are
                       stored server-side alongside these probabilities so a change to the
                       discriminator can be re-run against days already recorded. */}
-                  {regimeHistory.length >= 2 ? (
+                  {plottableHistory.length >= 2 ? (
                     <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px dashed " + C.bdr }}>
                       <div style={{ fontSize: 10.5, color: C.muted, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>
-                        Regime history · {regimeHistory.length} days logged
+                        Regime history · {plottableHistory.length} days logged
                       </div>
                       <ResponsiveContainer width="100%" height={70}>
-                        <LineChart data={regimeHistory} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                        <LineChart data={plottableHistory} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                           <XAxis dataKey="date" tick={{ fontSize: 9, fill: C.lbl }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
                           <YAxis domain={[0, 100]} hide />
                           <Tooltip formatter={(v, n) => [`${v}%`, n]} />
-                          <Line type="monotone" dataKey="stagflation_p"  name="Stagflation"  stroke="#B45309" strokeWidth={1.5} dot={false} connectNulls />
-                          <Line type="monotone" dataKey="reflationary_p" name="Reflationary" stroke="#166534" strokeWidth={1.5} dot={false} connectNulls />
-                          <Line type="monotone" dataKey="deflationary_p" name="Deflationary" stroke="#1D4ED8" strokeWidth={1.5} dot={false} connectNulls />
-                          <Line type="monotone" dataKey="inflationary_p" name="Inflationary" stroke="#7C3AED" strokeWidth={1.5} dot={false} connectNulls />
+                          <Line type="monotone" dataKey="stagflation_p"  name="Stagflation"  stroke={REGIME_PALETTE.stag.color} strokeWidth={1.5} dot={false} connectNulls />
+                          <Line type="monotone" dataKey="reflationary_p" name="Reflationary" stroke={REGIME_PALETTE.ref.color} strokeWidth={1.5} dot={false} connectNulls />
+                          <Line type="monotone" dataKey="deflationary_p" name="Deflationary" stroke={REGIME_PALETTE.def.color} strokeWidth={1.5} dot={false} connectNulls />
+                          <Line type="monotone" dataKey="inflationary_p" name="Inflationary" stroke={REGIME_PALETTE.inf.color} strokeWidth={1.5} dot={false} connectNulls />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
                   ) : (
                     <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 8, fontStyle: "italic" }}>
-                      Regime history: {regimeHistory.length} day{regimeHistory.length === 1 ? "" : "s"} logged — insufficient for a trend. One row is appended per day.
+                      Regime history: {plottableHistory.length} day{plottableHistory.length === 1 ? "" : "s"} logged — insufficient for a trend. One row is appended per day.
                     </div>
                   )}
                 </div>

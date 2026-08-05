@@ -9,9 +9,14 @@
 // twenty times a day produces one row, and a later intraday state supersedes an earlier one.
 // Uses the same GitHub commit-back store as the Korea entry — no new infrastructure.
 
-import { upsertObservation } from '../lib/series.js';
+import { upsertByDate } from '../lib/series.js';
 
 const DATA_PATH = 'data/regime_history.json';
+
+// A row is only a real observation if it carries at least one probability. Used both to serve
+// the log and to purge the husks the upsertObservation bug wrote.
+const HAS_CONTENT = r => r && (r.stagflation_p != null || r.reflationary_p != null ||
+                               r.deflationary_p != null || r.inflationary_p != null);
 
 function ghHeaders() {
   return {
@@ -40,9 +45,12 @@ export default async function handler(req, res) {
     if (!process.env.GITHUB_TOKEN || !process.env.GITHUB_REPO) return res.status(200).json({ rows: [], note: 'store not configured' });
     try {
       const { store } = await readStore();
-      const rows = (store.rows || []).slice(-Number(req.query.limit || 90));
+      // Serve only rows that actually carry a reading. A husk plots as a gap and counts as a
+      // day logged, which is how an empty chart came to claim '3 days logged'.
+      const all = (store.rows || []).filter(HAS_CONTENT);
+      const rows = all.slice(-Number(req.query.limit || 90));
       res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
-      return res.status(200).json({ rows, count: (store.rows || []).length });
+      return res.status(200).json({ rows, count: all.length, stored: (store.rows || []).length });
     } catch (e) {
       return res.status(200).json({ rows: [], error: String(e?.message || e) });
     }
@@ -85,10 +93,14 @@ export default async function handler(req, res) {
 
   const { store, sha } = await readStore();
   // Dedupe by date: last write for a given day wins, ordered ascending.
-  store.rows = upsertObservation(
-    (store.rows || []).map(r => ({ ...r, value: 1 })),   // upsertObservation needs a value key
-    { ...row, value: 1 },
-  ).map(({ value, ...r }) => r).slice(-800);
+  // Wide row, wide upsert. This previously went through upsertObservation with a dummy
+  // "value: 1" to satisfy its guard — which meant every write committed nothing but a date,
+  // because that helper whitelists the five scalar-series keys and drops the rest.
+  store.rows = upsertByDate(store.rows, row)
+    // Purge the contentless husks left by that bug: dated rows carrying no probabilities at
+    // all. They are unrecoverable (the values were never written) and only inflate the count.
+    .filter(r => r.date === row.date || HAS_CONTENT(r))
+    .slice(-800);
 
   const content = Buffer.from(JSON.stringify(store, null, 2) + '\n', 'utf8').toString('base64');
   const body = {
