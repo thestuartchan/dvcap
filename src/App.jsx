@@ -6,6 +6,7 @@ import {
 } from "recharts";
 import { kofiaStale, parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, KOFIA_FLOWS, toWonTrillions, koreaFlowRead, koreaFlowImplication, withCommas } from "../lib/kofia.js";
 import { freshnessText, humanizeAge } from "../lib/sessions.js";
+import { interventionAnnotation } from "../lib/fx.js";
 import { pendingReconciliations, reconStats } from "../lib/recon.js";
 import { deriveRegimeProbabilities, CONTESTED_GAP } from "../lib/regimeProb.js";
 import { STATUS, creditStatus, deriveAction, headerSignal, STAGES } from "../lib/status.js";
@@ -775,6 +776,120 @@ function fillLiveRates(text, cy) {
 // There is no free feed for 30-day fed funds futures (ZQ): IBKR has no stateless auth and its
 // futures data is ~20-min delayed, so this is a daily hand entry — same pattern as KOFIA.
 // ZQ is quoted as 100 − the implied average fed funds rate for the contract month.
+// F3 — coordinated FX intervention flag.
+//
+// Manual on purpose. No keyless feed reports intervention while it is happening; MOF/BOK
+// confirmations arrive days later. Inferring it from a wide daily move would manufacture
+// exactly the certainty this flag exists to withhold — so it is the operator's call, and the
+// annotation says so.
+//
+// Reads and writes the live store rather than the deployed bundle, so the flag takes effect
+// on save instead of waiting for a redeploy. That matters for a switch whose whole purpose is
+// to annotate a move that is happening right now.
+function InterventionToggle({ jpyChangePct, dxyChangePct, onChange }) {
+  const [iv, setIv] = useState(null);
+  const [since, setSince] = useState("");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => {
+    fetch("/api/manual-entry").then(r => r.json()).then(j => {
+      setIv(j.intervention || null);
+      if (j.intervention?.since) setSince(j.intervention.since);
+      if (j.intervention?.note) setNote(j.intervention.note);
+      onChange?.(j.intervention || null);
+    }).catch(() => {});
+  }, []);
+
+  const active = !!iv?.active;
+  // Preview the annotation the dashboard will show, computed from the same function the
+  // server uses — so what you see before saving is what gets rendered after.
+  const preview = interventionAnnotation({
+    active: true, since: since || new Date().toISOString().slice(0, 10), note: note || null,
+    jpyChangePct, dxyChangePct,
+  });
+
+  async function toggle(next) {
+    setSaving(true); setMsg(null);
+    try {
+      const body = next
+        ? { intervention: { active: true, since: since || new Date().toISOString().slice(0, 10), note: note || null } }
+        : { intervention: { active: false } };
+      const r = await fetch("/api/manual-entry", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        credentials: "include", body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      if (r.ok) {
+        const fresh = await fetch("/api/manual-entry").then(x => x.json()).catch(() => null);
+        setIv(fresh?.intervention || null);
+        onChange?.(fresh?.intervention || null);
+        setMsg({ ok: true, text: next ? "Intervention flag ON — FX row annotated" : "Flag cleared" });
+      } else setMsg({ ok: false, text: j.error || "save failed" });
+    } catch (e) { setMsg({ ok: false, text: String(e.message) }); }
+    setSaving(false);
+  }
+
+  const tok = active ? STATUS.WATCH : null;
+  return (
+    <Card style={active ? { background: tok.bg, border: "1.5px solid " + tok.bdr } : undefined}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <SLabel>⚑ FX intervention flag</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>manual · no feed reports this live</span>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
+        <button
+          onClick={() => toggle(!active)} disabled={saving}
+          style={{
+            background: active ? tok.color : "#fff", color: active ? "#fff" : C.mid,
+            border: "1.5px solid " + (active ? tok.color : C.bdrMd), borderRadius: 8,
+            padding: "6px 14px", fontSize: 12.5, fontWeight: 800,
+            cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1,
+          }}>
+          {saving ? "Saving…" : active ? "● ACTIVE — click to clear" : "○ Off — click to activate"}
+        </button>
+        {active && iv?.since && (
+          <span style={{ fontSize: 11.5, color: tok.color, fontWeight: 700 }}>since {iv.since}</span>
+        )}
+      </div>
+
+      {!active && (
+        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+          <input value={since} onChange={e => setSince(e.target.value)} placeholder="since (YYYY-MM-DD)"
+            style={{ flex: "1 1 130px", minWidth: 0, padding: "6px 9px", fontSize: 12, border: "1px solid " + C.bdrMd, borderRadius: 6 }} />
+          <input value={note} onChange={e => setNote(e.target.value)} placeholder="note (optional)"
+            style={{ flex: "2 1 180px", minWidth: 0, padding: "6px 9px", fontSize: 12, border: "1px solid " + C.bdrMd, borderRadius: 6 }} />
+        </div>
+      )}
+
+      {/* The arithmetic, shown whether the flag is on or off — it is what the operator is
+          judging against, and it is useful before deciding to set the flag. */}
+      {preview.attribution && (
+        <div style={{ fontSize: 11, color: C.muted, marginTop: 8, lineHeight: 1.55 }}>
+          {preview.attribution.sameDirection
+            ? `Today: ${preview.attribution.note}.`
+            : `Today: ${preview.attribution.note}.`}
+        </div>
+      )}
+      {active && (
+        <div style={{ fontSize: 11.5, color: tok.color, fontWeight: 600, marginTop: 6, lineHeight: 1.55 }}>
+          {iv.note ? `Note: ${iv.note}` : "Annotating the FX row on Global Playbook."}
+        </div>
+      )}
+      {!active && iv?.clearedAt && (
+        <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 6 }}>
+          Last window cleared {String(iv.clearedAt).slice(0, 10)}{iv.previousSince ? ` (ran from ${iv.previousSince})` : ""}
+        </div>
+      )}
+      {msg && (
+        <div style={{ fontSize: 11.5, fontWeight: 700, marginTop: 6, color: msg.ok ? C.green : C.red }}>{msg.text}</div>
+      )}
+    </Card>
+  );
+}
+
 function FedPathCard({ effr }) {
   const [data, setData] = useState(null);
   const [price, setPrice] = useState("");
@@ -2871,7 +2986,7 @@ function pbGeo(sym) {
   return "US";
 }
 
-function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updated, onRefresh, fmtTime, reconSummary }) {
+function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updated, onRefresh, fmtTime, reconSummary, liveIntervention }) {
   // Both All and single-region are filtered views of ONE spine. `active` = loaded data for
   // the selected region(s); `data` (= first active) backs the global macro strip + calendar.
   const active = regions.map(r => byRegion[r]).filter(Boolean);
@@ -3197,11 +3312,20 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               )}
               {/* F3 — intervention artefact. Manual flag: no keyless feed reports intervention
                   in real time, so an inferred flag would be manufacturing certainty. */}
-              {data.intervention?.active && (
+              {/* The just-saved flag wins over the deployed bundle: assemble.js reads the
+                  store at build time, so without this the annotation would not appear until
+                  the commit-back triggers a redeploy. */}
+              {(liveIntervention ? liveIntervention.active : data.intervention?.active) && (
                 <div style={{ marginBottom: 8, padding: "7px 10px", background: C.aBg,
                   border: "1px solid " + C.aBdr, borderRadius: 6,
                   fontSize: 11.5, fontWeight: 700, color: C.amber, lineHeight: 1.55 }}>
-                  {data.intervention.annotation}
+                  {(liveIntervention?.active
+                    ? interventionAnnotation({
+                        ...liveIntervention,
+                        jpyChangePct: data.cross?.fx?.rows?.find(r => r.sym === 'JPY=X')?.changePct ?? null,
+                        dxyChangePct: data.cross?.fx?.rows?.find(r => r.sym === 'DX-Y.NYB')?.changePct ?? null,
+                      }).annotation
+                    : data.intervention?.annotation)}
                 </div>
               )}
               {/* F4 — USD/KRW attribution. Gate 2's reading depends on WHY the won moved, and
@@ -3444,6 +3568,10 @@ export default function App() {
 
   // ── P0.3 — append one row per day, with the RAW INPUTS so logic changes stay backtestable.
   // Guarded by a local marker so a day's worth of refreshes produces one write, not hundreds.
+  // F3 — the live flag. assemble.js reads the store from the deployed bundle, so the
+  // server-side copy only refreshes on redeploy; this holds the just-saved value so the
+  // annotation appears the moment it is set.
+  const [liveIntervention, setLiveIntervention] = useState(null);
   const [regimeHistory, setRegimeHistory] = useState([]);
   useEffect(() => { fetch("/api/regime-log?limit=90").then(r => r.json()).then(j => setRegimeHistory(j.rows || [])).catch(() => {}); }, []);
   // Only rows carrying a reading can be plotted. Counting rows the chart cannot draw is how
@@ -4524,6 +4652,7 @@ export default function App() {
         {/* ── MACRO ── */}
         {tab === "global" && (
           <GlobalPlaybook
+            liveIntervention={liveIntervention}
             reconSummary={reconSummary}
             byRegion={pbData}
             regions={pbRegions}
@@ -4773,6 +4902,11 @@ export default function App() {
             })()}
 
             <FedPathCard effr={liveInd?.currentFedFunds ?? null} />
+            <InterventionToggle
+              jpyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "JPY=X")?.changePct ?? null}
+              dxyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "DX-Y.NYB")?.changePct ?? null}
+              onChange={setLiveIntervention}
+            />
 
             {/* CPI Inflation Tracker — Headline/Core CPI + Core PCE YoY, real-yield-on-cash */}
             {(() => {
