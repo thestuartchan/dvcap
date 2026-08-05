@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "prebuild": "node scripts/check-status-tokens.mjs",
+    "prebuild": "node scripts/check-undefined-refs.mjs && node scripts/check-status-tokens.mjs",
     "check:status": "node scripts/check-status-tokens.mjs"
   },
   "dependencies": {

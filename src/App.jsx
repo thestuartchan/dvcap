@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, Component } from "react";
+import { useState, useEffect, useCallback, useMemo, Component } from "react";
 import {
   AreaChart, Area, BarChart, Bar, RadarChart, PolarGrid,
   PolarAngleAxis, Radar, PieChart, Pie, Cell, LineChart, Line,
