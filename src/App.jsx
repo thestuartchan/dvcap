@@ -18,7 +18,7 @@ function trendBps(series, lookbackDays) {
   const t = trendOf(series, { lookbackDays });
   return t ? Math.round(t.delta * 100) : null;
 }
-import { laborStress, sahmAnnotation, laborVerdict, laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead } from "../lib/labor.js";
+import { laborStress, sahmAnnotation, laborVerdict, laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead, quitsRead } from "../lib/labor.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
 const C = {
@@ -1068,6 +1068,7 @@ function LaborPanel({ labor, depth = "full" }) {
   const s = {
     u3: g("u3"), participation: g("participation"), primeAge: g("primeAge"), empPop: g("empPop"),
     u6: g("u6"), longTerm: g("longTerm"), payrolls: g("payrolls"), household: g("household"),
+    quits: g("quits"),
   };
   if (!s.u3 || !s.empPop) return null;
 
@@ -1085,9 +1086,13 @@ function LaborPanel({ labor, depth = "full" }) {
     : sum.verdict.verdict === "GREEN" ? "BENIGN" : "WATCH";
   const tok = STATUS[st];
 
+  // F1 — quits vs emp-pop. The conflict is promoted to a primary line because a genuine
+  // disagreement between the two surveys outranks any individual reading from either.
+  const quits = s.quits ? quitsRead(s.quits, { delta: s.empPop.delta }) : null;
   const primaryLines = [
     s.primeAge && primeAgeRead(s.primeAge.value, s.primeAge.delta, s.participation?.delta),
     (s.payrolls && s.household) && surveyDivergenceRead(s.payrolls.delta, s.household.delta),
+    quits?.conflict && { text: quits.conflictNote, tone: "amber" },
   ].filter(x => x && x.text);
   const detailLines = [
     s.longTerm && longTermRead(s.longTerm.value, s.longTerm.delta,
@@ -1095,6 +1100,7 @@ function LaborPanel({ labor, depth = "full" }) {
         ? Math.round(g("longTermCount").value - g("longTermCount").yearAgo) : null),
     (s.u6 && s.u3) && u6SpreadRead(s.u6.value, s.u3.value, (s.u6.prev != null && s.u3.prev != null) ? +(s.u6.prev - s.u3.prev).toFixed(1) : null),
     s.payrolls && payrollsRead(s.payrolls.delta, null),
+    quits?.available && !quits.conflict && { text: quits.note },
   ].filter(x => x && x.text);
   const unverified = Object.entries(labor).filter(([, v]) => v && v.ok && v.verified === false);
 
@@ -1243,6 +1249,9 @@ function LaborPanel({ labor, depth = "full" }) {
           {tile("u3", "U3 rate")}
           {tile("primeAge", "Prime-age (25–54)")}
           {tile("payrolls", "Payrolls", "k")}
+          {/* F1 — sits in the primary row, not the detail drawer: it is the only worker-side
+              confidence read here, and it is the one that can contradict the others. */}
+          {tile("quits", "Quits rate")}
         </MetricGrid>
       </div>
 
@@ -2425,11 +2434,22 @@ function StateChip({ label, color, filled }) {
 function CrossRow({ r }) {
   const dcol = r.dir === "rising" ? C.green : r.dir === "falling" ? C.red : C.muted;
   const arrow = r.dir === "rising" ? "▲" : r.dir === "falling" ? "▼" : r.dir === "flat" ? "■" : "";
+  // Q4 / P6.1 — age computed HERE, at render, not captured at fetch. Without this a fast
+  // series shows a stale number with nothing to say so: VIX printed 15.86 while it traded
+  // 16.24 intraday, and the card gave no indication the two could differ.
+  const age = (() => {
+    if (!r.ts) return null;
+    const min = Math.floor((Date.now() - r.ts * 1000) / 60000);
+    if (min < 0) return null;                       // clock skew — say nothing rather than lie
+    if (min <= 20) return null;                     // live enough for a 1D card
+    return { text: humanizeAge(min) + " ago", stale: min > 90 };
+  })();
   return (
     <MetricCard
       label={r.name}
-      title={r.note || (r.sym + " · 1D vs prior close")}
+      title={r.note || (r.sym + " · 1D vs prior close" + (age ? ` · last tick ${age.text}` : ""))}
       value={r.price != null ? withCommas(+(+r.price).toFixed(2)) : "—"}
+      labelRight={age ? <StateChip label={age.text} color={age.stale ? C.amber : C.lbl} /> : null}
     >
       {r.dir ? (
         <div style={{ fontSize: 11, fontWeight: 700, color: dcol, marginTop: 2 }}>
@@ -2467,6 +2487,14 @@ function GaugesLeaning({ leaning, prominent }) {
         {prominent && <span style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>tripwires leaning de-risking</span>}
         {leaning.allLeaning && <span style={{ fontSize: prominent ? 12 : 10, fontWeight: 800, color: C.red }}>ALL TURNED TOGETHER</span>}
       </div>
+      {/* Q2 — a count is not actionable. Name the gauges that actually fired and show each
+          one's reading, inline. This was previously only in a `title` tooltip, which is
+          invisible in a screenshot, on touch, and to anyone reading quickly. */}
+      {leaning.items.some(i => i.tripped) && (
+        <div style={{ marginTop: 6, fontSize: prominent ? 12 : 11, color: C.red, fontWeight: 600, lineHeight: 1.5 }}>
+          Fired: {leaning.items.filter(i => i.tripped).map(i => `${i.name} (${i.detail})`).join(" · ")}
+        </div>
+      )}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
         {leaning.items.map(i => {
           const c = i.tripped === null ? C.lbl : i.tripped ? C.red : C.green;
@@ -2927,6 +2955,18 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               {data.marketRegime.corroboration && !data.marketRegime.corroboration.available && (
                 <div style={{ fontSize: 11, color: C.amber, fontWeight: 700, marginTop: 4 }}>{data.marketRegime.corroboration.note}</div>
               )}
+              {/* F2 — the gold pair, stated explicitly. Gold alone is ambiguous and has been
+                  read both ways in a week; the breakeven leg is what disambiguates it. */}
+              {data.marketRegime.goldPair && (
+                <div style={{ marginTop: 6, padding: "7px 10px", borderRadius: 6,
+                  background: data.marketRegime.goldPair.available ? C.bg : C.aBg,
+                  border: "1px solid " + (data.marketRegime.goldPair.available ? C.bdr : C.aBdr),
+                  fontSize: 11.5, lineHeight: 1.55,
+                  color: data.marketRegime.goldPair.available ? C.muted : C.amber,
+                  fontWeight: data.marketRegime.goldPair.available ? 400 : 700 }}>
+                  <b>Gold pair · {data.marketRegime.goldPair.reading.replace(/_/g, " ")}</b> — {data.marketRegime.goldPair.note}
+                </div>
+              )}
             </Card>
           )}
 
@@ -3153,6 +3193,26 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                   border: "1px solid " + (data.fx.diverging ? C.aBdr : C.bdr), borderRadius: 6,
                   fontSize: 11.5, fontWeight: data.fx.diverging ? 700 : 400, color: data.fx.diverging ? C.amber : C.muted, lineHeight: 1.55 }}>
                   {data.fx.note}
+                </div>
+              )}
+              {/* F3 — intervention artefact. Manual flag: no keyless feed reports intervention
+                  in real time, so an inferred flag would be manufacturing certainty. */}
+              {data.intervention?.active && (
+                <div style={{ marginBottom: 8, padding: "7px 10px", background: C.aBg,
+                  border: "1px solid " + C.aBdr, borderRadius: 6,
+                  fontSize: 11.5, fontWeight: 700, color: C.amber, lineHeight: 1.55 }}>
+                  {data.intervention.annotation}
+                </div>
+              )}
+              {/* F4 — USD/KRW attribution. Gate 2's reading depends on WHY the won moved, and
+                  the dollar/yen legs are what separate a macro move from a Korea-specific one. */}
+              {data.won?.note && (
+                <div style={{ marginBottom: 8, padding: "7px 10px",
+                  background: data.won.gate2 === "suspect" ? C.aBg : C.bg,
+                  border: "1px solid " + (data.won.gate2 === "suspect" ? C.aBdr : C.bdr), borderRadius: 6,
+                  fontSize: 11.5, fontWeight: data.won.gate2 === "suspect" ? 700 : 400,
+                  color: data.won.gate2 === "suspect" ? C.amber : C.muted, lineHeight: 1.55 }}>
+                  <b>Gate 2 · {String(data.won.gate2).toUpperCase()}</b> — {data.won.note}
                 </div>
               )}
               {["rates", "cyclical", "volCredit", "fx", "regime"].map(g => {
