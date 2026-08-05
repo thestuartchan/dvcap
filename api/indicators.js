@@ -173,7 +173,9 @@ export default async function handler(req, res) {
         const dt = new Date(o.date + "T00:00:00");
         const label = dt.toLocaleString("en-US", { month: "short" }).slice(0, 3)
           + "'" + String(dt.getFullYear()).slice(2);
-        thinned.push({ d: label, v: parseFloat(transformed.toFixed(4)) });
+        // iso kept alongside the display label so date arithmetic (e.g. months since the
+        // curve un-inverted) works on real dates rather than by parsing "Mon'YY" back out.
+        thinned.push({ d: label, iso: o.date, v: parseFloat(transformed.toFixed(4)) });
         lastMonth = month;
       }
     }
