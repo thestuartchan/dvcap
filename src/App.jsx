@@ -20,7 +20,7 @@ function trendBps(series, lookbackDays) {
   const t = trendOf(series, { lookbackDays });
   return t ? Math.round(t.delta * 100) : null;
 }
-import { laborStress, sahmAnnotation, laborVerdict, laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead, quitsRead } from "../lib/labor.js";
+import { laborStress, sahmAnnotation, laborVerdict, laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead, quitsRead, revisionTrackerRead, twelveMonthAvgRead, ytdDivergenceRead } from "../lib/labor.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
 const C = {
@@ -981,9 +981,12 @@ function FedPathCard({ effr }) {
 // The 2x2 verdict for a live indicators payload — shared so the Sahm annotation and the
 // labour panel can never disagree about whether the print is AMBER.
 function laborVerdictFor(liveInd) {
-  const u3 = liveInd?.labor?.u3, ep = liveInd?.labor?.empPop;
+  // Uses the July overlay and the payroll count so this shared verdict matches the panel's —
+  // R2's negative-payroll override must be reflected everywhere the verdict is read.
+  const { labor } = overlayJulyLabor(liveInd?.labor);
+  const u3 = labor?.u3, ep = labor?.empPop, pr = labor?.payrolls;
   if (!u3?.ok || !ep?.ok) return null;
-  return laborVerdict(u3.delta, ep.delta).verdict;
+  return laborVerdict(u3.delta, ep.delta, pr?.ok ? pr.delta : null).verdict;
 }
 
 // Credit thresholds — one definition for both the reference lines and the legend.
@@ -1190,7 +1193,7 @@ function CreditBlock({ credit, oas, hyg, reconSummary, history, depth = "full" }
 // The scoring rule is unchanged and lives in lib/labor.js: U3 is never scored alone, because
 // the rate can FALL on labour-force exit. Emp-pop is the control — employed ÷ working-age
 // population — and it cannot be gamed that way. That is why it is the hero metric.
-function LaborPanel({ labor, depth = "full" }) {
+function LaborPanel({ labor, depth = "full", extras = null, announced = false }) {
   if (!labor) return null;
   const g = k => labor[k] && labor[k].ok ? labor[k] : null;
   const s = {
@@ -1204,10 +1207,22 @@ function LaborPanel({ labor, depth = "full" }) {
     u3: { value: s.u3.value, delta: s.u3.delta },
     empPop: { value: s.empPop.value, delta: s.empPop.delta },
     household: { changeK: s.household?.delta ?? null },
+    // R2 — the payroll count threads into the verdict so a negative print forces RED.
+    payrolls: { changeK: s.payrolls?.delta ?? null },
   };
   const sum = laborSummary(state);
   const trig = laborDeteriorationTrigger(state);
-  const sahmNote = sahmAnnotation(sum.verdict.verdict);
+  // R5 — Sahm annotation now returns { prominent, title, text }; prominent when payrolls negative.
+  const sahmNote = sahmAnnotation(sum.verdict.verdict, s.payrolls?.delta ?? null);
+  // R3 / R4 / R6 — tracked metrics from the announced-print extras (revisions/12-mo/YTD have no
+  // single live FRED series). 12-mo average falls back to the live PAYEMS history when present.
+  const twelveMoAvgK = extras?.twelveMoAvgK
+    ?? ((s.payrolls?.history?.length >= 13)
+      ? Math.round((s.payrolls.history.at(-1).value - s.payrolls.history.at(-13).value) / 12)
+      : null);
+  const revisionRead = extras?.revisions ? revisionTrackerRead(extras.revisions) : null;
+  const twelveMoRead = twelveMonthAvgRead(twelveMoAvgK);
+  const ytdRead = extras?.ytd ? ytdDivergenceRead(extras.ytd) : null;
   // I.1 — the verdict maps onto the four status states; no ad-hoc vocabulary.
   const st = sum.verdict.verdict === "RED" ? "ELEVATED"
     : sum.verdict.verdict === "AMBER" ? "WATCH"
@@ -1383,6 +1398,48 @@ function LaborPanel({ labor, depth = "full" }) {
         </MetricGrid>
       </div>
 
+      {/* R4 / R3 / R6 (Amendment 3) — the payroll-count metrics the U3/emp-pop pair cannot show:
+          the 12-month trend, the revision direction, and the household/establishment YTD gap. */}
+      {(twelveMoRead || revisionRead || ytdRead) && (
+        <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+          {twelveMoRead && (() => {
+            const bt = twelveMoRead.flag === "RED" ? STATUS.ELEVATED : twelveMoRead.flag === "AMBER" ? STATUS.WATCH : STATUS.BENIGN;
+            return (
+              <div style={{ padding: "10px 13px", background: bt.bg, border: "1.5px solid " + bt.bdr, borderRadius: 10 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 26, fontWeight: 900, letterSpacing: -1, color: bt.color }}>{twelveMoRead.avgK >= 0 ? "+" : "−"}{Math.abs(twelveMoRead.avgK)}k</span>
+                  <span style={{ fontSize: 11, fontWeight: 900, letterSpacing: 0.5, color: bt.color, textTransform: "uppercase" }}>{twelveMoRead.band}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: C.mid }}>12-month average payrolls</span>
+                </div>
+                <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3, lineHeight: 1.5 }}>{twelveMoRead.text}</div>
+              </div>
+            );
+          })()}
+          {revisionRead && (
+            <div style={{ padding: "9px 12px", background: revisionRead.flag ? C.aBg : C.bg, border: "1px solid " + (revisionRead.flag ? C.aBdr : C.bdr), borderRadius: 8 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: C.muted }}>Revision trend</span>
+                <span style={{ fontSize: 15, fontWeight: 900, color: revisionRead.combinedK < 0 ? C.red : C.green }}>{revisionRead.combinedK >= 0 ? "+" : "−"}{Math.abs(revisionRead.combinedK)}k combined</span>
+                {revisionRead.twoConsecutiveDown && <span style={{ fontSize: 10, fontWeight: 900, color: C.amber, background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 4, padding: "1px 6px" }}>2 CONSECUTIVE DOWN</span>}
+                {revisionRead.rows.map(r => <span key={r.month} style={{ fontSize: 11.5, color: C.mid }}>{r.month} <b style={{ color: r.k < 0 ? C.red : C.green }}>{r.k >= 0 ? "+" : "−"}{Math.abs(r.k)}k</b></span>)}
+              </div>
+              <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>{revisionRead.text}</div>
+            </div>
+          )}
+          {ytdRead && (
+            <div style={{ padding: "9px 12px", background: ytdRead.flag ? C.aBg : C.bg, border: "1px solid " + (ytdRead.flag ? C.aBdr : C.bdr), borderRadius: 8 }}>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "baseline" }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: C.muted }}>Survey divergence (YTD)</span>
+                <span style={{ fontSize: 12.5, color: C.mid }}>Household <b style={{ color: ytdRead.householdK < 0 ? C.red : C.green }}>{ytdRead.householdK >= 0 ? "+" : "−"}{Math.abs(ytdRead.householdK)}k</b></span>
+                <span style={{ fontSize: 12.5, color: C.mid }}>Establishment <b style={{ color: ytdRead.payrollK < 0 ? C.red : C.green }}>{ytdRead.payrollK >= 0 ? "+" : "−"}{Math.abs(ytdRead.payrollK)}k</b></span>
+                {ytdRead.flag && <span style={{ fontSize: 10, fontWeight: 900, color: C.amber, background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 4, padding: "1px 6px" }}>OPPOSITE-SIGNED · {ytdRead.gapK.toLocaleString("en-US")}k GAP</span>}
+              </div>
+              <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>{ytdRead.text}</div>
+            </div>
+          )}
+        </div>
+      )}
+
       {primaryLines.length > 0 && (
         <div style={{ marginTop: 10 }}>
           {primaryLines.map((l, i) => (
@@ -1393,9 +1450,15 @@ function LaborPanel({ labor, depth = "full" }) {
         </div>
       )}
 
+      {/* R5 — when payrolls are negative the Sahm annotation renders at full weight, same size
+          as the Sahm value itself, because the rule moved FURTHER from firing in a month of job
+          losses and reading it as reassurance is the exact error it must not invite. */}
       {sahmNote && (
-        <div style={{ marginTop: 8, padding: "7px 10px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 6, fontSize: 11.5, lineHeight: 1.55, color: C.amber }}>
-          <b>Sahm Rule — </b>{sahmNote}
+        <div style={{ marginTop: 8, padding: sahmNote.prominent ? "11px 13px" : "7px 10px", background: C.aBg, border: (sahmNote.prominent ? "1.5px solid " : "1px solid ") + C.aBdr, borderRadius: 8, color: C.amber }}>
+          <div style={{ fontSize: sahmNote.prominent ? 13.5 : 12, fontWeight: sahmNote.prominent ? 900 : 800, marginBottom: sahmNote.prominent ? 3 : 0 }}>
+            {sahmNote.prominent ? "⚠ " : ""}{sahmNote.title}
+          </div>
+          <div style={{ fontSize: sahmNote.prominent ? 12.5 : 11.5, lineHeight: 1.55, fontWeight: sahmNote.prominent ? 600 : 400 }}>{sahmNote.text}</div>
         </div>
       )}
 
@@ -1420,6 +1483,17 @@ function LaborPanel({ labor, depth = "full" }) {
       <div style={{ marginTop: 10, padding: "7px 10px", background: trig.fired ? C.aBg : C.bg, border: "1px solid " + (trig.fired ? C.aBdr : C.bdr), borderRadius: 6, fontSize: 11.5, fontWeight: 700, color: trig.fired ? C.amber : C.muted }}>
         {trig.note}
       </div>
+
+      {/* R7 (Amendment 3) — QCEW benchmark countdown. Auto-retires after the revision publishes. */}
+      {(() => {
+        const today = new Date().toISOString().slice(0, 10);
+        if (today > "2026-08-28") return null;
+        return (
+          <div style={{ marginTop: 8, padding: "9px 12px", background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 8, fontSize: 11.5, lineHeight: 1.55, color: C.mid }}>
+            <b style={{ color: C.blue }}>Aug 28, 10:00 ET — QCEW benchmark revision.</b> BLS restates the payroll base every recession model is built on, derived from state UI tax records. With May and June revised down {revisionRead ? `${Math.abs(revisionRead.combinedK)}k combined` : "103k combined"} and the 12-month average at {twelveMoRead ? `${twelveMoRead.avgK >= 0 ? "+" : "−"}${Math.abs(twelveMoRead.avgK)}k` : "~34k"}, a material downward benchmark would further degrade the establishment survey's picture. Recent years have revised down substantially.
+          </div>
+        );
+      })()}
 
       {unverified.length > 0 && (
         <div style={{ marginTop: 8, padding: "7px 10px", background: C.rBg, border: "1px solid " + C.rBdr, borderRadius: 6, fontSize: 11.5, fontWeight: 700, color: C.red }}>
@@ -1455,6 +1529,46 @@ function announced(key, fredAsOf) {
   if (!a) return null;
   if (fredAsOf && String(fredAsOf) >= a.period) return null;   // FRED caught up → retire
   return a;
+}
+
+// ─── ANNOUNCED LABOUR PRINT (Amendment 3 — July Employment Situation) ──────────
+// The July 2026 Employment Situation released 08:30 ET on 2026-08-07, ahead of FRED's ingest,
+// so the live labour series still carry June until FRED updates. Rather than hardcode over the
+// live fields, the released figures are overlaid here and AUTO-RETIRE the moment FRED's own
+// emp-pop asOf reaches July. Values are the published figures; per-series deltas are computed
+// against the live prior at overlay time so the month-over-month move is real, not asserted.
+// emp-pop is not published as a headline — it is the identity participation × (1 − U3).
+const LABOR_ANNOUNCED = {
+  period: "2026-07-01", released: "2026-08-07", source: "BLS Employment Situation",
+  u3: 4.1, participation: 61.4,
+  empPop: +(61.4 * (1 - 4.1 / 100)).toFixed(1),   // 58.9 — identity, not a fabricated print
+  payrollsDeltaK: -23,                             // the monthly change itself
+  // Extras with no single live FRED series — the fixture the amendment supplies.
+  revisions: [{ month: "May", k: -66 }, { month: "June", k: -37 }],
+  twelveMoAvgK: 34,
+  ytd: { householdK: -833, payrollK: 392, laborForceK: -1100 },
+  ahe: { mom: 0.3, yoy: 3.5 },
+};
+// Returns { labor, applied, extras } — labor merged with the July overlay when FRED is behind.
+function overlayJulyLabor(labor) {
+  if (!labor) return { labor, applied: false, extras: null };
+  const live = labor.empPop;
+  if (live?.date && String(live.date) >= LABOR_ANNOUNCED.period) return { labor, applied: false, extras: null };
+  const A = LABOR_ANNOUNCED;
+  const d = (v, key) => labor[key]?.value != null ? +(v - labor[key].value).toFixed(1) : null;
+  const set = (key, value, delta) => labor[key]
+    ? { ...labor[key], value, delta, prev: labor[key].value ?? null, date: A.period, announced: true }
+    : labor[key];
+  const merged = {
+    ...labor,
+    u3: set("u3", A.u3, d(A.u3, "u3")),
+    participation: set("participation", A.participation, d(A.participation, "participation")),
+    empPop: set("empPop", A.empPop, d(A.empPop, "empPop")),
+    payrolls: labor.payrolls
+      ? { ...labor.payrolls, delta: A.payrollsDeltaK, date: A.period, announced: true }
+      : labor.payrolls,
+  };
+  return { labor: merged, applied: true, extras: A };
 }
 
 // ─── FED LANGUAGE STATUS ──────────────────────────────────────────────────────
@@ -3546,17 +3660,34 @@ export default function App() {
   // Section A — the growth/inflation context that decides whether a falling recession
   // probability is a GROWTH story or a STAGFLATION story. Both legs are live.
   const coreHist = liveInd?.pceCoreHistory || [];
+  // Amendment 3 — overlay the announced July labour print over the live (FRED-lagged) series so
+  // every downstream read (verdict, Sahm, regime signal) sees July, not June. Auto-retires when
+  // FRED catches up. One computation, reused by both LaborPanel renders and the regime context.
+  const { labor: laborView, applied: laborAnnounced, extras: laborExtras } = overlayJulyLabor(liveInd?.labor);
+  // R4/R8.1 — the 12-month average: the fixture when announced, else derived from PAYEMS history.
+  const laborTwelveMoK = laborExtras?.twelveMoAvgK
+    ?? ((laborView?.payrolls?.history?.length >= 13)
+      ? Math.round((laborView.payrolls.history.at(-1).value - laborView.payrolls.history.at(-13).value) / 12)
+      : null);
+  // R8.1 — the labour deterioration signal fed to deriveRegimeProbabilities.
+  const laborRegimeSignal = {
+    payrollsK: laborView?.payrolls?.delta ?? null,
+    empPopDelta: laborView?.empPop?.delta ?? null,
+    twelveMoAvgK: laborTwelveMoK,
+  };
   const regimeCtx = {
     gdpGrowth: (announced("gdpGrowth", liveInd?.asOf?.gdpGrowth)?.value) ?? liveInd?.gdpGrowth ?? null,
     gdpGrowthPrev: (announced("gdpGrowth", liveInd?.asOf?.gdpGrowth)?.prev) ?? liveInd?.gdpGrowthPrev ?? null,
     coreInflation: (announced("pceCore", liveInd?.asOf?.pceCoreCurrent)?.value) ?? liveInd?.pceCoreCurrent ?? null,
     coreCooling: coreHist.length >= 2 ? coreHist[coreHist.length - 1].value < coreHist[coreHist.length - 2].value : null,
+    labor: laborRegimeSignal,
   };
   const derivedRegimes = deriveRegimeProbabilities(recWeightedAvg, cpiForRegime, recKalshi2027, regimeCtx);
   // Section D — one labour-stress read, replacing every unemployment-RATE tripwire.
   const labStress = laborStress({
-    empPop: { delta: liveInd?.labor?.empPop?.delta ?? null },
-    household: { changeK: liveInd?.labor?.household?.delta ?? null },
+    empPop: { delta: laborView?.empPop?.delta ?? null },
+    household: { changeK: laborView?.household?.delta ?? null },
+    payrolls: { changeK: laborView?.payrolls?.delta ?? null },
   });
   const regimeProbFor = (id) => (derivedRegimes || fallbackRegimes)[
     { stag: "stagflation", ref: "reflationary", def: "deflationary", inf: "inflationary" }[id]
@@ -3978,10 +4109,10 @@ export default function App() {
                   // unemployment rate, and the Sahm reference carries its understatement
                   // caveat: a rate that fell on labour-force exit suppresses the rule.
                   { icon: labStress.severe ? "🚨" : "⚠️",
-                    text: `Unemployment at ${liveInd ? liveInd.unemployment.toFixed(1) : "4.4"}%`
-                      + `${liveInd?.labor?.empPop?.value != null ? `, emp-pop ${liveInd.labor.empPop.value.toFixed(1)}% (${liveInd.labor.empPop.delta >= 0 ? "+" : "−"}${Math.abs(liveInd.labor.empPop.delta ?? 0).toFixed(1)}pp)` : ""}. `
+                    text: `Unemployment at ${laborView?.u3?.value != null ? laborView.u3.value.toFixed(1) : (liveInd ? liveInd.unemployment.toFixed(1) : "4.4")}%`
+                      + `${laborView?.empPop?.value != null ? `, emp-pop ${laborView.empPop.value.toFixed(1)}% (${laborView.empPop.delta >= 0 ? "+" : "−"}${Math.abs(laborView.empPop.delta ?? 0).toFixed(1)}pp)` : ""}. `
                       + `${labStress.known ? labStress.note[0].toUpperCase() + labStress.note.slice(1) + "." : "Employment print unavailable."}`
-                      + `${sahmAnnotation(laborVerdictFor(liveInd)) ? ` Sahm Rule: ${sahmAnnotation(laborVerdictFor(liveInd))}` : ""}` },
+                      + `${(() => { const sn = sahmAnnotation(laborVerdictFor(liveInd), laborView?.payrolls?.delta ?? null); return sn ? ` ${sn.title} ${sn.text}` : ""; })()}` },
                 ].map((r, i) => (
                   <div key={i} style={{ flex: "1 1 200px", display: "flex", gap: 10 }}>
                     <span style={{ fontSize: 17, flexShrink: 0 }}>{r.icon}</span>
@@ -4008,7 +4139,7 @@ export default function App() {
 
             {/* G.2 — labour renders BELOW credit spreads and the yield curve. G.3 — this is
                 the SHARED definition (LaborPanel), not a reimplementation; two copies drift. */}
-            <LaborPanel labor={liveInd?.labor} depth="glance" />
+            <LaborPanel labor={laborView} depth="glance" announced={laborAnnounced} />
           </div>
         )}
 
@@ -5210,7 +5341,7 @@ export default function App() {
             {/* F.5 — the labour module is a paragraph of interpretation, so it sits where the
                 user is already reading rather than glancing. Same shared definition as the
                 Indicators tab (G.3) — one module, rendered once per tab. */}
-            <LaborPanel labor={liveInd?.labor} />
+            <LaborPanel labor={laborView} extras={laborExtras} announced={laborAnnounced} />
 
             <Card>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
@@ -5299,7 +5430,7 @@ export default function App() {
               {(() => {
                 // Live values with static fallbacks
                 const hy  = liveInd ? liveInd.creditSpread  : 2.75;
-                const ue  = liveInd ? liveInd.unemployment  : 4.4;
+                const ue  = laborView?.u3?.value ?? (liveInd ? liveInd.unemployment : 4.4);
                 const yc  = liveInd ? liveInd.yieldSpread   : 0.38;
                 const cpi = liveInd ? liveInd.cpi            : null;
                 const gdp = liveInd ? liveInd.gdp            : null;
@@ -5383,7 +5514,7 @@ export default function App() {
                       // the labour panel above and in the stagflation scenario — it just no
                       // longer decides whether this transition has fired.
                       (() => {
-                        const ep = liveInd?.labor?.empPop;
+                        const ep = laborView?.empPop;
                         if (ep?.ok && ep.value != null && ep.prev != null) {
                           return {
                             label: "Emp–pop ratio", value: ep.value, unit: "%",
