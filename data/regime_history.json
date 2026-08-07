@@ -70,6 +70,32 @@
         "twoY": 4.25
       },
       "loggedAt": "2026-08-06T04:14:29.986Z"
+    },
+    {
+      "date": "2026-08-07",
+      "stagflation_p": 55,
+      "reflationary_p": 20,
+      "deflationary_p": 20,
+      "inflationary_p": 5,
+      "hawkish_repricing": null,
+      "live_regime": "stag",
+      "view_regime": "stag",
+      "pinned": false,
+      "hyg_chg": null,
+      "hyg_qqq_divergence": null,
+      "inputs": {
+        "weightedRecessionProb": 26.22181818181818,
+        "cpi": 3.46353,
+        "kalshi2027": 41,
+        "tape": null,
+        "ladderSpread": null,
+        "u3": 4.2,
+        "empPop": 59,
+        "oas": 2.75,
+        "tenY": 4.63,
+        "twoY": 4.18
+      },
+      "loggedAt": "2026-08-07T01:51:41.102Z"
     }
   ]
 }
