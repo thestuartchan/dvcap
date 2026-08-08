@@ -239,24 +239,31 @@ const TICKER_TRIGGERS = {
 // Three-state crash-scenario overrides (onset / deflationary / inflationary) for
 // the phase-sensitive buckets. The first character of each note drives colour:
 // ⚠️ = amber, ✅ = green, ❌ = red (see AssetDetail phase-note render).
+// Keyed by INSURANCE_PHASES `.k` (preCrash / liquidity / def / inf / stag / hawkish).
 const PHASE_NOTES = {
   miners: {
-    onset:        "GLD is more stable than miners in the initial panic — hold GLD first, add miners after panic clears. ⚠️ ONSET: Miners sell off with equities in the initial panic. Hold light. GLD is better crash-phase protection until panic clears.",
-    deflationary: "GLD outperforms miners in deflation — prefer GLD over GDX here. ⚠️ DEFLATIONARY: Gold moderate in deflation, miners underperform gold. Only add after Fed pivot signal confirmed.",
-    inflationary: "Both GLD and GDX/GDXJ win here — miners provide 2-3× leverage to gold price. ✅✅ INFLATIONARY/DEBASEMENT: This is where miners shine. Gold up 20% = miners up 40–60%. Add aggressively after VIX peak.",
-    stagflation:  "GLD grinds higher steadily. Miners amplify but with more volatility. ⚠️ STAGFLATION: Gold grinds higher but without the explosive move of a debasement crash. Miners move with gold but underperform in a slow-grind regime. Hold a moderate position — don't over-allocate waiting for a spike that may take years.",
+    preCrash:     "GLD is more stable than miners as signals deteriorate — hold GLD first, add miners after the policy response. ⚠️ PRE-CRASH: Miners carry equity beta and sell with the market. Hold light; GLD is the better pre-crash hedge.",
+    liquidity:    "❌ LIQUIDITY PHASE: Miners are sold hard in a dash-for-cash — GDX fell ~70% in 2008 as equity beta and gold's liquidity-event drop compounded. Do not hold miners through the drawdown; wait for the policy response to become visible.",
+    def:          "GLD outperforms miners in deflation — prefer GLD over GDX here. ⚠️ RESOLUTION — DEFLATIONARY: Gold moderate in deflation, miners underperform gold. Only add after Fed pivot signal confirmed.",
+    inf:          "Both GLD and GDX/GDXJ win here — miners provide 2-3× leverage to gold price. ✅✅ RESOLUTION — DEBASEMENT: This is where miners shine. Gold up 20% = miners up 40–60%. Add aggressively after VIX peak.",
+    stag:         "GLD grinds higher steadily. Miners amplify but with more volatility. ⚠️ RESOLUTION — STAGFLATION: Gold grinds higher but without the explosive move of a debasement crash. Miners underperform in a slow grind. Hold moderate — don't over-allocate waiting for a spike that may take years.",
+    hawkish:      "❌ HAWKISH RATES REPRICING: Gold −2% and miners worse when real yields rise and gold's zero-yield bid competes with cash. Not the hedge here — the front end is.",
   },
   btc: {
-    onset:        "❌ ONSET: BTC dropped 50% in 48 hours in March 2020. Do not use as crash onset protection. Wait for panic to clear.",
-    deflationary: "❌ DEFLATIONARY: BTC performs poorly in deflationary crashes — no yield, high beta, sells with risk assets. Avoid.",
-    inflationary: "✅✅ INFLATIONARY/DEBASEMENT: Post-panic BTC is the highest-conviction debasement play. Fixed supply vs exploding Fed balance sheet. Enter after VIX peaks.",
-    stagflation:  "⚠️ STAGFLATION: No clear catalyst for BTC in persistent stagflation. Inflation present but not acute enough to drive debasement narrative. Equity correlation remains. Hold existing position, do not add aggressively.",
+    preCrash:     "❌ PRE-CRASH: BTC dropped 50% in 48 hours in March 2020. Not pre-crash protection. Wait for panic to clear.",
+    liquidity:    "❌ LIQUIDITY PHASE: BTC is high-beta and sells with risk assets in a dash-for-cash. Avoid until the policy response is visible.",
+    def:          "❌ RESOLUTION — DEFLATIONARY: BTC performs poorly in deflationary crashes — no yield, high beta, sells with risk assets. Avoid.",
+    inf:          "✅✅ RESOLUTION — DEBASEMENT: Post-panic BTC is the highest-conviction debasement play. Fixed supply vs exploding Fed balance sheet. Enter after VIX peaks.",
+    stag:         "⚠️ RESOLUTION — STAGFLATION: No clear catalyst for BTC in persistent stagflation. Inflation present but not acute enough to drive the debasement narrative. Equity correlation remains. Hold existing, don't add aggressively.",
+    hawkish:      "❌ HAWKISH RATES REPRICING: Risk-off plus higher real yields hit BTC. Not a hedge for a rates repricing.",
   },
   tbonds: {
-    onset:        "⚠️ ONSET: Only works if the crash is confirmed deflationary — falling CPI, growth scare, 10Y yield falling. In stagflation, TLT is still a trap even at onset. Do not buy until deflation is confirmed.",
-    deflationary: "✅✅ DEFLATIONARY: TLT is your best instrument here. Rates fall, bonds rally hard. This is the one scenario where TLT belongs at the top of the stack. Also consider IEF (7-10 year) as a lower-volatility alternative — less upside but less drawdown risk if recovery is faster than expected.",
-    inflationary: "❌ INFLATIONARY/DEBASEMENT: TLT gets crushed. Sticky inflation + Fed balance sheet expansion = bond bear market. Avoid entirely. 2022 repeat risk.",
-    stagflation:  "❌ STAGFLATION: Avoid. Inflation stays sticky — rates cannot fall meaningfully. TLT grinds lower as real yields stay elevated. Worst regime for long-duration bonds.",
+    preCrash:     "⚠️ PRE-CRASH: Only works if the crash is confirming deflationary — falling CPI, growth scare, 10Y yield falling. In stagflation TLT is a trap even here. Do not buy until deflation is confirmed.",
+    liquidity:    "⚠️ LIQUIDITY PHASE: Even Treasuries can sell in the worst of a dash-for-cash (March 2020 saw brief forced Treasury selling) before they rally. Size for the resolution, not the drawdown.",
+    def:          "✅✅ RESOLUTION — DEFLATIONARY: TLT is your best instrument here. Rates fall, bonds rally hard. Also consider IEF (7-10yr) as a lower-volatility alternative — less upside, less drawdown if the recovery is faster than expected.",
+    inf:          "❌ RESOLUTION — DEBASEMENT: TLT gets crushed. Sticky inflation + Fed balance-sheet expansion = bond bear market. Avoid entirely. 2022 repeat risk.",
+    stag:         "❌ RESOLUTION — STAGFLATION: Avoid. Inflation stays sticky — rates cannot fall meaningfully. TLT grinds lower as real yields stay elevated. Worst regime for long-duration bonds.",
+    hawkish:      "❌ HAWKISH RATES REPRICING: Duration IS the risk here — a rates repricing hits TLT directly (−0.87% on 2026-07-31). Front end only.",
   },
 };
 
@@ -265,29 +272,38 @@ const PHASE_NOTES = {
 // live-signal lean, then sets this manually. It does NOT auto-drive the toggle.
 // `col` maps each phase to its SCENARIO_MATRIX field; colour set is reused by the
 // interactive guide (active column) and the phase-note callouts.
+// Six columns. Crash TIMELINE (Pre-Crash → Liquidity Phase) then crash OUTCOMES
+// (Resolution: Deflationary / Debasement / Stagflation), plus the Hawkish Rates Repricing
+// macro state (not a crash, but its insurance behaves least intuitively — every yield-competing
+// asset, including the usual defensives, is sold at once). The `Resolution:` prefix marks the
+// three outcome columns as crash resolutions, NOT current-state regimes — critically, this
+// "Debasement" column is a CRISIS and is the OPPOSITE of Macro's "Inflationary Boom".
 const INSURANCE_PHASES = [
-  { k:"onset",        col:"onset", label:"Crash Onset",               short:"Crash Onset",  state:"WATCH", desc:"Signals deteriorating. Buy protection before confirmation. Puts, spreads, GLD." },
-  { k:"deflationary", col:"def",   label:"Deflationary Resolution",   short:"Deflationary", color:"#1E40AF", bg:"#EFF6FF", bdr:"#BFDBFE", desc:"Debt deflation, falling prices, Japan-style. TLT wins. Gold moderate. BTC loses." },
-  { k:"inflationary", col:"inf",   label:"Inflationary / Debasement", short:"Inflationary", color:"#7C3AED", bg:"#F5F3FF", bdr:"#C4B5FD", desc:"Fed prints to reflate. Dollar credibility erodes. Gold and BTC win. TLT is a trap." },
-  { k:"stagflation",  col:"stag",  label:"Persistent Stagflation",    short:"Stagflation",  color:"#0F766E", bg:"#F0FDFA", bdr:"#5EEAD1", desc:"Persistent Stagflation — slow grind, not a sharp crash. Favour passive real-asset hedges (GLD, XLP, farmland, HYG puts) over active short instruments. Avoid VIX calls (contango) and SQQQ (daily decay). Puts are expensive to roll monthly over 18-24 months — size conservatively and favour longer-dated instruments to reduce theta bleed." },
+  { k:"preCrash",  col:"preCrash",  label:"Pre-Crash",                 short:"Pre-Crash",         color:STATUS.WATCH.color,  bg:STATUS.WATCH.bg,  bdr:STATUS.WATCH.bdr,  desc:"Signals deteriorating, no drawdown yet — the accumulation window. Protection is cheap: puts and VIX calls are the right instruments here, before IV reprices. GLD works; miners lag (equity beta)." },
+  { k:"liquidity", col:"liquidity", label:"Liquidity Phase",           short:"Liquidity Phase",   color:STATUS.DANGER.color, bg:STATUS.DANGER.bg, bdr:STATUS.DANGER.bdr, desc:"Drawdown underway — margin calls, correlations going to 1. Gold is SOLD here because it is liquid and profitable: it fell ~12% over ~8 sessions in March 2020 and ~30% from its March 2008 high to its October 2008 low, both times while equities collapsed. Miners are worse (GDX ~−70% in 2008). Protection bought now is expensive — IV has already repriced, so puts and VIX calls are a poor purchase. Cash is the only thing that works cleanly." },
+  { k:"def",       col:"def",       label:"Resolution: Deflationary",  short:"Res: Deflationary", color:"#1E40AF", bg:"#EFF6FF", bdr:"#BFDBFE", desc:"Crash resolves through debt deflation — falling prices, Japan-style. TLT wins. Gold moderate. BTC loses. A crash OUTCOME, not a current regime." },
+  { k:"inf",       col:"inf",       label:"Resolution: Debasement",    short:"Res: Debasement",   color:"#7C3AED", bg:"#F5F3FF", bdr:"#C4B5FD", desc:"Crash resolves through DEBASEMENT — Fed prints, dollar credibility erodes, currency stress, loss of monetary confidence. Gold and BTC win; TLT is a trap. This is a CRISIS — the OPPOSITE of Macro's 'Inflationary Boom' (a good, growth-strong outcome you'd want to be long). Read at speed, the shared word invites exactly the wrong action; hence 'Resolution: Debasement'." },
+  { k:"stag",      col:"stag",      label:"Resolution: Stagflation",   short:"Res: Stagflation",  color:"#0F766E", bg:"#F0FDFA", bdr:"#5EEAD1", desc:"Persistent stagflation — slow grind, not a sharp crash. Favour passive real-asset hedges (GLD, XLP, farmland, HYG puts) over active short instruments. Avoid VIX calls (contango) and SQQQ (daily decay). Size conservatively; favour longer-dated instruments to reduce theta bleed." },
+  { k:"hawkish",   col:"hawkish",   label:"Hawkish Rates Repricing",   short:"Hawkish Repricing", color:"#B45309", bg:"#FFF7ED", bdr:"#FED7AA", desc:"Not a crash — a rates repricing (occurred 2026-07-31: gold −2.07%, TLT −0.87%, XLU −0.37%, XLP −0.80%, IWM −0.70%, BTC −1.8%, SPY roughly flat). Nothing hedges this except the front end. Duration is the risk, and every asset that competes with cash for yield gets sold simultaneously — including the defensives (GLD, TLT, staples) that work in every other scenario." },
 ];
 
-// Permanent, non-interactive reference. Four columns = four scenarios, grouped by
-// hedge family (group header rows rendered in the table).
-// ✅✅ = primary · ✅ = works well · ⚠️ = caution/timing · ❌ = avoid.
-// NOTE: GLD/Physical Gold and GDX/GDXJ are intentionally separate rows — GLD held
-// value in March 2020 while GDX dropped ~40% before recovering. The distinction matters.
+// Permanent, non-interactive reference. Six columns, grouped by hedge family (group header rows
+// rendered in the table). ✅✅ = primary · ✅ = works well · ⚠️ = caution/timing · ❌ = avoid.
+// GLD/Physical Gold and GDX/GDXJ are intentionally separate rows — GLD held value where GDX did
+// not. Cash is its own top row: the only instrument that works across the crash timeline AND the
+// hawkish repricing.
 const SCENARIO_MATRIX = [
-  { group:"Gold & Precious Metals", row:"GLD / Physical Gold", onset:"✅", def:"✅",  inf:"✅✅", stag:"✅" },
-  { group:"Gold & Precious Metals", row:"GDX / GDXJ",          onset:"⚠️", def:"⚠️", inf:"✅✅", stag:"⚠️" },
-  { group:"Macro / Rate Hedges",    row:"TLT / IEF",           onset:"⚠️", def:"✅✅", inf:"❌",  stag:"❌" },
-  { group:"Macro / Rate Hedges",    row:"HYG / JNK Puts",      onset:"✅", def:"✅",  inf:"✅",  stag:"✅" },
-  { group:"Macro / Rate Hedges",    row:"VIX Calls / VXX",     onset:"✅", def:"✅",  inf:"✅",  stag:"❌" },
-  { group:"Equity Shorts",          row:"SPY / QQQ Puts",      onset:"✅", def:"✅",  inf:"✅",  stag:"⚠️" },
-  { group:"Equity Shorts",          row:"SQQQ / 7568.HK",      onset:"✅", def:"✅",  inf:"✅",  stag:"⚠️" },
-  { group:"Defensive Income",       row:"XLP / Staples",       onset:"✅", def:"✅",  inf:"⚠️", stag:"✅✅" },
-  { group:"Commodities / Energy",   row:"CNOOC / Energy",      onset:"⚠️", def:"❌",  inf:"✅✅", stag:"✅" },
-  { group:"Debasement / Monetary",  row:"BTC",                 onset:"❌", def:"❌",  inf:"✅✅", stag:"⚠️" },
+  { group:"Cash / Front End",       row:"Cash / SGOV / USFR",  preCrash:"✅✅", liquidity:"✅✅", def:"✅✅", inf:"⚠️", stag:"⚠️", hawkish:"✅✅" },
+  { group:"Gold & Precious Metals", row:"GLD / Physical Gold", preCrash:"✅",  liquidity:"⚠️", def:"✅",  inf:"✅✅", stag:"✅",  hawkish:"❌" },
+  { group:"Gold & Precious Metals", row:"GDX / GDXJ",          preCrash:"⚠️", liquidity:"❌", def:"⚠️", inf:"✅✅", stag:"⚠️", hawkish:"❌" },
+  { group:"Macro / Rate Hedges",    row:"TLT / IEF",           preCrash:"⚠️", liquidity:"⚠️", def:"✅✅", inf:"❌",  stag:"❌",  hawkish:"❌" },
+  { group:"Macro / Rate Hedges",    row:"HYG / JNK Puts",      preCrash:"✅",  liquidity:"✅",  def:"✅",  inf:"✅",  stag:"✅",  hawkish:"⚠️" },
+  { group:"Macro / Rate Hedges",    row:"VIX Calls / VXX",     preCrash:"✅✅", liquidity:"⚠️", def:"✅",  inf:"✅",  stag:"❌",  hawkish:"⚠️" },
+  { group:"Equity Shorts",          row:"SPY / QQQ Puts",      preCrash:"✅✅", liquidity:"⚠️", def:"✅",  inf:"✅",  stag:"⚠️", hawkish:"⚠️" },
+  { group:"Equity Shorts",          row:"SQQQ / 7568.HK",      preCrash:"✅",  liquidity:"⚠️", def:"✅",  inf:"✅",  stag:"⚠️", hawkish:"⚠️" },
+  { group:"Defensive Income",       row:"XLP / Staples",       preCrash:"✅",  liquidity:"⚠️", def:"✅",  inf:"⚠️", stag:"✅✅", hawkish:"❌" },
+  { group:"Commodities / Energy",   row:"CNOOC / Energy",      preCrash:"⚠️", liquidity:"❌", def:"❌",  inf:"✅✅", stag:"✅",  hawkish:"⚠️" },
+  { group:"Debasement / Monetary",  row:"BTC",                 preCrash:"❌", liquidity:"❌", def:"❌",  inf:"✅✅", stag:"⚠️", hawkish:"❌" },
 ];
 
 // Live-signal anchor — auto-computed lean from liveInd. Informational only;
@@ -297,22 +313,23 @@ const SCENARIO_MATRIX = [
 function getCrashSignalRead(liveInd, activeRegime) {
   // Stagflation: the dashboard's active regime is already stagflationary. This
   // connects the regime engine directly to the Insurance tab's signal anchor.
+  // `phaseKey` names the INSURANCE_PHASES column the lean maps to, so the callout can link.
   if (activeRegime?.id === "stag") return {
-    lean: "Persistent Stagflation",
+    lean: "Resolution: Stagflation", phaseKey: "stag",
     reason: "active regime is stagflationary — inflation sticky, growth slowing. Favour staples, GLD, HYG puts over short-dated puts and VIX calls",
   };
   const inflationary = liveInd.cpiYoY > 4.0 && liveInd.m2Rising;
   const deflationary = liveInd.yieldSpread < -0.5 && liveInd.creditSpread > 4.5;
   if (inflationary) return {
-    lean: "Inflationary / Debasement",
+    lean: "Resolution: Debasement", phaseKey: "inf",
     reason: `CPI ${liveInd.cpiYoY?.toFixed(1)}% YoY, M2 rising, sticky inflation environment`,
   };
   if (deflationary) return {
-    lean: "Deflationary",
+    lean: "Resolution: Deflationary", phaseKey: "def",
     reason: `Yield curve ${liveInd.yieldSpread?.toFixed(2)}%, credit spreads ${liveInd.creditSpread?.toFixed(1)}%`,
   };
   return {
-    lean: "Onset / Unclear",
+    lean: "Pre-Crash / Unclear", phaseKey: "preCrash",
     reason: "Signals mixed — monitor credit spreads and CPI trajectory",
   };
 }
@@ -3641,7 +3658,7 @@ export default function App() {
   // make visible, so it must not silently reset.
   const [regimePin, setRegimePin] = useState(() => cacheLoad("regime_pin_v1", { pinned: false, note: "", setAt: null }));
   const savePin = (p) => { setRegimePin(p); cacheSave("regime_pin_v1", p); };
-  const [insurancePhase, setInsurancePhase] = useState("onset"); // Insurance tab — "onset" | "deflationary" | "inflationary" | "stagflation"
+  const [insurancePhase, setInsurancePhase] = useState("preCrash"); // Insurance tab — "preCrash" | "liquidity" | "def" | "inf" | "stag" | "hawkish"
   const [stage4, setStage4] = useState(false); // Posture deploy stage 4 — manual, persisted
   const [stage5, setStage5] = useState(false); // Posture deploy stage 5 — manual, persisted
   const [portfolioValue, setPortfolioValue] = useState(""); // Posture portfolio total (digits only), persisted
@@ -4374,8 +4391,49 @@ export default function App() {
         {/* ── INSURANCE ── */}
         {tab === "insurance" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {/* Item 4 — purpose line: the two tabs answer different questions. This one is about
+                crash OUTCOMES, not the current regime. Item 5 — explicit macro→column link. */}
+            {(() => {
+              // Macro regimes that map to a crash-resolution column. inf (Inflationary Boom) and
+              // ref (Reflationary Growth) are GROWTH regimes, not crashes — deliberately no map.
+              const macroToCol = { stag: "stag", def: "def" };
+              const mappedCol = macroToCol[liveRegime?.id] || null;
+              const mappedPhase = mappedCol ? INSURANCE_PHASES.find(p => p.k === mappedCol) : null;
+              const tapeHawkish = pbData?.us?.marketRegime?.state === "HAWKISH_RATES_REPRICING";
+              return (
+                <div style={{ background: C.surf, border: "1.5px solid " + C.bdr, borderRadius: 12, padding: "12px 16px" }}>
+                  <div style={{ fontSize: 13.5, color: C.mid, lineHeight: 1.55 }}>
+                    <b style={{ color: C.text }}>If a crash happens from here, how does it resolve — and what works in each case?</b>
+                    <span style={{ color: C.muted }}> These columns are crash <i>outcomes</i>, not current-state regimes. (The Macro tab answers “what regime are we in right now?”)</span>
+                  </div>
+                  <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 13 }}>
+                    <span style={{ color: C.lbl, fontWeight: 700 }}>Live macro regime:</span>
+                    <span style={{ color: liveRegime?.color, fontWeight: 800 }}>{liveRegime?.label} {regimeProbFor(liveRegime?.id)}%</span>
+                    {mappedPhase ? (
+                      <>
+                        <span style={{ color: C.lbl }}>→</span>
+                        <button onClick={() => setInsurancePhase(mappedCol)} style={{ cursor: "pointer", background: mappedPhase.bg, color: mappedPhase.color, border: "1.5px solid " + mappedPhase.bdr, borderRadius: 6, padding: "3px 9px", fontWeight: 800, fontSize: 12 }}>
+                          see {mappedPhase.label}
+                        </button>
+                      </>
+                    ) : (
+                      <span style={{ color: C.muted, fontStyle: "italic" }}>— a growth regime, not a crash scenario; the columns below are crash outcomes.</span>
+                    )}
+                    {tapeHawkish && (
+                      <>
+                        <span style={{ color: C.lbl }}>·</span>
+                        <span style={{ color: C.lbl, fontWeight: 700 }}>today’s tape:</span>
+                        <button onClick={() => setInsurancePhase("hawkish")} style={{ cursor: "pointer", background: "#FFF7ED", color: "#B45309", border: "1.5px solid #FED7AA", borderRadius: 6, padding: "3px 9px", fontWeight: 800, fontSize: 12 }}>
+                          Hawkish Rates Repricing → see column
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
             {/* Crash Scenario Guide — TOP of page. Static ratings (regime-independent);
-                the three column headers ARE the scenario selector. Picking a column
+                the column headers ARE the scenario selector. Picking a column
                 drives the phase-note callouts in the instrument detail below. */}
             <Card>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
@@ -4383,7 +4441,7 @@ export default function App() {
                 <span style={{ color: C.lbl, fontSize: 12 }}>Tap a column to plan around that scenario ↓</span>
               </div>
               <div style={{ overflowX: "auto", width: "100%" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620, fontSize: 12 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900, fontSize: 12 }}>
                   <thead>
                     <tr>
                       <th style={{ textAlign: "left", color: C.mid, padding: "6px 10px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700, width: 140, minWidth: 140 }}>Instrument</th>
@@ -4411,7 +4469,7 @@ export default function App() {
                       const rows = [];
                       if (showGroup) rows.push(
                         <tr key={"grp-" + r.group}>
-                          <td colSpan={5} style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#999", textTransform: "uppercase", padding: "10px 12px 4px", backgroundColor: "transparent", borderBottom: "none" }}>
+                          <td colSpan={7} style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#999", textTransform: "uppercase", padding: "10px 12px 4px", backgroundColor: "transparent", borderBottom: "none" }}>
                             {r.group}
                           </td>
                         </tr>
@@ -4848,6 +4906,12 @@ export default function App() {
 
         {tab === "macro" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {/* Item 4 — purpose line. This tab is about the CURRENT regime; the Insurance tab is
+                about how a crash would RESOLVE. Different taxonomies, stated so they don't blur. */}
+            <div style={{ background: C.surf, border: "1.5px solid " + C.bdr, borderRadius: 12, padding: "10px 16px", fontSize: 13.5, color: C.mid, lineHeight: 1.5 }}>
+              <b style={{ color: C.text }}>What regime are we in right now?</b>
+              <span style={{ color: C.muted }}> The Insurance tab answers a different question — if a crash happens from here, how does it resolve.</span>
+            </div>
             {/* Section E — the 10Y auction-health card is DELETED (the P7 spec is void).
                 10Y auctions are roughly monthly while this page is read daily, so a card whose
                 value is 3-25 days old, styled like the live ones, invites a stale impression to
