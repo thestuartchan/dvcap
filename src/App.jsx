@@ -4878,6 +4878,13 @@ export default function App() {
                   <b style={{ color: C.blue }}>Mapping: </b>{derivedRegimes.mapping.reason} — {derivedRegimes.mapping.redirected}pp moved from growth to stagflation.
                 </div>
               )}
+              {/* R8.1 — the labour override made visible: a live payroll/emp-pop deterioration
+                  moves weight into deflationary recession ahead of the (lagging) analyst consensus. */}
+              {derivedRegimes?.labor?.shift > 0 && (
+                <div style={{ marginBottom: 10, padding: "8px 11px", background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 8, fontSize: 11.5, color: C.mid, lineHeight: 1.55 }}>
+                  <b style={{ color: C.blue }}>Labour: </b>{derivedRegimes.labor.shift}pp moved into <b>deflationary recession</b> on live labour weakness ({derivedRegimes.labor.reasons.join(", ")}). The recession-consensus input lags today's print — this moves the engine on it.
+                </div>
+              )}
               <div className="mwd-regime-grid" style={{ marginBottom: 14 }}>
                 {REGIMES.map(r => {
                   // When contested, the top TWO share the highlight — no single winner.
