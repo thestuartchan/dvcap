@@ -261,44 +261,119 @@ export default async function handler(req, res) {
   // static/manual value for that row — survives untouched. On Vercel these are the only place
   // the numbers refresh; in the no-network sandbox they simply return null.
 
-  // Kalshi — public trade API. Probability is the market's own price in cents (0–100), taken
-  // from last_price, falling back to the yes bid/ask midpoint. The exact market ticker is set
-  // ONCE via env (KALSHI_RECESSION_2026 / _2027); a stable identifier is not "hand-maintaining
-  // the probability", and a wrong hardcoded ticker would silently publish the wrong market.
-  async function fetchKalshi(ticker) {
-    if (!ticker) return null;
+  // ── Kalshi — self-discovering. ─────────────────────────────────────────────
+  // Rather than pin a market ticker by hand (they change every cycle), we DISCOVER the right
+  // recession market for a given year: list the events under Kalshi's recession series, then
+  // pick the market whose settlement year matches. An exact ticker can still be pinned via env
+  // (KALSHI_RECESSION_2026 / _2027) — that wins when set, e.g. to force a specific contract.
+  const KALSHI_BASE = "https://api.elections.kalshi.com/trade-api/v2";
+  const kOpts = { headers: { Accept: "application/json", "User-Agent": "dvcap" } };
+  // Probability from a market object: last traded price (cents 0–100), else the yes bid/ask mid.
+  function kalshiCents(m) {
+    if (!m) return null;
+    let c = Number.isFinite(+m.last_price) && +m.last_price > 0 ? +m.last_price : null;
+    if (c == null && Number.isFinite(+m.yes_bid) && Number.isFinite(+m.yes_ask)) c = (+m.yes_bid + +m.yes_ask) / 2;
+    return c;
+  }
+  async function fetchKalshiMarket(ticker) {
+    const r = await fetch(`${KALSHI_BASE}/markets/${encodeURIComponent(ticker)}`, kOpts);
+    if (!r.ok) { console.error("Kalshi market status", r.status, ticker); return null; }
+    return (await r.json())?.market || null;
+  }
+  async function fetchKalshiRecession(year) {
+    // A live market's price is current as of THIS fetch — close_time is the settlement date, not
+    // an as-of, so stamping the fetch date is the honest freshness signal (and keeps the row out
+    // of the staleness flag it doesn't deserve).
+    const todayIso = new Date().toISOString().slice(0, 10);
     try {
-      const r = await fetch(`https://api.elections.kalshi.com/trade-api/v2/markets/${encodeURIComponent(ticker)}`,
-        { headers: { Accept: "application/json", "User-Agent": "dvcap" } });
-      if (!r.ok) { console.error("Kalshi status", r.status, ticker); return null; }
-      const m = (await r.json())?.market;
-      if (!m) return null;
-      let cents = Number.isFinite(+m.last_price) && +m.last_price > 0 ? +m.last_price : null;
-      if (cents == null && Number.isFinite(+m.yes_bid) && Number.isFinite(+m.yes_ask)) {
-        cents = (+m.yes_bid + +m.yes_ask) / 2;
+      // 1) Operator pin — an exact market ticker via env always wins.
+      const pinned = process.env[`KALSHI_RECESSION_${year}`];
+      if (pinned) {
+        const m = await fetchKalshiMarket(pinned);
+        const c = kalshiCents(m);
+        if (c != null) return { probability: Math.round(c), asOf: todayIso, ticker: pinned, discovered: false };
       }
-      if (cents == null) return null;
-      return { probability: Math.round(cents), asOf: (m.close_time || m.last_updated_ts || "").slice(0, 10) || null, ticker };
-    } catch (e) { console.error("Kalshi fetch error", e.message); return null; }
+      // 2) Discovery — walk the recession series' open events and match the settlement year.
+      //    Kalshi's newer series are prefixed "KX"; we try a few known spellings (env override
+      //    first) and stop at the first that returns markets.
+      const seriesCandidates = [process.env.KALSHI_RECESSION_SERIES, "KXRECESSION", "RECESSION", "RECSSNBER"].filter(Boolean);
+      let markets = [];
+      for (const s of seriesCandidates) {
+        const r = await fetch(`${KALSHI_BASE}/events?series_ticker=${encodeURIComponent(s)}&status=open&with_nested_markets=true&limit=200`, kOpts);
+        if (!r.ok) continue;
+        const evs = (await r.json())?.events || [];
+        const ms = evs.flatMap(e => (e.markets || []).map(m => ({ ...m, _eventTitle: e.title || "" })));
+        if (ms.length) { markets = ms; break; }
+      }
+      if (!markets.length) { console.error("Kalshi: no recession markets discovered for", year); return null; }
+      const ys = String(year);
+      // Prefer a market that settles in the target year; fall back to one whose title names the year.
+      const byYear = markets.filter(m => (m.close_time || "").slice(0, 4) === ys);
+      const byTitle = markets.filter(m => `${m.title || ""} ${m.subtitle || ""} ${m._eventTitle}`.includes(ys));
+      const pool = (byYear.length ? byYear : byTitle);
+      if (!pool.length) { console.error("Kalshi: no", year, "recession market among", markets.length); return null; }
+      // Among candidates take the most-traded (deepest, most reliable price).
+      pool.sort((a, b) => (+b.volume || 0) - (+a.volume || 0) || (+b.open_interest || 0) - (+a.open_interest || 0));
+      const m = pool[0];
+      const c = kalshiCents(m);
+      if (c == null) return null;
+      return { probability: Math.round(c), asOf: todayIso, ticker: m.ticker || null, discovered: true };
+    } catch (e) { console.error("Kalshi discovery error", e.message); return null; }
   }
 
-  // Polymarket — Gamma API. outcomePrices is a JSON-encoded string like '["0.18","0.82"]',
-  // index 0 = Yes. Slug set once via env (POLYMARKET_RECESSION_SLUG).
-  async function fetchPolymarket(slug) {
-    if (!slug) return null;
+  // ── Polymarket — self-discovering via Gamma. ───────────────────────────────
+  // Search Gamma for the active recession market for the year and read its Yes price. A slug can
+  // still be pinned via env (POLYMARKET_RECESSION_SLUG) to force a specific market.
+  const PM_BASE = "https://gamma-api.polymarket.com";
+  const pmOpts = { headers: { Accept: "application/json", "User-Agent": "dvcap" } };
+  // Yes price (0–1) from a Gamma market; outcomePrices is a JSON-encoded string '["0.18","0.82"]'.
+  function pmYesPrice(m) {
+    let prices = m?.outcomePrices;
+    if (typeof prices === "string") { try { prices = JSON.parse(prices); } catch { prices = null; } }
+    const yes = Array.isArray(prices) ? parseFloat(prices[0]) : null;
+    return yes != null && Number.isFinite(yes) ? yes : null;
+  }
+  function pmIsRecession(m, ys) {
+    const hay = `${m?.question || ""} ${m?.slug || ""} ${m?.groupItemTitle || ""}`.toLowerCase();
+    return hay.includes("recession") && hay.includes(ys);
+  }
+  async function fetchPolymarketRecession(year) {
+    const todayIso = new Date().toISOString().slice(0, 10);
     try {
-      const r = await fetch(`https://gamma-api.polymarket.com/markets?slug=${encodeURIComponent(slug)}`,
-        { headers: { Accept: "application/json", "User-Agent": "dvcap" } });
-      if (!r.ok) { console.error("Polymarket status", r.status, slug); return null; }
-      const arr = await r.json();
-      const m = Array.isArray(arr) ? arr[0] : arr;
-      if (!m) return null;
-      let prices = m.outcomePrices;
-      if (typeof prices === "string") { try { prices = JSON.parse(prices); } catch { prices = null; } }
-      const yes = Array.isArray(prices) ? parseFloat(prices[0]) : null;
-      if (yes == null || !Number.isFinite(yes)) return null;
-      return { probability: Math.round(yes * 100), asOf: (m.updatedAt || m.endDate || "").slice(0, 10) || null, slug };
-    } catch (e) { console.error("Polymarket fetch error", e.message); return null; }
+      const ys = String(year);
+      // 1) Operator pin — exact slug via env wins.
+      const pinnedSlug = process.env.POLYMARKET_RECESSION_SLUG;
+      if (pinnedSlug) {
+        const r = await fetch(`${PM_BASE}/markets?slug=${encodeURIComponent(pinnedSlug)}`, pmOpts);
+        if (r.ok) {
+          const m = (await r.json())?.[0];
+          const yes = pmYesPrice(m);
+          if (yes != null) return { probability: Math.round(yes * 100), asOf: (m.updatedAt || "").slice(0, 10) || todayIso, slug: pinnedSlug, discovered: false };
+        }
+      }
+      // 2) Discovery — collect candidate markets two ways and keep recession-for-year ones.
+      const candidates = [];
+      // (a) full-text search
+      try {
+        const r = await fetch(`${PM_BASE}/public-search?q=${encodeURIComponent("recession " + ys)}&limit_per_type=20&events_status=active`, pmOpts);
+        if (r.ok) {
+          const j = await r.json();
+          for (const e of (j?.events || [])) for (const m of (e.markets || [])) candidates.push(m);
+        }
+      } catch (e) { console.error("Polymarket search error", e.message); }
+      // (b) fallback: active markets by volume, filtered by keyword
+      if (!candidates.some(m => pmIsRecession(m, ys))) {
+        try {
+          const r = await fetch(`${PM_BASE}/markets?closed=false&active=true&limit=100&order=volumeNum&ascending=false`, pmOpts);
+          if (r.ok) { const arr = await r.json(); if (Array.isArray(arr)) candidates.push(...arr); }
+        } catch (e) { console.error("Polymarket markets error", e.message); }
+      }
+      const pool = candidates.filter(m => pmIsRecession(m, ys) && pmYesPrice(m) != null && !m.closed);
+      if (!pool.length) { console.error("Polymarket: no", year, "recession market discovered"); return null; }
+      pool.sort((a, b) => (parseFloat(b.volumeNum || b.volume) || 0) - (parseFloat(a.volumeNum || a.volume) || 0));
+      const m = pool[0];
+      return { probability: Math.round(pmYesPrice(m) * 100), asOf: (m.updatedAt || "").slice(0, 10) || todayIso, slug: m.slug || null, question: m.question || null, discovered: true };
+    } catch (e) { console.error("Polymarket discovery error", e.message); return null; }
   }
 
   // NY Fed Yield Curve model — rather than scrape their monthly .xls, compute the model itself.
@@ -400,10 +475,10 @@ export default async function handler(req, res) {
       fredPc1History("CPIAUCSL"),  // Headline CPI
       fredPc1History("CPILFESL"),  // Core CPI (ex food & energy)
       fredPc1History("PCEPILFE"),  // Core PCE (Fed's preferred)
-      // ── Recession auto-feeds (Task 1a) — each null on failure ──
-      fetchKalshi(process.env.KALSHI_RECESSION_2026),
-      fetchKalshi(process.env.KALSHI_RECESSION_2027),
-      fetchPolymarket(process.env.POLYMARKET_RECESSION_SLUG),
+      // ── Recession auto-feeds (Task 1a) — self-discovering; each null on failure ──
+      fetchKalshiRecession(2026),
+      fetchKalshiRecession(2027),
+      fetchPolymarketRecession(2026),
       fetchNyFedYieldCurve(),
     ]);
 
