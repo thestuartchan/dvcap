@@ -281,7 +281,7 @@ const PHASE_NOTES = {
 const INSURANCE_PHASES = [
   { k:"preCrash",  col:"preCrash",  label:"Pre-Crash",                 short:"Pre-Crash",         color:STATUS.WATCH.color,  bg:STATUS.WATCH.bg,  bdr:STATUS.WATCH.bdr,  desc:"Signals deteriorating, no drawdown yet — the accumulation window. Protection is cheap: puts and VIX calls are the right instruments here, before IV reprices. GLD works; miners lag (equity beta)." },
   { k:"liquidity", col:"liquidity", label:"Liquidity Phase",           short:"Liquidity Phase",   color:STATUS.DANGER.color, bg:STATUS.DANGER.bg, bdr:STATUS.DANGER.bdr, desc:"Drawdown underway — margin calls, correlations going to 1. Gold is SOLD here because it is liquid and profitable: it fell ~12% over ~8 sessions in March 2020 and ~30% from its March 2008 high to its October 2008 low, both times while equities collapsed. Miners are worse (GDX ~−70% in 2008). Protection bought now is expensive — IV has already repriced, so puts and VIX calls are a poor purchase. Cash is the only thing that works cleanly." },
-  { k:"def",       col:"def",       label:"Resolution: Deflationary",  short:"Res: Deflationary", color:"#1E40AF", bg:"#EFF6FF", bdr:"#BFDBFE", desc:"Crash resolves through debt deflation — falling prices, Japan-style. TLT wins. Gold moderate. BTC loses. A crash OUTCOME, not a current regime." },
+  { k:"def",       col:"def",       label:"Deflationary Recession",    short:"Defl. Recession",   color:"#1E40AF", bg:"#EFF6FF", bdr:"#BFDBFE", desc:"Crash resolves through debt deflation — falling prices, Japan-style. TLT wins. Gold moderate. BTC loses. Same term as the Macro tab's regime: a deflationary recession, whether you're forecasting it (Macro) or hedging its arrival (here)." },
   { k:"inf",       col:"inf",       label:"Resolution: Debasement",    short:"Res: Debasement",   color:"#7C3AED", bg:"#F5F3FF", bdr:"#C4B5FD", desc:"Crash resolves through DEBASEMENT — Fed prints, dollar credibility erodes, currency stress, loss of monetary confidence. Gold and BTC win; TLT is a trap. This is a CRISIS — the OPPOSITE of Macro's 'Inflationary Boom' (a good, growth-strong outcome you'd want to be long). Read at speed, the shared word invites exactly the wrong action; hence 'Resolution: Debasement'." },
   { k:"stag",      col:"stag",      label:"Resolution: Stagflation",   short:"Res: Stagflation",  color:"#0F766E", bg:"#F0FDFA", bdr:"#5EEAD1", desc:"Persistent stagflation — slow grind, not a sharp crash. Favour passive real-asset hedges (GLD, XLP, farmland, HYG puts) over active short instruments. Avoid VIX calls (contango) and SQQQ (daily decay). Size conservatively; favour longer-dated instruments to reduce theta bleed." },
   { k:"hawkish",   col:"hawkish",   label:"Hawkish Rates Repricing",   short:"Hawkish Repricing", color:"#B45309", bg:"#FFF7ED", bdr:"#FED7AA", desc:"Not a crash — a rates repricing (occurred 2026-07-31: gold −2.07%, TLT −0.87%, XLU −0.37%, XLP −0.80%, IWM −0.70%, BTC −1.8%, SPY roughly flat). Nothing hedges this except the front end. Duration is the risk, and every asset that competes with cash for yield gets sold simultaneously — including the defensives (GLD, TLT, staples) that work in every other scenario." },
@@ -325,7 +325,7 @@ function getCrashSignalRead(liveInd, activeRegime) {
     reason: `CPI ${liveInd.cpiYoY?.toFixed(1)}% YoY, M2 rising, sticky inflation environment`,
   };
   if (deflationary) return {
-    lean: "Resolution: Deflationary", phaseKey: "def",
+    lean: "Deflationary Recession", phaseKey: "def",
     reason: `Yield curve ${liveInd.yieldSpread?.toFixed(2)}%, credit spreads ${liveInd.creditSpread?.toFixed(1)}%`,
   };
   return {
@@ -1707,10 +1707,25 @@ const parseProbability = (probStr) => {
   return isNaN(num) ? null : num;
 };
 
-// Weighted average of the 2026 recession-probability sources. The Kalshi 2027
-// row is pulled out separately as the delayed-reckoning modifier input.
-const computeWeightedRecessionProb = (sources) => {
+// A source's weight decays LINEARLY to zero by this age. A March-2026 crisis-peak estimate
+// (≈160 days old on 2026-08-07) was carrying full weight in the average that feeds the regime
+// engine — a defect. Decay (rather than a hard 45-day cliff) fades old vintages without a jump,
+// and fully drops anything ≥180 days. Sources with no asOf are treated as current.
+const RECESSION_STALE_ZERO_DAYS = 180;
+function recencyFactor(asOf, nowIso) {
+  if (!asOf || !nowIso) return 1;
+  const age = Math.round((Date.parse(nowIso) - Date.parse(asOf)) / 86400000);
+  if (!Number.isFinite(age) || age <= 0) return 1;
+  if (age >= RECESSION_STALE_ZERO_DAYS) return 0;
+  return +(1 - age / RECESSION_STALE_ZERO_DAYS).toFixed(3);
+}
+
+// Weighted average of the 2026 recession-probability sources, recency-decayed. The Kalshi 2027
+// row is pulled out separately as the delayed-reckoning modifier input. `nowIso` (YYYY-MM-DD)
+// drives the decay; pass null to disable it (full weight, the old behaviour).
+const computeWeightedRecessionProb = (sources, nowIso = null) => {
   let weightedSum = 0, totalWeight = 0, kalshi2027 = null;
+  const decayed = [];
   sources.forEach(source => {
     if (source.name === "Kalshi prediction market" && source.year === 2027) {
       kalshi2027 = parseProbability(source.probability);
@@ -1718,10 +1733,14 @@ const computeWeightedRecessionProb = (sources) => {
     }
     const weight = RECESSION_SOURCE_WEIGHTS[source.name];
     const prob = parseProbability(source.probability);
-    if (weight && prob !== null) { weightedSum += prob * weight; totalWeight += weight; }
+    if (!weight || prob === null) return;
+    const factor = recencyFactor(source.asOf, nowIso);
+    if (factor < 0.999) decayed.push({ name: source.name, asOf: source.asOf, factor });
+    const eff = weight * factor;
+    if (eff > 0) { weightedSum += prob * eff; totalWeight += eff; }
   });
   const weightedAvg = totalWeight > 0 ? weightedSum / totalWeight : null;
-  return { weightedAvg, kalshi2027 };
+  return { weightedAvg, kalshi2027, decayed };
 };
 
 // Map weighted recession prob (+ live CPI + Kalshi 2027) to regime probabilities.
@@ -3672,7 +3691,7 @@ export default function App() {
   // Regime probabilities derived from the recession table + live CPI. Falls back
   // to the prior static split when no weighted average is available.
   const fallbackRegimes = { stagflation: 48, reflationary: 17, deflationary: 30, inflationary: 5 };
-  const { weightedAvg: recWeightedAvg, kalshi2027: recKalshi2027 } = computeWeightedRecessionProb(RECESSION_SOURCES);
+  const { weightedAvg: recWeightedAvg, kalshi2027: recKalshi2027, decayed: recDecayed } = computeWeightedRecessionProb(RECESSION_SOURCES, new Date().toISOString().slice(0, 10));
   const cpiForRegime = liveInd?.cpiHeadlineCurrent ?? liveInd?.cpi ?? null;
   // Section A — the growth/inflation context that decides whether a falling recession
   // probability is a GROWTH story or a STAGFLATION story. Both legs are live.
@@ -4974,6 +4993,11 @@ export default function App() {
                 <div style={{ marginTop: 10 }}>
                   <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5 }}>Weighted Wall Street recession probability: <b style={{ color: C.muted }}>{derivedRegimes.weightedAvg}%</b> | Derived from analyst consensus + live CPI</div>
                   <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5, marginTop: 2 }}>{derivedRegimes.derivedFrom}</div>
+                  {recDecayed && recDecayed.length > 0 && (
+                    <div style={{ color: C.amber, fontSize: 11, lineHeight: 1.5, marginTop: 2 }}>
+                      ⏳ Recency-decayed (linear to zero at {RECESSION_STALE_ZERO_DAYS}d): {recDecayed.map(d => `${d.name.split(" (")[0]} ${Math.round(d.factor * 100)}%`).join(" · ")} — stale vintages no longer carry full weight.
+                    </div>
+                  )}
                   <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5, marginTop: 2, fontStyle: "italic" }}>Updates automatically when recession table is refreshed or CPI changes.</div>
                   {/* P0.3 — trailing history. The engine is unfalsifiable without it: this is
                       how you answer "has the classifier actually been right". Raw inputs are
@@ -5567,7 +5591,7 @@ export default function App() {
                 const ROADMAP = [
                   {
                     label: "Stagflation → Deflationary Recession",
-                    prob: `${derivedRegimes?.deflationary ?? 35}% most likely`, color: C.blue,
+                    regimeKey: "def", character: "Painful", tiebreak: 2, color: C.blue,
                     path: "High oil + tight Fed choke off demand. Businesses stop hiring, consumers stop spending. Credit markets crack first — then unemployment surges. Treasuries and cash win. Everything else falls.",
                     signals: [
                       {
@@ -5613,7 +5637,7 @@ export default function App() {
                   },
                   {
                     label: "Stagflation → Reflationary Recovery",
-                    prob: `${derivedRegimes?.reflationary ?? 30}% next likely`, color: C.green,
+                    regimeKey: "ref", character: "Best case", tiebreak: 3, color: C.green,
                     path: "A Gulf peace deal or OPEC production increase brings oil below $80. Inflation cools, the Fed resumes cutting, and growth bounces back. This is the best-case exit from stagflation — and what equity markets would celebrate most.",
                     signals: [
                       {
@@ -5640,8 +5664,8 @@ export default function App() {
                     })(),
                   },
                   {
-                    label: "Persistent Stagflation (1970s path)",
-                    prob: `${derivedRegimes?.stagflation ?? 25}% painful`, color: C.amber,
+                    label: "Persistent Stagflation — no transition, regime persists",
+                    regimeKey: "stag", character: "1970s path", tiebreak: 1, color: C.amber,
                     path: "The Iran conflict drags on for years. Oil stays elevated. The Fed is paralysed — it can't raise rates without crushing growth, and can't cut without reigniting inflation. Gold and real assets become the only reliable stores of value.",
                     signals: [
                       {
@@ -5667,7 +5691,7 @@ export default function App() {
                   },
                   {
                     label: "Any regime → Inflationary Boom",
-                    prob: `${derivedRegimes?.inflationary ?? 5}% — Dalio scenario`, color: "#7C3AED",
+                    regimeKey: "inf", character: "Dalio scenario", tiebreak: 4, color: "#7C3AED",
                     path: "The US government keeps spending regardless of the Fed. The dollar structurally weakens. AI generates a genuine productivity surprise. The result: persistent inflation above 4%, but with real growth — a 1990s-style boom with a debasement twist. Gold miners, commodities, and Bitcoin are the standout winners.",
                     signals: [
                       {
@@ -5713,11 +5737,22 @@ export default function App() {
                   },
                 ];
 
-                return ROADMAP.map((r, i) => (
-                  <div key={i} style={{ padding: "16px 0", borderBottom: i < ROADMAP.length - 1 ? "1px solid " + C.bdr : "none" }}>
+                // Item 2 — rank is DERIVED from live probability, not baked into a string. Sort
+                // descending by probability; ties broken by a stable secondary key (`tiebreak`)
+                // so the order never jitters on refresh. The rank badge comes from the sorted
+                // index; the character tag ("Painful", "1970s path", …) stays per-scenario.
+                const RANK_BADGES = ["Most likely", "2nd most likely", "3rd", "4th"];
+                const rankSorted = [...ROADMAP].sort((a, b) =>
+                  (regimeProbFor(b.regimeKey) - regimeProbFor(a.regimeKey)) || (a.tiebreak - b.tiebreak));
+                return rankSorted.map((r, i) => (
+                  <div key={r.regimeKey} style={{ padding: "16px 0", borderBottom: i < rankSorted.length - 1 ? "1px solid " + C.bdr : "none" }}>
                     <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
                       <div style={{ flexShrink: 0, width: 120, paddingTop: 2 }}>
-                        <span style={{ background: r.color + "15", color: r.color, border: "1.5px solid " + r.color + "40", borderRadius: 8, padding: "5px 8px", fontSize: 11, fontWeight: 800, display: "block", textAlign: "center", lineHeight: 1.4, wordBreak: "break-word" }}>{r.prob}</span>
+                        <div style={{ background: r.color + "15", color: r.color, border: "1.5px solid " + r.color + "40", borderRadius: 8, padding: "6px 8px", textAlign: "center", lineHeight: 1.25 }}>
+                          <div style={{ fontSize: 19, fontWeight: 900 }}>{regimeProbFor(r.regimeKey)}%</div>
+                          <div style={{ fontSize: 10, fontWeight: 800, marginTop: 3 }}>{RANK_BADGES[i] || `${i + 1}th`}</div>
+                          <div style={{ fontSize: 9.5, fontWeight: 700, marginTop: 2, opacity: 0.85 }}>{r.character}</div>
+                        </div>
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 5 }}>{r.label}</div>
