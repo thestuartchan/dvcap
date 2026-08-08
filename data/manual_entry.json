@@ -55,7 +55,7 @@
       "hyg_qqq_divergence": -1.96,
       "oas_actual_chg": 0.02,
       "direction_agreed": false,
-      "loggedAt": "2026-08-08T06:44:08.213Z"
+      "loggedAt": "2026-08-08T14:07:35.850Z"
     },
     {
       "date": "2026-08-06",
@@ -63,7 +63,7 @@
       "hyg_qqq_divergence": -3.1,
       "oas_actual_chg": -0.04,
       "direction_agreed": true,
-      "loggedAt": "2026-08-08T06:44:08.228Z"
+      "loggedAt": "2026-08-08T14:07:35.863Z"
     }
   ],
   "intervention": null
