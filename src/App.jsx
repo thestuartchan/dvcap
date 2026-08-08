@@ -3859,6 +3859,18 @@ export default function App() {
     { stag: "stagflation", ref: "reflationary", def: "deflationary", inf: "inflationary" }[id]
   ];
 
+  // The four regime cards + the colour bar, ordered by probability (desc) so the most-likely
+  // state reads first. Probabilities are clamped to finite integers HERE, once — a bad/missing
+  // input can then never produce an "undefined%"/"NaN%" width that would collapse the colour bar
+  // to nothing. Stable secondary sort keeps equal-probability states in canonical order.
+  const regimeSorted = useMemo(() => {
+    const src = derivedRegimes || fallbackRegimes;
+    const key = { stag: "stagflation", ref: "reflationary", def: "deflationary", inf: "inflationary" };
+    return REGIMES
+      .map((r, i) => ({ r, prob: Math.max(0, Math.min(100, Math.round(Number(src?.[key[r.id]]) || 0))), i }))
+      .sort((a, b) => (b.prob - a.prob) || (a.i - b.i));
+  }, [derivedRegimes]);
+
   // ── P0.2 — computed regime vs displayed regime, deliberately separate ────────
   // liveRegime is ALWAYS what the engine computes; it is never user-editable. viewRegime is
   // what the page renders (best/worst assets, roadmap, sorting) and IS user-selectable.
@@ -5099,13 +5111,13 @@ export default function App() {
                 </div>
               )}
               <div className="mwd-regime-grid" style={{ marginBottom: 14 }}>
-                {REGIMES.map(r => {
+                {regimeSorted.map(({ r, prob }) => {
                   // When contested, the top TWO share the highlight — no single winner.
                   const inTopTwo = (derivedRegimes?.topTwo || []).includes(r.id);
                   const highlighted = derivedRegimes?.contested ? inTopTwo : activeRegime.id === r.id;
                   return (
                   <button key={r.id} onClick={() => { setActiveRegime(r); keepPinned(); }} style={{ background: highlighted ? r.bg : C.surf, border: "1.5px solid " + (highlighted ? r.color : C.bdr), borderTop: "4px solid " + r.color, borderRadius: 10, padding: "12px 14px", cursor: "pointer", textAlign: "left", width: "100%" }}>
-                    <div style={{ fontSize: 22, fontWeight: 900, color: r.color }}>{regimeProbFor(r.id)}%</div>
+                    <div style={{ fontSize: 22, fontWeight: 900, color: r.color }}>{prob}%</div>
                     <div style={{ color: r.color, fontWeight: 700, fontSize: 13, marginTop: 3, lineHeight: 1.3 }}>{r.label}</div>
                     {derivedRegimes?.contested && inTopTwo && (
                       <div style={{ fontSize: 9.5, fontWeight: 800, color: C.muted, marginTop: 2 }}>TIED</div>
@@ -5114,9 +5126,12 @@ export default function App() {
                   );
                 })}
               </div>
+              {/* Colour bar — same probability order as the cards. Widths come from the clamped
+                  integers in regimeSorted, so a segment can never render an invalid width and the
+                  bar cannot collapse; a non-zero share keeps a 2px floor so even 5% stays visible. */}
               <div style={{ display: "flex", height: 12, borderRadius: 6, overflow: "hidden", border: "1px solid " + C.bdr }}>
-                {REGIMES.map(r => (
-                  <div key={r.id} style={{ width: regimeProbFor(r.id) + "%", background: r.color, fontSize: 10, color: "#fff", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }} title={r.label}>{regimeProbFor(r.id)}%</div>
+                {regimeSorted.map(({ r, prob }) => (
+                  <div key={r.id} style={{ width: prob + "%", minWidth: prob > 0 ? 2 : 0, background: r.color, fontSize: 10, color: "#fff", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }} title={r.label}>{prob}%</div>
                 ))}
               </div>
               {derivedRegimes ? (
