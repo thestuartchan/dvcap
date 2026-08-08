@@ -23,14 +23,15 @@ async function readStore() {
   const repo = process.env.GITHUB_REPO;
   const branch = process.env.GITHUB_BRANCH || 'main';
   const r = await fetch(`https://api.github.com/repos/${repo}/contents/${DATA_PATH}?ref=${encodeURIComponent(branch)}`, { headers: ghHeaders() });
-  if (!r.ok) return { store: { fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null }, sha: null };
+  if (!r.ok) return { store: { fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, recession: {} }, sha: null };
   const meta = await r.json();
-  let store = { fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null };
+  let store = { fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, recession: {} };
   try { store = JSON.parse(Buffer.from(meta.content, 'base64').toString('utf8')); } catch { /* default */ }
   store.fedPath ||= { latest: null, series: [] };
   store.fedPath.series ||= [];
   store.oasRecon ||= [];
   store.intervention ??= null;
+  store.recession ||= {};   // manual overrides for the Wall Street recession sources
   return { store, sha: meta.sha };
 }
 
@@ -57,6 +58,7 @@ export default async function handler(req, res) {
         fedPath: { latest: store.fedPath.latest, series: store.fedPath.series.slice(-120) },
         oasRecon: store.oasRecon.slice(-180),
         intervention: store.intervention,
+        recession: store.recession,
       });
     } catch (e) {
       return res.status(200).json({ fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, error: String(e?.message || e) });
@@ -71,7 +73,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'GITHUB_TOKEN / GITHUB_REPO not configured' });
   }
 
-  const { fedPath, oasRecon, intervention } = req.body || {};
+  const { fedPath, oasRecon, intervention, recession } = req.body || {};
   const { store, sha } = await readStore();
   const saved = [];
 
@@ -136,6 +138,35 @@ export default async function handler(req, res) {
       : { active: false, since: null, note: null, clearedAt: new Date().toISOString(),
           previousSince: store.intervention?.since ?? null };
     saved.push(active ? 'intervention:on' : 'intervention:off');
+  }
+
+  // ── Recession-source manual overrides ──
+  // Keyed by the source name exactly as it appears in RECESSION_SOURCES, so an entry here
+  // replaces that row's probability/as-of on the client. A cleared entry (clear:true) removes
+  // the override and lets the static/auto value show through again — the same toggle discipline
+  // as the intervention flag, so an override can be un-set rather than only overwritten.
+  if (recession && recession.name) {
+    const name = String(recession.name).slice(0, 80);
+    if (recession.clear) {
+      delete store.recession[name];
+      saved.push('recession:clear:' + name);
+    } else {
+      const asOf = recession.asOf ? String(recession.asOf).slice(0, 10) : null;
+      if (asOf && !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) {
+        return res.status(422).json({ error: `recession.asOf '${recession.asOf}' is not YYYY-MM-DD` });
+      }
+      const prob = recession.probability != null ? String(recession.probability).slice(0, 16) : null;
+      if (prob != null && !/\d/.test(prob)) {
+        return res.status(422).json({ error: `recession.probability '${recession.probability}' has no number to parse` });
+      }
+      store.recession[name] = {
+        probability: prob,
+        asOf,
+        notes: recession.notes ? String(recession.notes).slice(0, 500) : null,
+        enteredAt: new Date().toISOString(),
+      };
+      saved.push('recession:' + name);
+    }
   }
 
   if (!saved.length) return res.status(400).json({ error: 'nothing to save' });

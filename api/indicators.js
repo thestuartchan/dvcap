@@ -255,6 +255,80 @@ export default async function handler(req, res) {
     }
   }
 
+  // ── Recession-probability auto-feeds (Task 1a) ─────────────────────────────
+  // Three of the ten Wall-Street recession rows are machine-readable and should not be a
+  // daily hand entry. Each returns null on ANY failure so the rest of the payload — and the
+  // static/manual value for that row — survives untouched. On Vercel these are the only place
+  // the numbers refresh; in the no-network sandbox they simply return null.
+
+  // Kalshi — public trade API. Probability is the market's own price in cents (0–100), taken
+  // from last_price, falling back to the yes bid/ask midpoint. The exact market ticker is set
+  // ONCE via env (KALSHI_RECESSION_2026 / _2027); a stable identifier is not "hand-maintaining
+  // the probability", and a wrong hardcoded ticker would silently publish the wrong market.
+  async function fetchKalshi(ticker) {
+    if (!ticker) return null;
+    try {
+      const r = await fetch(`https://api.elections.kalshi.com/trade-api/v2/markets/${encodeURIComponent(ticker)}`,
+        { headers: { Accept: "application/json", "User-Agent": "dvcap" } });
+      if (!r.ok) { console.error("Kalshi status", r.status, ticker); return null; }
+      const m = (await r.json())?.market;
+      if (!m) return null;
+      let cents = Number.isFinite(+m.last_price) && +m.last_price > 0 ? +m.last_price : null;
+      if (cents == null && Number.isFinite(+m.yes_bid) && Number.isFinite(+m.yes_ask)) {
+        cents = (+m.yes_bid + +m.yes_ask) / 2;
+      }
+      if (cents == null) return null;
+      return { probability: Math.round(cents), asOf: (m.close_time || m.last_updated_ts || "").slice(0, 10) || null, ticker };
+    } catch (e) { console.error("Kalshi fetch error", e.message); return null; }
+  }
+
+  // Polymarket — Gamma API. outcomePrices is a JSON-encoded string like '["0.18","0.82"]',
+  // index 0 = Yes. Slug set once via env (POLYMARKET_RECESSION_SLUG).
+  async function fetchPolymarket(slug) {
+    if (!slug) return null;
+    try {
+      const r = await fetch(`https://gamma-api.polymarket.com/markets?slug=${encodeURIComponent(slug)}`,
+        { headers: { Accept: "application/json", "User-Agent": "dvcap" } });
+      if (!r.ok) { console.error("Polymarket status", r.status, slug); return null; }
+      const arr = await r.json();
+      const m = Array.isArray(arr) ? arr[0] : arr;
+      if (!m) return null;
+      let prices = m.outcomePrices;
+      if (typeof prices === "string") { try { prices = JSON.parse(prices); } catch { prices = null; } }
+      const yes = Array.isArray(prices) ? parseFloat(prices[0]) : null;
+      if (yes == null || !Number.isFinite(yes)) return null;
+      return { probability: Math.round(yes * 100), asOf: (m.updatedAt || m.endDate || "").slice(0, 10) || null, slug };
+    } catch (e) { console.error("Polymarket fetch error", e.message); return null; }
+  }
+
+  // NY Fed Yield Curve model — rather than scrape their monthly .xls, compute the model itself.
+  // The NY Fed recession probability is an Estrella–Mishkin probit on the 10Y–3M term spread:
+  //   P(recession within 12mo) = Φ(a + b·spread),  a≈-0.5333, b≈-0.6330 (spread in ppt).
+  // We read T10Y3M (FRED's own published spread) and apply it. Labelled model-derived; it can
+  // differ a point or two from the NY Fed's latest re-estimated coefficients, so the note says so.
+  function normCdf(z) { // Zelen & Severo 7.1.26 approximation, |error| < 7.5e-8
+    const t = 1 / (1 + 0.2316419 * Math.abs(z));
+    const d = 0.3989422804014327 * Math.exp(-z * z / 2);
+    let p = d * t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+    return z > 0 ? 1 - p : p;
+  }
+  async function fetchNyFedYieldCurve() {
+    try {
+      const url = `https://api.stlouisfed.org/fred/series/observations?series_id=T10Y3M&sort_order=desc&limit=90&api_key=${FRED_KEY}&file_type=json`;
+      const r = await fetch(url);
+      if (!r.ok) { console.error("NY Fed spread status", r.status); return null; }
+      const obs = (await r.json())?.observations || [];
+      const valid = obs.filter(o => o.value !== "." && o.value !== "" && o.value !== "NA")
+        .map(o => ({ date: o.date, value: parseFloat(o.value) }))
+        .filter(o => Number.isFinite(o.value));
+      if (!valid.length) return null;
+      // NY Fed averages the spread over the month; use the trailing-month mean of daily values.
+      const monthAvg = valid.slice(0, 22).reduce((s, o) => s + o.value, 0) / Math.min(22, valid.length);
+      const prob = normCdf(-0.5333 - 0.6330 * monthAvg) * 100;
+      return { probability: Math.round(prob), asOf: valid[0].date, spread: +monthAvg.toFixed(2) };
+    } catch (e) { console.error("NY Fed yield-curve error", e.message); return null; }
+  }
+
   // ── Fetch YoY % change history (units=pc1) — returns [{date, value}] chrono ──
   // FRED computes the year-over-year % server-side. Returns [] on any failure so
   // the rest of the payload is unaffected. Used for the CPI inflation tracker.
@@ -284,6 +358,7 @@ export default async function handler(req, res) {
       spreadPublished, spreadHistoryRaw,
       tenYHistory, twoYHistory, unempHistory, creditHistory,
       cpiHeadlineHistory, cpiCoreHistory, pceCoreHistory,
+      kalshi2026Feed, kalshi2027Feed, polymarketFeed, nyFedCurveFeed,
     ] = await Promise.all([
       fredLatest("DGS10"),
       fredLatest("DGS2"),
@@ -325,6 +400,11 @@ export default async function handler(req, res) {
       fredPc1History("CPIAUCSL"),  // Headline CPI
       fredPc1History("CPILFESL"),  // Core CPI (ex food & energy)
       fredPc1History("PCEPILFE"),  // Core PCE (Fed's preferred)
+      // ── Recession auto-feeds (Task 1a) — each null on failure ──
+      fetchKalshi(process.env.KALSHI_RECESSION_2026),
+      fetchKalshi(process.env.KALSHI_RECESSION_2027),
+      fetchPolymarket(process.env.POLYMARKET_RECESSION_SLUG),
+      fetchNyFedYieldCurve(),
     ]);
 
     // ── Yield spread history: prefer FRED's published series ──────────────────
@@ -452,6 +532,15 @@ export default async function handler(req, res) {
         cpiCoreCurrent:     cpiCoreHistory.at(-1)?.date ?? null,
         pceCoreCurrent:     pceCoreHistory.at(-1)?.date ?? null,
         auctionBidCover:    auctionRaw?.date ?? null,
+      },
+      // ── Recession auto-feeds (Task 1a) — keyed by the RECESSION_SOURCES row name they
+      // refresh. null when the feed is unconfigured (no env ticker/slug) or the fetch failed;
+      // the client then falls back to the manual override, then the static value. ───────────
+      recessionFeeds: {
+        "Kalshi prediction market": kalshi2026Feed,        // 2026 contract
+        "Kalshi prediction market 2027": kalshi2027Feed,   // 2027 contract
+        "Polymarket": polymarketFeed,
+        "NY Fed Yield Curve Model": nyFedCurveFeed,
       },
       sanity,  // { metric: "out-of-band" } for any value outside its plausible band
     };

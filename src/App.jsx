@@ -1743,6 +1743,125 @@ const computeWeightedRecessionProb = (sources, nowIso = null) => {
   return { weightedAvg, kalshi2027, decayed };
 };
 
+// Two Kalshi rows share the name "Kalshi prediction market" (2026 vs 2027), so a bare name is
+// not a unique key for feed/override addressing. This composite key disambiguates them and is
+// used identically on the server (api/indicators recessionFeeds keys) and in the manual store.
+const recessionSrcKey = (r) =>
+  (r.name === "Kalshi prediction market" && r.year === 2027) ? "Kalshi prediction market 2027" : r.name;
+
+// Merge live auto-feeds (Task 1a) and manual overrides (Task 1b) over the static rows.
+// Precedence per row: manual override > auto-feed > static default. Only probability/asOf/notes
+// are touched; weight and timeframe always come from the static definition. `source` records the
+// provenance so the table can badge each row (📡 live / ✍️ manual / static).
+function mergeRecessionSources(statics, feeds = {}, manual = {}) {
+  const fmtPct = (v) => (/%/.test(String(v)) ? String(v) : `${v}%`);
+  return statics.map((r) => {
+    const key = recessionSrcKey(r);
+    const man = manual[key];
+    if (man && man.probability != null && man.probability !== "") {
+      return { ...r, probability: fmtPct(man.probability), asOf: man.asOf || r.asOf,
+        notes: man.notes || r.notes, source: "manual", sourceAt: man.enteredAt || null };
+    }
+    const auto = feeds[key];
+    if (auto && auto.probability != null) {
+      return { ...r, probability: fmtPct(auto.probability), asOf: auto.asOf || r.asOf, source: "auto" };
+    }
+    return { ...r, source: "static" };
+  });
+}
+
+// Task 1b — manual-entry panel for the recession sources, on the same POST-to-/api/manual-entry
+// pattern as the KOFIA / fed-path / intervention panels. Source dropdown → probability → as-of →
+// notes → save; a save writes an override keyed by recessionSrcKey that outranks the live feed and
+// the static default, and Clear removes it. Always rendered; an unauthenticated save 401s and the
+// error is shown inline (no client-side gate — the cookie check lives on the server).
+function RecessionEntryPanel({ overrides, onSaved }) {
+  const options = RECESSION_SOURCES.map((r) => ({
+    key: recessionSrcKey(r),
+    label: r.name + (r.year === 2027 ? " · End-2027" : ""),
+  }));
+  const [sel, setSel] = useState(options[0].key);
+  const [prob, setProb] = useState("");
+  const [asOf, setAsOf] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const current = overrides?.[sel] || null;
+  // Prefill from the existing override when the operator switches source, so an edit starts from
+  // what is stored rather than blank. Deliberately keyed on `sel` only — retyping should not be
+  // clobbered by a background refresh of `overrides`.
+  useEffect(() => {
+    setProb(current?.probability != null ? String(current.probability) : "");
+    setAsOf(current?.asOf || "");
+    setNotes(current?.notes || "");
+    setMsg(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel]);
+
+  async function save(clear = false) {
+    if (!clear && !/\d/.test(prob)) { setMsg({ ok: false, text: "enter a probability (a number, e.g. 22 or ~18%)" }); return; }
+    if (!clear && asOf.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(asOf.trim())) { setMsg({ ok: false, text: "as-of must be YYYY-MM-DD" }); return; }
+    setSaving(true); setMsg(null);
+    try {
+      const body = clear
+        ? { recession: { name: sel, clear: true } }
+        : { recession: { name: sel, probability: prob.trim(), asOf: asOf.trim() || null, notes: notes.trim() || null } };
+      const r = await fetch("/api/manual-entry", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        credentials: "include", body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      if (r.ok) {
+        const fresh = await fetch("/api/manual-entry").then((x) => x.json()).catch(() => null);
+        onSaved?.(fresh?.recession || {});
+        setMsg({ ok: true, text: clear ? "Override cleared — feed/static value restored" : `Saved — ${sel} now ${/%/.test(prob) ? prob : prob + "%"}` });
+        if (clear) { setProb(""); setAsOf(""); setNotes(""); }
+      } else setMsg({ ok: false, text: j.error || "save failed" });
+    } catch (e) { setMsg({ ok: false, text: String(e.message) }); }
+    setSaving(false);
+  }
+
+  const inp = { padding: "6px 9px", fontSize: 12, border: "1px solid " + C.bdrMd, borderRadius: 6, background: "#fff", color: C.text };
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <SLabel>✍️ Manual recession-source entry</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>overrides the feed &amp; static value · commits to the store</span>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <select value={sel} onChange={(e) => setSel(e.target.value)} style={{ ...inp, flex: "1 1 210px", minWidth: 0 }}>
+          {options.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+        </select>
+        <input value={prob} onChange={(e) => setProb(e.target.value)} placeholder="probability (e.g. 22 or ~18%)"
+          style={{ ...inp, flex: "1 1 150px", minWidth: 0 }} />
+        <input value={asOf} onChange={(e) => setAsOf(e.target.value)} placeholder="as-of (YYYY-MM-DD)"
+          style={{ ...inp, flex: "1 1 130px", minWidth: 0 }} />
+      </div>
+      <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="notes (optional)"
+        style={{ ...inp, width: "100%", marginTop: 8, boxSizing: "border-box" }} />
+      <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <button onClick={() => save(false)} disabled={saving}
+          style={{ background: C.blue, color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 12.5, fontWeight: 800, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 }}>
+          {saving ? "Saving…" : "Save override"}
+        </button>
+        {current && (
+          <button onClick={() => save(true)} disabled={saving}
+            style={{ background: "#fff", color: C.mid, border: "1.5px solid " + C.bdrMd, borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: saving ? "wait" : "pointer" }}>
+            Clear override
+          </button>
+        )}
+        {current && (
+          <span style={{ fontSize: 11, color: C.blue, fontWeight: 700 }}>
+            active: {current.probability}{current.asOf ? ` · ${current.asOf}` : ""}
+          </span>
+        )}
+      </div>
+      {msg && <div style={{ fontSize: 11.5, fontWeight: 700, marginTop: 8, color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
+    </Card>
+  );
+}
+
 // Map weighted recession prob (+ live CPI + Kalshi 2027) to regime probabilities.
 // (regime probability mapping + contested guard now live in lib/regimeProb.js — see there
 //  for why the reflationary share must be EARNED rather than granted.)
@@ -3683,15 +3802,26 @@ export default function App() {
   const [portfolioValue, setPortfolioValue] = useState(""); // Posture portfolio total (digits only), persisted
   const [funds, setFunds]       = useState(DEFAULT_FUNDS);
   const [selectedFund, setSelectedFund] = useState(DEFAULT_FUNDS[0]);
+  // Task 1b — manual recession-source overrides, keyed by recessionSrcKey. Loaded once from the
+  // manual store; refreshed after a save by the RecessionEntryPanel via onSaved.
+  const [recessionOverrides, setRecessionOverrides] = useState({});
+  useEffect(() => {
+    fetch("/api/manual-entry").then(r => r.json()).then(j => setRecessionOverrides(j.recession || {})).catch(() => {});
+  }, []);
 
   const { prices, loading: pricesLoading, updated: pricesUpdated, fetchPrices } = useLivePrices();
   const { live: liveInd, loading: indLoading, updated: indUpdated, error: indError, fetchIndicators } = useLiveIndicators();
   const { byRegion: pbData, loading: pbLoading, updated: pbUpdated, error: pbError, fetchRegion: fetchPlaybookRegion } = useLivePlaybook();
+  // Task 1a+1b — the recession table the whole app reads: manual override > auto-feed > static.
+  const effectiveRecessionSources = useMemo(
+    () => mergeRecessionSources(RECESSION_SOURCES, liveInd?.recessionFeeds || {}, recessionOverrides),
+    [liveInd, recessionOverrides]
+  );
 
   // Regime probabilities derived from the recession table + live CPI. Falls back
   // to the prior static split when no weighted average is available.
   const fallbackRegimes = { stagflation: 48, reflationary: 17, deflationary: 30, inflationary: 5 };
-  const { weightedAvg: recWeightedAvg, kalshi2027: recKalshi2027, decayed: recDecayed } = computeWeightedRecessionProb(RECESSION_SOURCES, new Date().toISOString().slice(0, 10));
+  const { weightedAvg: recWeightedAvg, kalshi2027: recKalshi2027, decayed: recDecayed } = computeWeightedRecessionProb(effectiveRecessionSources, new Date().toISOString().slice(0, 10));
   const cpiForRegime = liveInd?.cpiHeadlineCurrent ?? liveInd?.cpi ?? null;
   // Section A — the growth/inflation context that decides whether a falling recession
   // probability is a GROWTH story or a STAGFLATION story. Both legs are live.
@@ -5465,8 +5595,11 @@ export default function App() {
                   as-of and is flagged stale past 45 days rather than being silently updated. */}
               <div style={{ marginBottom: 10, padding: "8px 11px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, fontSize: 12, color: C.mid, lineHeight: 1.55 }}>
                 <b style={{ color: C.muted }}>Provenance: </b>
-                hand-maintained — no live feed exists for these estimates, so they were <b>not</b> auto-refreshed
-                after the Jul 29 FOMC. Each row shows its own as-of; anything past 45 days is flagged stale.
+                three rows carry a live feed — <b>📡 Kalshi</b> and <b>Polymarket</b> (real-money markets) and the
+                <b> NY&nbsp;Fed Yield&nbsp;Curve</b> (Estrella–Mishkin probit computed from the current 10Y-3M spread).
+                The broker/analyst rows have no keyless feed, so they are <b>not</b> auto-refreshed — each shows its own
+                as-of and is flagged stale past 45 days. Any row can be overridden by hand below (<b>✍️ manual</b>),
+                which takes precedence over both the feed and the static value.
                 <span style={{ color: C.amber, fontWeight: 700 }}> Q2 GDP at +1.5% (vs Q1 +2.1%) is the input most likely to push these up — expect revisions at the next publication, not before.</span>
               </div>
               <div style={{ overflowX: "auto" }}>
@@ -5479,11 +5612,23 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {RECESSION_SOURCES.map((r, i) => {
+                    {effectiveRecessionSources.map((r, i) => {
                       const pCol = r.color === "red" ? C.red : r.color === "amber" ? C.amber : C.green;
+                      // Provenance badge: 📡 live = refreshed by an auto-feed this load; ✍️ manual =
+                      // a hand-entered override in the manual store; static rows show nothing.
+                      const prov = r.source === "auto"
+                        ? { label: "📡 live", col: C.green, bg: C.gBg, bdr: C.gBdr }
+                        : r.source === "manual"
+                        ? { label: "✍️ manual", col: C.blue, bg: C.bg, bdr: C.bdr }
+                        : null;
                       return (
                       <tr key={i} style={{ background: i % 2 === 0 ? C.surf : C.bg }}>
-                        <td style={{ padding: "8px 12px", color: C.text, fontSize: 14, fontWeight: 600, borderBottom: "1px solid " + C.bdr }}>{r.name}</td>
+                        <td style={{ padding: "8px 12px", color: C.text, fontSize: 14, fontWeight: 600, borderBottom: "1px solid " + C.bdr }}>
+                          {r.name}
+                          {prov && (
+                            <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: prov.col, background: prov.bg, border: "1px solid " + prov.bdr, borderRadius: 5, padding: "1px 5px", whiteSpace: "nowrap" }}>{prov.label}</span>
+                          )}
+                        </td>
                         <td style={{ padding: "8px 12px", borderBottom: "1px solid " + C.bdr }}>
                           <span style={{ color: pCol, fontWeight: 800, fontSize: 15 }}>{r.probability}</span>
                         </td>
@@ -5516,6 +5661,7 @@ export default function App() {
               </div>
             </Card>
 
+            <RecessionEntryPanel overrides={recessionOverrides} onSaved={setRecessionOverrides} />
 
             <Card>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 4 }}>
