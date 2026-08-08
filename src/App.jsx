@@ -5115,8 +5115,12 @@ export default function App() {
                   // When contested, the top TWO share the highlight — no single winner.
                   const inTopTwo = (derivedRegimes?.topTwo || []).includes(r.id);
                   const highlighted = derivedRegimes?.contested ? inTopTwo : activeRegime.id === r.id;
+                  // Per-side longhand borders ONLY — never the `border`/`borderTop` shorthand mix.
+                  // React updating the `border` shorthand on click was dropping the `borderTop`
+                  // longhand, so the 4px top colour bar vanished from any card whose highlight
+                  // changed. All-longhand (no shorthand for a changing value) can't be clobbered.
                   return (
-                  <button key={r.id} onClick={() => { setActiveRegime(r); keepPinned(); }} style={{ background: highlighted ? r.bg : C.surf, border: "1.5px solid " + (highlighted ? r.color : C.bdr), borderTop: "4px solid " + r.color, borderRadius: 10, padding: "12px 14px", cursor: "pointer", textAlign: "left", width: "100%" }}>
+                  <button key={r.id} onClick={() => { setActiveRegime(r); keepPinned(); }} style={{ background: highlighted ? r.bg : C.surf, borderStyle: "solid", borderTopWidth: 4, borderRightWidth: 1.5, borderBottomWidth: 1.5, borderLeftWidth: 1.5, borderTopColor: r.color, borderRightColor: highlighted ? r.color : C.bdr, borderBottomColor: highlighted ? r.color : C.bdr, borderLeftColor: highlighted ? r.color : C.bdr, borderRadius: 10, padding: "12px 14px", cursor: "pointer", textAlign: "left", width: "100%" }}>
                     <div style={{ fontSize: 22, fontWeight: 900, color: r.color }}>{prob}%</div>
                     <div style={{ color: r.color, fontWeight: 700, fontSize: 13, marginTop: 3, lineHeight: 1.3 }}>{r.label}</div>
                     {derivedRegimes?.contested && inTopTwo && (
