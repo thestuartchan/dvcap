@@ -711,18 +711,34 @@ const DEFAULT_FUNDS = [
   },
 ];
 
+// The 13F vintage every equity row shares until the next EDGAR refresh. A 13F describes holdings
+// AS OF quarter-end and lands up to 45 days later — so it is ~6 weeks stale the day it arrives, and
+// says nothing about what changed since. Both dates travel with the data so no row reads as current.
+const MATRIX_13F = { positionsAsOf: "2026-03-31", filed: "2026-05-15", label: "Q1 2026" };
+// Per-row provenance. `source` is the ACTUAL disclosure the row is built from — not everything here
+// is 13F. 13F covers LONG US-LISTED EQUITY only; cash, bonds, shorts, options and foreign listings
+// are invisible to it, so those rows are tagged to their real source (10-Q / manager disclosure)
+// and carry their own as-of, independent of the 13F cycle.
 const CONSENSUS_ROWS = [
-  {theme:"AI Chips / Semis",            vals:["◐","◯","●","●","●","●","◯"],note:"5/7 bullish — most crowded consensus long; Fairfax absent"},
-  {theme:"Hyperscalers (AMZN/GOOG/MSFT)",vals:["●","●","●","◯","●","●","◯"],note:"Berkshire now large GOOGL holder; Ackman owns AMZN+MSFT"},
-  {theme:"Legacy SaaS",                 vals:["◯","◯","◐","◯","◯","◯","◯"],note:"Bridgewater holds CRM/ADBE/ORCL; no one adding aggressively"},
-  {theme:"China / EM",                  vals:["◯","◯","●","●","◐","●","●"],note:"Druckenmiller Brazil/Argentina, Tepper BABA, Fairfax India"},
-  {theme:"Gold / Commodities",          vals:["◐","◯","◐","●","◯","◯","◐"],note:"Druckenmiller 25–30% (off-13F), Bridgewater light (NEM), Fairfax commodity-linked"},
-  {theme:"Energy / Airlines",           vals:["●","◯","◯","◐","◯","◐","◯"],note:"Berkshire CVX+OXY+DAL; Appaloosa Vistra+NRG power"},
-  {theme:"Biotech / Healthcare",        vals:["◯","◯","◯","●","◯","◯","◯"],note:"Druckenmiller NTRA/INSM/Caris/Teva"},
-  {theme:"Financials / Insurance",      vals:["●","◐","◯","◯","◐","◯","●"],note:"Berkshire + Fairfax core insurance/float; Ackman GSEs, Tiger Corpay"},
-  {theme:"Cash / T-Bills",             vals:["●●","◯","◯","◯","◯","◯","◐"],note:"Berkshire $397B dry powder; Fairfax float in T-bills/bonds"},
-  {theme:"Macro Hedges / Tail Risk",    vals:["◯","◐","●","◐","◯","◯","●"],note:"Fairfax deflation/CPI hedges; Bridgewater risk-parity; Ackman episodic"},
+  {theme:"AI Chips / Semis",            source:"13F",  vals:["◐","◯","●","●","●","●","◯"],note:"5/7 bullish — most crowded consensus long; Fairfax absent"},
+  {theme:"Hyperscalers (AMZN/GOOG/MSFT)",source:"13F", vals:["●","●","●","◯","●","●","◯"],note:"Berkshire now large GOOGL holder; Ackman owns AMZN+MSFT"},
+  {theme:"Legacy SaaS",                 source:"13F",  vals:["◯","◯","◐","◯","◯","◯","◯"],note:"Bridgewater holds CRM/ADBE/ORCL; no one adding aggressively"},
+  {theme:"China / EM",                  source:"13F",  vals:["◯","◯","●","●","◐","●","●"],note:"Druckenmiller Brazil/Argentina (US ETFs), Tepper BABA (ADR); Fairfax India is TSX/foreign — off-13F"},
+  {theme:"Gold / Commodities",          source:"13F+mgr", vals:["◐","◯","◐","●","◯","◯","◐"],note:"Druckenmiller 25–30% off-13F (physical/futures); Bridgewater light (NEM); Fairfax commodity-linked"},
+  {theme:"Energy / Airlines",           source:"13F",  vals:["●","◯","◯","◐","◯","◐","◯"],note:"Berkshire CVX+OXY+DAL; Appaloosa Vistra+NRG power"},
+  {theme:"Biotech / Healthcare",        source:"13F",  vals:["◯","◯","◯","●","◯","◯","◯"],note:"Druckenmiller NTRA/INSM/Caris/Teva"},
+  {theme:"Financials / Insurance",      source:"13F+mgr", vals:["●","◐","◯","◯","◐","◯","●"],note:"Ackman GSEs, Tiger Corpay (13F); Berkshire + Fairfax core insurance float is operating, off-13F"},
+  {theme:"Cash / T-Bills",             source:"10-Q", asOf:"2026-03-31", vals:["●●","◯","◯","◯","◯","◯","◐"],note:"Berkshire $397B dry powder (Q1 10-Q, not 13F); Fairfax float in T-bills/bonds (annual report)"},
+  {theme:"Macro Hedges / Tail Risk",    source:"Manager disclosure", asOf:"ongoing / 2025 AR", vals:["◯","◐","●","◐","◯","◯","●"],note:"Fairfax deflation/CPI hedges & Bridgewater risk-parity are largely non-reportable — not in any 13F; Ackman episodic"},
 ];
+// How each source tag renders: label + colour. 13F is the default equity vintage; the others are
+// deliberately a different hue so a non-13F row can't be mistaken for one that moved on the 13F date.
+const SOURCE_TAGS = {
+  "13F":     { label: "13F",              col: "#1E40AF" },
+  "13F+mgr": { label: "13F + disclosure", col: "#6D28D9" },
+  "10-Q":    { label: "10-Q",             col: "#0F766E" },
+  "Manager disclosure": { label: "Mgr disclosure", col: "#B45309" },
+};
 
 // The four regimes are an IDENTITY palette, not a status palette. They are mutually exclusive
 // scenarios and none is "worse" than another — Deflationary Recession is the most damaging
@@ -1896,26 +1912,13 @@ const PROXY_BASE_URL = "/api"; // only needed for "proxy" mode — adjust if dif
 async function fetchTickerPrices(tickers) {
   if (!tickers || !tickers.length) return {};
 
-  // ── Option A: Claude.ai sandbox (works only in Claude artifact environment) ──
+  // ── Option A (REMOVED): an LLM call is not a price feed ──
+  // A prior version asked a model to "return today's price" for each ticker. With no market-data
+  // tool wired in, the model answers from training data — a plausible number rendered as a live
+  // quote. That is fabricated data presented as a feed, and it is never acceptable (enforced by
+  // scripts/check-no-llm-feeds.mjs). Prices come only from the /api/prices proxy below.
   if (DATA_SOURCE === "claude") {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1000,
-        tools: [{ type: "web_search_20250305", name: "web_search" }],
-        messages: [{
-          role: "user",
-          content: "Get today's stock price and daily percentage change for: " + tickers.join(", ") +
-            ". Return ONLY valid JSON: {\"TICK\":{\"price\":number,\"changePercent\":number}}. No other text.",
-        }],
-      }),
-    });
-    const data = await res.json();
-    const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
-    const match = text.match(/\{[\s\S]*\}/);
-    return match ? JSON.parse(match[0]) : {};
+    throw new Error("DATA_SOURCE 'claude' is disabled — an LLM cannot stand in for a price feed. Use 'proxy'.");
   }
 
   // ── Option B: Massive.com (client-side, free tier) ──
@@ -1963,24 +1966,10 @@ async function fetchTickerPrices(tickers) {
 // ─── INDICATOR FETCHER ────────────────────────────────────────────────────────
 // Returns { yieldSpread, tenY, twoY, unemployment, creditSpread }
 async function fetchMacroIndicators() {
+  // Removed: the same LLM-as-feed anti-pattern for macro values. Indicators come only from the
+  // /api/indicators proxy (FRED / Treasury / Yahoo, server-side keys). See check-no-llm-feeds.mjs.
   if (DATA_SOURCE === "claude") {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 800,
-        tools: [{ type: "web_search_20250305", name: "web_search" }],
-        messages: [{
-          role: "user",
-          content: "Find the most current values for: (1) US 10-year Treasury yield and 2-year Treasury yield — compute spread (10Y minus 2Y), (2) US unemployment rate (latest BLS), (3) ICE BofA US High Yield Index OAS. Return ONLY JSON: {\"yieldSpread\":number,\"tenY\":number,\"twoY\":number,\"unemployment\":number,\"creditSpread\":number}. No other text.",
-        }],
-      }),
-    });
-    const data = await res.json();
-    const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
-    const match = text.match(/\{[\s\S]*?\}/);
-    return match ? JSON.parse(match[0]) : null;
+    throw new Error("DATA_SOURCE 'claude' is disabled — an LLM cannot stand in for a data feed. Use 'proxy'.");
   }
 
   if (DATA_SOURCE === "polygon") {
@@ -4932,9 +4921,13 @@ export default function App() {
         {/* ── SMART MONEY ── */}
         {tab === "smartmoney" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {/* 13F staleness banner */}
-            <div style={{ background: C.aBg, border: "1.5px solid " + C.aBdr, borderRadius: 12, padding: "11px 15px", color: C.amber, fontSize: 14, lineHeight: 1.6, fontWeight: 600 }}>
-              ⚠️ Q2 2026 13F data available mid-August 2026 — fund positions below reflect Q1 2026 filings. Update manually when available.
+            {/* 13F limitation header — states plainly what this data is and is NOT, so an absent
+                cell isn't read as "no position" and a non-13F row isn't read as 13F. */}
+            <div style={{ background: C.aBg, border: "1.5px solid " + C.aBdr, borderRadius: 12, padding: "11px 15px", color: C.amber, fontSize: 13.5, lineHeight: 1.6 }}>
+              <div style={{ fontWeight: 800, marginBottom: 3 }}>⚠️ This is {MATRIX_13F.label} data — positions as of {MATRIX_13F.positionsAsOf}, filed {MATRIX_13F.filed}. Label it as of quarter-end, not current.</div>
+              <div style={{ fontWeight: 500 }}>
+                13F shows <b>long US-listed equity positions as of quarter-end</b> and arrives up to 45 days later (~6 weeks stale on arrival — the July memory crash, Iran de-escalation and yen intervention are all invisible here). Shorts, cash, bonds, options and foreign-listed securities are <b>not disclosed</b>; absence from a row may mean a position isn't reportable, not that it doesn't exist. The <b>Cash / T-Bills</b> and <b>Macro Hedges</b> rows come from 10-Q / manager disclosure, not 13F, and carry their own as-of. Q2 2026 filings land after the Aug 14 deadline.
+              </div>
             </div>
             {/* Cross-Fund Positioning Matrix — rendered above the fund selector (Fix 3) */}
             <Card>
@@ -4951,21 +4944,37 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {CONSENSUS_ROWS.map((row, ri) => (
+                    {CONSENSUS_ROWS.map((row, ri) => {
+                      const tag = SOURCE_TAGS[row.source] || SOURCE_TAGS["13F"];
+                      const is13F = row.source === "13F" || row.source === "13F+mgr";
+                      // 13F rows show BOTH dates (positions-as-of + filed); non-13F rows show their own.
+                      const dateLine = is13F
+                        ? `pos ${MATRIX_13F.positionsAsOf} · filed ${MATRIX_13F.filed}`
+                        : (row.asOf || "");
+                      return (
                       <tr key={row.theme} style={{ background: ri % 2 === 0 ? C.surf : C.bg }}>
-                        <td style={{ padding: "9px 12px", color: C.text, fontSize: 14, fontWeight: 600, borderBottom: "1px solid " + C.bdr }}>{row.theme}</td>
+                        <td style={{ padding: "9px 12px", borderBottom: "1px solid " + C.bdr }}>
+                          <div style={{ color: C.text, fontSize: 14, fontWeight: 600 }}>{row.theme}</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 9.5, fontWeight: 800, color: "#fff", background: tag.col, borderRadius: 4, padding: "1px 5px", whiteSpace: "nowrap" }}>{tag.label}</span>
+                            <span style={{ fontSize: 10.5, color: C.lbl, whiteSpace: "nowrap" }}>{dateLine}</span>
+                          </div>
+                        </td>
                         {row.vals.slice(0, funds.length).map((v, i) => {
-                          const col = v === "●" || v === "●●" ? "#166534" : v === "◐" ? "#D97706" : v === "✕" ? "#991B1B" : C.bdrMd;
+                          // ▨ = Withheld (manager filed for confidential treatment — a position exists
+                          // but is delayed), deliberately distinct from ◯ Absent (no reportable position).
+                          const col = v === "●" || v === "●●" ? "#166534" : v === "◐" ? "#D97706" : v === "✕" ? "#991B1B" : v === "▨" ? "#475569" : C.bdrMd;
                           return <td key={i} style={{ textAlign: "center", padding: "9px 8px", color: col, fontSize: 17, borderBottom: "1px solid " + C.bdr }}>{v}</td>;
                         })}
                         <td style={{ padding: "9px 8px", color: C.muted, fontSize: 12, borderBottom: "1px solid " + C.bdr }}>{row.note}</td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
               <div style={{ display: "flex", gap: 16, marginTop: 10, flexWrap: "wrap" }}>
-                {[["#166534","● Active"],["#D97706","◐ Partial"],["#991B1B","✕ Short/exit"],[C.bdrMd,"◯ Absent"]].map(([col, lbl]) => (
+                {[["#166534","● Active"],["#D97706","◐ Partial"],["#991B1B","✕ Short/exit"],[C.bdrMd,"◯ Absent"],["#475569","▨ Withheld"]].map(([col, lbl]) => (
                   <div key={lbl} style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 13, color: C.muted }}>
                     <span style={{ color: col, fontSize: 15 }}>{lbl.charAt(0)}</span>{lbl.slice(2)}
                   </div>
@@ -5678,7 +5687,7 @@ export default function App() {
               </div>
               <div style={{ marginTop: 12, padding: "12px 14px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8 }}>
                 <span style={{ color: C.amber, fontWeight: 700, fontSize: 13 }}>⚠️ The signal that matters: </span>
-                <span style={{ color: C.amber, fontSize: 14, lineHeight: 1.65 }}>Goldman's dramatic round-trip — 15% (pre-war) → 30% (March peak) → 15% (June post-deal) — shows how oil-driven the near-term risk was. Post peace deal, 2026 recession odds have broadly normalized. The more important signal is 2027: Kalshi at 41% suggests markets expect delayed reckoning from debt refinancing at 5-7%, $1.3T consumer revolving credit balances, and corporate capex compression. New risk to monitor: half of FOMC officials penciled in rate hikes at June meeting — BofA expects 3 hikes, Deutsche Bank expects 2. If hikes materialize, recession risk reprices sharply higher.</span>
+                <span style={{ color: C.amber, fontSize: 14, lineHeight: 1.65 }}>Goldman's dramatic round-trip — 15% (pre-war) → 30% (March peak) → 15% (June post-deal) — shows how oil-driven the near-term risk was. Post peace deal, 2026 recession odds have broadly normalized. The more important signal is 2027: Kalshi at {recKalshi2027 != null ? recKalshi2027 : 41}% (the live market) suggests markets expect delayed reckoning from debt refinancing at 5-7%, $1.3T consumer revolving credit balances, and corporate capex compression — still the higher of the two horizons. New risk to monitor: half of FOMC officials penciled in rate hikes at June meeting — BofA expects 3 hikes, Deutsche Bank expects 2. If hikes materialize, recession risk reprices sharply higher.</span>
               </div>
             </Card>
 
