@@ -280,6 +280,47 @@ export default async function handler(req, res) {
     if (!r.ok) { console.error("Kalshi market status", r.status, ticker); return null; }
     return (await r.json())?.market || null;
   }
+  // All open Kalshi "recession" markets, discovered ONCE and shared by both year rows (memoized
+  // promise). Two strategies: (1) the known recession SERIES tickers — fast, one call each — and
+  // if none resolve (Kalshi renames series between cycles), (2) page the full open-events list and
+  // keep any event whose title/category mentions "recession". Strategy 2 needs no ticker at all, so
+  // it survives a rename. Returns a flat [{...market, _eventTitle}] list (empty on total failure).
+  let _kalshiRecPromise = null;
+  function kalshiRecessionMarkets() {
+    if (_kalshiRecPromise) return _kalshiRecPromise;
+    _kalshiRecPromise = (async () => {
+      const reRec = /recession/i;
+      const flat = (evs) => evs.flatMap(e => (e.markets || []).map(m => ({ ...m, _eventTitle: e.title || "" })));
+      // Strategy 1 — known series tickers.
+      const seriesCandidates = [process.env.KALSHI_RECESSION_SERIES, "KXRECESSION", "KXRECSSNBER", "RECESSION", "RECSSNBER"].filter(Boolean);
+      for (const s of seriesCandidates) {
+        try {
+          const r = await fetch(`${KALSHI_BASE}/events?series_ticker=${encodeURIComponent(s)}&status=open&with_nested_markets=true&limit=200`, kOpts);
+          if (!r.ok) continue;
+          const ms = flat((await r.json())?.events || []);
+          if (ms.length) { console.log("Kalshi: recession series", s, "→", ms.length, "markets"); return ms; }
+        } catch { /* try next candidate */ }
+      }
+      // Strategy 2 — page all open events (bounded), keep recession ones by title/category.
+      const out = []; let cursor = "";
+      for (let page = 0; page < 10; page++) {
+        let j;
+        try {
+          const r = await fetch(`${KALSHI_BASE}/events?status=open&with_nested_markets=true&limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`, kOpts);
+          if (!r.ok) { console.error("Kalshi events page status", r.status); break; }
+          j = await r.json();
+        } catch (e) { console.error("Kalshi events page error", e.message); break; }
+        for (const e of (j?.events || [])) {
+          if (reRec.test(`${e.title || ""} ${e.sub_title || ""} ${e.category || ""}`)) out.push(...flat([e]));
+        }
+        cursor = j?.cursor || "";
+        if (!cursor) break;
+      }
+      console.log("Kalshi: recession events scan →", out.length, "markets");
+      return out;
+    })();
+    return _kalshiRecPromise;
+  }
   async function fetchKalshiRecession(year) {
     // A live market's price is current as of THIS fetch — close_time is the settlement date, not
     // an as-of, so stamping the fetch date is the honest freshness signal (and keeps the row out
@@ -293,23 +334,13 @@ export default async function handler(req, res) {
         const c = kalshiCents(m);
         if (c != null) return { probability: Math.round(c), asOf: todayIso, ticker: pinned, discovered: false };
       }
-      // 2) Discovery — walk the recession series' open events and match the settlement year.
-      //    Kalshi's newer series are prefixed "KX"; we try a few known spellings (env override
-      //    first) and stop at the first that returns markets.
-      const seriesCandidates = [process.env.KALSHI_RECESSION_SERIES, "KXRECESSION", "RECESSION", "RECSSNBER"].filter(Boolean);
-      let markets = [];
-      for (const s of seriesCandidates) {
-        const r = await fetch(`${KALSHI_BASE}/events?series_ticker=${encodeURIComponent(s)}&status=open&with_nested_markets=true&limit=200`, kOpts);
-        if (!r.ok) continue;
-        const evs = (await r.json())?.events || [];
-        const ms = evs.flatMap(e => (e.markets || []).map(m => ({ ...m, _eventTitle: e.title || "" })));
-        if (ms.length) { markets = ms; break; }
-      }
+      // 2) Discovery — filter the shared recession-market list to the target settlement year.
+      const markets = await kalshiRecessionMarkets();
       if (!markets.length) { console.error("Kalshi: no recession markets discovered for", year); return null; }
       const ys = String(year);
       // Prefer a market that settles in the target year; fall back to one whose title names the year.
       const byYear = markets.filter(m => (m.close_time || "").slice(0, 4) === ys);
-      const byTitle = markets.filter(m => `${m.title || ""} ${m.subtitle || ""} ${m._eventTitle}`.includes(ys));
+      const byTitle = markets.filter(m => `${m.title || ""} ${m.subtitle || ""} ${m.yes_sub_title || ""} ${m._eventTitle}`.includes(ys));
       const pool = (byYear.length ? byYear : byTitle);
       if (!pool.length) { console.error("Kalshi: no", year, "recession market among", markets.length); return null; }
       // Among candidates take the most-traded (deepest, most reliable price).
