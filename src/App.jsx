@@ -1764,7 +1764,9 @@ function mergeRecessionSources(statics, feeds = {}, manual = {}) {
     }
     const auto = feeds[key];
     if (auto && auto.probability != null) {
-      return { ...r, probability: fmtPct(auto.probability), asOf: auto.asOf || r.asOf, source: "auto" };
+      // Live rows carry their OWN note ("Live real-money market…", "Model-derived…") so the row's
+      // static prose — written for the old hand-entered value — can't contradict the fresh number.
+      return { ...r, probability: fmtPct(auto.probability), asOf: auto.asOf || r.asOf, notes: auto.note || r.notes, source: "auto" };
     }
     return { ...r, source: "static" };
   });

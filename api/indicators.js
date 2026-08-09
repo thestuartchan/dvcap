@@ -332,7 +332,7 @@ export default async function handler(req, res) {
       if (pinned) {
         const m = await fetchKalshiMarket(pinned);
         const c = kalshiCents(m);
-        if (c != null) return { probability: Math.round(c), asOf: todayIso, ticker: pinned, discovered: false };
+        if (c != null) return { probability: Math.round(c), asOf: todayIso, ticker: pinned, discovered: false, note: `Live real-money market (CFTC-regulated), auto-refreshed. Market-implied recession probability from ${pinned}.` };
       }
       // 2) Discovery — filter the shared recession-market list to the target settlement year.
       const markets = await kalshiRecessionMarkets();
@@ -348,7 +348,7 @@ export default async function handler(req, res) {
       const m = pool[0];
       const c = kalshiCents(m);
       if (c == null) return null;
-      return { probability: Math.round(c), asOf: todayIso, ticker: m.ticker || null, discovered: true };
+      return { probability: Math.round(c), asOf: todayIso, ticker: m.ticker || null, discovered: true, note: `Live real-money market (CFTC-regulated), auto-refreshed. Market-implied recession probability${m.ticker ? ` from ${m.ticker}` : ""}.` };
     } catch (e) { console.error("Kalshi discovery error", e.message); return null; }
   }
 
@@ -379,7 +379,7 @@ export default async function handler(req, res) {
         if (r.ok) {
           const m = (await r.json())?.[0];
           const yes = pmYesPrice(m);
-          if (yes != null) return { probability: Math.round(yes * 100), asOf: (m.updatedAt || "").slice(0, 10) || todayIso, slug: pinnedSlug, discovered: false };
+          if (yes != null) return { probability: Math.round(yes * 100), asOf: (m.updatedAt || "").slice(0, 10) || todayIso, slug: pinnedSlug, discovered: false, note: "Live market-implied probability, auto-refreshed from Polymarket." };
         }
       }
       // 2) Discovery — collect candidate markets two ways and keep recession-for-year ones.
@@ -403,7 +403,7 @@ export default async function handler(req, res) {
       if (!pool.length) { console.error("Polymarket: no", year, "recession market discovered"); return null; }
       pool.sort((a, b) => (parseFloat(b.volumeNum || b.volume) || 0) - (parseFloat(a.volumeNum || a.volume) || 0));
       const m = pool[0];
-      return { probability: Math.round(pmYesPrice(m) * 100), asOf: (m.updatedAt || "").slice(0, 10) || todayIso, slug: m.slug || null, question: m.question || null, discovered: true };
+      return { probability: Math.round(pmYesPrice(m) * 100), asOf: (m.updatedAt || "").slice(0, 10) || todayIso, slug: m.slug || null, question: m.question || null, discovered: true, note: `Live market-implied probability, auto-refreshed from Polymarket${m.question ? ` — "${String(m.question).slice(0, 120)}"` : ""}.` };
     } catch (e) { console.error("Polymarket discovery error", e.message); return null; }
   }
 
@@ -431,7 +431,7 @@ export default async function handler(req, res) {
       // NY Fed averages the spread over the month; use the trailing-month mean of daily values.
       const monthAvg = valid.slice(0, 22).reduce((s, o) => s + o.value, 0) / Math.min(22, valid.length);
       const prob = normCdf(-0.5333 - 0.6330 * monthAvg) * 100;
-      return { probability: Math.round(prob), asOf: valid[0].date, spread: +monthAvg.toFixed(2) };
+      return { probability: Math.round(prob), asOf: valid[0].date, spread: +monthAvg.toFixed(2), note: `Model-derived (Estrella–Mishkin probit) from the current 10Y-3M spread (${monthAvg.toFixed(2)} ppt), auto-refreshed. Model estimate — may differ slightly from the NY Fed's latest published re-estimate.` };
     } catch (e) { console.error("NY Fed yield-curve error", e.message); return null; }
   }
 
