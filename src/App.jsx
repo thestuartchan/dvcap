@@ -4723,9 +4723,15 @@ export default function App() {
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: "100%" }}>
                     {sorted.map((a, i) => (
                       <button key={a.id} onClick={() => setActiveAsset(a)} style={{
+                        // All-longhand borders — a `border` shorthand toggling on selection was
+                        // dropping the constant 4px `borderLeft` accent on click. See fund selector.
                         background: activeAsset.id === a.id ? a.bg : C.surf,
-                        border: "1.5px solid " + (activeAsset.id === a.id ? a.color : C.bdr),
-                        borderLeft: "4px solid " + a.color,
+                        borderStyle: "solid",
+                        borderTopWidth: 1.5, borderRightWidth: 1.5, borderBottomWidth: 1.5, borderLeftWidth: 4,
+                        borderTopColor: activeAsset.id === a.id ? a.color : C.bdr,
+                        borderRightColor: activeAsset.id === a.id ? a.color : C.bdr,
+                        borderBottomColor: activeAsset.id === a.id ? a.color : C.bdr,
+                        borderLeftColor: a.color,
                         borderRadius: 10, padding: "10px 12px", cursor: "pointer", textAlign: "left",
                         flex: "1 1 130px",
                         boxShadow: activeAsset.id === a.id ? "0 2px 10px " + a.color + "20" : "none",
@@ -4807,9 +4813,15 @@ export default function App() {
                       const rankVal = p[rankKey] || i + 1;
                       return (
                         <button key={p.category} onClick={() => setActiveIncome(p)} style={{
+                          // All-longhand borders — see fund/asset selectors; the shorthand+longhand
+                          // mix dropped the 4px left accent on click.
                           background: activeIncome.category === p.category ? p.bg : C.surf,
-                          border: "1.5px solid " + (activeIncome.category === p.category ? p.color + "60" : C.bdr),
-                          borderLeft: "4px solid " + p.color,
+                          borderStyle: "solid",
+                          borderTopWidth: 1.5, borderRightWidth: 1.5, borderBottomWidth: 1.5, borderLeftWidth: 4,
+                          borderTopColor: activeIncome.category === p.category ? p.color + "60" : C.bdr,
+                          borderRightColor: activeIncome.category === p.category ? p.color + "60" : C.bdr,
+                          borderBottomColor: activeIncome.category === p.category ? p.color + "60" : C.bdr,
+                          borderLeftColor: p.color,
                           borderRadius: 10, padding: "10px 12px", cursor: "pointer", textAlign: "left", flex: "1 1 120px",
                         }}>
                           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
@@ -5035,11 +5047,18 @@ export default function App() {
 
             {/* Fund selector — single row, flex-fit with horizontal-scroll fallback (Fix 1) */}
             <div className="mwd-smartmoney-row">
+              {/* Per-side longhand borders ONLY — the `border` shorthand + `borderLeft` longhand
+                  mix dropped the 4px colour accent on click (React clobbers the longhand when it
+                  updates the shorthand). All-longhand can't be clobbered. */}
               {funds.map(f => (
                 <button key={f.id} onClick={() => setSelectedFund(f)} style={{
                   background: selectedFund.id === f.id ? f.color + "12" : C.surf,
-                  border: "1.5px solid " + (selectedFund.id === f.id ? f.color : C.bdr),
-                  borderLeft: "4px solid " + f.color,
+                  borderStyle: "solid",
+                  borderTopWidth: 1.5, borderRightWidth: 1.5, borderBottomWidth: 1.5, borderLeftWidth: 4,
+                  borderTopColor: selectedFund.id === f.id ? f.color : C.bdr,
+                  borderRightColor: selectedFund.id === f.id ? f.color : C.bdr,
+                  borderBottomColor: selectedFund.id === f.id ? f.color : C.bdr,
+                  borderLeftColor: f.color,
                   borderRadius: 10, padding: "12px 13px", textAlign: "left", cursor: "pointer",
                 }}>
                   <div style={{ color: f.color, fontWeight: 800, fontSize: 13, lineHeight: 1.3, marginBottom: 3, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{f.name}</div>
