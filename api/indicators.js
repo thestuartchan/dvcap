@@ -268,13 +268,25 @@ export default async function handler(req, res) {
   // (KALSHI_RECESSION_2026 / _2027) — that wins when set, e.g. to force a specific contract.
   const KALSHI_BASE = "https://api.elections.kalshi.com/trade-api/v2";
   const kOpts = { headers: { Accept: "application/json", "User-Agent": "dvcap" } };
-  // Probability from a market object: last traded price (cents 0–100), else the yes bid/ask mid.
+  // Probability (0–100) from a Kalshi market. The live API returns prices as *_dollars STRINGS
+  // in [0,1] — e.g. last_price_dollars "0.0700" = 7% — so those are ×100. Older/alternate shapes
+  // used integer-cents (last_price/yes_bid/yes_ask, already 0–100); both are supported. Prefer the
+  // last trade, then the yes bid/ask midpoint.
   function kalshiCents(m) {
     if (!m) return null;
-    let c = Number.isFinite(+m.last_price) && +m.last_price > 0 ? +m.last_price : null;
-    if (c == null && Number.isFinite(+m.yes_bid) && Number.isFinite(+m.yes_ask)) c = (+m.yes_bid + +m.yes_ask) / 2;
-    return c;
+    const num = (v) => (v == null || v === "" || !Number.isFinite(+v)) ? null : +v;
+    const lastD = num(m.last_price_dollars);
+    if (lastD != null && lastD > 0) return lastD * 100;
+    const bidD = num(m.yes_bid_dollars), askD = num(m.yes_ask_dollars);
+    if ((bidD != null && bidD > 0) || (askD != null && askD > 0)) return ((bidD || 0) + (askD || 0)) / (bidD != null && askD != null ? 2 : 1) * 100;
+    const lastC = num(m.last_price);
+    if (lastC != null && lastC > 0) return lastC;
+    const bidC = num(m.yes_bid), askC = num(m.yes_ask);
+    if (bidC != null && askC != null) return (bidC + askC) / 2;
+    return null;
   }
+  // Traded-depth score for ranking markets — string _fp fields on the live API, plain on the old one.
+  const kalshiVol = (m) => (+m.volume_fp || +m.volume || 0) + (+m.open_interest_fp || +m.open_interest || 0);
   async function fetchKalshiMarket(ticker) {
     const r = await fetch(`${KALSHI_BASE}/markets/${encodeURIComponent(ticker)}`, kOpts);
     if (!r.ok) { console.error("Kalshi market status", r.status, ticker); return null; }
@@ -291,7 +303,7 @@ export default async function handler(req, res) {
   const kalshiNote = (tk) => `Live real-money market (CFTC-regulated), auto-refreshed. Market-implied recession probability${tk ? ` from ${tk}` : ""}.`;
   // Most-traded market carrying a usable price, from a list.
   const kalshiBest = (ms) => (ms || []).filter(m => kalshiCents(m) != null)
-    .sort((a, b) => ((+b.volume || 0) + (+b.open_interest || 0)) - ((+a.volume || 0) + (+a.open_interest || 0)))[0] || null;
+    .sort((a, b) => kalshiVol(b) - kalshiVol(a))[0] || null;
   // All open Kalshi "recession" markets, discovered ONCE and shared by both year rows (memoized
   // promise). Two strategies: (1) the known recession SERIES tickers — fast, one call each — and
   // if none resolve (Kalshi renames series between cycles), (2) page the full open-events list and
