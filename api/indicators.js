@@ -280,6 +280,18 @@ export default async function handler(req, res) {
     if (!r.ok) { console.error("Kalshi market status", r.status, ticker); return null; }
     return (await r.json())?.market || null;
   }
+  // Markets under a Kalshi EVENT ticker (a binary event like KXRECSSNBER-26 usually has one).
+  async function fetchKalshiEventMarkets(eventTicker) {
+    try {
+      const r = await fetch(`${KALSHI_BASE}/markets?event_ticker=${encodeURIComponent(eventTicker)}&limit=100`, kOpts);
+      if (!r.ok) { console.error("Kalshi event-markets status", r.status, eventTicker); return []; }
+      return (await r.json())?.markets || [];
+    } catch (e) { console.error("Kalshi event-markets error", e.message); return []; }
+  }
+  const kalshiNote = (tk) => `Live real-money market (CFTC-regulated), auto-refreshed. Market-implied recession probability${tk ? ` from ${tk}` : ""}.`;
+  // Most-traded market carrying a usable price, from a list.
+  const kalshiBest = (ms) => (ms || []).filter(m => kalshiCents(m) != null)
+    .sort((a, b) => ((+b.volume || 0) + (+b.open_interest || 0)) - ((+a.volume || 0) + (+a.open_interest || 0)))[0] || null;
   // All open Kalshi "recession" markets, discovered ONCE and shared by both year rows (memoized
   // promise). Two strategies: (1) the known recession SERIES tickers — fast, one call each — and
   // if none resolve (Kalshi renames series between cycles), (2) page the full open-events list and
@@ -326,29 +338,32 @@ export default async function handler(req, res) {
     // an as-of, so stamping the fetch date is the honest freshness signal (and keeps the row out
     // of the staleness flag it doesn't deserve).
     const todayIso = new Date().toISOString().slice(0, 10);
+    const yy = String(year).slice(-2);   // 2026 -> "26", the Kalshi event-ticker suffix
     try {
       // 1) Operator pin — an exact market ticker via env always wins.
       const pinned = process.env[`KALSHI_RECESSION_${year}`];
       if (pinned) {
-        const m = await fetchKalshiMarket(pinned);
-        const c = kalshiCents(m);
-        if (c != null) return { probability: Math.round(c), asOf: todayIso, ticker: pinned, discovered: false, note: `Live real-money market (CFTC-regulated), auto-refreshed. Market-implied recession probability from ${pinned}.` };
+        const c = kalshiCents(await fetchKalshiMarket(pinned));
+        if (c != null) return { probability: Math.round(c), asOf: todayIso, ticker: pinned, discovered: false, note: kalshiNote(pinned) };
       }
-      // 2) Discovery — filter the shared recession-market list to the target settlement year.
+      // 2) Known convention. The recession market URL is /markets/kxrecssnber/recession/
+      //    kxrecssnber-26, i.e. event ticker KXRECSSNBER-<yy>. Read that event's market directly —
+      //    deterministic, one call, no year-guessing. Series overridable via KALSHI_RECESSION_SERIES.
+      const series = process.env.KALSHI_RECESSION_SERIES || "KXRECSSNBER";
+      const evBest = kalshiBest(await fetchKalshiEventMarkets(`${series}-${yy}`));
+      if (evBest) return { probability: Math.round(kalshiCents(evBest)), asOf: todayIso, ticker: evBest.ticker || `${series}-${yy}`, discovered: true, note: kalshiNote(evBest.ticker || `${series}-${yy}`) };
+      // 3) Backstop — scan all open recession events (survives a series rename) and match the year
+      //    by TICKER SUFFIX (-<yy>) first, since the event settles when NBER declares, not in-year,
+      //    so close_time/title carry the wrong year or none. Then fall back to close_time/title.
       const markets = await kalshiRecessionMarkets();
       if (!markets.length) { console.error("Kalshi: no recession markets discovered for", year); return null; }
       const ys = String(year);
-      // Prefer a market that settles in the target year; fall back to one whose title names the year.
+      const byTk = markets.filter(m => (m.ticker || "").toUpperCase().endsWith(`-${yy}`));
       const byYear = markets.filter(m => (m.close_time || "").slice(0, 4) === ys);
       const byTitle = markets.filter(m => `${m.title || ""} ${m.subtitle || ""} ${m.yes_sub_title || ""} ${m._eventTitle}`.includes(ys));
-      const pool = (byYear.length ? byYear : byTitle);
-      if (!pool.length) { console.error("Kalshi: no", year, "recession market among", markets.length); return null; }
-      // Among candidates take the most-traded (deepest, most reliable price).
-      pool.sort((a, b) => (+b.volume || 0) - (+a.volume || 0) || (+b.open_interest || 0) - (+a.open_interest || 0));
-      const m = pool[0];
-      const c = kalshiCents(m);
-      if (c == null) return null;
-      return { probability: Math.round(c), asOf: todayIso, ticker: m.ticker || null, discovered: true, note: `Live real-money market (CFTC-regulated), auto-refreshed. Market-implied recession probability${m.ticker ? ` from ${m.ticker}` : ""}.` };
+      const best = kalshiBest(byTk.length ? byTk : byYear.length ? byYear : byTitle);
+      if (!best) { console.error("Kalshi: no", year, "recession market among", markets.length); return null; }
+      return { probability: Math.round(kalshiCents(best)), asOf: todayIso, ticker: best.ticker || null, discovered: true, note: kalshiNote(best.ticker) };
     } catch (e) { console.error("Kalshi discovery error", e.message); return null; }
   }
 
