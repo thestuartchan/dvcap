@@ -180,9 +180,9 @@
     },
     {
       "date": "2026-08-12",
-      "stagflation_p": 55,
+      "stagflation_p": 65,
       "reflationary_p": 5,
-      "deflationary_p": 35,
+      "deflationary_p": 25,
       "inflationary_p": 5,
       "hawkish_repricing": "INSUFFICIENT_DATA",
       "live_regime": "stag",
@@ -191,9 +191,9 @@
       "hyg_chg": -0.04,
       "hyg_qqq_divergence": 0.86,
       "inputs": {
-        "weightedRecessionProb": 17.805585750171268,
+        "weightedRecessionProb": 14.253199120284215,
         "cpi": 3.46353,
-        "kalshi2027": 41,
+        "kalshi2027": 26,
         "tape": {
           "gold": "up",
           "tlt": "up",
@@ -206,13 +206,13 @@
           "breakevenBp": -1
         },
         "ladderSpread": -1,
-        "u3": 4.2,
-        "empPop": 59,
-        "oas": 2.73,
-        "tenY": 4.63,
-        "twoY": 4.2
+        "u3": 4.1,
+        "empPop": 58.9,
+        "oas": 2.7,
+        "tenY": 4.72,
+        "twoY": 4.25
       },
-      "loggedAt": "2026-08-12T07:22:16.075Z"
+      "loggedAt": "2026-08-12T07:22:16.850Z"
     }
   ]
 }
