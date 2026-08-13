@@ -223,7 +223,7 @@
       "hawkish_repricing": "INSUFFICIENT_DATA",
       "live_regime": "stag",
       "view_regime": "stag",
-      "pinned": false,
+      "pinned": true,
       "hyg_chg": 0.04,
       "hyg_qqq_divergence": 0.38,
       "inputs": {
@@ -238,8 +238,8 @@
           "spy": "down",
           "qqq": "down",
           "iwm": "up",
-          "btc": "down",
-          "breakevenBp": null
+          "btc": "up",
+          "breakevenBp": -2
         },
         "ladderSpread": 0.58,
         "u3": 4.1,
@@ -248,7 +248,7 @@
         "tenY": 4.72,
         "twoY": 4.25
       },
-      "loggedAt": "2026-08-13T17:19:26.119Z"
+      "loggedAt": "2026-08-13T18:16:03.201Z"
     }
   ]
 }
