@@ -10,6 +10,7 @@ import { interventionAnnotation } from "../lib/fx.js";
 import { unInversionPhase, yieldCurveStatus, NORMAL_SPREAD } from "../lib/yieldcurve.js";
 import { pendingReconciliations, reconStats } from "../lib/recon.js";
 import { deriveRegimeProbabilities, CONTESTED_GAP } from "../lib/regimeProb.js";
+import { minersPairImplication } from "../lib/regimeState.js";
 import { STATUS, creditStatus, deriveAction, headerSignal, STAGES } from "../lib/status.js";
 import { observationAge } from "../lib/gates.js";
 import { trend as trendOf } from "../lib/series.js";
@@ -235,6 +236,23 @@ const TICKER_TRIGGERS = {
   SMH:"AI capex guidance miss OR semi earnings disappointment.",
 };
 
+// ─── CROSS-TAB ASSET RATING INVARIANT ─────────────────────────────────────────
+// One definition of WHY gold miners are not a gold hedge, referenced by both the Macro regime
+// lists and the Insurance matrix so the two tabs can never contradict again. Miners once read as
+// a "best asset" under Stagflation on Macro while the Insurance matrix rated GDX/GDXJ ⚠️ — same
+// regime, same asset, opposite guidance. Resolved toward the Insurance caution.
+//
+// INVARIANT: any asset that appears in BOTH a Macro regime best/worst list AND an Insurance
+// SCENARIO_MATRIX column must carry the SAME rating. Audit at time of writing — all consistent:
+//   • Gold miners  — Stagflation: Macro no longer lists as "best" (see below); Insurance ⚠️.  ✓ fixed
+//                    Inflationary Boom / Debasement: Macro best · Insurance ✅✅.               ✓
+//   • TLT          — Stag: Macro worst · Insurance ❌ | Def: Macro best · Insurance ✅✅.        ✓
+//   • Cash/T-bills — Def: Macro best · Insurance ✅✅ | Debasement: Macro worst · Insurance ⚠️.  ✓
+//   • Gold (GLD)   — Def: Macro best · Insurance ✅.                                            ✓
+//   • Staples/XLP  — Stag: Macro best · Insurance ✅✅ | Def: Macro best · Insurance ✅.          ✓
+//   • Energy/BTC/Commodities — Debasement: Macro best · Insurance ✅✅ | Def: Macro worst/❌.     ✓
+const GOLD_MINERS_WHY = "Gold miners are equities with operating leverage to gold, not gold itself — they carry equity beta and are sold in liquidity events (GDX fell ~70% in 2008). They express a gold view; they do not hedge one. The stagflation hedge is physical gold (GLD); miners are a cautioned, leveraged expression of it.";
+
 // ─── INSURANCE PHASE NOTES ────────────────────────────────────────────────────
 // Three-state crash-scenario overrides (onset / deflationary / inflationary) for
 // the phase-sensitive buckets. The first character of each note drives colour:
@@ -246,7 +264,7 @@ const PHASE_NOTES = {
     liquidity:    "❌ LIQUIDITY PHASE: Miners are sold hard in a dash-for-cash — GDX fell ~70% in 2008 as equity beta and gold's liquidity-event drop compounded. Do not hold miners through the drawdown; wait for the policy response to become visible.",
     def:          "GLD outperforms miners in deflation — prefer GLD over GDX here. ⚠️ RESOLUTION — DEFLATIONARY: Gold moderate in deflation, miners underperform gold. Only add after Fed pivot signal confirmed.",
     inf:          "Both GLD and GDX/GDXJ win here — miners provide 2-3× leverage to gold price. ✅✅ RESOLUTION — DEBASEMENT: This is where miners shine. Gold up 20% = miners up 40–60%. Add aggressively after VIX peak.",
-    stag:         "GLD grinds higher steadily. Miners amplify but with more volatility. ⚠️ RESOLUTION — STAGFLATION: Gold grinds higher but without the explosive move of a debasement crash. Miners underperform in a slow grind. Hold moderate — don't over-allocate waiting for a spike that may take years.",
+    stag:         "GLD grinds higher steadily. Miners amplify but with more volatility. ⚠️ RESOLUTION — STAGFLATION: Gold grinds higher but without the explosive move of a debasement crash. Miners underperform in a slow grind, carry equity beta, and are sold in liquidity events — they express a gold view, they do not hedge one. Physical gold (GLD) is the hedge; hold miners moderate as a cautioned leveraged expression, don't over-allocate waiting for a spike that may take years.",
     hawkish:      "❌ HAWKISH RATES REPRICING: Gold −2% and miners worse when real yields rise and gold's zero-yield bid competes with cash. Not the hedge here — the front end is.",
   },
   btc: {
@@ -759,7 +777,7 @@ const REGIMES = [
   {
     id:"stag",label:"Stagflation",prob:45,
     desc:"High inflation + slowing growth. Iran war oil shock, tariffs embedding in CPI, Fed trapped.",
-    best:["Gold Miners (GDX, AEM)","Consumer Staples (XLP, PG, KO)","Energy Pipelines (EPD, ET)","Farmland","Short-duration T-bills"],
+    best:["Gold / Physical (GLD)","Consumer Staples (XLP, PG, KO)","Energy Pipelines (EPD, ET)","Farmland","Short-duration T-bills"],
     worst:["Long-Duration Bonds (TLT)","Growth / high-multiple tech","Unprofitable tech"],
     trigger:"Supply shock resolves → reflationary growth  OR  demand destruction → deflationary recession",
   },
@@ -5243,6 +5261,29 @@ export default function App() {
                 </Card>
               </div>
             </div>
+
+            {/* P1/P2 — gold-miners resolution. Miners left the Stagflation "Best" list (they're
+                cautioned, matching the Insurance tab), and the F2 gold pair says which of the two
+                miner regimes is live right now. Only shown under Stagflation — the regime where the
+                two tabs used to disagree. */}
+            {activeRegime.id === "stag" && (() => {
+              const gp = pbData?.us?.marketRegime?.goldPair;
+              const mp = gp?.available ? minersPairImplication(gp.reading) : null;
+              return (
+                <div style={{ padding: "11px 14px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 10, fontSize: 13, lineHeight: 1.6 }}>
+                  <span style={{ color: C.amber, fontWeight: 800 }}>⚠️ Gold miners are not on the Best list as a hedge. </span>
+                  <span style={{ color: C.amber }}>{GOLD_MINERS_WHY} Same ⚠️ rating as the Insurance tab's GDX/GDXJ under stagflation — one definition, both tabs.</span>
+                  {mp && (
+                    <div style={{ marginTop: 7, color: mp.ok ? C.green : C.red, fontWeight: 700 }}>
+                      Gold pair live read — <b>{mp.live}</b>: {mp.text}
+                    </div>
+                  )}
+                  {gp && !gp.available && (
+                    <div style={{ marginTop: 7, color: C.lbl, fontSize: 12 }}>Gold pair unreadable right now: {gp.note}</div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* F.2 — credit is the master gauge and sits directly under regime. Reads the
                 Playbook payload (pbData.us) because OAS/HYG come from /api/playbook, not

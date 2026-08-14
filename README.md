@@ -16,6 +16,18 @@ These are enforced at build time by `scripts/*` in the `prebuild` step; they are
    from and how current it is (e.g. the recession table's per-row source tag + as-of, the 13F
    matrix's positions-as-of/filed dates, the 📡 live / ✍️ manual provenance badges).
 3. **Status colours come only from `lib/status.js`** — enforced by `scripts/check-status-tokens.mjs`.
+4. **One rating per asset across tabs.** Any asset that appears in both a Macro regime best/worst
+   list and an Insurance `SCENARIO_MATRIX` column must carry the same rating, from one definition
+   (see the cross-tab invariant + `GOLD_MINERS_WHY` in `src/App.jsx`). The gold-miners split —
+   "best" under Stagflation on Macro while ⚠️ on Insurance — is the case this prevents.
+
+## Deliberately NOT added
+
+Recorded so it isn't re-proposed. **No sentiment/flow surface for assets not held** — generic US
+retail ETF flow, S3 Partners retail imbalance, and similar. The Smart Money tab already covers
+institutional positioning; a second flow surface for un-held assets is noise the user would read
+but not act on. Flow panels are added only for held positions where the flow is the mechanism that
+moves the position (e.g. Korea/KOFIA for EWY, Southbound Stock Connect for SMIC 0981.HK).
 
 Currently, two official plugins are available:
 
