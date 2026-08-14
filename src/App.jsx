@@ -11,6 +11,7 @@ import { unInversionPhase, yieldCurveStatus, NORMAL_SPREAD } from "../lib/yieldc
 import { pendingReconciliations, reconStats } from "../lib/recon.js";
 import { deriveRegimeProbabilities, CONTESTED_GAP } from "../lib/regimeProb.js";
 import { minersPairImplication } from "../lib/regimeState.js";
+import { southboundTrend, southboundRead, sbStale } from "../lib/southbound.js";
 import { STATUS, creditStatus, deriveAction, headerSignal, STAGES } from "../lib/status.js";
 import { observationAge } from "../lib/gates.js";
 import { trend as trendOf } from "../lib/series.js";
@@ -3072,6 +3073,97 @@ function KoreaStressPanel({ korea }) {
   );
 }
 
+// Southbound Stock Connect — mainland flow into HK-listed names, hand-entered (no clean HKEX API;
+// see lib/southbound.js). Sits alongside the Korea/KOFIA flow panel — same class of metric, other
+// market. Tracks the daily aggregate net + SMIC 0981.HK specifically (SMIC ≈ a third of NLV and
+// trades as a China-policy bet; Southbound flow is the mechanism), with 5d/20d trends since single
+// days are noise. Self-fetches the manual store; a save 401s if unauthenticated (shown inline).
+function SouthboundPanel() {
+  const [series, setSeries] = useState([]);
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [agg, setAgg] = useState("");
+  const [smic, setSmic] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+  useEffect(() => {
+    fetch("/api/manual-entry").then(r => r.json()).then(j => setSeries(j.southbound?.series || [])).catch(() => {});
+  }, []);
+
+  const tAgg = southboundTrend(series, "aggregateNet");
+  const tSmic = southboundTrend(series, "smicNet");
+  const read = southboundRead(tAgg);
+  const latest = tAgg.latest;
+  const stale = latest ? sbStale(latest.date) : true;
+  const toneCol = read.tone === "green" ? C.green : read.tone === "amber" ? C.amber : C.muted;
+
+  async function save() {
+    if (!agg.trim() && !smic.trim()) { setMsg({ ok: false, text: "enter an aggregate or SMIC net" }); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) { setMsg({ ok: false, text: "date must be YYYY-MM-DD" }); return; }
+    setSaving(true); setMsg(null);
+    try {
+      const r = await fetch("/api/manual-entry", {
+        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+        body: JSON.stringify({ southbound: { date: date.trim(), aggregateNet: agg.trim() || null, smicNet: smic.trim() || null, notes: notes.trim() || null } }),
+      });
+      const j = await r.json();
+      if (r.ok) {
+        const fresh = await fetch("/api/manual-entry").then(x => x.json()).catch(() => null);
+        setSeries(fresh?.southbound?.series || []);
+        setAgg(""); setSmic(""); setNotes(""); setMsg({ ok: true, text: `Saved ${date}` });
+      } else setMsg({ ok: false, text: j.error || "save failed" });
+    } catch (e) { setMsg({ ok: false, text: String(e.message) }); }
+    setSaving(false);
+  }
+
+  const inp = { padding: "6px 9px", fontSize: 12, border: "1px solid " + C.bdrMd, borderRadius: 6, background: "#fff", color: C.text };
+  const win = (w) => `${w.sum > 0 ? "+" : ""}${w.sum} (${w.days}d, ${w.dir})`;
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <SLabel><span style={{ display: "inline-block", background: "#B91C1C", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 4px", borderRadius: 3, marginRight: 5 }}>HK</span>Southbound Stock Connect — mainland flow (SMIC 0981.HK)</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>manual · no clean HKEX feed</span>
+        <a href="https://www.hkex.com.hk/Mutual-Market/Stock-Connect/Statistics/Southbound?sc_lang=en" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: C.blue, textDecoration: "none", fontWeight: 700 }}>HKEX Southbound ↗</a>
+      </div>
+
+      {latest ? (
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 8 }}>
+          <div style={{ flex: "1 1 200px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, padding: "9px 12px" }}>
+            <div style={{ fontSize: 11, color: C.mid, fontWeight: 700 }}>Aggregate Southbound net (HKD bn)</div>
+            <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3, lineHeight: 1.6 }}>
+              Latest {latest.date}: <b style={{ color: latest.aggregateNet > 0 ? C.green : latest.aggregateNet < 0 ? C.red : C.muted }}>{latest.aggregateNet != null ? (latest.aggregateNet > 0 ? "+" : "") + latest.aggregateNet : "—"}</b>{stale && <span style={{ color: C.amber, fontWeight: 700 }}> · ⚠ stale</span>}<br />
+              5-day <b style={{ color: C.text }}>{win(tAgg.w5)}</b> · 20-day <b style={{ color: C.text }}>{win(tAgg.w20)}</b>
+            </div>
+          </div>
+          <div style={{ flex: "1 1 200px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, padding: "9px 12px" }}>
+            <div style={{ fontSize: 11, color: C.mid, fontWeight: 700 }}>SMIC 0981.HK Southbound net</div>
+            <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3, lineHeight: 1.6 }}>
+              Latest {tSmic.latest?.date || "—"}: <b style={{ color: (tSmic.latest?.smicNet ?? 0) > 0 ? C.green : (tSmic.latest?.smicNet ?? 0) < 0 ? C.red : C.muted }}>{tSmic.latest?.smicNet != null ? (tSmic.latest.smicNet > 0 ? "+" : "") + tSmic.latest.smicNet : "—"}</b><br />
+              5-day <b style={{ color: C.text }}>{win(tSmic.w5)}</b> · 20-day <b style={{ color: C.text }}>{win(tSmic.w20)}</b>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ fontSize: 12.5, color: C.lbl, marginBottom: 8 }}>No Southbound data entered yet — add the daily figures below.</div>
+      )}
+
+      <div style={{ fontSize: 12.5, color: toneCol, fontWeight: 600, lineHeight: 1.55, marginBottom: 10 }}>{read.text}</div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <input value={date} onChange={e => setDate(e.target.value)} placeholder="date YYYY-MM-DD" style={{ ...inp, flex: "1 1 120px", minWidth: 0 }} />
+        <input value={agg} onChange={e => setAgg(e.target.value)} placeholder="aggregate net (HKD bn)" style={{ ...inp, flex: "1 1 150px", minWidth: 0 }} />
+        <input value={smic} onChange={e => setSmic(e.target.value)} placeholder="SMIC net" style={{ ...inp, flex: "1 1 110px", minWidth: 0 }} />
+      </div>
+      <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="notes (optional)" style={{ ...inp, width: "100%", marginTop: 8, boxSizing: "border-box" }} />
+      <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <button onClick={save} disabled={saving} style={{ background: C.blue, color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 12.5, fontWeight: 800, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : "Save day"}</button>
+        <span style={{ fontSize: 11, color: C.lbl }}>{tAgg.nObs} day{tAgg.nObs === 1 ? "" : "s"} stored</span>
+        {msg && <span style={{ fontSize: 11.5, fontWeight: 700, color: msg.ok ? C.green : C.red }}>{msg.text}</span>}
+      </div>
+    </Card>
+  );
+}
+
 // Korea manual-entry: paste the KOFIA panel → preview (with the recompute-pct guard) →
 // Save (commits data/korea_kofia.json via /api/korea-save so Pre-Reads pick it up too).
 function KoreaManualEntry({ kofia, onSaved }) {
@@ -3511,6 +3603,10 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {/* Korea manual entry (KOFIA paste + 7709 units) — shown when Asia is active */}
           {regions.includes("asia") && byRegion.asia?.kofia &&
             <KoreaManualEntry kofia={byRegion.asia.kofia} onSaved={onRefresh} />}
+
+          {/* Southbound Stock Connect (SMIC mainland flow) — same class as the Korea flow panel,
+              shown alongside it when Asia is active. Self-fetches its own manual store. */}
+          {regions.includes("asia") && <SouthboundPanel />}
 
           {/* Names grid — one flat grid across active regions; sorted category → region →
               %chg with ★ leaders pinned per category. Geo badge shown in All view. */}

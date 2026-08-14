@@ -32,6 +32,8 @@ async function readStore() {
   store.oasRecon ||= [];
   store.intervention ??= null;
   store.recession ||= {};   // manual overrides for the Wall Street recession sources
+  store.southbound ||= { series: [] };   // HKEX Southbound Stock Connect daily flow (hand-entered)
+  store.southbound.series ||= [];
   return { store, sha: meta.sha };
 }
 
@@ -59,6 +61,7 @@ export default async function handler(req, res) {
         oasRecon: store.oasRecon.slice(-180),
         intervention: store.intervention,
         recession: store.recession,
+        southbound: { series: store.southbound.series.slice(-60) },
       });
     } catch (e) {
       return res.status(200).json({ fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, error: String(e?.message || e) });
@@ -73,7 +76,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'GITHUB_TOKEN / GITHUB_REPO not configured' });
   }
 
-  const { fedPath, oasRecon, intervention, recession } = req.body || {};
+  const { fedPath, oasRecon, intervention, recession, southbound } = req.body || {};
   const { store, sha } = await readStore();
   const saved = [];
 
@@ -167,6 +170,31 @@ export default async function handler(req, res) {
       };
       saved.push('recession:' + name);
     }
+  }
+
+  // ── Southbound Stock Connect daily flow ──
+  // One row per HK trading day: aggregate net (HKD bn, + = net buy) and the SMIC 0981.HK net.
+  // Upsert by date so a re-entry corrects rather than duplicates; the client computes 5d/20d
+  // trends from the series. No live HKEX feed is clean enough to trust — hand-entered like KOFIA.
+  if (southbound && southbound.date) {
+    const date = String(southbound.date).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(422).json({ error: `southbound.date '${southbound.date}' is not YYYY-MM-DD` });
+    }
+    const num = (v) => (v == null || v === '' || !Number.isFinite(+v)) ? null : +v;
+    const row = {
+      date,
+      aggregateNet: num(southbound.aggregateNet),  // HKD bn
+      smicNet: num(southbound.smicNet),            // SMIC 0981.HK Southbound net (mn shares or HKD — operator's unit)
+      notes: southbound.notes ? String(southbound.notes).slice(0, 300) : null,
+      enteredAt: new Date().toISOString(),
+    };
+    if (row.aggregateNet == null && row.smicNet == null) {
+      return res.status(422).json({ error: 'southbound needs at least an aggregateNet or smicNet number' });
+    }
+    store.southbound.series = [...store.southbound.series.filter(r => r.date !== date), row]
+      .sort((a, b) => a.date.localeCompare(b.date)).slice(-400);
+    saved.push('southbound:' + date);
   }
 
   if (!saved.length) return res.status(400).json({ error: 'nothing to save' });
