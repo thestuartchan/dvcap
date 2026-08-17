@@ -495,24 +495,39 @@ export default async function handler(req, res) {
   }
   async function fetchSmicAHPremium() {
     try {
-      const [a, h, cny, hkd] = await Promise.all([
-        fetchYahooDaily("688981.SS"), fetchYahooDaily("0981.HK"), fetchYahooDaily("CNY=X"), fetchYahooDaily("HKD=X"),
+      const [a, h, cross, cny, hkd] = await Promise.all([
+        fetchYahooDaily("688981.SS"), fetchYahooDaily("0981.HK"),
+        fetchYahooDaily("CNYHKD=X"),                          // direct HKD-per-CNY — no convention ambiguity
+        fetchYahooDaily("CNY=X"), fetchYahooDaily("HKD=X"),   // fallback: USDHKD / USDCNY
       ]);
-      if (!a || !h || !cny || !hkd) { console.error("SMIC A/H: a leg is missing (A-share likely absent)"); return null; }
-      const prem = (aCny, hHkd, usdcny, usdhkd) =>
-        (aCny != null && hHkd > 0 && usdcny > 0 && usdhkd > 0) ? +(((aCny * (usdhkd / usdcny)) / hHkd - 1) * 100).toFixed(1) : null;
-      const latest = prem(a.price, h.price, cny.price, hkd.price);
+      if (!a || !h) { console.error("SMIC A/H: A or H leg missing"); return null; }
+      // CNY→HKD: prefer the direct cross; only divide the two USD rates if the cross is unavailable.
+      const fxAt = (d) => {
+        if (cross && cross.map[d] > 0) return cross.map[d];
+        if (cny && hkd && cny.map[d] > 0 && hkd.map[d] > 0) return hkd.map[d] / cny.map[d];
+        return null;
+      };
+      const fxNow = (cross && cross.price > 0) ? cross.price
+        : (cny && hkd && cny.price > 0 && hkd.price > 0) ? hkd.price / cny.price : null;
+      if (fxNow == null) { console.error("SMIC A/H: no CNY→HKD fx"); return null; }
+      const prem = (aCny, hHkd, fx) => (aCny != null && hHkd > 0 && fx > 0) ? +(((aCny * fx) / hHkd - 1) * 100).toFixed(1) : null;
+      const latest = prem(a.price, h.price, fxNow);
       if (latest == null) return null;
       // Premium history over the intersection of trading dates (A and H calendars differ).
       const series = [];
       for (const d of Object.keys(a.map)) {
-        if (h.map[d] != null && cny.map[d] != null && hkd.map[d] != null) {
-          const p = prem(a.map[d], h.map[d], cny.map[d], hkd.map[d]);
+        const fx = fxAt(d);
+        if (h.map[d] != null && fx != null) {
+          const p = prem(a.map[d], h.map[d], fx);
           if (p != null) series.push({ date: d, premium: p });
         }
       }
       series.sort((x, y) => x.date.localeCompare(y.date));
-      return { premium: latest, aPrice: a.price, hPrice: h.price, cnyHkd: +(hkd.price / cny.price).toFixed(4), asOf: a.asOf || h.asOf, series: series.slice(-30) };
+      return {
+        premium: latest, aPrice: a.price, hPrice: h.price, cnyHkd: +fxNow.toFixed(4),
+        fxSource: (cross && cross.price > 0) ? "CNYHKD=X" : "USDHKD/USDCNY",
+        asOf: a.asOf || h.asOf, series: series.slice(-30),
+      };
     } catch (e) { console.error("SMIC A/H error", e.message); return null; }
   }
 
