@@ -462,6 +462,52 @@ export default async function handler(req, res) {
     } catch (e) { console.error("NY Fed yield-curve error", e.message); return null; }
   }
 
+  // ── SMIC A/H premium — the mainland-sentiment gauge for the China-policy trade ──────────────
+  // SMIC is dual-listed: 688981.SS (Shanghai STAR, priced in CNY) and 0981.HK (priced in HKD). The
+  // premium mainland investors pay for the A-share over the H-share is a real-time, market-priced
+  // read on mainland enthusiasm for SMIC specifically — better than a sticky Connect-holding %.
+  //   premium% = ( A_cny · (HKD/CNY) / H_hkd − 1 ) × 100 ,  HKD/CNY = USDHKD / USDCNY.
+  // All four legs come from Yahoo (keyless, same source as dxy/oil). Returns null on any failure —
+  // the A-share (688981.SS) is the leg most likely to be absent from the free feed; if so, the
+  // panel falls back to the manual Connect holding. Untestable in the no-network sandbox.
+  const YOPTS = { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json" } };
+  async function fetchYahooDaily(symbol) {
+    try {
+      const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1mo`, YOPTS);
+      if (!r.ok) { console.error("Yahoo daily status", r.status, symbol); return null; }
+      const res = (await r.json())?.chart?.result?.[0];
+      if (!res) return null;
+      const ts = res.timestamp || [], closes = res.indicators?.quote?.[0]?.close || [];
+      const map = {};
+      for (let i = 0; i < ts.length; i++) if (closes[i] != null) map[new Date(ts[i] * 1000).toISOString().slice(0, 10)] = closes[i];
+      const price = res.meta?.regularMarketPrice ?? null;
+      const asOf = res.meta?.regularMarketTime ? new Date(res.meta.regularMarketTime * 1000).toISOString().slice(0, 10) : null;
+      return { price, asOf, map };
+    } catch (e) { console.error("Yahoo daily error", symbol, e.message); return null; }
+  }
+  async function fetchSmicAHPremium() {
+    try {
+      const [a, h, cny, hkd] = await Promise.all([
+        fetchYahooDaily("688981.SS"), fetchYahooDaily("0981.HK"), fetchYahooDaily("CNY=X"), fetchYahooDaily("HKD=X"),
+      ]);
+      if (!a || !h || !cny || !hkd) { console.error("SMIC A/H: a leg is missing (A-share likely absent)"); return null; }
+      const prem = (aCny, hHkd, usdcny, usdhkd) =>
+        (aCny != null && hHkd > 0 && usdcny > 0 && usdhkd > 0) ? +(((aCny * (usdhkd / usdcny)) / hHkd - 1) * 100).toFixed(1) : null;
+      const latest = prem(a.price, h.price, cny.price, hkd.price);
+      if (latest == null) return null;
+      // Premium history over the intersection of trading dates (A and H calendars differ).
+      const series = [];
+      for (const d of Object.keys(a.map)) {
+        if (h.map[d] != null && cny.map[d] != null && hkd.map[d] != null) {
+          const p = prem(a.map[d], h.map[d], cny.map[d], hkd.map[d]);
+          if (p != null) series.push({ date: d, premium: p });
+        }
+      }
+      series.sort((x, y) => x.date.localeCompare(y.date));
+      return { premium: latest, aPrice: a.price, hPrice: h.price, cnyHkd: +(hkd.price / cny.price).toFixed(4), asOf: a.asOf || h.asOf, series: series.slice(-30) };
+    } catch (e) { console.error("SMIC A/H error", e.message); return null; }
+  }
+
   // ── Fetch YoY % change history (units=pc1) — returns [{date, value}] chrono ──
   // FRED computes the year-over-year % server-side. Returns [] on any failure so
   // the rest of the payload is unaffected. Used for the CPI inflation tracker.
@@ -491,7 +537,7 @@ export default async function handler(req, res) {
       spreadPublished, spreadHistoryRaw,
       tenYHistory, twoYHistory, unempHistory, creditHistory,
       cpiHeadlineHistory, cpiCoreHistory, pceCoreHistory,
-      kalshi2026Feed, kalshi2027Feed, polymarketFeed, nyFedCurveFeed,
+      kalshi2026Feed, kalshi2027Feed, polymarketFeed, nyFedCurveFeed, smicAHFeed,
     ] = await Promise.all([
       fredLatest("DGS10"),
       fredLatest("DGS2"),
@@ -538,6 +584,7 @@ export default async function handler(req, res) {
       fetchKalshiRecession(2027),
       fetchPolymarketRecession(2026),
       fetchNyFedYieldCurve(),
+      fetchSmicAHPremium(),   // China-policy-trade sentiment gauge (Southbound panel)
     ]);
 
     // ── Yield spread history: prefer FRED's published series ──────────────────
@@ -675,6 +722,7 @@ export default async function handler(req, res) {
         "Polymarket": polymarketFeed,
         "NY Fed Yield Curve Model": nyFedCurveFeed,
       },
+      smicAH: smicAHFeed,   // SMIC A/H premium — mainland-sentiment gauge for the Southbound panel
       sanity,  // { metric: "out-of-band" } for any value outside its plausible band
     };
 

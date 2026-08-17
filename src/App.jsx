@@ -11,7 +11,7 @@ import { unInversionPhase, yieldCurveStatus, NORMAL_SPREAD } from "../lib/yieldc
 import { pendingReconciliations, reconStats } from "../lib/recon.js";
 import { deriveRegimeProbabilities, CONTESTED_GAP } from "../lib/regimeProb.js";
 import { minersPairImplication } from "../lib/regimeState.js";
-import { southboundTrend, southboundLevelTrend, southboundRead, sbStale } from "../lib/southbound.js";
+import { southboundTrend, southboundLevelTrend, southboundRead, ahPremiumRead, sbStale } from "../lib/southbound.js";
 import { STATUS, creditStatus, deriveAction, headerSignal, STAGES } from "../lib/status.js";
 import { observationAge } from "../lib/gates.js";
 import { trend as trendOf } from "../lib/series.js";
@@ -3080,44 +3080,47 @@ function KoreaStressPanel({ korea }) {
   );
 }
 
-// Southbound Stock Connect — mainland flow into HK-listed names, hand-entered (no clean HKEX API;
-// see lib/southbound.js). Sits alongside the Korea/KOFIA flow panel — same class of metric, other
-// market. Tracks the daily aggregate net + SMIC 0981.HK specifically (SMIC ≈ a third of NLV and
-// trades as a China-policy bet; Southbound flow is the mechanism), with 5d/20d trends since single
-// days are noise. Self-fetches the manual store; a save 401s if unauthenticated (shown inline).
+// Southbound / China-policy-trade panel — the mainland-sentiment read on SMIC (≈ a third of NLV,
+// trades as a China-policy bet). Two layers: (1) SMIC's A/H premium (688981.SS vs 0981.HK) — an
+// AUTOMATIC, market-priced sentiment gauge from /api/indicators, the primary signal; (2) aggregate
+// Southbound net — a manual daily hand entry for the broad mainland-appetite backdrop. Trends are
+// 5d/20d since single days are noise. Self-fetches both; a save 401s if unauthenticated.
 function SouthboundPanel() {
   const [series, setSeries] = useState([]);
+  const [smicAH, setSmicAH] = useState(null);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [agg, setAgg] = useState("");
-  const [smic, setSmic] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
   useEffect(() => {
     fetch("/api/manual-entry").then(r => r.json()).then(j => setSeries(j.southbound?.series || [])).catch(() => {});
+    fetch("/api/indicators").then(r => r.json()).then(j => setSmicAH(j.smicAH || null)).catch(() => {});
   }, []);
 
+  const ah = southboundLevelTrend(smicAH?.series || [], "premium");
+  const ahRead = ahPremiumRead(smicAH?.premium ?? null, ah.d5, ah.d20);
   const tAgg = southboundTrend(series, "aggregateNet");
-  const tSmic = southboundLevelTrend(series, "smicHolding");
   const read = southboundRead(tAgg);
   const latest = tAgg.latest;
   const stale = latest ? sbStale(latest.date) : true;
-  const toneCol = read.tone === "green" ? C.green : read.tone === "amber" ? C.amber : C.muted;
+  const aggTone = read.tone === "green" ? C.green : read.tone === "amber" ? C.amber : C.muted;
+  const ahTone = ahRead.tone === "green" ? C.green : ahRead.tone === "amber" ? C.amber : C.muted;
 
   async function save() {
-    if (!agg.trim() && !smic.trim()) { setMsg({ ok: false, text: "enter the aggregate net or the SMIC holding %" }); return; }
+    if (!agg.trim() && !notes.trim()) { setMsg({ ok: false, text: "enter the aggregate net (or a note)" }); return; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) { setMsg({ ok: false, text: "date must be YYYY-MM-DD" }); return; }
     setSaving(true); setMsg(null);
     try {
       const r = await fetch("/api/manual-entry", {
         method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
-        body: JSON.stringify({ southbound: { date: date.trim(), aggregateNet: agg.trim() || null, smicHolding: smic.trim() || null, notes: notes.trim() || null } }),
+        body: JSON.stringify({ southbound: { date: date.trim(), aggregateNet: agg.trim() || null, notes: notes.trim() || null } }),
       });
       const j = await r.json();
       if (r.ok) {
         const fresh = await fetch("/api/manual-entry").then(x => x.json()).catch(() => null);
         setSeries(fresh?.southbound?.series || []);
-        setAgg(""); setSmic(""); setNotes(""); setMsg({ ok: true, text: `Saved ${date}` });
+        setAgg(""); setNotes(""); setMsg({ ok: true, text: `Saved ${date}` });
       } else setMsg({ ok: false, text: j.error || "save failed" });
     } catch (e) { setMsg({ ok: false, text: String(e.message) }); }
     setSaving(false);
@@ -3130,46 +3133,45 @@ function SouthboundPanel() {
   return (
     <Card>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-        <SLabel><span style={{ display: "inline-block", background: "#B91C1C", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 4px", borderRadius: 3, marginRight: 5 }}>HK</span>Southbound Stock Connect — mainland flow (SMIC 0981.HK)</SLabel>
-        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>manual · daily hand entry</span>
-        <a href={CCASS} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: C.blue, textDecoration: "none", fontWeight: 700 }}>HKEX CCASS · SMIC 0981 ↗</a>
+        <SLabel><span style={{ display: "inline-block", background: "#B91C1C", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 4px", borderRadius: 3, marginRight: 5 }}>HK</span>China-policy trade — SMIC A/H premium + Southbound flow</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>A/H premium 📡 auto · aggregate net ✍️ manual</span>
       </div>
 
-      {/* How to fill this in — two numbers, once per HK trading day. Written out because there is
-          no clean HKEX feed; these are the authoritative public sources. */}
-      <div style={{ background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, padding: "9px 12px", marginBottom: 10, fontSize: 11.5, color: C.mid, lineHeight: 1.65 }}>
-        <b style={{ color: C.text }}>Once per HK trading day, enter two numbers:</b><br />
-        <b>1) Aggregate net</b> — the day's total Southbound net buy, HKD bn (+ = mainland buying HK). From HKEX's daily Stock Connect statistics (or any market-data provider that prints the daily Southbound net).<br />
-        <b>2) SMIC holding %</b> — SMIC 0981.HK shares held via Southbound as a % of issued, read straight off <a href={CCASS} target="_blank" rel="noopener noreferrer" style={{ color: C.blue, fontWeight: 700 }}>HKEX CCASS ↗</a>: enter stock code <b>0981</b>, pick the date, and read the <i>Shanghai/Shenzhen Stock Connect</i> participant row's % of issued. It's a level — no subtraction needed; the panel computes the 5d/20d change. Rising % = mainland accumulating.
-      </div>
-
-      {latest ? (
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 8 }}>
-          <div style={{ flex: "1 1 200px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, padding: "9px 12px" }}>
-            <div style={{ fontSize: 11, color: C.mid, fontWeight: 700 }}>Aggregate Southbound net (HKD bn)</div>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 8 }}>
+        {/* PRIMARY — SMIC A/H premium: automatic, market-priced mainland-sentiment gauge. */}
+        <div style={{ flex: "1 1 240px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, padding: "9px 12px" }}>
+          <div style={{ fontSize: 11, color: C.mid, fontWeight: 700 }}>SMIC A/H premium — 688981.SS vs 0981.HK <span style={{ color: C.green, fontWeight: 800 }}>· 📡 auto</span></div>
+          {smicAH?.premium != null ? (
             <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3, lineHeight: 1.6 }}>
-              Latest {latest.date}: <b style={{ color: latest.aggregateNet > 0 ? C.green : latest.aggregateNet < 0 ? C.red : C.muted }}>{latest.aggregateNet != null ? (latest.aggregateNet > 0 ? "+" : "") + latest.aggregateNet : "—"}</b>{stale && <span style={{ color: C.amber, fontWeight: 700 }}> · ⚠ stale</span>}<br />
+              {smicAH.asOf || "latest"}: <b style={{ color: C.text, fontSize: 14 }}>{smicAH.premium}%</b> <span style={{ color: C.lbl }}>(A ¥{smicAH.aPrice} · H HK${smicAH.hPrice})</span><br />
+              Δ 5-day <b style={{ color: (ah.d5 ?? 0) > 0 ? C.green : (ah.d5 ?? 0) < 0 ? C.red : C.muted }}>{dlt(ah.d5)}</b> · Δ 20-day <b style={{ color: (ah.d20 ?? 0) > 0 ? C.green : (ah.d20 ?? 0) < 0 ? C.red : C.muted }}>{dlt(ah.d20)}</b>
+            </div>
+          ) : (
+            <div style={{ fontSize: 11.5, color: C.amber, marginTop: 3, lineHeight: 1.55 }}>A-share (688981.SS) not on the price feed. Fall back to SMIC's Southbound holding via <a href={CCASS} target="_blank" rel="noopener noreferrer" style={{ color: C.blue, fontWeight: 700 }}>HKEX CCASS ↗</a> (stock code 0981).</div>
+          )}
+        </div>
+
+        {/* SECONDARY — aggregate Southbound net: manual broad mainland-appetite backdrop. */}
+        <div style={{ flex: "1 1 200px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, padding: "9px 12px" }}>
+          <div style={{ fontSize: 11, color: C.mid, fontWeight: 700 }}>Aggregate Southbound net (HKD bn) <span style={{ color: C.muted, fontWeight: 700 }}>· ✍️ manual</span></div>
+          {latest ? (
+            <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3, lineHeight: 1.6 }}>
+              {latest.date}: <b style={{ color: latest.aggregateNet > 0 ? C.green : latest.aggregateNet < 0 ? C.red : C.muted }}>{latest.aggregateNet != null ? (latest.aggregateNet > 0 ? "+" : "") + latest.aggregateNet : "—"}</b>{stale && <span style={{ color: C.amber, fontWeight: 700 }}> · ⚠ stale</span>}<br />
               5-day <b style={{ color: C.text }}>{win(tAgg.w5)}</b> · 20-day <b style={{ color: C.text }}>{win(tAgg.w20)}</b>
             </div>
-          </div>
-          <div style={{ flex: "1 1 200px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, padding: "9px 12px" }}>
-            <div style={{ fontSize: 11, color: C.mid, fontWeight: 700 }}>SMIC 0981.HK Southbound holding (% of issued)</div>
-            <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3, lineHeight: 1.6 }}>
-              Latest {tSmic.latest?.date || "—"}: <b style={{ color: C.text }}>{tSmic.level != null ? tSmic.level + "%" : "—"}</b><br />
-              Δ 5-day <b style={{ color: (tSmic.d5 ?? 0) > 0 ? C.green : (tSmic.d5 ?? 0) < 0 ? C.red : C.muted }}>{dlt(tSmic.d5)}</b> · Δ 20-day <b style={{ color: (tSmic.d20 ?? 0) > 0 ? C.green : (tSmic.d20 ?? 0) < 0 ? C.red : C.muted }}>{dlt(tSmic.d20)}</b>
-            </div>
-          </div>
+          ) : (
+            <div style={{ fontSize: 12, color: C.lbl, marginTop: 3, lineHeight: 1.5 }}>Optional — hand-enter the day's total Southbound net buy below (HKEX daily Stock Connect stats).</div>
+          )}
         </div>
-      ) : (
-        <div style={{ fontSize: 12.5, color: C.lbl, marginBottom: 8 }}>No Southbound data entered yet — add the daily figures below (see instructions above).</div>
-      )}
+      </div>
 
-      <div style={{ fontSize: 12.5, color: toneCol, fontWeight: 600, lineHeight: 1.55, marginBottom: 10 }}>{read.text}</div>
+      <div style={{ fontSize: 12.5, color: ahTone, fontWeight: 600, lineHeight: 1.55, marginBottom: latest ? 4 : 10 }}>{ahRead.text}</div>
+      {latest && <div style={{ fontSize: 12, color: aggTone, lineHeight: 1.5, marginBottom: 10 }}>{read.text}</div>}
 
+      {/* Only the aggregate net is a manual entry now — the A/H premium above is automatic. */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <input value={date} onChange={e => setDate(e.target.value)} placeholder="date YYYY-MM-DD" style={{ ...inp, flex: "1 1 120px", minWidth: 0 }} />
-        <input value={agg} onChange={e => setAgg(e.target.value)} placeholder="aggregate net (HKD bn)" style={{ ...inp, flex: "1 1 150px", minWidth: 0 }} />
-        <input value={smic} onChange={e => setSmic(e.target.value)} placeholder="SMIC holding % (from CCASS)" style={{ ...inp, flex: "1 1 150px", minWidth: 0 }} />
+        <input value={agg} onChange={e => setAgg(e.target.value)} placeholder="aggregate Southbound net (HKD bn)" style={{ ...inp, flex: "1 1 230px", minWidth: 0 }} />
       </div>
       <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="notes (optional)" style={{ ...inp, width: "100%", marginTop: 8, boxSizing: "border-box" }} />
       <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
