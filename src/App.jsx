@@ -3090,6 +3090,7 @@ function SouthboundPanel() {
   const [smicAH, setSmicAH] = useState(null);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [agg, setAgg] = useState("");
+  const [smic, setSmic] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -3098,8 +3099,10 @@ function SouthboundPanel() {
     fetch("/api/indicators").then(r => r.json()).then(j => setSmicAH(j.smicAH || null)).catch(() => {});
   }, []);
 
+  const ahOk = smicAH?.premium != null;           // auto feed live?
   const ah = southboundLevelTrend(smicAH?.series || [], "premium");
   const ahRead = ahPremiumRead(smicAH?.premium ?? null, ah.d5, ah.d20);
+  const tSmic = southboundLevelTrend(series, "smicHolding");  // manual CCASS-holding fallback
   const tAgg = southboundTrend(series, "aggregateNet");
   const read = southboundRead(tAgg);
   const latest = tAgg.latest;
@@ -3108,19 +3111,19 @@ function SouthboundPanel() {
   const ahTone = ahRead.tone === "green" ? C.green : ahRead.tone === "amber" ? C.amber : C.muted;
 
   async function save() {
-    if (!agg.trim() && !notes.trim()) { setMsg({ ok: false, text: "enter the aggregate net (or a note)" }); return; }
+    if (!agg.trim() && !smic.trim() && !notes.trim()) { setMsg({ ok: false, text: "enter a number (or a note)" }); return; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) { setMsg({ ok: false, text: "date must be YYYY-MM-DD" }); return; }
     setSaving(true); setMsg(null);
     try {
       const r = await fetch("/api/manual-entry", {
         method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
-        body: JSON.stringify({ southbound: { date: date.trim(), aggregateNet: agg.trim() || null, notes: notes.trim() || null } }),
+        body: JSON.stringify({ southbound: { date: date.trim(), aggregateNet: agg.trim() || null, smicHolding: smic.trim() || null, notes: notes.trim() || null } }),
       });
       const j = await r.json();
       if (r.ok) {
         const fresh = await fetch("/api/manual-entry").then(x => x.json()).catch(() => null);
         setSeries(fresh?.southbound?.series || []);
-        setAgg(""); setNotes(""); setMsg({ ok: true, text: `Saved ${date}` });
+        setAgg(""); setSmic(""); setNotes(""); setMsg({ ok: true, text: `Saved ${date}` });
       } else setMsg({ ok: false, text: j.error || "save failed" });
     } catch (e) { setMsg({ ok: false, text: String(e.message) }); }
     setSaving(false);
@@ -3134,7 +3137,7 @@ function SouthboundPanel() {
     <Card>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
         <SLabel><span style={{ display: "inline-block", background: "#B91C1C", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 4px", borderRadius: 3, marginRight: 5 }}>HK</span>China-policy trade — SMIC A/H premium + Southbound flow</SLabel>
-        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>A/H premium 📡 auto · aggregate net ✍️ manual</span>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>{ahOk ? "A/H premium 📡 auto" : "A/H feed down — SMIC holding ✍️ manual"} · aggregate net ✍️ manual</span>
       </div>
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 8 }}>
@@ -3146,8 +3149,16 @@ function SouthboundPanel() {
               {smicAH.asOf || "latest"}: <b style={{ color: C.text, fontSize: 14 }}>{smicAH.premium}%</b> <span style={{ color: C.lbl }}>(A ¥{smicAH.aPrice} · H HK${smicAH.hPrice} · CNY→HKD {smicAH.cnyHkd})</span><br />
               Δ 5-day <b style={{ color: (ah.d5 ?? 0) > 0 ? C.green : (ah.d5 ?? 0) < 0 ? C.red : C.muted }}>{dlt(ah.d5)}</b> · Δ 20-day <b style={{ color: (ah.d20 ?? 0) > 0 ? C.green : (ah.d20 ?? 0) < 0 ? C.red : C.muted }}>{dlt(ah.d20)}</b>
             </div>
+          ) : tSmic.level != null ? (
+            <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3, lineHeight: 1.6 }}>
+              <span style={{ color: C.amber, fontWeight: 700 }}>A-share quote down</span> — manual Connect holding:<br />
+              {tSmic.latest?.date}: <b style={{ color: C.text, fontSize: 14 }}>{tSmic.level}%</b> held via Southbound<br />
+              Δ 5-day <b style={{ color: (tSmic.d5 ?? 0) > 0 ? C.green : (tSmic.d5 ?? 0) < 0 ? C.red : C.muted }}>{dlt(tSmic.d5)}</b> · Δ 20-day <b style={{ color: (tSmic.d20 ?? 0) > 0 ? C.green : (tSmic.d20 ?? 0) < 0 ? C.red : C.muted }}>{dlt(tSmic.d20)}</b>
+            </div>
           ) : (
-            <div style={{ fontSize: 11.5, color: C.amber, marginTop: 3, lineHeight: 1.55 }}>A-share (688981.SS) not on the price feed. Fall back to SMIC's Southbound holding via <a href={CCASS} target="_blank" rel="noopener noreferrer" style={{ color: C.blue, fontWeight: 700 }}>HKEX CCASS ↗</a> (stock code 0981).</div>
+            <div style={{ fontSize: 11.5, color: C.amber, marginTop: 3, lineHeight: 1.55 }}>
+              A-share quote down. Enter SMIC's Southbound holding % from <a href={CCASS} target="_blank" rel="noopener noreferrer" style={{ color: C.blue, fontWeight: 700 }}>HKEX CCASS ↗</a>: stock code <b>0981</b> → pick the date → read the <i>Shanghai/Shenzhen Stock Connect</i> row's % of issued, and type it in the <b>SMIC holding %</b> box below.
+            </div>
           )}
         </div>
 
@@ -3168,10 +3179,12 @@ function SouthboundPanel() {
       <div style={{ fontSize: 12.5, color: ahTone, fontWeight: 600, lineHeight: 1.55, marginBottom: latest ? 4 : 10 }}>{ahRead.text}</div>
       {latest && <div style={{ fontSize: 12, color: aggTone, lineHeight: 1.5, marginBottom: 10 }}>{read.text}</div>}
 
-      {/* Only the aggregate net is a manual entry now — the A/H premium above is automatic. */}
+      {/* The A/H premium above is automatic. Aggregate net is an optional manual backdrop; the SMIC
+          holding % input only appears when the auto A/H feed is down (its fallback). */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <input value={date} onChange={e => setDate(e.target.value)} placeholder="date YYYY-MM-DD" style={{ ...inp, flex: "1 1 120px", minWidth: 0 }} />
-        <input value={agg} onChange={e => setAgg(e.target.value)} placeholder="aggregate Southbound net (HKD bn)" style={{ ...inp, flex: "1 1 230px", minWidth: 0 }} />
+        <input value={agg} onChange={e => setAgg(e.target.value)} placeholder="aggregate Southbound net (HKD bn)" style={{ ...inp, flex: "1 1 200px", minWidth: 0 }} />
+        {!ahOk && <input value={smic} onChange={e => setSmic(e.target.value)} placeholder="SMIC holding % (CCASS, fallback)" style={{ ...inp, flex: "1 1 180px", minWidth: 0 }} />}
       </div>
       <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="notes (optional)" style={{ ...inp, width: "100%", marginTop: 8, boxSizing: "border-box" }} />
       <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>

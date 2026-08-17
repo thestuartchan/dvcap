@@ -480,8 +480,16 @@ export default async function handler(req, res) {
       const ts = res.timestamp || [], closes = res.indicators?.quote?.[0]?.close || [];
       const map = {};
       for (let i = 0; i < ts.length; i++) if (closes[i] != null) map[new Date(ts[i] * 1000).toISOString().slice(0, 10)] = closes[i];
-      const price = res.meta?.regularMarketPrice ?? null;
-      const asOf = res.meta?.regularMarketTime ? new Date(res.meta.regularMarketTime * 1000).toISOString().slice(0, 10) : null;
+      // Live price only exists while the market is OPEN. The Shanghai A-share (688981.SS) is closed
+      // most of the time the dashboard is loaded, so fall back to the last daily close — otherwise a
+      // null live price sinks the whole premium (all four legs must resolve). Keeps the feed steady.
+      const dates = Object.keys(map).sort();
+      const lastClose = dates.length ? map[dates[dates.length - 1]] : null;
+      const live = res.meta?.regularMarketPrice;
+      const price = (live != null && live > 0) ? live : lastClose;
+      const asOf = (live != null && live > 0 && res.meta?.regularMarketTime)
+        ? new Date(res.meta.regularMarketTime * 1000).toISOString().slice(0, 10)
+        : (dates[dates.length - 1] || null);
       return { price, asOf, map };
     } catch (e) { console.error("Yahoo daily error", symbol, e.message); return null; }
   }
