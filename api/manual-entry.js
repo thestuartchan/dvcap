@@ -184,13 +184,13 @@ export default async function handler(req, res) {
     const num = (v) => (v == null || v === '' || !Number.isFinite(+v)) ? null : +v;
     const row = {
       date,
-      aggregateNet: num(southbound.aggregateNet),  // HKD bn
-      smicNet: num(southbound.smicNet),            // SMIC 0981.HK Southbound net (mn shares or HKD — operator's unit)
+      aggregateNet: num(southbound.aggregateNet),   // HKD bn — daily Southbound net buy (a flow)
+      smicHolding: num(southbound.smicHolding),     // SMIC 0981.HK Southbound holding, % of issued (a LEVEL, read off CCASS)
       notes: southbound.notes ? String(southbound.notes).slice(0, 300) : null,
       enteredAt: new Date().toISOString(),
     };
-    if (row.aggregateNet == null && row.smicNet == null) {
-      return res.status(422).json({ error: 'southbound needs at least an aggregateNet or smicNet number' });
+    if (row.aggregateNet == null && row.smicHolding == null) {
+      return res.status(422).json({ error: 'southbound needs at least an aggregateNet or smicHolding number' });
     }
     store.southbound.series = [...store.southbound.series.filter(r => r.date !== date), row]
       .sort((a, b) => a.date.localeCompare(b.date)).slice(-400);

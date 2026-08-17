@@ -11,7 +11,7 @@ import { unInversionPhase, yieldCurveStatus, NORMAL_SPREAD } from "../lib/yieldc
 import { pendingReconciliations, reconStats } from "../lib/recon.js";
 import { deriveRegimeProbabilities, CONTESTED_GAP } from "../lib/regimeProb.js";
 import { minersPairImplication } from "../lib/regimeState.js";
-import { southboundTrend, southboundRead, sbStale } from "../lib/southbound.js";
+import { southboundTrend, southboundLevelTrend, southboundRead, sbStale } from "../lib/southbound.js";
 import { STATUS, creditStatus, deriveAction, headerSignal, STAGES } from "../lib/status.js";
 import { observationAge } from "../lib/gates.js";
 import { trend as trendOf } from "../lib/series.js";
@@ -3098,20 +3098,20 @@ function SouthboundPanel() {
   }, []);
 
   const tAgg = southboundTrend(series, "aggregateNet");
-  const tSmic = southboundTrend(series, "smicNet");
+  const tSmic = southboundLevelTrend(series, "smicHolding");
   const read = southboundRead(tAgg);
   const latest = tAgg.latest;
   const stale = latest ? sbStale(latest.date) : true;
   const toneCol = read.tone === "green" ? C.green : read.tone === "amber" ? C.amber : C.muted;
 
   async function save() {
-    if (!agg.trim() && !smic.trim()) { setMsg({ ok: false, text: "enter an aggregate or SMIC net" }); return; }
+    if (!agg.trim() && !smic.trim()) { setMsg({ ok: false, text: "enter the aggregate net or the SMIC holding %" }); return; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) { setMsg({ ok: false, text: "date must be YYYY-MM-DD" }); return; }
     setSaving(true); setMsg(null);
     try {
       const r = await fetch("/api/manual-entry", {
         method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
-        body: JSON.stringify({ southbound: { date: date.trim(), aggregateNet: agg.trim() || null, smicNet: smic.trim() || null, notes: notes.trim() || null } }),
+        body: JSON.stringify({ southbound: { date: date.trim(), aggregateNet: agg.trim() || null, smicHolding: smic.trim() || null, notes: notes.trim() || null } }),
       });
       const j = await r.json();
       if (r.ok) {
@@ -3125,12 +3125,22 @@ function SouthboundPanel() {
 
   const inp = { padding: "6px 9px", fontSize: 12, border: "1px solid " + C.bdrMd, borderRadius: 6, background: "#fff", color: C.text };
   const win = (w) => `${w.sum > 0 ? "+" : ""}${w.sum} (${w.days}d, ${w.dir})`;
+  const dlt = (v) => v == null ? "—" : `${v > 0 ? "+" : ""}${v}pp`;
+  const CCASS = "https://www3.hkexnews.hk/sdw/search/searchsdw.aspx";
   return (
     <Card>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
         <SLabel><span style={{ display: "inline-block", background: "#B91C1C", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 4px", borderRadius: 3, marginRight: 5 }}>HK</span>Southbound Stock Connect — mainland flow (SMIC 0981.HK)</SLabel>
-        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>manual · no clean HKEX feed</span>
-        <a href="https://www.hkex.com.hk/Mutual-Market/Stock-Connect/Statistics/Southbound?sc_lang=en" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: C.blue, textDecoration: "none", fontWeight: 700 }}>HKEX Southbound ↗</a>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>manual · daily hand entry</span>
+        <a href={CCASS} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: C.blue, textDecoration: "none", fontWeight: 700 }}>HKEX CCASS · SMIC 0981 ↗</a>
+      </div>
+
+      {/* How to fill this in — two numbers, once per HK trading day. Written out because there is
+          no clean HKEX feed; these are the authoritative public sources. */}
+      <div style={{ background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, padding: "9px 12px", marginBottom: 10, fontSize: 11.5, color: C.mid, lineHeight: 1.65 }}>
+        <b style={{ color: C.text }}>Once per HK trading day, enter two numbers:</b><br />
+        <b>1) Aggregate net</b> — the day's total Southbound net buy, HKD bn (+ = mainland buying HK). From HKEX's daily Stock Connect statistics (or any market-data provider that prints the daily Southbound net).<br />
+        <b>2) SMIC holding %</b> — SMIC 0981.HK shares held via Southbound as a % of issued, read straight off <a href={CCASS} target="_blank" rel="noopener noreferrer" style={{ color: C.blue, fontWeight: 700 }}>HKEX CCASS ↗</a>: enter stock code <b>0981</b>, pick the date, and read the <i>Shanghai/Shenzhen Stock Connect</i> participant row's % of issued. It's a level — no subtraction needed; the panel computes the 5d/20d change. Rising % = mainland accumulating.
       </div>
 
       {latest ? (
@@ -3143,15 +3153,15 @@ function SouthboundPanel() {
             </div>
           </div>
           <div style={{ flex: "1 1 200px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, padding: "9px 12px" }}>
-            <div style={{ fontSize: 11, color: C.mid, fontWeight: 700 }}>SMIC 0981.HK Southbound net</div>
+            <div style={{ fontSize: 11, color: C.mid, fontWeight: 700 }}>SMIC 0981.HK Southbound holding (% of issued)</div>
             <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3, lineHeight: 1.6 }}>
-              Latest {tSmic.latest?.date || "—"}: <b style={{ color: (tSmic.latest?.smicNet ?? 0) > 0 ? C.green : (tSmic.latest?.smicNet ?? 0) < 0 ? C.red : C.muted }}>{tSmic.latest?.smicNet != null ? (tSmic.latest.smicNet > 0 ? "+" : "") + tSmic.latest.smicNet : "—"}</b><br />
-              5-day <b style={{ color: C.text }}>{win(tSmic.w5)}</b> · 20-day <b style={{ color: C.text }}>{win(tSmic.w20)}</b>
+              Latest {tSmic.latest?.date || "—"}: <b style={{ color: C.text }}>{tSmic.level != null ? tSmic.level + "%" : "—"}</b><br />
+              Δ 5-day <b style={{ color: (tSmic.d5 ?? 0) > 0 ? C.green : (tSmic.d5 ?? 0) < 0 ? C.red : C.muted }}>{dlt(tSmic.d5)}</b> · Δ 20-day <b style={{ color: (tSmic.d20 ?? 0) > 0 ? C.green : (tSmic.d20 ?? 0) < 0 ? C.red : C.muted }}>{dlt(tSmic.d20)}</b>
             </div>
           </div>
         </div>
       ) : (
-        <div style={{ fontSize: 12.5, color: C.lbl, marginBottom: 8 }}>No Southbound data entered yet — add the daily figures below.</div>
+        <div style={{ fontSize: 12.5, color: C.lbl, marginBottom: 8 }}>No Southbound data entered yet — add the daily figures below (see instructions above).</div>
       )}
 
       <div style={{ fontSize: 12.5, color: toneCol, fontWeight: 600, lineHeight: 1.55, marginBottom: 10 }}>{read.text}</div>
@@ -3159,7 +3169,7 @@ function SouthboundPanel() {
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <input value={date} onChange={e => setDate(e.target.value)} placeholder="date YYYY-MM-DD" style={{ ...inp, flex: "1 1 120px", minWidth: 0 }} />
         <input value={agg} onChange={e => setAgg(e.target.value)} placeholder="aggregate net (HKD bn)" style={{ ...inp, flex: "1 1 150px", minWidth: 0 }} />
-        <input value={smic} onChange={e => setSmic(e.target.value)} placeholder="SMIC net" style={{ ...inp, flex: "1 1 110px", minWidth: 0 }} />
+        <input value={smic} onChange={e => setSmic(e.target.value)} placeholder="SMIC holding % (from CCASS)" style={{ ...inp, flex: "1 1 150px", minWidth: 0 }} />
       </div>
       <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="notes (optional)" style={{ ...inp, width: "100%", marginTop: 8, boxSizing: "border-box" }} />
       <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
