@@ -473,7 +473,7 @@ export default async function handler(req, res) {
   const YOPTS = { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json" } };
   async function fetchYahooDaily(symbol) {
     try {
-      const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1mo`, YOPTS);
+      const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=3mo`, YOPTS);
       if (!r.ok) { console.error("Yahoo daily status", r.status, symbol); return null; }
       const res = (await r.json())?.chart?.result?.[0];
       if (!res) return null;

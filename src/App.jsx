@@ -3143,7 +3143,7 @@ function SouthboundPanel() {
           <div style={{ fontSize: 11, color: C.mid, fontWeight: 700 }}>SMIC A/H premium — 688981.SS vs 0981.HK <span style={{ color: C.green, fontWeight: 800 }}>· 📡 auto</span></div>
           {smicAH?.premium != null ? (
             <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3, lineHeight: 1.6 }}>
-              {smicAH.asOf || "latest"}: <b style={{ color: C.text, fontSize: 14 }}>{smicAH.premium}%</b> <span style={{ color: C.lbl }}>(A ¥{smicAH.aPrice} · H HK${smicAH.hPrice})</span><br />
+              {smicAH.asOf || "latest"}: <b style={{ color: C.text, fontSize: 14 }}>{smicAH.premium}%</b> <span style={{ color: C.lbl }}>(A ¥{smicAH.aPrice} · H HK${smicAH.hPrice} · CNY→HKD {smicAH.cnyHkd})</span><br />
               Δ 5-day <b style={{ color: (ah.d5 ?? 0) > 0 ? C.green : (ah.d5 ?? 0) < 0 ? C.red : C.muted }}>{dlt(ah.d5)}</b> · Δ 20-day <b style={{ color: (ah.d20 ?? 0) > 0 ? C.green : (ah.d20 ?? 0) < 0 ? C.red : C.muted }}>{dlt(ah.d20)}</b>
             </div>
           ) : (
