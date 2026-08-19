@@ -2970,13 +2970,20 @@ function ScenarioBoard({ scenarios }) {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
         {scenarios.map(s => {
-          const col = s.confirmed ? C.red : (TONE[s.tone] || C.muted);
-          const countCol = s.confirmed ? C.red : s.total > 0 && s.met === s.total - 1 ? C.amber : C.muted;
+          // Color by the scenario's OWN tone, not a blanket red: "A · Plan works" confirming is a
+          // GOOD state (green), only "D · Disorderly" confirming is red. Confirmed just fills the
+          // tone-appropriate background + shows ✓; a near-miss (one short) reads amber.
+          const toneCol = TONE[s.tone] || C.muted;
+          const TBG  = { red: C.rBg, amber: C.aBg, green: C.gBg };
+          const TBDR = { red: C.rBdr, amber: C.aBdr, green: C.gBdr };
+          const bg  = s.confirmed ? (TBG[s.tone] || C.bg) : C.bg;
+          const bdr = s.confirmed ? (TBDR[s.tone] || C.bdrMd) : C.bdrMd;
+          const countCol = s.confirmed ? toneCol : (s.total > 0 && s.met === s.total - 1 ? C.amber : C.muted);
           return (
-            <div key={s.id} style={{ padding: "8px 10px", borderRadius: 8, background: s.confirmed ? C.rBg : C.bg,
-              border: "1px solid " + (s.confirmed ? C.rBdr : C.bdrMd) }}>
+            <div key={s.id} style={{ padding: "8px 10px", borderRadius: 8, background: bg,
+              border: "1px solid " + bdr }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 12.5, fontWeight: 900, color: col }}>{s.id} · {s.name}</span>
+                <span style={{ fontSize: 12.5, fontWeight: 900, color: toneCol }}>{s.id} · {s.name}</span>
                 <span style={{ fontSize: 10.5, color: C.muted, fontWeight: 600, fontStyle: "italic" }}>{s.gloss}</span>
                 <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 900, color: countCol }}>
                   {s.total > 0 ? `${s.met}/${s.total}` : "n/a"} {s.confirmed ? "✓" : "✗"}
@@ -2985,7 +2992,7 @@ function ScenarioBoard({ scenarios }) {
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 14px", marginTop: 4 }}>
                 {s.conditions.map((c, i) => {
-                  const cc = c.met === null ? C.lbl : c.met ? C.red : C.muted;
+                  const cc = c.met === null ? C.lbl : c.met ? toneCol : C.muted;
                   return (
                     <span key={i} style={{ fontSize: 11, fontWeight: 600, color: cc, fontVariantNumeric: "tabular-nums" }}>
                       {c.met === null ? "·" : c.met ? "✓" : "✗"} {c.label}
