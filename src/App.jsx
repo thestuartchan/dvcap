@@ -2860,7 +2860,7 @@ function CrossRow({ r }) {
     const min = Math.floor((Date.now() - r.ts * 1000) / 60000);
     if (min < 0) return null;                       // clock skew — say nothing rather than lie
     if (min <= 20) return null;                     // live enough for a 1D card
-    return { text: humanizeAge(min) + " ago", stale: min > 90 };
+    return { text: humanizeAge(min), stale: min > 90 };   // humanizeAge already yields "9h ago" — no second " ago"
   })();
   return (
     <MetricCard
