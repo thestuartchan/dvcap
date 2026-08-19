@@ -3113,48 +3113,56 @@ function VolRegime({ v }) {
   );
 }
 
-// C3 — cross-market handoff. Is Asia LEADING the US, or ECHOING an overnight driver that has
-// already reversed? Asia's live aggregate move vs the prior-US-session direction of SOX / 30Y
-// (TLT) / oil. DIVERGENT = Asia trading stale info, a mean-reversion setup into the US open.
+// C3 / P1.1 — cross-market handoff, FORWARD. The US just closed; Asia opens in ~3h and hasn't
+// seen it. The card leads with what the US close implies for the Asia OPEN (gap-up / gap-down
+// risk by convergence), and keeps the backward "did Asia predict the US" read as a validation line.
 function CrossMarketHandoff({ h }) {
-  if (!h) return null;
+  if (!h || !h.available) return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <SLabel>🔀 US → Asia handoff</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>what the US close implies for the Asia open</span>
+      </div>
+      <div style={{ marginTop: 4, fontSize: 12, color: C.muted, fontWeight: 600 }}>{h?.note || "unavailable"}</div>
+    </Card>
+  );
   const TONE = { amber: C.amber, green: C.green, red: C.red, muted: C.muted };
-  if (!h.available) {
-    return (
-      <Card>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-          <SLabel>🔀 Cross-market handoff</SLabel>
-          <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>Asia leading vs echoing the overnight drivers</span>
-        </div>
-        <div style={{ marginTop: 4, fontSize: 12, color: C.muted, fontWeight: 600 }}>{h.note}</div>
-      </Card>
-    );
-  }
-  const col = TONE[h.tone] || C.muted;
+  const fwd = h.forward, bwd = h.backward;
+  const col = fwd?.available ? (TONE[fwd.tone] || C.muted) : C.muted;
+  const chgCol = v => v == null ? C.muted : v > 0 ? C.green : v < 0 ? C.red : C.muted;
   return (
     <Card style={{ borderTop: "4px solid " + col }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-        <SLabel>🔀 Cross-market handoff</SLabel>
-        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>Asia now vs overnight drivers</span>
-        <span style={{ marginLeft: "auto", fontSize: 16, fontWeight: 900, color: col }}>{h.verdict}</span>
+        <SLabel>🔀 US → Asia handoff</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>what the US close implies for the Asia open{fwd?.nextOpenH ? ` · next open ~${fwd.nextOpenH}h` : ""}</span>
+        {fwd?.available && <span style={{ marginLeft: "auto", fontSize: 16, fontWeight: 900, color: col }}>{fwd.verdict}</span>}
       </div>
-      <div style={{ fontSize: 12, color: C.mid, fontWeight: 600, marginTop: 4, lineHeight: 1.5 }}>{h.note}</div>
-      <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 11.5, fontWeight: 800, color: h.asiaChangePct > 0 ? C.green : h.asiaChangePct < 0 ? C.red : C.muted,
-          border: "1px solid " + C.bdr, borderRadius: 5, padding: "2px 7px" }}>
-          Asia {h.asiaChangePct >= 0 ? "+" : ""}{h.asiaChangePct}%
-        </span>
-        {h.drivers.map(d => (
-          <span key={d.name} title={d.available ? (d.aligned ? "aligned with Asia" : "opposed to Asia") : "no overnight direction"}
-            style={{ fontSize: 11, fontWeight: 700,
-              color: !d.available ? C.lbl : d.aligned ? C.green : C.amber,
-              border: "1px solid " + (!d.available ? C.lbl : d.aligned ? C.gBdr : C.aBdr) + "88",
-              background: (!d.available ? C.lbl : d.aligned ? C.green : C.amber) + "12",
-              borderRadius: 5, padding: "2px 7px" }}>
-            {!d.available ? "· " : d.aligned ? "✓ " : "✗ "}{d.name}{d.available ? ` ${d.detail}` : " n/a"}
-          </span>
-        ))}
-      </div>
+      {fwd?.available ? (
+        <>
+          {/* Two aligned rows: what the US did, and where Asia last closed. */}
+          <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: "4px 16px", fontSize: 11.5 }}>
+            <span style={{ fontWeight: 800, color: C.muted, minWidth: 118 }}>US session drivers</span>
+            {h.drivers.map(d => (
+              <span key={d.name} style={{ fontWeight: 700, color: C.mid }}>{d.name} <b style={{ color: chgCol(d.riskSign) }}>{d.detail}</b></span>
+            ))}
+          </div>
+          <div style={{ marginTop: 3, display: "flex", flexWrap: "wrap", gap: "4px 16px", fontSize: 11.5 }}>
+            <span style={{ fontWeight: 800, color: C.muted, minWidth: 118 }}>Asia's last close</span>
+            {(h.asiaCloses || []).map(a => (
+              <span key={a.name} style={{ fontWeight: 700, color: C.mid }}>{a.name} <b style={{ color: chgCol(a.chg) }}>{a.chg >= 0 ? "+" : ""}{a.chg}%</b></span>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, color: col === C.muted ? C.mid : col, fontWeight: 700, marginTop: 7, lineHeight: 1.5 }}>Implied: {fwd.note}</div>
+        </>
+      ) : (
+        <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginTop: 4 }}>{fwd?.note}</div>
+      )}
+      {/* Backward read — model validation, subordinate. */}
+      {bwd?.note && (
+        <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 7, paddingTop: 6, borderTop: "1px solid " + C.bdr }}>
+          <b style={{ color: C.muted }}>{bwd.verdict}</b> · {bwd.note}
+        </div>
+      )}
     </Card>
   );
 }
