@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, Component } from "react";
+import { useState, useEffect, useCallback, useMemo, Component, Fragment } from "react";
 import {
   AreaChart, Area, BarChart, Bar, RadarChart, PolarGrid,
   PolarAngleAxis, Radar, PieChart, Pie, Cell, LineChart, Line,
@@ -3120,6 +3120,41 @@ function CrossMarketHandoff({ h }) {
   );
 }
 
+// D5 — FX overlay on P&L. The book's base is USD; KRW/HKD positions are quoted local. Shows each
+// non-USD position's local move vs its USD-translated move so the FX leg is explicit.
+function FxOverlay({ f }) {
+  if (!f || !f.available) return null;
+  const rows = f.rows.filter(r => r.ccy !== "USD" && r.usd != null)
+    .sort((a, b) => Math.abs(b.local) - Math.abs(a.local)).slice(0, 12);
+  if (!rows.length) return null;
+  const pct = (v) => v == null ? "—" : `${v >= 0 ? "+" : ""}${v}%`;
+  const col = (v) => v == null ? C.muted : v > 0 ? C.green : v < 0 ? C.red : C.muted;
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <SLabel>💱 FX overlay on P&L</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>local move vs USD-translated · base = USD</span>
+      </div>
+      <div style={{ fontSize: 11.5, color: C.mid, fontWeight: 600, marginTop: 3, lineHeight: 1.5 }}>{f.note}</div>
+      <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: "3px 14px", fontSize: 11.5, alignItems: "baseline" }}>
+        <span style={{ fontSize: 9.5, color: C.muted, fontWeight: 800, textTransform: "uppercase" }}>Position</span>
+        <span style={{ fontSize: 9.5, color: C.muted, fontWeight: 800, textTransform: "uppercase", textAlign: "right" }}>Local</span>
+        <span style={{ fontSize: 9.5, color: C.muted, fontWeight: 800, textTransform: "uppercase", textAlign: "right" }}>FX</span>
+        <span style={{ fontSize: 9.5, color: C.muted, fontWeight: 800, textTransform: "uppercase", textAlign: "right" }}>USD</span>
+        {rows.map(r => (
+          <Fragment key={r.sym}>
+            <span style={{ fontWeight: 700, color: C.text }}>{r.name} <span style={{ color: C.lbl, fontWeight: 500 }}>{r.ccy}</span></span>
+            <span style={{ textAlign: "right", fontWeight: 700, color: col(r.local) }}>{pct(r.local)}</span>
+            <span style={{ textAlign: "right", fontWeight: 600, color: col(r.fx) }}>{pct(r.fx)}</span>
+            <span style={{ textAlign: "right", fontWeight: 800, color: col(r.usd) }}>{pct(r.usd)}</span>
+          </Fragment>
+        ))}
+      </div>
+      <div style={{ fontSize: 10, color: C.lbl, marginTop: 6 }}>FX column = the currency contribution to the USD move (HKD pegged ≈ 0).</div>
+    </Card>
+  );
+}
+
 // Constituent baskets under the AI-levered axis — same auditable pattern as the other cards.
 function AxisBaskets({ ai, non }) {
   const line = (lbl, arr) => (
@@ -3673,6 +3708,8 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {data.volTerm && <VolRegime v={data.volTerm} />}
           {/* C3 — cross-market handoff (Asia tab only): is Asia leading or echoing the US? */}
           {data.handoff && <CrossMarketHandoff h={data.handoff} />}
+          {/* D5 — FX overlay on P&L (Asia tab only): local vs USD-translated per position. */}
+          {data.fxPnl && <FxOverlay f={data.fxPnl} />}
           {/* Cross-asset regime read (P0.1). Separate from the probability model on the Macro
               tab: this reads today's TAPE. Its value is the discriminator line — defensives
               sold vs bid is what separates a rates repricing from a deleveraging, and gold
