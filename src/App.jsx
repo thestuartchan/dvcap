@@ -2905,6 +2905,18 @@ function GaugesLeaning({ leaning, prominent }) {
         {prominent && <span style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>tripwires leaning de-risking</span>}
         {leaning.allLeaning && <span style={{ fontSize: prominent ? 12 : 10, fontWeight: 800, color: C.red }}>ALL TURNED TOGETHER</span>}
       </div>
+      {/* B3 — the count is directional: which SCENARIO the fired gauges point at, not an
+          undifferentiated N/5. "2 at Korea mechanical, 1 at Hawkish" is what's actionable. */}
+      {leaning.byScenario?.length > 0 && (
+        <div style={{ marginTop: 5, display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {leaning.byScenario.map(s => (
+            <span key={s.scenario} style={{ fontSize: prominent ? 11.5 : 10.5, fontWeight: 800, color: C.red,
+              border: "1px solid " + C.rBdr, background: C.rBg, borderRadius: 5, padding: "1px 7px" }}>
+              {s.count} → {s.scenario}
+            </span>
+          ))}
+        </div>
+      )}
       {/* Q2 — a count is not actionable. Name the gauges that actually fired and show each
           one's reading, inline. This was previously only in a `title` tooltip, which is
           invisible in a screenshot, on touch, and to anyone reading quickly. */}
