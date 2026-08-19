@@ -3009,6 +3009,52 @@ function VolRegime({ v }) {
   );
 }
 
+// C3 — cross-market handoff. Is Asia LEADING the US, or ECHOING an overnight driver that has
+// already reversed? Asia's live aggregate move vs the prior-US-session direction of SOX / 30Y
+// (TLT) / oil. DIVERGENT = Asia trading stale info, a mean-reversion setup into the US open.
+function CrossMarketHandoff({ h }) {
+  if (!h) return null;
+  const TONE = { amber: C.amber, green: C.green, red: C.red, muted: C.muted };
+  if (!h.available) {
+    return (
+      <Card>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+          <SLabel>🔀 Cross-market handoff</SLabel>
+          <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>Asia leading vs echoing the overnight drivers</span>
+        </div>
+        <div style={{ marginTop: 4, fontSize: 12, color: C.muted, fontWeight: 600 }}>{h.note}</div>
+      </Card>
+    );
+  }
+  const col = TONE[h.tone] || C.muted;
+  return (
+    <Card style={{ borderTop: "4px solid " + col }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <SLabel>🔀 Cross-market handoff</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>Asia now vs overnight drivers</span>
+        <span style={{ marginLeft: "auto", fontSize: 16, fontWeight: 900, color: col }}>{h.verdict}</span>
+      </div>
+      <div style={{ fontSize: 12, color: C.mid, fontWeight: 600, marginTop: 4, lineHeight: 1.5 }}>{h.note}</div>
+      <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: h.asiaChangePct > 0 ? C.green : h.asiaChangePct < 0 ? C.red : C.muted,
+          border: "1px solid " + C.bdr, borderRadius: 5, padding: "2px 7px" }}>
+          Asia {h.asiaChangePct >= 0 ? "+" : ""}{h.asiaChangePct}%
+        </span>
+        {h.drivers.map(d => (
+          <span key={d.name} title={d.available ? (d.aligned ? "aligned with Asia" : "opposed to Asia") : "no overnight direction"}
+            style={{ fontSize: 11, fontWeight: 700,
+              color: !d.available ? C.lbl : d.aligned ? C.green : C.amber,
+              border: "1px solid " + (!d.available ? C.lbl : d.aligned ? C.gBdr : C.aBdr) + "88",
+              background: (!d.available ? C.lbl : d.aligned ? C.green : C.amber) + "12",
+              borderRadius: 5, padding: "2px 7px" }}>
+            {!d.available ? "· " : d.aligned ? "✓ " : "✗ "}{d.name}{d.available ? ` ${d.detail}` : " n/a"}
+          </span>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 // Constituent baskets under the AI-levered axis — same auditable pattern as the other cards.
 function AxisBaskets({ ai, non }) {
   const line = (lbl, arr) => (
@@ -3558,6 +3604,8 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {/* C1 — VIX term-structure regime. The single biggest prior gap: nothing tracked the
               curve shape, and it governs every options decision. Sits at the very top. */}
           {data.volTerm && <VolRegime v={data.volTerm} />}
+          {/* C3 — cross-market handoff (Asia tab only): is Asia leading or echoing the US? */}
+          {data.handoff && <CrossMarketHandoff h={data.handoff} />}
           {/* Cross-asset regime read (P0.1). Separate from the probability model on the Macro
               tab: this reads today's TAPE. Its value is the discriminator line — defensives
               sold vs bid is what separates a rates repricing from a deleveraging, and gold
