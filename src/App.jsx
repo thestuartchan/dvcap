@@ -3871,6 +3871,121 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           </Card>
           ))}
 
+          {/* 5 — Rates: the Macro card (rates + regime inputs), directly under Credit. */}
+          <Card>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+              <SLabel>🛢️ Macro</SLabel>
+              <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>Global · US rates (same on every region)</span>
+            </div>
+            <MetricGrid min={180}>
+              {/* P3.2 — oil carries an explicit TICK TIMESTAMP. Futures run the globex week
+                  (Sun 18:00 → Fri 17:00 ET), so freshness is now scored against that, not NYSE
+                  hours: a Friday settle served after Sunday's reopen reads STALE rather than
+                  passing as a live tick. WTI and Brent both shown — the spread is itself a
+                  read on waterborne supply stress. */}
+              <MacroCell field={data.macro.wti}   value={data.macro.wti?.value != null ? "$" + data.macro.wti.value : "—"}     delta={data.macro.wti?.delta} deltaSuffix="" />
+              <MacroCell field={data.macro.brent} value={data.macro.brent?.value != null ? "$" + data.macro.brent.value : "—"} delta={data.macro.brent?.delta} deltaSuffix="" />
+              {(data.macro.wti?.value != null && data.macro.brent?.value != null) && (
+                <MetricCard label="Brent − WTI"
+                  title="waterborne vs landlocked crude — widens on shipping/supply stress"
+                  value={"$" + (data.macro.brent.value - data.macro.wti.value).toFixed(2)}
+                  sub={<span style={{ fontSize: 10.5, color: C.lbl, fontWeight: 700 }}>spread</span>} />
+              )}
+              <MacroCell field={data.macro.us2y}  value={data.macro.us2y?.value != null ? data.macro.us2y.value + "%" : "—"}   delta={data.macro.us2y?.deltaBps} deltaSuffix="bps" />
+              <MacroCell field={data.macro.us10y} value={data.macro.us10y?.value != null ? data.macro.us10y.value + "%" : "—"} delta={data.macro.us10y?.deltaBps} deltaSuffix="bps" />
+              <MacroCell field={data.macro.us30y} value={data.macro.us30y?.value != null ? data.macro.us30y.value + "%" : "—"} delta={data.macro.us30y?.deltaBps} deltaSuffix="bps" />
+              {/* Section E — replaces the deleted auction card. The 30Y's 20d move is the
+                  transmission channel that actually matters for duration, and it updates
+                  daily rather than monthly. Highlighted beyond ±20bp. */}
+              {(() => {
+                const s30 = data.macro.us30y?.series;
+                const t20 = s30 ? trendBps(s30, 20) : null;
+                if (t20 == null) return null;
+                const hot = Math.abs(t20) > 20;
+                return (
+                  <MetricCard label="30Y · 20d change"
+                    title="long-end move over 20 sessions — the duration transmission channel"
+                    value={`${t20 >= 0 ? "+" : "−"}${Math.abs(t20)}bp`}
+                    valueColor={hot ? C.amber : C.text}
+                    accent={hot ? C.aBdr : undefined}
+                    sub={hot ? <span style={{ fontSize: 10.5, fontWeight: 800, color: C.amber }}>&gt;±20bp</span> : null} />
+                );
+              })()}
+              {data.macro.fives30s != null && (
+                <MetricCard label="5s30s slope"
+                  title="long-end steepening is the funding-stress shape — distinct from a parallel hawkish shift"
+                  value={`${data.macro.fives30s >= 0 ? "+" : ""}${data.macro.fives30s}bp`}
+                  sub={data.macro.fives30sDeltaBps != null && (
+                    <span style={{ fontSize: 11.5, fontWeight: 800, color: data.macro.fives30sDeltaBps > 0 ? C.amber : C.muted }}>
+                      {data.macro.fives30sDeltaBps >= 0 ? "+" : "−"}{Math.abs(data.macro.fives30sDeltaBps)}bp 1D
+                    </span>
+                  )} />
+              )}
+              <MacroCell field={{ name: "2s10s", src: "DGS10−DGS2", date: data.macro.us10y?.date, cadence: "daily" }} value={data.macro.twos10s != null ? (data.macro.twos10s >= 0 ? "+" : "") + data.macro.twos10s + "bps" : "—"} delta={data.macro.twos10sDeltaBps} deltaSuffix="bps" />
+              {/* DXY dedup'd — owned by the FX legs group in the Cross-asset card (a blend read
+                  next to its EUR/JPY legs), so it is not repeated here. */}
+              <MacroCell field={data.macro.oas}   value={data.macro.oas?.value ?? "—"} delta={data.macro.oas?.deltaBps} deltaSuffix="bps" />
+            </MetricGrid>
+            {data.macro.sanity && data.macro.sanity.length > 0 && (
+              <div style={{ marginTop: 10, padding: "8px 12px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8, fontSize: 12, color: C.amber, fontWeight: 700 }}>
+                ⚠ Sanity: {data.macro.sanity.join(" · ")}
+              </div>
+            )}
+            {/* Regime inputs — gold/BTC co-movement + real yield/breakeven, drives the read below */}
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px dashed " + C.bdr }}>
+              <div style={{ fontSize: 11, color: C.muted, fontWeight: 800, textTransform: "uppercase", marginBottom: 8 }}>Regime Inputs</div>
+              <MetricGrid min={180}>
+                <MacroCell field={data.macro.gold} value={data.macro.gold?.value != null ? "$" + withCommas(data.macro.gold.value) : "—"} delta={data.macro.gold?.delta} deltaSuffix="" />
+                <MacroCell field={data.macro.btc} value={data.macro.btc?.value != null ? "$" + Math.round(data.macro.btc.value).toLocaleString("en-US") : "—"} delta={data.macro.btc?.delta != null ? Math.round(data.macro.btc.delta) : null} deltaSuffix="" />
+                <MacroCell field={data.macro.realYield} value={data.macro.realYield?.value != null ? data.macro.realYield.value + "%" : "—"} delta={data.macro.realYield?.deltaBps} deltaSuffix="bps" />
+                <MacroCell field={data.macro.breakeven} value={data.macro.breakeven?.value != null ? data.macro.breakeven.value + "%" : "—"} delta={data.macro.breakeven?.deltaBps} deltaSuffix="bps" />
+                {/* 5y5y fwd BE relocated here from the dropped cross-asset regime group — this is
+                    its only home. Sits with the other breakeven/inflation inputs. MOVE/OVX are
+                    dedup'd out (owned by the Vol/credit group in the Cross-asset card). */}
+                <MacroCell field={data.macro.fwdBreakeven} value={data.macro.fwdBreakeven?.value != null ? data.macro.fwdBreakeven.value + "%" : "—"} delta={data.macro.fwdBreakeven?.deltaBps} deltaSuffix="bps" />
+              </MetricGrid>
+              {data.macro.regimeSignal && (() => {
+                const rs = data.macro.regimeSignal;
+                const w = rs.windows || {};
+                const arr = d => d === "up" ? "▲" : d === "down" ? "▼" : d === "flat" ? "→" : "·";
+                const col = d => d === "up" ? C.green : d === "down" ? C.red : C.muted;
+                const maCol = m => m === "below both" ? C.red : m === "above both" ? C.green : C.amber;
+                const win = o => !o ? "—" : (
+                  <>
+                    1d <span style={{ color: col(o.d1), fontWeight: 800 }}>{arr(o.d1)}</span> · 5d <span style={{ color: col(o.d5), fontWeight: 800 }}>{arr(o.d5)}</span> · 20d <span style={{ color: col(o.d20), fontWeight: 800 }}>{arr(o.d20)}</span>
+                    {o.ma ? <span style={{ color: maCol(o.ma), fontWeight: 700 }}> · {o.ma}</span> : null}
+                    {o.offHi != null ? <span style={{ color: C.muted }}> · {o.offHi > 0 ? "+" : ""}{o.offHi}% off hi</span> : null}
+                  </>
+                );
+                const unconfirmed = /UNCONFIRMED/.test(rs.label || "");
+                const mismatch = rs.mismatch;
+                return (
+                  <div style={{ marginTop: 10, padding: "10px 12px", background: C.bg, border: "1.5px solid " + (mismatch ? C.rBdr : unconfirmed ? C.aBdr : C.bdrMd), borderRadius: 8 }}>
+                    <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>Debasement / stagflation read (gold+BTC, 5d-smoothed)</div>
+                    {/* A label that contradicts the deltas shown beneath it is suppressed — the
+                        mismatch is reported instead, never a confident-but-inconsistent read. */}
+                    {mismatch ? (
+                      <>
+                        <div style={{ fontSize: 12.5, fontWeight: 800, color: C.red, marginTop: 2 }}>{mismatch}</div>
+                        <div style={{ fontSize: 11.5, color: C.muted, marginTop: 2 }}>suppressed label: <s>{rs.label}</s></div>
+                      </>
+                    ) : (
+                      <div style={{ fontSize: 15, fontWeight: 900, color: unconfirmed ? C.amber : C.text }}>{rs.label}</div>
+                    )}
+                    {!mismatch && rs.windowSplit && (
+                      <div style={{ fontSize: 10.5, color: C.amber, fontWeight: 700, marginTop: 2 }}>⚖ {rs.windowSplit}</div>
+                    )}
+                    <div style={{ fontSize: 11, color: C.mid, marginTop: 4 }}>gold — {win(w.gold)}</div>
+                    <div style={{ fontSize: 11, color: C.mid, marginTop: 2 }}>btc &nbsp;— {win(w.btc)}</div>
+                    <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
+                      DXY {rs.inputs?.dxy ?? "—"} · real-yield {rs.inputs?.realYield ?? "—"} · OAS {rs.inputs?.oas ?? "—"}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </Card>
+
           {/* Korea manual entry (KOFIA paste + 7709 units) — shown when Asia is active */}
           {regions.includes("asia") && byRegion.asia?.kofia &&
             <KoreaManualEntry kofia={byRegion.asia.kofia} onSaved={onRefresh} />}
@@ -4107,120 +4222,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
             </Card>
           )}
 
-          {/* Macro — identical on every tab (see caption); global/US rates */}
-          <Card>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-              <SLabel>🛢️ Macro</SLabel>
-              <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>Global · US rates (same on every region)</span>
-            </div>
-            <MetricGrid min={180}>
-              {/* P3.2 — oil carries an explicit TICK TIMESTAMP. Futures run the globex week
-                  (Sun 18:00 → Fri 17:00 ET), so freshness is now scored against that, not NYSE
-                  hours: a Friday settle served after Sunday's reopen reads STALE rather than
-                  passing as a live tick. WTI and Brent both shown — the spread is itself a
-                  read on waterborne supply stress. */}
-              <MacroCell field={data.macro.wti}   value={data.macro.wti?.value != null ? "$" + data.macro.wti.value : "—"}     delta={data.macro.wti?.delta} deltaSuffix="" />
-              <MacroCell field={data.macro.brent} value={data.macro.brent?.value != null ? "$" + data.macro.brent.value : "—"} delta={data.macro.brent?.delta} deltaSuffix="" />
-              {(data.macro.wti?.value != null && data.macro.brent?.value != null) && (
-                <MetricCard label="Brent − WTI"
-                  title="waterborne vs landlocked crude — widens on shipping/supply stress"
-                  value={"$" + (data.macro.brent.value - data.macro.wti.value).toFixed(2)}
-                  sub={<span style={{ fontSize: 10.5, color: C.lbl, fontWeight: 700 }}>spread</span>} />
-              )}
-              <MacroCell field={data.macro.us2y}  value={data.macro.us2y?.value != null ? data.macro.us2y.value + "%" : "—"}   delta={data.macro.us2y?.deltaBps} deltaSuffix="bps" />
-              <MacroCell field={data.macro.us10y} value={data.macro.us10y?.value != null ? data.macro.us10y.value + "%" : "—"} delta={data.macro.us10y?.deltaBps} deltaSuffix="bps" />
-              <MacroCell field={data.macro.us30y} value={data.macro.us30y?.value != null ? data.macro.us30y.value + "%" : "—"} delta={data.macro.us30y?.deltaBps} deltaSuffix="bps" />
-              {/* Section E — replaces the deleted auction card. The 30Y's 20d move is the
-                  transmission channel that actually matters for duration, and it updates
-                  daily rather than monthly. Highlighted beyond ±20bp. */}
-              {(() => {
-                const s30 = data.macro.us30y?.series;
-                const t20 = s30 ? trendBps(s30, 20) : null;
-                if (t20 == null) return null;
-                const hot = Math.abs(t20) > 20;
-                return (
-                  <MetricCard label="30Y · 20d change"
-                    title="long-end move over 20 sessions — the duration transmission channel"
-                    value={`${t20 >= 0 ? "+" : "−"}${Math.abs(t20)}bp`}
-                    valueColor={hot ? C.amber : C.text}
-                    accent={hot ? C.aBdr : undefined}
-                    sub={hot ? <span style={{ fontSize: 10.5, fontWeight: 800, color: C.amber }}>&gt;±20bp</span> : null} />
-                );
-              })()}
-              {data.macro.fives30s != null && (
-                <MetricCard label="5s30s slope"
-                  title="long-end steepening is the funding-stress shape — distinct from a parallel hawkish shift"
-                  value={`${data.macro.fives30s >= 0 ? "+" : ""}${data.macro.fives30s}bp`}
-                  sub={data.macro.fives30sDeltaBps != null && (
-                    <span style={{ fontSize: 11.5, fontWeight: 800, color: data.macro.fives30sDeltaBps > 0 ? C.amber : C.muted }}>
-                      {data.macro.fives30sDeltaBps >= 0 ? "+" : "−"}{Math.abs(data.macro.fives30sDeltaBps)}bp 1D
-                    </span>
-                  )} />
-              )}
-              <MacroCell field={{ name: "2s10s", src: "DGS10−DGS2", date: data.macro.us10y?.date, cadence: "daily" }} value={data.macro.twos10s != null ? (data.macro.twos10s >= 0 ? "+" : "") + data.macro.twos10s + "bps" : "—"} delta={data.macro.twos10sDeltaBps} deltaSuffix="bps" />
-              {/* DXY dedup'd — owned by the FX legs group in the Cross-asset card (a blend read
-                  next to its EUR/JPY legs), so it is not repeated here. */}
-              <MacroCell field={data.macro.oas}   value={data.macro.oas?.value ?? "—"} delta={data.macro.oas?.deltaBps} deltaSuffix="bps" />
-            </MetricGrid>
-            {data.macro.sanity && data.macro.sanity.length > 0 && (
-              <div style={{ marginTop: 10, padding: "8px 12px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8, fontSize: 12, color: C.amber, fontWeight: 700 }}>
-                ⚠ Sanity: {data.macro.sanity.join(" · ")}
-              </div>
-            )}
-            {/* Regime inputs — gold/BTC co-movement + real yield/breakeven, drives the read below */}
-            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px dashed " + C.bdr }}>
-              <div style={{ fontSize: 11, color: C.muted, fontWeight: 800, textTransform: "uppercase", marginBottom: 8 }}>Regime Inputs</div>
-              <MetricGrid min={180}>
-                <MacroCell field={data.macro.gold} value={data.macro.gold?.value != null ? "$" + withCommas(data.macro.gold.value) : "—"} delta={data.macro.gold?.delta} deltaSuffix="" />
-                <MacroCell field={data.macro.btc} value={data.macro.btc?.value != null ? "$" + Math.round(data.macro.btc.value).toLocaleString("en-US") : "—"} delta={data.macro.btc?.delta != null ? Math.round(data.macro.btc.delta) : null} deltaSuffix="" />
-                <MacroCell field={data.macro.realYield} value={data.macro.realYield?.value != null ? data.macro.realYield.value + "%" : "—"} delta={data.macro.realYield?.deltaBps} deltaSuffix="bps" />
-                <MacroCell field={data.macro.breakeven} value={data.macro.breakeven?.value != null ? data.macro.breakeven.value + "%" : "—"} delta={data.macro.breakeven?.deltaBps} deltaSuffix="bps" />
-                {/* 5y5y fwd BE relocated here from the dropped cross-asset regime group — this is
-                    its only home. Sits with the other breakeven/inflation inputs. MOVE/OVX are
-                    dedup'd out (owned by the Vol/credit group in the Cross-asset card). */}
-                <MacroCell field={data.macro.fwdBreakeven} value={data.macro.fwdBreakeven?.value != null ? data.macro.fwdBreakeven.value + "%" : "—"} delta={data.macro.fwdBreakeven?.deltaBps} deltaSuffix="bps" />
-              </MetricGrid>
-              {data.macro.regimeSignal && (() => {
-                const rs = data.macro.regimeSignal;
-                const w = rs.windows || {};
-                const arr = d => d === "up" ? "▲" : d === "down" ? "▼" : d === "flat" ? "→" : "·";
-                const col = d => d === "up" ? C.green : d === "down" ? C.red : C.muted;
-                const maCol = m => m === "below both" ? C.red : m === "above both" ? C.green : C.amber;
-                const win = o => !o ? "—" : (
-                  <>
-                    1d <span style={{ color: col(o.d1), fontWeight: 800 }}>{arr(o.d1)}</span> · 5d <span style={{ color: col(o.d5), fontWeight: 800 }}>{arr(o.d5)}</span> · 20d <span style={{ color: col(o.d20), fontWeight: 800 }}>{arr(o.d20)}</span>
-                    {o.ma ? <span style={{ color: maCol(o.ma), fontWeight: 700 }}> · {o.ma}</span> : null}
-                    {o.offHi != null ? <span style={{ color: C.muted }}> · {o.offHi > 0 ? "+" : ""}{o.offHi}% off hi</span> : null}
-                  </>
-                );
-                const unconfirmed = /UNCONFIRMED/.test(rs.label || "");
-                const mismatch = rs.mismatch;
-                return (
-                  <div style={{ marginTop: 10, padding: "10px 12px", background: C.bg, border: "1.5px solid " + (mismatch ? C.rBdr : unconfirmed ? C.aBdr : C.bdrMd), borderRadius: 8 }}>
-                    <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>Debasement / stagflation read (gold+BTC, 5d-smoothed)</div>
-                    {/* A label that contradicts the deltas shown beneath it is suppressed — the
-                        mismatch is reported instead, never a confident-but-inconsistent read. */}
-                    {mismatch ? (
-                      <>
-                        <div style={{ fontSize: 12.5, fontWeight: 800, color: C.red, marginTop: 2 }}>{mismatch}</div>
-                        <div style={{ fontSize: 11.5, color: C.muted, marginTop: 2 }}>suppressed label: <s>{rs.label}</s></div>
-                      </>
-                    ) : (
-                      <div style={{ fontSize: 15, fontWeight: 900, color: unconfirmed ? C.amber : C.text }}>{rs.label}</div>
-                    )}
-                    {!mismatch && rs.windowSplit && (
-                      <div style={{ fontSize: 10.5, color: C.amber, fontWeight: 700, marginTop: 2 }}>⚖ {rs.windowSplit}</div>
-                    )}
-                    <div style={{ fontSize: 11, color: C.mid, marginTop: 4 }}>gold — {win(w.gold)}</div>
-                    <div style={{ fontSize: 11, color: C.mid, marginTop: 2 }}>btc &nbsp;— {win(w.btc)}</div>
-                    <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
-                      DXY {rs.inputs?.dxy ?? "—"} · real-yield {rs.inputs?.realYield ?? "—"} · OAS {rs.inputs?.oas ?? "—"}
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          </Card>
+          {/* Macro (rates + regime inputs) relocated up to #5, directly under Credit. */}
 
           {/* This week's flagged events */}
           {data.calendar && data.calendar.length > 0 && (
