@@ -3040,12 +3040,17 @@ function EventPositioning({ e }) {
             <div key={ev.sym + ev.date} style={{ padding: "7px 10px", borderRadius: 8, background: C.bg, border: "1px solid " + C.bdrMd }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 12.5, fontWeight: 900, color: C.text }}>{ev.name}</span>
+                {ev.status === "PARTIAL" && (
+                  <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.4, color: C.amber, border: "1px solid " + C.aBdr, background: C.aBg, borderRadius: 4, padding: "1px 5px" }}>PARTIAL</span>
+                )}
                 <span style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>{ev.label} · {ev.date} · <b style={{ color: col }}>{ev.daysTo}d out</b></span>
                 <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700, color: C.mid }}>
                   5d {pct(ev.chg5d)} · 20d {pct(ev.chg20d)} · vs50d {pct(ev.vs50dPct)}
                 </span>
               </div>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: col, marginTop: 3, lineHeight: 1.45 }}>{ev.reading}</div>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: col, marginTop: 3, lineHeight: 1.45 }}>
+                {ev.status === "PARTIAL" ? "No verdict — " : ""}{ev.reading}
+              </div>
             </div>
           );
         })}
@@ -3199,9 +3204,22 @@ function CorrelationCollapse({ c }) {
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <SLabel>🔗 Correlation collapse</SLabel>
         <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>{c.legs.join(" · ")} · {c.window}d rolling</span>
-        <span style={{ marginLeft: "auto", fontSize: 20, fontWeight: 900, color: col }}>ρ {c.avg}</span>
+        {/* P2.1 — effective positions leads: the aggregate ρ understates a hot pair. */}
+        {c.effectivePositions != null && (
+          <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 900, color: c.effectivePositions < c.legs.length ? C.red : C.green }}>
+            Effective positions: {c.effectivePositions}<span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}> / {c.legs.length} names</span>
+          </span>
+        )}
       </div>
-      <div style={{ fontSize: 12.5, fontWeight: 800, color: col === C.green ? C.mid : col, marginTop: 3, lineHeight: 1.5 }}>{c.reading}</div>
+      {/* Hot pairs (ρ ≥ 0.85) surfaced ABOVE the aggregate — they ARE one position. */}
+      {c.hotPairs?.length > 0 && (
+        <div style={{ marginTop: 5, padding: "6px 10px", borderRadius: 6, background: C.rBg, border: "1px solid " + C.rBdr, fontSize: 12, fontWeight: 800, color: C.red }}>
+          ⚠ {c.hotPairs.map(p => `${p.a}–${p.b} ρ ${p.corr}`).join(" · ")} — one position, not {c.hotPairs.length + 1}. {c.blocks?.length ? `Blocks: ${c.blocks.join(" | ")}.` : ""}
+        </div>
+      )}
+      <div style={{ fontSize: 12.5, fontWeight: 800, color: col === C.green ? C.mid : col, marginTop: 5, lineHeight: 1.5 }}>
+        aggregate ρ {c.avg} — {c.reading}
+      </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
         {c.pairs.map(p => (
           <span key={p.a + p.b} style={{ fontSize: 11, fontWeight: 700, color: p.corr >= 0.7 ? C.red : p.corr >= 0.4 ? C.amber : C.green,
