@@ -3021,6 +3021,40 @@ function ScenarioBoard({ scenarios }) {
   );
 }
 
+// D2 — event positioning. Before a catalyst, the question is what is already PAID FOR. Shows the
+// run-up into each upcoming event and how stretched above the 50d line — the "priced for
+// perfection" read (AMD: record double-beat, −9%).
+function EventPositioning({ e }) {
+  if (!e || !e.available) return null;
+  const pct = (v, s = "%") => v == null ? "—" : `${v >= 0 ? "+" : ""}${v}${s}`;
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <SLabel>📅 Event positioning</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>what's already priced in · run-up into the catalyst</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+        {e.events.map(ev => {
+          const col = ev.tone === "amber" ? C.amber : ev.tone === "green" ? C.green : C.muted;
+          return (
+            <div key={ev.sym + ev.date} style={{ padding: "7px 10px", borderRadius: 8, background: C.bg, border: "1px solid " + C.bdrMd }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12.5, fontWeight: 900, color: C.text }}>{ev.name}</span>
+                <span style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>{ev.label} · {ev.date} · <b style={{ color: col }}>{ev.daysTo}d out</b></span>
+                <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700, color: C.mid }}>
+                  5d {pct(ev.chg5d)} · 20d {pct(ev.chg20d)} · vs50d {pct(ev.vs50dPct)}
+                </span>
+              </div>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: col, marginTop: 3, lineHeight: 1.45 }}>{ev.reading}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ fontSize: 10, color: C.lbl, marginTop: 5 }}>IV percentile (the cleanest leg) needs an options feed — not shown; run-up + stretch are the proxies.</div>
+    </Card>
+  );
+}
+
 // C1 — VIX term-structure regime. The curve SHAPE (front vs back), not the spot level, governs
 // options posture. Contango = calm slope; backwardation = stress; flat = transition. The
 // event-pricing overlay separates a dated-catalyst front bid from a real regime change.
@@ -3731,6 +3765,8 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {/* Part C — scenario board at the very top: the synthesis layer. */}
           {data.scenarios && <ScenarioBoard scenarios={data.scenarios} />}
           {data.volTerm && <VolRegime v={data.volTerm} />}
+          {/* D2 — event positioning into upcoming catalysts (priced-for-perfection). */}
+          {data.events && <EventPositioning e={data.events} />}
           {/* C3 — cross-market handoff (Asia tab only): is Asia leading or echoing the US? */}
           {data.handoff && <CrossMarketHandoff h={data.handoff} />}
           {/* D4 — correlation collapse (Asia tab only): three Layer-3 names moving as one. */}

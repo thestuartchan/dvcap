@@ -27,7 +27,7 @@ export default async function handler(req, res) {
   const assembled = await assembleRegion(region);
   if (!assembled) return res.status(400).json({ error: 'bad region' });
 
-  const { R, quotes, idxRaw, macro, regime, cross, hyg, leaning, csop7709, volTerm, handoff, scenarios, smhSoxx, fxPnl, correlation, read, marketRegime, ladder, fx, won, intervention } = assembled;
+  const { R, quotes, idxRaw, macro, regime, cross, hyg, leaning, csop7709, volTerm, handoff, scenarios, smhSoxx, fxPnl, correlation, events, read, marketRegime, ladder, fx, won, intervention } = assembled;
 
   // Attach display metadata + structure tag to each name, and names to indices.
   // `session` = explicit phase of that symbol's OWN exchange (live/pre/post/lunch/holiday/
@@ -73,6 +73,7 @@ export default async function handler(req, res) {
     smhSoxx,              // D3  — SMH − SOXX spread (mega-cap concentration vs cycle broadening)
     fxPnl,                // D5  — FX overlay: local vs USD-translated move per Asia position
     correlation,          // D4  — SMIC/Hynix/Samsung rolling correlation (three-as-one warning)
+    events,               // D2  — event positioning into upcoming catalysts (priced for perfection)
     fx,                   // P4  — FX leg decomposition + DXY reliability flag
     won,                  // F4  — USD/KRW attribution: macro move vs Korea-specific (Gate 2)
     intervention,         // F3  — manual intervention flag + DXY yen-leg attribution
