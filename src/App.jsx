@@ -4083,7 +4083,12 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                   <b>Gate 2 · {String(data.won.gate2).toUpperCase()}</b> — {data.won.note}
                 </div>
               )}
-              {["rates", "cyclical", "volCredit", "fx", "regime"].map(g => {
+              {/* Dedup (Part C): the 'regime' group is dropped here — every metric it carried
+                  (gold, BTC, 10Y BE, 10Y real, 2s10s, DXY) is rendered once in its owning
+                  section (Regime Inputs / Macro rates / FX legs). Its 5y5y fwd BE — the only
+                  metric with no other home — moved into Regime Inputs. cross.regime still backs
+                  the composed READ; only the duplicate tiles are gone. */}
+              {["rates", "cyclical", "volCredit", "fx"].map(g => {
                 const grp = data.cross[g];
                 if (!grp?.rows?.length) return null;
                 return (
@@ -4153,7 +4158,8 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                   )} />
               )}
               <MacroCell field={{ name: "2s10s", src: "DGS10−DGS2", date: data.macro.us10y?.date, cadence: "daily" }} value={data.macro.twos10s != null ? (data.macro.twos10s >= 0 ? "+" : "") + data.macro.twos10s + "bps" : "—"} delta={data.macro.twos10sDeltaBps} deltaSuffix="bps" />
-              <MacroCell field={data.macro.dxy}   value={data.macro.dxy?.value != null ? data.macro.dxy.value.toFixed(2) : "—"} delta={data.macro.dxy?.delta} deltaSuffix="" />
+              {/* DXY dedup'd — owned by the FX legs group in the Cross-asset card (a blend read
+                  next to its EUR/JPY legs), so it is not repeated here. */}
               <MacroCell field={data.macro.oas}   value={data.macro.oas?.value ?? "—"} delta={data.macro.oas?.deltaBps} deltaSuffix="bps" />
             </MetricGrid>
             {data.macro.sanity && data.macro.sanity.length > 0 && (
@@ -4169,8 +4175,10 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                 <MacroCell field={data.macro.btc} value={data.macro.btc?.value != null ? "$" + Math.round(data.macro.btc.value).toLocaleString("en-US") : "—"} delta={data.macro.btc?.delta != null ? Math.round(data.macro.btc.delta) : null} deltaSuffix="" />
                 <MacroCell field={data.macro.realYield} value={data.macro.realYield?.value != null ? data.macro.realYield.value + "%" : "—"} delta={data.macro.realYield?.deltaBps} deltaSuffix="bps" />
                 <MacroCell field={data.macro.breakeven} value={data.macro.breakeven?.value != null ? data.macro.breakeven.value + "%" : "—"} delta={data.macro.breakeven?.deltaBps} deltaSuffix="bps" />
-                <MacroCell field={data.macro.move} value={data.macro.move?.value ?? "—"} delta={data.macro.move?.delta} deltaSuffix="" />
-                <MacroCell field={data.macro.ovx} value={data.macro.ovx?.value ?? "—"} delta={data.macro.ovx?.delta} deltaSuffix="" />
+                {/* 5y5y fwd BE relocated here from the dropped cross-asset regime group — this is
+                    its only home. Sits with the other breakeven/inflation inputs. MOVE/OVX are
+                    dedup'd out (owned by the Vol/credit group in the Cross-asset card). */}
+                <MacroCell field={data.macro.fwdBreakeven} value={data.macro.fwdBreakeven?.value != null ? data.macro.fwdBreakeven.value + "%" : "—"} delta={data.macro.fwdBreakeven?.deltaBps} deltaSuffix="bps" />
               </MetricGrid>
               {data.macro.regimeSignal && (() => {
                 const rs = data.macro.regimeSignal;
