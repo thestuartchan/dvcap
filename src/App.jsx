@@ -3993,7 +3993,9 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                 const mismatch = rs.mismatch;
                 return (
                   <div style={{ marginTop: 10, padding: "10px 12px", background: C.bg, border: "1.5px solid " + (mismatch ? C.rBdr : unconfirmed ? C.aBdr : C.bdrMd), borderRadius: 8 }}>
-                    <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>Debasement / stagflation read (gold+BTC, 5d-smoothed)</div>
+                    <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>Debasement / stagflation read (gold+BTC)</div>
+                    {/* P0.1 — scope label. */}
+                    <div style={{ fontSize: 11, fontWeight: 800, color: C.blue, letterSpacing: 0.3, marginTop: 1 }}>cross-asset · 5d smoothed</div>
                     {/* A label that contradicts the deltas shown beneath it is suppressed — the
                         mismatch is reported instead, never a confident-but-inconsistent read. */}
                     {mismatch ? (
@@ -4034,6 +4036,8 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                 <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>cross-asset, today's price action</span>
               </div>
               <div style={{ fontSize: 17, fontWeight: 900, color: data.marketRegime.color }}>{data.marketRegime.label}</div>
+              {/* P0.1 — scope label: this and the structural Stagflation read measure different things. */}
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.blue, letterSpacing: 0.3, marginTop: 1 }}>today's tape · one session</div>
               <div style={{ fontSize: 12, fontWeight: 800, color: C.mid, marginTop: 2 }}>{data.marketRegime.discriminator}</div>
               {data.marketRegime.reasons?.map((s, i) => (
                 <div key={i} style={{ fontSize: 12, color: C.muted, marginTop: 3, lineHeight: 1.5 }}>· {s}</div>
@@ -5721,7 +5725,10 @@ export default function App() {
 
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <Card style={{ flex: "1 1 240px", background: activeRegime.bg, border: "1.5px solid " + activeRegime.bdr, borderTop: "4px solid " + activeRegime.color }}>
-                <div style={{ fontSize: 18, fontWeight: 900, color: activeRegime.color, marginBottom: 4 }}>{activeRegime.label}</div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: activeRegime.color, marginBottom: 1 }}>{activeRegime.label}</div>
+                {/* P0.1 — scope label: this is the STRUCTURAL regime, distinct from the Global
+                    Playbook tape read (one session) and the debasement cross-asset read (5d). */}
+                <div style={{ fontSize: 11, fontWeight: 800, color: C.blue, letterSpacing: 0.3, marginBottom: 4 }}>structural · consensus-derived · months</div>
                 <div style={{ color: C.muted, fontSize: 13, fontStyle: "italic", lineHeight: 1.6, marginBottom: 10 }}>
                   {{
                     stag: "Prioritise insurance (miners, staples). Hold cash. Avoid new software/growth entries. TLT is a trap here.",
