@@ -2956,6 +2956,52 @@ function Csop7709Tripwire({ t }) {
   );
 }
 
+// Part C — scenario board. Answers "which scenario am I in" at the top of the page, so the user
+// doesn't reassemble it from five category-bucketed sections. Each row: name, X/N met, and its
+// conditions with threshold + live value. Sorted server-side by proximity to confirming.
+function ScenarioBoard({ scenarios }) {
+  if (!scenarios?.length) return null;
+  const TONE = { red: C.red, amber: C.amber, green: C.green, muted: C.muted };
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+        <SLabel>🧭 Scenario board</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>which scenario am I in · sorted by proximity to confirming</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+        {scenarios.map(s => {
+          const col = s.confirmed ? C.red : (TONE[s.tone] || C.muted);
+          const countCol = s.confirmed ? C.red : s.total > 0 && s.met === s.total - 1 ? C.amber : C.muted;
+          return (
+            <div key={s.id} style={{ padding: "8px 10px", borderRadius: 8, background: s.confirmed ? C.rBg : C.bg,
+              border: "1px solid " + (s.confirmed ? C.rBdr : C.bdrMd) }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12.5, fontWeight: 900, color: col }}>{s.id} · {s.name}</span>
+                <span style={{ fontSize: 10.5, color: C.muted, fontWeight: 600, fontStyle: "italic" }}>{s.gloss}</span>
+                <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 900, color: countCol }}>
+                  {s.total > 0 ? `${s.met}/${s.total}` : "n/a"} {s.confirmed ? "✓" : "✗"}
+                  {s.unavailable > 0 && <span style={{ color: C.lbl, fontWeight: 600, fontSize: 10 }}> · {s.unavailable} n/a</span>}
+                </span>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 14px", marginTop: 4 }}>
+                {s.conditions.map((c, i) => {
+                  const cc = c.met === null ? C.lbl : c.met ? C.red : C.muted;
+                  return (
+                    <span key={i} style={{ fontSize: 11, fontWeight: 600, color: cc, fontVariantNumeric: "tabular-nums" }}>
+                      {c.met === null ? "·" : c.met ? "✓" : "✗"} {c.label}
+                      <span style={{ color: C.lbl, fontWeight: 700 }}> {c.display}</span>
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 // C1 — VIX term-structure regime. The curve SHAPE (front vs back), not the spot level, governs
 // options posture. Contango = calm slope; backwardation = stress; flat = transition. The
 // event-pricing overlay separates a dated-catalyst front bid from a real regime change.
@@ -3603,6 +3649,8 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               synthesized conclusion — both were previously buried mid-page. */}
           {/* C1 — VIX term-structure regime. The single biggest prior gap: nothing tracked the
               curve shape, and it governs every options decision. Sits at the very top. */}
+          {/* Part C — scenario board at the very top: the synthesis layer. */}
+          {data.scenarios && <ScenarioBoard scenarios={data.scenarios} />}
           {data.volTerm && <VolRegime v={data.volTerm} />}
           {/* C3 — cross-market handoff (Asia tab only): is Asia leading or echoing the US? */}
           {data.handoff && <CrossMarketHandoff h={data.handoff} />}
