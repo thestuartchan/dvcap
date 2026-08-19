@@ -824,6 +824,33 @@ const REGIMES = [
   return { ...r, ...pal };
 });
 
+// P0.2 — Regime-SHIFT scenarios. The recession-consensus engine produces four states
+// (stag/ref/def/inf) and cannot derive these two: Debasement is a currency-devaluation regime and
+// Hawkish Rates Repricing is a long-end break — neither is a consensus recession outcome. They are
+// resolutions the Insurance tab already carries; the decision they change lives on the Macro tab
+// (the parking bucket). So they are presented here as SELECTABLE scenario states you check
+// positioning against, explicitly NOT consensus probabilities. Boom ≠ Debasement — kept distinct.
+const REGIME_SHIFTS = [
+  {
+    id:"debase", label:"Debasement", color:"#7C3AED", bg:"#F5F3FF", bdr:"#C4B5FD",
+    tag:"currency devaluation · weak growth · suppressed yields",
+    desc:"Currency loses purchasing power while real growth stays weak and yields are administratively suppressed below inflation. NOT Inflationary Boom (that is strong growth + inflation).",
+    discriminator:"gold up + breakevens UP = confirming · gold up + breakevens FLAT = ambiguous · gold up + breakevens DOWN = a real-yield trade, not debasement",
+    best:["Gold / physical (GLD, 2840.HK)","Hard assets / real assets","Bitcoin (as debasement hedge)","TIPS / inflation-linked","Foreign hard-currency assets"],
+    worst:["Short-duration T-bills — cash loses purchasing power (the parking bucket is the losing trade here)","Nominal long bonds","Cash (USD)"],
+    decision:"⚠ Parking-bucket flip: the USFR/T-bill parking thesis assumes STAGFLATION, where short bills are a best asset. In DEBASEMENT the same bills are the WRONG asset — real value erodes. If the discriminator confirms debasement, the cash bucket must rotate into real assets.",
+  },
+  {
+    id:"hawkish", label:"Hawkish Rates Repricing", color:"#B91C1C", bg:"#FEF2F2", bdr:"#FCA5A5",
+    tag:"long-end breaks higher · term premium repricing",
+    desc:"The long end reprices higher — 30Y breaks above ~5.35% and rate-sensitives sell together. A duration event, distinct from a growth-driven selloff.",
+    discriminator:"30Y > 5.35% AND gold, TLT, XLU, XLP, IWM selling together (a broad rate-sensitive de-rate, not a single-name move)",
+    best:["Cash / ultra-short (BIL, SGOV)","Floating-rate (USFR)","Energy / commodities (real-rate resilient)","Value over growth"],
+    worst:["Long-duration bonds (TLT, ZROZ)","Rate-sensitive equities (REITs, utilities)","Gold (loses to rising real yields)","High-multiple / unprofitable tech"],
+    decision:"Short-duration parking is CORRECT here (cash earns the higher front-end), but any long-duration hedge (TLT) is the wrong side — a hawkish break is exactly when the duration leg breaks.",
+  },
+];
+
 // CPI tracker series colours — ONE definition shared by the headline tiles, the chart lines
 // and the legend, so a tile can never drift out of sync with the line it labels.
 const CPI_SERIES = { headline: "#ef4444", core: "#f97316", pce: "#8b5cf6" };
@@ -3241,6 +3268,54 @@ function CorrelationCollapse({ c }) {
             {p.a}–{p.b} <b>{p.corr}</b>
           </span>
         ))}
+      </div>
+    </Card>
+  );
+}
+
+// P0.2 — Regime-shift scenarios (Macro tab). Selectable Debasement / Hawkish states the recession
+// engine can't derive, surfaced so the parking-bucket decision has somewhere to live.
+function RegimeShiftScenarios() {
+  const [sel, setSel] = useState(REGIME_SHIFTS[0].id);
+  const s = REGIME_SHIFTS.find(x => x.id === sel) || REGIME_SHIFTS[0];
+  return (
+    <Card style={{ borderTop: "4px solid " + s.color }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <SLabel>🔀 Regime-shift scenarios</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>selectable · check positioning — NOT consensus probabilities</span>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+        {REGIME_SHIFTS.map(x => {
+          const on = x.id === sel;
+          return (
+            <button key={x.id} onClick={() => setSel(x.id)} style={{
+              background: on ? x.color : C.surf, color: on ? "#fff" : C.mid,
+              border: "1.5px solid " + (on ? x.color : C.bdr), borderRadius: 8,
+              padding: "6px 12px", fontSize: 12.5, fontWeight: 800, cursor: "pointer", opacity: on ? 1 : 0.75,
+            }}>{on ? "● " : ""}{x.label}</button>
+          );
+        })}
+      </div>
+      <div style={{ marginTop: 10, padding: "12px 14px", background: s.bg, border: "1.5px solid " + s.bdr, borderRadius: 10 }}>
+        <div style={{ fontSize: 16, fontWeight: 900, color: s.color }}>{s.label}</div>
+        <div style={{ fontSize: 11, fontWeight: 800, color: s.color, letterSpacing: 0.3, marginTop: 1 }}>{s.tag}</div>
+        <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.55, marginTop: 6 }}>{s.desc}</div>
+        <div style={{ fontSize: 11.5, color: C.muted, fontWeight: 700, marginTop: 6, lineHeight: 1.5 }}>
+          <b style={{ color: C.mid }}>Discriminator:</b> {s.discriminator}
+        </div>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 8 }}>
+          <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 800, color: C.green, textTransform: "uppercase", letterSpacing: 0.4 }}>Best</div>
+            {s.best.map((a, i) => <div key={i} style={{ fontSize: 12, color: C.mid, marginTop: 2, lineHeight: 1.45 }}>✓ {a}</div>)}
+          </div>
+          <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 800, color: C.red, textTransform: "uppercase", letterSpacing: 0.4 }}>Worst</div>
+            {s.worst.map((a, i) => <div key={i} style={{ fontSize: 12, color: C.mid, marginTop: 2, lineHeight: 1.45 }}>✗ {a}</div>)}
+          </div>
+        </div>
+        <div style={{ marginTop: 10, padding: "8px 11px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8, fontSize: 12, fontWeight: 700, color: C.amber, lineHeight: 1.55 }}>
+          {s.decision}
+        </div>
       </div>
     </Card>
   );
@@ -5722,6 +5797,9 @@ export default function App() {
                 <div style={{ color: C.lbl, fontSize: 11, marginTop: 10, fontStyle: "italic" }}>Using fallback regime probabilities — live recession data unavailable.</div>
               )}
             </Card>
+
+            {/* P0.2 — regime-shift scenarios the consensus engine can't derive (Debasement / Hawkish). */}
+            <RegimeShiftScenarios />
 
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <Card style={{ flex: "1 1 240px", background: activeRegime.bg, border: "1.5px solid " + activeRegime.bdr, borderTop: "4px solid " + activeRegime.color }}>
