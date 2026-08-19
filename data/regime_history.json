@@ -364,35 +364,35 @@
       "reflationary_p": 5,
       "deflationary_p": 25,
       "inflationary_p": 5,
-      "hawkish_repricing": "REFLATIONARY_GROWTH",
+      "hawkish_repricing": "INSUFFICIENT_DATA",
       "live_regime": "stag",
       "view_regime": "stag",
-      "pinned": false,
-      "hyg_chg": 0.24,
-      "hyg_qqq_divergence": -1.07,
+      "pinned": true,
+      "hyg_chg": -0.1,
+      "hyg_qqq_divergence": 1.59,
       "inputs": {
-        "weightedRecessionProb": 13.270069015619324,
+        "weightedRecessionProb": 13.053501599715606,
         "cpi": 3.30386,
-        "kalshi2027": 32,
+        "kalshi2027": 29,
         "tape": {
           "gold": "down",
           "tlt": "up",
-          "xlu": "up",
+          "xlu": "down",
           "xlp": "up",
-          "spy": "up",
-          "qqq": "up",
-          "iwm": "up",
-          "btc": "down",
-          "breakevenBp": -1
+          "spy": "down",
+          "qqq": "down",
+          "iwm": "down",
+          "btc": "flat",
+          "breakevenBp": null
         },
-        "ladderSpread": 1.92,
+        "ladderSpread": -3.99,
         "u3": 4.1,
         "empPop": 58.9,
-        "oas": 2.71,
-        "tenY": 4.7,
-        "twoY": 4.22
+        "oas": 2.7,
+        "tenY": 4.72,
+        "twoY": 4.19
       },
-      "loggedAt": "2026-08-19T04:59:59.783Z"
+      "loggedAt": "2026-08-19T10:25:27.170Z"
     }
   ]
 }
