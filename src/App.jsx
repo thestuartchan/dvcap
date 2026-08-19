@@ -3729,6 +3729,25 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               <div style={{ fontSize: 11.5, color: data.ladder.alert ? C.amber : C.muted, fontWeight: data.ladder.alert ? 700 : 400, marginTop: 4 }}>
                 {data.ladder.alert ? "⚠ " : ""}{data.ladder.note}
               </div>
+              {/* D3 — SMH − SOXX: which KIND of semi leadership (mega-cap-only vs broadening). */}
+              {data.smhSoxx?.available && (() => {
+                const t = data.smhSoxx;
+                const col = t.tone === "amber" ? C.amber : t.tone === "green" ? C.green : C.muted;
+                return (
+                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid " + C.bdr }}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4 }}>SMH − SOXX</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: C.mid }}>
+                        SMH {t.smhPct >= 0 ? "+" : ""}{t.smhPct}% · SOXX {t.soxxPct >= 0 ? "+" : ""}{t.soxxPct}%
+                      </span>
+                      <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 900, color: col }}>
+                        {t.spread >= 0 ? "+" : ""}{t.spread}pp · {t.reading}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 3, lineHeight: 1.45 }}>⚠ {t.note}</div>
+                  </div>
+                );
+              })()}
             </Card>
           )}
 
