@@ -134,10 +134,14 @@ const INDICATORS = [
 const ASSETS = [
   {
     id:"miners", name:"Gold Miners", icon:"⛏️", state:"WATCH",
-    stagRank:1, defRank:4, refRank:3, infRank:1, volatility:"HIGH",
-    stagNote:"Best stagflation asset. Gold benefits from both inflation AND growth fear. Miners are 2–3× levered to gold price.",
-    crisisScore:85, inflationScore:90, deflationScore:30, liquidityScore:75, stagScore:95,
-    verdict:"Best for debasement + stagflation. Miners move 2–3× for every 1× gold move. Crash first in liquidity crises, then rip.",
+    // P0.3 — rating resolved toward the Macro tab's caution (GOLD_MINERS_WHY is the single source).
+    // Miners are NOT the best stagflation asset: they are equities with operating leverage to gold,
+    // sold in liquidity events. Demoted from stagRank #1 / score 95, consistent with the ⚠️ they
+    // already carry in SCENARIO_MATRIX. The stagflation hedge is physical gold (GLD / 2840.HK).
+    stagRank:4, defRank:4, refRank:3, infRank:1, volatility:"HIGH",
+    stagNote:"⚠️ Cautioned in stagflation — miners are equities with operating leverage to gold (equity beta, sold in liquidity events: GDX fell ~70% in 2008). The stagflation hedge is physical gold (GLD / 2840.HK); miners are a leveraged, cautioned expression of the view, not a hedge. Add only after a VIX peak confirms the liquidity phase has passed.",
+    crisisScore:85, inflationScore:90, deflationScore:30, liquidityScore:75, stagScore:55,
+    verdict:"Best in DEBASEMENT (2–3× gold leverage). ⚠️ Cautioned in stagflation — equity beta means they crash first in a liquidity event before they rip. Physical gold is the hedge; miners express the view. Same ⚠️ rating as the Macro tab (one definition).",
     tickers:[
       {t:"GDX",  name:"VanEck Gold Miners ETF",     type:"ETF",   note:"Best entry. $33B AUM, 57 miners. Top: AEM, NEM, ABX."},
       {t:"GDXJ", name:"VanEck Junior Gold Miners",  type:"ETF",   note:"Higher beta. More upside, more volatile."},
@@ -152,7 +156,9 @@ const ASSETS = [
   },
   {
     id:"farmland", name:"Farmland", icon:"🌾", state:"BENIGN",
-    stagRank:3, defRank:3, refRank:2, infRank:2, volatility:"LOW",
+    // P0.3 — promoted to stagflation #1 (real asset, low vol, no equity-beta liquidity risk) when
+    // gold miners were demoted to a cautioned expression.
+    stagRank:1, defRank:3, refRank:2, infRank:2, volatility:"LOW",
     stagNote:"Good inflation hedge — food prices sticky in all environments. Illiquid. Multi-year hold.",
     crisisScore:60, inflationScore:85, deflationScore:50, liquidityScore:20, stagScore:75,
     verdict:"Excellent long-run inflation hedge. Thinly traded — use limit orders.",
@@ -163,7 +169,7 @@ const ASSETS = [
   },
   {
     id:"tbonds", name:"Treasury Bonds", icon:"🏛️", color:"#1E40AF", bg:"#EFF6FF", bdr:"#BFDBFE",
-    stagRank:4, defRank:1, refRank:4, infRank:4, volatility:"MED",
+    stagRank:5, defRank:1, refRank:4, infRank:4, volatility:"MED",
     stagNote:"WORST stagflation asset. Inflation erodes real value; rate hikes crush price. TLT lost 30%+ in 2022.",
     crisisScore:75, inflationScore:20, deflationScore:95, liquidityScore:95, stagScore:10,
     verdict:"Works in deflation/growth-scare recessions (2008, 2020). Fails in stagflation. Know your recession type first.",
@@ -3983,7 +3989,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                     {o.offHi != null ? <span style={{ color: C.muted }}> · {o.offHi > 0 ? "+" : ""}{o.offHi}% off hi</span> : null}
                   </>
                 );
-                const unconfirmed = /UNCONFIRMED/.test(rs.label || "");
+                const unconfirmed = /UNCONFIRMED|AMBIGUOUS|not debasement/i.test(rs.label || "");
                 const mismatch = rs.mismatch;
                 return (
                   <div style={{ marginTop: 10, padding: "10px 12px", background: C.bg, border: "1.5px solid " + (mismatch ? C.rBdr : unconfirmed ? C.aBdr : C.bdrMd), borderRadius: 8 }}>
