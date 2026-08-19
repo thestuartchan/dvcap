@@ -2956,6 +2956,59 @@ function Csop7709Tripwire({ t }) {
   );
 }
 
+// C1 — VIX term-structure regime. The curve SHAPE (front vs back), not the spot level, governs
+// options posture. Contango = calm slope; backwardation = stress; flat = transition. The
+// event-pricing overlay separates a dated-catalyst front bid from a real regime change.
+function VolRegime({ v }) {
+  if (!v) return null;
+  const TONE = { red: [C.red, C.rBg, C.rBdr], amber: [C.amber, C.aBg, C.aBdr], green: [C.green, C.gBg, C.gBdr] };
+  if (!v.available) {
+    return (
+      <Card>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+          <SLabel>🌀 Vol regime</SLabel>
+          <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>VIX term structure · VIX9D → VIX → VIX3M</span>
+        </div>
+        <div style={{ marginTop: 4, fontSize: 12, color: C.amber, fontWeight: 700 }}>{v.note}</div>
+      </Card>
+    );
+  }
+  const [col, bg, bdr] = TONE[v.tone] || TONE.amber;
+  const pt = (x, suffix = "") => x == null ? "—" : `${x >= 0 ? "+" : ""}${x}${suffix}`;
+  return (
+    <Card style={{ borderTop: "4px solid " + col }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <SLabel>🌀 Vol regime</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>VIX term structure · governs options posture</span>
+        <span style={{ marginLeft: "auto", fontSize: 16, fontWeight: 900, color: col }}>{v.regime}</span>
+      </div>
+      <div style={{ fontSize: 12.5, fontWeight: 800, color: C.mid, marginTop: 3 }}>{v.meaning}</div>
+      {/* The three curve points, front → back, with each leg's 1d move. */}
+      <div style={{ display: "flex", gap: 14, marginTop: 8, flexWrap: "wrap" }}>
+        {[["VIX9D", v.vix9d, v.frontChg], ["VIX", v.vix, null], ["VIX3M", v.vix3m, v.backChg]].map(([lbl, px, chg]) => (
+          <div key={lbl} style={{ minWidth: 70 }}>
+            <div style={{ fontSize: 10, color: C.muted, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4 }}>{lbl}</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{px != null ? px.toFixed(2) : "—"}</div>
+            {chg != null && <div style={{ fontSize: 10.5, fontWeight: 700, color: chg > 0 ? C.red : chg < 0 ? C.green : C.muted }}>{pt(chg, "% 1d")}</div>}
+          </div>
+        ))}
+        <div style={{ minWidth: 90 }}>
+          <div style={{ fontSize: 10, color: C.muted, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4 }}>front − back</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: col }}>{pt(v.spreadPts)}pt</div>
+          <div style={{ fontSize: 10.5, fontWeight: 700, color: C.muted }}>{pt(v.spreadPct, "%")}</div>
+        </div>
+      </div>
+      {/* Event-pricing overlay — front bid against a flat back is a dated catalyst, not stress. */}
+      {v.eventPricing && (
+        <div style={{ marginTop: 8, padding: "7px 10px", borderRadius: 6, background: bg, border: "1px solid " + bdr,
+          fontSize: 11.5, lineHeight: 1.5, color: C.amber, fontWeight: 700 }}>
+          ⚠ {v.note}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // Constituent baskets under the AI-levered axis — same auditable pattern as the other cards.
 function AxisBaskets({ ai, non }) {
   const line = (lbl, arr) => (
@@ -3022,7 +3075,11 @@ function MacroCell({ field, value, delta, deltaSuffix }) {
   const mf = macroFresh(field);
   const suspect = !!field?.suspect;   // failed a sanity/relationship check → don't show clean
   const arrow = delta == null ? "" : delta > 0 ? "▲" : delta < 0 ? "▼" : "■";
-  const dcol = delta == null ? C.muted : delta > 0 ? C.green : delta < 0 ? C.red : C.muted;
+  // A2 — never render a confident green/red direction arrow off a STALE print. When the field
+  // is stale the delta is a prior-print move, not today's, so the arrow is neutralized to muted
+  // (the amber "last print · stale · Nd" text alongside marks WHY). A live field keeps its color.
+  const dcol = mf.stale ? C.muted
+             : delta == null ? C.muted : delta > 0 ? C.green : delta < 0 ? C.red : C.muted;
   return (
     <MetricCard
       label={field?.name}
@@ -3498,6 +3555,9 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               Ordered by signal value, not by data-flow order. The tripwire count is the
               at-a-glance "are the gauges aligning" read, and the composed READ is the
               synthesized conclusion — both were previously buried mid-page. */}
+          {/* C1 — VIX term-structure regime. The single biggest prior gap: nothing tracked the
+              curve shape, and it governs every options decision. Sits at the very top. */}
+          {data.volTerm && <VolRegime v={data.volTerm} />}
           {/* Cross-asset regime read (P0.1). Separate from the probability model on the Macro
               tab: this reads today's TAPE. Its value is the discriminator line — defensives
               sold vs bid is what separates a rates repricing from a deleveraging, and gold
