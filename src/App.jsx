@@ -2913,6 +2913,7 @@ function CrossRow({ r }) {
       ) : (
         <div style={{ fontSize: 10, color: C.amber, fontWeight: 700, marginTop: 2 }}>no direction</div>
       )}
+      {r.benchmark && <div style={{ marginTop: 1 }}><BenchChip b={r.benchmark} /></div>}
     </MetricCard>
   );
 }
@@ -3382,6 +3383,20 @@ function macroFresh(field) {
   }
   return { stale: false, text: "" };
 }
+// P1.2 — percentile + band chip. "12th pct (3Y) · CALM". Percentile = is this unusual; band =
+// does it matter. Band coloured by severity so a benign level and an extreme one read apart.
+function BenchChip({ b }) {
+  if (!b || (b.pct == null && !b.band)) return null;
+  const bandCol = /EXTREME|RECESSIONARY|HIGH/i.test(b.band || "") ? C.red
+    : /ELEVATED|STRESSED|WATCHFUL/i.test(b.band || "") ? C.amber : C.muted;
+  return (
+    <span style={{ fontSize: 10, color: C.lbl, fontWeight: 700 }}>
+      {b.pct != null ? `${b.pct}th pct${b.window ? ` (${b.window})` : ""}` : ""}
+      {b.band ? <> · <span style={{ color: bandCol, fontWeight: 800 }}>{b.band}</span></> : null}
+    </span>
+  );
+}
+
 // One macro cell: value + direction arrow (delta) + asOf/stale + source on hover.
 function MacroCell({ field, value, delta, deltaSuffix }) {
   const mf = macroFresh(field);
@@ -3404,6 +3419,7 @@ function MacroCell({ field, value, delta, deltaSuffix }) {
         {suspect && <span style={{ color: C.amber, fontWeight: 700 }}>suspect ({field.src})</span>}
         {!suspect && delta != null && <span style={{ color: dcol, fontWeight: 700 }}>{arrow} {Math.abs(delta)}{deltaSuffix}</span>}
         {mf.text && <span style={{ color: mf.stale ? C.amber : C.lbl }}>{mf.text}</span>}
+        <BenchChip b={field?.benchmark} />
       </div>
     </MetricCard>
   );
