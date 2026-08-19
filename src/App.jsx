@@ -3155,6 +3155,31 @@ function FxOverlay({ f }) {
   );
 }
 
+// D4 — correlation collapse. Three Layer-3 names (SMIC / SK Hynix / Samsung) look diversified;
+// when their rolling correlation is high they are one position at ~half the book.
+function CorrelationCollapse({ c }) {
+  if (!c || !c.available) return null;
+  const col = c.tone === "red" ? C.red : c.tone === "amber" ? C.amber : C.green;
+  return (
+    <Card style={{ borderTop: "4px solid " + col }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <SLabel>🔗 Correlation collapse</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>{c.legs.join(" · ")} · {c.window}d rolling</span>
+        <span style={{ marginLeft: "auto", fontSize: 20, fontWeight: 900, color: col }}>ρ {c.avg}</span>
+      </div>
+      <div style={{ fontSize: 12.5, fontWeight: 800, color: col === C.green ? C.mid : col, marginTop: 3, lineHeight: 1.5 }}>{c.reading}</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+        {c.pairs.map(p => (
+          <span key={p.a + p.b} style={{ fontSize: 11, fontWeight: 700, color: p.corr >= 0.7 ? C.red : p.corr >= 0.4 ? C.amber : C.green,
+            border: "1px solid " + C.bdr, borderRadius: 5, padding: "2px 7px" }}>
+            {p.a}–{p.b} <b>{p.corr}</b>
+          </span>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 // Constituent baskets under the AI-levered axis — same auditable pattern as the other cards.
 function AxisBaskets({ ai, non }) {
   const line = (lbl, arr) => (
@@ -3708,6 +3733,8 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {data.volTerm && <VolRegime v={data.volTerm} />}
           {/* C3 — cross-market handoff (Asia tab only): is Asia leading or echoing the US? */}
           {data.handoff && <CrossMarketHandoff h={data.handoff} />}
+          {/* D4 — correlation collapse (Asia tab only): three Layer-3 names moving as one. */}
+          {data.correlation && <CorrelationCollapse c={data.correlation} />}
           {/* D5 — FX overlay on P&L (Asia tab only): local vs USD-translated per position. */}
           {data.fxPnl && <FxOverlay f={data.fxPnl} />}
           {/* Cross-asset regime read (P0.1). Separate from the probability model on the Macro
