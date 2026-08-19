@@ -3760,104 +3760,18 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               Ordered by signal value, not by data-flow order. The tripwire count is the
               at-a-glance "are the gauges aligning" read, and the composed READ is the
               synthesized conclusion — both were previously buried mid-page. */}
-          {/* C1 — VIX term-structure regime. The single biggest prior gap: nothing tracked the
-              curve shape, and it governs every options decision. Sits at the very top. */}
-          {/* Part C — scenario board at the very top: the synthesis layer. */}
+          {/* ── LAYOUT (Part C) — the question order: Scenario → Tripwires → READ → Credit →
+              Rates → everything else. The synthesis cluster leads; raw data and the book-specific
+              tell cards (handoff / correlation / FX / events) drop to "everything else" below. */}
+          {/* 1 — Scenario board (synthesis). */}
           {data.scenarios && <ScenarioBoard scenarios={data.scenarios} />}
+          {/* 2 — Tripwires: vol regime + gauges + 7709, tagged by scenario. */}
           {data.volTerm && <VolRegime v={data.volTerm} />}
-          {/* D2 — event positioning into upcoming catalysts (priced-for-perfection). */}
-          {data.events && <EventPositioning e={data.events} />}
-          {/* C3 — cross-market handoff (Asia tab only): is Asia leading or echoing the US? */}
-          {data.handoff && <CrossMarketHandoff h={data.handoff} />}
-          {/* D4 — correlation collapse (Asia tab only): three Layer-3 names moving as one. */}
-          {data.correlation && <CorrelationCollapse c={data.correlation} />}
-          {/* D5 — FX overlay on P&L (Asia tab only): local vs USD-translated per position. */}
-          {data.fxPnl && <FxOverlay f={data.fxPnl} />}
-          {/* Cross-asset regime read (P0.1). Separate from the probability model on the Macro
-              tab: this reads today's TAPE. Its value is the discriminator line — defensives
-              sold vs bid is what separates a rates repricing from a deleveraging, and gold
-              and bonds alone cannot tell them apart. */}
-          {data.marketRegime && data.marketRegime.state !== "INSUFFICIENT_DATA" && (
-            <Card>{/* I.2 — regime state is not a status token; no badge, no bar. */}
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                <SLabel>🎛️ Tape regime</SLabel>
-                <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>cross-asset, today's price action</span>
-              </div>
-              <div style={{ fontSize: 17, fontWeight: 900, color: data.marketRegime.color }}>{data.marketRegime.label}</div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: C.mid, marginTop: 2 }}>{data.marketRegime.discriminator}</div>
-              {data.marketRegime.reasons?.map((s, i) => (
-                <div key={i} style={{ fontSize: 12, color: C.muted, marginTop: 3, lineHeight: 1.5 }}>· {s}</div>
-              ))}
-              {data.marketRegime.corroboration && !data.marketRegime.corroboration.available && (
-                <div style={{ fontSize: 11, color: C.amber, fontWeight: 700, marginTop: 4 }}>{data.marketRegime.corroboration.note}</div>
-              )}
-              {/* F2 — the gold pair, stated explicitly. Gold alone is ambiguous and has been
-                  read both ways in a week; the breakeven leg is what disambiguates it. */}
-              {data.marketRegime.goldPair && (
-                <div style={{ marginTop: 6, padding: "7px 10px", borderRadius: 6,
-                  background: data.marketRegime.goldPair.available ? C.bg : C.aBg,
-                  border: "1px solid " + (data.marketRegime.goldPair.available ? C.bdr : C.aBdr),
-                  fontSize: 11.5, lineHeight: 1.55,
-                  color: data.marketRegime.goldPair.available ? C.muted : C.amber,
-                  fontWeight: data.marketRegime.goldPair.available ? 400 : 700 }}>
-                  <b>Gold pair · {data.marketRegime.goldPair.reading.replace(/_/g, " ")}</b> — {data.marketRegime.goldPair.note}
-                </div>
-              )}
-            </Card>
-          )}
-
-          {/* Concentration ladder (P5) — fixed order, widest beta to narrowest. */}
-          {data.ladder && data.ladder.spread != null && (
-            <Card>{/* I.2 — alert flag is not a status badge; no bar. */}
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                <SLabel>🪜 Breadth ladder</SLabel>
-                <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>SMH → QQQ → SPY → IWM → HYG</span>
-                <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 900, color: data.ladder.alert ? C.amber : C.mid }}>
-                  spread {data.ladder.spread}pp
-                </span>
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 4 }}>
-                {data.ladder.rungs.map(r => (
-                  <span key={r.sym} style={{ fontSize: 12.5, fontWeight: 700 }}>
-                    <span style={{ color: C.muted }}>{r.sym}</span>{" "}
-                    <span style={{ color: r.pct == null ? C.lbl : pbPctColor(r.pct) }}>
-                      {r.pct == null ? "—" : `${r.pct >= 0 ? "+" : ""}${r.pct}%`}
-                    </span>
-                  </span>
-                ))}
-              </div>
-              <div style={{ fontSize: 11.5, color: data.ladder.alert ? C.amber : C.muted, fontWeight: data.ladder.alert ? 700 : 400, marginTop: 4 }}>
-                {data.ladder.alert ? "⚠ " : ""}{data.ladder.note}
-              </div>
-              {/* D3 — SMH − SOXX: which KIND of semi leadership (mega-cap-only vs broadening). */}
-              {data.smhSoxx?.available && (() => {
-                const t = data.smhSoxx;
-                const col = t.tone === "amber" ? C.amber : t.tone === "green" ? C.green : C.muted;
-                return (
-                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid " + C.bdr }}>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4 }}>SMH − SOXX</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: C.mid }}>
-                        SMH {t.smhPct >= 0 ? "+" : ""}{t.smhPct}% · SOXX {t.soxxPct >= 0 ? "+" : ""}{t.soxxPct}%
-                      </span>
-                      <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 900, color: col }}>
-                        {t.spread >= 0 ? "+" : ""}{t.spread}pp · {t.reading}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 3, lineHeight: 1.45 }}>⚠ {t.note}</div>
-                  </div>
-                );
-              })()}
-            </Card>
-          )}
-
           <GaugesLeaning leaning={data.leaning} prominent />
-
           {/* CSOP 7709 deleveraging tripwire — standalone, NOT part of the gauges count. */}
           {data.csop7709 && <Csop7709Tripwire t={data.csop7709} />}
 
-          {/* Composed READ — deterministic, from the gate state. Observational only: it
-              reports level, direction, thresholds and conflicts. No positioning language. */}
+          {/* 3 — Composed READ — deterministic, from the gate state. Observational only. */}
           {data.read?.sentences?.length > 0 && (
             <Card>{/* I.2 — composite read: informational, no status badge, no bar. */}
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
@@ -3888,6 +3802,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
             </Card>
           )}
 
+          {/* 4 — Credit (master gauge) lives inside the regime block below; it follows READ. */}
           {/* Regime summary — one card per active region (stacked in All view) */}
           {active.map(d => (
           <Card key={d.region}>
@@ -3963,6 +3878,88 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {/* Southbound Stock Connect (SMIC mainland flow) — same class as the Korea flow panel,
               shown alongside it when Asia is active. Self-fetches its own manual store. */}
           {regions.includes("asia") && <SouthboundPanel />}
+
+          {/* Tape regime + breadth ladder (everything-else): today's cross-asset price action. */}
+          {data.marketRegime && data.marketRegime.state !== "INSUFFICIENT_DATA" && (
+            <Card>{/* I.2 — regime state is not a status token; no badge, no bar. */}
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                <SLabel>🎛️ Tape regime</SLabel>
+                <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>cross-asset, today's price action</span>
+              </div>
+              <div style={{ fontSize: 17, fontWeight: 900, color: data.marketRegime.color }}>{data.marketRegime.label}</div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: C.mid, marginTop: 2 }}>{data.marketRegime.discriminator}</div>
+              {data.marketRegime.reasons?.map((s, i) => (
+                <div key={i} style={{ fontSize: 12, color: C.muted, marginTop: 3, lineHeight: 1.5 }}>· {s}</div>
+              ))}
+              {data.marketRegime.corroboration && !data.marketRegime.corroboration.available && (
+                <div style={{ fontSize: 11, color: C.amber, fontWeight: 700, marginTop: 4 }}>{data.marketRegime.corroboration.note}</div>
+              )}
+              {/* F2 — the gold pair, stated explicitly. Gold alone is ambiguous and has been
+                  read both ways in a week; the breakeven leg is what disambiguates it. */}
+              {data.marketRegime.goldPair && (
+                <div style={{ marginTop: 6, padding: "7px 10px", borderRadius: 6,
+                  background: data.marketRegime.goldPair.available ? C.bg : C.aBg,
+                  border: "1px solid " + (data.marketRegime.goldPair.available ? C.bdr : C.aBdr),
+                  fontSize: 11.5, lineHeight: 1.55,
+                  color: data.marketRegime.goldPair.available ? C.muted : C.amber,
+                  fontWeight: data.marketRegime.goldPair.available ? 400 : 700 }}>
+                  <b>Gold pair · {data.marketRegime.goldPair.reading.replace(/_/g, " ")}</b> — {data.marketRegime.goldPair.note}
+                </div>
+              )}
+            </Card>
+          )}
+
+          {/* Concentration ladder (P5) — fixed order, widest beta to narrowest. */}
+          {data.ladder && data.ladder.spread != null && (
+            <Card>{/* I.2 — alert flag is not a status badge; no bar. */}
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                <SLabel>🪜 Breadth ladder</SLabel>
+                <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>SMH → QQQ → SPY → IWM → HYG</span>
+                <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 900, color: data.ladder.alert ? C.amber : C.mid }}>
+                  spread {data.ladder.spread}pp
+                </span>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 4 }}>
+                {data.ladder.rungs.map(r => (
+                  <span key={r.sym} style={{ fontSize: 12.5, fontWeight: 700 }}>
+                    <span style={{ color: C.muted }}>{r.sym}</span>{" "}
+                    <span style={{ color: r.pct == null ? C.lbl : pbPctColor(r.pct) }}>
+                      {r.pct == null ? "—" : `${r.pct >= 0 ? "+" : ""}${r.pct}%`}
+                    </span>
+                  </span>
+                ))}
+              </div>
+              <div style={{ fontSize: 11.5, color: data.ladder.alert ? C.amber : C.muted, fontWeight: data.ladder.alert ? 700 : 400, marginTop: 4 }}>
+                {data.ladder.alert ? "⚠ " : ""}{data.ladder.note}
+              </div>
+              {/* D3 — SMH − SOXX: which KIND of semi leadership (mega-cap-only vs broadening). */}
+              {data.smhSoxx?.available && (() => {
+                const t = data.smhSoxx;
+                const col = t.tone === "amber" ? C.amber : t.tone === "green" ? C.green : C.muted;
+                return (
+                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid " + C.bdr }}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4 }}>SMH − SOXX</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: C.mid }}>
+                        SMH {t.smhPct >= 0 ? "+" : ""}{t.smhPct}% · SOXX {t.soxxPct >= 0 ? "+" : ""}{t.soxxPct}%
+                      </span>
+                      <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 900, color: col }}>
+                        {t.spread >= 0 ? "+" : ""}{t.spread}pp · {t.reading}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 3, lineHeight: 1.45 }}>⚠ {t.note}</div>
+                  </div>
+                );
+              })()}
+            </Card>
+          )}
+
+          {/* Book-specific tell cards (everything-else): event positioning + the Asia-only
+              handoff / correlation / FX overlay. Moved out of the top synthesis cluster. */}
+          {data.events && <EventPositioning e={data.events} />}
+          {data.handoff && <CrossMarketHandoff h={data.handoff} />}
+          {data.correlation && <CorrelationCollapse c={data.correlation} />}
+          {data.fxPnl && <FxOverlay f={data.fxPnl} />}
 
           {/* Names grid — one flat grid across active regions; sorted category → region →
               %chg with ★ leaders pinned per category. Geo badge shown in All view. */}
