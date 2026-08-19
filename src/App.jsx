@@ -2929,6 +2929,33 @@ function GaugesLeaning({ leaning, prominent }) {
   );
 }
 
+// CSOP 7709 deleveraging tripwire — a SINGLE, position-specific signal, kept out of the
+// gauges-leaning cluster on purpose (see lib/gates.js). China-tech units outstanding: a >3%
+// one-day drop or two consecutive down days = holders exiting the leveraged trade, which leads
+// the name. Withheld (not shown quiet) when the manual unit print is stale.
+function Csop7709Tripwire({ t }) {
+  if (!t) return null;
+  const fired = t.tripped === true;
+  const col = fired ? C.red : t.available ? C.green : C.lbl;
+  return (
+    <div style={{ marginTop: 12, padding: "10px 12px", background: fired ? C.rBg : C.bg,
+      border: "1.5px solid " + (fired ? C.rBdr : C.bdrMd), borderRadius: 8 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 11, color: C.muted, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5 }}>CSOP 7709 tripwire</span>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>China-tech units outstanding · deleveraging tell</span>
+        <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 900, color: col }}>
+          {fired ? "▲ FIRED" : t.available ? "▼ quiet" : "· withheld"}
+        </span>
+      </div>
+      <div style={{ marginTop: 5, fontSize: 12, color: fired ? C.red : C.mid, fontWeight: fired ? 700 : 600, lineHeight: 1.5 }}>
+        {t.available
+          ? <>{t.detail}{fired ? <> — <b>{t.reason}</b></> : " — no deleveraging trigger"}{t.asOf ? <span style={{ color: C.lbl, fontWeight: 500 }}> · {t.asOf}</span> : null}</>
+          : <span style={{ color: C.amber, fontWeight: 700 }}>{t.note}</span>}
+      </div>
+    </div>
+  );
+}
+
 // Constituent baskets under the AI-levered axis — same auditable pattern as the other cards.
 function AxisBaskets({ ai, non }) {
   const line = (lbl, arr) => (
@@ -3531,6 +3558,9 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           )}
 
           <GaugesLeaning leaning={data.leaning} prominent />
+
+          {/* CSOP 7709 deleveraging tripwire — standalone, NOT part of the gauges count. */}
+          {data.csop7709 && <Csop7709Tripwire t={data.csop7709} />}
 
           {/* Composed READ — deterministic, from the gate state. Observational only: it
               reports level, direction, thresholds and conflicts. No positioning language. */}
