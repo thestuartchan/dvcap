@@ -312,6 +312,15 @@ const INSURANCE_PHASES = [
   { k:"hawkish",   col:"hawkish",   label:"Hawkish Rates Repricing",   short:"Hawkish Repricing", color:"#B45309", bg:"#FFF7ED", bdr:"#FED7AA", desc:"Not a crash — a rates repricing (occurred 2026-07-31: gold −2.07%, TLT −0.87%, XLU −0.37%, XLP −0.80%, IWM −0.70%, BTC −1.8%, SPY roughly flat). Nothing hedges this except the front end. Duration is the risk, and every asset that competes with cash for yield gets sold simultaneously — including the defensives (GLD, TLT, staples) that work in every other scenario." },
 ];
 
+// P1.3 — the six columns are TWO dimensions: crash TIME PHASES (pre-crash / liquidity) and crash
+// RESOLUTIONS (deflationary / debasement / stagflation / hawkish). Picking a flat column answered
+// two questions at once. The matrix now offers a phase-dimension selector; the resolution
+// dimension expands to its four outcome columns. One asset can then carry three ratings —
+// e.g. gold ✅ pre-crash, ⚠️ liquidity, and varying by resolution — which a flat row can't show.
+const INS_PHASE_DIMS = { preCrash: ["preCrash"], liquidity: ["liquidity"], resolution: ["def", "inf", "stag", "hawkish"] };
+const INS_DIM_LABELS = { preCrash: "Pre-Crash", liquidity: "Liquidity", resolution: "Resolution" };
+const insDimOf = k => k === "preCrash" ? "preCrash" : k === "liquidity" ? "liquidity" : "resolution";
+
 // Permanent, non-interactive reference. Six columns, grouped by hedge family (group header rows
 // rendered in the table). ✅✅ = primary · ✅ = works well · ⚠️ = caution/timing · ❌ = avoid.
 // GLD/Physical Gold and GDX/GDXJ are intentionally separate rows — GLD held value where GDX did
@@ -5194,14 +5203,32 @@ export default function App() {
             <Card>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
                 <SLabel>Crash Scenario Guide</SLabel>
-                <span style={{ color: C.lbl, fontSize: 12 }}>Tap a column to plan around that scenario ↓</span>
+                <span style={{ color: C.lbl, fontSize: 12 }}>Pick the PHASE, then the column ↓</span>
               </div>
+              {/* P1.3 — phase-dimension selector: pick the phase first, resolution expands to four. */}
+              <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>Phase</span>
+                {["preCrash", "liquidity", "resolution"].map(dim => {
+                  const on = insDimOf(insurancePhase) === dim;
+                  return (
+                    <button key={dim} onClick={() => setInsurancePhase(INS_PHASE_DIMS[dim][0])} style={{
+                      background: on ? C.blue : C.surf, color: on ? "#fff" : C.mid,
+                      border: "1.5px solid " + (on ? C.blue : C.bdr), borderRadius: 8,
+                      padding: "6px 14px", fontSize: 12.5, fontWeight: 800, cursor: "pointer", opacity: on ? 1 : 0.7,
+                    }}>{on ? "● " : ""}{INS_DIM_LABELS[dim]}{dim === "resolution" ? " ▾" : ""}</button>
+                  );
+                })}
+                {insDimOf(insurancePhase) === "resolution" && (
+                  <span style={{ fontSize: 11, color: C.muted, fontWeight: 600 }}>→ Deflationary · Debasement · Stagflation · Hawkish</span>
+                )}
+              </div>
+              {(() => { const shownPhases = INSURANCE_PHASES.filter(p => INS_PHASE_DIMS[insDimOf(insurancePhase)].includes(p.k)); return (
               <div style={{ overflowX: "auto", width: "100%" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900, fontSize: 12 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: shownPhases.length > 1 ? 700 : 360, fontSize: 12 }}>
                   <thead>
                     <tr>
                       <th style={{ textAlign: "left", color: C.mid, padding: "6px 10px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700, width: 140, minWidth: 140 }}>Instrument</th>
-                      {INSURANCE_PHASES.map(p => {
+                      {shownPhases.map(p => {
                         const on = insurancePhase === p.k;
                         return (
                           <th key={p.k} style={{ padding: 0, minWidth: 120, borderBottom: "1.5px solid " + (on ? p.color : C.bdr) }}>
@@ -5225,7 +5252,7 @@ export default function App() {
                       const rows = [];
                       if (showGroup) rows.push(
                         <tr key={"grp-" + r.group}>
-                          <td colSpan={7} style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#999", textTransform: "uppercase", padding: "10px 12px 4px", backgroundColor: "transparent", borderBottom: "none" }}>
+                          <td colSpan={1 + shownPhases.length} style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#999", textTransform: "uppercase", padding: "10px 12px 4px", backgroundColor: "transparent", borderBottom: "none" }}>
                             {r.group}
                           </td>
                         </tr>
@@ -5233,7 +5260,7 @@ export default function App() {
                       rows.push(
                         <tr key={r.row} style={{ background: ri % 2 === 0 ? C.surf : C.bg }}>
                           <td style={{ padding: "6px 10px", color: C.text, fontWeight: 600, borderBottom: "1px solid " + C.bdr, width: 140, minWidth: 140 }}>{r.row}</td>
-                          {INSURANCE_PHASES.map(p => {
+                          {shownPhases.map(p => {
                             const on = insurancePhase === p.k;
                             return (
                               <td key={p.k} style={{ textAlign: "center", padding: "6px 8px", fontSize: 14, minWidth: 120, borderBottom: "1px solid " + C.bdr, background: on ? p.bg : "transparent", fontWeight: on ? 800 : 400 }}>
@@ -5248,6 +5275,7 @@ export default function App() {
                   </tbody>
                 </table>
               </div>
+              ); })()}
               <div style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap" }}>
                 {[["✅✅", "Primary instrument"], ["✅", "Works well"], ["⚠️", "Caution / timing-dependent"], ["❌", "Avoid"]].map(([sym, lbl]) => (
                   <div key={lbl} style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 12, color: C.muted }}>
