@@ -156,9 +156,11 @@ const ASSETS = [
   },
   {
     id:"farmland", name:"Farmland", icon:"🌾", state:"BENIGN",
-    // P0.3 — promoted to stagflation #1 (real asset, low vol, no equity-beta liquidity risk) when
-    // gold miners were demoted to a cautioned expression.
-    stagRank:1, defRank:3, refRank:2, infRank:2, volatility:"LOW",
+    // P0.3 — a real-asset inflation hedge, but ILLIQUID (multi-year hold), so it sits at stagflation
+    // #2 behind liquid Consumer Staples — consistent with the Macro tab, which ranks GLD > Staples >
+    // Energy > Farmland. Not #1: you cannot tactically deploy into farmland the way an insurance
+    // posture needs.
+    stagRank:2, defRank:3, refRank:2, infRank:2, volatility:"LOW",
     stagNote:"Good inflation hedge — food prices sticky in all environments. Illiquid. Multi-year hold.",
     crisisScore:60, inflationScore:85, deflationScore:50, liquidityScore:20, stagScore:75,
     verdict:"Excellent long-run inflation hedge. Thinly traded — use limit orders.",
@@ -182,9 +184,12 @@ const ASSETS = [
   },
   {
     id:"staples", name:"Consumer Staples", icon:"🛒", color:"#5B21B6", bg:"#F5F3FF", bdr:"#C4B5FD",
-    stagRank:2, defRank:2, refRank:1, infRank:3, volatility:"LOW",
-    stagNote:"Strong stagflation performer. Brand pricing power passes through inflation; non-discretionary demand holds in recession.",
-    crisisScore:75, inflationScore:65, deflationScore:70, liquidityScore:90, stagScore:80,
+    // P0.3 — the top LIQUID stagflation hold (pricing power + non-discretionary demand), so #1 in
+    // this instrument set. Physical gold outranks it in principle but is not a distinct asset here;
+    // matches the Macro tab's GLD > Staples ordering (staples is the highest *available* name).
+    stagRank:1, defRank:2, refRank:1, infRank:3, volatility:"LOW",
+    stagNote:"Top liquid stagflation hedge. Brand pricing power passes through inflation; non-discretionary demand holds in recession. (Physical gold outranks it as a pure inflation hedge but is a separate hold.)",
+    crisisScore:75, inflationScore:65, deflationScore:70, liquidityScore:90, stagScore:82,
     verdict:"Most reliable defensive sector. Brands = pricing power. Non-discretionary = recession-proof demand.",
     tickers:[
       {t:"XLP",  name:"Consumer Staples SPDR",    type:"ETF",   note:"Best ETF. Top 5: PG, COST, KO, PEP, PM."},
