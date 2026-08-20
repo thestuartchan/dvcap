@@ -155,8 +155,8 @@ const ASSETS = [
     // asymmetric; the "2–3×" is sell-side convention (only ~1.2× realised through 2023–25). Even in a
     // pure gold bull (debasement) they merely MATCH gold while carrying equity beta. So they sit below
     // Physical Gold everywhere — including a demotion from #1 in Inflationary Boom to #4.
-    stagRank:5, defRank:5, refRank:5, infRank:4, volatility:"HIGH",
-    stagNote:"⚠️ Cautioned in stagflation — miners are equities with operating leverage to gold (equity beta, sold in liquidity events: GDX fell ~70% in 2008). The stagflation hedge is physical gold (GLD / 2840.HK); miners are a leveraged, cautioned expression of the view, not a hedge. Add only after a VIX peak confirms the liquidity phase has passed.",
+    stagRank:3, defRank:5, refRank:5, infRank:4, volatility:"HIGH",
+    stagNote:"⚠️ Cautioned in stagflation — miners are equities with operating leverage to gold (equity beta, sold in liquidity events: GDX fell ~70% in 2008). The stagflation hedge is physical gold (GLD / 2840.HK); miners are a leveraged, cautioned expression of the view, not a hedge. Add only after a VIX peak confirms the liquidity phase has passed. Rank #3 only because they stay gold-linked (2022: GDX ~−9% vs the farmland REIT −14% and BTC −64%) — not a promotion to hedge status.",
     crisisScore:70, inflationScore:82, deflationScore:30, liquidityScore:40, stagScore:50,
     verdict:"A leveraged EXPRESSION of gold, never a substitute — it has lagged GLD ~6.5%/yr since 2006 and is worst in crises. Even in a debasement bull it only matches gold while carrying equity beta, dilution and cost inflation. Physical gold is the hedge; miners never rank above it.",
     tickers:[
@@ -173,14 +173,15 @@ const ASSETS = [
   },
   {
     id:"farmland", name:"Farmland REIT", icon:"🌾", state:"BENIGN",
-    // Aug-20 B4 — ONE definition: the investable instrument (FPI / LAND) is a small-cap farmland
-    // REIT, not raw farmland. So it is RATE-SENSITIVE — it trades like small-cap REITs regardless of
-    // the underlying acreage. That caps it below the pure real assets: real value in stagflation from
-    // ag-price pass-through, but it sells with rates in a hawkish repricing. Ranked accordingly.
-    stagRank:3, defRank:4, refRank:3, infRank:3, volatility:"MED",
-    stagNote:"Ag-price pass-through gives real-value protection, but FPI/LAND are small-cap REITs — rate-sensitive, so they sell in a hawkish repricing. Not the pure real asset the acreage implies.",
-    crisisScore:55, inflationScore:80, deflationScore:45, liquidityScore:55, stagScore:70,
-    verdict:"A small-cap farmland REIT (FPI / LAND) — real-asset exposure with REIT rate-sensitivity and small-cap beta. Below physical gold and broad commodities as an inflation hedge; sold in a hawkish rate repricing.",
+    // Aug-20 B4 + Recovery-brief D — ONE definition: the investable instrument (FPI / LAND) is a
+    // small-cap farmland REIT, not raw farmland. So it is RATE-SENSITIVE — it trades like small-cap
+    // REITs regardless of the underlying acreage. The decisive test is 2022: the unleveraged NCREIF
+    // land index returned +9.64% while FPI FELL >14%. The wrapper does not deliver the land's inflation
+    // hedge — so it drops below miners in stagflation (#4, not #3). NCREIF itself is not investable here.
+    stagRank:4, defRank:4, refRank:3, infRank:3, volatility:"MED",
+    stagNote:"The REIT is NOT the land. FPI/LAND are small-cap, leveraged, rate-sensitive REITs: in 2022 (the closest stagflation test) the unleveraged NCREIF land index returned +9.64% while FPI fell >14%. Real-value protection is capped by the wrapper — below physical gold, energy and even the gold-linked miners in a stagflation.",
+    crisisScore:55, inflationScore:80, deflationScore:45, liquidityScore:55, stagScore:60,
+    verdict:"A small-cap farmland REIT (FPI / LAND) — real-asset exposure diluted by REIT rate-sensitivity, leverage and small-cap beta. NOT a proxy for the land: 2022 the NCREIF index rose +9.64% while FPI fell. Extra return drivers unrelated to farmland — NAV discount (FPI 25–30%) and US-situs estate exposure. Below gold, energy and miners as a stagflation hedge; sold in a hawkish repricing.",
     tickers:[
       {t:"LAND", name:"Gladstone Land",    type:"REIT", note:"Berry & vegetable farms. ~$350M cap. Thinly traded."},
       {t:"FPI",  name:"Farmland Partners", type:"REIT", note:"Row-crop (corn, soy, wheat). Geographic diversity."},
@@ -225,8 +226,8 @@ const ASSETS = [
     // Aug-20 B7 — the debasement correlation is real but YOUNG (~2yr consistent); −50% in 48h (Mar
     // 2020), −64% through 2022. Correct direction, thin evidence — so it sits below Physical Gold in
     // debasement / inflationary boom, not alongside it.
-    stagRank:4, defRank:6, refRank:2, infRank:2, volatility:"VERY HIGH",
-    stagNote:"Mixed in stagflation — debasement tailwind, but risk-off selloffs hit it hard. Shines only once panic clears and the dollar-credibility narrative takes over. Short (~2yr) debasement track record.",
+    stagRank:5, defRank:6, refRank:2, infRank:2, volatility:"VERY HIGH",
+    stagNote:"Mixed in stagflation — debasement tailwind, but risk-off selloffs hit it hard (−64% through 2022, the deepest drawdown of any bar asset). Shines only once panic clears and the dollar-credibility narrative takes over. Short (~2yr) debasement track record.",
     crisisScore:40, inflationScore:85, deflationScore:20, liquidityScore:90, stagScore:55,
     verdict:"Hardest debasement hedge in existence — fixed supply, no central bank, no balance sheet. Best in class if the thesis is dollar credibility loss or Fed balance sheet explosion. Critical caveat: in a liquidity crisis onset (2008-style, March 2020-style), BTC sells off WITH equities — it dropped 50% in 48 hours in March 2020. It is NOT crash protection. It is post-crash, post-panic, debasement-phase protection. Correlation to Nasdaq in risk-off stress periods remains ~0.6–0.7. Size as high-conviction, long-horizon, volatile insurance — meaningful but not dominant.",
     uaeBenefit:"No UAE capital gains tax on crypto. AED/USD peg means no FX drag. IBKR Singapore supports BTC exposure via IBIT ETF.",
@@ -334,13 +335,13 @@ const PHASE_NOTES = {
 // three outcome columns as crash resolutions, NOT current-state regimes — critically, this
 // "Debasement" column is a CRISIS and is the OPPOSITE of Macro's "Inflationary Boom".
 const INSURANCE_PHASES = [
-  { k:"preCrash",  col:"preCrash",  label:"Pre-Crash",                 short:"Pre-Crash",         color:STATUS.WATCH.color,  bg:STATUS.WATCH.bg,  bdr:STATUS.WATCH.bdr,  desc:"Signals deteriorating, no drawdown yet — the accumulation window. Protection is cheap: puts and VIX calls are the right instruments here, before IV reprices. GLD works; miners lag (equity beta)." },
-  { k:"liquidity", col:"liquidity", label:"Liquidity Phase",           short:"Liquidity Phase",   color:STATUS.DANGER.color, bg:STATUS.DANGER.bg, bdr:STATUS.DANGER.bdr, desc:"Drawdown underway — margin calls, correlations going to 1. Gold is SOLD here because it is liquid and profitable: it fell ~12% over ~8 sessions in March 2020 and ~30% from its March 2008 high to its October 2008 low, both times while equities collapsed. Miners are worse (GDX ~−70% in 2008). Protection bought now is expensive — IV has already repriced, so puts and VIX calls are a poor purchase. Cash is the only thing that works cleanly." },
-  { k:"recovery",  col:"recovery",  label:"Recovery / Post-Trough",    short:"Recovery",          color:"#047857", bg:"#ECFDF5", bdr:"#A7F3D0", desc:"VIX has peaked and is rolling over, credit has stopped widening, forced selling is exhausted — resolution not yet determined. This is THE BUY: gold miners, BTC and equities lead off the trough (the NYSE Arca Gold Miners Index ran +100% Oct'07→Mar'09 while the S&P fell 57%, +40% in Apr'20, +27% in a single day Nov'08 — all of it here, none in the collapse column). Sell the decay hedges into the vol collapse: holding the right hedge past its window is where most insurance P&L is given back. Miners here are a post-trough TRADE with a trigger, never a hedge and never a hold." },
-  { k:"def",       col:"def",       label:"Deflationary Recession",    short:"Defl. Recession",   color:"#1E40AF", bg:"#EFF6FF", bdr:"#BFDBFE", desc:"Crash resolves through debt deflation — falling prices, Japan-style. TLT wins. Gold moderate. BTC loses. Same term as the Macro tab's regime: a deflationary recession, whether you're forecasting it (Macro) or hedging its arrival (here)." },
-  { k:"inf",       col:"inf",       label:"Resolution: Debasement",    short:"Res: Debasement",   color:"#7C3AED", bg:"#F5F3FF", bdr:"#C4B5FD", desc:"Crash resolves through DEBASEMENT — Fed prints, dollar credibility erodes, currency stress, loss of monetary confidence. Gold and BTC win; TLT is a trap. This is a CRISIS — the OPPOSITE of Macro's 'Inflationary Boom' (a good, growth-strong outcome you'd want to be long). Read at speed, the shared word invites exactly the wrong action; hence 'Resolution: Debasement'." },
-  { k:"stag",      col:"stag",      label:"Resolution: Stagflation",   short:"Res: Stagflation",  color:"#0F766E", bg:"#F0FDFA", bdr:"#5EEAD1", desc:"Persistent stagflation — slow grind, not a sharp crash. Favour passive real-asset hedges (GLD, XLP, farmland, HYG puts) over active short instruments. Avoid VIX calls (contango) and SQQQ (daily decay). Size conservatively; favour longer-dated instruments to reduce theta bleed." },
-  { k:"hawkish",   col:"hawkish",   label:"Hawkish Rates Repricing",   short:"Hawkish Repricing", color:"#B45309", bg:"#FFF7ED", bdr:"#FED7AA", desc:"Not a crash — a rates repricing (occurred 2026-07-31: gold −2.07%, TLT −0.87%, XLU −0.37%, XLP −0.80%, IWM −0.70%, BTC −1.8%, SPY roughly flat). Nothing hedges this except the front end. Duration is the risk, and every asset that competes with cash for yield gets sold simultaneously — including the defensives (GLD, TLT, staples) that work in every other scenario." },
+  { k:"preCrash",  col:"preCrash",  label:"Pre-Crash",                 short:"Pre-Crash",         color:STATUS.WATCH.color,  bg:STATUS.WATCH.bg,  bdr:STATUS.WATCH.bdr,  desc:"Signals deteriorating, no drawdown yet — the accumulation window. Protection is cheap: puts and VIX calls are the right instruments here, before IV reprices. GLD works; miners lag (equity beta).", size:{ band:"0–3%", note:"protection is cheap (VIX low, IV not yet repriced) — begin sizing puts / VIX calls; don't fully activate yet." } },
+  { k:"liquidity", col:"liquidity", label:"Liquidity Phase",           short:"Liquidity Phase",   color:STATUS.DANGER.color, bg:STATUS.DANGER.bg, bdr:STATUS.DANGER.bdr, desc:"Drawdown underway — margin calls, correlations going to 1. Gold is SOLD here because it is liquid and profitable: it fell ~12% over ~8 sessions in March 2020 and ~30% from its March 2008 high to its October 2008 low, both times while equities collapsed. Miners are worse (GDX ~−70% in 2008). Protection bought now is expensive — IV has already repriced, so puts and VIX calls are a poor purchase. Cash is the only thing that works cleanly.", size:{ band:"hold · add ~0%", note:"protection is now expensive (IV repriced) — don't chase it. Raise cash and prepare the recovery buy." } },
+  { k:"recovery",  col:"recovery",  label:"Recovery / Post-Trough",    short:"Recovery",          color:"#047857", bg:"#ECFDF5", bdr:"#A7F3D0", desc:"VIX has peaked and is rolling over, credit has stopped widening, forced selling is exhausted — resolution not yet determined. This is THE BUY: gold miners, BTC and equities lead off the trough (the NYSE Arca Gold Miners Index ran +100% Oct'07→Mar'09 while the S&P fell 57%, +40% in Apr'20, +27% in a single day Nov'08 — all of it here, none in the collapse column). Sell the decay hedges into the vol collapse: holding the right hedge past its window is where most insurance P&L is given back. Miners here are a post-trough TRADE with a trigger, never a hedge and never a hold.", size:{ band:"insurance → ~0%", note:"unwind the decay hedges into the vol collapse and rotate the proceeds + dry powder into the recovery buy (miners / BTC / equities)." } },
+  { k:"def",       col:"def",       label:"Deflationary Recession",    short:"Defl. Recession",   color:"#1E40AF", bg:"#EFF6FF", bdr:"#BFDBFE", desc:"Crash resolves through debt deflation — falling prices, Japan-style. TLT wins. Gold moderate. BTC loses. Same term as the Macro tab's regime: a deflationary recession, whether you're forecasting it (Macro) or hedging its arrival (here).", size:{ band:"10–18%", note:"the highest insurance allocation — TLT and SPY puts dominate; add IEF as a lower-vol duration alternative." } },
+  { k:"inf",       col:"inf",       label:"Resolution: Debasement",    short:"Res: Debasement",   color:"#7C3AED", bg:"#F5F3FF", bdr:"#C4B5FD", desc:"Crash resolves through DEBASEMENT — Fed prints, dollar credibility erodes, currency stress, loss of monetary confidence. Gold and BTC win; TLT is a trap. This is a CRISIS — the OPPOSITE of Macro's 'Inflationary Boom' (a good, growth-strong outcome you'd want to be long). Read at speed, the shared word invites exactly the wrong action; hence 'Resolution: Debasement'.", size:{ band:"5–10%", note:"gold and BTC as MONETARY insurance (not crash insurance) — TLT is a trap here." } },
+  { k:"stag",      col:"stag",      label:"Resolution: Stagflation",   short:"Res: Stagflation",  color:"#0F766E", bg:"#F0FDFA", bdr:"#5EEAD1", desc:"Persistent stagflation — slow grind, not a sharp crash. Favour passive real-asset hedges (GLD, XLP, farmland, HYG puts) over active short instruments. Avoid VIX calls (contango) and SQQQ (daily decay). Size conservatively; favour longer-dated instruments to reduce theta bleed.", size:{ band:"8–15%", note:"gold / staples / HYG puts; size conservatively and favour longer-dated to cut theta bleed over a slow grind." } },
+  { k:"hawkish",   col:"hawkish",   label:"Hawkish Rates Repricing",   short:"Hawkish Repricing", color:"#B45309", bg:"#FFF7ED", bdr:"#FED7AA", desc:"Not a crash — a rates repricing (occurred 2026-07-31: gold −2.07%, TLT −0.87%, XLU −0.37%, XLP −0.80%, IWM −0.70%, BTC −1.8%, SPY roughly flat). Nothing hedges this except the front end. Duration is the risk, and every asset that competes with cash for yield gets sold simultaneously — including the defensives (GLD, TLT, staples) that work in every other scenario.", size:{ band:"front-end only", note:"nothing hedges a rates repricing except the front end (bills / USFR) — duration IS the risk." } },
 ];
 
 // P1.3 — the six columns are TWO dimensions: crash TIME PHASES (pre-crash / liquidity) and crash
@@ -396,9 +397,7 @@ const SCENARIO_MATRIX = [
     carry:"futures roll — backwardation +, contango −" },
   { group:"Debasement / Monetary",  row:"BTC",                 cat:"tactical", preCrash:"❌", liquidity:"❌", recovery:"✅✅", def:"❌",  inf:"✅",  stag:"⚠️", hawkish:"❌", note:"Highest beta to returning liquidity — the recovery is where it earns its place. Short debasement record (~2yr; −50% in 48h Mar 2020, −64% through 2022). Correct direction, thin evidence for a top tier alongside physical gold in the resolutions.",
     carry:"zero yield; funding cost if levered — negative carry" },
-  { group:"Real Assets / Farmland", row:"Farmland — NCREIF",   cat:"regime",   benchmark:true, preCrash:"—", liquidity:"⚠️", recovery:"⚠️", def:"⚠️", inf:"✅✅", stag:"✅✅", hawkish:"⚠️", note:"BENCHMARK — not investable in this account (AcreTrader/FarmTogether need US accreditation, K-1s, ~10yr horizon; for a UAE-resident Canadian via IBKR SG this is context, not an instrument). 2022 (CPI ~9%): NCREIF +9.64% (cropland +14.4%, Corn Belt +28%). Low vol is partly quarterly-appraisal smoothing — and it cannot be sold during a drawdown.",
-    carry:"~10.15%/yr since 1992, ~6–7% vol — appraisal-smoothed; cannot be traded" },
-  { group:"Real Assets / Farmland", row:"Farmland REITs (LAND / FPI)", cat:"regime", preCrash:"⚠️", liquidity:"❌", recovery:"✅", def:"❌", inf:"⚠️", stag:"⚠️", hawkish:"❌", note:"Investable, but rate as REITs — NOT a proxy for the land. 2022: NCREIF +9.64% while FPI fell >14%. LAND max drawdown −76.56% (worse than GDX in 2008). Extra risks: NAV discount (FPI 25–30%, a return driver unrelated to farmland) and US-situs estate tax.",
+  { group:"Real Assets / Farmland", row:"Farmland REITs (LAND / FPI)", cat:"regime", preCrash:"⚠️", liquidity:"❌", recovery:"✅", def:"❌", inf:"⚠️", stag:"⚠️", hawkish:"❌", note:"The only investable farmland here — and it's a REIT, NOT a proxy for the land. The unleveraged NCREIF index returned +9.64% in 2022 while FPI fell >14%; LAND max drawdown −76.56% (worse than GDX in 2008). Extra risks: NAV discount (FPI 25–30%, a return driver unrelated to farmland) and US-situs estate tax.",
     carry:"small-cap REIT beta + leverage — LAND/FPI 0.68%/2.10% 10yr, deep drawdowns" },
 ];
 
@@ -5510,6 +5509,11 @@ export default function App() {
                             }}>
                               {on ? "● " : ""}{p.short}
                             </button>
+                            {p.size && (
+                              <div style={{ textAlign: "center", padding: "2px 6px 4px", background: on ? p.bg : "transparent" }} title={"Insurance sizing this phase: " + p.size.note}>
+                                <span style={{ fontSize: 9.5, fontWeight: 800, color: p.color, letterSpacing: 0.2 }}>🎯 {p.size.band}</span>
+                              </div>
+                            )}
                           </th>
                         );
                       })}
@@ -5582,9 +5586,10 @@ export default function App() {
               <div style={{ marginTop: 6, fontSize: 11, color: C.muted, fontStyle: "italic" }}>
                 Selected column also shows each row's <b style={{ fontStyle: "normal", color: C.lbl }}>⏳ hold horizon · exit trigger</b> and <b style={{ fontStyle: "normal", color: C.lbl }}>carry</b> (cost to hold). Most insurance P&L is lost holding the right hedge past its window — the exit rule matters as much as the rating.
               </div>
-              {/* D4 — the pairing note, rendered wherever both farmland rows appear (i.e. always). */}
+              {/* D4 — farmland caveat: the investable REIT is not the land. NCREIF (the unleveraged
+                  index) is dropped from the matrix because it isn't investable in this account. */}
               <div style={{ marginTop: 8, padding: "8px 11px", background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 8, fontSize: 11.5, color: C.mid, lineHeight: 1.55 }}>
-                🌾 <b>Farmland — read the two rows together:</b> NCREIF is the asset; LAND / FPI are equities that own it. In 2022 the asset returned <b>+9.64%</b> and the equities <b>fell</b>. Don't treat the second as a proxy for the first — the REIT wrapper adds leverage, small-cap beta, an unrelated NAV-discount driver, and US-situs estate exposure.
+                🌾 <b>Farmland — the REIT is not the land:</b> LAND / FPI are equities that <i>own</i> farmland. In 2022 the unleveraged NCREIF index returned <b>+9.64%</b> while FPI <b>fell &gt;14%</b> — the wrapper adds leverage, small-cap beta, an unrelated NAV-discount driver, and US-situs estate exposure. (Direct NCREIF access needs US accreditation + a ~10yr horizon — not investable here, so it's left off the matrix.)
               </div>
               {/* Active scenario summary + live-signal lean (informational; your call) */}
               {(() => {
@@ -5594,6 +5599,13 @@ export default function App() {
                   <div style={{ marginTop: 12, padding: "10px 13px", background: active.bg, border: "1.5px solid " + active.bdr, borderRadius: 8 }}>
                     <div style={{ color: active.color, fontWeight: 800, fontSize: 13, marginBottom: 3 }}>Planning for: {active.label}</div>
                     <div style={{ color: C.mid, fontSize: 13, lineHeight: 1.6 }}>{active.desc}</div>
+                    {active.size && (
+                      <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap", marginTop: 7 }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: active.color, textTransform: "uppercase", letterSpacing: 0.4 }}>🎯 Insurance sizing</span>
+                        <span style={{ fontSize: 13, fontWeight: 900, color: C.text }}>{active.size.band}</span>
+                        <span style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.55 }}>— {active.size.note}</span>
+                      </div>
+                    )}
                     <div style={{ color: C.muted, fontSize: 12, fontStyle: "italic", marginTop: 6, lineHeight: 1.55 }}>
                       Live signals lean toward: <b style={{ fontStyle: "normal", color: C.text }}>{read.lean}</b> — {read.reason}. Your call — set the column you believe.
                     </div>
