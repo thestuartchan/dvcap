@@ -359,20 +359,80 @@ const insDimOf = k => k === "preCrash" ? "preCrash" : k === "liquidity" ? "liqui
 //  B3 TIPS added · B5 Cash in deflation ✅ (TLT is the best asset) · B6 Energy hawkish ✅ conditional
 //  B7 BTC debasement ✅ (short record) + broad commodities added.
 const SCENARIO_MATRIX = [
-  { group:"Cash / Front End",       row:"Cash / SGOV / USFR",  preCrash:"✅✅", liquidity:"✅✅", def:"✅",  inf:"⚠️", stag:"⚠️", hawkish:"✅✅" },
-  { group:"Gold & Precious Metals", row:"GLD / Physical Gold", preCrash:"✅",  liquidity:"⚠️", def:"✅",  inf:"✅✅", stag:"✅✅", hawkish:"❌" },
-  { group:"Gold & Precious Metals", row:"GDX / GDXJ",          preCrash:"⚠️", liquidity:"❌", def:"⚠️", inf:"✅",  stag:"⚠️", hawkish:"❌", note:"Never above physical gold — GDX lagged GLD ~6.5%/yr since 2006, worst in crises; ~2× vol, asymmetric leverage (only ~1.2× realised through the 2023–25 bull)." },
-  { group:"Inflation-Linked",       row:"TIPS (STIP / TIP)",   preCrash:"⚠️", liquidity:"⚠️", def:"⚠️", inf:"✅",  stag:"✅✅", hawkish:"❌", note:"The direct inflation instrument. STIP (0–5yr) is less rate-sensitive — the better fit for a crisis matrix; breakevens fall in deflation, real yields rise in a hawkish repricing." },
-  { group:"Macro / Rate Hedges",    row:"TLT / IEF",           preCrash:"⚠️", liquidity:"⚠️", def:"✅✅", inf:"❌",  stag:"❌",  hawkish:"❌" },
-  { group:"Macro / Rate Hedges",    row:"HYG / JNK Puts",      preCrash:"✅",  liquidity:"✅",  def:"✅",  inf:"✅",  stag:"✅",  hawkish:"⚠️" },
-  { group:"Macro / Rate Hedges",    row:"VIX Calls / VXX",     preCrash:"✅✅", liquidity:"⚠️", def:"✅",  inf:"✅",  stag:"❌",  hawkish:"⚠️" },
-  { group:"Equity Shorts",          row:"SPY / QQQ Puts",      preCrash:"✅✅", liquidity:"⚠️", def:"✅",  inf:"✅",  stag:"⚠️", hawkish:"⚠️" },
-  { group:"Equity Shorts",          row:"SQQQ / 7568.HK",      preCrash:"✅",  liquidity:"⚠️", def:"✅",  inf:"✅",  stag:"⚠️", hawkish:"⚠️" },
-  { group:"Defensive Income",       row:"XLP / Staples",       preCrash:"✅",  liquidity:"⚠️", def:"✅",  inf:"⚠️", stag:"✅",  hawkish:"❌", note:"Best defensive EQUITY in stagflation (pricing power, non-discretionary demand) — but gold and energy outrank it as the primary hedges (2022: XLE +64%, XLP ~−3%)." },
-  { group:"Commodities / Energy",   row:"CNOOC / Energy",      preCrash:"⚠️", liquidity:"❌", def:"❌",  inf:"✅✅", stag:"✅✅", hawkish:"✅", note:"Hawkish repricing: ✅ if INFLATION-driven (breakevens rising) · ⚠️ if TERM-PREMIUM / supply-driven (today's case — breakevens flat). 2022 (inflation-driven) XLE was the best sector, +64%." },
-  { group:"Commodities / Energy",   row:"DBC / PDBC (broad)",  preCrash:"⚠️", liquidity:"❌", def:"❌",  inf:"✅",  stag:"✅✅", hawkish:"✅", note:"Broad commodities — the best-performing asset class of 2022; energy alone doesn't cover it. Same hawkish condition as energy." },
-  { group:"Debasement / Monetary",  row:"BTC",                 preCrash:"❌", liquidity:"❌", def:"❌",  inf:"✅",  stag:"⚠️", hawkish:"❌", note:"Short debasement track record — ~2yr; −50% in 48h (Mar 2020), −64% through 2022's inflation. Correct direction, thin evidence for a top tier alongside physical gold." },
+  { group:"Cash / Front End",       row:"Cash / SGOV / USFR",  preCrash:"✅✅", liquidity:"✅✅", def:"✅",  inf:"⚠️", stag:"⚠️", hawkish:"✅✅",
+    carry:"positive T-bill carry — you're paid to wait", carryBy:{ inf:"real carry erodes vs. sticky CPI", stag:"real carry erodes — nominal still paid" } },
+  { group:"Gold & Precious Metals", row:"GLD / Physical Gold", preCrash:"✅",  liquidity:"⚠️", def:"✅",  inf:"✅✅", stag:"✅✅", hawkish:"❌",
+    carry:"zero yield, ~0.4% fee — slight negative carry" },
+  { group:"Gold & Precious Metals", row:"GDX / GDXJ",          preCrash:"⚠️", liquidity:"❌", def:"⚠️", inf:"✅",  stag:"⚠️", hawkish:"❌", note:"Never above physical gold — GDX lagged GLD ~6.5%/yr since 2006, worst in crises; ~2× vol, asymmetric leverage (only ~1.2× realised through the 2023–25 bull).",
+    carry:"zero yield + equity beta — negative carry, drawdown-prone" },
+  { group:"Inflation-Linked",       row:"TIPS (STIP / TIP)",   preCrash:"⚠️", liquidity:"⚠️", def:"⚠️", inf:"✅",  stag:"✅✅", hawkish:"❌", note:"The direct inflation instrument. STIP (0–5yr) is less rate-sensitive — the better fit for a crisis matrix; breakevens fall in deflation, real yields rise in a hawkish repricing.",
+    carry:"real-yield carry — positive while reals > 0", carryBy:{ inf:"CPI accrual on principal — favorable", hawkish:"rising reals hit price — negative" } },
+  { group:"Macro / Rate Hedges",    row:"TLT / IEF",           preCrash:"⚠️", liquidity:"⚠️", def:"✅✅", inf:"❌",  stag:"❌",  hawkish:"❌",
+    carry:"coupon vs. MTM — carry swings with rates", carryBy:{ def:"coupon + duration gains as rates fall — favorable", inf:"negative real carry — coupon can't offset the bleed", stag:"negative real carry — grinds lower", hawkish:"duration IS the risk — worst carry" } },
+  { group:"Macro / Rate Hedges",    row:"HYG / JNK Puts",      preCrash:"✅",  liquidity:"✅",  def:"✅",  inf:"✅",  stag:"✅",  hawkish:"⚠️",
+    carry:"option theta — negative carry, decays while you wait" },
+  { group:"Macro / Rate Hedges",    row:"VIX Calls / VXX",     preCrash:"✅✅", liquidity:"⚠️", def:"✅",  inf:"✅",  stag:"❌",  hawkish:"⚠️",
+    carry:"steep theta + contango roll — expensive to hold", carryBy:{ preCrash:"cheap now — IV low before the repricing", liquidity:"IV already repriced — poor entry, dear to hold", stag:"contango bleeds hard in a slow grind" } },
+  { group:"Equity Shorts",          row:"SPY / QQQ Puts",      preCrash:"✅✅", liquidity:"⚠️", def:"✅",  inf:"✅",  stag:"⚠️", hawkish:"⚠️",
+    carry:"option theta — negative carry, worse the longer you wait" },
+  { group:"Equity Shorts",          row:"SQQQ / 7568.HK",      preCrash:"✅",  liquidity:"⚠️", def:"✅",  inf:"✅",  stag:"⚠️", hawkish:"⚠️",
+    carry:"daily-rebalance decay — bleeds in flat/choppy tape" },
+  { group:"Defensive Income",       row:"XLP / Staples",       preCrash:"✅",  liquidity:"⚠️", def:"✅",  inf:"⚠️", stag:"✅",  hawkish:"❌", note:"Best defensive EQUITY in stagflation (pricing power, non-discretionary demand) — but gold and energy outrank it as the primary hedges (2022: XLE +64%, XLP ~−3%).",
+    carry:"≈2.5% dividend — positive carry, cheap to hold" },
+  { group:"Commodities / Energy",   row:"CNOOC / Energy",      preCrash:"⚠️", liquidity:"❌", def:"❌",  inf:"✅✅", stag:"✅✅", hawkish:"✅", note:"Hawkish repricing: ✅ if INFLATION-driven (breakevens rising) · ⚠️ if TERM-PREMIUM / supply-driven (today's case — breakevens flat). 2022 (inflation-driven) XLE was the best sector, +64%.",
+    carry:"dividend + futures roll — carry varies", carryBy:{ inf:"backwardation adds positive roll carry", stag:"dividend + roll — favorable" } },
+  { group:"Commodities / Energy",   row:"DBC / PDBC (broad)",  preCrash:"⚠️", liquidity:"❌", def:"❌",  inf:"✅",  stag:"✅✅", hawkish:"✅", note:"Broad commodities — the best-performing asset class of 2022; energy alone doesn't cover it. Same hawkish condition as energy.",
+    carry:"futures roll — backwardation +, contango −" },
+  { group:"Debasement / Monetary",  row:"BTC",                 preCrash:"❌", liquidity:"❌", def:"❌",  inf:"✅",  stag:"⚠️", hawkish:"❌", note:"Short debasement track record — ~2yr; −50% in 48h (Mar 2020), −64% through 2022's inflation. Correct direction, thin evidence for a top tier alongside physical gold.",
+    carry:"zero yield; funding cost if levered — negative carry" },
 ];
+
+// B7 — per-cell ACTION + CARRY. The glyph rates HOW GOOD an instrument is in a scenario; these
+// answer WHAT TO DO with it. Action is derived per cell from the glyph + phase — pre-crash is the
+// cheap accumulation window (INITIATE), the liquidity phase has already repriced IV (HOLD what
+// works, don't chase), the resolution columns are where you position for the confirmed outcome —
+// with an override table for the cells whose timing is non-obvious (miners add only after the VIX
+// peak, TLT only on the pivot, gold gets trimmed into the dash-for-cash). Carry is the instrument's
+// cost-to-hold (row-level `carry`), overridden by `carryBy` in the scenarios where the sign flips.
+const CELL_ACT_OVERRIDES = {
+  "Cash / SGOV / USFR|preCrash": "HOLD",
+  "Cash / SGOV / USFR|liquidity": "HOLD",
+  "GLD / Physical Gold|liquidity": "TRIM→cash",
+  "GDX / GDXJ|inf": "STAGE",
+  "GDX / GDXJ|stag": "HOLD LIGHT",
+  "TLT / IEF|def": "ON PIVOT",
+  "HYG / JNK Puts|liquidity": "HOLD",
+  "VIX Calls / VXX|liquidity": "HOLD",
+  "SPY / QQQ Puts|liquidity": "HOLD",
+  "SQQQ / 7568.HK|liquidity": "HOLD",
+  "BTC|inf": "STAGE",
+  "CNOOC / Energy|hawkish": "CONDITIONAL",
+  "DBC / PDBC (broad)|hawkish": "CONDITIONAL",
+};
+function cellAction(glyph, phaseKey, row) {
+  const ov = CELL_ACT_OVERRIDES[`${row}|${phaseKey}`];
+  if (ov) return ov;
+  const g = String(glyph);
+  if (g.startsWith("❌")) return "AVOID";
+  if (g.startsWith("⚠️")) return phaseKey === "preCrash" ? "WAIT" : "HOLD LIGHT";
+  if (phaseKey === "preCrash") return "INITIATE";
+  if (phaseKey === "liquidity") return "HOLD";
+  return "INITIATE"; // resolution columns — position for the confirmed outcome
+}
+// Chip palette. INITIATE reads as go now (green); STAGE / ON PIVOT as go on the trigger (blue);
+// HOLD as keep-don't-chase (grey); WAIT / CONDITIONAL / TRIM as caution (amber); AVOID as stop (red).
+const ACT_STYLE = {
+  "INITIATE":    { color:"#047857", bg:"#ECFDF5", bdr:"#A7F3D0" },
+  "STAGE":       { color:"#1D4ED8", bg:"#EFF6FF", bdr:"#BFDBFE" },
+  "ON PIVOT":    { color:"#1D4ED8", bg:"#EFF6FF", bdr:"#BFDBFE" },
+  "HOLD":        { color:"#6B7280", bg:"#F9FAFB", bdr:"#E5E7EB" },
+  "HOLD LIGHT":  { color:"#6B7280", bg:"#F9FAFB", bdr:"#E5E7EB" },
+  "WAIT":        { color:"#B45309", bg:"#FFF7ED", bdr:"#FED7AA" },
+  "CONDITIONAL": { color:"#B45309", bg:"#FFF7ED", bdr:"#FED7AA" },
+  "TRIM→cash":   { color:"#B45309", bg:"#FFF7ED", bdr:"#FED7AA" },
+  "AVOID":       { color:"#B91C1C", bg:"#FEF2F2", bdr:"#FECACA" },
+};
+const actStyle = a => ACT_STYLE[a] || ACT_STYLE.HOLD;
 
 // Live-signal anchor — auto-computed lean from liveInd. Informational only;
 // the user still sets the toggle. Safe to call with {} when liveInd is null.
@@ -5391,9 +5451,16 @@ export default function App() {
                           </td>
                           {shownPhases.map(p => {
                             const on = insurancePhase === p.k;
+                            const act = cellAction(r[p.col], p.col, r.row);
+                            const st = actStyle(act);
+                            const cc = (r.carryBy && r.carryBy[p.col]) || r.carry;
                             return (
-                              <td key={p.k} style={{ textAlign: "center", padding: "6px 8px", fontSize: 14, minWidth: 120, borderBottom: "1px solid " + C.bdr, background: on ? p.bg : "transparent", fontWeight: on ? 800 : 400 }}>
-                                {r[p.col]}
+                              <td key={p.k} style={{ textAlign: "center", padding: "6px 8px", minWidth: 120, borderBottom: "1px solid " + C.bdr, background: on ? p.bg : "transparent" }}>
+                                <div style={{ fontSize: 14, fontWeight: on ? 800 : 400 }}>{r[p.col]}</div>
+                                <div style={{ marginTop: 3, display: "inline-block", fontSize: 8.5, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: st.color, background: st.bg, border: "1px solid " + st.bdr, borderRadius: 4, padding: "1px 5px", lineHeight: 1.35 }}>{act}</div>
+                                {on && cc && (
+                                  <div style={{ marginTop: 4, fontSize: 8.5, color: C.muted, fontWeight: 400, lineHeight: 1.35, whiteSpace: "normal", maxWidth: 130, margin: "4px auto 0" }} title={"Carry: " + cc}>{cc}</div>
+                                )}
                               </td>
                             );
                           })}
@@ -5405,12 +5472,25 @@ export default function App() {
                 </table>
               </div>
               ); })()}
-              <div style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>Rating</span>
                 {[["✅✅", "Primary instrument"], ["✅", "Works well"], ["⚠️", "Caution / timing-dependent"], ["❌", "Avoid"]].map(([sym, lbl]) => (
                   <div key={lbl} style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 12, color: C.muted }}>
                     <span style={{ fontSize: 13 }}>{sym}</span>{lbl}
                   </div>
                 ))}
+              </div>
+              <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>Action</span>
+                {[["INITIATE", "open now"], ["STAGE / ON PIVOT", "add on the trigger"], ["HOLD", "keep, don't chase"], ["WAIT / CONDITIONAL / TRIM", "not yet"], ["AVOID", "stay out"]].map(([a, lbl]) => {
+                  const st = actStyle(a.split(" / ")[0]);
+                  return (
+                    <div key={a} style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 11.5, color: C.muted }}>
+                      <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: st.color, background: st.bg, border: "1px solid " + st.bdr, borderRadius: 4, padding: "1px 5px" }}>{a}</span>{lbl}
+                    </div>
+                  );
+                })}
+                <span style={{ fontSize: 11, color: C.muted, fontStyle: "italic" }}>· carry = cost to hold (shown in the selected column)</span>
               </div>
               {/* Active scenario summary + live-signal lean (informational; your call) */}
               {(() => {
