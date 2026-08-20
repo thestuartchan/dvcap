@@ -296,6 +296,7 @@ const PHASE_NOTES = {
   miners: {
     preCrash:     "GLD is more stable than miners as signals deteriorate — hold GLD first, add miners after the policy response. ⚠️ PRE-CRASH: Miners carry equity beta and sell with the market. Hold light; GLD is the better pre-crash hedge.",
     liquidity:    "❌ LIQUIDITY PHASE: Miners are sold hard in a dash-for-cash — GDX fell ~70% in 2008 as equity beta and gold's liquidity-event drop compounded. Do not hold miners through the drawdown; wait for the policy response to become visible.",
+    recovery:     "✅✅ RECOVERY / POST-TROUGH: This is the whole point of miners — a post-trough TRADE, never a hedge and never a hold. The Gold Miners Index ran +100% Oct'07→Mar'09 (S&P −57%), +40% in a single month (Apr'20), +27% in a day (Nov'08) — all of it off the trough. Trigger: VIX term structure flips backwardation → contango. Take the recovery move; don't carry it into the resolution.",
     def:          "GLD outperforms miners in deflation — prefer GLD over GDX here. ⚠️ RESOLUTION — DEFLATIONARY: Gold moderate in deflation, miners underperform gold. Only add after Fed pivot signal confirmed.",
     inf:          "Both GLD and GDX/GDXJ win here — miners provide 2-3× leverage to gold price. ✅✅ RESOLUTION — DEBASEMENT: This is where miners shine. Gold up 20% = miners up 40–60%. Add aggressively after VIX peak.",
     stag:         "GLD grinds higher steadily. Miners amplify but with more volatility. ⚠️ RESOLUTION — STAGFLATION: Gold grinds higher but without the explosive move of a debasement crash. Miners underperform in a slow grind, carry equity beta, and are sold in liquidity events — they express a gold view, they do not hedge one. Physical gold (GLD) is the hedge; hold miners moderate as a cautioned leveraged expression, don't over-allocate waiting for a spike that may take years.",
@@ -304,6 +305,7 @@ const PHASE_NOTES = {
   btc: {
     preCrash:     "❌ PRE-CRASH: BTC dropped 50% in 48 hours in March 2020. Not pre-crash protection. Wait for panic to clear.",
     liquidity:    "❌ LIQUIDITY PHASE: BTC is high-beta and sells with risk assets in a dash-for-cash. Avoid until the policy response is visible.",
+    recovery:     "✅✅ RECOVERY / POST-TROUGH: Highest beta to returning liquidity — BTC leads off the trough once forced selling is exhausted. Trigger: VIX term structure flips backwardation → contango. A recovery buy alongside miners and equities, funded by selling the decay hedges.",
     def:          "❌ RESOLUTION — DEFLATIONARY: BTC performs poorly in deflationary crashes — no yield, high beta, sells with risk assets. Avoid.",
     inf:          "✅✅ RESOLUTION — DEBASEMENT: Post-panic BTC is the highest-conviction debasement play. Fixed supply vs exploding Fed balance sheet. Enter after VIX peaks.",
     stag:         "⚠️ RESOLUTION — STAGFLATION: No clear catalyst for BTC in persistent stagflation. Inflation present but not acute enough to drive the debasement narrative. Equity correlation remains. Hold existing, don't add aggressively.",
@@ -312,6 +314,7 @@ const PHASE_NOTES = {
   tbonds: {
     preCrash:     "⚠️ PRE-CRASH: Only works if the crash is confirming deflationary — falling CPI, growth scare, 10Y yield falling. In stagflation TLT is a trap even here. Do not buy until deflation is confirmed.",
     liquidity:    "⚠️ LIQUIDITY PHASE: Even Treasuries can sell in the worst of a dash-for-cash (March 2020 saw brief forced Treasury selling) before they rally. Size for the resolution, not the drawdown.",
+    recovery:     "⚠️ RECOVERY / POST-TROUGH: TLT's recovery role depends entirely on the resolution — it rallies hard into a deflationary recession but is a trap into debasement or stagflation. Don't buy duration off the trough on reflex; wait for the resolution column to declare (OAS direction, breakevens). The recovery buy is equities/miners/BTC, not bonds.",
     def:          "✅✅ RESOLUTION — DEFLATIONARY: TLT is your best instrument here. Rates fall, bonds rally hard. Also consider IEF (7-10yr) as a lower-volatility alternative — less upside, less drawdown if the recovery is faster than expected.",
     inf:          "❌ RESOLUTION — DEBASEMENT: TLT gets crushed. Sticky inflation + Fed balance-sheet expansion = bond bear market. Avoid entirely. 2022 repeat risk.",
     stag:         "❌ RESOLUTION — STAGFLATION: Avoid. Inflation stays sticky — rates cannot fall meaningfully. TLT grinds lower as real yields stay elevated. Worst regime for long-duration bonds.",
@@ -333,6 +336,7 @@ const PHASE_NOTES = {
 const INSURANCE_PHASES = [
   { k:"preCrash",  col:"preCrash",  label:"Pre-Crash",                 short:"Pre-Crash",         color:STATUS.WATCH.color,  bg:STATUS.WATCH.bg,  bdr:STATUS.WATCH.bdr,  desc:"Signals deteriorating, no drawdown yet — the accumulation window. Protection is cheap: puts and VIX calls are the right instruments here, before IV reprices. GLD works; miners lag (equity beta)." },
   { k:"liquidity", col:"liquidity", label:"Liquidity Phase",           short:"Liquidity Phase",   color:STATUS.DANGER.color, bg:STATUS.DANGER.bg, bdr:STATUS.DANGER.bdr, desc:"Drawdown underway — margin calls, correlations going to 1. Gold is SOLD here because it is liquid and profitable: it fell ~12% over ~8 sessions in March 2020 and ~30% from its March 2008 high to its October 2008 low, both times while equities collapsed. Miners are worse (GDX ~−70% in 2008). Protection bought now is expensive — IV has already repriced, so puts and VIX calls are a poor purchase. Cash is the only thing that works cleanly." },
+  { k:"recovery",  col:"recovery",  label:"Recovery / Post-Trough",    short:"Recovery",          color:"#047857", bg:"#ECFDF5", bdr:"#A7F3D0", desc:"VIX has peaked and is rolling over, credit has stopped widening, forced selling is exhausted — resolution not yet determined. This is THE BUY: gold miners, BTC and equities lead off the trough (the NYSE Arca Gold Miners Index ran +100% Oct'07→Mar'09 while the S&P fell 57%, +40% in Apr'20, +27% in a single day Nov'08 — all of it here, none in the collapse column). Sell the decay hedges into the vol collapse: holding the right hedge past its window is where most insurance P&L is given back. Miners here are a post-trough TRADE with a trigger, never a hedge and never a hold." },
   { k:"def",       col:"def",       label:"Deflationary Recession",    short:"Defl. Recession",   color:"#1E40AF", bg:"#EFF6FF", bdr:"#BFDBFE", desc:"Crash resolves through debt deflation — falling prices, Japan-style. TLT wins. Gold moderate. BTC loses. Same term as the Macro tab's regime: a deflationary recession, whether you're forecasting it (Macro) or hedging its arrival (here)." },
   { k:"inf",       col:"inf",       label:"Resolution: Debasement",    short:"Res: Debasement",   color:"#7C3AED", bg:"#F5F3FF", bdr:"#C4B5FD", desc:"Crash resolves through DEBASEMENT — Fed prints, dollar credibility erodes, currency stress, loss of monetary confidence. Gold and BTC win; TLT is a trap. This is a CRISIS — the OPPOSITE of Macro's 'Inflationary Boom' (a good, growth-strong outcome you'd want to be long). Read at speed, the shared word invites exactly the wrong action; hence 'Resolution: Debasement'." },
   { k:"stag",      col:"stag",      label:"Resolution: Stagflation",   short:"Res: Stagflation",  color:"#0F766E", bg:"#F0FDFA", bdr:"#5EEAD1", desc:"Persistent stagflation — slow grind, not a sharp crash. Favour passive real-asset hedges (GLD, XLP, farmland, HYG puts) over active short instruments. Avoid VIX calls (contango) and SQQQ (daily decay). Size conservatively; favour longer-dated instruments to reduce theta bleed." },
@@ -344,9 +348,9 @@ const INSURANCE_PHASES = [
 // two questions at once. The matrix now offers a phase-dimension selector; the resolution
 // dimension expands to its four outcome columns. One asset can then carry three ratings —
 // e.g. gold ✅ pre-crash, ⚠️ liquidity, and varying by resolution — which a flat row can't show.
-const INS_PHASE_DIMS = { preCrash: ["preCrash"], liquidity: ["liquidity"], resolution: ["def", "inf", "stag", "hawkish"] };
-const INS_DIM_LABELS = { preCrash: "Pre-Crash", liquidity: "Liquidity", resolution: "Resolution" };
-const insDimOf = k => k === "preCrash" ? "preCrash" : k === "liquidity" ? "liquidity" : "resolution";
+const INS_PHASE_DIMS = { preCrash: ["preCrash"], liquidity: ["liquidity"], recovery: ["recovery"], resolution: ["def", "inf", "stag", "hawkish"] };
+const INS_DIM_LABELS = { preCrash: "Pre-Crash", liquidity: "Liquidity", recovery: "Recovery", resolution: "Resolution" };
+const insDimOf = k => k === "preCrash" ? "preCrash" : k === "liquidity" ? "liquidity" : k === "recovery" ? "recovery" : "resolution";
 
 // Permanent, non-interactive reference. Six columns, grouped by hedge family (group header rows
 // rendered in the table). ✅✅ = primary · ✅ = works well · ⚠️ = caution/timing · ❌ = avoid.
@@ -358,33 +362,44 @@ const insDimOf = k => k === "preCrash" ? "preCrash" : k === "liquidity" ? "liqui
 //     worst in crises; ~2× vol, asymmetric). B2 stagflation re-tiered (Gold/Energy ✅✅, Staples ✅).
 //  B3 TIPS added · B5 Cash in deflation ✅ (TLT is the best asset) · B6 Energy hawkish ✅ conditional
 //  B7 BTC debasement ✅ (short record) + broad commodities added.
+// Column order per row: preCrash · liquidity · recovery · def · inf(=Debasement) · stag · hawkish.
+// `cat` classes the row for hold/exit logic (Part B): decay = sold, not held (theta/contango/daily
+// decay); tactical = post-trough TRADE with a trigger (miners, BTC — never a hedge, never a hold);
+// regime = held until the Macro-tab regime flips, NOT sold on a liquidity-phase drawdown; cash = held
+// until the deployment trigger, and the only asset that flips ✅✅→❌ on a REGIME (Debasement), not a phase.
 const SCENARIO_MATRIX = [
-  { group:"Cash / Front End",       row:"Cash / SGOV / USFR",  preCrash:"✅✅", liquidity:"✅✅", def:"✅",  inf:"⚠️", stag:"⚠️", hawkish:"✅✅",
-    carry:"positive T-bill carry — you're paid to wait", carryBy:{ inf:"real carry erodes vs. sticky CPI", stag:"real carry erodes — nominal still paid" } },
-  { group:"Gold & Precious Metals", row:"GLD / Physical Gold", preCrash:"✅",  liquidity:"⚠️", def:"✅",  inf:"✅✅", stag:"✅✅", hawkish:"❌",
+  { group:"Cash / Front End",       row:"Cash / SGOV / USFR",  cat:"cash",     preCrash:"✅✅", liquidity:"✅✅", recovery:"🔻", def:"✅",  inf:"⚠️", stag:"⚠️", hawkish:"✅✅",
+    carry:"positive T-bill carry — you're paid to wait", carryBy:{ inf:"real carry erodes vs. sticky CPI", stag:"real carry erodes — nominal still paid", recovery:"opportunity cost — every day unspent is return foregone" } },
+  { group:"Gold & Precious Metals", row:"GLD / Physical Gold", cat:"regime",   preCrash:"✅",  liquidity:"⚠️", recovery:"✅",  def:"✅",  inf:"✅✅", stag:"✅✅", hawkish:"❌",
     carry:"zero yield, ~0.4% fee — slight negative carry" },
-  { group:"Gold & Precious Metals", row:"GDX / GDXJ",          preCrash:"⚠️", liquidity:"❌", def:"⚠️", inf:"✅",  stag:"⚠️", hawkish:"❌", note:"Never above physical gold — GDX lagged GLD ~6.5%/yr since 2006, worst in crises; ~2× vol, asymmetric leverage (only ~1.2× realised through the 2023–25 bull).",
+  { group:"Gold & Precious Metals", row:"GDX / GDXJ",          cat:"tactical", preCrash:"⚠️", liquidity:"❌", recovery:"✅✅", def:"⚠️", inf:"✅",  stag:"⚠️", hawkish:"❌", note:"Never a hedge, never a hold — a post-trough TRADE with a trigger. Collapsed −70% (Mar→Oct 2008) then ran +100% Oct'07→Mar'09 vs S&P −57%; +40% month (Apr'20), +27% day (Nov'08). Baur: −6.5%/yr vs bullion buy-and-hold — a poor permanent allocation, an excellent tactical one.",
     carry:"zero yield + equity beta — negative carry, drawdown-prone" },
-  { group:"Inflation-Linked",       row:"TIPS (STIP / TIP)",   preCrash:"⚠️", liquidity:"⚠️", def:"⚠️", inf:"✅",  stag:"✅✅", hawkish:"❌", note:"The direct inflation instrument. STIP (0–5yr) is less rate-sensitive — the better fit for a crisis matrix; breakevens fall in deflation, real yields rise in a hawkish repricing.",
+  { group:"Gold & Precious Metals", row:"Silver (SLV / SIL)",  cat:"regime",   preCrash:"⚠️", liquidity:"❌", recovery:"✅✅", def:"❌", inf:"✅✅", stag:"⚠️", hawkish:"❌", note:"Half industrial, so it behaves unlike gold: more beta than gold in debasement and off the trough, but falls HARDER in the liquidity phase and in deflation as industrial demand drops. ~1.6× gold's volatility.",
+    carry:"zero yield + storage — negative carry; ~1.6× gold's vol" },
+  { group:"Inflation-Linked",       row:"TIPS (STIP / TIP)",   cat:"regime",   preCrash:"⚠️", liquidity:"⚠️", recovery:"⚠️", def:"⚠️", inf:"✅",  stag:"✅✅", hawkish:"❌", note:"The direct inflation instrument. STIP (0–5yr) is less rate-sensitive — the better fit for a crisis matrix; breakevens fall in deflation, real yields rise in a hawkish repricing.",
     carry:"real-yield carry — positive while reals > 0", carryBy:{ inf:"CPI accrual on principal — favorable", hawkish:"rising reals hit price — negative" } },
-  { group:"Macro / Rate Hedges",    row:"TLT / IEF",           preCrash:"⚠️", liquidity:"⚠️", def:"✅✅", inf:"❌",  stag:"❌",  hawkish:"❌",
+  { group:"Macro / Rate Hedges",    row:"TLT / IEF",           cat:"regime",   preCrash:"⚠️", liquidity:"⚠️", recovery:"⚠️", def:"✅✅", inf:"❌",  stag:"❌",  hawkish:"❌",
     carry:"coupon vs. MTM — carry swings with rates", carryBy:{ def:"coupon + duration gains as rates fall — favorable", inf:"negative real carry — coupon can't offset the bleed", stag:"negative real carry — grinds lower", hawkish:"duration IS the risk — worst carry" } },
-  { group:"Macro / Rate Hedges",    row:"HYG / JNK Puts",      preCrash:"✅",  liquidity:"✅",  def:"✅",  inf:"✅",  stag:"✅",  hawkish:"⚠️",
-    carry:"option theta — negative carry, decays while you wait" },
-  { group:"Macro / Rate Hedges",    row:"VIX Calls / VXX",     preCrash:"✅✅", liquidity:"⚠️", def:"✅",  inf:"✅",  stag:"❌",  hawkish:"⚠️",
-    carry:"steep theta + contango roll — expensive to hold", carryBy:{ preCrash:"cheap now — IV low before the repricing", liquidity:"IV already repriced — poor entry, dear to hold", stag:"contango bleeds hard in a slow grind" } },
-  { group:"Equity Shorts",          row:"SPY / QQQ Puts",      preCrash:"✅✅", liquidity:"⚠️", def:"✅",  inf:"✅",  stag:"⚠️", hawkish:"⚠️",
-    carry:"option theta — negative carry, worse the longer you wait" },
-  { group:"Equity Shorts",          row:"SQQQ / 7568.HK",      preCrash:"✅",  liquidity:"⚠️", def:"✅",  inf:"✅",  stag:"⚠️", hawkish:"⚠️",
-    carry:"daily-rebalance decay — bleeds in flat/choppy tape" },
-  { group:"Defensive Income",       row:"XLP / Staples",       preCrash:"✅",  liquidity:"⚠️", def:"✅",  inf:"⚠️", stag:"✅",  hawkish:"❌", note:"Best defensive EQUITY in stagflation (pricing power, non-discretionary demand) — but gold and energy outrank it as the primary hedges (2022: XLE +64%, XLP ~−3%).",
+  { group:"Macro / Rate Hedges",    row:"HYG / JNK Puts",      cat:"decay",    preCrash:"✅",  liquidity:"✅",  recovery:"🔻", def:"✅",  inf:"✅",  stag:"✅",  hawkish:"⚠️",
+    carry:"option theta — negative carry, decays while you wait", carryBy:{ recovery:"spreads compress + IV crush — the fastest bleed here" } },
+  { group:"Macro / Rate Hedges",    row:"VIX Calls / VXX",     cat:"decay",    preCrash:"✅✅", liquidity:"⚠️", recovery:"🔻", def:"✅",  inf:"✅",  stag:"❌",  hawkish:"⚠️",
+    carry:"steep theta + contango roll — expensive to hold", carryBy:{ preCrash:"cheap now — IV low before the repricing", liquidity:"IV already repriced — poor entry, dear to hold", recovery:"vol collapse — the single most expensive thing to hold here", stag:"contango bleeds hard in a slow grind" } },
+  { group:"Equity Shorts",          row:"SPY / QQQ Puts",      cat:"decay",    preCrash:"✅✅", liquidity:"⚠️", recovery:"🔻", def:"✅",  inf:"✅",  stag:"⚠️", hawkish:"⚠️", note:"Tenor matters: short-dated (30d) is a Pre-Crash instrument; longer-dated (3–6mo) is a hold-through-the-phase instrument with more carry but a wider window.",
+    carry:"option theta — negative carry, worse the longer you wait", carryBy:{ recovery:"IV crush + delta both against you" } },
+  { group:"Equity Shorts",          row:"SQQQ / 7568.HK",      cat:"decay",    preCrash:"✅",  liquidity:"⚠️", recovery:"🔻", def:"✅",  inf:"✅",  stag:"⚠️", hawkish:"⚠️",
+    carry:"daily-rebalance decay — bleeds in flat/choppy tape", carryBy:{ recovery:"daily decay against a rising tape — sell" } },
+  { group:"Defensive Income",       row:"XLP / Staples",       cat:"regime",   preCrash:"✅",  liquidity:"⚠️", recovery:"⚠️", def:"✅",  inf:"⚠️", stag:"✅",  hawkish:"❌", note:"Best defensive EQUITY in stagflation (pricing power, non-discretionary demand) — but gold and energy outrank it as the primary hedges (2022: XLE +64%, XLP ~−3%). Lags in the recovery — defensives are what you rotate OUT of off the trough.",
     carry:"≈2.5% dividend — positive carry, cheap to hold" },
-  { group:"Commodities / Energy",   row:"CNOOC / Energy",      preCrash:"⚠️", liquidity:"❌", def:"❌",  inf:"✅✅", stag:"✅✅", hawkish:"✅", note:"Hawkish repricing: ✅ if INFLATION-driven (breakevens rising) · ⚠️ if TERM-PREMIUM / supply-driven (today's case — breakevens flat). 2022 (inflation-driven) XLE was the best sector, +64%.",
+  { group:"Commodities / Energy",   row:"CNOOC / Energy",      cat:"regime",   preCrash:"⚠️", liquidity:"❌", recovery:"✅",  def:"❌",  inf:"✅✅", stag:"✅✅", hawkish:"✅", note:"Hawkish repricing: ✅ if INFLATION-driven (breakevens rising) · ⚠️ if TERM-PREMIUM / supply-driven (today's case — breakevens flat). 2022 (inflation-driven) XLE was the best sector, +64%.",
     carry:"dividend + futures roll — carry varies", carryBy:{ inf:"backwardation adds positive roll carry", stag:"dividend + roll — favorable" } },
-  { group:"Commodities / Energy",   row:"DBC / PDBC (broad)",  preCrash:"⚠️", liquidity:"❌", def:"❌",  inf:"✅",  stag:"✅✅", hawkish:"✅", note:"Broad commodities — the best-performing asset class of 2022; energy alone doesn't cover it. Same hawkish condition as energy.",
+  { group:"Commodities / Energy",   row:"DBC / PDBC (broad)",  cat:"regime",   preCrash:"⚠️", liquidity:"❌", recovery:"✅",  def:"❌",  inf:"✅",  stag:"✅✅", hawkish:"✅", note:"Broad commodities — the best-performing asset class of 2022; energy alone doesn't cover it. Same hawkish condition as energy.",
     carry:"futures roll — backwardation +, contango −" },
-  { group:"Debasement / Monetary",  row:"BTC",                 preCrash:"❌", liquidity:"❌", def:"❌",  inf:"✅",  stag:"⚠️", hawkish:"❌", note:"Short debasement track record — ~2yr; −50% in 48h (Mar 2020), −64% through 2022's inflation. Correct direction, thin evidence for a top tier alongside physical gold.",
+  { group:"Debasement / Monetary",  row:"BTC",                 cat:"tactical", preCrash:"❌", liquidity:"❌", recovery:"✅✅", def:"❌",  inf:"✅",  stag:"⚠️", hawkish:"❌", note:"Highest beta to returning liquidity — the recovery is where it earns its place. Short debasement record (~2yr; −50% in 48h Mar 2020, −64% through 2022). Correct direction, thin evidence for a top tier alongside physical gold in the resolutions.",
     carry:"zero yield; funding cost if levered — negative carry" },
+  { group:"Real Assets / Farmland", row:"Farmland — NCREIF",   cat:"regime",   benchmark:true, preCrash:"—", liquidity:"⚠️", recovery:"⚠️", def:"⚠️", inf:"✅✅", stag:"✅✅", hawkish:"⚠️", note:"BENCHMARK — not investable in this account (AcreTrader/FarmTogether need US accreditation, K-1s, ~10yr horizon; for a UAE-resident Canadian via IBKR SG this is context, not an instrument). 2022 (CPI ~9%): NCREIF +9.64% (cropland +14.4%, Corn Belt +28%). Low vol is partly quarterly-appraisal smoothing — and it cannot be sold during a drawdown.",
+    carry:"~10.15%/yr since 1992, ~6–7% vol — appraisal-smoothed; cannot be traded" },
+  { group:"Real Assets / Farmland", row:"Farmland REITs (LAND / FPI)", cat:"regime", preCrash:"⚠️", liquidity:"❌", recovery:"✅", def:"❌", inf:"⚠️", stag:"⚠️", hawkish:"❌", note:"Investable, but rate as REITs — NOT a proxy for the land. 2022: NCREIF +9.64% while FPI fell >14%. LAND max drawdown −76.56% (worse than GDX in 2008). Extra risks: NAV discount (FPI 25–30%, a return driver unrelated to farmland) and US-situs estate tax.",
+    carry:"small-cap REIT beta + leverage — LAND/FPI 0.68%/2.10% 10yr, deep drawdowns" },
 ];
 
 // B7 — per-cell ACTION + CARRY. The glyph rates HOW GOOD an instrument is in a scenario; these
@@ -397,6 +412,7 @@ const SCENARIO_MATRIX = [
 const CELL_ACT_OVERRIDES = {
   "Cash / SGOV / USFR|preCrash": "HOLD",
   "Cash / SGOV / USFR|liquidity": "HOLD",
+  "Cash / SGOV / USFR|recovery": "DEPLOY",
   "GLD / Physical Gold|liquidity": "TRIM→cash",
   "GDX / GDXJ|inf": "STAGE",
   "GDX / GDXJ|stag": "HOLD LIGHT",
@@ -410,29 +426,67 @@ const CELL_ACT_OVERRIDES = {
   "DBC / PDBC (broad)|hawkish": "CONDITIONAL",
 };
 function cellAction(glyph, phaseKey, row) {
+  const g = String(glyph);
+  if (g === "—" || g.toLowerCase() === "n/a" || g === "") return ""; // no tactical position
+  if (g.startsWith("🔻")) return phaseKey === "recovery" && /Cash/.test(String(row)) ? "DEPLOY" : "SELL";
   const ov = CELL_ACT_OVERRIDES[`${row}|${phaseKey}`];
   if (ov) return ov;
-  const g = String(glyph);
   if (g.startsWith("❌")) return "AVOID";
   if (g.startsWith("⚠️")) return phaseKey === "preCrash" ? "WAIT" : "HOLD LIGHT";
   if (phaseKey === "preCrash") return "INITIATE";
   if (phaseKey === "liquidity") return "HOLD";
+  if (phaseKey === "recovery") return "BUY"; // off the trough — this is the buy, not the resolutions
   return "INITIATE"; // resolution columns — position for the confirmed outcome
 }
-// Chip palette. INITIATE reads as go now (green); STAGE / ON PIVOT as go on the trigger (blue);
-// HOLD as keep-don't-chase (grey); WAIT / CONDITIONAL / TRIM as caution (amber); AVOID as stop (red).
+// Chip palette. INITIATE / BUY read as go now (green); STAGE / ON PIVOT / DEPLOY as go on the trigger
+// (blue); HOLD as keep-don't-chase (grey); WAIT / CONDITIONAL / TRIM as caution (amber); AVOID as
+// stop (red); SELL as unwind-now (rose — deliberately distinct from AVOID's don't-buy red).
 const ACT_STYLE = {
   "INITIATE":    { color:"#047857", bg:"#ECFDF5", bdr:"#A7F3D0" },
+  "BUY":         { color:"#047857", bg:"#ECFDF5", bdr:"#A7F3D0" },
   "STAGE":       { color:"#1D4ED8", bg:"#EFF6FF", bdr:"#BFDBFE" },
   "ON PIVOT":    { color:"#1D4ED8", bg:"#EFF6FF", bdr:"#BFDBFE" },
+  "DEPLOY":      { color:"#1D4ED8", bg:"#EFF6FF", bdr:"#BFDBFE" },
   "HOLD":        { color:"#6B7280", bg:"#F9FAFB", bdr:"#E5E7EB" },
   "HOLD LIGHT":  { color:"#6B7280", bg:"#F9FAFB", bdr:"#E5E7EB" },
   "WAIT":        { color:"#B45309", bg:"#FFF7ED", bdr:"#FED7AA" },
   "CONDITIONAL": { color:"#B45309", bg:"#FFF7ED", bdr:"#FED7AA" },
   "TRIM→cash":   { color:"#B45309", bg:"#FFF7ED", bdr:"#FED7AA" },
   "AVOID":       { color:"#B91C1C", bg:"#FEF2F2", bdr:"#FECACA" },
+  "SELL":        { color:"#BE123C", bg:"#FFF1F2", bdr:"#FECDD3" },
 };
 const actStyle = a => ACT_STYLE[a] || ACT_STYLE.HOLD;
+
+// Part B — holding period + exit trigger by category. Three (plus tactical) different exit rules:
+// most insurance losses come not from buying the wrong hedge but from holding the right hedge past
+// its window. Rendered per cell (in the selected column) so the exit rule travels with the rating.
+const HOLD_LOGIC = {
+  decay:    { horizon:"days–weeks",           horizonShort:"days–wks",   exit:"VIX term structure flips back to contango",              exitShort:"vol → contango",       note:"Sold, not held — bleeds continuously (theta / contango roll / daily decay). Holding through the peak gives back the entire gain." },
+  tactical: { horizon:"weeks — post-trough window", horizonShort:"wks",   exit:"the recovery rally matures / the resolution confirms",    exitShort:"rally matures",        note:"A VIX-peak TRADE, not a hedge and not a hold. Take the off-the-trough move; don't carry it into the resolution." },
+  regime:   { horizon:"months — until the regime changes", horizonShort:"months", exit:"the Macro-tab regime state changes",             exitShort:"Macro regime flips",   note:"Exit on a regime change, NOT on a liquidity-phase drawdown — that drawdown is how liquid, profitable positions get sold to meet margin (gold −12% over 8 sessions Mar 2020, then all-time highs by August)." },
+  cash:     { horizon:"until the deployment trigger", horizonShort:"to trigger", exit:"bills → duration at the pivot → equities 30–60d after the first cut", exitShort:"deployment sequence", note:"The only asset whose worst outcome is being right and doing nothing. Flips ✅✅→❌ on a REGIME change (Debasement — loses purchasing power), not on a phase change." },
+};
+
+// A3 — auto-suggest the Insurance phase from the VIX term-structure regime + the OAS 20-obs trend.
+//   BACKWARDATION → Liquidity Phase (front above back; stress / forced selling).
+//   CONTANGO + OAS off its lows and rolling over → Recovery (credit stabilising AFTER a widening).
+//   CONTANGO + OAS calm/tight → Pre-Crash (the accumulation window).
+//   FLAT → regime transition; no confident call, leave the user's selection alone.
+// The OAS 20-obs change is the discriminator between Pre-Crash and Recovery — both read contango, but
+// recovery follows a widening and pre-crash does not. Suggestion only; the user can pin (see A3 banner).
+function suggestInsurancePhase(volTerm, oasSeries) {
+  if (!volTerm?.available || !volTerm.regime) return null;
+  if (volTerm.regime === "BACKWARDATION") return { phase: "liquidity", why: "VIX backwardation — front above back; a stress / forced-selling regime" };
+  if (volTerm.regime === "FLAT") return null; // transition — don't override a manual read
+  const vals = (oasSeries || []).map(x => (typeof x === "number" ? x : (x?.value ?? x?.oas ?? null))).filter(v => v != null);
+  if (vals.length >= 6) {
+    const last = vals[vals.length - 1];
+    const back = vals[Math.max(0, vals.length - 21)];
+    const widened = last - back; // OAS units (percentage points); positive = wider than ~20 obs ago
+    if (widened >= 0.2) return { phase: "recovery", why: `VIX contango + credit stabilising after a widening (OAS +${widened.toFixed(2)} over ~20 obs)` };
+  }
+  return { phase: "preCrash", why: "VIX contango + credit calm — the accumulation window" };
+}
 
 // Live-signal anchor — auto-computed lean from liveInd. Informational only;
 // the user still sets the toggle. Safe to call with {} when liveInd is null.
@@ -4586,7 +4640,12 @@ export default function App() {
   // make visible, so it must not silently reset.
   const [regimePin, setRegimePin] = useState(() => cacheLoad("regime_pin_v1", { pinned: false, note: "", setAt: null }));
   const savePin = (p) => { setRegimePin(p); cacheSave("regime_pin_v1", p); };
-  const [insurancePhase, setInsurancePhase] = useState("preCrash"); // Insurance tab — "preCrash" | "liquidity" | "def" | "inf" | "stag" | "hawkish"
+  const [insurancePhase, setInsurancePhase] = useState("preCrash"); // Insurance tab — "preCrash" | "liquidity" | "recovery" | "def" | "inf" | "stag" | "hawkish"
+  const [insurancePinned, setInsurancePinned] = useState(false);    // A3 — true once the user manually sets a phase; suppresses the vol-regime auto-suggest
+  // A3 — manual override: clicking any phase pins it (same pattern as the regime pin). Auto-suggest
+  // still computes and, when it diverges from the pin, surfaces a banner with a follow-signal action.
+  const pickInsurancePhase = (k) => { setInsurancePhase(k); setInsurancePinned(true); };
+  const followInsuranceSignal = () => { setInsurancePinned(false); };
   const [stage4, setStage4] = useState(false); // Posture deploy stage 4 — manual, persisted
   const [stage5, setStage5] = useState(false); // Posture deploy stage 5 — manual, persisted
   const [portfolioValue, setPortfolioValue] = useState(""); // Posture portfolio total (digits only), persisted
@@ -4602,6 +4661,11 @@ export default function App() {
   const { prices, loading: pricesLoading, updated: pricesUpdated, fetchPrices } = useLivePrices();
   const { live: liveInd, loading: indLoading, updated: indUpdated, error: indError, fetchIndicators } = useLiveIndicators();
   const { byRegion: pbData, loading: pbLoading, updated: pbUpdated, error: pbError, fetchRegion: fetchPlaybookRegion } = useLivePlaybook();
+  // A3 — vol-regime → Insurance-phase suggestion (declared after pbData to stay out of its TDZ).
+  const insuranceSuggest = suggestInsurancePhase(pbData?.us?.volTerm, pbData?.us?.macro?.oas?.series);
+  useEffect(() => {
+    if (!insurancePinned && insuranceSuggest?.phase && insuranceSuggest.phase !== insurancePhase) setInsurancePhase(insuranceSuggest.phase);
+  }, [insuranceSuggest?.phase, insurancePinned]);
   // Task 1a+1b — the recession table the whole app reads: manual override > auto-feed > static.
   const effectiveRecessionSources = useMemo(
     () => mergeRecessionSources(RECESSION_SOURCES, liveInd?.recessionFeeds || {}, recessionOverrides),
@@ -5363,7 +5427,7 @@ export default function App() {
                     {mappedPhase ? (
                       <>
                         <span style={{ color: C.lbl }}>→</span>
-                        <button onClick={() => setInsurancePhase(mappedCol)} style={{ cursor: "pointer", background: mappedPhase.bg, color: mappedPhase.color, border: "1.5px solid " + mappedPhase.bdr, borderRadius: 6, padding: "3px 9px", fontWeight: 800, fontSize: 12 }}>
+                        <button onClick={() => pickInsurancePhase(mappedCol)} style={{ cursor: "pointer", background: mappedPhase.bg, color: mappedPhase.color, border: "1.5px solid " + mappedPhase.bdr, borderRadius: 6, padding: "3px 9px", fontWeight: 800, fontSize: 12 }}>
                           see {mappedPhase.label}
                         </button>
                       </>
@@ -5374,7 +5438,7 @@ export default function App() {
                       <>
                         <span style={{ color: C.lbl }}>·</span>
                         <span style={{ color: C.lbl, fontWeight: 700 }}>today’s tape:</span>
-                        <button onClick={() => setInsurancePhase("hawkish")} style={{ cursor: "pointer", background: "#FFF7ED", color: "#B45309", border: "1.5px solid #FED7AA", borderRadius: 6, padding: "3px 9px", fontWeight: 800, fontSize: 12 }}>
+                        <button onClick={() => pickInsurancePhase("hawkish")} style={{ cursor: "pointer", background: "#FFF7ED", color: "#B45309", border: "1.5px solid #FED7AA", borderRadius: 6, padding: "3px 9px", fontWeight: 800, fontSize: 12 }}>
                           Hawkish Rates Repricing → see column
                         </button>
                       </>
@@ -5394,10 +5458,10 @@ export default function App() {
               {/* P1.3 — phase-dimension selector: pick the phase first, resolution expands to four. */}
               <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
                 <span style={{ fontSize: 10.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>Phase</span>
-                {["preCrash", "liquidity", "resolution"].map(dim => {
+                {["preCrash", "liquidity", "recovery", "resolution"].map(dim => {
                   const on = insDimOf(insurancePhase) === dim;
                   return (
-                    <button key={dim} onClick={() => setInsurancePhase(INS_PHASE_DIMS[dim][0])} style={{
+                    <button key={dim} onClick={() => pickInsurancePhase(INS_PHASE_DIMS[dim][0])} style={{
                       background: on ? C.blue : C.surf, color: on ? "#fff" : C.mid,
                       border: "1.5px solid " + (on ? C.blue : C.bdr), borderRadius: 8,
                       padding: "6px 14px", fontSize: 12.5, fontWeight: 800, cursor: "pointer", opacity: on ? 1 : 0.7,
@@ -5408,6 +5472,25 @@ export default function App() {
                   <span style={{ fontSize: 11, color: C.muted, fontWeight: 600 }}>→ Deflationary · Debasement · Stagflation · Hawkish</span>
                 )}
               </div>
+              {/* A3 — vol-regime auto-suggest. Unpinned: the phase follows the VIX term structure (+ OAS
+                  trend). Pinned: show a divergence banner when the signal disagrees, with a follow-signal
+                  action — same pattern as the regime pin. */}
+              {insuranceSuggest && (() => {
+                const sp = INSURANCE_PHASES.find(p => p.k === insuranceSuggest.phase);
+                const diverged = insurancePinned && insuranceSuggest.phase !== insurancePhase;
+                if (!sp) return null;
+                return (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 10, padding: "7px 11px", borderRadius: 8,
+                    background: diverged ? C.aBg : C.surf, border: "1px solid " + (diverged ? C.aBdr : C.bdr) }}>
+                    <span style={{ fontSize: 11.5, color: C.muted, fontWeight: 700 }}>{diverged ? "⚠️ Vol regime suggests" : "📡 Vol regime →"}</span>
+                    <button onClick={() => pickInsurancePhase(sp.k)} style={{ cursor: "pointer", background: sp.bg, color: sp.color, border: "1.5px solid " + sp.bdr, borderRadius: 6, padding: "2px 8px", fontWeight: 800, fontSize: 11.5 }}>{sp.short}</button>
+                    <span style={{ fontSize: 11, color: C.muted, fontStyle: "italic" }}>{insuranceSuggest.why}</span>
+                    {!insurancePinned && <span style={{ fontSize: 10.5, color: C.green, fontWeight: 800 }}>· auto (following signal)</span>}
+                    {diverged && <button onClick={followInsuranceSignal} style={{ cursor: "pointer", background: C.green, color: "#fff", border: "none", borderRadius: 6, padding: "2px 9px", fontWeight: 800, fontSize: 11 }}>Follow signal</button>}
+                    {insurancePinned && !diverged && <span style={{ fontSize: 10.5, color: C.muted, fontWeight: 700 }}>· pinned (matches)</span>}
+                  </div>
+                );
+              })()}
               {(() => { const shownPhases = INSURANCE_PHASES.filter(p => INS_PHASE_DIMS[insDimOf(insurancePhase)].includes(p.k)); return (
               <div style={{ overflowX: "auto", width: "100%" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", minWidth: shownPhases.length > 1 ? 700 : 360, fontSize: 12 }}>
@@ -5418,7 +5501,7 @@ export default function App() {
                         const on = insurancePhase === p.k;
                         return (
                           <th key={p.k} style={{ padding: 0, minWidth: 120, borderBottom: "1.5px solid " + (on ? p.color : C.bdr) }}>
-                            <button onClick={() => setInsurancePhase(p.k)} title={p.desc} style={{
+                            <button onClick={() => pickInsurancePhase(p.k)} title={p.desc} style={{
                               width: "100%", cursor: "pointer", border: "none", whiteSpace: "nowrap",
                               background: on ? p.color : "transparent",
                               color: on ? "#fff" : p.color,
@@ -5447,6 +5530,7 @@ export default function App() {
                         <tr key={r.row} style={{ background: ri % 2 === 0 ? C.surf : C.bg }}>
                           <td style={{ padding: "6px 10px", color: C.text, fontWeight: 600, borderBottom: "1px solid " + C.bdr, width: 140, minWidth: 140 }}>
                             {r.row}
+                            {r.benchmark && <span style={{ display: "inline-block", marginLeft: 5, fontSize: 8, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: "#1D4ED8", background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 4, padding: "1px 4px", verticalAlign: "middle" }} title="Benchmark — not investable in this account">Benchmark · not investable</span>}
                             {r.note && <div style={{ fontSize: 9.5, color: C.lbl, fontWeight: 400, lineHeight: 1.4, marginTop: 2 }} title={r.note}>{r.note.length > 70 ? r.note.slice(0, 68) + "…" : r.note}</div>}
                           </td>
                           {shownPhases.map(p => {
@@ -5454,12 +5538,16 @@ export default function App() {
                             const act = cellAction(r[p.col], p.col, r.row);
                             const st = actStyle(act);
                             const cc = (r.carryBy && r.carryBy[p.col]) || r.carry;
+                            const hl = HOLD_LOGIC[r.cat];
                             return (
                               <td key={p.k} style={{ textAlign: "center", padding: "6px 8px", minWidth: 120, borderBottom: "1px solid " + C.bdr, background: on ? p.bg : "transparent" }}>
                                 <div style={{ fontSize: 14, fontWeight: on ? 800 : 400 }}>{r[p.col]}</div>
-                                <div style={{ marginTop: 3, display: "inline-block", fontSize: 8.5, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: st.color, background: st.bg, border: "1px solid " + st.bdr, borderRadius: 4, padding: "1px 5px", lineHeight: 1.35 }}>{act}</div>
+                                {act && <div style={{ marginTop: 3, display: "inline-block", fontSize: 8.5, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: st.color, background: st.bg, border: "1px solid " + st.bdr, borderRadius: 4, padding: "1px 5px", lineHeight: 1.35 }}>{act}</div>}
+                                {on && hl && (
+                                  <div style={{ marginTop: 4, fontSize: 8.5, color: C.lbl, fontWeight: 600, lineHeight: 1.35, whiteSpace: "normal", maxWidth: 130, margin: "4px auto 0" }} title={"Hold: " + hl.horizon + " · Exit: " + hl.exit}>⏳ {hl.horizonShort} · exit: {hl.exitShort}</div>
+                                )}
                                 {on && cc && (
-                                  <div style={{ marginTop: 4, fontSize: 8.5, color: C.muted, fontWeight: 400, lineHeight: 1.35, whiteSpace: "normal", maxWidth: 130, margin: "4px auto 0" }} title={"Carry: " + cc}>{cc}</div>
+                                  <div style={{ marginTop: 3, fontSize: 8.5, color: C.muted, fontWeight: 400, lineHeight: 1.35, whiteSpace: "normal", maxWidth: 130, margin: "3px auto 0" }} title={"Carry: " + cc}>{cc}</div>
                                 )}
                               </td>
                             );
@@ -5474,7 +5562,7 @@ export default function App() {
               ); })()}
               <div style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
                 <span style={{ fontSize: 10.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>Rating</span>
-                {[["✅✅", "Primary instrument"], ["✅", "Works well"], ["⚠️", "Caution / timing-dependent"], ["❌", "Avoid"]].map(([sym, lbl]) => (
+                {[["✅✅", "Primary instrument"], ["✅", "Works well"], ["⚠️", "Caution / timing-dependent"], ["❌", "Avoid (don't buy)"], ["🔻", "Sell / unwind — a held hedge that's now a drag"]].map(([sym, lbl]) => (
                   <div key={lbl} style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 12, color: C.muted }}>
                     <span style={{ fontSize: 13 }}>{sym}</span>{lbl}
                   </div>
@@ -5482,7 +5570,7 @@ export default function App() {
               </div>
               <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
                 <span style={{ fontSize: 10.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>Action</span>
-                {[["INITIATE", "open now"], ["STAGE / ON PIVOT", "add on the trigger"], ["HOLD", "keep, don't chase"], ["WAIT / CONDITIONAL / TRIM", "not yet"], ["AVOID", "stay out"]].map(([a, lbl]) => {
+                {[["INITIATE", "open now"], ["BUY", "off the trough"], ["STAGE / ON PIVOT / DEPLOY", "on the trigger"], ["HOLD", "keep, don't chase"], ["WAIT / CONDITIONAL / TRIM", "not yet"], ["SELL", "unwind now"], ["AVOID", "stay out"]].map(([a, lbl]) => {
                   const st = actStyle(a.split(" / ")[0]);
                   return (
                     <div key={a} style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 11.5, color: C.muted }}>
@@ -5490,7 +5578,13 @@ export default function App() {
                     </div>
                   );
                 })}
-                <span style={{ fontSize: 11, color: C.muted, fontStyle: "italic" }}>· carry = cost to hold (shown in the selected column)</span>
+              </div>
+              <div style={{ marginTop: 6, fontSize: 11, color: C.muted, fontStyle: "italic" }}>
+                Selected column also shows each row's <b style={{ fontStyle: "normal", color: C.lbl }}>⏳ hold horizon · exit trigger</b> and <b style={{ fontStyle: "normal", color: C.lbl }}>carry</b> (cost to hold). Most insurance P&L is lost holding the right hedge past its window — the exit rule matters as much as the rating.
+              </div>
+              {/* D4 — the pairing note, rendered wherever both farmland rows appear (i.e. always). */}
+              <div style={{ marginTop: 8, padding: "8px 11px", background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 8, fontSize: 11.5, color: C.mid, lineHeight: 1.55 }}>
+                🌾 <b>Farmland — read the two rows together:</b> NCREIF is the asset; LAND / FPI are equities that own it. In 2022 the asset returned <b>+9.64%</b> and the equities <b>fell</b>. Don't treat the second as a proxy for the first — the REIT wrapper adds leverage, small-cap beta, an unrelated NAV-discount driver, and US-situs estate exposure.
               </div>
               {/* Active scenario summary + live-signal lean (informational; your call) */}
               {(() => {
@@ -5506,6 +5600,37 @@ export default function App() {
                   </div>
                 );
               })()}
+              {/* C3 — "already in it" logic: if you didn't buy protection before the liquidity phase,
+                  buying it now is expensive and late. Raise cash and prepare the recovery buy instead. */}
+              {insurancePhase === "liquidity" && (
+                <div style={{ marginTop: 10, padding: "10px 13px", background: C.aBg, border: "1.5px solid " + C.aBdr, borderRadius: 8 }}>
+                  <div style={{ color: C.amber, fontWeight: 800, fontSize: 12.5, marginBottom: 3 }}>⚠️ Already in the drawdown, no protection on?</div>
+                  <div style={{ color: C.mid, fontSize: 12.5, lineHeight: 1.6 }}>
+                    Buying protection now is <b>expensive and late</b> — IV has already repriced, so puts and VIX calls are a poor purchase here. Don't chase the hedge. <b>Raise cash and prepare the recovery buy</b> (miners · BTC · equities) for the moment the VIX term structure flips back to contango.
+                  </div>
+                </div>
+              )}
+              {/* B5 — the conversion map. The point of insurance is not to profit on the hedge; it is to
+                  FUND the recovery buy. Rendered as its own panel on the Recovery phase. */}
+              {insurancePhase === "recovery" && (
+                <div style={{ marginTop: 10, padding: "12px 14px", background: "#ECFDF5", border: "1.5px solid #A7F3D0", borderRadius: 10, borderTop: "4px solid #047857" }}>
+                  <div style={{ color: "#047857", fontWeight: 900, fontSize: 13.5, letterSpacing: 0.3, marginBottom: 2 }}>AT THE VIX PEAK — sell these, buy those</div>
+                  <div style={{ color: C.muted, fontSize: 11.5, fontStyle: "italic", marginBottom: 10 }}>Trigger: VIX term structure flips backwardation → contango. The hedge doesn't need to profit — it needs to fund the buy.</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+                    {[
+                      { head: "🔻 SELL", tint: "#BE123C", bg: "#FFF1F2", bd: "#FECDD3", items: "VIX calls · SPY/QQQ puts · HYG puts · SQQQ", sub: "vol collapse + IV crush — the most expensive things to hold here" },
+                      { head: "✅ BUY", tint: "#047857", bg: "#ECFDF5", bd: "#A7F3D0", items: "Gold miners · BTC · equities", sub: "highest beta to returning liquidity — miners lead off the trough" },
+                      { head: "🔷 DEPLOY", tint: "#1D4ED8", bg: "#EFF6FF", bd: "#BFDBFE", items: "Cash → the above", sub: "the sale proceeds and dry powder fund the recovery buy" },
+                    ].map(c => (
+                      <div key={c.head} style={{ background: c.bg, border: "1.5px solid " + c.bd, borderRadius: 8, padding: "9px 11px" }}>
+                        <div style={{ color: c.tint, fontWeight: 900, fontSize: 12.5, marginBottom: 3 }}>{c.head}</div>
+                        <div style={{ color: C.text, fontWeight: 700, fontSize: 12.5, lineHeight: 1.45 }}>{c.items}</div>
+                        <div style={{ color: C.muted, fontSize: 10.5, marginTop: 3, lineHeight: 1.4 }}>{c.sub}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </Card>
 
             {/* Regime-aware context banner — best→worst ranking for the active macro regime */}
