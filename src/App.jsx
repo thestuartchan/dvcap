@@ -133,15 +133,32 @@ const INDICATORS = [
 // ─── INSURANCE ASSETS ─────────────────────────────────────────────────────────
 const ASSETS = [
   {
+    // Aug-20 Part B — Physical Gold is its own asset, distinct from miners (which only ever
+    // EXPRESS a gold view, with equity beta). The primary real-asset hold; ranks above miners in
+    // every regime. Matches the SCENARIO_MATRIX, which already separates GLD from GDX.
+    id:"gold", name:"Physical Gold", icon:"🥇", color:"#B45309", bg:"#FFFBEB", bdr:"#FDE68A",
+    stagRank:1, defRank:2, refRank:4, infRank:1, volatility:"MED",
+    stagNote:"The classic stagflation hedge — monetary, no growth dependency (1970s: $35 → ~$850). The primary real-asset hold; miners are only a cautioned, leveraged expression of it.",
+    crisisScore:80, inflationScore:88, deflationScore:60, liquidityScore:55, stagScore:90,
+    verdict:"THE debasement + stagflation hedge. Held value where miners collapsed (2008). SOLD in a liquidity dash-for-cash (−12% over 8 sessions, Mar 2020), then rips. Sits above miners in every regime.",
+    tickers:[
+      {t:"GLD",     name:"SPDR Gold Trust",       type:"ETF", note:"Largest, most liquid. 0.40% fee."},
+      {t:"IAU",     name:"iShares Gold Trust",    type:"ETF", note:"Lower fee (0.25%). Same physical exposure."},
+      {t:"SGOL",    name:"abrdn Physical Gold",   type:"ETF", note:"Swiss-vaulted. 0.17% fee — cheapest."},
+      {t:"2840.HK", name:"SPDR Gold Trust (HK)",  type:"ETF", note:"HKD-pegged, zero HK withholding tax. Use via IBKR HK account.", link:"https://www.hkex.com.hk"},
+    ],
+  },
+  {
     id:"miners", name:"Gold Miners", icon:"⛏️", state:"WATCH",
-    // P0.3 — rating resolved toward the Macro tab's caution (GOLD_MINERS_WHY is the single source).
-    // Miners are NOT the best stagflation asset: they are equities with operating leverage to gold,
-    // sold in liquidity events. Demoted from stagRank #1 / score 95, consistent with the ⚠️ they
-    // already carry in SCENARIO_MATRIX. The stagflation hedge is physical gold (GLD / 2840.HK).
-    stagRank:4, defRank:4, refRank:3, infRank:1, volatility:"HIGH",
+    // P0.3 + Aug-20 B1 — miners NEVER rank above physical gold, in any regime. Evidence: GDX lagged
+    // GLD ~6.5%/yr since 2006 (~−350% cumulative), worst during equity crises; ~2× the volatility,
+    // asymmetric; the "2–3×" is sell-side convention (only ~1.2× realised through 2023–25). Even in a
+    // pure gold bull (debasement) they merely MATCH gold while carrying equity beta. So they sit below
+    // Physical Gold everywhere — including a demotion from #1 in Inflationary Boom to #4.
+    stagRank:5, defRank:5, refRank:5, infRank:4, volatility:"HIGH",
     stagNote:"⚠️ Cautioned in stagflation — miners are equities with operating leverage to gold (equity beta, sold in liquidity events: GDX fell ~70% in 2008). The stagflation hedge is physical gold (GLD / 2840.HK); miners are a leveraged, cautioned expression of the view, not a hedge. Add only after a VIX peak confirms the liquidity phase has passed.",
-    crisisScore:85, inflationScore:90, deflationScore:30, liquidityScore:75, stagScore:55,
-    verdict:"Best in DEBASEMENT (2–3× gold leverage). ⚠️ Cautioned in stagflation — equity beta means they crash first in a liquidity event before they rip. Physical gold is the hedge; miners express the view. Same ⚠️ rating as the Macro tab (one definition).",
+    crisisScore:70, inflationScore:82, deflationScore:30, liquidityScore:40, stagScore:50,
+    verdict:"A leveraged EXPRESSION of gold, never a substitute — it has lagged GLD ~6.5%/yr since 2006 and is worst in crises. Even in a debasement bull it only matches gold while carrying equity beta, dilution and cost inflation. Physical gold is the hedge; miners never rank above it.",
     tickers:[
       {t:"GDX",  name:"VanEck Gold Miners ETF",     type:"ETF",   note:"Best entry. $33B AUM, 57 miners. Top: AEM, NEM, ABX."},
       {t:"GDXJ", name:"VanEck Junior Gold Miners",  type:"ETF",   note:"Higher beta. More upside, more volatile."},
@@ -155,15 +172,15 @@ const ASSETS = [
     regionalNote:"Physical Gold (Dubai): 0% VAT on gold purchases in UAE. Available via Dubai Gold Souk, DMCC dealers, or Emirates NBD/ADCB gold savings accounts. No FX risk given AED/USD peg. Best local debasement hedge for UAE residents.",
   },
   {
-    id:"farmland", name:"Farmland", icon:"🌾", state:"BENIGN",
-    // P0.3 — a real-asset inflation hedge, but ILLIQUID (multi-year hold), so it sits at stagflation
-    // #2 behind liquid Consumer Staples — consistent with the Macro tab, which ranks GLD > Staples >
-    // Energy > Farmland. Not #1: you cannot tactically deploy into farmland the way an insurance
-    // posture needs.
-    stagRank:2, defRank:3, refRank:2, infRank:2, volatility:"LOW",
-    stagNote:"Good inflation hedge — food prices sticky in all environments. Illiquid. Multi-year hold.",
-    crisisScore:60, inflationScore:85, deflationScore:50, liquidityScore:20, stagScore:75,
-    verdict:"Excellent long-run inflation hedge. Thinly traded — use limit orders.",
+    id:"farmland", name:"Farmland REIT", icon:"🌾", state:"BENIGN",
+    // Aug-20 B4 — ONE definition: the investable instrument (FPI / LAND) is a small-cap farmland
+    // REIT, not raw farmland. So it is RATE-SENSITIVE — it trades like small-cap REITs regardless of
+    // the underlying acreage. That caps it below the pure real assets: real value in stagflation from
+    // ag-price pass-through, but it sells with rates in a hawkish repricing. Ranked accordingly.
+    stagRank:3, defRank:4, refRank:3, infRank:3, volatility:"MED",
+    stagNote:"Ag-price pass-through gives real-value protection, but FPI/LAND are small-cap REITs — rate-sensitive, so they sell in a hawkish repricing. Not the pure real asset the acreage implies.",
+    crisisScore:55, inflationScore:80, deflationScore:45, liquidityScore:55, stagScore:70,
+    verdict:"A small-cap farmland REIT (FPI / LAND) — real-asset exposure with REIT rate-sensitivity and small-cap beta. Below physical gold and broad commodities as an inflation hedge; sold in a hawkish rate repricing.",
     tickers:[
       {t:"LAND", name:"Gladstone Land",    type:"REIT", note:"Berry & vegetable farms. ~$350M cap. Thinly traded."},
       {t:"FPI",  name:"Farmland Partners", type:"REIT", note:"Row-crop (corn, soy, wheat). Geographic diversity."},
@@ -171,7 +188,9 @@ const ASSETS = [
   },
   {
     id:"tbonds", name:"Treasury Bonds", icon:"🏛️", color:"#1E40AF", bg:"#EFF6FF", bdr:"#BFDBFE",
-    stagRank:5, defRank:1, refRank:4, infRank:4, volatility:"MED",
+    // Aug-20 — the best asset in a deflationary recession (#1), the worst in stagflation / hawkish
+    // repricing / inflationary boom (rising yields crush duration). Re-ranked with Physical Gold added.
+    stagRank:6, defRank:1, refRank:6, infRank:6, volatility:"MED",
     stagNote:"WORST stagflation asset. Inflation erodes real value; rate hikes crush price. TLT lost 30%+ in 2022.",
     crisisScore:75, inflationScore:20, deflationScore:95, liquidityScore:95, stagScore:10,
     verdict:"Works in deflation/growth-scare recessions (2008, 2020). Fails in stagflation. Know your recession type first.",
@@ -184,12 +203,12 @@ const ASSETS = [
   },
   {
     id:"staples", name:"Consumer Staples", icon:"🛒", color:"#5B21B6", bg:"#F5F3FF", bdr:"#C4B5FD",
-    // P0.3 — the top LIQUID stagflation hold (pricing power + non-discretionary demand), so #1 in
-    // this instrument set. Physical gold outranks it in principle but is not a distinct asset here;
-    // matches the Macro tab's GLD > Staples ordering (staples is the highest *available* name).
-    stagRank:1, defRank:2, refRank:1, infRank:3, volatility:"LOW",
-    stagNote:"Top liquid stagflation hedge. Brand pricing power passes through inflation; non-discretionary demand holds in recession. (Physical gold outranks it as a pure inflation hedge but is a separate hold.)",
-    crisisScore:75, inflationScore:65, deflationScore:70, liquidityScore:90, stagScore:82,
+    // Aug-20 B2 — the best defensive EQUITY in stagflation (pricing power, non-discretionary demand),
+    // but that is a narrower claim than "top hold": gold and energy are the primary hedges (2022: XLE
+    // +64%, XLP ~−3%). So #2 behind Physical Gold in stagflation. Best defensive in reflationary growth.
+    stagRank:2, defRank:3, refRank:1, infRank:5, volatility:"LOW",
+    stagNote:"Best defensive EQUITY in stagflation — brand pricing power passes through inflation, non-discretionary demand holds. But gold and energy outrank it as the primary hedges; staples are adequate, not standout (2022: XLE +64%, XLP ~−3%).",
+    crisisScore:75, inflationScore:60, deflationScore:70, liquidityScore:90, stagScore:75,
     verdict:"Most reliable defensive sector. Brands = pricing power. Non-discretionary = recession-proof demand.",
     tickers:[
       {t:"XLP",  name:"Consumer Staples SPDR",    type:"ETF",   note:"Best ETF. Top 5: PG, COST, KO, PEP, PM."},
@@ -203,8 +222,11 @@ const ASSETS = [
   },
   {
     id:"btc", name:"Bitcoin", icon:"₿", color:"#F7931A", bg:"#FFF8F0", bdr:"#F7931A",
-    stagRank:3, defRank:6, refRank:2, infRank:1, volatility:"VERY HIGH",
-    stagNote:"Mixed in stagflation — debasement tailwind, but risk-off selloffs hit it hard. Shines only once panic clears and the dollar-credibility narrative takes over.",
+    // Aug-20 B7 — the debasement correlation is real but YOUNG (~2yr consistent); −50% in 48h (Mar
+    // 2020), −64% through 2022. Correct direction, thin evidence — so it sits below Physical Gold in
+    // debasement / inflationary boom, not alongside it.
+    stagRank:4, defRank:6, refRank:2, infRank:2, volatility:"VERY HIGH",
+    stagNote:"Mixed in stagflation — debasement tailwind, but risk-off selloffs hit it hard. Shines only once panic clears and the dollar-credibility narrative takes over. Short (~2yr) debasement track record.",
     crisisScore:40, inflationScore:85, deflationScore:20, liquidityScore:90, stagScore:55,
     verdict:"Hardest debasement hedge in existence — fixed supply, no central bank, no balance sheet. Best in class if the thesis is dollar credibility loss or Fed balance sheet explosion. Critical caveat: in a liquidity crisis onset (2008-style, March 2020-style), BTC sells off WITH equities — it dropped 50% in 48 hours in March 2020. It is NOT crash protection. It is post-crash, post-panic, debasement-phase protection. Correlation to Nasdaq in risk-off stress periods remains ~0.6–0.7. Size as high-conviction, long-horizon, volatile insurance — meaningful but not dominant.",
     uaeBenefit:"No UAE capital gains tax on crypto. AED/USD peg means no FX drag. IBKR Singapore supports BTC exposure via IBIT ETF.",
@@ -331,18 +353,25 @@ const insDimOf = k => k === "preCrash" ? "preCrash" : k === "liquidity" ? "liqui
 // GLD/Physical Gold and GDX/GDXJ are intentionally separate rows — GLD held value where GDX did
 // not. Cash is its own top row: the only instrument that works across the crash timeline AND the
 // hawkish repricing.
+// `inf` column = the DEBASEMENT resolution. Aug-20 Part B corrections applied:
+//  B1 miners capped at ✅, never above physical gold (GDX has lagged GLD ~6.5%/yr since 2006,
+//     worst in crises; ~2× vol, asymmetric). B2 stagflation re-tiered (Gold/Energy ✅✅, Staples ✅).
+//  B3 TIPS added · B5 Cash in deflation ✅ (TLT is the best asset) · B6 Energy hawkish ✅ conditional
+//  B7 BTC debasement ✅ (short record) + broad commodities added.
 const SCENARIO_MATRIX = [
-  { group:"Cash / Front End",       row:"Cash / SGOV / USFR",  preCrash:"✅✅", liquidity:"✅✅", def:"✅✅", inf:"⚠️", stag:"⚠️", hawkish:"✅✅" },
-  { group:"Gold & Precious Metals", row:"GLD / Physical Gold", preCrash:"✅",  liquidity:"⚠️", def:"✅",  inf:"✅✅", stag:"✅",  hawkish:"❌" },
-  { group:"Gold & Precious Metals", row:"GDX / GDXJ",          preCrash:"⚠️", liquidity:"❌", def:"⚠️", inf:"✅✅", stag:"⚠️", hawkish:"❌" },
+  { group:"Cash / Front End",       row:"Cash / SGOV / USFR",  preCrash:"✅✅", liquidity:"✅✅", def:"✅",  inf:"⚠️", stag:"⚠️", hawkish:"✅✅" },
+  { group:"Gold & Precious Metals", row:"GLD / Physical Gold", preCrash:"✅",  liquidity:"⚠️", def:"✅",  inf:"✅✅", stag:"✅✅", hawkish:"❌" },
+  { group:"Gold & Precious Metals", row:"GDX / GDXJ",          preCrash:"⚠️", liquidity:"❌", def:"⚠️", inf:"✅",  stag:"⚠️", hawkish:"❌", note:"Never above physical gold — GDX lagged GLD ~6.5%/yr since 2006, worst in crises; ~2× vol, asymmetric leverage (only ~1.2× realised through the 2023–25 bull)." },
+  { group:"Inflation-Linked",       row:"TIPS (STIP / TIP)",   preCrash:"⚠️", liquidity:"⚠️", def:"⚠️", inf:"✅",  stag:"✅✅", hawkish:"❌", note:"The direct inflation instrument. STIP (0–5yr) is less rate-sensitive — the better fit for a crisis matrix; breakevens fall in deflation, real yields rise in a hawkish repricing." },
   { group:"Macro / Rate Hedges",    row:"TLT / IEF",           preCrash:"⚠️", liquidity:"⚠️", def:"✅✅", inf:"❌",  stag:"❌",  hawkish:"❌" },
   { group:"Macro / Rate Hedges",    row:"HYG / JNK Puts",      preCrash:"✅",  liquidity:"✅",  def:"✅",  inf:"✅",  stag:"✅",  hawkish:"⚠️" },
   { group:"Macro / Rate Hedges",    row:"VIX Calls / VXX",     preCrash:"✅✅", liquidity:"⚠️", def:"✅",  inf:"✅",  stag:"❌",  hawkish:"⚠️" },
   { group:"Equity Shorts",          row:"SPY / QQQ Puts",      preCrash:"✅✅", liquidity:"⚠️", def:"✅",  inf:"✅",  stag:"⚠️", hawkish:"⚠️" },
   { group:"Equity Shorts",          row:"SQQQ / 7568.HK",      preCrash:"✅",  liquidity:"⚠️", def:"✅",  inf:"✅",  stag:"⚠️", hawkish:"⚠️" },
-  { group:"Defensive Income",       row:"XLP / Staples",       preCrash:"✅",  liquidity:"⚠️", def:"✅",  inf:"⚠️", stag:"✅✅", hawkish:"❌" },
-  { group:"Commodities / Energy",   row:"CNOOC / Energy",      preCrash:"⚠️", liquidity:"❌", def:"❌",  inf:"✅✅", stag:"✅",  hawkish:"⚠️" },
-  { group:"Debasement / Monetary",  row:"BTC",                 preCrash:"❌", liquidity:"❌", def:"❌",  inf:"✅✅", stag:"⚠️", hawkish:"❌" },
+  { group:"Defensive Income",       row:"XLP / Staples",       preCrash:"✅",  liquidity:"⚠️", def:"✅",  inf:"⚠️", stag:"✅",  hawkish:"❌", note:"Best defensive EQUITY in stagflation (pricing power, non-discretionary demand) — but gold and energy outrank it as the primary hedges (2022: XLE +64%, XLP ~−3%)." },
+  { group:"Commodities / Energy",   row:"CNOOC / Energy",      preCrash:"⚠️", liquidity:"❌", def:"❌",  inf:"✅✅", stag:"✅✅", hawkish:"✅", note:"Hawkish repricing: ✅ if INFLATION-driven (breakevens rising) · ⚠️ if TERM-PREMIUM / supply-driven (today's case — breakevens flat). 2022 (inflation-driven) XLE was the best sector, +64%." },
+  { group:"Commodities / Energy",   row:"DBC / PDBC (broad)",  preCrash:"⚠️", liquidity:"❌", def:"❌",  inf:"✅",  stag:"✅✅", hawkish:"✅", note:"Broad commodities — the best-performing asset class of 2022; energy alone doesn't cover it. Same hawkish condition as energy." },
+  { group:"Debasement / Monetary",  row:"BTC",                 preCrash:"❌", liquidity:"❌", def:"❌",  inf:"✅",  stag:"⚠️", hawkish:"❌", note:"Short debasement track record — ~2yr; −50% in 48h (Mar 2020), −64% through 2022's inflation. Correct direction, thin evidence for a top tier alongside physical gold." },
 ];
 
 // Live-signal anchor — auto-computed lean from liveInd. Informational only;
@@ -5264,7 +5293,10 @@ export default function App() {
                       );
                       rows.push(
                         <tr key={r.row} style={{ background: ri % 2 === 0 ? C.surf : C.bg }}>
-                          <td style={{ padding: "6px 10px", color: C.text, fontWeight: 600, borderBottom: "1px solid " + C.bdr, width: 140, minWidth: 140 }}>{r.row}</td>
+                          <td style={{ padding: "6px 10px", color: C.text, fontWeight: 600, borderBottom: "1px solid " + C.bdr, width: 140, minWidth: 140 }}>
+                            {r.row}
+                            {r.note && <div style={{ fontSize: 9.5, color: C.lbl, fontWeight: 400, lineHeight: 1.4, marginTop: 2 }} title={r.note}>{r.note.length > 70 ? r.note.slice(0, 68) + "…" : r.note}</div>}
+                          </td>
                           {shownPhases.map(p => {
                             const on = insurancePhase === p.k;
                             return (
