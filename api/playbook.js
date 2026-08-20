@@ -27,7 +27,7 @@ export default async function handler(req, res) {
   const assembled = await assembleRegion(region);
   if (!assembled) return res.status(400).json({ error: 'bad region' });
 
-  const { R, quotes, idxRaw, macro, regime, cross, hyg, leaning, csop7709, volTerm, handoff, scenarios, smhSoxx, fxPnl, correlation, events, read, marketRegime, ladder, fx, won, intervention } = assembled;
+  const { R, quotes, idxRaw, macro, regime, cross, hyg, leaning, csop7709, volTerm, handoff, scenarios, posture, smhSoxx, fxPnl, correlation, events, read, marketRegime, ladder, fx, won, intervention } = assembled;
 
   // Attach display metadata + structure tag to each name, and names to indices.
   // `session` = explicit phase of that symbol's OWN exchange (live/pre/post/lunch/holiday/
@@ -67,6 +67,7 @@ export default async function handler(req, res) {
     volTerm,              // C1 — VIX term-structure regime (contango/flat/backwardation + event overlay)
     handoff,              // C3 — cross-market handoff (Asia leading vs echoing the overnight US drivers)
     scenarios,            // Part C — scenario board (A/B/C/D macro + Korea mechanical + China policy)
+    posture,              // A1 — headline POSTURE card (deterministic synthesis)
     read,                 // Stage 4 — composed deterministic READ (no model call)
     marketRegime,         // P0.1 — cross-asset regime read (incl. HAWKISH_RATES_REPRICING)
     ladder,               // P5  — concentration ladder + single-theme alert

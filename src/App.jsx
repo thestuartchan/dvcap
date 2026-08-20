@@ -2981,6 +2981,7 @@ function GaugesLeaning({ leaning, prominent }) {
         <span style={{ fontSize: prominent ? 28 : 14, fontWeight: 900, color: col, lineHeight: 1.1 }}>{leaning.tripped}/{leaning.usable}</span>
         {prominent && <span style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>tripwires leaning de-risking</span>}
         {leaning.allLeaning && <span style={{ fontSize: prominent ? 12 : 10, fontWeight: 800, color: C.red }}>ALL TURNED TOGETHER</span>}
+        {prominent && <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase" }}>today</span>}
       </div>
       {/* B3 — the count is directional: which SCENARIO the fired gauges point at, not an
           undifferentiated N/5. "2 at Korea mechanical, 1 at Hawkish" is what's actionable. */}
@@ -3032,6 +3033,7 @@ function Csop7709Tripwire({ t }) {
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <span style={{ fontSize: 11, color: C.muted, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5 }}>CSOP 7709 tripwire</span>
         <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>China-tech units outstanding · deleveraging tell</span>
+        <span style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase" }}>today</span>
         <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 900, color: col }}>
           {fired ? "▲ FIRED" : t.available ? "▼ quiet" : "· withheld"}
         </span>
@@ -3045,9 +3047,45 @@ function Csop7709Tripwire({ t }) {
   );
 }
 
+// A1 — headline POSTURE card. The one card that says what to DO, resolving several
+// simultaneously-confirmed scenarios into a single risk stance + a short action list.
+function PostureCard({ p }) {
+  if (!p) return null;
+  const col = p.tone === "red" ? C.red : p.tone === "green" ? C.green : p.tone === "amber" ? C.amber : C.muted;
+  const bg  = p.tone === "red" ? C.rBg : p.tone === "green" ? C.gBg : p.tone === "amber" ? C.aBg : C.surf;
+  const bdr = p.tone === "red" ? C.rBdr : p.tone === "green" ? C.gBdr : p.tone === "amber" ? C.aBdr : C.bdr;
+  const Row = ({ label, children, color }) => (
+    <div style={{ display: "flex", gap: 10, marginTop: 5, alignItems: "baseline" }}>
+      <span style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, minWidth: 66, flexShrink: 0 }}>{label}</span>
+      <div style={{ fontSize: 12, color: color || C.mid, fontWeight: 600, lineHeight: 1.5 }}>{children}</div>
+    </div>
+  );
+  return (
+    <Card style={{ background: bg, border: "1.5px solid " + bdr, borderTop: "5px solid " + col }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 2 }}>Posture</span>
+        <span style={{ fontSize: 22, fontWeight: 900, color: col, lineHeight: 1.05 }}>{p.posture}</span>
+        <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase" }}>weeks</span>
+        {p.tripwires && <span style={{ fontSize: 13, fontWeight: 800, color: C.muted }}>{p.tripwires} tripwires</span>}
+      </div>
+      {p.working?.length > 0 && <Row label="Working" color={C.green}>{p.working.join(" · ")}</Row>}
+      {p.not?.length > 0 && <Row label="Not" color={C.red}>{p.not.join(" · ")}</Row>}
+      {p.do?.length > 0 && (
+        <Row label="Do">
+          {p.do.map((d, i) => <div key={i} style={{ marginTop: i ? 2 : 0 }}>→ {d}</div>)}
+        </Row>
+      )}
+      {p.watch && <Row label="Watch" color={C.amber}>{p.watch}</Row>}
+      {p.next?.length > 0 && (
+        <Row label="Next">{p.next.map(n => `${n.label} ${n.date.slice(5)} (${n.daysTo}d)`).join(" · ")}</Row>
+      )}
+    </Card>
+  );
+}
+
 // Part C — scenario board. Answers "which scenario am I in" at the top of the page, so the user
 // doesn't reassemble it from five category-bucketed sections. Each row: name, X/N met, and its
-// conditions with threshold + live value. Sorted server-side by proximity to confirming.
+// conditions with threshold + live value. Sorted server-side by consequence weight, then proximity.
 function ScenarioBoard({ scenarios }) {
   if (!scenarios?.length) return null;
   const TONE = { red: C.red, amber: C.amber, green: C.green, muted: C.muted };
@@ -3055,7 +3093,8 @@ function ScenarioBoard({ scenarios }) {
     <Card>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
         <SLabel>🧭 Scenario board</SLabel>
-        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>which scenario am I in · sorted by proximity to confirming</span>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>which scenario am I in · sorted by consequence weight</span>
+        <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase" }}>weeks</span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
         {scenarios.map(s => {
@@ -3090,6 +3129,12 @@ function ScenarioBoard({ scenarios }) {
                   );
                 })}
               </div>
+              {/* A2 — the consequence: what to DO, not just what's true. Emphasised when confirmed. */}
+              {s.consequence && (
+                <div style={{ marginTop: 4, fontSize: 11, fontWeight: s.confirmed ? 800 : 600, color: s.confirmed ? toneCol : C.muted, lineHeight: 1.45 }}>
+                  → {s.consequence}
+                </div>
+              )}
             </div>
           );
         })}
@@ -3161,6 +3206,7 @@ function VolRegime({ v }) {
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <SLabel>🌀 Vol regime</SLabel>
         <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>VIX term structure · governs options posture</span>
+        <span style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase" }}>days</span>
         <span style={{ marginLeft: "auto", fontSize: 16, fontWeight: 900, color: col }}>{v.regime}</span>
       </div>
       <div style={{ fontSize: 12.5, fontWeight: 800, color: C.mid, marginTop: 3 }}>{v.meaning}</div>
@@ -3929,6 +3975,8 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {/* ── LAYOUT (Part C) — the question order: Scenario → Tripwires → READ → Credit →
               Rates → everything else. The synthesis cluster leads; raw data and the book-specific
               tell cards (handoff / correlation / FX / events) drop to "everything else" below. */}
+          {/* A1 — POSTURE headline: the single "what to do" card, above everything. */}
+          {data.posture && <PostureCard p={data.posture} />}
           {/* 1 — Scenario board (synthesis). */}
           {data.scenarios && <ScenarioBoard scenarios={data.scenarios} />}
           {/* 2 — Tripwires: vol regime + gauges + 7709, tagged by scenario. */}
