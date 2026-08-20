@@ -131,6 +131,18 @@ const INDICATORS = [
 ];
 
 // ─── INSURANCE ASSETS ─────────────────────────────────────────────────────────
+// The best→worst bar ranks these six by macro regime (stagRank/defRank/refRank/infRank). Cross-tab
+// consistency with the SCENARIO_MATRIX, audited Aug-20:
+//   • stag ↔ matrix `stag` column, def ↔ matrix `def` column — DIRECT maps. The bar order follows the
+//     matrix glyphs (✅✅>✅>⚠️>❌), ties broken by 2022 evidence. stag: gold>staples>miners>farmland>btc>tlt.
+//     def: tbonds>gold>staples>miners>farmland>btc.
+//   • inf = Inflationary BOOM — explicitly NOT the matrix `inf` (=Debasement crisis) column, so ranked by
+//     regime logic: gold>btc>miners>farmland>staples>tbonds (real assets win, miners cap below physical
+//     gold per B1, the leveraged farmland REIT lags the metals, bonds toxic).
+//   • ref = Reflationary Growth — a benign regime with no matrix column. Miners lag BY DESIGN (the gold
+//     safe-haven bid fades), so here alone farmland outranks miners; staples/farmland lead.
+// Invariant: the farmland REIT sits BELOW the gold-linked miners in every regime except reflationary
+// growth (2022: GDX −9% vs FPI −14%), and miners NEVER outrank physical gold anywhere.
 const ASSETS = [
   {
     // Aug-20 Part B — Physical Gold is its own asset, distinct from miners (which only ever
@@ -155,7 +167,7 @@ const ASSETS = [
     // asymmetric; the "2–3×" is sell-side convention (only ~1.2× realised through 2023–25). Even in a
     // pure gold bull (debasement) they merely MATCH gold while carrying equity beta. So they sit below
     // Physical Gold everywhere — including a demotion from #1 in Inflationary Boom to #4.
-    stagRank:3, defRank:5, refRank:5, infRank:4, volatility:"HIGH",
+    stagRank:3, defRank:4, refRank:5, infRank:3, volatility:"HIGH",
     stagNote:"⚠️ Cautioned in stagflation — miners are equities with operating leverage to gold (equity beta, sold in liquidity events: GDX fell ~70% in 2008). The stagflation hedge is physical gold (GLD / 2840.HK); miners are a leveraged, cautioned expression of the view, not a hedge. Add only after a VIX peak confirms the liquidity phase has passed. Rank #3 only because they stay gold-linked (2022: GDX ~−9% vs the farmland REIT −14% and BTC −64%) — not a promotion to hedge status.",
     crisisScore:70, inflationScore:82, deflationScore:30, liquidityScore:40, stagScore:50,
     verdict:"A leveraged EXPRESSION of gold, never a substitute — it has lagged GLD ~6.5%/yr since 2006 and is worst in crises. Even in a debasement bull it only matches gold while carrying equity beta, dilution and cost inflation. Physical gold is the hedge; miners never rank above it.",
@@ -178,7 +190,7 @@ const ASSETS = [
     // REITs regardless of the underlying acreage. The decisive test is 2022: the unleveraged NCREIF
     // land index returned +9.64% while FPI FELL >14%. The wrapper does not deliver the land's inflation
     // hedge — so it drops below miners in stagflation (#4, not #3). NCREIF itself is not investable here.
-    stagRank:4, defRank:4, refRank:3, infRank:3, volatility:"MED",
+    stagRank:4, defRank:5, refRank:3, infRank:4, volatility:"MED",
     stagNote:"The REIT is NOT the land. FPI/LAND are small-cap, leveraged, rate-sensitive REITs: in 2022 (the closest stagflation test) the unleveraged NCREIF land index returned +9.64% while FPI fell >14%. Real-value protection is capped by the wrapper — below physical gold, energy and even the gold-linked miners in a stagflation.",
     crisisScore:55, inflationScore:80, deflationScore:45, liquidityScore:55, stagScore:60,
     verdict:"A small-cap farmland REIT (FPI / LAND) — real-asset exposure diluted by REIT rate-sensitivity, leverage and small-cap beta. NOT a proxy for the land: 2022 the NCREIF index rose +9.64% while FPI fell. Extra return drivers unrelated to farmland — NAV discount (FPI 25–30%) and US-situs estate exposure. Below gold, energy and miners as a stagflation hedge; sold in a hawkish repricing.",
@@ -5670,7 +5682,7 @@ export default function App() {
                   </div>
                   {activeRegime.id === "stag" && (
                     <div style={{ marginTop: 10, color: activeRegime.color, fontSize: 14, lineHeight: 1.6 }}>
-                      ⚠️ TLT dropped 30%+ in 2022 stagflation. Long bonds are the worst insurance when inflation is embedded. Gold miners + staples dominate.
+                      ⚠️ TLT dropped 30%+ in 2022 stagflation. Long bonds are the worst insurance when inflation is embedded. Physical gold and staples lead; the gold-linked miners follow (a cautioned, leveraged expression, not a hedge).
                     </div>
                   )}
                   {activeRegime.id === "def" && (
@@ -5685,7 +5697,7 @@ export default function App() {
                   )}
                   {activeRegime.id === "inf" && (
                     <div style={{ marginTop: 10, color: activeRegime.color, fontSize: 14, lineHeight: 1.6 }}>
-                      🔥 Inflationary boom: Gold miners are the best insurance. Farmland #2. Bonds are toxic. Real assets dominate.
+                      🔥 Inflationary boom: Physical gold is the best insurance; BTC and the gold-linked miners follow. Bonds are toxic. Real assets dominate — the leveraged farmland REIT lags the metals (2022: GDX −9% vs FPI −14%).
                     </div>
                   )}
                 </div>
