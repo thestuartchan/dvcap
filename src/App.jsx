@@ -3087,6 +3087,26 @@ function PostureCard({ p }) {
 // doesn't reassemble it from five category-bucketed sections. Each row: name, X/N met, and its
 // conditions with threshold + live value. Sorted server-side by consequence weight, then proximity.
 function ScenarioBoard({ scenarios }) {
+  // A6 — mark scenarios whose confirmed-count moved since the last DIFFERENT render (stored in
+  // localStorage). KM going 2/3 → 3/3 overnight is the most actionable fact on the page.
+  const [changed, setChanged] = useState({});
+  useEffect(() => {
+    if (!scenarios?.length) return;
+    const KEY = "dvcap_scenario_counts";
+    let stored = {};
+    try { stored = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch { /* ignore */ }
+    const cur = {}, ch = {};
+    let anyDiff = false;
+    for (const s of scenarios) {
+      const cnt = s.total > 0 ? `${s.met}/${s.total}` : "n/a";
+      cur[s.id] = cnt;
+      if (stored[s.id] && stored[s.id] !== cnt) { ch[s.id] = stored[s.id]; anyDiff = true; }
+    }
+    if (anyDiff || Object.keys(stored).length === 0) {
+      if (anyDiff) setChanged(ch);
+      try { localStorage.setItem(KEY, JSON.stringify(cur)); } catch { /* ignore */ }
+    }
+  }, [scenarios]);
   if (!scenarios?.length) return null;
   const TONE = { red: C.red, amber: C.amber, green: C.green, muted: C.muted };
   return (
@@ -3112,6 +3132,12 @@ function ScenarioBoard({ scenarios }) {
               border: "1px solid " + bdr }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 12.5, fontWeight: 900, color: toneCol }}>{s.id} · {s.name}</span>
+                {changed[s.id] && (
+                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: "#fff", background: toneCol, borderRadius: 4, padding: "1px 5px" }}
+                    title={`moved ${changed[s.id]} → ${s.met}/${s.total} since the last change`}>
+                    ▲ CHANGED {changed[s.id]} → {s.met}/{s.total}
+                  </span>
+                )}
                 <span style={{ fontSize: 10.5, color: C.muted, fontWeight: 600, fontStyle: "italic" }}>{s.gloss}</span>
                 <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 900, color: countCol }}>
                   {s.total > 0 ? `${s.met}/${s.total}` : "n/a"} {s.confirmed ? "✓" : "✗"}
@@ -3985,36 +4011,54 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {/* CSOP 7709 deleveraging tripwire — standalone, NOT part of the gauges count. */}
           {data.csop7709 && <Csop7709Tripwire t={data.csop7709} />}
 
-          {/* 3 — Composed READ — deterministic, from the gate state. Observational only. */}
-          {data.read?.sentences?.length > 0 && (
-            <Card>{/* I.2 — composite read: informational, no status badge, no bar. */}
+          {/* 3 — Composed READ (A4) — leads with the qualification, then structured claim rows.
+              Deterministic, from the gate state; observational only. */}
+          {data.read?.structured?.rows?.length > 0 && (() => {
+            const st = data.read.structured;
+            const rowTone = t => t === "red" ? C.red : t === "amber" ? C.amber : C.mid;
+            return (
+            <Card>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                 <SLabel>📝 Read</SLabel>
-                <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>composed from gate state · deterministic, no model</span>
+                <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>deterministic, no model</span>
                 <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 800, textTransform: "uppercase",
-                  color: data.read.confidence === "clean" ? C.green : data.read.confidence === "qualified" ? C.amber : C.red,
+                  color: st.confidence === "clean" ? C.green : st.confidence === "qualified" ? C.amber : C.red,
                   border: "1px solid currentColor", borderRadius: 4, padding: "1px 5px" }}>
-                  {data.read.confidence}
+                  {st.confidence}
                 </span>
               </div>
-              {data.read.sentences.map((s, i) => (
-                <div key={i} style={{ fontSize: 13.5, color: C.mid, lineHeight: 1.6, marginBottom: 6 }}>{s}</div>
-              ))}
-              {/* Conflicts are SURFACED, never resolved into one confident answer */}
-              {data.read.conflicts?.map((s, i) => (
-                <div key={"c" + i} style={{ fontSize: 12.5, fontWeight: 700, color: C.amber, background: C.aBg,
-                  border: "1px solid " + C.aBdr, borderRadius: 6, padding: "6px 9px", marginTop: 5, lineHeight: 1.5 }}>
-                  ⚖ {s}
+              {/* Lead qualification — the single most important line, at the top. */}
+              {st.lead && (
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: C.amber, background: C.aBg,
+                  border: "1px solid " + C.aBdr, borderRadius: 6, padding: "7px 10px", marginTop: 6, lineHeight: 1.5 }}>
+                  ⚠ {st.lead}
                 </div>
-              ))}
-              {data.read.flip && (
-                <div style={{ fontSize: 12.5, fontWeight: 700, color: C.blue, marginTop: 7 }}>↪ {data.read.flip}</div>
               )}
-              {data.read.caveats?.length > 0 && (
-                <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>Caveats: {data.read.caveats.join(" · ")}</div>
+              {/* Labelled claim rows. */}
+              <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "auto auto 1fr", gap: "3px 12px", alignItems: "baseline" }}>
+                {st.rows.map((r, i) => (
+                  <Fragment key={i}>
+                    <span style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4 }}>{r.label}</span>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: rowTone(r.tone) }}>{r.state}</span>
+                    <span style={{ fontSize: 12, color: C.muted, fontWeight: 500, lineHeight: 1.45 }}>{r.detail}</span>
+                  </Fragment>
+                ))}
+              </div>
+              {st.flipsIf && (
+                <div style={{ marginTop: 8, display: "flex", gap: 12, alignItems: "baseline" }}>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4, minWidth: 66 }}>Flips if</span>
+                  <span style={{ fontSize: 12, color: C.blue, fontWeight: 700 }}>{st.flipsIf.replace(/^Flips if /i, "")}</span>
+                </div>
+              )}
+              {st.caveats?.length > 0 && (
+                <div style={{ marginTop: 4, display: "flex", gap: 12, alignItems: "baseline" }}>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4, minWidth: 66 }}>Caveats</span>
+                  <span style={{ fontSize: 11, color: C.lbl, lineHeight: 1.45 }}>{st.caveats.join(" · ")}</span>
+                </div>
               )}
             </Card>
-          )}
+            );
+          })()}
 
           {/* 4 — Credit (master gauge) lives inside the regime block below; it follows READ. */}
           {/* Regime summary — one card per active region (stacked in All view) */}
