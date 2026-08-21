@@ -1128,6 +1128,14 @@ function InterventionToggle({ jpyChangePct, dxyChangePct, onChange }) {
         )}
       </div>
 
+      {/* C5 — prompt when USD/JPY moves >2% in a session: the condition that would have caught the
+          Jul 30–31 joint US–Japan intervention. Manual by design — this nudges, it does not auto-set. */}
+      {!active && jpyChangePct != null && Math.abs(jpyChangePct) > 2 && (
+        <div style={{ marginTop: 8, padding: "8px 11px", background: STATUS.WATCH.bg, border: "1.5px solid " + STATUS.WATCH.bdr, borderRadius: 8, fontSize: 12, color: STATUS.WATCH.color, fontWeight: 700, lineHeight: 1.5 }}>
+          ⚑ USD/JPY moved {jpyChangePct >= 0 ? "+" : ""}{jpyChangePct.toFixed(2)}% this session (&gt;2%) — check for intervention before trusting the yen leg. The Jul 30–31 joint US–Japan action (~¥8.45tn day one, the largest single-day intervention on record) is exactly the kind of move this flag exists to catch.
+        </div>
+      )}
+
       {!active && (
         <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
           <input value={since} onChange={e => setSince(e.target.value)} placeholder="since (YYYY-MM-DD)"
@@ -1163,6 +1171,16 @@ function InterventionToggle({ jpyChangePct, dxyChangePct, onChange }) {
   );
 }
 
+// C2 — business days (Mon–Fri) elapsed since an ISO date. A hand-entered ZQ settle goes stale fast:
+// past 3 business days the derived hike/cut count must not read as current, so it is suppressed.
+function bizDaysSince(isoDate, now = new Date()) {
+  const start = new Date(isoDate + "T00:00:00Z");
+  if (isNaN(start.getTime())) return 0;
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  let d = new Date(start), n = 0;
+  while (d < end) { d.setUTCDate(d.getUTCDate() + 1); const wd = d.getUTCDay(); if (wd !== 0 && wd !== 6) n++; }
+  return n;
+}
 function FedPathCard({ effr }) {
   const [data, setData] = useState(null);
   const [price, setPrice] = useState("");
@@ -1190,8 +1208,11 @@ function FedPathCard({ effr }) {
   }
 
   const L = data?.latest;
+  // C2 — suppress the derived hike/cut count once the manual entry is >3 business days old.
+  const staleBiz = L?.date ? bizDaysSince(L.date) : 0;
+  const suppressDerived = staleBiz > 3;
   // The divergence between this and the qualitative Fed read IS the story when they disagree.
-  const diverges = L?.movesPriced != null && Math.abs(L.movesPriced) >= 1;
+  const diverges = !suppressDerived && L?.movesPriced != null && Math.abs(L.movesPriced) >= 1;
   return (
     <Card>{/* I.2 — informational: no status badge, so no accent bar. */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
@@ -1203,8 +1224,10 @@ function FedPathCard({ effr }) {
           <div style={{ fontSize: 20, fontWeight: 900, color: C.text }}>
             {L.impliedRate}% <span style={{ fontSize: 12, fontWeight: 700, color: C.muted }}>implied · {L.contract || "—"}</span>
           </div>
-          <div style={{ fontSize: 12.5, color: diverges ? C.amber : C.mid, fontWeight: diverges ? 800 : 600, marginTop: 2 }}>
-            {L.movesPriced == null ? "no EFFR to compare against"
+          <div style={{ fontSize: 12.5, color: suppressDerived ? C.amber : diverges ? C.amber : C.mid, fontWeight: (suppressDerived || diverges) ? 800 : 600, marginTop: 2 }}>
+            {suppressDerived
+              ? `derived hike/cut count suppressed — entry ${staleBiz} business days old, re-enter today's ZQ settle`
+              : L.movesPriced == null ? "no EFFR to compare against"
               : `${Math.abs(L.movesPriced).toFixed(1)} × 25bp ${L.movesPriced >= 0 ? "HIKES" : "CUTS"} priced vs EFFR ${L.effr}%`}
           </div>
           <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 2 }}>
@@ -1218,7 +1241,7 @@ function FedPathCard({ effr }) {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-end", marginTop: 10 }}>
         <div>
           <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>ZQ price</div>
-          <input value={price} onChange={e => setPrice(e.target.value)} placeholder="96.040"
+          <input value={price} onChange={e => setPrice(e.target.value)} placeholder="96.160"
             style={{ fontSize: 13, padding: "6px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 110 }} />
         </div>
         <div>
@@ -1248,6 +1271,23 @@ function laborVerdictFor(liveInd) {
   if (!u3?.ok || !ep?.ok) return null;
   return laborVerdict(u3.delta, ep.delta, pr?.ok ? pr.delta : null).verdict;
 }
+
+// C4 — the next BLS Employment Situation release, DERIVED from the cadence (first Friday of the
+// month) instead of a hardcoded date that goes wrong the moment the print lands. If this month's
+// first Friday has already passed, roll to next month's.
+function nextEmploymentPrint(now = new Date()) {
+  const firstFriday = (y, m) => {
+    const d = new Date(Date.UTC(y, m, 1));
+    const off = (5 - d.getUTCDay() + 7) % 7; // 5 = Friday
+    return new Date(Date.UTC(y, m, 1 + off));
+  };
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  let y = now.getUTCFullYear(), m = now.getUTCMonth();
+  let ff = firstFriday(y, m);
+  if (ff < today) { m += 1; if (m > 11) { m = 0; y += 1; } ff = firstFriday(y, m); }
+  return ff;
+}
+const fmtPrintDate = d => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
 // Credit thresholds — one definition for both the reference lines and the legend.
 const CREDIT_MARKS = [
@@ -1514,7 +1554,7 @@ function LaborPanel({ labor, depth = "full", extras = null, announced = false })
     </span>
   );
   // J.2 / K.2 — one line naming what would change the verdict. Not a paragraph.
-  const watchLine = "Watch: emp-pop ratio. A second consecutive monthly decline confirms exit-driven deterioration. Next print Aug 7.";
+  const watchLine = `Watch: emp-pop ratio. A second consecutive monthly decline confirms exit-driven deterioration. Next print ${fmtPrintDate(nextEmploymentPrint())} (BLS Employment Situation, first Friday).`;
 
   const tile = (key, lab, unit = "%") => {
     const row = g(key); if (!row) return null;
@@ -1837,17 +1877,21 @@ function overlayJulyLabor(labor) {
 // definitions are stable and only change on explicit request.
 const FED_LANGUAGE_STATUS = {
   status: "hawkish_hold", // current state — update manually
-  lastUpdated: "2026-07-29",
-  lastEvent: "FOMC July 2026 — hawkish hold",
+  lastUpdated: "2026-08-19",
+  lastEvent: "July FOMC minutes (released Aug 19) — hawkish upgrade",
   decision: "HELD at 3.50–3.75% — fifth consecutive hold",
   vote: "9–3",
   dissents: "Hammack (Cleveland), Kashkari (Minneapolis), Logan (Dallas) — all three dissented FOR a 25bp HIKE",
-  dissentNote: "Most one-directional dissent since Sept 2016",
-  guidance: "NONE — Warsh continues removing forward guidance (\"family fight\", data-dependent). No new dot plot; next SEP is September.",
-  summary: "Hawkish hold. Warsh framed inflation as \"a choice\", reaffirmed the 2% target and rejected any \"soft or implicit\" target, keeping the focus on the direction of the data. He explicitly flagged labour-market downside as the two-sided risk. With three regional presidents dissenting for a hike and no guidance offered, September is live in both directions.",
+  dissentNote: "Aug 19 minutes show 'many participants' saw further tightening as likely necessary — so the three dissents UNDERSTATE the committee's hawkishness",
+  guidance: "NONE — Warsh continues removing forward guidance (\"family fight\", data-dependent). No new dot plot; next SEP is September. Warsh floated cutting FOMC meetings from 8 to 6 a year (no decision; 2026 schedule unaffected) — structurally significant: fewer meetings means larger moves per meeting.",
+  summary: "Hawkish hold, upgraded by the Aug 19 minutes: 'many participants' assessed further tightening would likely be necessary — a material step up from June's 'only a few', so the three hike dissents understate committee hawkishness. Warsh framed inflation as \"a choice\", reaffirmed the 2% target and rejected any \"soft or implicit\" target, and flagged labour-market downside as the two-sided risk. The Board also discussed an intermeeting incident that disrupted transaction settlements. September is live in both directions.",
   bias: "Hold, hawkish bias, data-dependent — September live",
-  nextEvent: "FOMC Sept 15–16, 2026 (decision Sept 16) · Jackson Hole (Warsh) late Aug",
+  nextEvent: "Jackson Hole Aug 27–29 (Warsh Fri Aug 28) · FOMC Sept 15–16 (decision Sept 16)",
 };
+// C3 — market-implied odds of a HIKE at the September FOMC. The single cleanest forward Fed metric.
+// Sourced from CME FedWatch / the Kalshi Fed contracts (manual — no keyless feed). Moved from ~57%
+// on the July decision day to ~34% after the August −23k payroll print.
+const SEP_HIKE_ODDS = { value: 34, prior: 57, asOf: "2026-08-21", source: "CME FedWatch / Kalshi Fed contracts", note: "≈57% on the July decision day → ≈34% after the August −23k payroll print. Odds of NO change are the complement; a cut is not being priced." };
 const FED_LANGUAGE_STATES = {
   hawkish_hold: {
     label: "🔴 Hawkish Hold",
@@ -1915,17 +1959,17 @@ const CONSENSUS_VINTAGE = {
 // deal + June FOMC). `color` drives the probability cell colour; `year` and
 // `name` are used by the regime-probability derivation.
 const RECESSION_SOURCES = [
-  { name: "Goldman Sachs",             probability: "15%",    timeframe: "12-month", year: 2026, notes: "Cut from 25% (pre-Iran war) → 30% (March peak Hormuz) → 15% (June 26, post peace deal). Cites lower oil, higher real income, AI wealth effect, solid capex. GDP forecast H2 2026: 2.0%. Flags Fed rate hike risk as new variable — half of FOMC penciled in at least one hike.", asOf: "2026-06-26", color: "green" },
+  { name: "Goldman Sachs",             probability: "15%",    timeframe: "12-month", year: 2026, notes: "The current published figure and post-peace-deal: 25% (pre-Iran war) → 30% (March peak Hormuz) → 15% (June 26, post peace deal). No newer figure has been published since — the row is the latest print, not an overdue one. Cites lower oil, higher real income, AI wealth effect, solid capex; GDP H2 2026 +2.0%. Flags Fed rate-hike risk as the new variable.", asOf: "2026-06-26", color: "green" },
   { name: "NY Fed Yield Curve Model",  probability: "~15%",   timeframe: "12-month", year: 2026, notes: "May 2026 data. Based on 3M/10Y spread. Below historical alarm threshold of 30%. Yield curve now upward sloping: 10Y at 4.37%, 3M at 3.75%, spread +62bps. Structural improvement from prior inversion.", asOf: "2026-05-01", color: "green" },
-  { name: "NY Fed DSGE Model",         probability: "35.8%",  timeframe: "12-month", year: 2026, notes: "March 2026, latest published. Recession = 4Q output growth below -1%. Down from 37.5% in December. Next update expected Q3 2026.", asOf: "2026-03-01", color: "amber" },
-  { name: "JPMorgan",                  probability: "35%",    timeframe: "12-month", year: 2026, notes: "March 2026. Warned markets complacent over sustained oil shock. No updated June figure available — figure may have declined post peace deal. Watch for mid-year update.", asOf: "2026-03-01", color: "amber" },
-  { name: "EY-Parthenon (Daco)",       probability: "40%",    timeframe: "12-month", year: 2026, notes: "March 2026. Risks rising if geopolitical tensions persist. New source added June 2026.", asOf: "2026-03-01", color: "amber" },
-  { name: "Moody's Analytics (Zandi)", probability: "~49%",   timeframe: "12-month", year: 2026, notes: "March 2026 peak — 'on the precipice.' Driven by weak labor data and soft economic indicators since late 2025. Most bearish major forecaster. No updated post-peace-deal figure available.", asOf: "2026-03-01", color: "red" },
+  { name: "NY Fed DSGE Model",         probability: "35.8%",  timeframe: "12-month", year: 2026, notes: "March 2026. Recession = 4Q output growth below -1%. Down from 37.5% in December. Card said next update expected Q3 2026 — check for a Q3 print; if none, it stays archived.", asOf: "2026-03-01", color: "amber", archived: true, archiveReason: "March vintage. Conditional on the sustained oil shock that has since resolved — no post-deal revision published." },
+  { name: "JPMorgan",                  probability: "35%",    timeframe: "12-month", year: 2026, notes: "March 2026. Warned markets complacent over a sustained oil shock. That shock resolved (Brent ~$91.57 vs the $105–115 the peak estimates assumed) and no post-deal figure was published.", asOf: "2026-03-01", color: "amber", archived: true, archiveReason: "March vintage. Explicitly conditional on a sustained oil shock that has since resolved — no post-deal revision published." },
+  { name: "EY-Parthenon (Daco)",       probability: "40%",    timeframe: "12-month", year: 2026, notes: "March 2026. Risks framed as rising IF geopolitical tensions persist — they did not. No post-peace-deal revision published.", asOf: "2026-03-01", color: "amber", archived: true, archiveReason: "March vintage. Conditional on persisting geopolitical/oil tensions that have since resolved — no post-deal revision published." },
+  { name: "Moody's Analytics (Zandi)", probability: "~49%",   timeframe: "12-month", year: 2026, notes: "March 2026 peak — 'on the precipice.' Zandi's own condition: 'if oil prices remain elevated for much longer — weeks not months.' They did not. No post-peace-deal figure published.", asOf: "2026-03-01", color: "red", archived: true, archiveReason: "March vintage. Zandi's estimate was explicitly conditional on oil staying elevated — it did not; the condition was not met and no revision was published." },
   { name: "Kalshi prediction market",  probability: "22%",    timeframe: "End-2026", year: 2026, notes: "June 2026. Up from 17.5% last month. Real-money market. CFTC-regulated. Slight uptick despite Iran peace deal — reflects lingering growth concerns.", asOf: "2026-06-01", color: "green" },
   { name: "Kalshi prediction market",  probability: "41%",    timeframe: "End-2027", year: 2027, notes: "Investors pricing delayed reckoning — debt refinancing at 5-7% vs near-zero rates, $1.3T consumer revolving credit, corporate capex compression. More concerning than 2026 figure.", asOf: "2026-06-01", color: "amber" },
   { name: "Polymarket",                probability: "~12.5%", timeframe: "End-2026", year: 2026, notes: "June 2026. Market-implied. 87.5% probability on No recession. Sahm Rule at 0.10 — well below 0.50 threshold. Lowest of all sources.", color: "green" },
   { name: "BNP Paribas",               probability: "Low",    timeframe: "12-month", year: 2026, notes: "Qualitative only — excluded from weighted average. 'Well-positioned to absorb shock.' US net energy exporter status cited. No numeric update available.", color: "green" },
-  { name: "June FOMC Minutes", probability: "Elevated", timeframe: "qualitative", year: 2026, notes: "July 8, 2026. 'Only a few' members saw a case to hike — mildly dovish vs. the June dot plot (9/18 penciled a hike). Warsh withheld his own dot. PCE revised to 3.6%. Minutes predate July 7–8 Hormuz attacks entirely — the hawkish oil impulse is not yet in any official Fed communication.", color: "amber" },
+  { name: "July FOMC Minutes", probability: "Elevated", timeframe: "qualitative", year: 2026, notes: "Released Aug 19, 2026. 'Many participants' assessed further policy tightening would likely be necessary — a material upgrade from June's 'only a few', so the three hike dissents UNDERSTATE the committee's hawkishness. Warsh floated cutting FOMC meetings from 8 to 6 a year (no decision; 2026 schedule unaffected). Board discussed an intermeeting incident disrupting transaction settlements.", asOf: "2026-08-19", color: "amber" },
 ];
 
 // Weighted-average weights per source. Sum is 1.10 (intentional — the average
@@ -1974,6 +2018,9 @@ const computeWeightedRecessionProb = (sources, nowIso = null) => {
       kalshi2027 = parseProbability(source.probability);
       return;
     }
+    // A1 — archived vintages (condition invalidated) are excluded outright, not decayed. Decay
+    // handles aging; it does not handle a forecast whose stated precondition no longer holds.
+    if (source.archived) return;
     const weight = RECESSION_SOURCE_WEIGHTS[source.name];
     const prob = parseProbability(source.probability);
     if (!weight || prob === null) return;
@@ -4615,14 +4662,22 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {data.calendar && data.calendar.length > 0 && (
             <Card>
               <SLabel>📅 Calendar — Current / Upcoming</SLabel>
-              {data.calendar.map((e, i) => (
+              {data.calendar.map((e, i) => {
+                // C6 — countdown chip so imminence is legible, and adjacent same-window catalysts read
+                // as the collision they are (e.g. NVDA Aug 26 → Jackson Hole Aug 27–29).
+                const days = Math.round((new Date(e.date + "T00:00:00Z") - new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z")) / 864e5);
+                const cd = e.reported ? null : days <= 0 ? "today" : days === 1 ? "tomorrow" : `in ${days}d`;
+                const soon = !e.reported && days >= 0 && days <= 2;
+                return (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0", fontSize: 13, color: e.reported ? C.lbl : C.mid, opacity: e.reported ? 0.72 : 1, borderBottom: i < data.calendar.length - 1 ? "1px solid " + C.bdr : "none" }}>
                   <span style={{ color: C.muted, minWidth: 92 }}>{e.date}</span>
                   <span style={{ fontWeight: 600, textDecoration: e.reported ? "line-through" : "none" }}>{e.title}</span>
                   {e.reported && <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: C.lbl, border: "1px solid " + C.bdr, borderRadius: 4, padding: "1px 4px" }}>reported</span>}
+                  {cd && <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: soon ? C.amber : C.lbl, background: soon ? C.aBg : "transparent", border: "1px solid " + (soon ? C.aBdr : C.bdr), borderRadius: 4, padding: "1px 5px" }}>{cd}</span>}
                   <span style={{ color: C.lbl, marginLeft: "auto" }}>{e.region}</span>
                 </div>
-              ))}
+                );
+              })}
             </Card>
           )}
 
@@ -6376,6 +6431,29 @@ export default function App() {
             })()}
 
             <FedPathCard effr={liveInd?.currentFedFunds ?? null} />
+            {/* C3 — September hike odds: the cleanest forward Fed metric, absent until now. */}
+            {(() => {
+              const s = SEP_HIKE_ODDS;
+              const days = Math.round((Date.now() - new Date(s.asOf + "T00:00:00Z")) / 864e5);
+              const stale = days > 3;
+              const down = s.value < s.prior;
+              return (
+                <Card>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                    <SLabel>📊 September FOMC hike odds</SLabel>
+                    <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>{s.source} · manual (no keyless feed)</span>
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: C.text, marginTop: 2 }}>
+                    {s.value}% <span style={{ fontSize: 12, fontWeight: 700, color: down ? C.green : C.amber }}>{down ? "↓" : "↑"} from {s.prior}%</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: C.muted }}> · implied prob of a hike</span>
+                  </div>
+                  <div style={{ fontSize: 12.5, color: C.mid, marginTop: 3, lineHeight: 1.55 }}>{s.note}</div>
+                  <div style={{ fontSize: 10.5, color: stale ? C.amber : C.lbl, fontWeight: stale ? 700 : 400, marginTop: 4 }}>
+                    as of {s.asOf}{stale ? ` · ${days}d stale — re-check FedWatch/Kalshi` : ""}
+                  </div>
+                </Card>
+              );
+            })()}
             <InterventionToggle
               jpyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "JPY=X")?.changePct ?? null}
               dxyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "DX-Y.NYB")?.changePct ?? null}
@@ -6680,7 +6758,7 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {effectiveRecessionSources.map((r, i) => {
+                    {effectiveRecessionSources.filter(r => !r.archived).map((r, i) => {
                       const pCol = r.color === "red" ? C.red : r.color === "amber" ? C.amber : C.green;
                       // Provenance badge: 📡 live = refreshed by an auto-feed this load; ✍️ manual =
                       // a hand-entered override in the manual store; static rows show nothing.
@@ -6723,9 +6801,53 @@ export default function App() {
                   </tbody>
                 </table>
               </div>
+              {/* A1 — archived March vintages: condition invalidated, excluded from the weighted average.
+                  Collapsed by default; the reason (not just the date) is rendered. */}
+              {(() => {
+                const arch = effectiveRecessionSources.filter(r => r.archived);
+                if (!arch.length) return null;
+                return (
+                  <details style={{ marginTop: 10, background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, padding: "6px 11px" }}>
+                    <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, color: C.muted, letterSpacing: 0.3 }}>
+                      🗄️ Historical vintage — condition invalidated ({arch.length}) · excluded from the weighted average
+                    </summary>
+                    <div style={{ fontSize: 11.5, color: C.lbl, margin: "6px 0 8px", lineHeight: 1.5 }}>
+                      All four were March-2026 estimates explicitly conditional on a sustained oil shock (Brent forecast $105–115). That condition resolved — Brent ~$91.57 — and none received a published post-deal revision. Goldman's own round-trip (15% → 30% → 15%) is the control. Decayed weight would still let them leak in; archiving removes them.
+                    </div>
+                    {arch.map((r, i) => (
+                      <div key={i} style={{ padding: "6px 0", borderTop: i ? "1px solid " + C.bdr : "none", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+                        <span style={{ fontSize: 12.5, fontWeight: 700, color: C.muted, textDecoration: "line-through" }}>{r.name}</span>
+                        <span style={{ fontSize: 12.5, fontWeight: 800, color: C.lbl }}>{r.probability}</span>
+                        <span style={{ fontSize: 10.5, color: C.muted }}>({r.asOf})</span>
+                        <span style={{ fontSize: 11, color: C.lbl, fontStyle: "italic", flexBasis: "100%" }}>{r.archiveReason}</span>
+                      </div>
+                    ))}
+                  </details>
+                );
+              })()}
+              {/* A4 — leading-indicator context feeds. Not weighted into the consensus average (they
+                  are indicators/nowcasts, not 12-month recession probabilities), but they carry the
+                  live signal the archived analyst vintages no longer can. */}
+              <div style={{ marginTop: 10, padding: "8px 11px", background: C.surf, border: "1px solid " + C.bdr, borderRadius: 8 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>Leading indicators · context, not weighted</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 8 }}>
+                  {[
+                    { n: "Sahm Rule", src: "FRED SAHMREALTIME", read: laborView?.sahm?.value != null ? `${laborView.sahm.value.toFixed(2)} — reads away from the 0.50 trigger` : "reads away from the 0.50 trigger (see Labour module)", tone: "green" },
+                    { n: "Cleveland Fed yield-curve", src: "distinct probit from the NY Fed model", read: "add via manual entry — no keyless feed", tone: "muted" },
+                    { n: "Conference Board LEI", src: "6-month annualised rate", read: "add via manual entry — no keyless feed", tone: "muted" },
+                    { n: "Atlanta Fed GDPNow", src: "highest-frequency growth nowcast", read: "add via manual entry — no keyless feed", tone: "muted" },
+                  ].map(x => (
+                    <div key={x.n} style={{ fontSize: 11.5, lineHeight: 1.45 }}>
+                      <div style={{ fontWeight: 800, color: C.text }}>{x.n}</div>
+                      <div style={{ color: x.tone === "green" ? C.green : C.muted, fontWeight: 600 }}>{x.read}</div>
+                      <div style={{ color: C.lbl, fontSize: 10 }}>{x.src}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
               <div style={{ marginTop: 12, padding: "12px 14px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8 }}>
                 <span style={{ color: C.amber, fontWeight: 700, fontSize: 13 }}>⚠️ The signal that matters: </span>
-                <span style={{ color: C.amber, fontSize: 14, lineHeight: 1.65 }}>Goldman's dramatic round-trip — 15% (pre-war) → 30% (March peak) → 15% (June post-deal) — shows how oil-driven the near-term risk was. Post peace deal, 2026 recession odds have broadly normalized. The more important signal is 2027: Kalshi at {recKalshi2027 != null ? recKalshi2027 : 41}% (the live market) suggests markets expect delayed reckoning from debt refinancing at 5-7%, $1.3T consumer revolving credit balances, and corporate capex compression — still the higher of the two horizons. New risk to monitor: half of FOMC officials penciled in rate hikes at June meeting — BofA expects 3 hikes, Deutsche Bank expects 2. If hikes materialize, recession risk reprices sharply higher.</span>
+                <span style={{ color: C.amber, fontSize: 14, lineHeight: 1.65 }}>Goldman's dramatic round-trip — 15% (pre-war) → 30% (March peak) → 15% (June post-deal) — shows how oil-driven the near-term risk was. Post peace deal, 2026 recession odds have broadly normalized. The more important signal is 2027: Kalshi at {recKalshi2027 != null ? recKalshi2027 : 41}% (the live market) suggests markets expect delayed reckoning from debt refinancing at 5-7%, $1.3T consumer revolving credit balances, and corporate capex compression — still the higher of the two horizons. New risk to monitor: the July FOMC minutes (released Aug 19) show 'many participants' saw further tightening as likely necessary — an upgrade from June's 'only a few', so the three hike dissents understate the committee's hawkishness. If hikes materialize, recession risk reprices sharply higher.</span>
               </div>
             </Card>
 
