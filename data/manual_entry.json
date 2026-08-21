@@ -140,7 +140,12 @@
       "loggedAt": "2026-08-21T11:20:04.576Z"
     }
   ],
-  "intervention": null,
+  "intervention": {
+    "active": true,
+    "since": "2026-08-21",
+    "note": null,
+    "setAt": "2026-08-21T11:20:37.089Z"
+  },
   "recession": {},
   "southbound": {
     "series": []
