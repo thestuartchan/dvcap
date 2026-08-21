@@ -23,6 +23,7 @@ function trendBps(series, lookbackDays) {
   return t ? Math.round(t.delta * 100) : null;
 }
 import { laborStress, sahmAnnotation, laborVerdict, laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead, quitsRead, revisionTrackerRead, twelveMonthAvgRead, ytdDivergenceRead } from "../lib/labor.js";
+import { handoffChain } from "../lib/handoff.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
 const C = {
@@ -3488,6 +3489,60 @@ function CrossMarketHandoff({ h }) {
   );
 }
 
+// Part B — the bidirectional handoff CHAIN. Three legs stacked in trading order (Asia → Europe →
+// US → Asia); each shows whether the "from" market LED / FOLLOWED / DIVERGED its upstream, the next
+// open of the "to" market with a countdown, and highlights the leg live for the user's HKT clock.
+function HandoffChain({ chain }) {
+  if (!chain || !chain.available) return null;
+  const STATE_STYLE = {
+    LED:       { color: C.green, bg: C.gBg, bdr: C.gBdr },
+    DIVERGED:  { color: C.amber, bg: C.aBg, bdr: C.aBdr },
+    FOLLOWED:  { color: C.muted, bg: C.bg,  bdr: C.bdr  },
+    QUIET:     { color: C.lbl,   bg: C.bg,  bdr: C.bdr  },
+    "NO DATA": { color: C.lbl,   bg: C.bg,  bdr: C.bdr  },
+  };
+  // HKT clock → next-open countdowns + which leg is live. Asia 08:00 · Europe 15:00 · US 21:30 HKT.
+  const hkNow = new Date().toLocaleString("en-US", { timeZone: "Asia/Hong_Kong", hour12: false, hour: "2-digit", minute: "2-digit" });
+  const [hh, mm] = hkNow.split(":").map(Number);
+  const nowH = (Number.isFinite(hh) ? hh : 0) + (Number.isFinite(mm) ? mm : 0) / 60;
+  const OPENS = { EUROPE: 15, US: 21.5, ASIA: 8 };
+  const toOpen = t => { let d = t - nowH; if (d <= 0) d += 24; return d; };
+  const fmtCd = d => `${Math.floor(d)}h ${String(Math.round((d % 1) * 60)).padStart(2, "0")}m`;
+  const activeIdx = (nowH >= 8 && nowH < 15) ? 0 : (nowH >= 15 && nowH < 21.5) ? 1 : 2;
+  const pct = v => v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
+  const chgCol = v => v == null ? C.muted : v > 0 ? C.green : v < 0 ? C.red : C.muted;
+  const active = chain.legs[activeIdx];
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <SLabel>🔗 Handoff chain</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>Asia → Europe → US → Asia · LED = local info the next open hasn't priced</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+        {chain.legs.map((l, i) => {
+          const st = STATE_STYLE[l.state] || STATE_STYLE["NO DATA"];
+          const isActive = i === activeIdx;
+          return (
+            <div key={i} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, padding: "8px 11px", borderRadius: 8,
+              background: isActive ? st.bg : C.surf, border: "1px solid " + (isActive ? st.bdr : C.bdr), borderLeft: "4px solid " + (isActive ? st.color : C.bdr) }}>
+              <span style={{ fontWeight: 900, fontSize: 12.5, color: C.text, minWidth: 116 }}>{l.from} → {l.to}</span>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: chgCol(l.fromPct) }}>{pct(l.fromPct)}</span>
+              <span style={{ fontSize: 9.5, color: C.lbl }}>vs {l.refName} {pct(l.refPct)}</span>
+              <span style={{ fontSize: 11, fontWeight: 900, letterSpacing: 0.3, color: st.color, background: st.bg, border: "1px solid " + st.bdr, borderRadius: 5, padding: "1px 7px" }}>{l.state}</span>
+              <span style={{ marginLeft: "auto", fontSize: 9.5, color: isActive ? st.color : C.lbl, fontWeight: 700 }}>{isActive ? "● live · " : ""}{l.to} opens in {fmtCd(toOpen(OPENS[l.to]))}</span>
+            </div>
+          );
+        })}
+      </div>
+      {active && (
+        <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 7, lineHeight: 1.5 }}>
+          <b style={{ color: (STATE_STYLE[active.state] || {}).color || C.muted }}>{active.from} → {active.to}: {active.state}</b> — {active.note}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // D5 — FX overlay on P&L. The book's base is USD; KRW/HKD positions are quoted local. Shows each
 // non-USD position's local move vs its USD-translated move so the FX leg is explicit.
 function FxOverlay({ f }) {
@@ -4506,6 +4561,18 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {/* Book-specific tell cards (everything-else): event positioning + the Asia-only
               handoff / correlation / FX overlay. Moved out of the top synthesis cluster. */}
           {data.events && <EventPositioning e={data.events} />}
+          {/* Part B — the three-leg handoff chain, computed client-side from all fetched regions'
+              index aggregates (Asia/Europe/US each have their own indices in the payload). Sits above
+              the detailed US → Asia gap card, which stays for the drivers/gap read on the active leg. */}
+          {(() => {
+            const aggOf = (region, exclude = []) => {
+              const idx = byRegion?.[region]?.indices || [];
+              const vals = idx.filter(q => !exclude.includes(q.sym) && Number.isFinite(q.changePct)).map(q => q.changePct);
+              return vals.length ? +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : null;
+            };
+            const chain = handoffChain({ asiaPct: aggOf("asia"), europePct: aggOf("eu"), usPct: aggOf("us", ["^VIX"]) });
+            return chain.available ? <HandoffChain chain={chain} /> : null;
+          })()}
           {data.handoff && <CrossMarketHandoff h={data.handoff} />}
           {data.correlation && <CorrelationCollapse c={data.correlation} />}
           {data.fxPnl && <FxOverlay f={data.fxPnl} />}
