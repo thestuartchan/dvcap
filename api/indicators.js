@@ -556,7 +556,7 @@ export default async function handler(req, res) {
     // ── Fetch all data in parallel ────────────────────────────────────────────
     const [
       tenY, twoY, unemp, hySpread, cpi, cpiYoY, gdp, dxyRaw, m2Raw, oilRaw, auctionRaw,
-      fedFundsRaw, tbill6mRaw, gdpGrowthRaw, usfrYield, sgovYield, termPremiumRaw, laborRaw,
+      fedFundsRaw, tbill6mRaw, tbill3mRaw, gdpGrowthRaw, usfrYield, sgovYield, termPremiumRaw, laborRaw,
       spreadPublished, spreadHistoryRaw,
       tenYHistory, twoYHistory, unempHistory, creditHistory,
       cpiHeadlineHistory, cpiCoreHistory, pceCoreHistory,
@@ -575,6 +575,7 @@ export default async function handler(req, res) {
       fetchAuction(),           // 10Y Treasury auction bid-to-cover (FiscalData)
       fredLatest("FEDFUNDS"),   // Current Fed funds effective rate
       fredLatest("DTB6"),       // 6-month T-bill — forward policy-rate proxy
+      fredLatest("DTB3"),       // 3-month T-bill — drives the SGOV/USFR SEC-yield proxy (both are bill pass-throughs)
       // Real GDP GROWTH (% change from preceding quarter, SAAR) — the growth INPUT. GDPC1
       // above is a level ($T) and cannot answer "is growth decelerating"; this can, and it
       // carries the prior quarter so the direction is computed from a real prior print.
@@ -651,6 +652,7 @@ export default async function handler(req, res) {
     // bps. Negative bps = market pricing hikes. Null if either fetch is missing.
     const currentFedFunds = fedFundsRaw.value > 0 ? fedFundsRaw.value : null;
     const tbill6m = tbill6mRaw.value > 0 ? tbill6mRaw.value : null;
+    const tbill3m = tbill3mRaw.value > 0 ? tbill3mRaw.value : null;
     const impliedCutsBps = (currentFedFunds != null && tbill6m != null)
       ? Math.round((currentFedFunds - tbill6m) * 100)
       : null;
@@ -706,6 +708,7 @@ export default async function handler(req, res) {
       auctionHistory:  auctionRaw?.history ?? [],
       currentFedFunds,
       tbill6m,
+      tbill3m,        // 3-month T-bill (DTB3) — drives the SGOV/USFR SEC-yield proxy
       impliedCutsBps, // positive = market pricing cuts, negative = pricing hikes
       // ── CPI inflation tracker (additive; existing `cpi` field unchanged) ─────
       cpiHeadlineCurrent,
@@ -728,7 +731,7 @@ export default async function handler(req, res) {
         tenY: tenY.date, twoY: twoY.date, yieldSpread: yieldSpreadDate,
         unemployment: unemp.date, creditSpread: hySpread.date,
         cpi: cpi.date, gdp: gdp.date, gdpGrowth: gdpGrowthRaw.date,
-        currentFedFunds: fedFundsRaw.date, tbill6m: tbill6mRaw.date,
+        currentFedFunds: fedFundsRaw.date, tbill6m: tbill6mRaw.date, tbill3m: tbill3mRaw.date,
         dxy: dxyRaw.asOf, oil: oilRaw.asOf,
         cpiYoY:             cpiHeadlineHistory.at(-1)?.date ?? null,
         cpiHeadlineCurrent: cpiHeadlineHistory.at(-1)?.date ?? null,

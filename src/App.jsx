@@ -24,6 +24,7 @@ function trendBps(series, lookbackDays) {
 }
 import { laborStress, sahmAnnotation, laborVerdict, laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead, quitsRead, revisionTrackerRead, twelveMonthAvgRead, ytdDivergenceRead } from "../lib/labor.js";
 import { handoffChain } from "../lib/handoff.js";
+import { SEC_YIELDS, PROXY, secYieldProxy, proxyDivergence, apyFromSec, afterWht, compareCash } from "../lib/cashyield.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
 const C = {
@@ -1258,6 +1259,104 @@ function FedPathCard({ effr }) {
         <Btn onClick={save} disabled={saving || preview == null} color={C.blue} bgColor={C.blBg} label={saving ? "⏳ Saving…" : "💾 Save"} />
       </div>
       {msg && <div style={{ marginTop: 8, fontSize: 12.5, fontWeight: 700, color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
+    </Card>
+  );
+}
+
+// Aug-22 Part B — cash-yield vs a bank term deposit on a LIKE-FOR-LIKE basis. Three adjustments make
+// the comparison valid: compounding (SEC 30-day is annualised-simple → an APY column), withholding
+// (0% VERIFIED on USFR per the Jul 30 2026 distribution; SGOV UNVERIFIED until one is observed), and
+// liquidity (a locked deposit defeats a bucket held for deployment). Bank rate + WHT + size are manual.
+function CashComparisonCard({ liveInd }) {
+  const [cfg, setCfg] = useState(() => cacheLoad("cash_compare_v1", { bankRate: "3.65", conv: "apy", term: "6mo", usfrWht: "0", sgovWht: "0", posUsd: "53418" }));
+  const set = (k, v) => setCfg(prev => { const next = { ...prev, [k]: v }; cacheSave("cash_compare_v1", next); return next; });
+  const usfrSec = SEC_YIELDS.USFR.value, sgovSec = SEC_YIELDS.SGOV.value;
+  const bill = liveCashYield(liveInd);
+  const posUsd = Math.max(0, Math.round(Number(String(cfg.posUsd).replace(/,/g, "")) || 0));
+  const bankRateNum = cfg.bankRate === "" ? null : Number(cfg.bankRate);
+  const isApy = cfg.conv === "apy";
+  const bankApy = bankRateNum == null ? null : (isApy ? bankRateNum : apyFromSec(bankRateNum));
+  const cmp = compareCash({ usfrSec, sgovSec, usfrWht: Number(cfg.usfrWht) || 0, sgovWht: Number(cfg.sgovWht) || 0, bankRate: bankRateNum, bankConvention: cfg.conv, positionUsd: posUsd });
+  const pc = v => v == null ? "—" : `${v.toFixed(2)}%`;
+  const rows = [
+    { k: "USFR", sec: usfrSec, apy: apyFromSec(usfrSec), aw: cmp.rows.USFR.afterWht, liq: "T+1", credit: "US Govt", wht: `${Number(cfg.usfrWht) || 0}%`, whtTag: "✓ VERIFIED · Jul 30 2026 distribution", whtOk: true },
+    { k: "SGOV", sec: sgovSec, apy: apyFromSec(sgovSec), aw: cmp.rows.SGOV.afterWht, liq: "T+1", credit: "US Govt", wht: `${Number(cfg.sgovWht) || 0}%`, whtTag: "⚠ UNVERIFIED · no SGOV distribution observed", whtOk: false, star: true },
+    bill && { k: bill.src, sec: bill.value, apy: bill.value, aw: bill.value, liq: "to maturity", credit: "US Govt", wht: "0%", whtTag: null },
+    { k: "Bank deposit", sec: null, apy: bankApy, aw: bankApy, liq: "LOCKED", credit: "Bank", bank: true },
+  ].filter(Boolean);
+  const cols = ["", "SEC 30d", "APY", "After WHT", "Liquidity", "Credit"];
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <SLabel>💵 Cash yield comparison</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>vs a bank term deposit · manual: bank rate, WHT, size</span>
+      </div>
+      <div style={{ overflowX: "auto", marginTop: 8 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 460, fontSize: 12.5 }}>
+          <thead>
+            <tr>{cols.map((c, i) => (
+              <th key={i} style={{ textAlign: i === 0 ? "left" : "right", padding: "5px 8px", borderBottom: "1.5px solid " + C.bdr, color: C.mid, fontWeight: 700, fontSize: 11, whiteSpace: "nowrap" }}>{c}</th>
+            ))}</tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={r.k} style={{ background: i % 2 ? C.bg : "transparent" }}>
+                <td style={{ padding: "5px 8px", fontWeight: 700, color: r.bank ? C.muted : C.text, borderBottom: "1px solid " + C.bdr }}>{r.k}</td>
+                <td style={{ padding: "5px 8px", textAlign: "right", color: C.mid, borderBottom: "1px solid " + C.bdr }}>{pc(r.sec)}</td>
+                <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: 800, color: C.text, borderBottom: "1px solid " + C.bdr }}>{pc(r.apy)}</td>
+                <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700, color: C.mid, borderBottom: "1px solid " + C.bdr }}>{pc(r.aw)}{r.star ? "*" : ""}</td>
+                <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: r.liq === "LOCKED" ? 800 : 600, color: r.liq === "LOCKED" ? C.amber : C.muted, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap" }}>{r.liq}</td>
+                <td style={{ padding: "5px 8px", textAlign: "right", color: C.muted, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap" }}>{r.credit}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", marginTop: 10 }}>
+        <label style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>Bank rate
+          <input value={cfg.bankRate} onChange={e => set("bankRate", e.target.value)} placeholder="3.65"
+            style={{ display: "block", marginTop: 2, fontSize: 13, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 80 }} /></label>
+        <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: "1.5px solid " + C.bdr }}>
+          {["simple", "apy"].map(cv => (
+            <button key={cv} onClick={() => set("conv", cv)} style={{ cursor: "pointer", border: "none", padding: "6px 10px", fontSize: 11.5, fontWeight: 800,
+              background: cfg.conv === cv ? C.blue : C.surf, color: cfg.conv === cv ? "#fff" : C.mid }}>{cv === "apy" ? "APY" : "simple"}</button>
+          ))}
+        </div>
+        <label style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>Term
+          <input value={cfg.term} onChange={e => set("term", e.target.value)} placeholder="6mo"
+            style={{ display: "block", marginTop: 2, fontSize: 13, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 64 }} /></label>
+        <label style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>Position $
+          <input value={cfg.posUsd} onChange={e => set("posUsd", e.target.value)} placeholder="53418"
+            style={{ display: "block", marginTop: 2, fontSize: 13, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 90 }} /></label>
+        <label style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>USFR WHT %
+          <input value={cfg.usfrWht} onChange={e => set("usfrWht", e.target.value)} placeholder="0"
+            style={{ display: "block", marginTop: 2, fontSize: 13, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 60 }} /></label>
+        <label style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>SGOV WHT %
+          <input value={cfg.sgovWht} onChange={e => set("sgovWht", e.target.value)} placeholder="0"
+            style={{ display: "block", marginTop: 2, fontSize: 13, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 60 }} /></label>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 8 }}>
+        {rows.filter(r => r.whtTag).map(r => (
+          <div key={r.k} style={{ fontSize: 11, color: r.whtOk ? C.green : C.amber, fontWeight: 700 }}>{r.k} withholding {r.wht} — {r.whtTag}</div>
+        ))}
+      </div>
+      {cmp.edgeVsBankBp != null && (
+        <div style={{ marginTop: 10, padding: "9px 12px", background: cmp.edgeVsBankBp >= 0 ? C.gBg : C.aBg, border: "1.5px solid " + (cmp.edgeVsBankBp >= 0 ? C.gBdr : C.aBdr), borderRadius: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 900, color: cmp.edgeVsBankBp >= 0 ? C.green : C.amber }}>
+            Verdict: {cmp.edgeVsBankBp >= 0 ? cmp.best : "Bank deposit"} by {Math.abs(cmp.edgeVsBankBp)}bp on {isApy ? "an APY" : "a simple"} basis
+          </div>
+          <div style={{ fontSize: 12, color: C.mid, marginTop: 2, lineHeight: 1.5 }}>
+            On ${posUsd.toLocaleString("en-US")} that is ~${Math.abs(cmp.dollarVsBank ?? 0).toLocaleString("en-US")}/yr vs the deposit{cmp.dollarFundGap != null ? `, ~$${Math.abs(cmp.dollarFundGap).toLocaleString("en-US")}/yr vs SGOV` : ""}. At this size the gap is small — let liquidity and simplicity carry more weight than yield.
+          </div>
+        </div>
+      )}
+      <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6, fontSize: 11.5, color: C.mid, lineHeight: 1.55 }}>
+        <div>🔒 <b>Liquidity isn't free.</b> A term-deposit yield is only comparable if the money would not need to move before maturity — and this bucket is explicitly held for deployment (bills now → duration at the pivot → equities 30–60d after the first cut).</div>
+        <div>〰️ <b>SGOV sawtooth.</b> Its price climbs ~30c through the month as interest accrues, then drops on ex-dividend; the quote in isolation looks like the position is bleeding. Total return = NAV change + distributions.</div>
+        <div>📉 <b>Unrealised P&amp;L is not a gain.</b> On USFR/SGOV the price accrues through the month and drops on ex-dividend — the unrealised figure is interest not yet distributed, not profit.</div>
+        <div style={{ color: C.amber, fontWeight: 700 }}>⚠️ <b>USFR carries a 100% margin requirement — no buying power.</b> Parking cash here reduces available margin by the full amount, the same as moving it out of the account. Verify SGOV's requirement separately; do not assume it matches.</div>
+        <div style={{ color: C.lbl, fontSize: 10.5 }}>* SGOV after-WHT assumes 0% by analogy to USFR — an assumption, not a measurement, until a SGOV distribution is observed.</div>
+      </div>
     </Card>
   );
 }
@@ -6570,12 +6669,16 @@ export default function App() {
               // Cash-yield markers drawn on the chart: the two funds actually held plus the
               // spot bill rate. Each is only included when its live value exists — a missing
               // one is dropped, never defaulted.
-              const ey = liveInd?.etfYields || {};
+              // Aug-22 — use the 30-DAY SEC YIELD (forward, comparable), not TTM distribution yield
+              // (backward-looking, overstates, frozen between monthly ex-divs). Published figures are
+              // dated manual issuer-page values; the live DTB3 proxy reconciles them daily.
+              const dtb3 = liveInd?.tbill3m ?? null;
+              const secDiv = proxyDivergence(dtb3);
               const cashMarks = [
-                ey.USFR?.ttmYield != null && { key: "USFR", label: "USFR", value: ey.USFR.ttmYield, color: "#0EA5E9",
-                  detail: `TTM from ${ey.USFR.payments} distributions, latest ${ey.USFR.lastDivDate}${ey.USFR.annualizedLatest != null ? ` · latest month annualised ${ey.USFR.annualizedLatest}%` : ""}` },
-                ey.SGOV?.ttmYield != null && { key: "SGOV", label: "SGOV", value: ey.SGOV.ttmYield, color: "#6366F1",
-                  detail: `TTM from ${ey.SGOV.payments} distributions, latest ${ey.SGOV.lastDivDate}${ey.SGOV.annualizedLatest != null ? ` · latest month annualised ${ey.SGOV.annualizedLatest}%` : ""}` },
+                { key: "USFR", label: "USFR", value: SEC_YIELDS.USFR.value, color: "#0EA5E9",
+                  detail: `SEC 30-day yield ${SEC_YIELDS.USFR.value}% — as of ${SEC_YIELDS.USFR.asOf} · ${SEC_YIELDS.USFR.src}` },
+                { key: "SGOV", label: "SGOV", value: SEC_YIELDS.SGOV.value, color: "#6366F1",
+                  detail: `SEC 30-day yield ${SEC_YIELDS.SGOV.value}% — as of ${SEC_YIELDS.SGOV.asOf} · expense ${SEC_YIELDS.SGOV.expense}% · ${SEC_YIELDS.SGOV.src}` },
                 cashYield && { key: "bill", label: cashYield.src, value: cashYield.value, color: "#3b82f6",
                   detail: `spot policy-linked rate${cashYield.asOf ? `, as of ${cashYield.asOf}` : ""}` },
               ].filter(Boolean);
@@ -6585,17 +6688,8 @@ export default function App() {
               const cashLo = cashMarks.length ? Math.min(...cashMarks.map(m => m.value)) : null;
               const cashHi = cashMarks.length ? Math.max(...cashMarks.map(m => m.value)) : null;
 
-              // Real yield on cash, on the SAME basis the chart band draws. Previously this used
-              // Fed funds (3.63%) while the band used the bill/fund yields (~3.8%), so the
-              // headline figure and the chart directly beneath it answered the same question
-              // differently. Both are defensible in isolation; showing both on one card is not.
-              // Falls back to Fed funds only when no cash mark exists, and says so.
-              const ryBasis = cashYield ?? (liveInd?.currentFedFunds != null
-                ? { value: liveInd.currentFedFunds, src: "Fed funds", asOf: liveInd?.asOf?.currentFedFunds ?? null } : null);
-              const realYield = (ryBasis && headline != null) ? (ryBasis.value - headline) : null;
-              // Spread across every cash instrument, so the single number isn't read as exact.
-              const ryRange = (headline != null && cashLo != null && cashHi != null)
-                ? { lo: cashLo - headline, hi: cashHi - headline } : null;
+              // A4 — real yield is now computed PER INSTRUMENT off each SEC yield (below), not as a
+              // single Fed-funds-vs-headline figure. The per-instrument block replaces the old band.
               const trendChip = t => t && (
                 <span style={{ fontSize: 10.5, fontWeight: 800, color: t.dir === "cooling" ? C.green : t.dir === "rising" ? C.red : C.muted }}>
                   {t.dir === "cooling" ? "▼" : t.dir === "rising" ? "▲" : "■"} {t.d >= 0 ? "+" : "−"}{Math.abs(t.d)}pp vs prior
@@ -6644,51 +6738,47 @@ export default function App() {
                       </div>
                     </div>
                   )}
-                  {realYield != null && (
-                    <div style={{ padding: "8px 12px", borderRadius: 6, backgroundColor: realYield > 0 ? "#f0fdf4" : "#fef2f2", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: C.mid }}>
-                        Real Yield on Cash ({ryBasis.src} − Headline CPI):
-                        <span style={{ color: realYield > 0 ? "#22c55e" : "#ef4444", marginLeft: 8, fontWeight: 800 }}>
-                          {realYield > 0 ? "+" : ""}{realYield.toFixed(2)}%
-                        </span>
-                        {/* Range across every cash instrument on the chart, so the single figure
-                            reads as representative rather than exact. */}
-                        {ryRange && Math.abs(ryRange.hi - ryRange.lo) >= 0.01 && (
-                          <span style={{ color: "#888", marginLeft: 8, fontWeight: 600 }}>
-                            ({ryRange.lo > 0 ? "+" : ""}{ryRange.lo.toFixed(2)} to {ryRange.hi > 0 ? "+" : ""}{ryRange.hi.toFixed(2)} across {cashMarks.map(m => m.label).join(" / ")})
-                          </span>
-                        )}
-                      </span>
-                      <span style={{ fontSize: 11, color: "#888", fontStyle: "italic" }}>
-                        {realYield > 0 ? "Cash yielding above headline inflation." : "Headline inflation exceeding cash yield — real erosion."}
-                      </span>
+                  {/* A3 — DTB3 proxy reconciliation. Published SEC yields are dated manual issuer-page
+                      figures; the live 3-month bill drives a daily estimate, and a >10bp gap means the
+                      discount margin shifted → re-fetch the issuer page. */}
+                  {dtb3 != null && secDiv && (
+                    <div style={{ marginBottom: 12, padding: "8px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, fontSize: 11.5 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
+                        <span style={{ fontWeight: 800, color: C.mid }}>3M T-bill (DTB3) <b style={{ color: C.text }}>{dtb3.toFixed(2)}%</b> <span style={{ color: C.lbl, fontWeight: 600 }}>live · daily{liveInd?.asOf?.tbill3m ? ` · ${liveInd.asOf.tbill3m}` : ""}</span></span>
+                        <span style={{ color: C.lbl, fontStyle: "italic" }}>SGOV & USFR are pass-throughs of the bill</span>
+                      </div>
+                      {[["SGOV", PROXY.SGOV.formula], ["USFR", PROXY.USFR.formula]].map(([k, f]) => {
+                        const d = secDiv[k];
+                        return (
+                          <div key={k} style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "baseline", marginTop: 3 }}>
+                            <span style={{ minWidth: 48, fontWeight: 700, color: C.mid }}>{k} est</span>
+                            <span style={{ fontWeight: 800, color: C.text }}>{d.est.toFixed(2)}%</span>
+                            <span style={{ color: C.lbl }}>{f}</span>
+                            <span style={{ color: C.muted }}>· actual <b style={{ color: C.mid }}>{d.published.toFixed(2)}%</b> ({SEC_YIELDS[k].asOf})</span>
+                            <span style={{ fontWeight: 800, color: d.diverged ? C.amber : C.green }}>{d.diverged ? `⚠ ${d.bp >= 0 ? "+" : ""}${d.bp}bp — discount margin shifted, re-fetch` : "✓ reconciles"}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
-                  {/* Flip threshold + buffer against each measure. The headline read is the
-                      thinnest and the most volatile (energy), so a single "positive real yield"
-                      badge overstates how settled this is — state what would flip it, and how
-                      much cushion exists on the less jumpy measures. */}
-                  {realYield != null && ryBasis && (
-                    <div style={{ marginTop: -6, marginBottom: 12, padding: "7px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6, fontSize: 11.5, color: C.mid, lineHeight: 1.6 }}>
-                      <b style={{ color: C.muted }}>↪ Flips if </b>
-                      headline CPI ≥ <b>{ryBasis.value.toFixed(2)}%</b> ({realYield >= 0 ? "+" : ""}{realYield.toFixed(2)}pp from here)
-                      {" or "}cash ≤ <b>{headline.toFixed(2)}%</b>
-                      {realYield > 0 && <> (~{Math.max(1, Math.ceil(realYield / 0.25))} × 25bp of cuts)</>}.
-                      <div style={{ marginTop: 3 }}>
-                        <span style={{ color: C.muted, fontWeight: 700 }}>Buffer: </span>
-                        {[["headline CPI", headline], ["core PCE", pce], ["core CPI", core]]
-                          .filter(([, v]) => v != null)
-                          .map(([n, v], i) => {
-                            const b = ryBasis.value - v;
-                            return (
-                              <span key={n}>
-                                {i ? " · " : ""}
-                                <span style={{ color: b > 0 ? C.green : C.red, fontWeight: 800 }}>{b >= 0 ? "+" : ""}{b.toFixed(2)}pp</span>
-                                <span style={{ color: C.lbl }}> vs {n}</span>
-                              </span>
-                            );
-                          })}
-                        <span style={{ color: C.lbl }}> — headline is the thinnest and the most energy-sensitive; it last went negative at May's 4.17% print.</span>
+                  {/* A4 — real yield PER INSTRUMENT off its SEC yield (funds) or spot (the bill). Each
+                      shows its cushion vs headline CPI and the CPI level that flips it negative. */}
+                  {headline != null && (
+                    <div style={{ marginBottom: 12, padding: "8px 12px", background: C.surf, border: "1px solid " + C.bdr, borderRadius: 8 }}>
+                      <div style={{ fontSize: 10.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 5 }}>Real yield on cash vs headline CPI {headline.toFixed(2)}%</div>
+                      {cashMarks.map(m => {
+                        const ry = m.value - headline;
+                        return (
+                          <div key={m.key} style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "baseline", padding: "2px 0" }}>
+                            <span style={{ minWidth: 96, fontWeight: 700, color: C.mid }}>{m.label}</span>
+                            <span style={{ fontWeight: 800, color: C.text }}>{m.value.toFixed(2)}%</span>
+                            <span style={{ fontWeight: 800, color: ry > 0 ? C.green : C.red }}>{ry >= 0 ? "+" : ""}{ry.toFixed(2)}% real</span>
+                            <span style={{ color: C.lbl }}>flips at CPI ≥ <b style={{ color: C.mid }}>{m.value.toFixed(2)}%</b></span>
+                          </div>
+                        );
+                      })}
+                      <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 5, lineHeight: 1.5 }}>
+                        SEC 30-day yields (forward) — narrower than the backward-looking TTM figures the card used to show; the SGOV cushion roughly halves. Headline is the thinnest, most energy-sensitive measure{liveInd?.oil != null ? ` (WTI ${liveInd.oil})` : ""}. USFR leads SGOV by {Math.round((SEC_YIELDS.USFR.value - SEC_YIELDS.SGOV.value) * 100)}bp on SEC yields, not the ~4bp a TTM figure showed.
                       </div>
                     </div>
                   )}
@@ -6775,6 +6865,9 @@ export default function App() {
                 </Card>
               );
             })()}
+
+            {/* Aug-22 Part B — cash-yield comparison card, adjacent to the CPI tracker's cash read. */}
+            <CashComparisonCard liveInd={liveInd} />
 
             {/* F.5 — the labour module is a paragraph of interpretation, so it sits where the
                 user is already reading rather than glancing. Same shared definition as the
