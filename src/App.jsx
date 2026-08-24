@@ -353,7 +353,7 @@ const INSURANCE_PHASES = [
   { k:"liquidity", col:"liquidity", label:"Liquidity Phase",           short:"Liquidity Phase",   color:STATUS.DANGER.color, bg:STATUS.DANGER.bg, bdr:STATUS.DANGER.bdr, desc:"Drawdown underway — margin calls, correlations going to 1. Gold is SOLD here because it is liquid and profitable: it fell ~12% over ~8 sessions in March 2020 and ~30% from its March 2008 high to its October 2008 low, both times while equities collapsed. Miners are worse (GDX ~−70% in 2008). Protection bought now is expensive — IV has already repriced, so puts and VIX calls are a poor purchase. Cash is the only thing that works cleanly.", size:{ band:"hold · add ~0%", note:"protection is now expensive (IV repriced) — don't chase it. Raise cash and prepare the recovery buy." } },
   { k:"recovery",  col:"recovery",  label:"Recovery / Post-Trough",    short:"Recovery",          color:"#047857", bg:"#ECFDF5", bdr:"#A7F3D0", desc:"VIX has peaked and is rolling over, credit has stopped widening, forced selling is exhausted — resolution not yet determined. This is THE BUY: gold miners, BTC and equities lead off the trough (the NYSE Arca Gold Miners Index ran +100% Oct'07→Mar'09 while the S&P fell 57%, +40% in Apr'20, +27% in a single day Nov'08 — all of it here, none in the collapse column). Sell the decay hedges into the vol collapse: holding the right hedge past its window is where most insurance P&L is given back. Miners here are a post-trough TRADE with a trigger, never a hedge and never a hold.", size:{ band:"insurance → ~0%", note:"unwind the decay hedges into the vol collapse and rotate the proceeds + dry powder into the recovery buy (miners / BTC / equities)." } },
   { k:"def",       col:"def",       label:"Deflationary Recession",    short:"Defl. Recession",   color:"#1E40AF", bg:"#EFF6FF", bdr:"#BFDBFE", desc:"Crash resolves through debt deflation — falling prices, Japan-style. TLT wins. Gold moderate. BTC loses. Same term as the Macro tab's regime: a deflationary recession, whether you're forecasting it (Macro) or hedging its arrival (here).", size:{ band:"10–18%", note:"the highest insurance allocation — TLT and SPY puts dominate; add IEF as a lower-vol duration alternative." } },
-  { k:"inf",       col:"inf",       label:"Resolution: Debasement",    short:"Res: Debasement",   color:"#7C3AED", bg:"#F5F3FF", bdr:"#C4B5FD", desc:"Crash resolves through DEBASEMENT — Fed prints, dollar credibility erodes, currency stress, loss of monetary confidence. Gold and BTC win; TLT is a trap. This is a CRISIS — the OPPOSITE of Macro's 'Inflationary Boom' (a good, growth-strong outcome you'd want to be long). Read at speed, the shared word invites exactly the wrong action; hence 'Resolution: Debasement'.", size:{ band:"5–10%", note:"gold and BTC as MONETARY insurance (not crash insurance) — TLT is a trap here." } },
+  { k:"inf",       col:"inf",       label:"Resolution: Debasement",    short:"Res: Debasement",   color:"#7C3AED", bg:"#F5F3FF", bdr:"#C4B5FD", desc:"Crash resolves through DEBASEMENT — Fed prints, dollar credibility erodes, currency stress, loss of monetary confidence. Gold and BTC win; TLT is a trap. This is a CRISIS — the OPPOSITE of Macro's 'Inflationary Boom' (a good, growth-strong outcome you'd want to be long). Read at speed, the shared word invites exactly the wrong action; hence 'Resolution: Debasement'. Its slow-motion, multi-year cousin — Financial Repression (negative real yields held for years, Japan-style) — is a Macro-tab regime STATE, not a crash resolution; see the Regime-shift scenarios there, not a column here.", size:{ band:"5–10%", note:"gold and BTC as MONETARY insurance (not crash insurance) — TLT is a trap here." } },
   { k:"stag",      col:"stag",      label:"Resolution: Stagflation",   short:"Res: Stagflation",  color:"#0F766E", bg:"#F0FDFA", bdr:"#5EEAD1", desc:"Persistent stagflation — slow grind, not a sharp crash. Favour passive real-asset hedges (GLD, XLP, farmland, HYG puts) over active short instruments. Avoid VIX calls (contango) and SQQQ (daily decay). Size conservatively; favour longer-dated instruments to reduce theta bleed.", size:{ band:"8–15%", note:"gold / staples / HYG puts; size conservatively and favour longer-dated to cut theta bleed over a slow grind." } },
   { k:"hawkish",   col:"hawkish",   label:"Hawkish Rates Repricing",   short:"Hawkish Repricing", color:"#B45309", bg:"#FFF7ED", bdr:"#FED7AA", desc:"Not a crash — a rates repricing (occurred 2026-07-31: gold −2.07%, TLT −0.87%, XLU −0.37%, XLP −0.80%, IWM −0.70%, BTC −1.8%, SPY roughly flat). Nothing hedges this except the front end. Duration is the risk, and every asset that competes with cash for yield gets sold simultaneously — including the defensives (GLD, TLT, staples) that work in every other scenario.", size:{ band:"front-end only", note:"nothing hedges a rates repricing except the front end (bills / USFR) — duration IS the risk." } },
 ];
@@ -1018,6 +1018,22 @@ const REGIME_SHIFTS = [
     best:["Cash / ultra-short (BIL, SGOV)","Floating-rate (USFR)","Energy / commodities (real-rate resilient)","Value over growth"],
     worst:["Long-duration bonds (TLT, ZROZ)","Rate-sensitive equities (REITs, utilities)","Gold (loses to rising real yields)","High-multiple / unprofitable tech"],
     decision:"Short-duration parking is CORRECT here (cash earns the higher front-end), but any long-duration hedge (TLT) is the wrong side — a hawkish break is exactly when the duration leg breaks.",
+  },
+  {
+    // Aug-24 — financial repression is NOT a Debasement variant: the mechanism is similar but the
+    // horizon is DECADES, and it is the tool used to AVOID a crash, not a crash resolution. So it is
+    // a structural background STATE, gated on a sustained-negative 10Y real yield (DFII10), and it is
+    // deliberately kept off the Insurance tab (which only asks how a crash resolves).
+    id:"repress", label:"Financial Repression", color:"#0F766E", bg:"#F0FDFA", bdr:"#5EEAD1",
+    tag:"structural · multi-year",
+    desc:"Retiring the debt in real terms by holding nominal yields below inflation for years — Dalio's \"artificially low interest rate… the way Japan has done it.\" NOT a crash resolution: repression is the mechanism used to AVOID a crash. Japan ran suppressed JGB yields ~1990–2024 with no crash — the Nikkei peaked in 1989 and did not recover until 2024. Cash bleeds ~1–2%/yr: slow and survivable, not the fast erosion of Debasement.",
+    discriminator:"10Y real yield (DFII10) sustained NEGATIVE → repression active · positive → not repression. This IS the definition — the bondholder must receive less than inflation.",
+    realYieldGated:true,
+    best:["Real assets held for YEARS — physical gold (GLD, 2840.HK), NCREIF-type farmland","Equities with pricing power","TIPS · commodities · foreign hard-currency assets (✅ second tier)"],
+    caution:["Cash — loses ~1–2%/yr; survivable, but a slow real bleed. Distinct from Debasement's ⚠️, where cash is wrong QUICKLY."],
+    worst:["Nominal long bonds — the asset being repressed","ALL decay instruments (puts · VIX calls · SQQQ) — explicitly excluded: the multi-year horizon guarantees they expire worthless long before the thesis pays"],
+    decision:"⚠ Parking-bucket, slow version: in Debasement cash is wrong QUICKLY; in repression cash is wrong SLOWLY — ~1–2% of purchasing power a year. Survivable, and it leaves time to react. Different urgency, same direction: rotate toward real assets, but you are not forced out overnight.",
+    counter:"Counter-case (both sides): Japan's repression worked because domestic savers held JGBs and had nowhere else to go. Roughly a third of US Treasuries are held by foreigners who CAN leave — if they do, the outcome is a currency crisis, not orderly repression (a worse outcome that fits no column here). And today's committee points the other way: Warsh is a hawk who stripped forward guidance, three regional presidents dissented FOR a hike in July, and the July minutes recorded 'many participants' saw tightening as likely necessary. Not a repression-friendly Fed. Dalio is describing a PATH, not today's condition.",
   },
 ];
 
@@ -3717,9 +3733,18 @@ function CorrelationCollapse({ c }) {
 
 // P0.2 — Regime-shift scenarios (Macro tab). Selectable Debasement / Hawkish states the recession
 // engine can't derive, surfaced so the parking-bucket decision has somewhere to live.
-function RegimeShiftScenarios() {
+function RegimeShiftScenarios({ realYield = null, realYieldAsOf = null }) {
   const [sel, setSel] = useState(REGIME_SHIFTS[0].id);
   const s = REGIME_SHIFTS.find(x => x.id === sel) || REGIME_SHIFTS[0];
+  // Live gate for the real-yield-defined states (financial repression). A sustained-negative 10Y
+  // real yield (DFII10) is the definition; a positive one means the state is NOT active today.
+  const gate = s.realYieldGated
+    ? (realYield == null
+        ? { text: "AWAITING DFII10", col: C.muted, bg: C.bg, bdr: C.bdr }
+        : realYield < 0
+          ? { text: `ACTIVE · DFII10 ${realYield.toFixed(2)}% (negative)`, col: C.red, bg: C.rBg, bdr: C.rBdr }
+          : { text: `NOT ACTIVE · DFII10 +${realYield.toFixed(2)}% (positive)${realYieldAsOf ? ` · ${realYieldAsOf}` : ""}`, col: C.green, bg: C.gBg, bdr: C.gBdr })
+    : null;
   return (
     <Card style={{ borderTop: "4px solid " + s.color }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
@@ -3739,18 +3764,27 @@ function RegimeShiftScenarios() {
         })}
       </div>
       <div style={{ marginTop: 10, padding: "12px 14px", background: s.bg, border: "1.5px solid " + s.bdr, borderRadius: 10 }}>
-        <div style={{ fontSize: 16, fontWeight: 900, color: s.color }}>{s.label}</div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 16, fontWeight: 900, color: s.color }}>{s.label}</div>
+          {gate && <span style={{ fontSize: 11, fontWeight: 900, letterSpacing: 0.3, color: gate.col, background: gate.bg, border: "1.5px solid " + gate.bdr, borderRadius: 6, padding: "2px 8px" }}>{gate.text}</span>}
+        </div>
         <div style={{ fontSize: 11, fontWeight: 800, color: s.color, letterSpacing: 0.3, marginTop: 1 }}>{s.tag}</div>
         <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.55, marginTop: 6 }}>{s.desc}</div>
         <div style={{ fontSize: 11.5, color: C.muted, fontWeight: 700, marginTop: 6, lineHeight: 1.5 }}>
           <b style={{ color: C.mid }}>Discriminator:</b> {s.discriminator}
         </div>
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 8 }}>
-          <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+          <div style={{ flex: "1 1 200px", minWidth: 0 }}>
             <div style={{ fontSize: 10.5, fontWeight: 800, color: C.green, textTransform: "uppercase", letterSpacing: 0.4 }}>Best</div>
             {s.best.map((a, i) => <div key={i} style={{ fontSize: 12, color: C.mid, marginTop: 2, lineHeight: 1.45 }}>✓ {a}</div>)}
           </div>
-          <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+          {s.caution && (
+            <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+              <div style={{ fontSize: 10.5, fontWeight: 800, color: C.amber, textTransform: "uppercase", letterSpacing: 0.4 }}>Caution</div>
+              {s.caution.map((a, i) => <div key={i} style={{ fontSize: 12, color: C.mid, marginTop: 2, lineHeight: 1.45 }}>⚠️ {a}</div>)}
+            </div>
+          )}
+          <div style={{ flex: "1 1 200px", minWidth: 0 }}>
             <div style={{ fontSize: 10.5, fontWeight: 800, color: C.red, textTransform: "uppercase", letterSpacing: 0.4 }}>Worst</div>
             {s.worst.map((a, i) => <div key={i} style={{ fontSize: 12, color: C.mid, marginTop: 2, lineHeight: 1.45 }}>✗ {a}</div>)}
           </div>
@@ -3758,6 +3792,11 @@ function RegimeShiftScenarios() {
         <div style={{ marginTop: 10, padding: "8px 11px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8, fontSize: 12, fontWeight: 700, color: C.amber, lineHeight: 1.55 }}>
           {s.decision}
         </div>
+        {s.counter && (
+          <div style={{ marginTop: 8, padding: "8px 11px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, fontSize: 11.5, color: C.mid, lineHeight: 1.55 }}>
+            <b style={{ color: C.muted }}>⚖ </b>{s.counter}
+          </div>
+        )}
       </div>
     </Card>
   );
@@ -6422,7 +6461,7 @@ export default function App() {
             </Card>
 
             {/* P0.2 — regime-shift scenarios the consensus engine can't derive (Debasement / Hawkish). */}
-            <RegimeShiftScenarios />
+            <RegimeShiftScenarios realYield={pbData?.us?.macro?.realYield?.value ?? null} realYieldAsOf={pbData?.us?.macro?.realYield?.date ?? null} />
 
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <Card style={{ flex: "1 1 240px", background: activeRegime.bg, border: "1.5px solid " + activeRegime.bdr, borderTop: "4px solid " + activeRegime.color }}>
