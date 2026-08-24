@@ -946,6 +946,60 @@ const SOURCE_TAGS = {
   "Manager disclosure": { label: "Mgr disclosure", col: "#B45309" },
 };
 
+// ── Improvement #2 — 13F COVERAGE per fund. A 13F only shows long US-listed equity; cash, bonds,
+// shorts, most options, foreign listings and private books are invisible. This states, per manager,
+// how much of the real book the filing actually captures — so the long-only limit is structural, not
+// a footnote. Each note cites the disclosed figures the ratio is built from (no invented precision).
+const FUND_COVERAGE = {
+  berkshire:   { band: "Partial", note: "Shows the $299B equity book; the ~$397B cash (Q1 10-Q) is off-13F — the filing is ~43% of the equity+cash balance sheet." },
+  pershing:    { band: "Most",    note: "Concentrated long US equity — the 13F (filed via the public parent) captures nearly the whole book." },
+  bridgewater: { band: "Partial", note: "$24.4B 13F of ~$92B total AUM (~27%); futures, FX and global-macro overlays are off-13F." },
+  duquesne:    { band: "Partial", note: "$5.2B 13F, but ~25–30% gold and heavy index/single-name CALL leverage are off-13F — the filing understates both size and leverage." },
+  tiger:       { band: "Most",    note: "The US-listed equity core is captured; a large private/VC book (and any pre-listing stakes) sits off-13F." },
+  appaloosa:   { band: "Most",    note: "Long US equity captured, and the AAPL PUT shows on-13F; any shorts or non-equity hedges would not." },
+  fairfax:     { band: "None",    note: "Not a US 13F filer — files on SEDAR+. Holdings shown are from the 2025 annual report, not a 13F." },
+};
+const COVERAGE_BAND = {
+  Most:    { col: "#166534", bg: "#F0FDF4", bdr: "#86EFAC" },
+  Partial: { col: "#B45309", bg: "#FFF7ED", bdr: "#FED7AA" },
+  Low:     { col: "#B45309", bg: "#FFF7ED", bdr: "#FED7AA" },
+  None:    { col: "#991B1B", bg: "#FEF2F2", bdr: "#FECACA" },
+};
+
+// ── Improvement #3b — NOTABLE ABSENCES. Trades worth checking for; presence/absence is COMPUTED from
+// the actual holdings below, so it self-updates (if a manager buys TLT next quarter, it drops off).
+// The `why` is the one-line read on what the absence implies.
+const ABSENCE_WATCH = [
+  { label: "Long-duration Treasuries (TLT / ZROZ / IEF)", tickers: ["TLT", "ZROZ", "IEF"], why: "no one is positioned for a deflationary rate-collapse" },
+  { label: "Index shorts / broad puts (SH / SQQQ / SPXU)", tickers: ["SH", "SQQQ", "SPXU", "PSQ"], why: "no outright bearish index bet — Appaloosa's AAPL put is the lone equity hedge" },
+  { label: "Utilities / defensive REITs (XLU / VNQ)", tickers: ["XLU", "VNQ", "XLRE"], why: "no rate-sensitive defensive tilt" },
+];
+
+// ── Improvement #1 — mark-to-market since the 13F as-of date. A 13F reports position VALUE ($, at
+// quarter-end) and SHARE COUNT, so the implied filing price is value/shares; the live price vs that
+// is how the disclosed position has moved since Jun 30. Only computed where BOTH shares (from the
+// filing) and a live price exist — never estimated. `h.value` is in $B, `h.shares` a raw share count.
+function sinceFiling(h, prices) {
+  const p = prices?.[h?.name];
+  if (!h?.shares || !(h.shares > 0) || !(p?.price > 0) || !(h.value > 0)) return null;
+  const refPrice = (h.value * 1e9) / h.shares;
+  if (!(refPrice > 0)) return null;
+  return { refPrice: +refPrice.toFixed(2), live: p.price, pct: +((p.price / refPrice - 1) * 100).toFixed(1) };
+}
+// Value-weighted move of the disclosed (priced) book since the filing date, plus how much of the
+// book that covers — so a partial price set never reads as the whole book.
+function bookSinceFiling(fund, prices) {
+  let movedVal = 0, pricedVal = 0, totalVal = 0;
+  for (const h of fund.holdings || []) {
+    if (h.name === "Other" || !(h.value > 0)) continue;
+    totalVal += h.value;
+    const s = sinceFiling(h, prices);
+    if (s) { pricedVal += h.value; movedVal += h.value * (s.pct / 100); }
+  }
+  if (pricedVal <= 0) return null;
+  return { pct: +(movedVal / pricedVal * 100).toFixed(1), coveredPct: Math.round(pricedVal / totalVal * 100) };
+}
+
 // The four regimes are an IDENTITY palette, not a status palette. They are mutually exclusive
 // scenarios and none is "worse" than another — Deflationary Recession is the most damaging
 // outcome yet renders calm blue, which is correct, because the colour says WHICH scenario, not
@@ -2958,9 +3012,19 @@ function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated 
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <Pill label={fund.signal} color={fund.signalColor} />
+            {(() => {
+              const cov = FUND_COVERAGE[fund.id]; if (!cov) return null;
+              const st = COVERAGE_BAND[cov.band] || COVERAGE_BAND.Partial;
+              return <span title={cov.note} style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.2, color: st.col, background: st.bg, border: "1.5px solid " + st.bdr, borderRadius: 6, padding: "2px 8px", cursor: "help" }}>13F coverage: {cov.band}</span>;
+            })()}
           </div>
         </div>
         <p style={{ color: C.mid, fontSize: 15, lineHeight: 1.75, margin: 0 }}>{fund.thesis}</p>
+        {FUND_COVERAGE[fund.id] && (
+          <div style={{ marginTop: 8, fontSize: 12, color: C.muted, lineHeight: 1.55, borderTop: "1px solid " + C.bdr, paddingTop: 8 }}>
+            <b style={{ color: C.mid }}>What the 13F can't see: </b>{FUND_COVERAGE[fund.id].note}
+          </div>
+        )}
       </Card>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -3004,7 +3068,16 @@ function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated 
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
           <SLabel>Top Holdings — {fund.id === "fairfax" ? "Annual Report 2025" : "Q2 2026 · as of Jun 30"}</SLabel>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            {/* #1 — value-weighted move of the disclosed book since the filing date. */}
+            {(() => {
+              const b = bookSinceFiling(fund, prices); if (!b) return null;
+              const up = b.pct >= 0;
+              return <span title={`Value-weighted price move of the priced portion of the disclosed book since ${MATRIX_13F.positionsAsOf}. Covers ${b.coveredPct}% of the book by weight; the rest has no live price.`}
+                style={{ fontSize: 11.5, fontWeight: 800, color: up ? C.green : C.red, background: up ? C.gBg : C.rBg, border: "1.5px solid " + (up ? C.gBdr : C.rBdr), borderRadius: 6, padding: "2px 8px" }}>
+                book {up ? "+" : ""}{b.pct}% since filing <span style={{ color: C.muted, fontWeight: 600 }}>· {b.coveredPct}% priced</span>
+              </span>;
+            })()}
             {pricesUpdated && <span style={{ color: C.lbl, fontSize: 12 }}>{fmtTime(pricesUpdated)}</span>}
             <Btn onClick={() => onFetchPrices(tickers)} disabled={pricesLoading} color="#fff" bgColor={C.green} label={pricesLoading ? "Loading…" : "🔄 Prices"} />
           </div>
@@ -3037,6 +3110,14 @@ function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated 
                 <span style={{ color: C.muted, fontSize: 13 }}>${h.value}B</span>
                 <ActionBadge action={h.action} />
                 <PriceBadge ticker={h.name} prices={prices} />
+                {(() => {
+                  const s = sinceFiling(h, prices); if (!s) return null;
+                  const up = s.pct >= 0;
+                  return <span title={`Filing price ~$${s.refPrice} (value ÷ shares, as of ${MATRIX_13F.positionsAsOf}) vs live $${s.live}`}
+                    style={{ fontSize: 11, fontWeight: 800, color: up ? C.green : C.red, background: up ? C.gBg : C.rBg, border: "1px solid " + (up ? C.gBdr : C.rBdr), borderRadius: 5, padding: "1px 5px" }}>
+                    {up ? "+" : ""}{s.pct}% since filing
+                  </span>;
+                })()}
               </div>
             </div>
           ))}
@@ -6247,6 +6328,50 @@ export default function App() {
                 ))}
               </div>
             </Card>
+
+            {/* Improvement #3 — consensus / crowding / absences, computed from the matrix + holdings. */}
+            {(() => {
+              const isLong = v => v === "●" || v === "●●";
+              const rows = CONSENSUS_ROWS.map(r => ({ theme: r.theme, long: r.vals.filter(isLong).length, partial: r.vals.filter(v => v === "◐").length }));
+              const crowded = rows.filter(r => r.long >= 4).sort((a, b) => b.long - a.long);
+              const lonely = rows.filter(r => r.long === 1).sort((a, b) => b.partial - a.partial);
+              const absences = ABSENCE_WATCH.filter(w => !funds.some(f => (f.holdings || []).some(h => w.tickers.includes(h.name))));
+              const colHead = (txt, col) => <div style={{ fontSize: 10.5, fontWeight: 800, color: col, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>{txt}</div>;
+              return (
+                <Card>
+                  <SLabel>Consensus · crowding · absences</SLabel>
+                  <div style={{ fontSize: 11, color: C.lbl, margin: "2px 0 10px", lineHeight: 1.5 }}>Computed from the matrix + holdings above. Crowded ≠ safe — a lone conviction or a total absence is often the higher-information signal.</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
+                    <div>
+                      {colHead("Most crowded", C.amber)}
+                      {crowded.length ? crowded.map(r => (
+                        <div key={r.theme} style={{ fontSize: 12, color: C.mid, marginTop: 3, lineHeight: 1.4 }}>
+                          <b style={{ color: C.text }}>{r.long}/7</b> {r.theme}
+                        </div>
+                      )) : <div style={{ fontSize: 12, color: C.lbl }}>—</div>}
+                      <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 5, fontStyle: "italic" }}>Crowding is a fragility, not a green light — a consensus long unwinds fastest.</div>
+                    </div>
+                    <div>
+                      {colHead("Lone conviction", C.blue)}
+                      {lonely.length ? lonely.map(r => (
+                        <div key={r.theme} style={{ fontSize: 12, color: C.mid, marginTop: 3, lineHeight: 1.4 }}>
+                          <b style={{ color: C.text }}>1 fund</b> {r.theme}
+                        </div>
+                      )) : <div style={{ fontSize: 12, color: C.lbl }}>—</div>}
+                      <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 5, fontStyle: "italic" }}>One manager alone — differentiated, not consensus.</div>
+                    </div>
+                    <div>
+                      {colHead("Notable absences", C.red)}
+                      {absences.length ? absences.map(w => (
+                        <div key={w.label} style={{ fontSize: 12, color: C.mid, marginTop: 3, lineHeight: 1.4 }}>
+                          <b style={{ color: C.text }}>None hold</b> {w.label} — <span style={{ color: C.muted }}>{w.why}</span>
+                        </div>
+                      )) : <div style={{ fontSize: 12, color: C.lbl }}>—</div>}
+                    </div>
+                  </div>
+                </Card>
+              );
+            })()}
 
             {/* Smart Money Implied Regime Bets — moved here from the Macro tab */}
             <Card>
