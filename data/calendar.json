@@ -16,8 +16,9 @@
   { "date": "2026-07-30", "title": "US Q2 GDP advance",                 "region": "US",   "tier": 2, "scope": "global" },
   { "date": "2026-07-31", "title": "US June PCE",                       "region": "US",   "tier": 1, "scope": "global" },
   { "date": "2026-08-01", "title": "US July jobs report",              "region": "US",   "tier": 1, "scope": "global" },
-  { "date": "2026-08-26", "title": "NVDA earnings (AC) — 36h before Jackson Hole", "region": "US", "tier": 1, "scope": "global" },
+  { "date": "2026-08-26", "title": "NVDA earnings (AC) — the crowded-long test · 36h before Jackson Hole", "region": "US", "tier": 1, "scope": "global" },
   { "date": "2026-08-27", "title": "Jackson Hole symposium opens (Aug 27–29)", "region": "US", "tier": 1, "scope": "global" },
+  { "date": "2026-08-28", "title": "QCEW benchmark revision — restates the payroll base (deflation test)", "region": "US", "tier": 1, "scope": "global" },
   { "date": "2026-08-28", "title": "Jackson Hole — Warsh speaks (Fri AM)", "region": "US", "tier": 1, "scope": "global" },
   { "date": "2026-08-28", "title": "US July PCE",                       "region": "US",   "tier": 1, "scope": "global" },
   { "date": "2026-09-04", "title": "US August jobs report",            "region": "US",   "tier": 1, "scope": "global" }

@@ -704,13 +704,13 @@ const INCOME_PLAYS = [
 const DEFAULT_FUNDS = [
   {
     id:"berkshire", name:"Berkshire Hathaway", manager:"Greg Abel (Buffett chairman)",
-    aum:"$299B equity (Q2 13F) · $397B cash (Q1 10-Q)", style:"Quality compounder / Value", color:"#1E40AF",
-    turnover:"Low–Medium", signal:"DEFENSIVE", signalColor:"#991B1B",
-    lastUpdated:"Q2 2026 · as of Jun 30",
-    regimeBet:"Waiting — agnostic",
-    regimeBetColor:"#1E40AF",
-    regimeBetSignal:"Big Q2 move: built Alphabet to ~12.6% (top-4). Still ~$397B cash (Q1 10-Q; Q2 pending). No macro regime bet.",
-    thesis:"Q2 story is Alphabet: GOOGL added to $28.2B and a NEW $9.6B GOOG Class C stake — combined ~12.6% and now a top-4 position, Berkshire's most AI-adjacent bet (though still no chips). AAPL still #1 at 22%, then AXP, KO, BAC, Chubb (CB) and Moody's; energy (CVX/OXY) held. Cash was $397B at the Q1 10-Q — the Q2 10-Q figure is pending. Value/quality, not growth. Positions as of Jun 30.",
+    aum:"$323.8B equity (Q2 13F) · $365.5B cash (Q2 10-Q, Aug 8)", style:"Quality compounder / Value", color:"#1E40AF",
+    turnover:"Low–Medium", signal:"NET BUYER", signalColor:"#166534",
+    lastUpdated:"Q2 2026 · as of Jun 30 · cash Q2 10-Q Aug 8",
+    regimeBet:"Deploying — net buyer (first cash drawdown in ~4yr)",
+    regimeBetColor:"#166534",
+    regimeBetSignal:"NOT agnostic in Q2: net buyer of ~$19.8B ($23.5B bought vs $3.7B sold) — the largest single-quarter net buying in 3.5yr, ending a 14-quarter selling streak. Cash FELL to $365.5B (Q2 10-Q, Aug 8) from $397B — its first quarterly decline in ~4 years. Buybacks $4.5B (vs $235M in Q1).",
+    thesis:"Q2 marks a turn: after 14 straight quarters of net selling, Berkshire was a NET BUYER of ~$19.8B ($23.5B purchased vs $3.7B sold) — the biggest single-quarter net buying in at least 3.5 years — and bought back $4.5B of stock (vs $235M in Q1). Cash fell to $365.5B (Q2 10-Q, Aug 8) from $397B, the first quarterly decline in ~4 years. The equity story is still Alphabet: GOOGL added to $28.2B plus a new $9.6B GOOG Class C stake (~12.6%, top-4, its most AI-adjacent bet though still no chips), on top of a separate $10B Alphabet private placement outside the 13F. Top five are now ~66% of the $323.8B book, up ~5pts q/q. Value/quality, not growth. Positions as of Jun 30.",
     holdings:[
       {name:"AAPL", shares:227917808, pct:22.0,value:65.95,sector:"Tech",      action:"hold"},
       {name:"AXP",  shares:151610700, pct:17.1,value:51.28,sector:"Financials",action:"hold"},
@@ -799,8 +799,8 @@ const DEFAULT_FUNDS = [
     lastUpdated:"Q2 2026 · as of Jun 30",
     regimeBet:"Stagflation / supercycle",
     regimeBetColor:"#B45309",
-    regimeBetSignal:"~25–30% gold off-13F. EM hard assets (Brazil/Argentina). Q2 reversal: re-entered AMZN + GOOGL after exiting in Q1.",
-    thesis:"Q2 reversal — RE-ENTERED mega-cap tech (AMZN + GOOGL) after fully exiting both in Q1. Natera (NTRA) still #1 at 16.6%; biotech sleeve (INSM, Revolution, NewAmsterdam) deep. New STMicro (STM); semis via TSM, Seagate, SanDisk. EM/macro: Brazil (EWZ + calls), Argentina (YPF), Mexico (BBB Foods), Sea Ltd. Heavy call usage for leverage (RSP/IWM/SPY/EWZ/INSM/TSLA calls, in Other). ~25–30% gold remains off-13F. Positions as of Jun 30.",
+    regimeBetSignal:"~25–30% gold off-13F — held through gold's worst quarter since 2013 (−20–24%), now +17% in August. EM hard assets (Brazil/Argentina). Q2 reversal: re-entered AMZN + GOOGL after exiting in Q1.",
+    thesis:"Q2 reversal — RE-ENTERED mega-cap tech (AMZN + GOOGL) after fully exiting both in Q1. Natera (NTRA) still #1 at 16.6%; biotech sleeve (INSM, Revolution, NewAmsterdam) deep. New STMicro (STM); semis via TSM, Seagate, SanDisk. EM/macro: Brazil (EWZ + calls), Argentina (YPF), Mexico (BBB Foods), Sea Ltd. Heavy call usage for leverage (RSP/IWM/SPY/EWZ/INSM/TSLA calls, in Other). ~25–30% gold remains off-13F. GOLD MARK-TO-MARKET: the position was deeply underwater at the filing date — gold fell 20–24% in Q2 (its worst quarter since 2013) from a Jan 28 record near $5,589 to ~$4,000 by Aug 1 — and is now the best-performing bet in the set: ~$4,680 today (GLD 427.33), ~+17% in August, its best month since January. Positions as of Jun 30.",
     holdings:[
       {name:"NTRA", shares:3186306, pct:16.6,value:0.86,sector:"Biotech",      action:"hold"},
       {name:"TSM",  shares:589680, pct:5.4, value:0.28,sector:"Semis",        action:"added"},
@@ -934,7 +934,7 @@ const CONSENSUS_ROWS = [
   {theme:"Energy / Airlines",           source:"13F",  vals:["●","◯","◯","◐","◯","●","◯"],note:"Berkshire CVX+OXY+DAL; Appaloosa Vistra+NRG+AAL+pipelines (power-demand); Druckenmiller YPF+United"},
   {theme:"Biotech / Healthcare",        source:"13F",  vals:["◐","◯","◯","●","◯","◯","◯"],note:"Druckenmiller deep (Natera #1, Insmed, Revolution, NewAmsterdam); Berkshire holds DaVita"},
   {theme:"Financials / Insurance",      source:"13F+mgr", vals:["●","●","◯","◯","◐","◯","●"],note:"Ackman NEW Visa+Mastercard+S&P Global on top of Brookfield (Q2 — a financial-infrastructure tilt); Tiger Corpay+Apollo+Visa; Berkshire + Fairfax core insurance float is operating, off-13F"},
-  {theme:"Cash / T-Bills",             source:"10-Q", asOf:"2026-03-31", vals:["●●","◯","◯","◯","◯","◯","◐"],note:"Berkshire ~$397B (Q1 10-Q, not 13F — Q2 10-Q pending); Fairfax float in T-bills/bonds (annual report)"},
+  {theme:"Cash / T-Bills",             source:"10-Q", asOf:"2026-06-30", vals:["●●","◯","◯","◯","◯","◯","◐"],note:"Berkshire $365.5B (Q2 10-Q, filed Aug 8 — not 13F), DOWN from $397B: first quarterly decline in ~4yr as Berkshire turned net buyer. Fairfax float in T-bills/bonds (annual report)"},
   {theme:"Macro Hedges / Tail Risk",    source:"Manager disclosure", asOf:"ongoing / 2025 AR", vals:["◯","◐","●","◐","◯","◐","●"],note:"Fairfax deflation/CPI hedges; Bridgewater risk-parity; Appaloosa initiated an AAPL PUT (new tail hedge); Druckenmiller heavy call usage"},
 ];
 // How each source tag renders: label + colour. 13F is the default equity vintage; the others are
@@ -951,7 +951,7 @@ const SOURCE_TAGS = {
 // how much of the real book the filing actually captures — so the long-only limit is structural, not
 // a footnote. Each note cites the disclosed figures the ratio is built from (no invented precision).
 const FUND_COVERAGE = {
-  berkshire:   { band: "Partial", note: "Shows the $299B equity book; the ~$397B cash (Q1 10-Q) is off-13F — the filing is ~43% of the equity+cash balance sheet." },
+  berkshire:   { band: "Partial", note: "Shows the ~$324B equity book; the $365.5B cash (Q2 10-Q, Aug 8) is off-13F — the filing is ~47% of the equity+cash balance sheet, and misses the Q2 net-buying + the $10B Alphabet private placement." },
   pershing:    { band: "Most",    note: "Concentrated long US equity — the 13F (filed via the public parent) captures nearly the whole book." },
   bridgewater: { band: "Partial", note: "$24.4B 13F of ~$92B total AUM (~27%); futures, FX and global-macro overlays are off-13F." },
   duquesne:    { band: "Partial", note: "$5.2B 13F, but ~25–30% gold and heavy index/single-name CALL leverage are off-13F — the filing understates both size and leverage." },
@@ -966,11 +966,24 @@ const COVERAGE_BAND = {
   None:    { col: "#991B1B", bg: "#FEF2F2", bdr: "#FECACA" },
 };
 
+// ── B4 — HEDGES per manager. The disclosed downside/tail protection (mostly off-13F), tracked so Q3
+// can be diffed for whether hedging SPREADS across the group. `flag:true` = an explicit equity hedge.
+const FUND_HEDGES = {
+  berkshire:   { text: "None — net long; the (now shrinking) $365.5B cash pile is the de-facto hedge." },
+  pershing:    { text: "None disclosed — long-only quality compounders." },
+  bridgewater: { text: "Risk-parity overlay + a gold sleeve (Newmont, Barrick) as the portfolio hedge; no single-name equity hedge on the 13F." },
+  duquesne:    { text: "Heavy index/single-name CALL usage (RSP/IWM/SPY/EWZ/INSM/TSLA) for leverage — not downside; ~25–30% gold off-13F is the macro hedge." },
+  tiger:       { text: "None — an unhedged growth/AI long (style: 90 growth, 20 defensiveness)." },
+  appaloosa:   { flag: true, text: "NEW AAPL PUT (~3.1%) — the ONLY explicit equity hedge in the set, run alongside its Micron top-2 long: long the thesis, hedged the multiple." },
+  fairfax:     { text: "CPI-linked derivatives + deflation / tail hedges (manager disclosure, off-13F) — the group's most hedge-forward book." },
+};
+
 // ── Improvement #3b — NOTABLE ABSENCES. Trades worth checking for; presence/absence is COMPUTED from
 // the actual holdings below, so it self-updates (if a manager buys TLT next quarter, it drops off).
 // The `why` is the one-line read on what the absence implies.
 const ABSENCE_WATCH = [
-  { label: "Long-duration Treasuries (TLT / ZROZ / IEF)", tickers: ["TLT", "ZROZ", "IEF"], why: "no one is positioned for a deflationary rate-collapse" },
+  { label: "Long-duration Treasuries (TLT / ZROZ / IEF)", tickers: ["TLT", "ZROZ", "IEF"], why: "no one is positioned for a deflationary rate-collapse",
+    note: "But the absence is a SUPPLY story, not a 'deflation is impossible' one: the 30Y hit a 19-year high in August and the Treasury DOUBLED its long-end buyback to $4bn/operation (Aug 19) — the long end is selling on issuance + term premium. Meanwhile the labour base has broken down (July payrolls −23k vs +83k expected; 12-mo avg +26k stall speed; May/June revised −103k; emp-pop 58.9%, 2nd decline). If the QCEW benchmark restates the base lower AND the issuer keeps supporting the long end, both objections to owning duration disappear at once — watch Q3 filings." },
   { label: "Index shorts / broad puts (SH / SQQQ / SPXU)", tickers: ["SH", "SQQQ", "SPXU", "PSQ"], why: "no outright bearish index bet — Appaloosa's AAPL put is the lone equity hedge" },
   { label: "Utilities / defensive REITs (XLU / VNQ)", tickers: ["XLU", "VNQ", "XLRE"], why: "no rate-sensitive defensive tilt" },
 ];
@@ -2065,7 +2078,7 @@ const FED_LANGUAGE_STATUS = {
 // C3 — market-implied odds of a HIKE at the September FOMC. The single cleanest forward Fed metric.
 // Sourced from CME FedWatch / the Kalshi Fed contracts (manual — no keyless feed). Moved from ~57%
 // on the July decision day to ~34% after the August −23k payroll print.
-const SEP_HIKE_ODDS = { value: 34, prior: 57, asOf: "2026-08-21", source: "CME FedWatch / Kalshi Fed contracts", note: "≈57% on the July decision day → ≈34% after the August −23k payroll print. Odds of NO change are the complement; a cut is not being priced." };
+const SEP_HIKE_ODDS = { value: 31, prior: 57, asOf: "2026-08-24", source: "CME FedWatch / Kalshi Fed contracts", note: "≈57% on the July decision day → ≈31% after three soft prints in a week (jobs, CPI, PPI); the consensus has moved from two 2026 hikes to one. Odds of NO change are the complement; a cut is not being priced." };
 const FED_LANGUAGE_STATES = {
   hawkish_hold: {
     label: "🔴 Hawkish Hold",
@@ -3023,6 +3036,11 @@ function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated 
         {FUND_COVERAGE[fund.id] && (
           <div style={{ marginTop: 8, fontSize: 12, color: C.muted, lineHeight: 1.55, borderTop: "1px solid " + C.bdr, paddingTop: 8 }}>
             <b style={{ color: C.mid }}>What the 13F can't see: </b>{FUND_COVERAGE[fund.id].note}
+          </div>
+        )}
+        {FUND_HEDGES[fund.id] && (
+          <div style={{ marginTop: 6, fontSize: 12, color: FUND_HEDGES[fund.id].flag ? C.amber : C.muted, lineHeight: 1.55 }}>
+            <b style={{ color: FUND_HEDGES[fund.id].flag ? C.amber : C.mid }}>{FUND_HEDGES[fund.id].flag ? "🛡️ Hedges: " : "Hedges: "}</b>{FUND_HEDGES[fund.id].text}
           </div>
         )}
       </Card>
@@ -6276,6 +6294,12 @@ export default function App() {
                 13F shows <b>long US-listed equity positions as of quarter-end</b> and arrives up to 45 days later (~6 weeks stale on arrival — the July memory crash, Iran de-escalation and yen intervention are all invisible here). Shorts, cash, bonds, options and foreign-listed securities are <b>not disclosed</b>; absence from a row may mean a position isn't reportable, not that it doesn't exist. The <b>Cash / T-Bills</b> and <b>Macro Hedges</b> rows come from 10-Q / manager disclosure, not 13F, and carry their own as-of. All 6 US 13F filers are in for Q2; <b>Pershing Square now files via its public parent Pershing Square Inc.</b> (Capital Management filed a 13F-NT notice) and <b>Fairfax</b> is not a US 13F filer — both flagged on their cards.
               </div>
             </div>
+            {/* B5 — Fed context the snapshot lacks. The book was set on Jun 30; the Fed path has moved
+                since, and the positioning reads differently against it. */}
+            <div style={{ padding: "8px 11px", background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 8, fontSize: 11.5, color: C.mid, lineHeight: 1.6 }}>
+              <b style={{ color: C.blue }}>Fed context since Jun 30: </b>
+              September hike odds <b>≈31%</b> (from ≈57% on the July decision day) after three soft prints in a week (jobs, CPI, PPI); consensus moved from two 2026 hikes to one. July FOMC was a <b>9–3 hold</b> with three regional presidents dissenting <i>for</i> a hike, and the Aug 19 minutes recorded "many participants" saw tightening as likely necessary — <b>more hawkish than the three dissents implied</b>. The book below was set before all of this.
+            </div>
             {/* Cross-Fund Positioning Matrix — rendered above the fund selector (Fix 3) */}
             <Card>
               <SLabel>Cross-Fund Positioning Matrix</SLabel>
@@ -6365,8 +6389,20 @@ export default function App() {
                       {absences.length ? absences.map(w => (
                         <div key={w.label} style={{ fontSize: 12, color: C.mid, marginTop: 3, lineHeight: 1.4 }}>
                           <b style={{ color: C.text }}>None hold</b> {w.label} — <span style={{ color: C.muted }}>{w.why}</span>
+                          {w.note && <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 2, lineHeight: 1.45, paddingLeft: 8, borderLeft: "2px solid " + C.bdr }}>{w.note}</div>}
                         </div>
                       )) : <div style={{ fontSize: 12, color: C.lbl }}>—</div>}
+                    </div>
+                  </div>
+                  {/* A2 + B2 — the crowded AI long: thesis STRENGTHENING while price DE-RATES. That
+                      divergence is the signal — a crowded long meeting an ordinary quarter, not a
+                      fundamentals problem. All figures post-date the Jun-30 snapshot. */}
+                  <div style={{ marginTop: 12, padding: "10px 13px", background: C.aBg, border: "1.5px solid " + C.aBdr, borderRadius: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: C.amber, marginBottom: 3 }}>⚠️ The consensus long (AI infra): thesis strengthening, price de-rating</div>
+                    <div style={{ fontSize: 11.5, color: C.mid, lineHeight: 1.6 }}>
+                      <b style={{ color: C.green }}>Fundamentals up post-filing:</b> Amazon 2026 capex raised to $220B (Jul 30 call), Alphabet to $205B, Meta twice; big-four 2026 ~$725B (+77% YoY), 2027 consensus $934.5B (JPM/Goldman &gt;$1T); Google Cloud backlog $460B (~2×).
+                      <br /><b style={{ color: C.red }}>Price down anyway:</b> AMD (Aug 4) record double-beat but −9% on in-line guidance; MU (Aug 18) −7%; SK Hynix / Samsung (Aug 19) −9.4% / −7.7%; SMH 546.03, −5.4% since Aug 19.
+                      <br /><span style={{ color: C.muted }}>That gap — improving fundamentals into a de-rating price — is a positioning problem, not a fundamentals one. It is precisely what a crowded long looks like meeting an ordinary quarter.</span>
                     </div>
                   </div>
                 </Card>
