@@ -734,27 +734,31 @@ const DEFAULT_FUNDS = [
   },
   {
     id:"pershing", name:"Pershing Square", manager:"Bill Ackman",
-    aum:"$13.7B", style:"Concentrated activist", color:"#6D28D9",
-    turnover:"Low–Med (18%)", signal:"TECH COMPOUNDERS", signalColor:"#1E40AF",
-    lastUpdated:"⚠ STILL Q1 2026 · Mar 31 — Q2 not yet filed (late filer)",
-    regimeBet:"AI-driven compounding",
+    aum:"$19.5B (Q2 13F, via Pershing Square Inc.)", style:"Concentrated activist", color:"#6D28D9",
+    turnover:"Medium", signal:"QUALITY COMPOUNDERS", signalColor:"#1E40AF",
+    lastUpdated:"Q2 2026 · as of Jun 30",
+    regimeBet:"Quality compounding / soft landing",
     regimeBetColor:"#6D28D9",
-    regimeBetSignal:"⚠ Q2 13F not yet on EDGAR as of the Aug 15 pull — this remains the Q1 (Mar 31) book. Q2 will be picked up in the Aug 21 re-pull. MSFT, AMZN, UBER — quality compounders, not crisis positioning.",
-    thesis:"Ultra-concentrated: 11 holdings, top 4 = 65% of book. Rotated out of GOOGL (-95%) into MSFT ($2.1B new position) after Feb selloff — bought at 21× fwd earnings arguing Azure + M365 AI optionality was underpriced. Brookfield #1 — bet on global real assets and alts AUM growth.",
+    regimeBetSignal:"Q2 book now filed via the public parent Pershing Square Inc. (Capital Management filed a 13F-NT notice). NEW Visa, Mastercard, S&P Global, Netflix — a tilt into payment networks and financial-data compounders. Uber now #1; Amazon trimmed. Not crisis positioning.",
+    thesis:"Q2: reporting consolidated under the public parent Pershing Square Inc. — Capital Management filed a 13F-NT notice pointing to the parent, whose filing now carries the whole $19.5B book. Diversified out of the ultra-concentrated 10-name Q1 book: NEW stakes in Visa, Mastercard, S&P Global and Netflix (payment networks + financial-data compounders) plus a Pershing Square USA Ltd position. Uber is now #1 (added), ahead of Brookfield (trimmed) and Microsoft (added); Amazon trimmed ~25%; the small Alphabet stub exited. Still quality compounders, not crisis positioning. Positions as of Jun 30.",
     holdings:[
-      {name:"BN",   pct:17.6,value:2.41,sector:"Alts/RE",      action:"trim"},
-      {name:"AMZN", pct:17.4,value:2.38,sector:"Tech",          action:"added"},
-      {name:"UBER", pct:15.7,value:2.15,sector:"Transport",     action:"trim"},
-      {name:"MSFT", pct:15.3,value:2.10,sector:"Tech",          action:"bought"},
-      {name:"QSR",  pct:12.2,value:1.67,sector:"Consumer",      action:"hold"},
-      {name:"HHH",  pct:6.5, value:0.89,sector:"Real Estate",   action:"hold"},
-      {name:"FNMA", pct:4.1, value:0.56,sector:"Govt/GSE",      action:"hold"},
-      {name:"Other",pct:11.2,value:1.54,sector:"Mix",           action:"hold"},
+      {name:"UBER", pct:12.7,value:2.48,sector:"Transport",     action:"added"},
+      {name:"BN",   pct:12.6,value:2.45,sector:"Alts/RE",       action:"trim"},
+      {name:"MSFT", pct:11.9,value:2.32,sector:"Tech",          action:"added"},
+      {name:"AMZN", pct:10.5,value:2.04,sector:"Tech",          action:"trim"},
+      {name:"HHH",  pct:10.2,value:1.99,sector:"Real Estate",   action:"hold"},
+      {name:"QSR",  pct:9.6, value:1.87,sector:"Consumer",      action:"added"},
+      {name:"META", pct:9.3, value:1.80,sector:"Tech",          action:"added"},
+      {name:"V",    pct:5.8, value:1.12,sector:"Payments",      action:"bought"},
+      {name:"MA",   pct:5.6, value:1.09,sector:"Payments",      action:"bought"},
+      {name:"SPGI", pct:5.4, value:1.06,sector:"Fin Data",      action:"bought"},
+      {name:"NFLX", pct:4.8, value:0.93,sector:"Tech/Media",    action:"bought"},
+      {name:"Other",pct:1.6, value:0.32,sector:"Mix (PSUS, Seaport, Hertz)", action:"hold"},
     ],
-    sectors:[{name:"Tech",pct:48},{name:"Consumer",pct:12},{name:"Alts/RE",pct:24},{name:"Govt/GSE",pct:4},{name:"Transport",pct:12}],
-    recentBuys:["MSFT ($2.1B new)","AMZN (added)"],
-    recentSells:["HLT (exit)","GOOGL (-95%)"],
-    radar:[{axis:"Value",score:60},{axis:"Growth",score:75},{axis:"Defensiveness",score:40},{axis:"AI Exposure",score:70},{axis:"International",score:20},{axis:"Income",score:30}],
+    sectors:[{name:"Tech",pct:35},{name:"Payments/Fin-Data",pct:17},{name:"Alts/RE",pct:23},{name:"Transport",pct:13},{name:"Consumer",pct:10},{name:"Other",pct:2}],
+    recentBuys:["Visa, Mastercard, S&P Global, Netflix (NEW compounders)","Uber (added — now #1)","Meta + QSR + MSFT (added)"],
+    recentSells:["Amazon (trimmed ~25%)","Alphabet (exited small stub)","Brookfield (trimmed)"],
+    radar:[{axis:"Value",score:62},{axis:"Growth",score:66},{axis:"Defensiveness",score:52},{axis:"AI Exposure",score:52},{axis:"International",score:22},{axis:"Income",score:32}],
   },
   {
     id:"bridgewater", name:"Bridgewater Associates", manager:"Karniol-Tambour / Prince / Jensen",
@@ -911,16 +915,16 @@ const DEFAULT_FUNDS = [
 // The 13F vintage every equity row shares until the next EDGAR refresh. A 13F describes holdings
 // AS OF quarter-end and lands up to 45 days later — so it is ~6 weeks stale the day it arrives, and
 // says nothing about what changed since. Both dates travel with the data so no row reads as current.
-// Q2 2026 vintage. 5 of 7 managers have filed (Berkshire, Bridgewater, Duquesne, Tiger, Appaloosa,
-// all as of Jun 30, filed by the Aug 14 deadline). Pershing Square had NOT filed Q2 as of the Aug 15
-// pull (still Q1 — flagged on its card, to be caught Aug 21). Fairfax is not a US 13F filer. Exact
-// per-filing EDGAR dates were not retrievable from the 13F data source, so `filed` states the month.
+// Q2 2026 vintage. All 6 US 13F filers are in (Berkshire, Pershing, Bridgewater, Duquesne, Tiger,
+// Appaloosa, all as of Jun 30, filed by the Aug 14 deadline). Pershing's Q2 book is now filed via its
+// public parent Pershing Square Inc. (CIK 0002026053) — Capital Management filed a 13F-NT notice.
+// Fairfax is not a US 13F filer. No 13F-HR/A amendments have been filed since the Aug 15 Pass-1 pull.
 const MATRIX_13F = { positionsAsOf: "2026-06-30", filed: "Aug 2026 (by Aug 14 deadline)", label: "Q2 2026" };
 // Per-row provenance. `source` is the ACTUAL disclosure the row is built from — not everything here
 // is 13F. 13F covers LONG US-LISTED EQUITY only; cash, bonds, shorts, options and foreign listings
 // are invisible to it, so those rows are tagged to their real source (10-Q / manager disclosure)
 // and carry their own as-of, independent of the 13F cycle.
-// Columns: [Berkshire, Pershing(still Q1), Bridgewater, Duquesne, Tiger, Appaloosa, Fairfax(non-13F)].
+// Columns: [Berkshire, Pershing(Q2), Bridgewater, Duquesne, Tiger, Appaloosa, Fairfax(non-13F)].
 const CONSENSUS_ROWS = [
   {theme:"AI Chips / Semis",            source:"13F",  vals:["◯","◯","●","●","●","●","◯"],note:"4/7 heavily long — crowding INTENSIFIED in Q2: Micron top-2 at Appaloosa, NEW Cerebras + Intel re-entry at Tiger, Lam/AMAT added at Tiger+Bridgewater. Berkshire/Pershing hold NO chips (Alphabet is a hyperscaler, not a chip)."},
   {theme:"Hyperscalers (AMZN/GOOG/MSFT)",source:"13F", vals:["●","●","●","◐","●","●","◯"],note:"Berkshire built Alphabet to ~12.6% (GOOGL added + new GOOG Class C, top-4); Druckenmiller RE-ENTERED AMZN+GOOGL after exiting in Q1"},
@@ -929,7 +933,7 @@ const CONSENSUS_ROWS = [
   {theme:"Gold / Commodities",          source:"13F+mgr", vals:["◐","◯","◐","●","◯","◐","◐"],note:"Druckenmiller ~25–30% gold off-13F; Bridgewater Newmont+Barrick; Appaloosa power/energy (Vistra/NRG/pipelines); Fairfax commodity-linked"},
   {theme:"Energy / Airlines",           source:"13F",  vals:["●","◯","◯","◐","◯","●","◯"],note:"Berkshire CVX+OXY+DAL; Appaloosa Vistra+NRG+AAL+pipelines (power-demand); Druckenmiller YPF+United"},
   {theme:"Biotech / Healthcare",        source:"13F",  vals:["◐","◯","◯","●","◯","◯","◯"],note:"Druckenmiller deep (Natera #1, Insmed, Revolution, NewAmsterdam); Berkshire holds DaVita"},
-  {theme:"Financials / Insurance",      source:"13F+mgr", vals:["●","◐","◯","◯","◐","◯","●"],note:"Ackman Brookfield (Q1), Tiger Corpay+Apollo+Visa (13F); Berkshire + Fairfax core insurance float is operating, off-13F"},
+  {theme:"Financials / Insurance",      source:"13F+mgr", vals:["●","●","◯","◯","◐","◯","●"],note:"Ackman NEW Visa+Mastercard+S&P Global on top of Brookfield (Q2 — a financial-infrastructure tilt); Tiger Corpay+Apollo+Visa; Berkshire + Fairfax core insurance float is operating, off-13F"},
   {theme:"Cash / T-Bills",             source:"10-Q", asOf:"2026-03-31", vals:["●●","◯","◯","◯","◯","◯","◐"],note:"Berkshire ~$397B (Q1 10-Q, not 13F — Q2 10-Q pending); Fairfax float in T-bills/bonds (annual report)"},
   {theme:"Macro Hedges / Tail Risk",    source:"Manager disclosure", asOf:"ongoing / 2025 AR", vals:["◯","◐","●","◐","◯","◐","●"],note:"Fairfax deflation/CPI hedges; Bridgewater risk-parity; Appaloosa initiated an AAPL PUT (new tail hedge); Druckenmiller heavy call usage"},
 ];
@@ -2999,7 +3003,7 @@ function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated 
 
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-          <SLabel>Top Holdings — {fund.id === "fairfax" ? "Annual Report 2025" : fund.id === "pershing" ? "Q1 2026 (Q2 not yet filed)" : "Q2 2026 · as of Jun 30"}</SLabel>
+          <SLabel>Top Holdings — {fund.id === "fairfax" ? "Annual Report 2025" : "Q2 2026 · as of Jun 30"}</SLabel>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {pricesUpdated && <span style={{ color: C.lbl, fontSize: 12 }}>{fmtTime(pricesUpdated)}</span>}
             <Btn onClick={() => onFetchPrices(tickers)} disabled={pricesLoading} color="#fff" bgColor={C.green} label={pricesLoading ? "Loading…" : "🔄 Prices"} />
@@ -6188,7 +6192,7 @@ export default function App() {
             <div style={{ background: C.aBg, border: "1.5px solid " + C.aBdr, borderRadius: 12, padding: "11px 15px", color: C.amber, fontSize: 13.5, lineHeight: 1.6 }}>
               <div style={{ fontWeight: 800, marginBottom: 3 }}>⚠️ This is {MATRIX_13F.label} data — positions as of {MATRIX_13F.positionsAsOf}, filed {MATRIX_13F.filed}. Label it as of quarter-end, not current.</div>
               <div style={{ fontWeight: 500 }}>
-                13F shows <b>long US-listed equity positions as of quarter-end</b> and arrives up to 45 days later (~6 weeks stale on arrival — the July memory crash, Iran de-escalation and yen intervention are all invisible here). Shorts, cash, bonds, options and foreign-listed securities are <b>not disclosed</b>; absence from a row may mean a position isn't reportable, not that it doesn't exist. The <b>Cash / T-Bills</b> and <b>Macro Hedges</b> rows come from 10-Q / manager disclosure, not 13F, and carry their own as-of. Q2 filings are in for 5 of 7 managers; <b>Pershing Square had not filed as of Aug 15</b> (still Q1) and <b>Fairfax</b> is not a US 13F filer — both flagged on their cards.
+                13F shows <b>long US-listed equity positions as of quarter-end</b> and arrives up to 45 days later (~6 weeks stale on arrival — the July memory crash, Iran de-escalation and yen intervention are all invisible here). Shorts, cash, bonds, options and foreign-listed securities are <b>not disclosed</b>; absence from a row may mean a position isn't reportable, not that it doesn't exist. The <b>Cash / T-Bills</b> and <b>Macro Hedges</b> rows come from 10-Q / manager disclosure, not 13F, and carry their own as-of. All 6 US 13F filers are in for Q2; <b>Pershing Square now files via its public parent Pershing Square Inc.</b> (Capital Management filed a 13F-NT notice) and <b>Fairfax</b> is not a US 13F filer — both flagged on their cards.
               </div>
             </div>
             {/* Cross-Fund Positioning Matrix — rendered above the fund selector (Fix 3) */}
@@ -6291,7 +6295,7 @@ export default function App() {
               </div>
               <div style={{ marginTop: 12, padding: "12px 14px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8 }}>
                 <span style={{ color: C.amber, fontWeight: 700, fontSize: 13 }}>⚠️ The Q2 signal (as of Jun 30): </span>
-                <span style={{ color: C.amber, fontSize: 14 }}>The AI-chip long got MORE crowded, not less — Micron became Appaloosa's #2, Tiger added a new Cerebras stake and re-entered Intel, and semis moved to the top of Tiger's book. But hedges are appearing at the edges: Tepper initiated an AAPL put and cut BABA. Berkshire built Alphabet to a top-4 position (its most AI-adjacent bet) while holding ~$397B cash. Druckenmiller re-entered the mega-caps he'd exited. Positions as of Jun 30 — not current.</span>
+                <span style={{ color: C.amber, fontSize: 14 }}>The AI-chip long got MORE crowded, not less — Micron became Appaloosa's #2, Tiger added a new Cerebras stake and re-entered Intel, and semis moved to the top of Tiger's book. But hedges are appearing at the edges: Tepper initiated an AAPL put and cut BABA. Berkshire built Alphabet to a top-4 position (its most AI-adjacent bet) while holding ~$397B cash. Druckenmiller re-entered the mega-caps he'd exited. Ackman (now filing via the public parent Pershing Square Inc.) added Visa, Mastercard, S&P Global and Netflix — a shift toward quality compounders. Positions as of Jun 30 — not current.</span>
               </div>
             </Card>
 
@@ -7313,7 +7317,7 @@ export default function App() {
 
         {/* FOOTER */}
         <div style={{ color: C.lbl, fontSize: 12, textAlign: "center", marginTop: 20, paddingTop: 14, borderTop: "1px solid " + C.bdr }}>
-          Data: SEC 13F (Q2 2026 · positions as of Jun 30, filed by Aug 14 · via FMP/sec_13f) — Pershing still Q1 (late filer), Fairfax non-13F · FRED / ICE BofA / US Treasury · Berkshire cash $397B is the Q1 10-Q (Q2 pending).<br />
+          Data: SEC 13F (Q2 2026 · positions as of Jun 30, filed by Aug 14 · via FMP/sec_13f; Pershing pulled direct from EDGAR) — Pershing now files via public parent Pershing Square Inc., Fairfax non-13F · FRED / ICE BofA / US Treasury · Berkshire cash $397B is the Q1 10-Q (Q2 pending).<br />
           Editable fund data auto-saves to browser storage · Global family portfolio (UAE/HK/Canada) — consult local tax advisors for withholding treatment · Not investment advice.
         </div>
       </div>
