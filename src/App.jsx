@@ -6856,7 +6856,7 @@ export default function App() {
                         ))}
                       </div>
                       <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 5, lineHeight: 1.55 }}>
-                        Fund yields are <b>trailing 12-month</b>, computed from actual distributions (not an SEC 30-day yield);
+                        Fund yields are the <b>30-day SEC yield</b> (USFR as of {SEC_YIELDS.USFR.asOf}, SGOV {SEC_YIELDS.SGOV.asOf}) — forward and comparable, not the backward-looking TTM distribution figure;
                         the {cashYield?.src ?? "bill"} figure is the spot rate. Where a CPI line sits <i>above</i> the band, cash is losing to inflation.
                         {" · "}{chartData.length} monthly observations, {chartData[0]?.date} → {chartData[chartData.length - 1]?.date}.
                       </div>
