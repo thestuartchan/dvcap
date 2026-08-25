@@ -13,6 +13,7 @@ import { deriveRegimeProbabilities, CONTESTED_GAP } from "../lib/regimeProb.js";
 import { minersPairImplication } from "../lib/regimeState.js";
 import { southboundTrend, southboundLevelTrend, southboundRead, ahPremiumRead, sbStale } from "../lib/southbound.js";
 import { STATUS, creditStatus, deriveAction, headerSignal, STAGES } from "../lib/status.js";
+import { REGIME_SIZING, rMultiple, positionSize, regimeMultiplier, suggestedSize, distanceToLevels, triggeredLevels, tradeSide, DEFAULT_BASE_RISK_PCT } from "../lib/console.js";
 import { observationAge } from "../lib/gates.js";
 import { trend as trendOf } from "../lib/series.js";
 
@@ -4998,6 +4999,411 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
   );
 }
 
+// ─── TRADE CONSOLE (Tier 3) ─────────────────────────────────────────────────
+// The regime-aware trade console: a watchlist of the instruments YOU trade, each with your
+// levels, auto R:R and regime-scaled sizing, tagged with how it sits vs the live regime and the
+// insurance book, plus a journal that stamps the regime at entry. No execution, no fabricated
+// data — prices come from /api/prices, levels are hand-entered, sizing is arithmetic (lib/console.js).
+
+// Insurance-book tickers, for the "insurance overlap" tag (ASSETS is the insurance universe).
+const INSURANCE_TICKERS = (() => {
+  const m = {};
+  for (const a of ASSETS) for (const t of (a.tickers || [])) if (t?.t) m[t.t.toUpperCase()] = a.name;
+  return m;
+})();
+const reEsc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// How a symbol sits vs the live regime: its tickers appear in the regime's best/worst asset lists.
+function regimeFitFor(sym, regime) {
+  if (!sym || !regime) return { fit: "neutral", where: null };
+  const re = new RegExp(`\\b${reEsc(sym.toUpperCase())}\\b`, "i");
+  const hitBest = (regime.best || []).find(x => re.test(x));
+  if (hitBest) return { fit: "tailwind", where: hitBest };
+  const hitWorst = (regime.worst || []).find(x => re.test(x));
+  if (hitWorst) return { fit: "headwind", where: hitWorst };
+  return { fit: "neutral", where: null };
+}
+
+function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contested, regimeDiverged, prices, fetchPrices, pricesLoading }) {
+  const LS = "dvcap_console_v1";
+  const [wl, setWl]             = useState([]);
+  const [journal, setJournal]   = useState([]);
+  const [settings, setSettings] = useState({ equity: null, baseRiskPct: DEFAULT_BASE_RISK_PCT, alertsEnabled: false, sizing: {} });
+  const [loaded, setLoaded]     = useState(false);
+  const [dirty, setDirty]       = useState(false);
+  const [saving, setSaving]     = useState(false);
+  const [saveMsg, setSaveMsg]   = useState(null);
+  const [expanded, setExpanded] = useState(null);
+  const [addSym, setAddSym]     = useState("");
+  const [jForm, setJForm]       = useState(null);   // open journal form (prefilled from a row or blank)
+  const notifiedRef = useMemo(() => ({ current: new Set() }), []);   // dedupe browser notifications
+
+  // Load: localStorage for instant paint, then the server store (authoritative if present).
+  useEffect(() => {
+    try {
+      const c = JSON.parse(localStorage.getItem(LS) || "null");
+      if (c) { setWl(c.watchlist || []); setJournal(c.journal || []); setSettings(s => ({ ...s, ...(c.settings || {}) })); }
+    } catch { /* no cache */ }
+    fetch("/api/manual-entry").then(r => r.json()).then(j => {
+      const c = j?.console;
+      if (c && typeof c === "object") {
+        if (Array.isArray(c.watchlist)) setWl(c.watchlist);
+        if (Array.isArray(c.journal))   setJournal(c.journal);
+        if (c.settings) setSettings(s => ({ ...s, ...c.settings }));
+      }
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+  }, []);
+
+  // Mirror every change to localStorage (per-device durability, instant).
+  useEffect(() => {
+    if (!loaded) return;
+    try { localStorage.setItem(LS, JSON.stringify({ watchlist: wl, journal, settings })); } catch { /* quota */ }
+  }, [wl, journal, settings, loaded]);
+
+  // Live quotes for the watchlist symbols.
+  const wlSymbols = useMemo(() => [...new Set(wl.map(w => w.symbol).filter(Boolean))], [wl]);
+  const wlSymKey = wlSymbols.join(",");
+  useEffect(() => { if (wlSymbols.length) fetchPrices(wlSymbols); }, [wlSymKey]);   // eslint-disable-line
+
+  // Sizing table = defaults overlaid with the user's per-regime multiplier overrides.
+  const mergedSizing = useMemo(() => {
+    const out = {};
+    for (const k of Object.keys(REGIME_SIZING)) {
+      const ov = settings?.sizing?.[k];
+      out[k] = ov != null ? { ...REGIME_SIZING[k], mult: +ov } : REGIME_SIZING[k];
+    }
+    return out;
+  }, [settings?.sizing]);
+  const regimeCtx = { regimeId: liveRegime?.id, creditDanger, contested, pinnedDiverged: regimeDiverged, sizing: mergedSizing };
+  const rm = regimeMultiplier(regimeCtx);
+  // Inputs are kept as raw strings while typing (so decimals aren't mangled by number coercion);
+  // coerce to numbers only where the math needs them.
+  const numOrNull = (v) => (v == null || v === "" || !Number.isFinite(+v)) ? null : +v;
+  const equityNum = numOrNull(settings.equity);
+  const baseRiskNum = numOrNull(settings.baseRiskPct) ?? DEFAULT_BASE_RISK_PCT;
+
+  // Mutations (each marks dirty so the cloud-save button lights up).
+  const touch = () => setDirty(true);
+  const addSymbol = () => {
+    const sym = addSym.trim().toUpperCase();
+    if (!sym) return;
+    const id = `${sym}-${Math.random().toString(36).slice(2, 8)}`;
+    setWl(prev => [...prev, { id, symbol: sym, side: null, entry: null, stop: null, targets: [], riskPct: null, status: "idea", note: "", addedAt: new Date().toISOString() }]);
+    setAddSym(""); setExpanded(id); touch();
+  };
+  const updateItem = (id, patch) => { setWl(prev => prev.map(w => w.id === id ? { ...w, ...patch } : w)); touch(); };
+  const removeItem = (id) => { setWl(prev => prev.filter(w => w.id !== id)); touch(); };
+
+  const saveCloud = async () => {
+    setSaving(true); setSaveMsg(null);
+    try {
+      const r = await fetch("/api/manual-entry", {
+        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+        body: JSON.stringify({ console: { watchlist: wl, journal, settings } }),
+      });
+      if (r.ok) { setDirty(false); setSaveMsg("Saved to cloud ✓"); }
+      else if (r.status === 401) setSaveMsg("Log in to the dashboard to sync to cloud (saved locally).");
+      else setSaveMsg(`Cloud save failed (${r.status}) — kept locally.`);
+    } catch (e) { setSaveMsg("Cloud save failed — kept locally."); }
+    setSaving(false);
+    setTimeout(() => setSaveMsg(null), 6000);
+  };
+
+  // Journal helpers.
+  const openJournalFor = (w) => setJForm({
+    id: null, symbol: w?.symbol || "", side: w?.side || (w?.entry != null && w?.stop != null ? tradeSide(w.entry, w.stop) : null),
+    thesis: w?.note || "", entryPrice: w?.entry ?? "", exitPrice: "", stop: w?.stop ?? "", shares: "", dateIn: new Date().toISOString().slice(0, 10), dateOut: "", notes: "",
+  });
+  const saveJournal = () => {
+    const f = jForm; if (!f || !f.symbol) return;
+    const e = +f.entryPrice, x = +f.exitPrice, s = +f.stop;
+    const side = f.side || tradeSide(e, s);
+    let realizedR = null;
+    if (Number.isFinite(e) && Number.isFinite(x) && Number.isFinite(s) && Math.abs(e - s) > 0) {
+      realizedR = +(((side === "short" ? (e - x) : (x - e)) / Math.abs(e - s))).toFixed(2);
+    }
+    const row = {
+      id: `${f.symbol.toUpperCase()}-${Math.random().toString(36).slice(2, 8)}`,
+      symbol: f.symbol.toUpperCase(), side: side || null, thesis: f.thesis || null,
+      entryPrice: Number.isFinite(e) ? e : null, exitPrice: Number.isFinite(x) ? x : null,
+      shares: Number.isFinite(+f.shares) ? +f.shares : null, realizedR,
+      regimeAtEntry: liveRegime ? `${liveRegime.label} ${regimeProbFor(liveRegime.id)}%` : null,
+      dateIn: f.dateIn || null, dateOut: f.dateOut || null, notes: f.notes || null,
+    };
+    setJournal(prev => [row, ...prev]); setJForm(null); touch();
+  };
+  const removeJournal = (id) => { setJournal(prev => prev.filter(j => j.id !== id)); touch(); };
+
+  // Poll-cadence level alerts: which rows have hit a level at the current price.
+  const triggered = useMemo(() => {
+    const out = [];
+    for (const w of wl) {
+      const p = prices?.[w.symbol]?.price;
+      if (p == null) continue;
+      const hits = triggeredLevels({ price: p, entry: w.entry, stop: w.stop, targets: w.targets });
+      if (hits.length) out.push({ w, price: p, hits });
+    }
+    return out;
+  }, [wl, prices]);
+
+  // Optional browser notification for newly-triggered levels (permission-gated, de-duped).
+  useEffect(() => {
+    if (!settings.alertsEnabled || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    for (const t of triggered) for (const h of t.hits) {
+      const key = `${t.w.id}:${h.level}:${h.price}`;
+      if (notifiedRef.current.has(key)) continue;
+      notifiedRef.current.add(key);
+      try { new Notification(`${t.w.symbol} hit ${h.kind}`, { body: `${h.kind} @ ${h.price} · live ${t.price}` }); } catch { /* ignore */ }
+    }
+  }, [triggered, settings.alertsEnabled]);
+
+  const enableAlerts = async () => {
+    if (typeof Notification !== "undefined" && Notification.permission !== "granted") {
+      try { await Notification.requestPermission(); } catch { /* ignore */ }
+    }
+    setSettings(s => ({ ...s, alertsEnabled: !s.alertsEnabled })); touch();
+  };
+
+  // ── small presentational helpers ──
+  const chip = (txt, col, bg, bd) => (
+    <span style={{ background: bg, color: col, border: "1px solid " + bd, borderRadius: 6, padding: "1px 7px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>{txt}</span>
+  );
+  const fitChip = (fit) => fit === "tailwind" ? chip("regime tailwind", C.green, "#F0FDF4", "#BBF7D0")
+    : fit === "headwind" ? chip("fights regime", C.red, "#FEF2F2", "#FECACA")
+    : chip("regime-neutral", C.muted, C.bg, C.bdr);
+  const numInput = (val, onChange, ph, w = 92) => (
+    <input value={val ?? ""} onChange={e => onChange(e.target.value)} placeholder={ph} inputMode="decimal"
+      style={{ width: w, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} />
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* purpose + regime context */}
+      <div style={{ background: liveRegime?.bg || C.surf, border: "1.5px solid " + (liveRegime?.bdr || C.bdr), borderTop: "4px solid " + (liveRegime?.color || C.blue), borderRadius: 12, padding: "12px 16px" }}>
+        <div style={{ fontSize: 13.5, color: C.mid, lineHeight: 1.5 }}>
+          <b style={{ color: C.text }}>Your trade console.</b> A watchlist with your levels, regime-scaled sizing and a journal — read against the live regime.
+          <span style={{ color: C.muted }}> Prices are from the same feed as the rest of the dashboard (poll-cadence, not streaming); nothing here places orders.</span>
+        </div>
+        <div style={{ marginTop: 8, display: "flex", gap: "6px 14px", flexWrap: "wrap", alignItems: "baseline", fontSize: 13 }}>
+          <span style={{ color: C.lbl, fontWeight: 700 }}>Live regime:</span>
+          <b style={{ color: liveRegime?.color }}>{liveRegime?.label} {regimeProbFor(liveRegime?.id)}%</b>
+          <span style={{ color: C.bdr }}>·</span>
+          <span style={{ color: C.lbl, fontWeight: 700 }}>size ×</span>
+          <b style={{ color: C.text }}>{rm.mult.toFixed(2)}</b>
+          <span style={{ color: C.muted, fontSize: 12 }}>({rm.reasons[rm.reasons.length - 1]})</span>
+          {contested && chip("⚖ CONTESTED", C.amber, C.aBg || "#FFFBEB", C.aBdr || "#FDE68A")}
+          {regimeDiverged && chip("📌 PINNED≠LIVE", C.amber, C.aBg || "#FFFBEB", C.aBdr || "#FDE68A")}
+        </div>
+      </div>
+
+      {/* triggered-levels strip */}
+      {triggered.length > 0 && (
+        <div style={{ background: "#FFF7ED", border: "1.5px solid #FED7AA", borderRadius: 12, padding: "10px 14px" }}>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: "#B45309", marginBottom: 6 }}>⚡ Levels hit (at last poll)</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {triggered.map(t => t.hits.map(h => (
+              <span key={t.w.id + h.level} style={{ background: C.surf, border: "1.5px solid #FED7AA", borderRadius: 8, padding: "3px 9px", fontSize: 12.5, fontWeight: 700, color: C.text }}>
+                <b>{t.w.symbol}</b> {h.kind === "stop" ? "🛑 stop" : h.kind === "target" ? "🎯 " + h.level : "⊙ entry"} @ {h.price} · live {t.price}
+              </span>
+            )))}
+          </div>
+        </div>
+      )}
+
+      {/* settings */}
+      <Card>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+          <SLabel>Console settings</SLabel>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {saveMsg && <span style={{ fontSize: 12, color: C.mid }}>{saveMsg}</span>}
+            <Btn onClick={() => fetchPrices(wlSymbols)} disabled={pricesLoading || !wlSymbols.length} color={C.mid} bgColor={C.bg} label={pricesLoading ? "…" : "🔄 Prices"} />
+            <Btn onClick={saveCloud} disabled={saving} color="#fff" bgColor={dirty ? C.blue : C.bdrMd} label={saving ? "Saving…" : dirty ? "☁ Save to cloud" : "☁ Synced"} />
+          </div>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
+          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Account equity ($)<br />{numInput(settings.equity, v => { setSettings(s => ({ ...s, equity: v === "" ? null : v })); touch(); }, "e.g. 100000", 120)}</label>
+          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Base risk / trade (%)<br />{numInput(settings.baseRiskPct, v => { setSettings(s => ({ ...s, baseRiskPct: v === "" ? null : v })); touch(); }, "1.0", 80)}</label>
+          <button onClick={enableAlerts} style={{ cursor: "pointer", background: settings.alertsEnabled ? C.green : C.surf, color: settings.alertsEnabled ? "#fff" : C.mid, border: "1.5px solid " + (settings.alertsEnabled ? C.green : C.bdr), borderRadius: 8, padding: "7px 12px", fontSize: 12.5, fontWeight: 800 }}>
+            {settings.alertsEnabled ? "🔔 Alerts on" : "🔕 Alerts off"}
+          </button>
+        </div>
+        {/* editable regime multipliers */}
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Regime sizing multipliers (× on base risk)</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+            {Object.keys(REGIME_SIZING).map(k => {
+              const cur = settings?.sizing?.[k] ?? REGIME_SIZING[k].mult;
+              const isLive = liveRegime?.id === k;
+              return (
+                <label key={k} style={{ fontSize: 12, color: isLive ? C.text : C.lbl, fontWeight: isLive ? 800 : 600, border: "1.5px solid " + (isLive ? (liveRegime?.color || C.blue) : C.bdr), borderRadius: 8, padding: "5px 9px", background: isLive ? (liveRegime?.bg || C.surf) : C.surf }}>
+                  {REGIME_SIZING[k].label}{isLive ? " ● live" : ""}<br />
+                  {numInput(cur, v => { setSettings(s => ({ ...s, sizing: { ...(s.sizing || {}), [k]: v === "" ? null : v } })); touch(); }, String(REGIME_SIZING[k].mult), 64)}
+                </label>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Credit-DANGER caps the multiplier at {CREDIT_DANGER_CAP_LABEL}; a contested or pinned≠live regime applies an extra ×0.7 haircut. Suggestions only — you size the trade.</div>
+        </div>
+      </Card>
+
+      {/* add symbol */}
+      <Card>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <SLabel>Watchlist</SLabel>
+          <span style={{ color: C.muted, fontSize: 12 }}>{wl.length} instrument{wl.length === 1 ? "" : "s"}</span>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            <input value={addSym} onChange={e => setAddSym(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addSymbol(); }} placeholder="Add ticker (e.g. NVDA)"
+              style={{ width: 170, padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 13, background: C.surf, color: C.text, textTransform: "uppercase" }} />
+            <Btn onClick={addSymbol} color="#fff" bgColor={C.blue} label="+ Add" />
+          </div>
+        </div>
+
+        {wl.length === 0 ? (
+          <div style={{ color: C.muted, fontSize: 13, marginTop: 12, fontStyle: "italic" }}>No instruments yet. Add the tickers you actually trade — each row gets levels, R:R, regime-scaled sizing and a regime-fit read.</div>
+        ) : (
+          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+            {wl.map(w => {
+              const q = prices?.[w.symbol];
+              const price = q?.price ?? null;
+              const chg = q?.changePercent ?? null;
+              const fit = regimeFitFor(w.symbol, liveRegime);
+              const ins = INSURANCE_TICKERS[w.symbol];
+              const rr = rMultiple({ entry: w.entry, stop: w.stop, target: w.targets?.[0] });
+              const dist = price != null ? distanceToLevels({ price, entry: w.entry, stop: w.stop, targets: w.targets }) : null;
+              const open = expanded === w.id;
+              const sug = suggestedSize({ equity: equityNum, baseRiskPct: baseRiskNum, regime: regimeCtx, entry: w.entry, stop: w.stop, sizing: mergedSizing });
+              const own = w.riskPct != null && w.riskPct !== "" ? positionSize({ equity: equityNum, riskPct: w.riskPct, entry: w.entry, stop: w.stop }) : null;
+              return (
+                <div key={w.id} style={{ border: "1.5px solid " + C.bdr, borderRadius: 10, overflow: "hidden" }}>
+                  {/* row header */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", flexWrap: "wrap", background: open ? C.bg : C.surf, cursor: "pointer" }} onClick={() => setExpanded(open ? null : w.id)}>
+                    <b style={{ fontSize: 15, color: C.text, minWidth: 62 }}>{w.symbol}</b>
+                    <span style={{ fontSize: 14, color: C.text, fontWeight: 700, minWidth: 66 }}>{price != null ? price.toFixed(2) : "—"}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 800, color: chg == null ? C.muted : chg >= 0 ? C.green : C.red, minWidth: 56 }}>{chg == null ? "" : (chg >= 0 ? "+" : "") + chg.toFixed(2) + "%"}</span>
+                    {fitChip(fit.fit)}
+                    {ins && chip("🛡 insurance: " + ins, "#B45309", "#FFFBEB", "#FDE68A")}
+                    {rr.rr != null && chip(`R:R ${rr.rr}`, rr.rr >= 2 ? C.green : rr.rr >= 1 ? C.amber : C.red, C.bg, C.bdr)}
+                    {chip(w.status, C.mid, C.bg, C.bdr)}
+                    <span style={{ marginLeft: "auto", color: C.lbl, fontSize: 12 }}>{open ? "▲" : "▼ setup"}</span>
+                  </div>
+
+                  {/* expanded setup */}
+                  {open && (
+                    <div style={{ padding: "12px", borderTop: "1px solid " + C.bdr, background: C.surf }} onClick={e => e.stopPropagation()}>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-end" }}>
+                        <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Entry<br />{numInput(w.entry, v => updateItem(w.id, { entry: v === "" ? null : v }), "")}</label>
+                        <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Stop<br />{numInput(w.stop, v => updateItem(w.id, { stop: v === "" ? null : v }), "")}</label>
+                        <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Targets (comma)<br />
+                          <input defaultValue={(w.targets || []).join(", ")} onBlur={e => updateItem(w.id, { targets: e.target.value.split(",").map(x => +x.trim()).filter(x => Number.isFinite(x)).slice(0, 4) })} placeholder="e.g. 200, 220"
+                            style={{ width: 130, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} />
+                        </label>
+                        <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Your risk %<br />{numInput(w.riskPct, v => updateItem(w.id, { riskPct: v === "" ? null : v }), String(baseRiskNum), 70)}</label>
+                        <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Status<br />
+                          <select value={w.status} onChange={e => updateItem(w.id, { status: e.target.value })} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
+                            {["idea", "armed", "in-trade", "closed"].map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </label>
+                      </div>
+
+                      {/* computed R:R + sizing */}
+                      <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 10 }}>
+                        <div style={{ flex: "1 1 240px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 9, padding: "10px 12px" }}>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Risk / reward</div>
+                          {rr.side ? (
+                            <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.7 }}>
+                              Side <b style={{ color: C.text }}>{rr.side}</b> · R <b style={{ color: C.text }}>{rr.riskPerShare ?? "—"}</b>/sh · reward <b style={{ color: C.text }}>{rr.rewardPerShare ?? "—"}</b>/sh · <b style={{ color: rr.rr >= 2 ? C.green : rr.rr >= 1 ? C.amber : C.red }}>{rr.rr ?? "—"}R</b>
+                              {dist && <div style={{ color: C.muted, marginTop: 3 }}>to stop {dist.stop.pct ?? "—"}% · to T1 {dist.targets?.[0]?.pct ?? "—"}%</div>}
+                            </div>
+                          ) : <div style={{ fontSize: 12.5, color: C.muted, fontStyle: "italic" }}>Enter entry + stop to compute R:R.</div>}
+                        </div>
+                        <div style={{ flex: "1 1 240px", background: liveRegime?.bg || C.bg, border: "1px solid " + (liveRegime?.bdr || C.bdr), borderRadius: 9, padding: "10px 12px" }}>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Regime-scaled size</div>
+                          {sug?.size ? (
+                            <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.7 }}>
+                              Suggested <b style={{ color: C.text }}>{sug.size.shares}</b> sh (${sug.size.notional.toLocaleString()} · {sug.size.notionalPct}% of book) at <b style={{ color: liveRegime?.color }}>{sug.effRiskPct}%</b> risk (base {baseRiskNum}% × {sug.mult})
+                              {own && <div style={{ color: C.muted, marginTop: 3 }}>your {w.riskPct}% → {own.shares} sh (${own.notional.toLocaleString()})</div>}
+                            </div>
+                          ) : <div style={{ fontSize: 12.5, color: C.muted, fontStyle: "italic" }}>Set account equity + entry + stop for a size.</div>}
+                        </div>
+                      </div>
+
+                      {fit.where && <div style={{ marginTop: 8, fontSize: 12, color: C.mid }}><b style={{ color: fit.fit === "tailwind" ? C.green : C.red }}>{fit.fit === "tailwind" ? "Regime tailwind" : "Fights the regime"}:</b> {liveRegime?.label} {fit.fit === "tailwind" ? "favours" : "disfavours"} “{fit.where}”.</div>}
+
+                      <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <input value={w.note ?? ""} onChange={e => updateItem(w.id, { note: e.target.value })} placeholder="thesis / note"
+                          style={{ flex: "1 1 260px", padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 12.5, background: C.surf, color: C.text }} />
+                        <Btn onClick={() => openJournalFor(w)} color="#fff" bgColor={C.green} label="📓 Log trade" />
+                        <Btn onClick={() => removeItem(w.id)} color={C.red} bgColor={C.surf} label="✕ Remove" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      {/* journal form */}
+      {jForm && (
+        <Card>
+          <SLabel>Log a trade — {jForm.symbol || "?"}</SLabel>
+          <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Symbol<br />
+              <input value={jForm.symbol} onChange={e => setJForm(f => ({ ...f, symbol: e.target.value.toUpperCase() }))} style={{ width: 90, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Side<br />
+              <select value={jForm.side || ""} onChange={e => setJForm(f => ({ ...f, side: e.target.value || null }))} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
+                <option value="">—</option><option value="long">long</option><option value="short">short</option>
+              </select></label>
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Entry<br />{numInput(jForm.entryPrice, v => setJForm(f => ({ ...f, entryPrice: v })), "", 80)}</label>
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Stop<br />{numInput(jForm.stop, v => setJForm(f => ({ ...f, stop: v })), "", 80)}</label>
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Exit<br />{numInput(jForm.exitPrice, v => setJForm(f => ({ ...f, exitPrice: v })), "", 80)}</label>
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Shares<br />{numInput(jForm.shares, v => setJForm(f => ({ ...f, shares: v })), "", 80)}</label>
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Date out<br />
+              <input type="date" value={jForm.dateOut} onChange={e => setJForm(f => ({ ...f, dateOut: e.target.value }))} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
+          </div>
+          <input value={jForm.notes} onChange={e => setJForm(f => ({ ...f, notes: e.target.value }))} placeholder="notes / what happened"
+            style={{ marginTop: 10, width: "100%", boxSizing: "border-box", padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 12.5, background: C.surf, color: C.text }} />
+          <div style={{ marginTop: 6, fontSize: 11.5, color: C.muted }}>Regime at entry auto-stamps: <b style={{ color: liveRegime?.color }}>{liveRegime ? `${liveRegime.label} ${regimeProbFor(liveRegime.id)}%` : "—"}</b>. Realized R computes from entry/stop/exit.</div>
+          <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+            <Btn onClick={saveJournal} color="#fff" bgColor={C.green} label="Save to journal" />
+            <Btn onClick={() => setJForm(null)} color={C.mid} bgColor={C.bg} label="Cancel" />
+          </div>
+        </Card>
+      )}
+
+      {/* journal list */}
+      <Card>
+        <SLabel>Journal</SLabel>
+        {journal.length === 0 ? (
+          <div style={{ color: C.muted, fontSize: 13, marginTop: 10, fontStyle: "italic" }}>No trades logged. Use “Log trade” on a watchlist row — each entry stamps the regime you were in, so you can later see how you do by regime.</div>
+        ) : (
+          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+            {journal.map(j => (
+              <div key={j.id} style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", padding: "8px 10px", border: "1px solid " + C.bdr, borderRadius: 8, background: C.surf }}>
+                <b style={{ color: C.text, minWidth: 56 }}>{j.symbol}</b>
+                {j.side && chip(j.side, C.mid, C.bg, C.bdr)}
+                {j.realizedR != null && chip(`${j.realizedR >= 0 ? "+" : ""}${j.realizedR}R`, j.realizedR >= 0 ? C.green : C.red, C.bg, C.bdr)}
+                <span style={{ fontSize: 12, color: C.muted }}>{j.dateIn || "?"}{j.dateOut ? " → " + j.dateOut : ""}</span>
+                {j.regimeAtEntry && <span style={{ fontSize: 11.5, color: C.lbl }}>· regime: {j.regimeAtEntry}</span>}
+                {j.thesis && <span style={{ fontSize: 12, color: C.mid, flex: "1 1 180px" }}>{j.thesis}</span>}
+                <Btn onClick={() => removeJournal(j.id)} color={C.red} bgColor={C.surf} label="✕" />
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <div style={{ color: C.lbl, fontSize: 11.5, textAlign: "center", lineHeight: 1.5 }}>
+        Prices: /api/prices (Yahoo, poll-cadence) · sizing + R:R are arithmetic over your inputs (lib/console.js) · state syncs to your private store on “Save to cloud”, and mirrors to this browser automatically. Not investment advice; no orders are placed.
+      </div>
+    </div>
+  );
+}
+
+// Label for the credit cap, shown in the console settings note.
+const CREDIT_DANGER_CAP_LABEL = "×0.40";
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [tab, setTab]           = useState("macro");
@@ -5222,6 +5628,7 @@ export default function App() {
   const fmtTime = d => d ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
 
   const TABS = [
+    { id: "console",    label: "🎚️ Console"      },
     { id: "macro",      label: "🌐 Macro"        },
     { id: "global",     label: "🌏 Global Playbook" },
     { id: "smartmoney", label: "🏦 Smart Money"  },
@@ -5362,6 +5769,21 @@ export default function App() {
         )}
 
         <TabErrorBoundary key={tab} name={(TABS.find(t => t.id === tab)?.label || "This tab").replace(/^\S+\s/, "")}>
+
+        {/* ── TRADE CONSOLE (Tier 3) ── */}
+        {tab === "console" && (
+          <TradeConsole
+            liveRegime={liveRegime}
+            regimeProbFor={regimeProbFor}
+            liveInd={liveInd}
+            creditDanger={creditStatus(liveInd?.creditSpread) === "DANGER"}
+            contested={!!derivedRegimes?.contested}
+            regimeDiverged={regimeDiverged}
+            prices={prices}
+            fetchPrices={fetchPrices}
+            pricesLoading={pricesLoading}
+          />
+        )}
 
         {/* ── INDICATORS ── */}
         {tab === "indicators" && (

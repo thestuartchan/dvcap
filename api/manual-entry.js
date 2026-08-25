@@ -23,9 +23,10 @@ async function readStore() {
   const repo = process.env.GITHUB_REPO;
   const branch = process.env.GITHUB_BRANCH || 'main';
   const r = await fetch(`https://api.github.com/repos/${repo}/contents/${DATA_PATH}?ref=${encodeURIComponent(branch)}`, { headers: ghHeaders() });
-  if (!r.ok) return { store: { fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, recession: {} }, sha: null };
+  const emptyConsole = () => ({ watchlist: [], journal: [], settings: {} });
+  if (!r.ok) return { store: { fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, recession: {}, console: emptyConsole() }, sha: null };
   const meta = await r.json();
-  let store = { fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, recession: {} };
+  let store = { fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, recession: {}, console: emptyConsole() };
   try { store = JSON.parse(Buffer.from(meta.content, 'base64').toString('utf8')); } catch { /* default */ }
   store.fedPath ||= { latest: null, series: [] };
   store.fedPath.series ||= [];
@@ -34,6 +35,10 @@ async function readStore() {
   store.recession ||= {};   // manual overrides for the Wall Street recession sources
   store.southbound ||= { series: [] };   // HKEX Southbound Stock Connect daily flow (hand-entered)
   store.southbound.series ||= [];
+  store.console ||= emptyConsole();       // Tier 3 trade console — watchlist / journal / settings
+  store.console.watchlist ||= [];
+  store.console.journal ||= [];
+  store.console.settings ||= {};
   return { store, sha: meta.sha };
 }
 
@@ -46,6 +51,56 @@ export function zqImpliedRate(price) {
 export function zqMovesPriced(impliedRate, effr) {
   if (impliedRate == null || effr == null) return null;
   return +((impliedRate - effr) / 0.25).toFixed(2);
+}
+
+// ── Console (Tier 3) sanitizers ──────────────────────────────────────────────
+// The console syncs its full state wholesale (the browser owns it); we bound every field so a
+// synced payload can never bloat the committed store file. cs = capped string, cn = number-or-null.
+const cs = (v, max = 200) => (v == null ? null : String(v).slice(0, max));
+const cn = (v) => (v == null || v === '' || !Number.isFinite(+v)) ? null : +v;
+function sanitizeWatchItem(w) {
+  if (!w || typeof w !== 'object') return null;
+  const sym = cs(w.symbol, 20);
+  if (!sym) return null;
+  return {
+    id: cs(w.id, 48) || `${sym}-${Math.random().toString(36).slice(2, 8)}`,
+    symbol: sym.toUpperCase(),
+    side: (w.side === 'long' || w.side === 'short') ? w.side : null,
+    entry: cn(w.entry), stop: cn(w.stop),
+    targets: Array.isArray(w.targets) ? w.targets.map(cn).filter(x => x != null).slice(0, 4) : [],
+    riskPct: cn(w.riskPct),
+    status: cs(w.status, 16) || 'idea',
+    note: cs(w.note, 500),
+    addedAt: cs(w.addedAt, 40) || new Date().toISOString(),
+  };
+}
+function sanitizeJournalItem(j) {
+  if (!j || typeof j !== 'object') return null;
+  const sym = cs(j.symbol, 20);
+  if (!sym) return null;
+  return {
+    id: cs(j.id, 48) || `${sym}-${Math.random().toString(36).slice(2, 8)}`,
+    symbol: sym.toUpperCase(),
+    side: (j.side === 'long' || j.side === 'short') ? j.side : null,
+    thesis: cs(j.thesis, 1000),
+    entryPrice: cn(j.entryPrice), exitPrice: cn(j.exitPrice), shares: cn(j.shares),
+    realizedR: cn(j.realizedR),
+    regimeAtEntry: cs(j.regimeAtEntry, 48),
+    dateIn: cs(j.dateIn, 12), dateOut: cs(j.dateOut, 12),
+    notes: cs(j.notes, 1000),
+  };
+}
+function sanitizeConsoleSettings(s) {
+  if (!s || typeof s !== 'object') return {};
+  const out = { equity: cn(s.equity), baseRiskPct: cn(s.baseRiskPct), alertsEnabled: !!s.alertsEnabled };
+  if (s.sizing && typeof s.sizing === 'object') {
+    out.sizing = {};
+    for (const k of ['ref', 'inf', 'stag', 'def']) {
+      const m = cn(s.sizing[k]?.mult ?? s.sizing[k]);
+      if (m != null) out.sizing[k] = Math.max(0, Math.min(3, m));   // clamp multiplier to 0–3×
+    }
+  }
+  return out;
 }
 
 export default async function handler(req, res) {
@@ -62,6 +117,7 @@ export default async function handler(req, res) {
         intervention: store.intervention,
         recession: store.recession,
         southbound: { series: store.southbound.series.slice(-60) },
+        console: store.console,   // Tier 3 trade console state (watchlist / journal / settings)
       });
     } catch (e) {
       return res.status(200).json({ fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, error: String(e?.message || e) });
@@ -76,7 +132,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'GITHUB_TOKEN / GITHUB_REPO not configured' });
   }
 
-  const { fedPath, oasRecon, intervention, recession, southbound } = req.body || {};
+  const { fedPath, oasRecon, intervention, recession, southbound, console: consoleIn } = req.body || {};
   const { store, sha } = await readStore();
   const saved = [];
 
@@ -195,6 +251,22 @@ export default async function handler(req, res) {
     store.southbound.series = [...store.southbound.series.filter(r => r.date !== date), row]
       .sort((a, b) => a.date.localeCompare(b.date)).slice(-400);
     saved.push('southbound:' + date);
+  }
+
+  // ── Console (Tier 3) — full-state sync ──
+  // The browser owns the console state and syncs the whole object; we replace wholesale (bounded
+  // by the sanitizers + slice caps) rather than upserting rows. Absent sub-keys keep what's stored,
+  // so a settings-only save doesn't wipe the watchlist.
+  if (consoleIn && typeof consoleIn === 'object') {
+    const watchlist = Array.isArray(consoleIn.watchlist)
+      ? consoleIn.watchlist.map(sanitizeWatchItem).filter(Boolean).slice(0, 100)
+      : store.console.watchlist;
+    const journal = Array.isArray(consoleIn.journal)
+      ? consoleIn.journal.map(sanitizeJournalItem).filter(Boolean).slice(0, 1000)
+      : store.console.journal;
+    const settings = consoleIn.settings ? sanitizeConsoleSettings(consoleIn.settings) : store.console.settings;
+    store.console = { watchlist, journal, settings, updatedAt: new Date().toISOString() };
+    saved.push('console');
   }
 
   if (!saved.length) return res.status(400).json({ error: 'nothing to save' });
