@@ -2174,6 +2174,39 @@ const RECESSION_SOURCE_WEIGHTS = {
   "Polymarket": 0.10,
 };
 
+// Expected publication cadence per source, in days — how often THIS source actually publishes a
+// recession probability. The as-of chip used to flag every row past a flat 45 days as "stale",
+// which conflated two different things: a number that is simply the source's LATEST print (a
+// research house publishes episodically — Goldman's 60-day-old 15% is its current view, not an
+// overdue fetch) and a number that is genuinely PAST DUE (the NY Fed DSGE model publishes monthly;
+// at 177 days something is actually wrong). Flagging both identically trained the eye to ignore the
+// flag and sent the reader hunting for updates that do not exist. Within cadence → neutral "latest";
+// past cadence → amber "overdue", which now means something. This is presentation only: the
+// weighted average is unaffected — recencyFactor() above still decays every source linearly to
+// zero at 180 days regardless of cadence, which is the correct treatment for the MATH.
+const RECESSION_SOURCE_CADENCE = {
+  "NY Fed DSGE Model": 30,              // quarterly-ish model run, published monthly
+  "NY Fed Yield Curve Model": 30,       // monthly update (auto-fed daily here)
+  "Kalshi prediction market": 1,        // live market — any gap is a feed failure
+  "Kalshi prediction market 2027": 1,
+  "Polymarket": 1,
+  "Goldman Sachs": 120,                 // episodic research note, event-driven
+  "JPMorgan": 120,
+  "Moody's Analytics (Zandi)": 120,
+  "EY-Parthenon (Daco)": 120,
+  "BNP Paribas": 120,
+  "July FOMC Minutes": 45,              // tied to the FOMC calendar (8 meetings/yr)
+};
+const RECESSION_DEFAULT_CADENCE = 90;
+
+// Age + whether the source is genuinely OVERDUE for its own cadence.
+function recessionAsOfState(name, asOf) {
+  if (!asOf) return null;
+  const days = Math.round((Date.now() - new Date(asOf + "T00:00:00Z")) / 864e5);
+  const cadence = RECESSION_SOURCE_CADENCE[name] ?? RECESSION_DEFAULT_CADENCE;
+  return { days, cadence, overdue: days > cadence };
+}
+
 // Parse a probability string ("~15%", "35.8%", "Low") to a number, or null.
 const parseProbability = (probStr) => {
   if (!probStr || probStr === "Low" || probStr === "High") return null;
@@ -7618,14 +7651,17 @@ export default function App() {
                 );
               })()}
               {/* Provenance: these are hand-maintained. There is no keyless feed for broker
-                  recession odds, so they are NOT auto-refreshed — each row carries its own
-                  as-of and is flagged stale past 45 days rather than being silently updated. */}
+                  recession odds, so they are NOT auto-refreshed — each row carries its own as-of
+                  and is flagged OVERDUE against that source's own publication cadence (not a flat
+                  threshold) rather than being silently updated. */}
               <div style={{ marginBottom: 10, padding: "8px 11px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, fontSize: 12, color: C.mid, lineHeight: 1.55 }}>
                 <b style={{ color: C.muted }}>Provenance: </b>
                 three rows carry a live feed — <b>📡 Kalshi</b> and <b>Polymarket</b> (real-money markets) and the
                 <b> NY&nbsp;Fed Yield&nbsp;Curve</b> (Estrella–Mishkin probit computed from the current 10Y-3M spread).
                 The broker/analyst rows have no keyless feed, so they are <b>not</b> auto-refreshed — each shows its own
-                as-of and is flagged stale past 45 days. Any row can be overridden by hand below (<b>✍️ manual</b>),
+                as-of, judged against <i>that source's</i> publication cadence: <b>latest</b> (its current view — research houses
+                publish episodically) or <b>⚠ overdue</b> (past due for a source that should have printed by now).
+                Age still decays a row's weight in the average either way. Any row can be overridden by hand below (<b>✍️ manual</b>),
                 which takes precedence over both the feed and the static value.
                 <span style={{ color: C.amber, fontWeight: 700 }}> Q2 GDP at +1.5% (vs Q1 +2.1%) is the input most likely to push these up — expect revisions at the next publication, not before.</span>
               </div>
@@ -7659,17 +7695,24 @@ export default function App() {
                         <td style={{ padding: "8px 12px", borderBottom: "1px solid " + C.bdr }}>
                           <span style={{ color: pCol, fontWeight: 800, fontSize: 15 }}>{r.probability}</span>
                         </td>
-                        {/* As-of + staleness. These are hand-maintained (no live feed exists
-                            for broker recession odds), so an old figure must never read as a
-                            current post-FOMC one. */}
+                        {/* As-of + freshness, judged against the SOURCE'S OWN cadence. An old
+                            figure must never read as a current post-FOMC one — but neither should
+                            a research house's latest print read as a failed fetch. */}
                         <td style={{ padding: "8px 12px", fontSize: 12, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap" }}>
                           {(() => {
-                            if (!r.asOf) return <span style={{ color: C.lbl }}>—</span>;
-                            const days = Math.round((Date.now() - new Date(r.asOf + "T00:00:00Z")) / 864e5);
-                            const stale = days > 45;
+                            const st = recessionAsOfState(r.name, r.asOf);
+                            if (!st) return <span style={{ color: C.lbl }}>—</span>;
                             return (
-                              <span style={{ color: stale ? C.amber : C.muted, fontWeight: stale ? 700 : 400 }}>
-                                {r.asOf}{stale ? ` · ${days}d stale` : ""}
+                              <span
+                                style={{ color: st.overdue ? C.amber : C.muted, fontWeight: st.overdue ? 700 : 400 }}
+                                title={st.overdue
+                                  ? `${r.name} publishes roughly every ${st.cadence}d; this print is ${st.days}d old — past due, worth checking for a newer one.`
+                                  : `${st.days}d old, within ${r.name}'s ~${st.cadence}d publication cadence — this is its latest print, not an overdue one. Weight still decays with age in the average.`}
+                              >
+                                {r.asOf}
+                                {st.overdue
+                                  ? ` · ⚠ ${st.days}d overdue`
+                                  : <span style={{ color: C.lbl }}> · latest · {st.days}d</span>}
                               </span>
                             );
                           })()}
