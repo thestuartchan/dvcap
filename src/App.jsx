@@ -5213,7 +5213,10 @@ function regimeFitFor(sym, regime) {
 
 // A number field that COMMITS ON BLUR OR ENTER, not per keystroke — so a multi-digit quantity can
 // be typed. `dk` is the draft key; while a draft exists it wins over the stored value.
-const NumCommit = ({ dk, value, onCommit, placeholder, width = 84, title, drafts, setDraft, clearDraft }) => {
+const NumCommit = ({ dk, value, onCommit, placeholder, width = 84, title, drafts = {}, setDraft, clearDraft }) => {
+  // `drafts` defaults to {} deliberately: this component is rendered from more than one place, and
+  // a caller that forgets the draft store should lose the draft behaviour, not crash the tab. The
+  // Console went blank once because `drafts[dk]` was read on an undefined store.
   const draft = drafts[dk];
   const shown = draft !== undefined ? draft : (value ?? "");
   const commit = () => {
@@ -5462,10 +5465,10 @@ const {
           {(d.fills || []).map(f => (
             <div key={f.id} style={{ display: "flex", gap: 7, alignItems: "center", fontSize: 12, color: C.mid, marginBottom: 4, flexWrap: "wrap" }}>
               <b style={{ color: f.side === "buy" ? C.green : C.blue, minWidth: 32 }}>{f.side}</b>
-              <NumCommit dk={`fq:${f.id}`} value={f.qty} placeholder="qty" width={78}
+              <NumCommit dk={`fq:${f.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={f.qty} placeholder="qty" width={78}
                 onCommit={q => { if (q != null && q > 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, qty: q } : x) }); }} />
               <span style={{ color: C.lbl }}>@</span>
-              <NumCommit dk={`fp:${f.id}`} value={f.price} placeholder="price" width={92}
+              <NumCommit dk={`fp:${f.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={f.price} placeholder="price" width={92}
                 onCommit={p => { if (p != null && p >= 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, price: p } : x) }); }} />
               <input type="date" value={f.date || ""} onChange={e => upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, date: e.target.value } : x) })}
                 style={{ padding: "4px 7px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 11.5, background: C.surf, color: C.text }} />
@@ -5478,7 +5481,7 @@ const {
               <b style={{ color: C.amber }}>⚠ quantity needed</b>
               <span style={{ color: C.mid }}>{f.side} @ {f.price}{f.date ? ` · ${f.date}` : ""}</span>
               <span style={{ color: C.lbl }}>how many?</span>
-              <NumCommit dk={`q:${f.id}`} value="" placeholder="qty" width={90}
+              <NumCommit dk={`q:${f.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value="" placeholder="qty" width={90}
                 title="Type the full quantity, then press Enter or click away."
                 onCommit={q => { if (q != null && q > 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, qty: q } : x) }); }} />
               <span style={{ color: C.muted, fontSize: 11 }}>press Enter or click away to save — the price was imported, the size was not</span>
@@ -5765,10 +5768,9 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
   // A level's live state: how far away, and whether it is currently hit.  // Everything the hoisted row components need from this closure, in one object. Recreated each
   // render, which is fine: the COMPONENT identities are stable, so React re-renders rather than
   // remounting, and focus is preserved.
-  const NumCommitBound = useCallback((p) => <NumCommit {...p} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} />, [drafts]);
   const ctx = {
     prices, priceOf, liveRegime, expanded, setExpanded, upd, del, addLevel, updLevel, delLevel,
-    openFill, delFill, fillFor, setFillFor, saveFill, NumCommit: NumCommitBound, nInput, chip, ccyChip, fitChip, kindCol, money, pnlCol,
+    openFill, delFill, fillFor, setFillFor, saveFill, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip, kindCol, money, pnlCol,
     equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
   };
 
@@ -5850,7 +5852,7 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
         </div>
         <div style={{ marginTop: 9, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
           <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Account equity ({baseCcy})<br />
-            <NumCommit dk="equity" value={settings.equity} placeholder="e.g. 208597" width={124}
+            <NumCommit dk="equity" drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={settings.equity} placeholder="e.g. 208597" width={124}
               title="A rough figure is fine — sizing is linear in equity, so being 5% out moves a suggestion by 5%."
               onCommit={v => { setSettings(x => ({ ...x, equity: v, equityAsOf: new Date().toISOString().slice(0, 10) })); touch(); }} />
             {(() => {
