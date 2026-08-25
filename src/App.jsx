@@ -17,7 +17,7 @@ import { HORIZON, HORIZON_LABEL, consensusFor, calendarWindow, dispersionRead, N
 import { buildViews, evaluateViews, regimeCluster, divergenceRead } from "../lib/analystViews.js";
 import { CURRENCIES, CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, toUsd, fxRisk, fmtCcy } from "../lib/fxrates.js";
 import { derivePosition, positionPnl, levelHit, levelHits, distancePct, summarize, realizedCurve } from "../lib/positions.js";
-import { REGIME_SIZING, SIZING_MODES, regimeMultiplier, sizeSuggestion, riskAtStop, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT } from "../lib/sizing.js";
+import { REGIME_SIZING, SIZING_MODES, regimeMultiplier, sizeSuggestion, riskAtStop, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT } from "../lib/sizing.js";
 import { observationAge } from "../lib/gates.js";
 import { trend as trendOf } from "../lib/series.js";
 
@@ -5609,7 +5609,7 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
                   </div>
                   {sug.ok ? (
                     <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.75 }}>
-                      Full size <b style={{ color: C.text }}>{sug.fullQty}</b> ({money(sug.notional, r.currency)} · {sug.notionalPctOfBook}% of book)
+                      Full size <b style={{ color: C.text }} title={sug.rounded ? `rounded from ${sug.fullExact} — equity is approximate, so the extra digits are not meaningful` : undefined}>~{sug.fullQty}</b> ({money(sug.notional, r.currency)} · {sug.notionalPctOfBook}% of book)
                       {sug.heldQty > 0 && <> · holding <b>{sug.heldQty}</b></>}
                       {" · "}<b style={{ color: sug.roomQty > 0 ? C.green : C.muted }}>room for {sug.roomQty}</b>
                       {sug.tranches > 1 && sug.trancheQty > 0 && <> · <b>{sug.trancheQty}</b> per tranche ×{sug.tranches}</>}
@@ -5620,6 +5620,7 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
                       )}
                       <div style={{ color: C.muted, fontSize: 11.5 }}>
                         {mode === "risk" ? `${baseRisk}%` : `${numOrNull(r.targetPct) ?? targetPct}%`} base × <b style={{ color: liveRegime?.color }}>{sug.mult}</b> regime — {sug.reasons[sug.reasons.length - 1]}
+                        {sug.perTenPctEquity > 0 && <> · a 10% move in your equity shifts this by ~{sug.perTenPctEquity} share{sug.perTenPctEquity === 1 ? "" : "s"}</>}
                       </div>
                       {sug.warnings.map((w, i) => <div key={i} style={{ color: C.amber, fontWeight: 700, fontSize: 11.5 }}>⚠ {w}</div>)}
                     </div>
@@ -5781,12 +5782,29 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
         </div>
         <div style={{ marginTop: 9, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
           <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Account equity ({baseCcy})<br />
-            {nInput(settings.equity, v => { setSettings(x => ({ ...x, equity: v === "" ? null : v })); touch(); }, "e.g. 208597", 120)}</label>
+            <NumCommit dk="equity" value={settings.equity} placeholder="e.g. 208597" width={124}
+              title="A rough figure is fine — sizing is linear in equity, so being 5% out moves a suggestion by 5%."
+              onCommit={v => { setSettings(x => ({ ...x, equity: v, equityAsOf: new Date().toISOString().slice(0, 10) })); touch(); }} />
+            {(() => {
+              const f = equityFreshness(settings.equityAsOf);
+              if (settings.equity == null) return null;
+              return (
+                <div style={{ fontSize: 10.5, fontWeight: 600, color: f.stale ? C.amber : C.lbl, marginTop: 2 }}
+                  title={`Sizing scales linearly with equity, so it is refreshed on your schedule rather than synced — a figure within ~${EQUITY_STALE_DAYS} days is plenty.`}>
+                  {f.days == null ? "no date recorded" : f.days === 0 ? "as of today" : `as of ${settings.equityAsOf} · ${f.days}d ago`}
+                  {f.stale ? " ⚠" : ""}
+                </div>
+              );
+            })()}
+          </label>
           <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Risk / trade (%)<br />
             {nInput(settings.baseRiskPct, v => { setSettings(x => ({ ...x, baseRiskPct: v === "" ? null : v })); touch(); }, "1", 64)}</label>
           <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Default allocation (%)<br />
             {nInput(settings.targetPct, v => { setSettings(x => ({ ...x, targetPct: v === "" ? null : v })); touch(); }, "5", 64)}</label>
           <div style={{ fontSize: 11.5, color: C.muted, flex: "1 1 240px", lineHeight: 1.55 }}>
+            <b style={{ color: C.mid }}>Equity is meant to be approximate.</b> Sizing is linear in it, so a figure 5% out moves a
+            suggestion by 5% — which never changes a swing decision. Refresh it when the book has moved materially, not daily;
+            sizes are rounded to match that precision.<br />
             <b>Risk</b> sizes so a stop-out costs a fixed % of the book — for swings with an invalidation level.
             <b> Allocation</b> targets a % of the book — for long holds where the thesis, not a price, is the exit.
             Each position picks its own; both are scaled by the regime multiplier and netted against what you already hold.

@@ -1,5 +1,5 @@
 // Regression tests for lib/sizing.js — position-aware sizing for spot / swing / long holds.
-import { sizeSuggestion, regimeMultiplier, riskAtStop, REGIME_SIZING, CREDIT_DANGER_CAP } from '../lib/sizing.js';
+import { sizeSuggestion, regimeMultiplier, riskAtStop, roundQty, equityFreshness, EQUITY_STALE_DAYS, REGIME_SIZING, CREDIT_DANGER_CAP } from '../lib/sizing.js';
 let pass=0,fail=0;
 const eq=(n,g,w)=>{const ok=JSON.stringify(g)===JSON.stringify(w);console.log(`${ok?'✅':'❌'} ${n}`+(ok?'':`  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`));ok?pass++:fail++;};
 
@@ -55,6 +55,30 @@ eq('tranches split the ROOM, not the full size', trHeld.trancheQty, 20);
 eq('no equity -> explains', /account equity/.test(sizeSuggestion({mode:'risk', price:100, stop:90}).why), true);
 eq('no price -> explains',  /no live price/.test(sizeSuggestion({mode:'risk', equityInPos:100000, stop:90}).why), true);
 eq('tiny budget warns',     sizeSuggestion({mode:'allocation', equityInPos:100, price:5000, targetPct:1, regime:{regimeId:'ref'}}).warnings.length > 0, true);
+
+// ── equity is APPROXIMATE, so sizes are rounded rather than implying false precision ──
+eq('small sizes keep every share', roundQty(7), 7);
+eq('tens round to 5',              roundQty(43), 40);
+eq('hundreds round to 10',         roundQty(137), 130);
+eq('thousands round to 25',        roundQty(1058), 1050);
+eq('ten-thousands round to 100',   roundQty(12345), 12300);
+eq('zero stays zero',              roundQty(0), 0);
+eq('junk is zero',                 roundQty(NaN), 0);
+
+const rounded = sizeSuggestion({mode:'risk', equityInPos:208597, price:100, stop:90, baseRiskPct:1, regime:{regimeId:'stag'}});
+eq('suggestion is rounded',   rounded.fullQty, 120);
+eq('exact is still reported', rounded.fullExact, 125);
+eq('rounding is flagged',     rounded.rounded, true);
+// The question a moving account balance actually raises: how much would being wrong cost me?
+eq('sensitivity to equity',   rounded.perTenPctEquity, 12);
+
+// ── equity freshness: generous, because sizing is linear in equity ──
+eq('same day is fresh',   equityFreshness('2026-08-26','2026-08-26').stale, false);
+eq('a week is fine',      equityFreshness('2026-08-19','2026-08-26').stale, false);
+eq('past threshold flags', equityFreshness('2026-08-01','2026-08-26').stale, true);
+eq('days counted',        equityFreshness('2026-08-01','2026-08-26').days, 25);
+eq('no date -> explains', /no date recorded/.test(equityFreshness(null).note), true);
+eq('threshold is generous', EQUITY_STALE_DAYS >= 7, true);
 
 // ── risk at stop ──
 eq('risk at stop', riskAtStop({qty:100, price:100, stop:90}), 1000);

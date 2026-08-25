@@ -121,7 +121,7 @@ function sanitizeConsoleSettings(s) {
   if (!s || typeof s !== 'object') return {};
   const out = {
     alertsEnabled: !!s.alertsEnabled,
-    equity: cn(s.equity), baseRiskPct: cn(s.baseRiskPct), targetPct: cn(s.targetPct),
+    equity: cn(s.equity), equityAsOf: cs(s.equityAsOf, 12), baseRiskPct: cn(s.baseRiskPct), targetPct: cn(s.targetPct),
     baseCurrency: /^[A-Z]{3}$/.test(String(s.baseCurrency || '').toUpperCase()) ? String(s.baseCurrency).toUpperCase() : 'USD',
   };
   if (s.sizing && typeof s.sizing === 'object') {
