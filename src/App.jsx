@@ -14,6 +14,7 @@ import { minersPairImplication } from "../lib/regimeState.js";
 import { southboundTrend, southboundLevelTrend, southboundRead, ahPremiumRead, sbStale } from "../lib/southbound.js";
 import { STATUS, creditStatus, deriveAction, headerSignal, STAGES } from "../lib/status.js";
 import { HORIZON, HORIZON_LABEL, horizonOf, consensusFor, calendarWindow, dispersionRead, sourceScore, lastRevision, blockOf, BLOCK_LABEL, NO_CONVERSION_NOTE } from "../lib/recession.js";
+import { buildViews, evaluateViews, regimeCluster, divergenceRead } from "../lib/analystViews.js";
 import { REGIME_SIZING, rMultiple, positionSize, regimeMultiplier, suggestedSize, distanceToLevels, triggeredLevels, tradeSide, DEFAULT_BASE_RISK_PCT } from "../lib/console.js";
 import { observationAge } from "../lib/gates.js";
 import { trend as trendOf } from "../lib/series.js";
@@ -5092,6 +5093,116 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
   );
 }
 
+// ─── ANALYST VIEW BOARD ──────────────────────────────────────────────────────
+// Replaces the weighted-average headline. The section's job is to say what the professionals
+// think — about a recession AND about the upcoming regime — and whether the live signals still
+// agree with them. A scalar consensus could answer none of that, so each house is rendered as a
+// thesis with its stated conditions checked against live data (lib/analystViews.js). The numeric
+// consensus survives underneath as a labelled byproduct, because the regime engine needs a number.
+function AnalystViewBoard({ live, probFor, engineRegime, consensus }) {
+  const evaluated = useMemo(() => evaluateViews(buildViews(live)), [live]);
+  const liveViews = evaluated.filter(v => !v.archived);
+  const brokenViews = evaluated.filter(v => v.archived);
+  const cluster = useMemo(() => regimeCluster(evaluated), [evaluated]);
+  const regimeLabel = (id) => REGIMES.find(r => r.id === id)?.label || id;
+  const regimeColor = (id) => REGIMES.find(r => r.id === id)?.color || C.mid;
+
+  const divergence = divergenceRead({
+    cluster, engineRegime,
+    marketProb: consensus?.calendar?.value ?? null,
+    analystProb: consensus?.rolling?.value ?? null,
+  });
+
+  const toneCol = (t) => t === "green" ? C.green : t === "amber" ? C.amber : t === "red" ? C.red : C.muted;
+  const toneBg  = (t) => t === "green" ? C.gBg : t === "amber" ? C.aBg : t === "red" ? C.rBg : C.bg;
+  const toneBdr = (t) => t === "green" ? C.gBdr : t === "amber" ? C.aBdr : t === "red" ? C.rBdr : C.bdr;
+
+  const ViewCard = ({ v, dim }) => {
+    const prob = probFor(v.key);
+    return (
+      <div style={{ flex: "1 1 320px", background: dim ? C.bg : C.surf, border: "1.5px solid " + toneBdr(v.tone), borderLeft: "4px solid " + toneCol(v.tone), borderRadius: 10, padding: "11px 13px", opacity: dim ? 0.72 : 1 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+          <b style={{ fontSize: 14, color: C.text }}>{v.house}</b>
+          {prob != null && <span style={{ fontSize: 15, fontWeight: 900, color: C.text }}>{prob}%</span>}
+          <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4, color: toneCol(v.tone), background: toneBg(v.tone), border: "1px solid " + toneBdr(v.tone), borderRadius: 5, padding: "1px 7px" }}>
+            {v.verdict} {v.total ? `${v.met}/${v.total}` : ""}
+          </span>
+        </div>
+        <div style={{ marginTop: 4, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 10, color: C.lbl, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3 }}>implies</span>
+          <span style={{ fontSize: 11.5, fontWeight: 800, color: regimeColor(v.impliedRegime) }}>{regimeLabel(v.impliedRegime)}</span>
+          <span style={{ fontSize: 10, color: C.lbl }}>· {v.kind}</span>
+        </div>
+        <div style={{ marginTop: 5, fontSize: 12.5, color: C.mid, fontStyle: "italic", lineHeight: 1.5 }}>“{v.call}”</div>
+        <div style={{ marginTop: 7, display: "flex", flexDirection: "column", gap: 3 }}>
+          {v.conditions.map((c, i) => (
+            <div key={i} style={{ fontSize: 12, color: C.mid, lineHeight: 1.5, display: "flex", gap: 6 }} title={c.why || undefined}>
+              <span style={{ color: c.met === null ? C.muted : c.met ? C.green : C.red, fontWeight: 800, flexShrink: 0 }}>
+                {c.met === null ? "?" : c.met ? "✓" : "✗"}
+              </span>
+              <span>
+                {c.label}
+                {c.critical && <span style={{ color: C.amber, fontWeight: 800 }} title="the house's own flagged invalidator"> ⚑</span>}
+                <span style={{ color: C.lbl }}> — {c.display}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: 7, paddingTop: 6, borderTop: "1px solid " + C.bdr, fontSize: 11.5, color: toneCol(v.tone), fontWeight: 600, lineHeight: 1.5 }}>
+          → {v.note}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      {/* The read — where the professionals cluster, and where they disagree with the engine. */}
+      <div style={{ background: C.blBg, border: "1.5px solid " + C.blBdr, borderRadius: 10, padding: "11px 14px", marginBottom: 10 }}>
+        <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, color: C.blue, marginBottom: 5 }}>
+          What the professionals think
+        </div>
+        <div style={{ display: "flex", gap: "5px 14px", flexWrap: "wrap", alignItems: "baseline", fontSize: 13 }}>
+          <span style={{ color: C.lbl, fontWeight: 700 }}>Live theses cluster on</span>
+          <b style={{ color: cluster.top ? regimeColor(cluster.top) : C.muted, fontSize: 14 }}>
+            {cluster.top ? regimeLabel(cluster.top) : "—"}
+          </b>
+          {cluster.ranked.length > 1 && (
+            <span style={{ color: C.muted, fontSize: 12 }}>
+              ({cluster.ranked.map(([r, n]) => `${regimeLabel(r)} ${n}`).join(" · ")})
+            </span>
+          )}
+          <span style={{ color: C.bdr }}>·</span>
+          <span style={{ color: C.lbl, fontWeight: 700 }}>your engine</span>
+          <b style={{ color: regimeColor(engineRegime) }}>{regimeLabel(engineRegime)}</b>
+        </div>
+        {divergence && (
+          <div style={{ marginTop: 7, fontSize: 12.5, color: C.mid, lineHeight: 1.6 }}>{divergence}</div>
+        )}
+      </div>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        {liveViews.map(v => <ViewCard key={v.key} v={v} />)}
+      </div>
+
+      {brokenViews.length > 0 && (
+        <details style={{ marginTop: 10 }}>
+          <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, color: C.muted, padding: "6px 0" }}>
+            🪦 {brokenViews.length} thesis{brokenViews.length === 1 ? "" : "es"} that broke — and the signal that broke {brokenViews.length === 1 ? "it" : "them"}
+          </summary>
+          <div style={{ fontSize: 11.5, color: C.lbl, lineHeight: 1.6, margin: "4px 0 8px" }}>
+            These are excluded from every consensus. Each was explicitly conditional, and the condition is now testably false —
+            which is why they are retired on <i>evidence</i> rather than merely aged out.
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {brokenViews.map(v => <ViewCard key={v.key} v={v} dim />)}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 // ─── TRADE CONSOLE (Tier 3) ─────────────────────────────────────────────────
 // The regime-aware trade console: a watchlist of the instruments YOU trade, each with your
 // levels, auto R:R and regime-scaled sizing, tagged with how it sits vs the live regime and the
@@ -7698,8 +7809,29 @@ export default function App() {
                   </div>
                 );
               })()}
-              {/* ── TWO-HORIZON CONSENSUS ──
-                  The headline. These are two different questions and are never blended: a
+              {/* ── ANALYST VIEW BOARD — the headline ──
+                  What the professionals think, which regime each view implies, and whether the
+                  live signals still agree with them. This is the section's actual purpose; the
+                  numeric consensus below is a byproduct the regime engine consumes. */}
+              <AnalystViewBoard
+                live={{
+                  oil: liveInd?.oil ?? null,
+                  gdpGrowth: liveInd?.gdpGrowth ?? null,
+                  yieldSpread: liveInd?.yieldSpread ?? null,
+                  septHikeOdds: SEP_HIKE_ODDS?.value ?? null,
+                  fedHawkish: /hawkish/i.test(FED_LANGUAGE_STATUS?.status || ""),
+                  capexRising: true,   // big-four 2026 ~$725B (+77% YoY) — Smart Money tab, sourced
+                }}
+                probFor={(key) => {
+                  const row = effectiveRecessionSources.find(r => r.name === key);
+                  return row ? parseProbability(row.probability) : null;
+                }}
+                engineRegime={liveRegime?.id}
+                consensus={recConsensus}
+              />
+
+              {/* ── TWO-HORIZON CONSENSUS — the byproduct ──
+                  These are two different questions and are never blended: a
                   calendar-year contract resolves inside a window that shrinks toward Dec 31, so
                   averaging it with rolling-12m forecasts pushed the consensus down for calendar
                   reasons alone — and that number drives the regime engine and position sizing. */}
@@ -7732,6 +7864,9 @@ export default function App() {
                 );
                 return (
                   <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, color: C.muted, marginBottom: 6 }}>
+                      Numeric consensus <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0, color: C.lbl }}>— the scalar the regime engine needs. The board above is the read; this is the byproduct.</span>
+                    </div>
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                       {box(HORIZON_LABEL[HORIZON.ROLLING], roll, { primary: true })}
                       {box(HORIZON_LABEL[HORIZON.CALENDAR], cal, {
