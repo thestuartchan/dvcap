@@ -1,4 +1,5 @@
 import { LABOR_SERIES } from "../lib/labor.js";
+import { fetchSmicAHPremium } from "../lib/smicah.js";
 
 export default async function handler(req, res) {
   const FRED_KEY = process.env.FRED_API_KEY;
@@ -10,6 +11,13 @@ export default async function handler(req, res) {
   // ── Fetch single latest value from FRED ────────────────────────────────────
   // Returns { value, date } — the observation DATE is the metric's real asOf (source
   // timestamp), which the P0 staleness system needs. Never fetch-time.
+  // NOTE: intentionally NOT unified with lib/fred.js::fredLatest — the semantics differ on
+  // purpose. This one fetches limit=2 and filters "." placeholders, so a not-yet-settled latest
+  // row (common on weekends/holidays for daily series) falls through to the last REAL print
+  // instead of blanking the tile; lib/fred.js uses limit=1 (→ null on a "." latest) and returns
+  // value:null on empty where this returns value:0. Those differences are load-bearing for the
+  // Macro tiles, so the two clients stay separate by design. Same for fredYoY/fredTwo/fredPair/
+  // fredLabor/fredHistory/fredPc1History below, which lib/fred.js does not implement at all.
   async function fredLatest(seriesId) {
     const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=2&api_key=${FRED_KEY}&file_type=json`;
     const r = await fetch(url);
@@ -463,73 +471,14 @@ export default async function handler(req, res) {
   }
 
   // ── SMIC A/H premium — the mainland-sentiment gauge for the China-policy trade ──────────────
-  // SMIC is dual-listed: 688981.SS (Shanghai STAR, priced in CNY) and 0981.HK (priced in HKD). The
-  // premium mainland investors pay for the A-share over the H-share is a real-time, market-priced
-  // read on mainland enthusiasm for SMIC specifically — better than a sticky Connect-holding %.
-  //   premium% = ( A_cny · (HKD/CNY) / H_hkd − 1 ) × 100 ,  HKD/CNY = USDHKD / USDCNY.
-  // All four legs come from Yahoo (keyless, same source as dxy/oil). Returns null on any failure —
-  // the A-share (688981.SS) is the leg most likely to be absent from the free feed; if so, the
-  // panel falls back to the manual Connect holding. Untestable in the no-network sandbox.
-  const YOPTS = { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json" } };
-  async function fetchYahooDaily(symbol) {
-    try {
-      const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=3mo`, YOPTS);
-      if (!r.ok) { console.error("Yahoo daily status", r.status, symbol); return null; }
-      const res = (await r.json())?.chart?.result?.[0];
-      if (!res) return null;
-      const ts = res.timestamp || [], closes = res.indicators?.quote?.[0]?.close || [];
-      const map = {};
-      for (let i = 0; i < ts.length; i++) if (closes[i] != null) map[new Date(ts[i] * 1000).toISOString().slice(0, 10)] = closes[i];
-      // Live price only exists while the market is OPEN. The Shanghai A-share (688981.SS) is closed
-      // most of the time the dashboard is loaded, so fall back to the last daily close — otherwise a
-      // null live price sinks the whole premium (all four legs must resolve). Keeps the feed steady.
-      const dates = Object.keys(map).sort();
-      const lastClose = dates.length ? map[dates[dates.length - 1]] : null;
-      const live = res.meta?.regularMarketPrice;
-      const price = (live != null && live > 0) ? live : lastClose;
-      const asOf = (live != null && live > 0 && res.meta?.regularMarketTime)
-        ? new Date(res.meta.regularMarketTime * 1000).toISOString().slice(0, 10)
-        : (dates[dates.length - 1] || null);
-      return { price, asOf, map };
-    } catch (e) { console.error("Yahoo daily error", symbol, e.message); return null; }
-  }
-  async function fetchSmicAHPremium() {
-    try {
-      const [a, h, cross, cny, hkd] = await Promise.all([
-        fetchYahooDaily("688981.SS"), fetchYahooDaily("0981.HK"),
-        fetchYahooDaily("CNYHKD=X"),                          // direct HKD-per-CNY — no convention ambiguity
-        fetchYahooDaily("CNY=X"), fetchYahooDaily("HKD=X"),   // fallback: USDHKD / USDCNY
-      ]);
-      if (!a || !h) { console.error("SMIC A/H: A or H leg missing"); return null; }
-      // CNY→HKD: prefer the direct cross; only divide the two USD rates if the cross is unavailable.
-      const fxAt = (d) => {
-        if (cross && cross.map[d] > 0) return cross.map[d];
-        if (cny && hkd && cny.map[d] > 0 && hkd.map[d] > 0) return hkd.map[d] / cny.map[d];
-        return null;
-      };
-      const fxNow = (cross && cross.price > 0) ? cross.price
-        : (cny && hkd && cny.price > 0 && hkd.price > 0) ? hkd.price / cny.price : null;
-      if (fxNow == null) { console.error("SMIC A/H: no CNY→HKD fx"); return null; }
-      const prem = (aCny, hHkd, fx) => (aCny != null && hHkd > 0 && fx > 0) ? +(((aCny * fx) / hHkd - 1) * 100).toFixed(1) : null;
-      const latest = prem(a.price, h.price, fxNow);
-      if (latest == null) return null;
-      // Premium history over the intersection of trading dates (A and H calendars differ).
-      const series = [];
-      for (const d of Object.keys(a.map)) {
-        const fx = fxAt(d);
-        if (h.map[d] != null && fx != null) {
-          const p = prem(a.map[d], h.map[d], fx);
-          if (p != null) series.push({ date: d, premium: p });
-        }
-      }
-      series.sort((x, y) => x.date.localeCompare(y.date));
-      return {
-        premium: latest, aPrice: a.price, hPrice: h.price, cnyHkd: +fxNow.toFixed(4),
-        fxSource: (cross && cross.price > 0) ? "CNYHKD=X" : "USDHKD/USDCNY",
-        asOf: a.asOf || h.asOf, series: series.slice(-30),
-      };
-    } catch (e) { console.error("SMIC A/H error", e.message); return null; }
-  }
+  // SMIC is dual-listed: 688981.SS (Shanghai STAR, CNY) and 0981.HK (HKD). The premium mainland
+  // investors pay for the A-share over the H-share is a real-time read on mainland enthusiasm.
+  // The computation lives in lib/smicah.js — the SAME module the macro spine (lib/assemble.js)
+  // uses for the China-policy scenario leg. It used to be duplicated inline here; the two copies
+  // were byte-identical and the lib header warned "if one changes, change both", so the inline
+  // copy is now retired and this endpoint imports the single canonical version (fetchSmicAHPremium).
+  // Behaviour is unchanged bar an 8s per-leg fetch timeout the lib version carries — strictly a
+  // robustness gain (a hung Yahoo leg can no longer stall the whole indicators response).
 
   // ── Fetch YoY % change history (units=pc1) — returns [{date, value}] chrono ──
   // FRED computes the year-over-year % server-side. Returns [] on any failure so
