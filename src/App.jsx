@@ -5192,6 +5192,24 @@ function AnalystViewBoard({ live, probFor, engineRegime, consensus }) {
   );
 }
 
+// Insurance-book tickers, for the "insurance overlap" tag (ASSETS is the insurance universe).
+const INSURANCE_TICKERS = (() => {
+  const m = {};
+  for (const a of ASSETS) for (const t of (a.tickers || [])) if (t?.t) m[t.t.toUpperCase()] = a.name;
+  return m;
+})();
+const reEsc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// How a symbol sits vs the live regime: its tickers appear in the regime's best/worst asset lists.
+function regimeFitFor(sym, regime) {
+  if (!sym || !regime) return { fit: "neutral", where: null };
+  const re = new RegExp(`\\b${reEsc(sym.toUpperCase())}\\b`, "i");
+  const hitBest = (regime.best || []).find(x => re.test(x));
+  if (hitBest) return { fit: "tailwind", where: hitBest };
+  const hitWorst = (regime.worst || []).find(x => re.test(x));
+  if (hitWorst) return { fit: "headwind", where: hitWorst };
+  return { fit: "neutral", where: null };
+}
+
 // ─── TRADE CONSOLE ───────────────────────────────────────────────────────────
 // SCOPE: spot, swing and long holds. Not day trades or scalps — those live in the broker and the
 // user's own tracker sheet, and duplicating them here produced a worse second copy of both.
