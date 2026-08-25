@@ -178,6 +178,12 @@
   "console": {
     "watchlist": [],
     "journal": [],
-    "settings": {}
+    "settings": {
+      "equity": null,
+      "baseRiskPct": 1,
+      "alertsEnabled": false,
+      "sizing": {}
+    },
+    "updatedAt": "2026-08-25T19:17:55.407Z"
   }
 }
