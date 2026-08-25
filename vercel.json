@@ -1,9 +1,9 @@
 {
   "crons": [
-    { "path": "/api/preread?region=asia&post=1&cron=1",  "schedule": "0 23 * * 0-4" },
-    { "path": "/api/preread?region=eu&post=1&cron=1",    "schedule": "0 8 * * 1-5" },
-    { "path": "/api/preread?region=eu&post=1&cron=1",    "schedule": "0 9 * * 1-5" },
-    { "path": "/api/preread?region=us&post=1&cron=1",    "schedule": "0 13 * * 1-5" },
-    { "path": "/api/preread?region=us&post=1&cron=1",    "schedule": "0 14 * * 1-5" }
+    { "path": "/api/preread?region=asia&post=1&cron=1",  "schedule": "45 22 * * 0-4" },
+    { "path": "/api/preread?region=eu&post=1&cron=1",    "schedule": "45 7 * * 1-5" },
+    { "path": "/api/preread?region=eu&post=1&cron=1",    "schedule": "45 8 * * 1-5" },
+    { "path": "/api/preread?region=us&post=1&cron=1",    "schedule": "45 12 * * 1-5" },
+    { "path": "/api/preread?region=us&post=1&cron=1",    "schedule": "45 13 * * 1-5" }
   ]
 }

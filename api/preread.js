@@ -7,12 +7,21 @@ import { UNIVERSE } from '../data/universe.js';
 import { assembleRegion } from '../lib/assemble.js';
 import { structure } from '../lib/regime.js';
 import { weekHighlights } from '../lib/calendar.js';
-import { marketState, localHour, halfDayLabels, freshness, freshnessText } from '../lib/sessions.js';
+import { marketState, localHour, localMinutesOfDay, halfDayLabels, freshness, freshnessText } from '../lib/sessions.js';
 import { kofiaStoredLine, koreaFlowRead, koreaFlowImplication, withCommas } from '../lib/kofia.js';
 import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
 
 
 function fmtPct(p) { return p == null ? '—' : `${p > 0 ? '+' : ''}${p.toFixed(1)}%`; }
+
+// Pre-read cron timing. The crons (vercel.json) fire LEAD minutes before each region's target
+// local hour so the assemble+post runtime lands the brief on time instead of a few minutes
+// late. WINDOW is the half-open accept span [target-lead, target-lead+WINDOW); keep it < 60 so
+// the two DST candidate crons (60min apart in local time) can never both pass. See the gate
+// in the handler. Firing at target-15 with a 55-min window delivers ~on-time and tolerates
+// roughly 40min of positive cron jitter before a run would fall out of the window.
+const PREREAD_LEAD_MIN   = 15;
+const PREREAD_WINDOW_MIN = 55;
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -181,17 +190,31 @@ export default async function handler(req, res) {
   const R = UNIVERSE[region];
   if (!R) return res.status(400).json({ error: 'bad region' });
 
-  // DST-safe cron gating. Vercel crons are UTC-only and would drift an hour across
-  // daylight-saving shifts. For DST-observing regions (EU/US) we schedule the cron at
-  // BOTH candidate UTC hours and gate here on the region's real local hour (Intl,
-  // DST-aware), so exactly one firing per day actually posts. Asia (HK/KR/TW/JP keep
-  // no DST) needs one entry, but the same gate applies harmlessly. Only scheduled
-  // calls pass cron=1 — manual calls/dry-runs skip the gate, so tests always run.
-  if (req.query.cron === '1' && localHour(R.tz) !== R.prereadHourLocal) {
-    return res.status(200).json({
-      region, skipped: true,
-      reason: `off-target local hour (want ${R.prereadHourLocal}:00 ${R.tz}, now ${localHour(R.tz)}:00)`,
-    });
+  // DST-safe, LEAD-TIMED cron gating. Vercel crons are UTC-only and would drift an hour
+  // across daylight-saving shifts. For DST-observing regions (EU/US) we schedule the cron at
+  // BOTH candidate UTC hours and gate here on the region's real local time (Intl, DST-aware),
+  // so exactly one firing per day actually posts. Asia (HK/KR/TW/JP keep no DST) needs one
+  // entry, but the same gate applies harmlessly.
+  //
+  // Why a WINDOW, not `localHour === prereadHourLocal`: the old gate could only pass once the
+  // local clock had already reached the top of the target hour, so cron jitter + the
+  // assemble-and-post runtime always landed the brief a few minutes AFTER the intended time.
+  // The crons now fire PREREAD_LEAD_MIN before the target (see vercel.json), and we accept a
+  // half-open window [target-lead, target-lead+PREREAD_WINDOW_MIN). Window < 60min so the two
+  // DST candidate crons (exactly 60min apart in local time) can never both pass, while still
+  // absorbing up to ~an hour of positive cron jitter. Only scheduled calls pass cron=1 —
+  // manual calls/dry-runs skip the gate, so tests always run.
+  if (req.query.cron === '1') {
+    const nowMin    = localMinutesOfDay(R.tz);
+    const openMin   = R.prereadHourLocal * 60 - PREREAD_LEAD_MIN;   // window opens `lead` before target
+    const sinceOpen = nowMin - openMin;
+    if (sinceOpen < 0 || sinceOpen >= PREREAD_WINDOW_MIN) {
+      const hh = Math.floor(nowMin / 60), mm = String(nowMin % 60).padStart(2, '0');
+      return res.status(200).json({
+        region, skipped: true,
+        reason: `off-window (target ${R.prereadHourLocal}:00 ${R.tz}, delivery window ${Math.floor(openMin/60)}:${String(openMin%60).padStart(2,'0')}–${Math.floor((openMin+PREREAD_WINDOW_MIN)/60)}:${String((openMin+PREREAD_WINDOW_MIN)%60).padStart(2,'0')}, now ${hh}:${mm})`,
+      });
+    }
   }
 
   const { quotes, idxRaw, macro, regime, read: composed } = await assembleRegion(region);
