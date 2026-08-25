@@ -3823,6 +3823,21 @@ function CorrelationCollapse({ c }) {
       <div style={{ fontSize: 12.5, fontWeight: 800, color: col === C.green ? C.mid : col, marginTop: 5, lineHeight: 1.5 }}>
         aggregate ρ {c.avg} — {c.reading}
       </div>
+      {/* Plain-English translation. The panel previously spoke only in ρ and "effective positions",
+          which assumes the reader knows Pearson correlation — the number alone doesn't say what to
+          DO. This states the concentration in portfolio terms. */}
+      <div style={{ marginTop: 6, padding: "8px 11px", borderRadius: 8, background: C.bg, border: "1px solid " + C.bdr, fontSize: 12, color: C.mid, lineHeight: 1.6 }}>
+        <b style={{ color: C.text }}>In plain English:</b> ρ (rho) measures how tightly two names move together over the last {c.window} trading days —
+        <b> 1.0</b> = identical moves, <b>0</b> = unrelated, <b>−1</b> = opposite. Above ~<b>0.85</b> two names are effectively the same bet.
+        {c.effectivePositions != null && (
+          <> You hold <b style={{ color: C.text }}>{c.legs.length} names but {c.effectivePositions} real position{c.effectivePositions === 1 ? "" : "s"}</b>
+            {c.effectivePositions < c.legs.length
+              ? <> — {c.blocks?.length ? `${c.blocks.join(" and ")} ` : ""}move as one, so the money you think is spread across {c.legs.length} bets is concentrated in {c.effectivePositions}. Sizing each as an independent position <b style={{ color: C.red }}>understates your true risk</b>.</>
+              : <> — each name is still pulling its own way, so the diversification is real.</>}
+          </>
+        )}
+        {" "}“Aggregate ρ {c.avg}” is just the average across every pair — a single hot pair can hide inside a calm-looking average, which is why the effective-position count leads.
+      </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
         {c.pairs.map(p => (
           <span key={p.a + p.b} style={{ fontSize: 11, fontWeight: 700, color: p.corr >= 0.7 ? C.red : p.corr >= 0.4 ? C.amber : C.green,
@@ -4097,7 +4112,7 @@ function SouthboundPanel() {
 
   const ahOk = smicAH?.premium != null;           // auto feed live?
   const ah = southboundLevelTrend(smicAH?.series || [], "premium");
-  const ahRead = ahPremiumRead(smicAH?.premium ?? null, ah.d5, ah.d20);
+  const ahRead = ahPremiumRead(smicAH?.premium ?? null, ah.d5, ah.d20, smicAH);
   const tSmic = southboundLevelTrend(series, "smicHolding");  // manual CCASS-holding fallback
   const tAgg = southboundTrend(series, "aggregateNet");
   const read = southboundRead(tAgg);
@@ -4147,13 +4162,13 @@ function SouthboundPanel() {
             </div>
           ) : tSmic.level != null ? (
             <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3, lineHeight: 1.6 }}>
-              <span style={{ color: C.amber, fontWeight: 700 }}>A-share quote down</span> — manual Connect holding:<br />
+              <span style={{ color: C.amber, fontWeight: 700 }} title={smicAH?.reason || undefined}>A/H feed down{smicAH?.failed?.length ? ` (${smicAH.failed.join(", ")})` : ""}</span> — manual Connect holding:<br />
               {tSmic.latest?.date}: <b style={{ color: C.text, fontSize: 14 }}>{tSmic.level}%</b> held via Southbound<br />
               Δ 5-day <b style={{ color: (tSmic.d5 ?? 0) > 0 ? C.green : (tSmic.d5 ?? 0) < 0 ? C.red : C.muted }}>{dlt(tSmic.d5)}</b> · Δ 20-day <b style={{ color: (tSmic.d20 ?? 0) > 0 ? C.green : (tSmic.d20 ?? 0) < 0 ? C.red : C.muted }}>{dlt(tSmic.d20)}</b>
             </div>
           ) : (
             <div style={{ fontSize: 11.5, color: C.amber, marginTop: 3, lineHeight: 1.55 }}>
-              A-share quote down. Enter SMIC's Southbound holding % from <a href={CCASS} target="_blank" rel="noopener noreferrer" style={{ color: C.blue, fontWeight: 700 }}>HKEX CCASS ↗</a>: stock code <b>0981</b> → pick the date → read the <i>Shanghai/Shenzhen Stock Connect</i> row's % of issued, and type it in the <b>SMIC holding %</b> box below.
+              <span title={smicAH?.reason || undefined}>A/H feed down{smicAH?.failed?.length ? ` (${smicAH.failed.join(", ")})` : ""}.</span> Enter SMIC's Southbound holding % from <a href={CCASS} target="_blank" rel="noopener noreferrer" style={{ color: C.blue, fontWeight: 700 }}>HKEX CCASS ↗</a>: stock code <b>0981</b> → pick the date → read the <i>Shanghai/Shenzhen Stock Connect</i> row's % of issued, and type it in the <b>SMIC holding %</b> box below.
             </div>
           )}
         </div>
@@ -6343,14 +6358,14 @@ export default function App() {
               })()}
               {(() => { const shownPhases = INSURANCE_PHASES.filter(p => INS_PHASE_DIMS[insDimOf(insurancePhase)].includes(p.k)); return (
               <div style={{ overflowX: "auto", width: "100%" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: shownPhases.length > 1 ? 700 : 360, fontSize: 12 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: shownPhases.length > 1 ? 780 : 420, fontSize: 12.5 }}>
                   <thead>
                     <tr>
-                      <th style={{ textAlign: "left", color: C.mid, padding: "6px 10px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700, width: 140, minWidth: 140 }}>Instrument</th>
+                      <th style={{ textAlign: "left", color: C.mid, padding: "6px 10px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700, width: 168, minWidth: 168 }}>Instrument</th>
                       {shownPhases.map(p => {
                         const on = insurancePhase === p.k;
                         return (
-                          <th key={p.k} style={{ padding: 0, minWidth: 120, borderBottom: "1.5px solid " + (on ? p.color : C.bdr) }}>
+                          <th key={p.k} style={{ padding: 0, minWidth: 150, borderBottom: "1.5px solid " + (on ? p.color : C.bdr) }}>
                             <button onClick={() => pickInsurancePhase(p.k)} title={p.desc} style={{
                               width: "100%", cursor: "pointer", border: "none", whiteSpace: "nowrap",
                               background: on ? p.color : "transparent",
@@ -6362,7 +6377,7 @@ export default function App() {
                             </button>
                             {p.size && (
                               <div style={{ textAlign: "center", padding: "2px 6px 4px", background: on ? p.bg : "transparent" }} title={"Insurance sizing this phase: " + p.size.note}>
-                                <span style={{ fontSize: 9.5, fontWeight: 800, color: p.color, letterSpacing: 0.2 }}>🎯 {p.size.band}</span>
+                                <span style={{ fontSize: 11, fontWeight: 800, color: p.color, letterSpacing: 0.2 }}>🎯 {p.size.band}</span>
                               </div>
                             )}
                           </th>
@@ -6383,10 +6398,10 @@ export default function App() {
                       );
                       rows.push(
                         <tr key={r.row} style={{ background: ri % 2 === 0 ? C.surf : C.bg }}>
-                          <td style={{ padding: "6px 10px", color: C.text, fontWeight: 600, borderBottom: "1px solid " + C.bdr, width: 140, minWidth: 140 }}>
+                          <td style={{ padding: "6px 10px", color: C.text, fontWeight: 600, borderBottom: "1px solid " + C.bdr, width: 168, minWidth: 168 }}>
                             {r.row}
-                            {r.benchmark && <span style={{ display: "inline-block", marginLeft: 5, fontSize: 8, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: "#1D4ED8", background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 4, padding: "1px 4px", verticalAlign: "middle" }} title="Benchmark — not investable in this account">Benchmark · not investable</span>}
-                            {r.note && <div style={{ fontSize: 9.5, color: C.lbl, fontWeight: 400, lineHeight: 1.4, marginTop: 2 }} title={r.note}>{r.note.length > 70 ? r.note.slice(0, 68) + "…" : r.note}</div>}
+                            {r.benchmark && <span style={{ display: "inline-block", marginLeft: 5, fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: "#1D4ED8", background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 4, padding: "1px 4px", verticalAlign: "middle" }} title="Benchmark — not investable in this account">Benchmark · not investable</span>}
+                            {r.note && <div style={{ fontSize: 11, color: C.lbl, fontWeight: 400, lineHeight: 1.45, marginTop: 3 }} title={r.note}>{r.note.length > 90 ? r.note.slice(0, 88) + "…" : r.note}</div>}
                           </td>
                           {shownPhases.map(p => {
                             const on = insurancePhase === p.k;
@@ -6395,14 +6410,14 @@ export default function App() {
                             const cc = (r.carryBy && r.carryBy[p.col]) || r.carry;
                             const hl = HOLD_LOGIC[r.cat];
                             return (
-                              <td key={p.k} style={{ textAlign: "center", padding: "6px 8px", minWidth: 120, borderBottom: "1px solid " + C.bdr, background: on ? p.bg : "transparent" }}>
+                              <td key={p.k} style={{ textAlign: "center", padding: "8px 10px", minWidth: 150, borderBottom: "1px solid " + C.bdr, background: on ? p.bg : "transparent" }}>
                                 <div style={{ fontSize: 14, fontWeight: on ? 800 : 400 }}>{r[p.col]}</div>
-                                {act && <div style={{ marginTop: 3, display: "inline-block", fontSize: 8.5, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: st.color, background: st.bg, border: "1px solid " + st.bdr, borderRadius: 4, padding: "1px 5px", lineHeight: 1.35 }}>{act}</div>}
+                                {act && <div style={{ marginTop: 4, display: "inline-block", fontSize: 10, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: st.color, background: st.bg, border: "1px solid " + st.bdr, borderRadius: 4, padding: "1px 5px", lineHeight: 1.35 }}>{act}</div>}
                                 {on && hl && (
-                                  <div style={{ marginTop: 4, fontSize: 8.5, color: C.lbl, fontWeight: 600, lineHeight: 1.35, whiteSpace: "normal", maxWidth: 130, margin: "4px auto 0" }} title={"Hold: " + hl.horizon + " · Exit: " + hl.exit}>⏳ {hl.horizonShort} · exit: {hl.exitShort}</div>
+                                  <div style={{ marginTop: 5, fontSize: 10.5, color: C.lbl, fontWeight: 600, lineHeight: 1.45, whiteSpace: "normal", maxWidth: 150, margin: "4px auto 0" }} title={"Hold: " + hl.horizon + " · Exit: " + hl.exit}>⏳ {hl.horizonShort} · exit: {hl.exitShort}</div>
                                 )}
                                 {on && cc && (
-                                  <div style={{ marginTop: 3, fontSize: 8.5, color: C.muted, fontWeight: 400, lineHeight: 1.35, whiteSpace: "normal", maxWidth: 130, margin: "3px auto 0" }} title={"Carry: " + cc}>{cc}</div>
+                                  <div style={{ marginTop: 4, fontSize: 10.5, color: C.muted, fontWeight: 400, lineHeight: 1.45, whiteSpace: "normal", maxWidth: 150, margin: "3px auto 0" }} title={"Carry: " + cc}>{cc}</div>
                                 )}
                               </td>
                             );
