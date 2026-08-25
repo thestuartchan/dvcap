@@ -210,18 +210,6 @@
         "status": "idea",
         "note": "",
         "addedAt": "2026-08-25T19:19:23.753Z"
-      },
-      {
-        "id": "TLT-i9q7by",
-        "symbol": "TLT",
-        "side": null,
-        "entry": null,
-        "stop": null,
-        "targets": [],
-        "riskPct": null,
-        "status": "idea",
-        "note": "",
-        "addedAt": "2026-08-25T19:19:56.600Z"
       }
     ],
     "journal": [],
@@ -231,6 +219,6 @@
       "alertsEnabled": false,
       "sizing": {}
     },
-    "updatedAt": "2026-08-25T19:20:05.450Z"
+    "updatedAt": "2026-08-25T21:47:38.145Z"
   }
 }
