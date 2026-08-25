@@ -540,39 +540,29 @@
     },
     {
       "date": "2026-08-25",
-      "stagflation_p": 65,
-      "reflationary_p": 5,
-      "deflationary_p": 25,
+      "stagflation_p": 55,
+      "reflationary_p": 20,
+      "deflationary_p": 20,
       "inflationary_p": 5,
-      "hawkish_repricing": "DISINFLATIONARY_EASING",
+      "hawkish_repricing": null,
       "live_regime": "stag",
       "view_regime": "stag",
-      "pinned": true,
-      "hyg_chg": 0.11,
-      "hyg_qqq_divergence": 1.11,
+      "pinned": false,
+      "hyg_chg": null,
+      "hyg_qqq_divergence": null,
       "inputs": {
-        "weightedRecessionProb": 10.811105602379772,
-        "cpi": 3.30386,
-        "kalshi2027": 25,
-        "tape": {
-          "gold": "up",
-          "tlt": "up",
-          "xlu": "up",
-          "xlp": "up",
-          "spy": "down",
-          "qqq": "down",
-          "iwm": "down",
-          "btc": "up",
-          "breakevenBp": -2
-        },
-        "ladderSpread": -2.54,
-        "u3": 4.1,
-        "empPop": 58.9,
-        "oas": 2.7,
-        "tenY": 4.74,
-        "twoY": 4.24
+        "weightedRecessionProb": 15.334639059876888,
+        "cpi": null,
+        "kalshi2027": 41,
+        "tape": null,
+        "ladderSpread": null,
+        "u3": null,
+        "empPop": null,
+        "oas": null,
+        "tenY": null,
+        "twoY": null
       },
-      "loggedAt": "2026-08-25T07:26:48.065Z"
+      "loggedAt": "2026-08-25T10:11:14.918Z"
     }
   ]
 }
