@@ -5190,7 +5190,7 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
           <span style={{ color: C.bdr }}>·</span>
           <span style={{ color: C.lbl, fontWeight: 700 }}>size ×</span>
           <b style={{ color: C.text }}>{rm.mult.toFixed(2)}</b>
-          <span style={{ color: C.muted, fontSize: 12 }}>({rm.reasons[rm.reasons.length - 1]})</span>
+          <span style={{ color: C.muted, fontSize: 12 }}>({rm.reasons.length > 1 ? rm.reasons.slice(1).join("; ") : (mergedSizing[liveRegime?.id]?.note || liveRegime?.label || "base")})</span>
           {contested && chip("⚖ CONTESTED", C.amber, C.aBg || "#FFFBEB", C.aBdr || "#FDE68A")}
           {regimeDiverged && chip("📌 PINNED≠LIVE", C.amber, C.aBg || "#FFFBEB", C.aBdr || "#FDE68A")}
         </div>
