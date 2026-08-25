@@ -5228,6 +5228,9 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
   const [expanded, setExpanded] = useState(null);
   const [addSym, setAddSym]     = useState("");
   const [jForm, setJForm]       = useState(null);   // open journal form (prefilled from a row or blank)
+  const [portOpen, setPortOpen] = useState(false);  // import/export panel
+  const [importTxt, setImportTxt] = useState("");
+  const [importMsg, setImportMsg] = useState(null);
   const notifiedRef = useMemo(() => ({ current: new Set() }), []);   // dedupe browser notifications
 
   // Load: localStorage for instant paint, then the server store (authoritative if present).
@@ -5372,6 +5375,44 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
     setSettings(s => ({ ...s, alertsEnabled: !s.alertsEnabled })); touch();
   };
 
+  // ── Import / export ──────────────────────────────────────────────────────
+  // The console's state lives server-side, which means there is no way to seed it except through
+  // this UI — pasting a payload here is strictly better than handing round Redis credentials.
+  // It also doubles as backup/restore and as the migration path between stores.
+  const exportJson = () => JSON.stringify({ watchlist: wl, journal, settings }, null, 2);
+  const doImport = (mode) => {
+    setImportMsg(null);
+    let parsed;
+    try { parsed = JSON.parse(importTxt); } catch { setImportMsg({ err: "That is not valid JSON." }); return; }
+    const inWl = Array.isArray(parsed?.watchlist) ? parsed.watchlist : null;
+    const inJr = Array.isArray(parsed?.journal) ? parsed.journal : null;
+    if (!inWl && !inJr && !parsed?.settings) { setImportMsg({ err: "No watchlist, journal or settings found in that payload." }); return; }
+    // Normalise + de-dupe by symbol so a re-paste updates rather than duplicating rows.
+    const clean = (inWl || []).map(w => ({
+      id: w.id || `${String(w.symbol || "").toUpperCase()}-${Math.random().toString(36).slice(2, 8)}`,
+      symbol: String(w.symbol || "").toUpperCase(),
+      side: w.side === "long" || w.side === "short" ? w.side : null,
+      entry: w.entry ?? null, stop: w.stop ?? null,
+      targets: Array.isArray(w.targets) ? w.targets : [],
+      riskPct: w.riskPct ?? null, currency: (w.currency || "USD").toUpperCase(),
+      status: w.status || "idea", note: w.note || "",
+      addedAt: w.addedAt || new Date().toISOString(),
+    })).filter(w => w.symbol);
+    if (mode === "replace") {
+      setWl(clean);
+      if (inJr) setJournal(inJr);
+    } else {
+      const bySym = new Map(wl.map(w => [w.symbol, w]));
+      for (const w of clean) bySym.set(w.symbol, { ...(bySym.get(w.symbol) || {}), ...w, id: bySym.get(w.symbol)?.id || w.id });
+      setWl([...bySym.values()]);
+      if (inJr) setJournal(prev => [...inJr, ...prev]);
+    }
+    if (parsed.settings) setSettings(s => ({ ...s, ...parsed.settings }));
+    touch();
+    setImportMsg({ ok: `Loaded ${clean.length} position${clean.length === 1 ? "" : "s"}${parsed.settings ? " + settings" : ""}. Now press “Save to cloud” to sync.` });
+    setImportTxt("");
+  };
+
   // ── small presentational helpers ──
   const chip = (txt, col, bg, bd) => (
     <span style={{ background: bg, color: col, border: "1px solid " + bd, borderRadius: 6, padding: "1px 7px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>{txt}</span>
@@ -5470,6 +5511,38 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
           </div>
           <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Credit-DANGER caps the multiplier at {CREDIT_DANGER_CAP_LABEL}; a contested or pinned≠live regime applies an extra ×0.7 haircut. Suggestions only — you size the trade.</div>
         </div>
+      </Card>
+
+      {/* import / export — the only way to seed server-side state without sharing credentials */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <SLabel>Import / export</SLabel>
+          <span style={{ fontSize: 11.5, color: C.muted }}>seed from a broker export, back up, or move between devices</span>
+          <button onClick={() => setPortOpen(o => !o)} style={{ marginLeft: "auto", cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700 }}>
+            {portOpen ? "Hide" : "Open"}
+          </button>
+        </div>
+        {portOpen && (
+          <div style={{ marginTop: 10 }}>
+            <textarea value={importTxt} onChange={e => setImportTxt(e.target.value)}
+              placeholder='Paste a payload, e.g. {"watchlist":[{"symbol":"AMZN","entry":234.82,"currency":"USD","status":"in-trade"}]}'
+              style={{ width: "100%", boxSizing: "border-box", minHeight: 110, padding: "9px 11px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 12, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", background: C.surf, color: C.text, lineHeight: 1.5 }} />
+            <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <Btn onClick={() => doImport("merge")} disabled={!importTxt.trim()} color="#fff" bgColor={C.blue} label="Merge in" />
+              <Btn onClick={() => doImport("replace")} disabled={!importTxt.trim()} color={C.red} bgColor={C.surf} label="Replace all" />
+              <Btn onClick={() => { setImportTxt(exportJson()); setImportMsg({ ok: "Current state exported below — copy it somewhere safe." }); }} color={C.mid} bgColor={C.bg} label="⬇ Export current" />
+              {importMsg && (
+                <span style={{ fontSize: 12, fontWeight: 600, color: importMsg.err ? C.red : C.green }}>
+                  {importMsg.err || importMsg.ok}
+                </span>
+              )}
+            </div>
+            <div style={{ marginTop: 7, fontSize: 11, color: C.lbl, lineHeight: 1.55 }}>
+              <b>Merge in</b> upserts by symbol (a re-paste updates a row rather than duplicating it); <b>Replace all</b> swaps the whole book.
+              Either way nothing reaches the server until you press <b>Save to cloud</b> — so an import can be reviewed, edited, or abandoned by reloading first.
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* add symbol */}
