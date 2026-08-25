@@ -1,4 +1,4 @@
-import { horizonOf, HORIZON, consensusFor, calendarWindow, blockOf, dispersionRead, lastRevision, roundTrips, sourceScore } from '../lib/recession.js';
+import { horizonOf, HORIZON, consensusFor, calendarWindow, blockOf, dispersionRead } from '../lib/recession.js';
 let p=0,f=0;const eq=(n,g,w)=>{const ok=JSON.stringify(g)===JSON.stringify(w);console.log(`${ok?'✅':'❌'} ${n}`+(ok?'':`\n     got  ${JSON.stringify(g)}\n     want ${JSON.stringify(w)}`));ok?p++:f++;};
 
 // horizon classification
@@ -41,20 +41,6 @@ eq('calendar keeps raw dispersion', [cal.lo,cal.hi], [12.5,22]);
 // dispersion
 eq('wide spread flagged', dispersionRead({value:20,spread:16,lo:12,hi:28}).wide, true);
 eq('tight spread ok', dispersionRead({value:15,spread:3,lo:14,hi:17}).wide, false);
-
-// revisions — Goldman's documented round trip 25 -> 30 -> 15
-const gs=[{asOf:'2026-02-15',prob:25},{asOf:'2026-03-25',prob:30},{asOf:'2026-06-26',prob:15}];
-eq('goldman roundTrips', roundTrips(gs), 1);
-eq('goldman lastRevision', lastRevision(gs).delta, -15);
-eq('goldman dir', lastRevision(gs).dir, 'down');
-const sc=sourceScore(gs,'2026-08-25');
-eq('goldman grade', sc.grade, 'reactive');
-eq('goldman avgMove', sc.avgMove, 10);
-eq('goldman netDrift', sc.netDrift, -10);
-eq('goldman daysSince', sc.daysSince, 60);
-// steady source
-eq('steady grade', sourceScore([{prob:15},{prob:17},{prob:18}]).grade, 'steady');
-eq('insufficient', sourceScore([{prob:15}]).grade, 'insufficient history');
 
 console.log(f?`\n❌ ${f} FAILED`:`\n✅ ALL ${p} PASSED`);
 process.exit(f?1:0);

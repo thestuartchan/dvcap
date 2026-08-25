@@ -13,7 +13,7 @@ import { deriveRegimeProbabilities, CONTESTED_GAP } from "../lib/regimeProb.js";
 import { minersPairImplication } from "../lib/regimeState.js";
 import { southboundTrend, southboundLevelTrend, southboundRead, ahPremiumRead, sbStale } from "../lib/southbound.js";
 import { STATUS, creditStatus, deriveAction, headerSignal, STAGES } from "../lib/status.js";
-import { HORIZON, HORIZON_LABEL, horizonOf, consensusFor, calendarWindow, dispersionRead, sourceScore, lastRevision, blockOf, BLOCK_LABEL, NO_CONVERSION_NOTE } from "../lib/recession.js";
+import { HORIZON, HORIZON_LABEL, consensusFor, calendarWindow, dispersionRead, NO_CONVERSION_NOTE } from "../lib/recession.js";
 import { buildViews, evaluateViews, regimeCluster, divergenceRead } from "../lib/analystViews.js";
 import { REGIME_SIZING, rMultiple, positionSize, regimeMultiplier, suggestedSize, distanceToLevels, triggeredLevels, tradeSide, DEFAULT_BASE_RISK_PCT } from "../lib/console.js";
 import { observationAge } from "../lib/gates.js";
@@ -2174,27 +2174,6 @@ const RECESSION_SOURCE_WEIGHTS = {
   "Moody's Analytics (Zandi)": 0.10,
   "Kalshi prediction market": 0.10, // 2026 row only; 2027 row handled separately
   "Polymarket": 0.10,
-};
-
-// Published revision history per source — the same trajectories already narrated in each row's
-// `notes`, structured so they can be scored instead of just read. Dates are the publication dates
-// where known; sourceScore() grades on the SEQUENCE (reversals, move sizes), so an approximate
-// date does not corrupt the grade — only the "days since" readout depends on the last one.
-// Nothing here is a new figure: every value appears in the row notes above.
-const RECESSION_REVISIONS = {
-  "Goldman Sachs": [
-    { asOf: "2026-02-15", prob: 25, note: "pre-Iran war" },
-    { asOf: "2026-03-25", prob: 30, note: "March peak — Hormuz oil shock" },
-    { asOf: "2026-06-26", prob: 15, note: "post peace deal — oil lower, capex solid" },
-  ],
-  "Kalshi prediction market": [
-    { asOf: "2026-05-01", prob: 17.5, note: "prior month" },
-    { asOf: "2026-06-01", prob: 22, note: "uptick despite the peace deal — lingering growth concern" },
-  ],
-  "NY Fed DSGE Model": [
-    { asOf: "2025-12-01", prob: 37.5, note: "December vintage" },
-    { asOf: "2026-03-01", prob: 35.8, note: "March vintage — since archived" },
-  ],
 };
 
 // Expected publication cadence per source, in days — how often THIS source actually publishes a
@@ -5134,6 +5113,14 @@ function AnalystViewBoard({ live, probFor, engineRegime, consensus }) {
           <span style={{ fontSize: 10, color: C.lbl }}>· {v.kind}</span>
         </div>
         <div style={{ marginTop: 5, fontSize: 12.5, color: C.mid, fontStyle: "italic", lineHeight: 1.5 }}>“{v.call}”</div>
+        {/* Provenance — every view names where it came from and when, same discipline as the
+            numeric rows. A view read off a secondary summary says so. */}
+        {v.sourceNote && (
+          <div style={{ marginTop: 4, fontSize: 10.5, color: C.lbl, lineHeight: 1.45 }} title={v.sourceNote}>
+            {v.published ? <b>{v.published}</b> : null}{v.published ? " · " : ""}
+            {v.sourceNote.length > 96 ? v.sourceNote.slice(0, 94) + "…" : v.sourceNote}
+          </div>
+        )}
         <div style={{ marginTop: 7, display: "flex", flexDirection: "column", gap: 3 }}>
           {v.conditions.map((c, i) => (
             <div key={i} style={{ fontSize: 12, color: C.mid, lineHeight: 1.5, display: "flex", gap: 6 }} title={c.why || undefined}>
@@ -5661,8 +5648,7 @@ export default function App() {
   const fallbackRegimes = { stagflation: 48, reflationary: 17, deflationary: 30, inflationary: 5 };
   const recConsensus = computeWeightedRecessionProb(effectiveRecessionSources, new Date().toISOString().slice(0, 10));
   // The regime engine consumes the ROLLING-12M consensus — the horizon it actually asks about.
-  // recLegacyBlend is the old all-horizons average, kept visible so the difference is auditable.
-  const { regimeInput: recWeightedAvg, weightedAvg: recLegacyBlend, kalshi2027: recKalshi2027, decayed: recDecayed } = recConsensus;
+  const { regimeInput: recWeightedAvg, kalshi2027: recKalshi2027, decayed: recDecayed } = recConsensus;
   const cpiForRegime = liveInd?.cpiHeadlineCurrent ?? liveInd?.cpi ?? null;
   // Section A — the growth/inflation context that decides whether a falling recession
   // probability is a GROWTH story or a STAGFLATION story. Both legs are live.
@@ -7821,6 +7807,10 @@ export default function App() {
                   septHikeOdds: SEP_HIKE_ODDS?.value ?? null,
                   fedHawkish: /hawkish/i.test(FED_LANGUAGE_STATUS?.status || ""),
                   capexRising: true,   // big-four 2026 ~$725B (+77% YoY) — Smart Money tab, sourced
+                  unemployment: laborView?.u3?.value ?? liveInd?.unemployment ?? null,
+                  // The employment SHARE, not the headline rate: U3 can fall on labour-force exit
+                  // while the employed share shrinks, which is the consumer tell these theses rest on.
+                  empPopFalling: laborView?.empPop?.delta == null ? null : laborView.empPop.delta < 0,
                 }}
                 probFor={(key) => {
                   const row = effectiveRecessionSources.find(r => r.name === key);
@@ -7836,7 +7826,7 @@ export default function App() {
                   averaging it with rolling-12m forecasts pushed the consensus down for calendar
                   reasons alone — and that number drives the regime engine and position sizing. */}
               {(() => {
-                const { rolling: roll, calendar: cal, calWindow: cw, weightedAvg: legacy } = recConsensus;
+                const { rolling: roll, calendar: cal, calWindow: cw } = recConsensus;
                 const disp = dispersionRead(roll);
                 const box = (title, c, opts = {}) => (
                   <div style={{ flex: "1 1 260px", background: opts.primary ? C.blBg : C.bg, border: "1.5px solid " + (opts.primary ? C.blBdr : C.bdr), borderRadius: 10, padding: "11px 13px" }}>
@@ -7887,9 +7877,6 @@ export default function App() {
                     )}
                     <div style={{ marginTop: 7, fontSize: 11, color: C.lbl, lineHeight: 1.6 }}>
                       {NO_CONVERSION_NOTE}
-                      {legacy != null && roll.value != null && Math.abs(legacy - roll.value) >= 0.1 && (
-                        <> <span style={{ color: C.muted }}>The former all-horizons blend read <b>{legacy.toFixed(1)}%</b>; the regime engine now uses <b>{roll.value}%</b>.</span></>
-                      )}
                     </div>
                   </div>
                 );
@@ -7913,7 +7900,7 @@ export default function App() {
                 <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 400 }}>
                   <thead>
                     <tr style={{ background: C.bg }}>
-                      {["Source", "Probability", "Revisions", "As of", "Timeframe", "Notes"].map(h => (
+                      {["Source", "Probability", "As of", "Timeframe", "Notes"].map(h => (
                         <th key={h} style={{ textAlign: "left", color: C.mid, padding: "8px 12px", borderBottom: "2px solid " + C.bdr, fontSize: 13, fontWeight: 700 }}>{h}</th>
                       ))}
                     </tr>
@@ -7938,32 +7925,6 @@ export default function App() {
                         </td>
                         <td style={{ padding: "8px 12px", borderBottom: "1px solid " + C.bdr }}>
                           <span style={{ color: pCol, fontWeight: 800, fontSize: 15 }}>{r.probability}</span>
-                        </td>
-                        {/* Revisions — direction of travel + a DESCRIPTIVE behaviour grade. A level
-                            alone hides whether a source is being revised up or down, and whether it
-                            round-trips (revising up then straight back = following the news, not
-                            leading it). Accuracy is deliberately NOT scored: recessions are rare and
-                            NBER declares them 6–18 months late, so an accuracy score would take
-                            years to say anything. See lib/recession.js. */}
-                        <td style={{ padding: "8px 12px", fontSize: 12, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap" }}>
-                          {(() => {
-                            const hist = RECESSION_REVISIONS[r.name];
-                            if (!hist || hist.length < 2) return <span style={{ color: C.lbl }}>—</span>;
-                            const sc = sourceScore(hist, new Date().toISOString().slice(0, 10));
-                            const lr = sc.last;
-                            const gCol = sc.grade === "reactive" ? C.amber : sc.grade === "steady" ? C.green : C.mid;
-                            return (
-                              <span title={`${hist.map(h => h.prob + "%").join(" → ")}  ·  ${sc.note}`}>
-                                <b style={{ color: lr.dir === "up" ? C.red : lr.dir === "down" ? C.green : C.muted }}>
-                                  {lr.dir === "up" ? "▲" : lr.dir === "down" ? "▼" : "—"} {lr.delta > 0 ? "+" : ""}{lr.delta}pp
-                                </b>
-                                <span style={{ color: C.lbl }}> from {lr.from}%</span>
-                                <div style={{ fontSize: 10, fontWeight: 800, color: gCol, textTransform: "uppercase", letterSpacing: 0.3, marginTop: 2 }}>
-                                  {sc.grade}{sc.trips > 0 ? ` · ${sc.trips} reversal${sc.trips > 1 ? "s" : ""}` : ""}
-                                </div>
-                              </span>
-                            );
-                          })()}
                         </td>
                         {/* As-of + freshness, judged against the SOURCE'S OWN cadence. An old
                             figure must never read as a current post-FOMC one — but neither should
