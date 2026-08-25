@@ -172,6 +172,7 @@ const {
         {/* A symbol can hold more than one trade at once — the label and the open date are what
             tell two METU trades apart at a glance, so they sit in the header, not in the editor. */}
         {r.trade ? <span style={{ fontSize: 11.5, color: C.mid, fontWeight: 700, background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6, padding: "1px 7px", whiteSpace: "nowrap" }}>{r.trade}</span> : null}
+        {d.multiplier > 1 ? chip(`×${d.multiplier}`, C.amber, C.aBg, C.aBdr) : null}
         {mode === "open" && d.firstDate ? <span style={{ fontSize: 11.5, color: C.lbl, whiteSpace: "nowrap" }}>since {d.firstDate}</span> : null}
         <span style={{ fontSize: 14, fontWeight: 700, minWidth: 62 }}>{price != null ? price.toFixed(2) : "—"}</span>
         <span style={{ fontSize: 12.5, fontWeight: 800, minWidth: 54, color: q?.changePercent == null ? C.muted : q.changePercent >= 0 ? C.green : C.red }}>
@@ -462,7 +463,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   // `rows` alone rather than from `derivedRows`, which depends on `prices` and would make the
   // fetch feed its own input.
   const symbols = useMemo(() => [...new Set(
-    rows.filter(r => derivePosition(r.fills || []).status !== "closed").map(r => r.symbol).filter(Boolean)
+    rows.filter(r => derivePosition(r.fills || [], { multiplier: r.multiplier }).status !== "closed").map(r => r.symbol).filter(Boolean)
   )], [rows]);
   const usedCcys = useMemo(() => [...new Set([baseCcy, ...rows.map(r => r.currency || "USD")])], [rows, baseCcy]);
   const fxSyms = useMemo(() => fxSymbolsFor(usedCcys), [usedCcys]);
@@ -490,7 +491,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
 
   // ── derive everything from fills ──
   const derivedRows = useMemo(() => rows.map(r => {
-    const derived = derivePosition(r.fills || []);
+    const derived = derivePosition(r.fills || [], { multiplier: r.multiplier });
     return { ...r, derived, pnl: positionPnl(derived, priceOf(r)) };
   }), [rows, prices]);
 
@@ -599,6 +600,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
         id: r.id || `${String(r.symbol || "").toUpperCase()}-${Math.random().toString(36).slice(2, 8)}`,
         symbol: String(r.symbol || "").toUpperCase(), currency: (r.currency || "USD").toUpperCase(),
         thesis: r.thesis || "", trade: r.trade ? String(r.trade).slice(0, 40) : "",
+        multiplier: Number.isFinite(+r.multiplier) && +r.multiplier > 0 ? +r.multiplier : 1,
         levels: Array.isArray(r.levels) ? r.levels : [],
         fills: Array.isArray(r.fills) ? r.fills : [], tags: Array.isArray(r.tags) ? r.tags : [],
       })).filter(r => r.symbol);
@@ -918,6 +920,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
                   return (
                     <tr key={r.id} title={r.thesis || ""}>
                       <td style={{ ...td, fontWeight: 700 }}>{r.symbol} {ccyChip(r.currency)}
+                        {r.derived.multiplier > 1 ? <span style={{ fontWeight: 700, color: C.amber, fontSize: 11 }}> ×{r.derived.multiplier}</span> : null}
                         {r.trade ? <span style={{ fontWeight: 600, color: C.lbl, fontSize: 11.5 }}> · {r.trade}</span> : null}</td>
                       <td style={{ ...td, color: C.lbl, whiteSpace: "nowrap" }}>
                         {r.derived.firstDate || "?"} → {r.derived.lastDate || "?"}{days == null ? "" : ` · ${days}d`}</td>

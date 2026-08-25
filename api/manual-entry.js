@@ -110,6 +110,9 @@ function sanitizeRow(r) {
     thesis: cs(r.thesis, 600),
     // Short label that distinguishes two trades in the SAME symbol (one archived, one open).
     trade: cs(r.trade, 40),
+    // Contract multiplier (1 for shares, 100 for a US option). Money figures scale by it; prices
+    // stay quoted, so an option archives at its premium rather than a per-contract dollar amount.
+    multiplier: (Number.isFinite(+r.multiplier) && +r.multiplier > 0 && +r.multiplier <= 100000) ? +r.multiplier : 1,
     sizeMode: (r.sizeMode === 'risk' || r.sizeMode === 'allocation') ? r.sizeMode : null,
     targetPct: cn(r.targetPct),
     tranches: cn(r.tranches),

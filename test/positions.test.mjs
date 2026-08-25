@@ -151,5 +151,35 @@ const st = derivePosition([]);
 eq('setup has no entry', st.avgEntry, null);
 eq('setup has no exit', st.avgExit, null);
 
+// ── contract multiplier: money scales, quoted prices and percentages do not ──
+const opt = derivePosition([
+  {date:'2026-07-28', side:'buy',  qty:8, price:2.98894},
+  {date:'2026-07-30', side:'sell', qty:8, price:2.39914},
+], {multiplier: 100});
+eq('option entry stays a PREMIUM', opt.avgEntry, 2.98894);
+eq('option exit stays a PREMIUM', opt.avgExit, 2.39914);
+eq('realised is in DOLLARS', opt.realized, -471.84);
+eq('spent is in dollars', opt.spent, 2391.15);
+eq('multiplier reported back', opt.multiplier, 100);
+
+// The same fills without a multiplier must be 100x smaller — proving the scaling is real and
+// that every existing equity row is untouched by this change.
+const asShares = derivePosition(opt.fills);
+eq('default multiplier is 1', asShares.multiplier, 1);
+eq('shares realised is 1/100th', asShares.realized, -4.72);
+eq('shares entry identical', asShares.avgEntry, opt.avgEntry);
+
+// Live P&L: dollars scale, the percentage move in the premium does not.
+const live = derivePosition([{date:'2026-08-01', side:'buy', qty:2, price:5}], {multiplier: 100});
+const lp = positionPnl(live, 7.5);
+eq('option market value in dollars', lp.marketValue, 1500);
+eq('option unrealised in dollars', lp.unrealized, 500);
+eq('percentage is the premium move', lp.unrealizedPct, 50);
+eq('shares percentage matches', positionPnl(derivePosition(live.fills), 7.5).unrealizedPct, 50);
+
+// A nonsense multiplier falls back to 1 rather than zeroing or NaN-ing the whole book.
+eq('zero multiplier rejected', derivePosition(live.fills, {multiplier: 0}).multiplier, 1);
+eq('junk multiplier rejected', derivePosition(live.fills, {multiplier: 'x'}).multiplier, 1);
+
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);
