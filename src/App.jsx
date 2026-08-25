@@ -5328,7 +5328,11 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
   const del = (id) => { setRows(p => p.filter(r => r.id !== id)); touch(); };
   const addLevel = (id, kind) => {
     const r = rows.find(x => x.id === id); if (!r) return;
-    upd(id, { levels: [...(r.levels || []), { id: Math.random().toString(36).slice(2, 8), kind, at: null, to: null, note: "" }] });
+    // Seed at the live price rather than blank: an empty row reads as broken, and the level is
+    // almost always set relative to where the thing is trading now.
+    const live = priceOf(r);
+    const at = live != null ? +live.toFixed(2) : null;
+    upd(id, { levels: [...(r.levels || []), { id: Math.random().toString(36).slice(2, 8), kind, at, to: null, note: "" }] });
   };
   const updLevel = (id, lid, patch) => {
     const r = rows.find(x => x.id === id); if (!r) return;
@@ -5338,6 +5342,23 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
     const r = rows.find(x => x.id === id); if (!r) return;
     upd(id, { levels: (r.levels || []).filter(l => l.id !== lid) });
   };
+  // One entry point for every "record what I did" action. "stopped" is a SELL of the whole
+  // position prefilled at the stop price — it is the most common exit and had no obvious path.
+  const openFill = (r, intent) => {
+    const d = derivePosition(r.fills || []);
+    const stop = (r.levels || []).find(l => l.kind === "stop");
+    const live = priceOf(r);
+    setFillFor({
+      rowId: r.id,
+      side: intent === "buy" ? "buy" : "sell",
+      intent,
+      qty: intent === "stopped" ? (d.qty || "") : "",
+      price: intent === "stopped" ? (stop?.at ?? live ?? "") : (live ?? ""),
+      date: new Date().toISOString().slice(0, 10),
+      note: intent === "stopped" ? "stopped out" : "",
+    });
+  };
+
   const saveFill = () => {
     const f = fillFor; if (!f) return;
     const qty = +f.qty, price = +f.price;
@@ -5429,6 +5450,7 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
     const open = expanded === r.id;
     const d = r.derived, p = r.pnl;
     const active = (r.levels || []).filter(l => l.at != null);
+    const stopLevel = active.find(l => l.kind === "stop");
     const anyHit = active.some(l => levelHit(l, price));
     return (
       <div style={{ border: "1.5px solid " + (anyHit ? C.amber : C.bdr), borderLeft: "4px solid " + (anyHit ? C.amber : mode === "open" ? C.blue : C.bdr), borderRadius: 10, overflow: "hidden" }}>
@@ -5449,7 +5471,21 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
           {fitChip(fit.fit)}
           {ins && chip("🛡 " + ins, "#B45309", "#FFFBEB", "#FDE68A")}
           {anyHit && chip("⚡ level hit", C.amber, C.aBg, C.aBdr)}
-          <span style={{ marginLeft: "auto", color: C.lbl, fontSize: 12 }}>{open ? "▲" : "▼"}</span>
+          {d.needsQty && chip("⚠ quantity needed", C.amber, C.aBg, C.aBdr)}
+          {/* The actions that answer "how do I record what I did" — on the row, not hidden. */}
+          <span style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }} onClick={e => e.stopPropagation()}>
+            {mode === "setup" && (
+              <Btn onClick={() => openFill(r, "buy")} color="#fff" bgColor={C.green} label="✓ I bought" />
+            )}
+            {mode === "open" && (
+              <>
+                <Btn onClick={() => openFill(r, "buy")} color="#fff" bgColor={C.green} label="＋ Bought more" />
+                <Btn onClick={() => openFill(r, "sell")} color="#fff" bgColor={C.blue} label="－ Sold some" />
+                {stopLevel && <Btn onClick={() => openFill(r, "stopped")} color={C.red} bgColor={C.surf} label="🛑 Stopped out" />}
+              </>
+            )}
+            <span style={{ color: C.lbl, fontSize: 12, cursor: "pointer" }} onClick={() => setExpanded(open ? null : r.id)}>{open ? "▲ less" : "▼ edit"}</span>
+          </span>
         </div>
 
         {/* levels always visible — this is the daily read */}
@@ -5506,10 +5542,23 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
                 <button onClick={() => delFill(r.id, f.id)} style={{ marginLeft: "auto", cursor: "pointer", background: "none", border: "none", color: C.red, fontWeight: 800 }}>✕</button>
               </div>
             ))}
+            {(d.incomplete || []).map(f => (
+              <div key={f.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12, marginTop: 5, padding: "7px 9px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 7 }}>
+                <b style={{ color: C.amber }}>⚠ quantity needed</b>
+                <span style={{ color: C.mid }}>{f.side} @ {f.price}{f.date ? ` · ${f.date}` : ""}</span>
+                <span style={{ color: C.lbl }}>how many?</span>
+                {nInput("", v => {
+                  const q = +v;
+                  if (!Number.isFinite(q) || q <= 0) return;
+                  upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, qty: q } : x) });
+                }, "qty", 80)}
+                <span style={{ color: C.muted, fontSize: 11 }}>the price was imported; the size was not, so nothing is computed until you set it</span>
+              </div>
+            ))}
             {d.warnings?.map((w, i) => <div key={i} style={{ fontSize: 11.5, color: C.amber, fontWeight: 700, marginTop: 4 }}>⚠ {w}</div>)}
             <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-              <Btn onClick={() => setFillFor({ rowId: r.id, side: "buy", qty: "", price: price ?? "", date: new Date().toISOString().slice(0, 10), note: "" })} color="#fff" bgColor={C.green} label="+ Buy fill" />
-              {d.qty > 0 && <Btn onClick={() => setFillFor({ rowId: r.id, side: "sell", qty: "", price: price ?? "", date: new Date().toISOString().slice(0, 10), note: "" })} color="#fff" bgColor={C.blue} label="− Sell fill" />}
+              <Btn onClick={() => openFill(r, "buy")} color="#fff" bgColor={C.green} label="+ Record a buy" />
+              {d.qty > 0 && <Btn onClick={() => openFill(r, "sell")} color="#fff" bgColor={C.blue} label="− Record a sell" />}
               <Btn onClick={() => del(r.id)} color={C.red} bgColor={C.surf} label="✕ Remove" />
             </div>
 
@@ -5551,6 +5600,14 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
           <b style={{ color: C.text }}>Setups and levels.</b> What you are waiting for, and whether it has arrived —
           checked against live prices each time this loads.
           <span style={{ color: C.muted }}> Spot, swing and long holds only; day trades and scalps stay in the broker. Poll-cadence, not streaming; nothing here places orders.</span>
+        </div>
+        <div style={{ marginTop: 8, fontSize: 12.5, color: C.mid, lineHeight: 1.6, background: "rgba(255,255,255,0.55)", border: "1px solid " + C.bdr, borderRadius: 8, padding: "8px 11px" }}>
+          <b style={{ color: C.text }}>How it works:</b> add a ticker, give it <b>levels</b> (buy / sell / stop — a single price or a zone).
+          It sits in <b>Setups</b> and every load checks the live price against those levels, flagging any that are hit.
+          When you actually trade it, press <b style={{ color: C.green }}>✓ I bought</b> — that records a <b>fill</b> (quantity + price)
+          and moves it to <b>Open positions</b>. Buying more or selling part adds another fill, so scaling in and out is just more fills:
+          your average cost, realised and unrealised P&amp;L are all worked out from them. Sell everything (or press <b style={{ color: C.red }}>🛑 Stopped out</b>) and it moves to <b>Archive</b>.
+          <span style={{ color: C.muted }}> Position size is the quantity you enter on a fill.</span>
         </div>
         <div style={{ marginTop: 7, display: "flex", gap: "5px 14px", flexWrap: "wrap", alignItems: "baseline", fontSize: 13 }}>
           <span style={{ color: C.lbl, fontWeight: 700 }}>Live regime:</span>
@@ -5668,13 +5725,16 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
       {/* fill form */}
       {fillFor && (
         <Card style={{ borderTop: "4px solid " + (fillFor.side === "buy" ? C.green : C.blue) }}>
-          <SLabel>Record a {fillFor.side} — {rows.find(r => r.id === fillFor.rowId)?.symbol}</SLabel>
+          <SLabel>
+            {fillFor.intent === "stopped" ? "Stopped out" : fillFor.intent === "sell" ? "Record a sell" : "Record a buy"}
+            {" — "}{rows.find(r => r.id === fillFor.rowId)?.symbol}
+          </SLabel>
           <div style={{ marginTop: 9, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
             <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Side<br />
               <select value={fillFor.side} onChange={e => setFillFor(f => ({ ...f, side: e.target.value }))} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
                 <option value="buy">buy</option><option value="sell">sell</option>
               </select></label>
-            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Quantity<br />{nInput(fillFor.qty, v => setFillFor(f => ({ ...f, qty: v })), "")}</label>
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Quantity <span style={{ fontWeight: 400, color: C.muted }}>(your position size)</span><br />{nInput(fillFor.qty, v => setFillFor(f => ({ ...f, qty: v })), "shares")}</label>
             <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Price<br />{nInput(fillFor.price, v => setFillFor(f => ({ ...f, price: v })), "")}</label>
             <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Date<br />
               <input type="date" value={fillFor.date} onChange={e => setFillFor(f => ({ ...f, date: e.target.value }))} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
@@ -5685,7 +5745,11 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
           <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <Btn onClick={saveFill} color="#fff" bgColor={fillFor.side === "buy" ? C.green : C.blue} label="Record fill" />
             <Btn onClick={() => setFillFor(null)} color={C.mid} bgColor={C.bg} label="Cancel" />
-            <span style={{ fontSize: 11, color: C.lbl }}>Selling part of a position keeps it open and books the realised P&amp;L at your average cost.</span>
+            <span style={{ fontSize: 11, color: C.lbl }}>
+              {fillFor.intent === "stopped"
+                ? "Prefilled to sell the whole position at your stop. Adjust if you were filled elsewhere."
+                : "Selling part keeps the position open and books realised P&L at your average cost; selling all of it moves the row to Archive."}
+            </span>
           </div>
         </Card>
       )}

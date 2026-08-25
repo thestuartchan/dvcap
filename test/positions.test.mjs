@@ -63,6 +63,20 @@ eq('oversell clamps to held', over.qty, 0);
 eq('oversell realises only what was held', over.realized, 100);
 eq('oversell warns', over.warnings.length, 1);
 
+// ── an incomplete fill is RETAINED, not silently dropped ──
+// This is the bug that put nine held positions in "Setups": the import knew the price but not the
+// quantity, and dropping the fill quietly reclassified a real position as an untaken idea.
+const incomplete = derivePosition([{id:'f0', side:'buy', qty:null, price:107.01}]);
+eq('incomplete fill keeps position OPEN', incomplete.status, 'open');
+eq('incomplete fill flagged', incomplete.needsQty, true);
+eq('incomplete fill retained', incomplete.incomplete.length, 1);
+eq('incomplete fill not counted as a real fill', incomplete.nFills, 0);
+eq('no average invented from it', incomplete.avgCost, null);
+// Once the quantity is supplied it becomes an ordinary fill.
+const repaired = derivePosition([{id:'f0', side:'buy', qty:100, price:107.01}]);
+eq('repaired -> not flagged', repaired.needsQty, false);
+eq('repaired -> avg cost', repaired.avgCost, 107.01);
+
 // ── junk fills are dropped, not guessed ──
 eq('drops malformed fills', derivePosition([{side:'buy',qty:'abc',price:10},{side:'nope',qty:1,price:1}]).nFills, 0);
 
