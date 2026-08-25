@@ -5238,6 +5238,14 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
   const [portOpen, setPortOpen] = useState(false);
   const [importTxt, setImportTxt] = useState("");
   const [importMsg, setImportMsg] = useState(null);
+  // Draft values for numeric fields, keyed by fill id. These are held HERE rather than inside the
+  // row component because RowCard is declared inside this function: its identity changes on every
+  // render, so React remounts the subtree and any local state in it is lost on each keystroke.
+  // That is what made the quantity field commit "1" while typing "1058" — it had no value of its
+  // own, so the first character was written straight to the fill and the input reset.
+  const [drafts, setDrafts] = useState({});
+  const setDraft = (k, v) => setDrafts(d => ({ ...d, [k]: v }));
+  const clearDraft = (k) => setDrafts(d => { const n = { ...d }; delete n[k]; return n; });
   const notifiedRef = useMemo(() => ({ current: new Set() }), []);
 
   // ── load / persist ──
@@ -5437,6 +5445,31 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
   const chip = (t, col, bg, bd) => <span style={{ background: bg, color: col, border: "1px solid " + bd, borderRadius: 6, padding: "1px 7px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>{t}</span>;
   const ccyChip = (ccy) => { if (ccy === baseCcy) return null; const r = fxRisk(ccy, baseCcy); return chip(ccy + (r.real ? "" : " 🔒"), r.real ? C.amber : C.mid, r.real ? C.aBg : C.bg, r.real ? C.aBdr : C.bdr); };
   const fitChip = (f) => f === "tailwind" ? chip("regime tailwind", C.green, "#F0FDF4", "#BBF7D0") : f === "headwind" ? chip("fights regime", C.red, "#FEF2F2", "#FECACA") : null;
+  // A number field that COMMITS ON BLUR OR ENTER, not per keystroke — so a multi-digit quantity can
+  // be typed. `dk` is the draft key; while a draft exists it wins over the stored value.
+  const NumCommit = ({ dk, value, onCommit, placeholder, width = 84, title }) => {
+    const draft = drafts[dk];
+    const shown = draft !== undefined ? draft : (value ?? "");
+    const commit = () => {
+      if (draft === undefined) return;
+      const n = draft === "" ? null : +draft;
+      clearDraft(dk);
+      if (draft !== "" && !Number.isFinite(n)) return;   // reject junk rather than storing NaN
+      onCommit(n);
+    };
+    return (
+      <input
+        value={shown} title={title} placeholder={placeholder} inputMode="decimal"
+        onChange={e => setDraft(dk, e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); } if (e.key === "Escape") clearDraft(dk); }}
+        style={{
+          width, padding: "5px 8px", borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text,
+          border: "1.5px solid " + (draft !== undefined ? C.blue : C.bdr),
+        }} />
+    );
+  };
+
   const nInput = (v, on, ph, w = 84) => <input value={v ?? ""} onChange={e => on(e.target.value)} placeholder={ph} inputMode="decimal" style={{ width: w, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} />;
   const kindCol = (k) => k === "buy" ? C.green : k === "sell" ? C.blue : C.red;
   const money = (v, ccy) => v == null ? "—" : fmtCcy(v, ccy);
@@ -5609,12 +5642,17 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
               Fills {d.nFills > 0 && <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0, color: C.lbl }}>· {d.bought} bought · {d.sold} sold · avg {d.avgCost?.toFixed(2) ?? "—"}</span>}
             </div>
             {(d.fills || []).map(f => (
-              <div key={f.id} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 12, color: C.mid, marginBottom: 3 }}>
+              <div key={f.id} style={{ display: "flex", gap: 7, alignItems: "center", fontSize: 12, color: C.mid, marginBottom: 4, flexWrap: "wrap" }}>
                 <b style={{ color: f.side === "buy" ? C.green : C.blue, minWidth: 32 }}>{f.side}</b>
-                <span>{f.qty} @ {f.price}</span>
-                <span style={{ color: C.lbl }}>{f.date || "no date"}</span>
+                <NumCommit dk={`fq:${f.id}`} value={f.qty} placeholder="qty" width={78}
+                  onCommit={q => { if (q != null && q > 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, qty: q } : x) }); }} />
+                <span style={{ color: C.lbl }}>@</span>
+                <NumCommit dk={`fp:${f.id}`} value={f.price} placeholder="price" width={92}
+                  onCommit={p => { if (p != null && p >= 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, price: p } : x) }); }} />
+                <input type="date" value={f.date || ""} onChange={e => upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, date: e.target.value } : x) })}
+                  style={{ padding: "4px 7px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 11.5, background: C.surf, color: C.text }} />
                 {f.note && <span style={{ color: C.muted, fontSize: 11.5 }}>{f.note}</span>}
-                <button onClick={() => delFill(r.id, f.id)} style={{ marginLeft: "auto", cursor: "pointer", background: "none", border: "none", color: C.red, fontWeight: 800 }}>✕</button>
+                <button onClick={() => delFill(r.id, f.id)} title="delete this fill" style={{ marginLeft: "auto", cursor: "pointer", background: "none", border: "none", color: C.red, fontWeight: 800 }}>✕</button>
               </div>
             ))}
             {(d.incomplete || []).map(f => (
@@ -5622,12 +5660,10 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
                 <b style={{ color: C.amber }}>⚠ quantity needed</b>
                 <span style={{ color: C.mid }}>{f.side} @ {f.price}{f.date ? ` · ${f.date}` : ""}</span>
                 <span style={{ color: C.lbl }}>how many?</span>
-                {nInput("", v => {
-                  const q = +v;
-                  if (!Number.isFinite(q) || q <= 0) return;
-                  upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, qty: q } : x) });
-                }, "qty", 80)}
-                <span style={{ color: C.muted, fontSize: 11 }}>the price was imported; the size was not, so nothing is computed until you set it</span>
+                <NumCommit dk={`q:${f.id}`} value="" placeholder="qty" width={90}
+                  title="Type the full quantity, then press Enter or click away."
+                  onCommit={q => { if (q != null && q > 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, qty: q } : x) }); }} />
+                <span style={{ color: C.muted, fontSize: 11 }}>press Enter or click away to save — the price was imported, the size was not</span>
               </div>
             ))}
             {d.warnings?.map((w, i) => <div key={i} style={{ fontSize: 11.5, color: C.amber, fontWeight: 700, marginTop: 4 }}>⚠ {w}</div>)}
@@ -5772,6 +5808,88 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
           <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>Credit-DANGER caps the multiplier at ×{CREDIT_DANGER_CAP_LABEL}; a contested or pinned≠live regime applies a further ×0.7.</div>
         </div>
       </Card>
+
+      {/* ── CURRENT PORTFOLIO ──
+          Same visual idiom as the Smart Money tab (donut for weight, horizontal bars for the
+          per-name read) so the two tabs are read the same way. Everything is converted into the
+          base currency; a position whose FX rate is missing is EXCLUDED and counted, never added
+          at face value in the wrong currency. */}
+      {openPos.length > 0 && (() => {
+        const held = openPos.map(r => {
+          const mv = r.pnl.marketValue == null ? null : toBase(r.pnl.marketValue, r.currency);
+          const un = r.pnl.unrealized == null ? null : toBase(r.pnl.unrealized, r.currency);
+          const re = toBase(r.derived.realized, r.currency);
+          return { ...r, mvBase: mv, unBase: un, reBase: re, totalBase: (un ?? 0) + (re ?? 0) };
+        });
+        const priced = held.filter(h => h.mvBase != null && h.mvBase > 0);
+        const missing = held.length - priced.length;
+        const totalMv = priced.reduce((a, h) => a + h.mvBase, 0);
+        const pie = priced.map(h => ({ name: h.symbol, value: +h.mvBase.toFixed(2), pct: totalMv ? +((h.mvBase / totalMv) * 100).toFixed(1) : 0 }))
+          .sort((a, b) => b.value - a.value);
+        const bars = held.filter(h => h.unBase != null || h.reBase)
+          .map(h => ({ name: h.symbol, unrealised: +(h.unBase ?? 0).toFixed(2), realised: +(h.reBase ?? 0).toFixed(2), total: +h.totalBase.toFixed(2) }))
+          .sort((a, b) => b.total - a.total);
+        const PAL = ["#1E40AF", "#0F766E", "#B45309", "#6D28D9", "#BE185D", "#047857", "#C2410C", "#4338CA", "#0E7490", "#7C2D12"];
+        const cashPct = equityBase && totalMv ? Math.max(0, +(100 - (totalMv / equityBase) * 100).toFixed(1)) : null;
+        return (
+          <Card>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
+              <SLabel>Current portfolio</SLabel>
+              <span style={{ fontSize: 12, color: C.muted }}>{priced.length} priced position{priced.length === 1 ? "" : "s"} · {baseCcy}</span>
+              <div style={{ marginLeft: "auto", display: "flex", gap: 16, alignItems: "baseline", fontSize: 13 }}>
+                <span><span style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800 }}>INVESTED </span><b>{fmtCcy(totalMv, baseCcy)}</b></span>
+                {cashPct != null && <span><span style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800 }}>CASH </span><b>{cashPct}%</b></span>}
+                <span><span style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800 }}>OPEN P&amp;L </span>
+                  <b style={{ color: pnlCol(bars.reduce((a, b) => a + b.total, 0)) }}>{fmtCcy(bars.reduce((a, b) => a + b.total, 0), baseCcy)}</b></span>
+              </div>
+            </div>
+            {missing > 0 && (
+              <div style={{ fontSize: 11.5, color: C.amber, fontWeight: 700, marginBottom: 6 }}>
+                ⚠ {missing} position{missing === 1 ? "" : "s"} not shown — no live price or no {baseCcy} rate yet. Refresh prices.
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+              {/* weight */}
+              <div style={{ flex: "1 1 280px", minWidth: 260, height: 230 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Weight by market value</div>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={pie} cx="50%" cy="48%" innerRadius={44} outerRadius={72} dataKey="value" stroke="#fff" strokeWidth={2}
+                      label={(e) => `${e.name} ${e.pct}%`} labelLine={false} fontSize={10}>
+                      {pie.map((e, i) => <Cell key={e.name} fill={PAL[i % PAL.length]} />)}
+                    </Pie>
+                    <Tooltip formatter={(v, n, p) => [`${fmtCcy(v, baseCcy)} (${p?.payload?.pct}%)`, n]}
+                      contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid " + C.bdr }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              {/* per-name P&L, split realised vs unrealised — the scale-out case made visible */}
+              <div style={{ flex: "1 1 320px", minWidth: 280, height: 230 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>
+                  P&amp;L by position <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0, color: C.lbl }}>· realised vs unrealised</span>
+                </div>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={bars} layout="vertical" margin={{ left: 6, right: 18, top: 4, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={C.bdr} horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 10, fill: C.lbl }} tickLine={false} axisLine={{ stroke: C.bdr }} />
+                    <YAxis type="category" dataKey="name" width={62} tick={{ fontSize: 11, fill: C.mid }} tickLine={false} axisLine={false} />
+                    <Tooltip formatter={(v, n) => [fmtCcy(v, baseCcy), n]} contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid " + C.bdr }} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <ReferenceLine x={0} stroke={C.bdrMd} />
+                    <Bar dataKey="realised" stackId="p" fill={C.green} radius={[0, 0, 0, 0]} />
+                    <Bar dataKey="unrealised" stackId="p" radius={[0, 4, 4, 0]}>
+                      {bars.map(b => <Cell key={b.name} fill={b.unrealised >= 0 ? C.blue : C.red} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: C.lbl, marginTop: 6, lineHeight: 1.5 }}>
+              Realised bars are profit already taken on scale-outs, so a position can show both at once. Cash % assumes your account equity above is the whole book.
+            </div>
+          </Card>
+        );
+      })()}
 
       <Section title="Setups — waiting" note="no position yet; levels are being watched" list={setups} mode="setup" />
       <Section title="Open positions" note="spot / swing holds, scaled in and out" list={openPos} mode="open" />
