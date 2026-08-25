@@ -3454,7 +3454,7 @@ function PostureCard({ p }) {
   return (
     <Card style={{ background: bg, border: "1.5px solid " + bdr, borderTop: "5px solid " + col }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 2 }}>Posture</span>
+        <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 2 }} title="The tape's what-to-do right now. Portfolio allocation lives on the Posture tab.">Tape stance</span>
         <span style={{ fontSize: 22, fontWeight: 900, color: col, lineHeight: 1.05 }}>{p.posture}</span>
         <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase" }}>weeks</span>
         {p.tripwires && <span style={{ fontSize: 13, fontWeight: 800, color: C.muted }}>{p.tripwires} tripwires</span>}
@@ -5300,6 +5300,36 @@ export default function App() {
               </button>
             ))}
           </div>
+          {/* T1a — always-on regime strip: the market regime at a glance, on every tab, sticky.
+              Reuses the values the engine already computes; no new data. */}
+          {(() => {
+            const r = liveRegime || REGIMES[0];
+            const prob = regimeProbFor(r.id);
+            const cs = liveInd ? liveInd.creditSpread : null;
+            const cKey = cs != null ? creditStatus(cs) : "BENIGN";
+            const cTok = STATUS[cKey] || STATUS.BENIGN;
+            const cLbl = cKey === "BENIGN" ? "CALM" : cKey === "WATCH" ? "WATCHFUL" : cKey === "ELEVATED" ? "WIDENING" : "STRESSED";
+            const fedState = FED_LANGUAGE_STATES[FED_LANGUAGE_STATUS.status] || {};
+            const fedLbl = (fedState.label || "").replace(/^\S+\s/, "");
+            const chip = (k, v, col) => (
+              <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6, whiteSpace: "nowrap" }}>
+                <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: C.lbl }}>{k}</span>
+                <span style={{ fontSize: 12.5, fontWeight: 800, color: col }}>{v}</span>
+              </span>
+            );
+            const flag = (txt) => <span style={{ fontSize: 10, fontWeight: 800, color: C.amber, background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 5, padding: "1px 6px", whiteSpace: "nowrap" }}>{txt}</span>;
+            return (
+              <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "nowrap", overflowX: "auto", scrollbarWidth: "none", padding: "7px 2px 3px", borderTop: "1px solid " + C.bdr, marginTop: 4 }}>
+                {chip("Regime", `${r.label} ${prob}%`, r.color)}
+                <span style={{ color: C.bdr }}>·</span>
+                {chip("Credit", `${cLbl}${cs != null ? ` · OAS ${cs}` : ""}`, cTok.color)}
+                <span style={{ color: C.bdr }}>·</span>
+                {chip("Fed", fedLbl || "—", fedState.color || C.mid)}
+                {derivedRegimes?.contested && flag("⚖ CONTESTED")}
+                {regimeDiverged && flag("📌 PINNED ≠ LIVE")}
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -6512,6 +6542,33 @@ export default function App() {
 
         {tab === "macro" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {/* T1c — Macro synthesis strip: the one-line answer at the top, so the read lands without
+                scrolling the cards below. Complements the always-on header strip with recession + cash + do. */}
+            {(() => {
+              const r = liveRegime || REGIMES[0];
+              const prob = regimeProbFor(r.id);
+              const rec = derivedRegimes?.weightedAvg ?? null;
+              const headline = liveInd?.cpiHeadlineCurrent ?? null;
+              const realCash = headline != null ? +(SEC_YIELDS.USFR.value - headline).toFixed(2) : null;
+              const best = activeRegime?.best || [], worst = activeRegime?.worst || [];
+              const item = (k, v, col) => (<span style={{ display: "inline-flex", gap: 6, alignItems: "baseline" }}><span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: C.lbl }}>{k}</span><b style={{ color: col || C.text, fontWeight: 800 }}>{v}</b></span>);
+              return (
+                <div style={{ background: r.bg, border: "1.5px solid " + r.bdr, borderTop: "4px solid " + r.color, borderRadius: 12, padding: "11px 16px" }}>
+                  <div style={{ display: "flex", gap: "4px 18px", flexWrap: "wrap", alignItems: "baseline", fontSize: 14 }}>
+                    {item("Regime", `${r.label} ${prob}%`, r.color)}
+                    <span style={{ color: C.bdr }}>·</span>
+                    {item("Recession consensus", rec != null ? `${rec}%` : "—", C.mid)}
+                    <span style={{ color: C.bdr }}>·</span>
+                    {item("Real cash yield", realCash != null ? `${realCash >= 0 ? "+" : ""}${realCash}pp` : "—", realCash != null ? (realCash > 0 ? C.green : C.red) : C.muted)}
+                  </div>
+                  {(best.length || worst.length) ? (
+                    <div style={{ marginTop: 6, fontSize: 13, color: C.mid, lineHeight: 1.5 }}>
+                      <b style={{ color: r.color }}>Do:</b> hold {best.slice(0, 2).join(", ")}{worst.length ? <> · <span style={{ color: C.muted }}>avoid {worst.slice(0, 2).join(", ")}</span></> : null}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })()}
             {/* Item 4 — purpose line. This tab is about the CURRENT regime; the Insurance tab is
                 about how a crash would RESOLVE. Different taxonomies, stated so they don't blur. */}
             <div style={{ background: C.surf, border: "1.5px solid " + C.bdr, borderRadius: 12, padding: "10px 16px", fontSize: 13.5, color: C.mid, lineHeight: 1.5 }}>
@@ -6698,43 +6755,44 @@ export default function App() {
               reconSummary={reconSummary}
             />
 
-            {/* Market-Implied Fed Cuts (6-Month) — Fed funds vs 6m T-bill proxy (Update 1) */}
+            {/* T1b — Fed pricing: one card that answers "what's priced for the Fed", cross-checking the
+                6-month bill-implied path against the September-meeting odds. Folds the former standalone
+                6-month-cuts and September-odds cards; the ZQ futures path + qualitative language follow below. */}
             {(() => {
-              const bps = liveInd ? liveInd.impliedCutsBps : null;
-              const cf  = liveInd ? liveInd.currentFedFunds : null;
-              const tb  = liveInd ? liveInd.tbill6m : null;
-              let fcCol = C.muted, fcMsg = "Unavailable — Fed funds / T-bill data not loaded", fcNote = "";
-              if (bps != null) {
-                if (bps < 0)        { fcCol = C.red;     fcMsg = "Market pricing rate hike. Hold USFR, avoid duration.";                                   fcNote = "USFR yield likely to rise further. Hold. Avoid all duration."; }
-                else if (bps === 0) { fcCol = C.muted;   fcMsg = "No cuts priced in. Market aligned with hawkish hold.";                                    fcNote = "USFR and SGOV remain optimal. No action needed on cash positions."; }
-                else if (bps < 25)  { fcCol = C.amber;   fcMsg = `Market pricing ~${bps}bps of cuts. Early expectation forming.`;                          fcNote = "Monitor Fed language for confirmation. No action yet — futures can be wrong."; }
-                else if (bps < 50)  { fcCol = "#f97316"; fcMsg = "Market pricing ~1 cut. Watch for Fed language confirmation.";                             fcNote = "Prepare IEF/TLT position. Do not rotate yet — wait for Fed language confirmation (Dovish Tilt or better)."; }
-                else                { fcCol = C.green;   fcMsg = "Market pricing 2+ cuts within 6 months. USFR → IEF rotation signal approaching.";        fcNote = "Rotation signal active if Fed language confirms. USFR → IEF on confirmed pivot. Begin Stage 4 checklist."; }
-              }
+              const bps = liveInd?.impliedCutsBps ?? null;
+              const cf = liveInd?.currentFedFunds ?? null, tb = liveInd?.tbill6m ?? null;
+              const sept = SEP_HIKE_ODDS.value;
+              const sixDir = bps == null ? null : bps > 10 ? "dovish" : bps < 0 ? "hawkish" : "neutral";
+              const sixLean = bps == null ? null : bps > 10 ? 1 : bps < 0 ? -1 : 0;
+              const septDir = sept <= 30 ? "dovish" : sept >= 45 ? "hawkish" : "neutral";
+              const septLean = sept <= 30 ? 1 : sept >= 45 ? -1 : 0;
+              let xread, xcol;
+              if (sixLean == null) { xread = "6-month path unavailable — showing the September read only."; xcol = C.muted; }
+              else if (sixLean !== 0 && septLean !== 0 && sixLean === septLean) { xread = `Aligned — both lean ${sixDir}. The near-term path and the September meeting point the same way.`; xcol = C.green; }
+              else if (sixLean !== 0 && septLean !== 0 && sixLean !== septLean) { xread = `Diverge — the 6-month path leans ${sixDir} but September-meeting odds lean ${septDir}. Trust the meeting read for September, the path for the trajectory.`; xcol = C.amber; }
+              else { xread = "Mixed / neutral — nothing decisively priced either way."; xcol = C.muted; }
+              const dirCol = d => d === "dovish" ? C.green : d === "hawkish" ? C.red : C.muted;
+              const row = (label, big, sub, col) => (
+                <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", padding: "6px 0", borderBottom: "1px solid " + C.bdr }}>
+                  <span style={{ minWidth: 150, fontSize: 12.5, fontWeight: 700, color: C.mid }}>{label}</span>
+                  <span style={{ fontSize: 17, fontWeight: 900, color: col }}>{big}</span>
+                  <span style={{ fontSize: 12, color: C.muted }}>{sub}</span>
+                </div>
+              );
               return (
-                <Card style={{ borderLeft: "3px solid " + fcCol }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
-                    <div>
-                      <SLabel>Market-Implied Fed Cuts (6-Month)</SLabel>
-                      {bps != null ? (
-                        <>
-                          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-                            <span style={{ fontSize: 30, fontWeight: 900, letterSpacing: -1, color: fcCol }}>{bps} bps</span>
-                            <span style={{ color: fcCol, fontSize: 14, fontWeight: 700, maxWidth: 380 }}>{fcMsg}</span>
-                          </div>
-                          <div style={{ color: C.lbl, fontSize: 12, marginTop: 3 }}>Current Fed funds: {cf != null ? cf.toFixed(2) : "—"}% | 6M T-bill: {tb != null ? tb.toFixed(2) : "—"}%</div>
-                        </>
-                      ) : (
-                        <div style={{ color: C.muted, fontSize: 14 }}>{fcMsg}</div>
-                      )}
-                    </div>
-                    <div style={{ maxWidth: 240, color: C.muted, fontSize: 12, lineHeight: 1.6 }}>
-                      Proxy: Fed funds rate minus 6-month T-bill. Positive = market pricing cuts.
-                    </div>
+                <Card>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                    <SLabel>Fed pricing — what's priced for the Fed</SLabel>
+                    <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>two market reads, cross-checked · ZQ futures path below</span>
                   </div>
-                  {bps != null && fcNote && (
-                    <div style={{ marginTop: 10, padding: "9px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, color: C.mid, fontSize: 13, lineHeight: 1.55 }}>{fcNote}</div>
-                  )}
+                  <div style={{ marginTop: 6 }}>
+                    {row("6-month path", bps != null ? `${bps} bps` : "—", bps != null ? `${bps > 0 ? "cuts" : bps < 0 ? "hikes" : "flat"} priced · 6M bill ${tb != null ? tb.toFixed(2) : "—"}% vs funds ${cf != null ? cf.toFixed(2) : "—"}%` : "Fed funds / T-bill not loaded", bps != null ? dirCol(sixDir) : C.muted)}
+                    {row("September meeting", `${sept}%`, `implied hike odds · ${SEP_HIKE_ODDS.value < SEP_HIKE_ODDS.prior ? "↓" : "↑"} from ${SEP_HIKE_ODDS.prior}%`, dirCol(septDir))}
+                  </div>
+                  <div style={{ marginTop: 8, padding: "8px 11px", background: xcol === C.amber ? C.aBg : xcol === C.green ? C.gBg : C.bg, border: "1px solid " + (xcol === C.amber ? C.aBdr : xcol === C.green ? C.gBdr : C.bdr), borderRadius: 8, fontSize: 12.5, fontWeight: 700, color: xcol, lineHeight: 1.5 }}>
+                    Cross-check: {xread}
+                  </div>
+                  <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 6, lineHeight: 1.5 }}>{SEP_HIKE_ODDS.note} <span style={{ color: C.muted }}>· Sept odds as of {SEP_HIKE_ODDS.asOf}, {SEP_HIKE_ODDS.source}.</span></div>
                 </Card>
               );
             })()}
@@ -6801,29 +6859,6 @@ export default function App() {
             })()}
 
             <FedPathCard effr={liveInd?.currentFedFunds ?? null} />
-            {/* C3 — September hike odds: the cleanest forward Fed metric, absent until now. */}
-            {(() => {
-              const s = SEP_HIKE_ODDS;
-              const days = Math.round((Date.now() - new Date(s.asOf + "T00:00:00Z")) / 864e5);
-              const stale = days > 3;
-              const down = s.value < s.prior;
-              return (
-                <Card>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                    <SLabel>📊 September FOMC hike odds</SLabel>
-                    <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>{s.source} · manual (no keyless feed)</span>
-                  </div>
-                  <div style={{ fontSize: 20, fontWeight: 900, color: C.text, marginTop: 2 }}>
-                    {s.value}% <span style={{ fontSize: 12, fontWeight: 700, color: down ? C.green : C.amber }}>{down ? "↓" : "↑"} from {s.prior}%</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: C.muted }}> · implied prob of a hike</span>
-                  </div>
-                  <div style={{ fontSize: 12.5, color: C.mid, marginTop: 3, lineHeight: 1.55 }}>{s.note}</div>
-                  <div style={{ fontSize: 10.5, color: stale ? C.amber : C.lbl, fontWeight: stale ? 700 : 400, marginTop: 4 }}>
-                    as of {s.asOf}{stale ? ` · ${days}d stale — re-check FedWatch/Kalshi` : ""}
-                  </div>
-                </Card>
-              );
-            })()}
             <InterventionToggle
               jpyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "JPY=X")?.changePct ?? null}
               dxyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "DX-Y.NYB")?.changePct ?? null}
