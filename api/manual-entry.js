@@ -9,7 +9,30 @@
 //     trusted by habit.
 // Both live in one endpoint to stay inside the 12-function Hobby cap (this is the 8th).
 
+import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY } from '../lib/kv.js';
+
 const DATA_PATH = 'data/manual_entry.json';
+
+// ── Where each kind of state lives ───────────────────────────────────────────
+// GIT (data/manual_entry.json): curated macro inputs — fedPath, oasRecon, intervention, recession
+//   overrides, southbound. Version history is a FEATURE here: you want to see when a recession
+//   override changed and what it was before.
+// REDIS (Upstash, lib/kv.js): the trade console — positions, cost basis, journal, settings.
+//   Personal, high-churn, and a permanent diffable history of a real book is a liability, not a
+//   feature. Redis writes replace; nothing accumulates.
+// Until the Upstash env vars exist, console reads fall back to whatever is already in the git
+// store (so nothing is lost on migration) and writes stay local to the browser.
+async function readConsole(gitFallback) {
+  if (kvConfigured()) {
+    const kv = await kvGetJson(CONSOLE_KEY);
+    if (kv) return { ...kv, _store: 'kv' };
+    // First run after wiring Upstash: nothing in Redis yet, so serve (and thereby migrate) the
+    // copy already committed to git. The next save writes it to Redis.
+    if (gitFallback) return { ...gitFallback, _store: 'git-fallback' };
+    return { watchlist: [], journal: [], settings: {}, _store: 'kv-empty' };
+  }
+  return { ...(gitFallback || { watchlist: [], journal: [], settings: {} }), _store: 'git' };
+}
 
 function ghHeaders() {
   return {
@@ -69,6 +92,7 @@ function sanitizeWatchItem(w) {
     entry: cn(w.entry), stop: cn(w.stop),
     targets: Array.isArray(w.targets) ? w.targets.map(cn).filter(x => x != null).slice(0, 4) : [],
     riskPct: cn(w.riskPct),
+    currency: /^[A-Z]{3}$/.test(String(w.currency || '').toUpperCase()) ? String(w.currency).toUpperCase() : 'USD',
     status: cs(w.status, 16) || 'idea',
     note: cs(w.note, 500),
     addedAt: cs(w.addedAt, 40) || new Date().toISOString(),
@@ -92,7 +116,10 @@ function sanitizeJournalItem(j) {
 }
 function sanitizeConsoleSettings(s) {
   if (!s || typeof s !== 'object') return {};
-  const out = { equity: cn(s.equity), baseRiskPct: cn(s.baseRiskPct), alertsEnabled: !!s.alertsEnabled };
+  const out = {
+    equity: cn(s.equity), baseRiskPct: cn(s.baseRiskPct), alertsEnabled: !!s.alertsEnabled,
+    baseCurrency: /^[A-Z]{3}$/.test(String(s.baseCurrency || '').toUpperCase()) ? String(s.baseCurrency).toUpperCase() : 'USD',
+  };
   if (s.sizing && typeof s.sizing === 'object') {
     out.sizing = {};
     for (const k of ['ref', 'inf', 'stag', 'def']) {
@@ -110,14 +137,19 @@ export default async function handler(req, res) {
     }
     try {
       const { store } = await readStore();
-      res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=600');
+      // NOT edge-cached. This response now carries the trade console — real positions and cost
+      // basis — and a shared s-maxage cache would both hold private state at the edge and serve a
+      // stale book to a second device, defeating the cross-device sync this store exists for.
+      res.setHeader('Cache-Control', 'private, no-store');
       return res.status(200).json({
         fedPath: { latest: store.fedPath.latest, series: store.fedPath.series.slice(-120) },
         oasRecon: store.oasRecon.slice(-180),
         intervention: store.intervention,
         recession: store.recession,
         southbound: { series: store.southbound.series.slice(-60) },
-        console: store.console,   // Tier 3 trade console state (watchlist / journal / settings)
+        // Console comes from Redis when configured, else the git copy (migration path).
+        console: await readConsole(store.console),
+        kv: { configured: kvConfigured() },
       });
     } catch (e) {
       return res.status(200).json({ fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, error: String(e?.message || e) });
@@ -253,32 +285,55 @@ export default async function handler(req, res) {
     saved.push('southbound:' + date);
   }
 
-  // ── Console (Tier 3) — full-state sync ──
+  // ── Console (Tier 3) — full-state sync, to REDIS not git ──
   // The browser owns the console state and syncs the whole object; we replace wholesale (bounded
   // by the sanitizers + slice caps) rather than upserting rows. Absent sub-keys keep what's stored,
-  // so a settings-only save doesn't wipe the watchlist.
+  // so a settings-only save doesn't wipe the watchlist. This deliberately does NOT touch the git
+  // store — a real book's positions and cost basis should not accrue permanent version history.
+  let consoleResult = null;
   if (consoleIn && typeof consoleIn === 'object') {
+    const prev = await readConsole(store.console);
     const watchlist = Array.isArray(consoleIn.watchlist)
       ? consoleIn.watchlist.map(sanitizeWatchItem).filter(Boolean).slice(0, 100)
-      : store.console.watchlist;
+      : (prev.watchlist || []);
     const journal = Array.isArray(consoleIn.journal)
       ? consoleIn.journal.map(sanitizeJournalItem).filter(Boolean).slice(0, 1000)
-      : store.console.journal;
-    const settings = consoleIn.settings ? sanitizeConsoleSettings(consoleIn.settings) : store.console.settings;
-    store.console = { watchlist, journal, settings, updatedAt: new Date().toISOString() };
-    saved.push('console');
+      : (prev.journal || []);
+    const settings = consoleIn.settings ? sanitizeConsoleSettings(consoleIn.settings) : (prev.settings || {});
+    const payload = { watchlist, journal, settings, updatedAt: new Date().toISOString() };
+
+    if (kvConfigured()) {
+      const ok = await kvSetJson(CONSOLE_KEY, payload);
+      consoleResult = ok ? { stored: 'kv' } : { stored: 'failed', error: 'Redis write failed — state kept locally in your browser' };
+    } else {
+      // No Redis yet: say so plainly rather than silently accepting. The browser keeps its local
+      // copy, so nothing is lost — it just will not follow you to another device.
+      consoleResult = { stored: 'none', error: 'cross-device sync not configured (KV_REST_API_URL / KV_REST_API_TOKEN unset) — saved locally in this browser only' };
+    }
+    // Console never counts toward `saved`, which drives the GIT commit below.
+    if (consoleResult.stored === 'kv') saved.push('console→kv');
   }
 
-  if (!saved.length) return res.status(400).json({ error: 'nothing to save' });
+  // A console-only save has nothing to commit to git — return the KV result directly.
+  const gitSaves = saved.filter(s => s !== 'console→kv');
+  if (!gitSaves.length) {
+    if (consoleResult) {
+      return res.status(consoleResult.stored === 'failed' ? 502 : 200)
+        .json({ ok: consoleResult.stored === 'kv', console: consoleResult });
+    }
+    return res.status(400).json({ error: 'nothing to save' });
+  }
 
+  // Console state is owned by Redis — strip it so a macro save never re-commits a real book.
+  if (kvConfigured()) delete store.console;
   const content = Buffer.from(JSON.stringify(store, null, 2) + '\n', 'utf8').toString('base64');
   const w = await fetch(`https://api.github.com/repos/${process.env.GITHUB_REPO}/contents/${DATA_PATH}`, {
     method: 'PUT', headers: ghHeaders(),
     body: JSON.stringify({
-      message: `Manual entry — ${saved.join(', ')} @ ${new Date().toISOString().slice(0, 10)}`,
+      message: `Manual entry — ${gitSaves.join(', ')} @ ${new Date().toISOString().slice(0, 10)}`,
       content, branch: process.env.GITHUB_BRANCH || 'main', ...(sha ? { sha } : {}),
     }),
   });
   if (!w.ok) return res.status(502).json({ error: 'GitHub commit failed', detail: (await w.text()).slice(0, 300) });
-  return res.status(200).json({ ok: true, saved, fedPath: store.fedPath.latest, reconRows: store.oasRecon.length });
+  return res.status(200).json({ ok: true, saved, console: consoleResult, fedPath: store.fedPath.latest, reconRows: store.oasRecon.length });
 }

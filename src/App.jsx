@@ -15,6 +15,7 @@ import { southboundTrend, southboundLevelTrend, southboundRead, ahPremiumRead, s
 import { STATUS, creditStatus, deriveAction, headerSignal, STAGES } from "../lib/status.js";
 import { HORIZON, HORIZON_LABEL, consensusFor, calendarWindow, dispersionRead, NO_CONVERSION_NOTE } from "../lib/recession.js";
 import { buildViews, evaluateViews, regimeCluster, divergenceRead } from "../lib/analystViews.js";
+import { CURRENCIES, CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, toUsd, fxRisk, fmtCcy } from "../lib/fxrates.js";
 import { REGIME_SIZING, rMultiple, positionSize, regimeMultiplier, suggestedSize, distanceToLevels, triggeredLevels, tradeSide, DEFAULT_BASE_RISK_PCT } from "../lib/console.js";
 import { observationAge } from "../lib/gates.js";
 import { trend as trendOf } from "../lib/series.js";
@@ -5218,7 +5219,8 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
   const LS = "dvcap_console_v1";
   const [wl, setWl]             = useState([]);
   const [journal, setJournal]   = useState([]);
-  const [settings, setSettings] = useState({ equity: null, baseRiskPct: DEFAULT_BASE_RISK_PCT, alertsEnabled: false, sizing: {} });
+  const [settings, setSettings] = useState({ equity: null, baseRiskPct: DEFAULT_BASE_RISK_PCT, alertsEnabled: false, sizing: {}, baseCurrency: "USD" });
+  const [kvOn, setKvOn] = useState(null);   // is cross-device sync configured on the server?
   const [loaded, setLoaded]     = useState(false);
   const [dirty, setDirty]       = useState(false);
   const [saving, setSaving]     = useState(false);
@@ -5241,6 +5243,7 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
         if (Array.isArray(c.journal))   setJournal(c.journal);
         if (c.settings) setSettings(s => ({ ...s, ...c.settings }));
       }
+      setKvOn(j?.kv?.configured ?? null);
       setLoaded(true);
     }).catch(() => setLoaded(true));
   }, []);
@@ -5253,8 +5256,14 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
 
   // Live quotes for the watchlist symbols.
   const wlSymbols = useMemo(() => [...new Set(wl.map(w => w.symbol).filter(Boolean))], [wl]);
-  const wlSymKey = wlSymbols.join(",");
-  useEffect(() => { if (wlSymbols.length) fetchPrices(wlSymbols); }, [wlSymKey]);   // eslint-disable-line
+  // FX rates ride the SAME /api/prices passthrough (a generic Yahoo proxy), so multi-currency
+  // costs no extra serverless function. Only the currencies actually in the book are fetched.
+  const usedCcys = useMemo(() => [...new Set([settings.baseCurrency || "USD", ...wl.map(w => w.currency || "USD")])], [wl, settings.baseCurrency]);
+  const fxSyms = useMemo(() => fxSymbolsFor(usedCcys), [usedCcys]);
+  const fetchKey = [...wlSymbols, ...fxSyms].join(",");
+  useEffect(() => { const all = [...wlSymbols, ...fxSyms]; if (all.length) fetchPrices(all); }, [fetchKey]);   // eslint-disable-line
+  const { rates: fxRates, sources: fxSources } = useMemo(() => ratesFrom(prices), [prices]);
+  const baseCcy = settings.baseCurrency || "USD";
 
   // Sizing table = defaults overlaid with the user's per-regime multiplier overrides.
   const mergedSizing = useMemo(() => {
@@ -5292,7 +5301,15 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
         method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
         body: JSON.stringify({ console: { watchlist: wl, journal, settings } }),
       });
-      if (r.ok) { setDirty(false); setSaveMsg("Saved to cloud ✓"); }
+      const j = await r.json().catch(() => null);
+      if (r.ok) {
+        const stored = j?.console?.stored;
+        setDirty(false);
+        setSaveMsg(stored === "kv" ? "Synced across devices ✓"
+          : stored === "none" ? "Saved in this browser only — cross-device sync not configured."
+          : "Saved ✓");
+        if (stored) setKvOn(stored === "kv");
+      }
       else if (r.status === 401) setSaveMsg("Log in to the dashboard to sync to cloud (saved locally).");
       else setSaveMsg(`Cloud save failed (${r.status}) — kept locally.`);
     } catch (e) { setSaveMsg("Cloud save failed — kept locally."); }
@@ -5359,6 +5376,13 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
   const chip = (txt, col, bg, bd) => (
     <span style={{ background: bg, color: col, border: "1px solid " + bd, borderRadius: 6, padding: "1px 7px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>{txt}</span>
   );
+  // Currency chip — shown only when a position is NOT in the base currency, with the peg status,
+  // so a HKD or AED leg does not read as FX exposure it does not carry.
+  const posCcyChip = (ccy) => {
+    if (ccy === baseCcy) return null;
+    const r = fxRisk(ccy, baseCcy);
+    return chip(ccy + (r.real ? "" : " 🔒"), r.real ? C.amber : C.mid, r.real ? C.aBg : C.bg, r.real ? C.aBdr : C.bdr);
+  };
   const fitChip = (fit) => fit === "tailwind" ? chip("regime tailwind", C.green, "#F0FDF4", "#BBF7D0")
     : fit === "headwind" ? chip("fights regime", C.red, "#FEF2F2", "#FECACA")
     : chip("regime-neutral", C.muted, C.bg, C.bdr);
@@ -5406,6 +5430,12 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
           <SLabel>Console settings</SLabel>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {kvOn === false && (
+              <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }} title="Add the Upstash integration in Vercel to sync this book across devices. Until then it lives in this browser only.">
+                ⚠ this browser only — cross-device sync not configured
+              </span>
+            )}
+            {kvOn === true && <span style={{ fontSize: 11.5, color: C.green, fontWeight: 700 }} title="Console state is stored server-side in Redis and follows you across devices.">☁ syncing across devices</span>}
             {saveMsg && <span style={{ fontSize: 12, color: C.mid }}>{saveMsg}</span>}
             <Btn onClick={() => fetchPrices(wlSymbols)} disabled={pricesLoading || !wlSymbols.length} color={C.mid} bgColor={C.bg} label={pricesLoading ? "…" : "🔄 Prices"} />
             <Btn onClick={saveCloud} disabled={saving} color="#fff" bgColor={dirty ? C.blue : C.bdrMd} label={saving ? "Saving…" : dirty ? "☁ Save to cloud" : "☁ Synced"} />
@@ -5413,6 +5443,11 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
           <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Account equity ($)<br />{numInput(settings.equity, v => { setSettings(s => ({ ...s, equity: v === "" ? null : v })); touch(); }, "e.g. 100000", 120)}</label>
+          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Base currency<br />
+            <select value={baseCcy} onChange={e => { setSettings(s => ({ ...s, baseCurrency: e.target.value })); touch(); }} style={{ padding: "6px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
+              {CURRENCY_CODES.map(c => <option key={c} value={c}>{c} — {CURRENCIES[c].label}</option>)}
+            </select>
+          </label>
           <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Base risk / trade (%)<br />{numInput(settings.baseRiskPct, v => { setSettings(s => ({ ...s, baseRiskPct: v === "" ? null : v })); touch(); }, "1.0", 80)}</label>
           <button onClick={enableAlerts} style={{ cursor: "pointer", background: settings.alertsEnabled ? C.green : C.surf, color: settings.alertsEnabled ? "#fff" : C.mid, border: "1.5px solid " + (settings.alertsEnabled ? C.green : C.bdr), borderRadius: 8, padding: "7px 12px", fontSize: 12.5, fontWeight: 800 }}>
             {settings.alertsEnabled ? "🔔 Alerts on" : "🔕 Alerts off"}
@@ -5462,8 +5497,16 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
               const rr = rMultiple({ entry: w.entry, stop: w.stop, target: w.targets?.[0] });
               const dist = price != null ? distanceToLevels({ price, entry: w.entry, stop: w.stop, targets: w.targets }) : null;
               const open = expanded === w.id;
-              const sug = suggestedSize({ equity: equityNum, baseRiskPct: baseRiskNum, regime: regimeCtx, entry: w.entry, stop: w.stop, sizing: mergedSizing });
-              const own = w.riskPct != null && w.riskPct !== "" ? positionSize({ equity: equityNum, riskPct: w.riskPct, entry: w.entry, stop: w.stop }) : null;
+              // Sizing must be dimensionally consistent: equity is held in the BASE currency while
+              // entry/stop are quoted in the POSITION's currency, so convert equity across before
+              // dividing by a stop distance. Without this an HKD-quoted stop would be measured
+              // against a USD equity and oversize the position by the ~7.8x cross.
+              const posCcy = w.currency || "USD";
+              const equityInPos = equityNum == null ? null : convert(equityNum, baseCcy, posCcy, fxRates);
+              const sug = suggestedSize({ equity: equityInPos, baseRiskPct: baseRiskNum, regime: regimeCtx, entry: w.entry, stop: w.stop, sizing: mergedSizing });
+              const own = w.riskPct != null && w.riskPct !== "" ? positionSize({ equity: equityInPos, riskPct: w.riskPct, entry: w.entry, stop: w.stop }) : null;
+              const risk = fxRisk(posCcy, baseCcy);
+              const notionalBase = sug?.size ? convert(sug.size.notional, posCcy, baseCcy, fxRates) : null;
               return (
                 <div key={w.id} style={{ border: "1.5px solid " + C.bdr, borderRadius: 10, overflow: "hidden" }}>
                   {/* row header */}
@@ -5471,6 +5514,7 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
                     <b style={{ fontSize: 15, color: C.text, minWidth: 62 }}>{w.symbol}</b>
                     <span style={{ fontSize: 14, color: C.text, fontWeight: 700, minWidth: 66 }}>{price != null ? price.toFixed(2) : "—"}</span>
                     <span style={{ fontSize: 12.5, fontWeight: 800, color: chg == null ? C.muted : chg >= 0 ? C.green : C.red, minWidth: 56 }}>{chg == null ? "" : (chg >= 0 ? "+" : "") + chg.toFixed(2) + "%"}</span>
+                    {posCcyChip(w.currency || "USD")}
                     {fitChip(fit.fit)}
                     {ins && chip("🛡 insurance: " + ins, "#B45309", "#FFFBEB", "#FDE68A")}
                     {rr.rr != null && chip(`R:R ${rr.rr}`, rr.rr >= 2 ? C.green : rr.rr >= 1 ? C.amber : C.red, C.bg, C.bdr)}
@@ -5489,6 +5533,11 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
                             style={{ width: 130, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} />
                         </label>
                         <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Your risk %<br />{numInput(w.riskPct, v => updateItem(w.id, { riskPct: v === "" ? null : v }), String(baseRiskNum), 70)}</label>
+                        <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Currency<br />
+                          <select value={w.currency || "USD"} onChange={e => updateItem(w.id, { currency: e.target.value })} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
+                            {CURRENCY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </label>
                         <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Status<br />
                           <select value={w.status} onChange={e => updateItem(w.id, { status: e.target.value })} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
                             {["idea", "armed", "in-trade", "closed"].map(s => <option key={s} value={s}>{s}</option>)}
@@ -5511,8 +5560,16 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
                           <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Regime-scaled size</div>
                           {sug?.size ? (
                             <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.7 }}>
-                              Suggested <b style={{ color: C.text }}>{sug.size.shares}</b> sh (${sug.size.notional.toLocaleString()} · {sug.size.notionalPct}% of book) at <b style={{ color: liveRegime?.color }}>{sug.effRiskPct}%</b> risk (base {baseRiskNum}% × {sug.mult})
-                              {own && <div style={{ color: C.muted, marginTop: 3 }}>your {w.riskPct}% → {own.shares} sh (${own.notional.toLocaleString()})</div>}
+                              Suggested <b style={{ color: C.text }}>{sug.size.shares}</b> sh ({fmtCcy(sug.size.notional, posCcy)}
+                              {posCcy !== baseCcy && notionalBase != null ? <span style={{ color: C.lbl }}> ≈ {fmtCcy(notionalBase, baseCcy)}</span> : null}
+                              {" "}· {sug.size.notionalPct}% of book) at <b style={{ color: liveRegime?.color }}>{sug.effRiskPct}%</b> risk (base {baseRiskNum}% × {sug.mult})
+                              {own && <div style={{ color: C.muted, marginTop: 3 }}>your {w.riskPct}% → {own.shares} sh ({fmtCcy(own.notional, posCcy)})</div>}
+                              {posCcy !== baseCcy && (
+                                <div style={{ marginTop: 4, fontSize: 11.5, color: risk.real ? C.amber : C.green, lineHeight: 1.45 }}>
+                                  {risk.real ? "⚠ FX risk: " : "🔒 no FX risk: "}{risk.note}
+                                  {fxRates[posCcy] ? <span style={{ color: C.lbl }}> · 1 {baseCcy} = {(fxRates[posCcy] / (fxRates[baseCcy] || 1)).toFixed(4)} {posCcy}</span> : <span style={{ color: C.red }}> · rate unavailable — sizing not converted</span>}
+                                </div>
+                              )}
                             </div>
                           ) : <div style={{ fontSize: 12.5, color: C.muted, fontStyle: "italic" }}>Set account equity + entry + stop for a size.</div>}
                         </div>
