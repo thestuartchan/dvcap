@@ -777,7 +777,10 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie data={pie} cx="50%" cy="48%" innerRadius={44} outerRadius={72} dataKey="value" stroke="#fff" strokeWidth={2}
-                      label={(e) => `${e.name} ${e.pct}%`} labelLine={false} fontSize={10}>
+                      /* Only label slices with room for one. With nine positions where a cash leg is
+                         ~60%, the remaining labels stack on top of each other and become unreadable;
+                         the tooltip still names every slice on hover. */
+                      label={(e) => (e.pct >= 5 ? `${e.name} ${e.pct}%` : "")} labelLine={false} fontSize={10}>
                       {pie.map((e, i) => <Cell key={e.name} fill={PAL[i % PAL.length]} />)}
                     </Pie>
                     <Tooltip formatter={(v, n, p) => [`${fmtCcy(v, baseCcy)} (${p?.payload?.pct}%)`, n]}
@@ -788,15 +791,20 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
               {/* per-name P&L, split realised vs unrealised — the scale-out case made visible */}
               <div style={{ flex: "1 1 320px", minWidth: 280, height: 230 }}>
                 <div style={{ fontSize: 10.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>
-                  P&amp;L by position <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0, color: C.lbl }}>· realised vs unrealised</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span>P&amp;L by position</span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 600, textTransform: "none", letterSpacing: 0, color: C.lbl }}>
+                      <span style={{ width: 9, height: 9, borderRadius: 2, background: C.green, display: "inline-block" }} />realised
+                      <span style={{ width: 9, height: 9, borderRadius: 2, background: C.blue, display: "inline-block", marginLeft: 6 }} />unrealised
+                    </span>
+                  </span>
                 </div>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={bars} layout="vertical" margin={{ left: 6, right: 18, top: 4, bottom: 0 }}>
+                  <BarChart data={bars} layout="vertical" margin={{ left: 6, right: 18, top: 4, bottom: 6 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={C.bdr} horizontal={false} />
                     <XAxis type="number" tick={{ fontSize: 10, fill: C.lbl }} tickLine={false} axisLine={{ stroke: C.bdr }} />
                     <YAxis type="category" dataKey="name" width={62} tick={{ fontSize: 11, fill: C.mid }} tickLine={false} axisLine={false} />
                     <Tooltip formatter={(v, n) => [fmtCcy(v, baseCcy), n]} contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid " + C.bdr }} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
                     <ReferenceLine x={0} stroke={C.bdrMd} />
                     <Bar dataKey="realised" stackId="p" fill={C.green} radius={[0, 0, 0, 0]} />
                     <Bar dataKey="unrealised" stackId="p" radius={[0, 4, 4, 0]}>
@@ -806,7 +814,12 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
                 </ResponsiveContainer>
               </div>
             </div>
-            <div style={{ fontSize: 11, color: C.lbl, marginTop: 6, lineHeight: 1.5 }}>
+            {pie.filter(p => p.pct < 5).length > 0 && (
+              <div style={{ fontSize: 11, color: C.lbl, marginTop: 8, lineHeight: 1.5 }}>
+                <b style={{ color: C.muted }}>Under 5%:</b> {pie.filter(p => p.pct < 5).map(p => `${p.name} ${p.pct}%`).join(" · ")}
+              </div>
+            )}
+            <div style={{ fontSize: 11, color: C.lbl, marginTop: 8, paddingTop: 8, borderTop: "1px solid " + C.bdr, lineHeight: 1.5 }}>
               Realised bars are profit already taken on scale-outs, so a position can show both at once. Cash % assumes your account equity above is the whole book.
             </div>
           </Card>
