@@ -139,6 +139,16 @@ const { kindCol } = ctx;
   );
 };
 
+// Calendar days between two ISO dates — the archive's own definition of "how long was this held",
+// which is what separates a swing from a scalp. Returns null when either end is unknown (a holding
+// opened before the broker's trade window has no recorded entry date to measure from).
+const daysBetween = (a, b) => {
+  if (!a || !b) return null;
+  const t0 = Date.parse(a), t1 = Date.parse(b);
+  if (!Number.isFinite(t0) || !Number.isFinite(t1)) return null;
+  return Math.round((t1 - t0) / 86400000);
+};
+
 const PositionRow = ({ r, mode, ctx }) => {
 const {
   prices, priceOf, liveRegime, expanded, setExpanded, upd, del, addLevel, updLevel, delLevel,
@@ -159,6 +169,10 @@ const {
     <div style={{ border: "1.5px solid " + (anyHit ? C.amber : C.bdr), borderLeft: "4px solid " + (anyHit ? C.amber : mode === "open" ? C.blue : C.bdr), borderRadius: 10, overflow: "hidden" }}>
       <div onClick={() => setExpanded(open ? null : r.id)} style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", flexWrap: "wrap", cursor: "pointer", background: open ? C.bg : C.surf }}>
         <b style={{ fontSize: 15, minWidth: 74 }}>{r.symbol}</b>
+        {/* A symbol can hold more than one trade at once — the label and the open date are what
+            tell two METU trades apart at a glance, so they sit in the header, not in the editor. */}
+        {r.trade ? <span style={{ fontSize: 11.5, color: C.mid, fontWeight: 700, background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6, padding: "1px 7px", whiteSpace: "nowrap" }}>{r.trade}</span> : null}
+        {mode === "open" && d.firstDate ? <span style={{ fontSize: 11.5, color: C.lbl, whiteSpace: "nowrap" }}>since {d.firstDate}</span> : null}
         <span style={{ fontSize: 14, fontWeight: 700, minWidth: 62 }}>{price != null ? price.toFixed(2) : "—"}</span>
         <span style={{ fontSize: 12.5, fontWeight: 800, minWidth: 54, color: q?.changePercent == null ? C.muted : q.changePercent >= 0 ? C.green : C.red }}>
           {q?.changePercent == null ? "" : (q.changePercent >= 0 ? "+" : "") + q.changePercent.toFixed(2) + "%"}
@@ -205,6 +219,9 @@ const {
               <select value={r.currency || "USD"} onChange={e => upd(r.id, { currency: e.target.value })} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
                 {CURRENCY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
               </select></label>
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Trade label<br />
+              <input value={r.trade || ""} onChange={e => upd(r.id, { trade: e.target.value })} placeholder="e.g. Aug 18 entry"
+                style={{ width: 120, padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
             <label style={{ flex: "1 1 240px", fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Thesis / why you are watching<br />
               <input value={r.thesis || ""} onChange={e => upd(r.id, { thesis: e.target.value })} placeholder="e.g. accumulate on a pullback to the 200dma"
                 style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
@@ -439,7 +456,14 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   const baseCcy = settings.baseCurrency || "USD";
 
   // ── prices + fx ──
-  const symbols = useMemo(() => [...new Set(rows.map(r => r.symbol).filter(Boolean))], [rows]);
+  // Only LIVE rows are quoted. A closed archive row needs no price — its P&L is already realised —
+  // and quoting one is actively wrong for a symbol that is not a plain equity ticker (an option
+  // trade archived under "SPCX" would come back priced as the SPCX stock). Derived here from
+  // `rows` alone rather than from `derivedRows`, which depends on `prices` and would make the
+  // fetch feed its own input.
+  const symbols = useMemo(() => [...new Set(
+    rows.filter(r => derivePosition(r.fills || []).status !== "closed").map(r => r.symbol).filter(Boolean)
+  )], [rows]);
   const usedCcys = useMemo(() => [...new Set([baseCcy, ...rows.map(r => r.currency || "USD")])], [rows, baseCcy]);
   const fxSyms = useMemo(() => fxSymbolsFor(usedCcys), [usedCcys]);
   const fetchKey = [...symbols, ...fxSyms].join(",");
@@ -574,14 +598,28 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       const clean = incoming.map(r => ({
         id: r.id || `${String(r.symbol || "").toUpperCase()}-${Math.random().toString(36).slice(2, 8)}`,
         symbol: String(r.symbol || "").toUpperCase(), currency: (r.currency || "USD").toUpperCase(),
-        thesis: r.thesis || "", levels: Array.isArray(r.levels) ? r.levels : [],
+        thesis: r.thesis || "", trade: r.trade ? String(r.trade).slice(0, 40) : "",
+        levels: Array.isArray(r.levels) ? r.levels : [],
         fills: Array.isArray(r.fills) ? r.fills : [], tags: Array.isArray(r.tags) ? r.tags : [],
       })).filter(r => r.symbol);
       if (mode === "replace") setRows(clean);
       else {
-        const by = new Map(rows.map(r => [r.symbol, r]));
-        for (const r of clean) by.set(r.symbol, { ...(by.get(r.symbol) || {}), ...r, id: by.get(r.symbol)?.id || r.id });
-        setRows([...by.values()]);
+        // Merge on ROW ID, not on symbol. One symbol can legitimately hold several rows — two
+        // separate METU trades, one archived and one open, are two trades and not one position —
+        // so keying by symbol silently collapsed them into whichever arrived last. A payload
+        // without ids (or with unrecognised ones) falls back to a symbol match ONLY when that
+        // symbol is unambiguous; otherwise the row is added rather than overwriting a guess.
+        const next = [...rows];
+        const byId = new Map(next.map((r, i) => [r.id, i]));
+        const symCount = new Map();
+        for (const r of next) symCount.set(r.symbol, (symCount.get(r.symbol) || 0) + 1);
+        for (const r of clean) {
+          let i = byId.has(r.id) ? byId.get(r.id) : -1;
+          if (i < 0 && symCount.get(r.symbol) === 1) i = next.findIndex(x => x.symbol === r.symbol);
+          if (i >= 0) next[i] = { ...next[i], ...r, id: next[i].id };
+          else { byId.set(r.id, next.length); symCount.set(r.symbol, (symCount.get(r.symbol) || 0) + 1); next.push(r); }
+        }
+        setRows(next);
       }
       setImportMsg({ ok: `Loaded ${clean.length} row${clean.length === 1 ? "" : "s"}. Press “Save to cloud” to sync.` });
     }
@@ -871,20 +909,47 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
         {showArchive && archived.length > 0 && (
           <div style={{ marginTop: 12, overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 520 }}>
-              <thead><tr>{["Symbol", "Held", "Bought", "Avg cost", "Realised", "Return"].map(h => (
+              <thead><tr>{["Trade", "Held", "Size", "Entry", "Exit", "Realised", "Return"].map(h => (
                 <th key={h} style={{ textAlign: "left", color: C.mid, padding: "6px 10px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700, fontSize: 11.5 }}>{h}</th>))}</tr></thead>
               <tbody>
-                {archived.map(r => (
-                  <tr key={r.id}>
-                    <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr, fontWeight: 700 }}>{r.symbol} {ccyChip(r.currency)}</td>
-                    <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr, color: C.lbl }}>{r.derived.firstDate || "?"} → {r.derived.lastDate || "?"}</td>
-                    <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr }}>{r.derived.bought}</td>
-                    <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr }}>{r.derived.proceeds ? (r.derived.proceeds / (r.derived.sold || 1)).toFixed(2) : "—"}</td>
-                    <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr, fontWeight: 700, color: pnlCol(r.derived.realized) }}>{money(r.derived.realized, r.currency)}</td>
-                    <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr, color: pnlCol(r.derived.realizedPct) }}>{r.derived.realizedPct == null ? "—" : (r.derived.realizedPct > 0 ? "+" : "") + r.derived.realizedPct + "%"}</td>
-                  </tr>
-                ))}
+                {[...archived].sort((a, b) => String(b.derived.lastDate || "").localeCompare(String(a.derived.lastDate || ""))).map(r => {
+                  const td = { padding: "6px 10px", borderBottom: "1px solid " + C.bdr };
+                  const days = daysBetween(r.derived.firstDate, r.derived.lastDate);
+                  return (
+                    <tr key={r.id} title={r.thesis || ""}>
+                      <td style={{ ...td, fontWeight: 700 }}>{r.symbol} {ccyChip(r.currency)}
+                        {r.trade ? <span style={{ fontWeight: 600, color: C.lbl, fontSize: 11.5 }}> · {r.trade}</span> : null}</td>
+                      <td style={{ ...td, color: C.lbl, whiteSpace: "nowrap" }}>
+                        {r.derived.firstDate || "?"} → {r.derived.lastDate || "?"}{days == null ? "" : ` · ${days}d`}</td>
+                      <td style={td}>{r.derived.bought}</td>
+                      <td style={td}>{r.derived.avgEntry == null ? "—" : r.derived.avgEntry.toFixed(4)}</td>
+                      <td style={td}>{r.derived.avgExit == null ? "—" : r.derived.avgExit.toFixed(4)}</td>
+                      <td style={{ ...td, fontWeight: 700, color: pnlCol(r.derived.realized) }}>{money(r.derived.realized, r.currency)}</td>
+                      <td style={{ ...td, color: pnlCol(r.derived.realizedPct) }}>{r.derived.realizedPct == null ? "—" : (r.derived.realizedPct > 0 ? "+" : "") + r.derived.realizedPct + "%"}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
+              {/* Totals are in the BASE currency, so a row whose FX rate is missing is left out and
+                  counted rather than added at face value in the wrong currency. */}
+              {(() => {
+                const conv = archived.map(r => ({ r, v: toBase(r.derived.realized, r.currency) }));
+                const ok = conv.filter(c => c.v != null);
+                const skipped = conv.length - ok.length;
+                const tot = ok.reduce((a, c) => a + c.v, 0);
+                const wins = ok.filter(c => c.v > 0).length;
+                return (
+                  <tfoot><tr>
+                    <td colSpan={5} style={{ padding: "8px 10px", borderTop: "1.5px solid " + C.bdr, color: C.mid, fontWeight: 700 }}>
+                      {ok.length} closed trade{ok.length === 1 ? "" : "s"} in {baseCcy} · {wins} up / {ok.length - wins} down
+                      {skipped ? ` · ${skipped} excluded (no FX rate)` : ""}
+                    </td>
+                    <td colSpan={2} style={{ padding: "8px 10px", borderTop: "1.5px solid " + C.bdr, fontWeight: 800, color: pnlCol(tot) }}>
+                      {(tot > 0 ? "+" : "") + money(tot, baseCcy)}
+                    </td>
+                  </tr></tfoot>
+                );
+              })()}
             </table>
           </div>
         )}

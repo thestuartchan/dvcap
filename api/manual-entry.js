@@ -108,6 +108,8 @@ function sanitizeRow(r) {
     symbol: sym.toUpperCase(),
     currency: /^[A-Z]{3}$/.test(String(r.currency || '').toUpperCase()) ? String(r.currency).toUpperCase() : 'USD',
     thesis: cs(r.thesis, 600),
+    // Short label that distinguishes two trades in the SAME symbol (one archived, one open).
+    trade: cs(r.trade, 40),
     sizeMode: (r.sizeMode === 'risk' || r.sizeMode === 'allocation') ? r.sizeMode : null,
     targetPct: cn(r.targetPct),
     tranches: cn(r.tranches),

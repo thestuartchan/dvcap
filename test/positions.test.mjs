@@ -115,5 +115,41 @@ eq('curve points = sells', curve.length, 2);
 eq('curve first gain', curve[0].gain, 500);
 eq('curve cumulative', curve[1].cumulative, 1500);
 
+// ── lifetime averages survive the exit (the archive's entry/exit columns) ──
+const rt = derivePosition([
+  {date:'2026-08-05', side:'buy',  qty:200, price:21.405003},
+  {date:'2026-08-07', side:'sell', qty:200, price:21.393403},
+]);
+eq('round trip is closed', rt.status, 'closed');
+eq('avgCost cleared once flat', rt.avgCost, null);
+eq('avgEntry survives the exit', rt.avgEntry, 21.405003);
+eq('avgExit survives the exit', rt.avgExit, 21.393403);
+eq('realised reconciles to the broker', rt.realized, -2.32);
+
+// Averages are weighted by SIZE, not by fill count — the whole point of collapsing a scaled
+// entry into one figure is that a 596-lot and a 4-lot must not count equally.
+const wt = derivePosition([
+  {date:'2026-08-18', side:'buy', qty:596, price:18.059},
+  {date:'2026-08-18', side:'buy', qty:4,   price:18.06},
+]);
+eq('weighted entry, not the mean of prices', wt.avgEntry, 18.059007);
+eq('spent tracks buy notional', wt.spent, 10835.4);
+eq('no exit yet', wt.avgExit, null);
+
+// A scale-out reports the average of what actually left, not of the whole position.
+const so = derivePosition([
+  {date:'2026-08-01', side:'buy',  qty:100, price:10},
+  {date:'2026-08-02', side:'buy',  qty:100, price:20},
+  {date:'2026-08-03', side:'sell', qty:50,  price:30},
+]);
+eq('entry averages both buys', so.avgEntry, 15);
+eq('exit averages only the sold', so.avgExit, 30);
+eq('still open', so.status, 'open');
+
+// A setup has no averages at all rather than zeroes, so the UI can print "—".
+const st = derivePosition([]);
+eq('setup has no entry', st.avgEntry, null);
+eq('setup has no exit', st.avgExit, null);
+
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);
