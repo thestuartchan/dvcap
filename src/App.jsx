@@ -13,6 +13,7 @@ import { deriveRegimeProbabilities, CONTESTED_GAP } from "../lib/regimeProb.js";
 import { minersPairImplication } from "../lib/regimeState.js";
 import { southboundTrend, southboundLevelTrend, southboundRead, ahPremiumRead, sbStale } from "../lib/southbound.js";
 import { STATUS, creditStatus, deriveAction, headerSignal, STAGES } from "../lib/status.js";
+import { HORIZON, HORIZON_LABEL, horizonOf, consensusFor, calendarWindow, dispersionRead, sourceScore, lastRevision, blockOf, BLOCK_LABEL, NO_CONVERSION_NOTE } from "../lib/recession.js";
 import { REGIME_SIZING, rMultiple, positionSize, regimeMultiplier, suggestedSize, distanceToLevels, triggeredLevels, tradeSide, DEFAULT_BASE_RISK_PCT } from "../lib/console.js";
 import { observationAge } from "../lib/gates.js";
 import { trend as trendOf } from "../lib/series.js";
@@ -2174,6 +2175,27 @@ const RECESSION_SOURCE_WEIGHTS = {
   "Polymarket": 0.10,
 };
 
+// Published revision history per source — the same trajectories already narrated in each row's
+// `notes`, structured so they can be scored instead of just read. Dates are the publication dates
+// where known; sourceScore() grades on the SEQUENCE (reversals, move sizes), so an approximate
+// date does not corrupt the grade — only the "days since" readout depends on the last one.
+// Nothing here is a new figure: every value appears in the row notes above.
+const RECESSION_REVISIONS = {
+  "Goldman Sachs": [
+    { asOf: "2026-02-15", prob: 25, note: "pre-Iran war" },
+    { asOf: "2026-03-25", prob: 30, note: "March peak — Hormuz oil shock" },
+    { asOf: "2026-06-26", prob: 15, note: "post peace deal — oil lower, capex solid" },
+  ],
+  "Kalshi prediction market": [
+    { asOf: "2026-05-01", prob: 17.5, note: "prior month" },
+    { asOf: "2026-06-01", prob: 22, note: "uptick despite the peace deal — lingering growth concern" },
+  ],
+  "NY Fed DSGE Model": [
+    { asOf: "2025-12-01", prob: 37.5, note: "December vintage" },
+    { asOf: "2026-03-01", prob: 35.8, note: "March vintage — since archived" },
+  ],
+};
+
 // Expected publication cadence per source, in days — how often THIS source actually publishes a
 // recession probability. The as-of chip used to flag every row past a flat 45 days as "stale",
 // which conflated two different things: a number that is simply the source's LATEST print (a
@@ -2251,7 +2273,30 @@ const computeWeightedRecessionProb = (sources, nowIso = null) => {
     if (eff > 0) { weightedSum += prob * eff; totalWeight += eff; }
   });
   const weightedAvg = totalWeight > 0 ? weightedSum / totalWeight : null;
-  return { weightedAvg, kalshi2027, decayed };
+
+  // ── Horizon-split consensus (lib/recession.js) ──
+  // `weightedAvg` above is the LEGACY all-horizons blend, kept only so the change is auditable.
+  // It mixed rolling-12m forecasts with calendar-year contracts whose window shrinks toward
+  // Dec 31, which dragged the number down for calendar reasons alone. The regime engine now
+  // consumes `rolling` — the horizon it actually asks about ("recession within 12 months").
+  const rows = sources
+    .filter(s => !(s.name === "Kalshi prediction market" && s.year === 2027))
+    .map(s => ({
+      name: s.name, prob: parseProbability(s.probability),
+      weight: RECESSION_SOURCE_WEIGHTS[s.name] || 0,
+      recency: recencyFactor(s.asOf, nowIso),
+      asOf: s.asOf, year: s.year, timeframe: s.timeframe, archived: s.archived,
+    }));
+  const rolling  = consensusFor(rows, HORIZON.ROLLING);
+  const calendar = consensusFor(rows, HORIZON.CALENDAR);
+  const calWindow = calendarWindow(nowIso || new Date().toISOString().slice(0, 10), 2026);
+
+  return {
+    weightedAvg,          // legacy blend — displayed for comparison, no longer drives the engine
+    regimeInput: rolling.value ?? weightedAvg,   // what the regime engine consumes
+    rolling, calendar, calWindow,
+    kalshi2027, decayed,
+  };
 };
 
 // Two Kalshi rows share the name "Kalshi prediction market" (2026 vs 2027), so a bare name is
@@ -5503,7 +5548,10 @@ export default function App() {
   // Regime probabilities derived from the recession table + live CPI. Falls back
   // to the prior static split when no weighted average is available.
   const fallbackRegimes = { stagflation: 48, reflationary: 17, deflationary: 30, inflationary: 5 };
-  const { weightedAvg: recWeightedAvg, kalshi2027: recKalshi2027, decayed: recDecayed } = computeWeightedRecessionProb(effectiveRecessionSources, new Date().toISOString().slice(0, 10));
+  const recConsensus = computeWeightedRecessionProb(effectiveRecessionSources, new Date().toISOString().slice(0, 10));
+  // The regime engine consumes the ROLLING-12M consensus — the horizon it actually asks about.
+  // recLegacyBlend is the old all-horizons average, kept visible so the difference is auditable.
+  const { regimeInput: recWeightedAvg, weightedAvg: recLegacyBlend, kalshi2027: recKalshi2027, decayed: recDecayed } = recConsensus;
   const cpiForRegime = liveInd?.cpiHeadlineCurrent ?? liveInd?.cpi ?? null;
   // Section A — the growth/inflation context that decides whether a falling recession
   // probability is a GROWTH story or a STAGFLATION story. Both legs are live.
@@ -7650,6 +7698,67 @@ export default function App() {
                   </div>
                 );
               })()}
+              {/* ── TWO-HORIZON CONSENSUS ──
+                  The headline. These are two different questions and are never blended: a
+                  calendar-year contract resolves inside a window that shrinks toward Dec 31, so
+                  averaging it with rolling-12m forecasts pushed the consensus down for calendar
+                  reasons alone — and that number drives the regime engine and position sizing. */}
+              {(() => {
+                const { rolling: roll, calendar: cal, calWindow: cw, weightedAvg: legacy } = recConsensus;
+                const disp = dispersionRead(roll);
+                const box = (title, c, opts = {}) => (
+                  <div style={{ flex: "1 1 260px", background: opts.primary ? C.blBg : C.bg, border: "1.5px solid " + (opts.primary ? C.blBdr : C.bdr), borderRadius: 10, padding: "11px 13px" }}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, color: opts.primary ? C.blue : C.muted }}>{title}</span>
+                      {opts.primary && <span style={{ fontSize: 9.5, fontWeight: 800, color: "#fff", background: C.blue, borderRadius: 4, padding: "1px 6px" }}>DRIVES REGIME</span>}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 4 }}>
+                      <b style={{ fontSize: 24, color: c.value == null ? C.muted : C.text, lineHeight: 1.1 }}>{c.value == null ? "—" : c.value + "%"}</b>
+                      {c.spread != null && c.nSources > 1 && (
+                        <span style={{ fontSize: 12, color: C.lbl }}>range {c.lo}–{c.hi}%</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+                      {c.nSources} row{c.nSources === 1 ? "" : "s"} → <b style={{ color: c.thin ? C.amber : C.mid }}>{c.nEffective} independent view{c.nEffective === 1 ? "" : "s"}</b>
+                      {c.views?.some(v => v.isBlock) && <span> · correlated sources counted once</span>}
+                      {opts.note}
+                    </div>
+                    {c.thin && (
+                      <div style={{ marginTop: 6, fontSize: 11, color: C.amber, fontWeight: 700 }}>
+                        ⚠ Thin — resting on a single independent view. Treat as indicative.
+                      </div>
+                    )}
+                  </div>
+                );
+                return (
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      {box(HORIZON_LABEL[HORIZON.ROLLING], roll, { primary: true })}
+                      {box(HORIZON_LABEL[HORIZON.CALENDAR], cal, {
+                        note: cw ? <span> · <b style={{ color: cw.shrinking ? C.amber : C.mid }}>{cw.monthsLeft} months</b> of window left</span> : null,
+                      })}
+                    </div>
+                    {cw?.shrinking && (
+                      <div style={{ marginTop: 8, padding: "9px 12px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8, fontSize: 12, color: C.amber, lineHeight: 1.6 }}>
+                        ⏳ <b>Calendar effect:</b> the by-year-end contracts have only <b>{cw.monthsLeft} months</b> left to resolve in (they had 7.0 in June).
+                        Their price must fall toward zero as Dec 31 approaches <i>even if nothing changes in the economy</i> — so a decline here is not
+                        automatically falling recession risk. This is why they no longer feed the regime engine.
+                      </div>
+                    )}
+                    {disp?.wide && (
+                      <div style={{ marginTop: 8, padding: "9px 12px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8, fontSize: 12, color: C.amber, lineHeight: 1.6 }}>
+                        ⚖ <b>Wide dispersion:</b> {disp.text}.
+                      </div>
+                    )}
+                    <div style={{ marginTop: 7, fontSize: 11, color: C.lbl, lineHeight: 1.6 }}>
+                      {NO_CONVERSION_NOTE}
+                      {legacy != null && roll.value != null && Math.abs(legacy - roll.value) >= 0.1 && (
+                        <> <span style={{ color: C.muted }}>The former all-horizons blend read <b>{legacy.toFixed(1)}%</b>; the regime engine now uses <b>{roll.value}%</b>.</span></>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
               {/* Provenance: these are hand-maintained. There is no keyless feed for broker
                   recession odds, so they are NOT auto-refreshed — each row carries its own as-of
                   and is flagged OVERDUE against that source's own publication cadence (not a flat
@@ -7669,7 +7778,7 @@ export default function App() {
                 <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 400 }}>
                   <thead>
                     <tr style={{ background: C.bg }}>
-                      {["Source", "Probability", "As of", "Timeframe", "Notes"].map(h => (
+                      {["Source", "Probability", "Revisions", "As of", "Timeframe", "Notes"].map(h => (
                         <th key={h} style={{ textAlign: "left", color: C.mid, padding: "8px 12px", borderBottom: "2px solid " + C.bdr, fontSize: 13, fontWeight: 700 }}>{h}</th>
                       ))}
                     </tr>
@@ -7694,6 +7803,32 @@ export default function App() {
                         </td>
                         <td style={{ padding: "8px 12px", borderBottom: "1px solid " + C.bdr }}>
                           <span style={{ color: pCol, fontWeight: 800, fontSize: 15 }}>{r.probability}</span>
+                        </td>
+                        {/* Revisions — direction of travel + a DESCRIPTIVE behaviour grade. A level
+                            alone hides whether a source is being revised up or down, and whether it
+                            round-trips (revising up then straight back = following the news, not
+                            leading it). Accuracy is deliberately NOT scored: recessions are rare and
+                            NBER declares them 6–18 months late, so an accuracy score would take
+                            years to say anything. See lib/recession.js. */}
+                        <td style={{ padding: "8px 12px", fontSize: 12, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap" }}>
+                          {(() => {
+                            const hist = RECESSION_REVISIONS[r.name];
+                            if (!hist || hist.length < 2) return <span style={{ color: C.lbl }}>—</span>;
+                            const sc = sourceScore(hist, new Date().toISOString().slice(0, 10));
+                            const lr = sc.last;
+                            const gCol = sc.grade === "reactive" ? C.amber : sc.grade === "steady" ? C.green : C.mid;
+                            return (
+                              <span title={`${hist.map(h => h.prob + "%").join(" → ")}  ·  ${sc.note}`}>
+                                <b style={{ color: lr.dir === "up" ? C.red : lr.dir === "down" ? C.green : C.muted }}>
+                                  {lr.dir === "up" ? "▲" : lr.dir === "down" ? "▼" : "—"} {lr.delta > 0 ? "+" : ""}{lr.delta}pp
+                                </b>
+                                <span style={{ color: C.lbl }}> from {lr.from}%</span>
+                                <div style={{ fontSize: 10, fontWeight: 800, color: gCol, textTransform: "uppercase", letterSpacing: 0.3, marginTop: 2 }}>
+                                  {sc.grade}{sc.trips > 0 ? ` · ${sc.trips} reversal${sc.trips > 1 ? "s" : ""}` : ""}
+                                </div>
+                              </span>
+                            );
+                          })()}
                         </td>
                         {/* As-of + freshness, judged against the SOURCE'S OWN cadence. An old
                             figure must never read as a current post-FOMC one — but neither should
