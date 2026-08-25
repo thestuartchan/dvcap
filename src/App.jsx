@@ -5309,7 +5309,8 @@ const { kindCol } = ctx;
 const PositionRow = ({ r, mode, ctx }) => {
 const {
   prices, priceOf, liveRegime, expanded, setExpanded, upd, del, addLevel, updLevel, delLevel,
-  openFill, delFill, NumCommit, nInput, chip, ccyChip, fitChip, kindCol, money, pnlCol,
+  openFill, delFill, fillFor, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip,
+  kindCol, money, pnlCol,
   equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
 } = ctx;
   const price = priceOf(r);
