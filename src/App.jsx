@@ -5819,6 +5819,14 @@ export default function App() {
               const mappedCol = macroToCol[liveRegime?.id] || null;
               const mappedPhase = mappedCol ? INSURANCE_PHASES.find(p => p.k === mappedCol) : null;
               const tapeHawkish = pbData?.us?.marketRegime?.state === "HAWKISH_RATES_REPRICING";
+              // T2b — reactive best→worst insurance ranking for the LIVE regime, so opening the tab
+              // immediately answers "given the regime, what's my best insurance and what to avoid."
+              // Same rankKey the best→worst bars use elsewhere; growth regimes (inf/ref) still have a
+              // real-asset ordering even though they aren't crash scenarios.
+              const insRankKey = { stag: "stagRank", def: "defRank", ref: "refRank", inf: "infRank" }[liveRegime?.id] || "stagRank";
+              const insRanked = [...ASSETS].sort((a, b) => (a[insRankKey] ?? 99) - (b[insRankKey] ?? 99));
+              const insBest = insRanked.slice(0, 2);
+              const insWorst = insRanked[insRanked.length - 1];
               return (
                 <div style={{ background: C.surf, border: "1.5px solid " + C.bdr, borderRadius: 12, padding: "12px 16px" }}>
                   <div style={{ fontSize: 13.5, color: C.mid, lineHeight: 1.55 }}>
@@ -5847,6 +5855,22 @@ export default function App() {
                         </button>
                       </>
                     )}
+                  </div>
+                  {/* T2b — best→worst insurance for the live regime, so the tab opens on the answer. */}
+                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid " + C.bdr, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 12.5 }}>
+                    <span style={{ color: C.lbl, fontWeight: 700 }}>In this regime →</span>
+                    <span style={{ color: C.muted, fontWeight: 700 }}>best:</span>
+                    {insBest.map(a => (
+                      <span key={a.id} style={{ background: C.surf2 || C.surf, border: "1.5px solid " + C.bdr, borderRadius: 6, padding: "2px 8px", fontWeight: 800, color: C.text }}>
+                        {a.icon} {a.name}
+                      </span>
+                    ))}
+                    <span style={{ color: C.lbl }}>·</span>
+                    <span style={{ color: C.muted, fontWeight: 700 }}>avoid:</span>
+                    <span style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 6, padding: "2px 8px", fontWeight: 800, color: "#B91C1C" }}>
+                      {insWorst.icon} {insWorst.name}
+                    </span>
+                    <span style={{ color: C.muted, fontStyle: "italic", fontSize: 11.5 }}>ranked for {liveRegime?.label} — full order in the best→worst bar below</span>
                   </div>
                 </div>
               );
@@ -6575,6 +6599,21 @@ export default function App() {
               <b style={{ color: C.text }}>What regime are we in right now?</b>
               <span style={{ color: C.muted }}> The Insurance tab answers a different question — if a crash happens from here, how does it resolve.</span>
             </div>
+            {/* T2a — jump-nav. The Macro tab is long; this lets the reader land on any section
+                without scrolling. Anchors are the `id="macro-*"` markers before each block. */}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", padding: "2px 2px" }}>
+              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: C.lbl, marginRight: 2 }}>Jump to</span>
+              {[
+                ["Regime", "macro-regime"], ["Credit", "macro-credit"], ["Fed", "macro-fed"],
+                ["Inflation", "macro-inflation"], ["Labor", "macro-labor"], ["Recession", "macro-recession"],
+                ["Transitions", "macro-transitions"],
+              ].map(([lbl, id]) => (
+                <button key={id} onClick={() => { const el = typeof document !== "undefined" && document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }}
+                  style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 999, padding: "4px 11px", fontSize: 11.5, fontWeight: 700 }}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
             {/* Section E — the 10Y auction-health card is DELETED (the P7 spec is void).
                 10Y auctions are roughly monthly while this page is read daily, so a card whose
                 value is 3-25 days old, styled like the live ones, invites a stale impression to
@@ -6586,6 +6625,7 @@ export default function App() {
                 slow-moving: regime + contested guard, then rates, then CPI, then the
                 labour module, then the consensus block (slowest). Credit stays on the
                 Global Playbook tab where it already lives. ── */}
+            <div id="macro-regime" style={{ scrollMarginTop: 96 }} />
             <Card>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                 <SLabel>Regime Probability — Derived from Recession Consensus + Live CPI</SLabel>
@@ -6748,6 +6788,7 @@ export default function App() {
             {/* F.2 — credit is the master gauge and sits directly under regime. Reads the
                 Playbook payload (pbData.us) because OAS/HYG come from /api/playbook, not
                 /api/indicators which feeds the rest of this tab. */}
+            <div id="macro-credit" style={{ scrollMarginTop: 96 }} />
             <CreditBlock
               credit={pbData?.us?.regime?.credit}
               oas={pbData?.us?.macro?.oas}
@@ -6758,6 +6799,7 @@ export default function App() {
             {/* T1b — Fed pricing: one card that answers "what's priced for the Fed", cross-checking the
                 6-month bill-implied path against the September-meeting odds. Folds the former standalone
                 6-month-cuts and September-odds cards; the ZQ futures path + qualitative language follow below. */}
+            <div id="macro-fed" style={{ scrollMarginTop: 96 }} />
             {(() => {
               const bps = liveInd?.impliedCutsBps ?? null;
               const cf = liveInd?.currentFedFunds ?? null, tb = liveInd?.tbill6m ?? null;
@@ -6865,6 +6907,7 @@ export default function App() {
               onChange={setLiveIntervention}
             />
 
+            <div id="macro-inflation" style={{ scrollMarginTop: 96 }} />
             {/* CPI Inflation Tracker — Headline/Core CPI + Core PCE YoY, real-yield-on-cash */}
             {(() => {
               // (level→colour lookup now lives in bandOf() below — the tile numbers carry their
@@ -7111,8 +7154,10 @@ export default function App() {
             {/* F.5 — the labour module is a paragraph of interpretation, so it sits where the
                 user is already reading rather than glancing. Same shared definition as the
                 Indicators tab (G.3) — one module, rendered once per tab. */}
+            <div id="macro-labor" style={{ scrollMarginTop: 96 }} />
             <LaborPanel labor={laborView} extras={laborExtras} announced={laborAnnounced} />
 
+            <div id="macro-recession" style={{ scrollMarginTop: 96 }} />
             <Card>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                 <SLabel>Wall Street Recession Probability</SLabel>
@@ -7252,6 +7297,7 @@ export default function App() {
 
             <RecessionEntryPanel overrides={recessionOverrides} onSaved={setRecessionOverrides} />
 
+            <div id="macro-transitions" style={{ scrollMarginTop: 96 }} />
             <Card>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 4 }}>
                 <SLabel>Transition Roadmap</SLabel>
