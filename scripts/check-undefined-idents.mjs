@@ -14,8 +14,9 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const acorn = require('acorn'); const jsx = require('acorn-jsx');
 const Parser = acorn.Parser.extend(jsx());
-const src = readFileSync('src/App.jsx','utf8');
-const ast = Parser.parse(src,{ecmaVersion:'latest',sourceType:'module',locations:true});
+// Every source file, so extracting a tab into its own module cannot create a new blind spot —
+// which is exactly what would have happened when the Console moved out of App.jsx.
+const FILES=['src/App.jsx','src/TradeConsole.jsx','src/ui.jsx'];
 
 const GLOBALS=new Set(['globalThis','console','JSON','Math','Date','Number','String','Boolean','Object','Array','Set','Map','WeakMap','Promise','Symbol','RegExp','Error','TypeError','parseInt','parseFloat','isNaN','isFinite','encodeURIComponent','decodeURIComponent','setTimeout','clearTimeout','setInterval','clearInterval','window','document','navigator','location','localStorage','sessionStorage','fetch','AbortSignal','URL','Notification','Intl','process','undefined','NaN','Infinity','arguments','structuredClone','requestAnimationFrame']);
 
@@ -51,6 +52,7 @@ function declsOf(node){
 }
 
 const problems=[];
+let CURRENT_FILE='';
 function analyze(node,chain){
   const scope=declsOf(node);
   const nextChain=[...chain,scope];
@@ -64,7 +66,7 @@ function analyze(node,chain){
     else if(n.type==='MemberExpression'&&n.object.type==='Identifier')name=n.object.name;
     else if(n.type==='JSXExpressionContainer'&&n.expression.type==='Identifier')name=n.expression.name;
     else if(n.type==='JSXOpeningElement'&&n.name.type==='JSXIdentifier'&&/^[A-Z]/.test(n.name.name))name=n.name.name;
-    if(name&&!resolve(name))problems.push({name,line:n.loc.start.line});
+    if(name&&!resolve(name))problems.push({name,line:n.loc.start.line,file:CURRENT_FILE});
     for(const k of Object.keys(n)){ if(['type','start','end','loc'].includes(k))continue;
       const v=n[k];
       if(Array.isArray(v))v.forEach(c=>c&&typeof c.type==='string'&&visit(c,n));
@@ -73,11 +75,16 @@ function analyze(node,chain){
   };
   visit(node,null);
 }
-analyze(ast,[]);
+for(const FILE of FILES){
+  const src=readFileSync(FILE,'utf8');
+  const ast=Parser.parse(src,{ecmaVersion:'latest',sourceType:'module',locations:true});
+  CURRENT_FILE=FILE;
+  analyze(ast,[]);
+}
 const seen=new Set();
 for(const p of problems.sort((a,b)=>a.line-b.line)){
-  const k=p.name+':'+p.line; if(seen.has(k))continue; seen.add(k);
-  console.error(`\u2717 src/App.jsx:${p.line} — \`${p.name}\` does not resolve in its enclosing scope.`);
+  const k=p.file+':'+p.name+':'+p.line; if(seen.has(k))continue; seen.add(k);
+  console.error(`\u2717 ${p.file}:${p.line} — \`${p.name}\` does not resolve in its enclosing scope.`);
 }
 if(seen.size){
   console.error(`\n${seen.size} unresolved reference${seen.size===1?'':'s'} — the class of break that renders a blank tab while the build passes.`);
