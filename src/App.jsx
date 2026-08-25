@@ -17,7 +17,7 @@ import { HORIZON, HORIZON_LABEL, consensusFor, calendarWindow, dispersionRead, N
 import { buildViews, evaluateViews, regimeCluster, divergenceRead } from "../lib/analystViews.js";
 import { CURRENCIES, CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, toUsd, fxRisk, fmtCcy } from "../lib/fxrates.js";
 import { derivePosition, positionPnl, levelHit, levelHits, distancePct, summarize, realizedCurve } from "../lib/positions.js";
-import { REGIME_SIZING, rMultiple, positionSize, regimeMultiplier, suggestedSize, distanceToLevels, triggeredLevels, tradeSide, DEFAULT_BASE_RISK_PCT } from "../lib/console.js";
+import { REGIME_SIZING, SIZING_MODES, regimeMultiplier, sizeSuggestion, riskAtStop, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT } from "../lib/sizing.js";
 import { observationAge } from "../lib/gates.js";
 import { trend as trendOf } from "../lib/series.js";
 
@@ -5225,7 +5225,7 @@ function regimeFitFor(sym, regime) {
 function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, creditDanger, contested, regimeDiverged, prices, fetchPrices, pricesLoading }) {
   const LS = "dvcap_console_v2";
   const [rows, setRows]         = useState([]);     // unified: setups + positions
-  const [settings, setSettings] = useState({ baseCurrency: "USD", alertsEnabled: false });
+  const [settings, setSettings] = useState({ baseCurrency: "USD", alertsEnabled: false, equity: null, baseRiskPct: DEFAULT_BASE_RISK_PCT, targetPct: DEFAULT_TARGET_PCT, sizing: {} });
   const [loaded, setLoaded]     = useState(false);
   const [dirty, setDirty]       = useState(false);
   const [saving, setSaving]     = useState(false);
@@ -5291,6 +5291,22 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
   const { rates: fxRates } = useMemo(() => ratesFrom(prices), [prices]);
   const toBase = (v, ccy) => convert(v, ccy || "USD", baseCcy, fxRates);
   const priceOf = (r) => prices?.[r.symbol]?.price ?? null;
+
+  // ── sizing context ──
+  const numOrNull = (v) => (v == null || v === "" || !Number.isFinite(+v)) ? null : +v;
+  const equityBase = numOrNull(settings.equity);
+  const baseRisk = numOrNull(settings.baseRiskPct) ?? DEFAULT_BASE_RISK_PCT;
+  const targetPct = numOrNull(settings.targetPct) ?? DEFAULT_TARGET_PCT;
+  const mergedSizing = useMemo(() => {
+    const out = {};
+    for (const k of Object.keys(REGIME_SIZING)) {
+      const ov = numOrNull(settings?.sizing?.[k]);
+      out[k] = ov != null ? { ...REGIME_SIZING[k], mult: ov } : REGIME_SIZING[k];
+    }
+    return out;
+  }, [settings?.sizing]);
+  const regimeCtx = { regimeId: liveRegime?.id, creditDanger, contested, pinnedDiverged: regimeDiverged, sizing: mergedSizing };
+  const rm = regimeMultiplier(regimeCtx);
 
   // ── derive everything from fills ──
   const derivedRows = useMemo(() => rows.map(r => {
@@ -5529,6 +5545,65 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
               <span style={{ fontSize: 11, color: C.lbl, alignSelf: "center" }}>leave “to” blank for a single price, or fill it for a zone</span>
             </div>
 
+            {/* how much to buy */}
+            {(() => {
+              const mode = r.sizeMode || (stopLevel ? "risk" : "allocation");
+              const equityInPos = equityBase == null ? null : convert(equityBase, baseCcy, r.currency || "USD", fxRates);
+              const sug = sizeSuggestion({
+                mode, equityInPos, price, stop: stopLevel?.at,
+                baseRiskPct: baseRisk, targetPct: numOrNull(r.targetPct) ?? targetPct,
+                regime: regimeCtx, heldQty: d.qty || 0, tranches: numOrNull(r.tranches) || 1,
+                sizing: mergedSizing,
+              });
+              return (
+                <div style={{ marginTop: 12, padding: "10px 12px", background: liveRegime?.bg || C.bg, border: "1px solid " + (liveRegime?.bdr || C.bdr), borderRadius: 9 }}>
+                  <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap", marginBottom: 7 }}>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>How much to buy</span>
+                    <select value={mode} onChange={e => upd(r.id, { sizeMode: e.target.value })}
+                      title="Risk: size so a stop-out costs a fixed % of the book. Allocation: hold a target % of the book — for long holds with no stop."
+                      style={{ padding: "3px 7px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 11.5, background: C.surf, color: C.text, fontWeight: 700 }}>
+                      <option value="risk">risk-based (needs a stop)</option>
+                      <option value="allocation">allocation (% of book)</option>
+                    </select>
+                    {mode === "allocation" && (
+                      <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700, display: "flex", gap: 5, alignItems: "center" }}>
+                        target % {nInput(r.targetPct ?? "", v => upd(r.id, { targetPct: v === "" ? null : +v }), String(targetPct), 58)}
+                      </label>
+                    )}
+                    <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700, display: "flex", gap: 5, alignItems: "center" }}>
+                      tranches {nInput(r.tranches ?? "", v => upd(r.id, { tranches: v === "" ? null : +v }), "1", 48)}
+                    </label>
+                  </div>
+                  {sug.ok ? (
+                    <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.75 }}>
+                      Full size <b style={{ color: C.text }}>{sug.fullQty}</b> ({money(sug.notional, r.currency)} · {sug.notionalPctOfBook}% of book)
+                      {sug.heldQty > 0 && <> · holding <b>{sug.heldQty}</b></>}
+                      {" · "}<b style={{ color: sug.roomQty > 0 ? C.green : C.muted }}>room for {sug.roomQty}</b>
+                      {sug.tranches > 1 && sug.trancheQty > 0 && <> · <b>{sug.trancheQty}</b> per tranche ×{sug.tranches}</>}
+                      {sug.riskAmount != null && (
+                        <div style={{ color: C.lbl }}>
+                          Risks <b style={{ color: C.red }}>{fmtCcy(sug.riskAmount, r.currency)}</b> at the {stopLevel?.at} stop ({sug.effPct}% of book · {money(sug.perShareRisk, r.currency)}/share)
+                        </div>
+                      )}
+                      <div style={{ color: C.muted, fontSize: 11.5 }}>
+                        {mode === "risk" ? `${baseRisk}%` : `${numOrNull(r.targetPct) ?? targetPct}%`} base × <b style={{ color: liveRegime?.color }}>{sug.mult}</b> regime — {sug.reasons[sug.reasons.length - 1]}
+                      </div>
+                      {sug.warnings.map((w, i) => <div key={i} style={{ color: C.amber, fontWeight: 700, fontSize: 11.5 }}>⚠ {w}</div>)}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12.5, color: C.muted, fontStyle: "italic" }}>
+                      {sug.why}
+                      {/^risk sizing needs a stop/.test(sug.why || "") && (
+                        <button onClick={() => upd(r.id, { sizeMode: "allocation" })} style={{ marginLeft: 8, cursor: "pointer", background: C.surf, color: C.blue, border: "1.5px solid " + C.bdr, borderRadius: 6, padding: "2px 8px", fontSize: 11.5, fontWeight: 700 }}>
+                          use allocation instead
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* fills */}
             <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, margin: "12px 0 5px" }}>
               Fills {d.nFills > 0 && <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0, color: C.lbl }}>· {d.bought} bought · {d.sold} sold · avg {d.avgCost?.toFixed(2) ?? "—"}</span>}
@@ -5655,6 +5730,46 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
             <Btn onClick={() => fetchPrices([...symbols, ...fxSyms])} disabled={pricesLoading || !symbols.length} color={C.mid} bgColor={C.bg} label={pricesLoading ? "…" : "🔄 Prices"} />
             <Btn onClick={saveCloud} disabled={saving} color="#fff" bgColor={dirty ? C.blue : C.bdrMd} label={saving ? "Saving…" : dirty ? "☁ Save to cloud" : "☁ Synced"} />
           </div>
+        </div>
+      </Card>
+
+      {/* sizing settings */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+          <SLabel>Sizing</SLabel>
+          <span style={{ fontSize: 11.5, color: C.muted }}>suggestions only — shown beside your own number, never applied</span>
+          <span style={{ marginLeft: "auto", fontSize: 12.5 }}>
+            <span style={{ color: C.lbl, fontWeight: 700 }}>regime ×</span> <b style={{ color: liveRegime?.color }}>{rm.mult.toFixed(2)}</b>
+            <span style={{ color: C.muted, fontSize: 11.5 }}> ({rm.reasons[rm.reasons.length - 1]})</span>
+          </span>
+        </div>
+        <div style={{ marginTop: 9, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Account equity ({baseCcy})<br />
+            {nInput(settings.equity, v => { setSettings(x => ({ ...x, equity: v === "" ? null : v })); touch(); }, "e.g. 208597", 120)}</label>
+          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Risk / trade (%)<br />
+            {nInput(settings.baseRiskPct, v => { setSettings(x => ({ ...x, baseRiskPct: v === "" ? null : v })); touch(); }, "1", 64)}</label>
+          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Default allocation (%)<br />
+            {nInput(settings.targetPct, v => { setSettings(x => ({ ...x, targetPct: v === "" ? null : v })); touch(); }, "5", 64)}</label>
+          <div style={{ fontSize: 11.5, color: C.muted, flex: "1 1 240px", lineHeight: 1.55 }}>
+            <b>Risk</b> sizes so a stop-out costs a fixed % of the book — for swings with an invalidation level.
+            <b> Allocation</b> targets a % of the book — for long holds where the thesis, not a price, is the exit.
+            Each position picks its own; both are scaled by the regime multiplier and netted against what you already hold.
+          </div>
+        </div>
+        <div style={{ marginTop: 11 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Regime multipliers</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 9 }}>
+            {Object.keys(REGIME_SIZING).map(k => {
+              const isLive = liveRegime?.id === k;
+              return (
+                <label key={k} style={{ fontSize: 11.5, color: isLive ? C.text : C.lbl, fontWeight: isLive ? 800 : 600, border: "1.5px solid " + (isLive ? (liveRegime?.color || C.blue) : C.bdr), borderRadius: 8, padding: "5px 9px", background: isLive ? (liveRegime?.bg || C.surf) : C.surf }}>
+                  {REGIME_SIZING[k].label}{isLive ? " ● live" : ""}<br />
+                  {nInput(settings?.sizing?.[k] ?? REGIME_SIZING[k].mult, v => { setSettings(x => ({ ...x, sizing: { ...(x.sizing || {}), [k]: v === "" ? null : v } })); touch(); }, String(REGIME_SIZING[k].mult), 60)}
+                </label>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>Credit-DANGER caps the multiplier at ×{CREDIT_DANGER_CAP_LABEL}; a contested or pinned≠live regime applies a further ×0.7.</div>
         </div>
       </Card>
 

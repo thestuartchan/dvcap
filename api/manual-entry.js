@@ -108,6 +108,9 @@ function sanitizeRow(r) {
     symbol: sym.toUpperCase(),
     currency: /^[A-Z]{3}$/.test(String(r.currency || '').toUpperCase()) ? String(r.currency).toUpperCase() : 'USD',
     thesis: cs(r.thesis, 600),
+    sizeMode: (r.sizeMode === 'risk' || r.sizeMode === 'allocation') ? r.sizeMode : null,
+    targetPct: cn(r.targetPct),
+    tranches: cn(r.tranches),
     levels: Array.isArray(r.levels) ? r.levels.map(sanitizeLevel).filter(Boolean).slice(0, 12) : [],
     fills: Array.isArray(r.fills) ? r.fills.map(sanitizeFill).filter(Boolean).slice(0, 200) : [],
     tags: Array.isArray(r.tags) ? r.tags.map(t => cs(t, 24)).filter(Boolean).slice(0, 8) : [],
@@ -118,8 +121,16 @@ function sanitizeConsoleSettings(s) {
   if (!s || typeof s !== 'object') return {};
   const out = {
     alertsEnabled: !!s.alertsEnabled,
+    equity: cn(s.equity), baseRiskPct: cn(s.baseRiskPct), targetPct: cn(s.targetPct),
     baseCurrency: /^[A-Z]{3}$/.test(String(s.baseCurrency || '').toUpperCase()) ? String(s.baseCurrency).toUpperCase() : 'USD',
   };
+  if (s.sizing && typeof s.sizing === 'object') {
+    out.sizing = {};
+    for (const k of ['ref', 'inf', 'stag', 'def']) {
+      const m = cn(s.sizing[k]);
+      if (m != null) out.sizing[k] = Math.max(0, Math.min(3, m));   // clamp the multiplier to 0–3x
+    }
+  }
   return out;
 }
 
