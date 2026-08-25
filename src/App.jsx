@@ -16,7 +16,7 @@ import { STATUS, creditStatus, deriveAction, headerSignal, STAGES } from "../lib
 import { HORIZON, HORIZON_LABEL, consensusFor, calendarWindow, dispersionRead, NO_CONVERSION_NOTE } from "../lib/recession.js";
 import { buildViews, evaluateViews, regimeCluster, divergenceRead } from "../lib/analystViews.js";
 import { CURRENCIES, CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, toUsd, fxRisk, fmtCcy } from "../lib/fxrates.js";
-import { regimeOnDate, closeTrade, performanceByRegime } from "../lib/journal.js";
+import { derivePosition, positionPnl, levelHit, levelHits, distancePct, summarize, realizedCurve } from "../lib/positions.js";
 import { REGIME_SIZING, rMultiple, positionSize, regimeMultiplier, suggestedSize, distanceToLevels, triggeredLevels, tradeSide, DEFAULT_BASE_RISK_PCT } from "../lib/console.js";
 import { observationAge } from "../lib/gates.js";
 import { trend as trendOf } from "../lib/series.js";
@@ -5192,627 +5192,511 @@ function AnalystViewBoard({ live, probFor, engineRegime, consensus }) {
   );
 }
 
-// ─── TRADE CONSOLE (Tier 3) ─────────────────────────────────────────────────
-// The regime-aware trade console: a watchlist of the instruments YOU trade, each with your
-// levels, auto R:R and regime-scaled sizing, tagged with how it sits vs the live regime and the
-// insurance book, plus a journal that stamps the regime at entry. No execution, no fabricated
-// data — prices come from /api/prices, levels are hand-entered, sizing is arithmetic (lib/console.js).
-
-// Insurance-book tickers, for the "insurance overlap" tag (ASSETS is the insurance universe).
-const INSURANCE_TICKERS = (() => {
-  const m = {};
-  for (const a of ASSETS) for (const t of (a.tickers || [])) if (t?.t) m[t.t.toUpperCase()] = a.name;
-  return m;
-})();
-const reEsc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-// How a symbol sits vs the live regime: its tickers appear in the regime's best/worst asset lists.
-function regimeFitFor(sym, regime) {
-  if (!sym || !regime) return { fit: "neutral", where: null };
-  const re = new RegExp(`\\b${reEsc(sym.toUpperCase())}\\b`, "i");
-  const hitBest = (regime.best || []).find(x => re.test(x));
-  if (hitBest) return { fit: "tailwind", where: hitBest };
-  const hitWorst = (regime.worst || []).find(x => re.test(x));
-  if (hitWorst) return { fit: "headwind", where: hitWorst };
-  return { fit: "neutral", where: null };
-}
-
+// ─── TRADE CONSOLE ───────────────────────────────────────────────────────────
+// SCOPE: spot, swing and long holds. Not day trades or scalps — those live in the broker and the
+// user's own tracker sheet, and duplicating them here produced a worse second copy of both.
+//
+// The console answers a PRE-TRADE question the sheet cannot: "what am I waiting for, and has it
+// arrived?" Setups carry levels; live prices are checked against them; a hit raises a flag. What it
+// keeps beyond that is deliberately thin — enough position state to know what is actually held and
+// what it has made, with a brief archive, and nothing that re-implements a P&L tracker.
+//
+// Positions are FILLS, not a single entry price (lib/positions.js), because these trades scale in
+// and scale out: a position is regularly open AND realising P&L at the same time, which the old
+// single-entry model could not represent at all.
 function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, creditDanger, contested, regimeDiverged, prices, fetchPrices, pricesLoading }) {
-  const LS = "dvcap_console_v1";
-  const [wl, setWl]             = useState([]);
-  const [journal, setJournal]   = useState([]);
-  const [settings, setSettings] = useState({ equity: null, baseRiskPct: DEFAULT_BASE_RISK_PCT, alertsEnabled: false, sizing: {}, baseCurrency: "USD" });
-  const [kvOn, setKvOn] = useState(null);   // is cross-device sync configured on the server?
+  const LS = "dvcap_console_v2";
+  const [rows, setRows]         = useState([]);     // unified: setups + positions
+  const [settings, setSettings] = useState({ baseCurrency: "USD", alertsEnabled: false });
   const [loaded, setLoaded]     = useState(false);
   const [dirty, setDirty]       = useState(false);
   const [saving, setSaving]     = useState(false);
   const [saveMsg, setSaveMsg]   = useState(null);
+  const [kvOn, setKvOn]         = useState(null);
   const [expanded, setExpanded] = useState(null);
   const [addSym, setAddSym]     = useState("");
-  const [closeForm, setCloseForm] = useState(null); // close-a-position form
-  const [portOpen, setPortOpen] = useState(false);  // import/export panel
+  const [fillFor, setFillFor]   = useState(null);   // open "record a fill" form
+  const [showArchive, setShowArchive] = useState(false);
+  const [portOpen, setPortOpen] = useState(false);
   const [importTxt, setImportTxt] = useState("");
   const [importMsg, setImportMsg] = useState(null);
-  const notifiedRef = useMemo(() => ({ current: new Set() }), []);   // dedupe browser notifications
+  const notifiedRef = useMemo(() => ({ current: new Set() }), []);
 
-  // Load: localStorage for instant paint, then the server store (authoritative if present).
+  // ── load / persist ──
   useEffect(() => {
     try {
       const c = JSON.parse(localStorage.getItem(LS) || "null");
-      if (c) { setWl(c.watchlist || []); setJournal(c.journal || []); setSettings(s => ({ ...s, ...(c.settings || {}) })); }
+      if (c) { setRows(c.rows || []); setSettings(s => ({ ...s, ...(c.settings || {}) })); }
     } catch { /* no cache */ }
     fetch("/api/manual-entry").then(r => r.json()).then(j => {
       const c = j?.console;
       if (c && typeof c === "object") {
-        if (Array.isArray(c.watchlist)) setWl(c.watchlist);
-        if (Array.isArray(c.journal))   setJournal(c.journal);
+        if (Array.isArray(c.rows)) setRows(c.rows);
+        else if (Array.isArray(c.watchlist)) setRows(migrateV1(c.watchlist));   // one-time v1 → v2
         if (c.settings) setSettings(s => ({ ...s, ...c.settings }));
       }
       setKvOn(j?.kv?.configured ?? null);
       setLoaded(true);
     }).catch(() => setLoaded(true));
   }, []);
-
-  // Mirror every change to localStorage (per-device durability, instant).
   useEffect(() => {
     if (!loaded) return;
-    try { localStorage.setItem(LS, JSON.stringify({ watchlist: wl, journal, settings })); } catch { /* quota */ }
-  }, [wl, journal, settings, loaded]);
+    try { localStorage.setItem(LS, JSON.stringify({ rows, settings })); } catch { /* quota */ }
+  }, [rows, settings, loaded]);
 
-  // Live quotes for the watchlist symbols.
-  const wlSymbols = useMemo(() => [...new Set(wl.map(w => w.symbol).filter(Boolean))], [wl]);
-  // FX rates ride the SAME /api/prices passthrough (a generic Yahoo proxy), so multi-currency
-  // costs no extra serverless function. Only the currencies actually in the book are fetched.
-  const usedCcys = useMemo(() => [...new Set([settings.baseCurrency || "USD", ...wl.map(w => w.currency || "USD")])], [wl, settings.baseCurrency]);
-  const fxSyms = useMemo(() => fxSymbolsFor(usedCcys), [usedCcys]);
-  const fetchKey = [...wlSymbols, ...fxSyms].join(",");
-  useEffect(() => { const all = [...wlSymbols, ...fxSyms]; if (all.length) fetchPrices(all); }, [fetchKey]);   // eslint-disable-line
-  const { rates: fxRates, sources: fxSources } = useMemo(() => ratesFrom(prices), [prices]);
+  // v1 stored a single `entry` per row. Convert it to an opening BUY fill so nothing is lost, and
+  // mark the quantity unknown rather than inventing one.
+  function migrateV1(watchlist) {
+    return (watchlist || []).map(w => ({
+      id: w.id || `${w.symbol}-${Math.random().toString(36).slice(2, 8)}`,
+      symbol: w.symbol, currency: w.currency || "USD", thesis: w.note || "",
+      levels: [
+        ...(w.stop != null ? [{ id: "s", kind: "stop", at: w.stop, note: "" }] : []),
+        ...((w.targets || []).map((t, i) => ({ id: "t" + i, kind: "sell", at: t, note: "" }))),
+      ],
+      fills: (w.entry != null && w.status === "in-trade")
+        ? [{ id: "f0", date: w.entryDate || "", side: "buy", qty: null, price: w.entry, note: "migrated from v1 — quantity unknown, please set" }]
+        : [],
+      tags: [],
+    }));
+  }
+
+  const touch = () => setDirty(true);
   const baseCcy = settings.baseCurrency || "USD";
 
-  // Sizing table = defaults overlaid with the user's per-regime multiplier overrides.
-  const mergedSizing = useMemo(() => {
-    const out = {};
-    for (const k of Object.keys(REGIME_SIZING)) {
-      const ov = settings?.sizing?.[k];
-      out[k] = ov != null ? { ...REGIME_SIZING[k], mult: +ov } : REGIME_SIZING[k];
-    }
-    return out;
-  }, [settings?.sizing]);
-  const regimeCtx = { regimeId: liveRegime?.id, creditDanger, contested, pinnedDiverged: regimeDiverged, sizing: mergedSizing };
-  const rm = regimeMultiplier(regimeCtx);
-  // Inputs are kept as raw strings while typing (so decimals aren't mangled by number coercion);
-  // coerce to numbers only where the math needs them.
-  const numOrNull = (v) => (v == null || v === "" || !Number.isFinite(+v)) ? null : +v;
-  const equityNum = numOrNull(settings.equity);
-  const baseRiskNum = numOrNull(settings.baseRiskPct) ?? DEFAULT_BASE_RISK_PCT;
+  // ── prices + fx ──
+  const symbols = useMemo(() => [...new Set(rows.map(r => r.symbol).filter(Boolean))], [rows]);
+  const usedCcys = useMemo(() => [...new Set([baseCcy, ...rows.map(r => r.currency || "USD")])], [rows, baseCcy]);
+  const fxSyms = useMemo(() => fxSymbolsFor(usedCcys), [usedCcys]);
+  const fetchKey = [...symbols, ...fxSyms].join(",");
+  useEffect(() => { const all = [...symbols, ...fxSyms]; if (all.length) fetchPrices(all); }, [fetchKey]);   // eslint-disable-line
+  const { rates: fxRates } = useMemo(() => ratesFrom(prices), [prices]);
+  const toBase = (v, ccy) => convert(v, ccy || "USD", baseCcy, fxRates);
+  const priceOf = (r) => prices?.[r.symbol]?.price ?? null;
 
-  // Mutations (each marks dirty so the cloud-save button lights up).
-  const touch = () => setDirty(true);
-  const addSymbol = () => {
+  // ── derive everything from fills ──
+  const derivedRows = useMemo(() => rows.map(r => {
+    const derived = derivePosition(r.fills || []);
+    return { ...r, derived, pnl: positionPnl(derived, priceOf(r)) };
+  }), [rows, prices]);
+
+  const setups   = derivedRows.filter(r => r.derived.status === "setup");
+  const openPos  = derivedRows.filter(r => r.derived.status === "open");
+  const archived = derivedRows.filter(r => r.derived.status === "closed");
+  const summary  = useMemo(() => summarize(derivedRows, toBase), [derivedRows, fxRates, baseCcy]);
+  const curve    = useMemo(() => realizedCurve(derivedRows, toBase), [derivedRows, fxRates, baseCcy]);
+
+  // ── level alerts (poll cadence — checked whenever prices refresh) ──
+  const hits = useMemo(() => levelHits(derivedRows.filter(r => r.derived.status !== "closed"), priceOf), [derivedRows, prices]);
+  useEffect(() => {
+    if (!settings.alertsEnabled || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    for (const h of hits) {
+      const key = `${h.position.id}:${h.level.kind}:${h.level.at}`;
+      if (notifiedRef.current.has(key)) continue;
+      notifiedRef.current.add(key);
+      try { new Notification(`${h.position.symbol} — ${h.level.kind} level`, { body: `${h.level.kind} ${h.level.at}${h.level.to ? "–" + h.level.to : ""} · live ${h.price}` }); } catch { /* ignore */ }
+    }
+  }, [hits, settings.alertsEnabled]);
+
+  // ── mutations ──
+  const addRow = () => {
     const sym = addSym.trim().toUpperCase();
     if (!sym) return;
     const id = `${sym}-${Math.random().toString(36).slice(2, 8)}`;
-    setWl(prev => [...prev, { id, symbol: sym, side: null, entry: null, stop: null, targets: [], riskPct: null, status: "idea", note: "", addedAt: new Date().toISOString() }]);
+    setRows(p => [...p, { id, symbol: sym, currency: "USD", thesis: "", levels: [], fills: [], tags: [] }]);
     setAddSym(""); setExpanded(id); touch();
   };
-  const updateItem = (id, patch) => { setWl(prev => prev.map(w => w.id === id ? { ...w, ...patch } : w)); touch(); };
-  const removeItem = (id) => { setWl(prev => prev.filter(w => w.id !== id)); touch(); };
+  const upd = (id, patch) => { setRows(p => p.map(r => r.id === id ? { ...r, ...patch } : r)); touch(); };
+  const del = (id) => { setRows(p => p.filter(r => r.id !== id)); touch(); };
+  const addLevel = (id, kind) => {
+    const r = rows.find(x => x.id === id); if (!r) return;
+    upd(id, { levels: [...(r.levels || []), { id: Math.random().toString(36).slice(2, 8), kind, at: null, to: null, note: "" }] });
+  };
+  const updLevel = (id, lid, patch) => {
+    const r = rows.find(x => x.id === id); if (!r) return;
+    upd(id, { levels: (r.levels || []).map(l => l.id === lid ? { ...l, ...patch } : l) });
+  };
+  const delLevel = (id, lid) => {
+    const r = rows.find(x => x.id === id); if (!r) return;
+    upd(id, { levels: (r.levels || []).filter(l => l.id !== lid) });
+  };
+  const saveFill = () => {
+    const f = fillFor; if (!f) return;
+    const qty = +f.qty, price = +f.price;
+    if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(price)) { setSaveMsg("A fill needs a positive quantity and a price."); setTimeout(() => setSaveMsg(null), 4000); return; }
+    const r = rows.find(x => x.id === f.rowId); if (!r) return;
+    upd(f.rowId, { fills: [...(r.fills || []), { id: Math.random().toString(36).slice(2, 8), date: f.date, side: f.side, qty, price, note: f.note || "" }] });
+    setFillFor(null);
+  };
+  const delFill = (rowId, fid) => {
+    const r = rows.find(x => x.id === rowId); if (!r) return;
+    upd(rowId, { fills: (r.fills || []).filter(f => f.id !== fid) });
+  };
 
   const saveCloud = async () => {
     setSaving(true); setSaveMsg(null);
     try {
-      const r = await fetch("/api/manual-entry", {
+      const res = await fetch("/api/manual-entry", {
         method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
-        body: JSON.stringify({ console: { watchlist: wl, journal, settings } }),
+        body: JSON.stringify({ console: { rows, settings } }),
       });
-      const j = await r.json().catch(() => null);
-      if (r.ok) {
+      const j = await res.json().catch(() => null);
+      if (res.ok) {
         const stored = j?.console?.stored;
         setDirty(false);
-        setSaveMsg(stored === "kv" ? "Synced across devices ✓"
-          : stored === "none" ? "Saved in this browser only — cross-device sync not configured."
-          : "Saved ✓");
+        setSaveMsg(stored === "kv" ? "Synced across devices ✓" : stored === "none" ? "Saved in this browser only — sync not configured." : "Saved ✓");
         if (stored) setKvOn(stored === "kv");
-      }
-      else if (r.status === 401) setSaveMsg("Log in to the dashboard to sync to cloud (saved locally).");
-      else setSaveMsg(`Cloud save failed (${r.status}) — kept locally.`);
-    } catch (e) { setSaveMsg("Cloud save failed — kept locally."); }
-    setSaving(false);
-    setTimeout(() => setSaveMsg(null), 6000);
+      } else if (res.status === 401) setSaveMsg("Log in to sync (kept locally).");
+      else setSaveMsg(`Save failed (${res.status}) — kept locally.`);
+    } catch { setSaveMsg("Save failed — kept locally."); }
+    setSaving(false); setTimeout(() => setSaveMsg(null), 6000);
   };
 
-  // ── Closing a position ───────────────────────────────────────────────────
-  // A trade is a LIFECYCLE, not a single event. The old flow only accepted a completed round trip
-  // typed by hand, which is why nine open positions could never become a record of anything.
-  const openCloseFor = (w) => setCloseForm({
-    id: w.id, symbol: w.symbol, side: w.side || tradeSide(w.entry, w.stop) || "long",
-    currency: w.currency || "USD",
-    entry: w.entry ?? "", stop: w.stop ?? "", entryDate: w.entryDate || "",
-    exit: "", shares: "", dateOut: new Date().toISOString().slice(0, 10), notes: "",
-  });
-
-  const saveClose = () => {
-    const f = closeForm; if (!f) return;
-    const res = closeTrade({ entry: f.entry, stop: f.stop, exit: f.exit, shares: f.shares, side: f.side, currency: f.currency });
-    if (!res.ok) { setSaveMsg(res.error); setTimeout(() => setSaveMsg(null), 5000); return; }
-    // Regime at ENTRY is looked up from the log by the entry date — never assumed to be today's.
-    const atEntry = regimeOnDate(regimeHistory, f.entryDate || null);
-    const row = {
-      id: `${f.symbol}-${Math.random().toString(36).slice(2, 8)}`,
-      symbol: f.symbol, side: f.side, currency: f.currency,
-      entryPrice: +f.entry, exitPrice: +f.exit,
-      stop: f.stop === "" ? null : +f.stop,
-      shares: f.shares === "" ? null : +f.shares,
-      realizedR: res.realizedR, pctReturn: res.pctReturn, pnl: res.pnl, measure: res.measure,
-      regimeAtEntryId: atEntry.regime,
-      regimeAtEntry: atEntry.regime
-        ? `${REGIMES.find(r => r.id === atEntry.regime)?.label || atEntry.regime}${atEntry.exact ? "" : " (prior session)"}`
-        : "unknown — predates the regime log",
-      regimeAtExitId: liveRegime?.id ?? null,
-      dateIn: f.entryDate || null, dateOut: f.dateOut || null,
-      notes: f.notes || null,
-    };
-    setJournal(prev => [row, ...prev]);
-    // The position is closed, so it leaves the live watchlist.
-    setWl(prev => prev.filter(w => w.id !== f.id));
-    setCloseForm(null); setExpanded(null); touch();
-  };
-
-  const removeJournal = (id) => { setJournal(prev => prev.filter(j => j.id !== id)); touch(); };
-  const perf = useMemo(() => performanceByRegime(journal), [journal]);
-
-  // Poll-cadence level alerts: which rows have hit a level at the current price.
-  const triggered = useMemo(() => {
-    const out = [];
-    for (const w of wl) {
-      const p = prices?.[w.symbol]?.price;
-      if (p == null) continue;
-      const hits = triggeredLevels({ price: p, entry: w.entry, stop: w.stop, targets: w.targets });
-      if (hits.length) out.push({ w, price: p, hits });
-    }
-    return out;
-  }, [wl, prices]);
-
-  // Optional browser notification for newly-triggered levels (permission-gated, de-duped).
-  useEffect(() => {
-    if (!settings.alertsEnabled || typeof Notification === "undefined" || Notification.permission !== "granted") return;
-    for (const t of triggered) for (const h of t.hits) {
-      const key = `${t.w.id}:${h.level}:${h.price}`;
-      if (notifiedRef.current.has(key)) continue;
-      notifiedRef.current.add(key);
-      try { new Notification(`${t.w.symbol} hit ${h.kind}`, { body: `${h.kind} @ ${h.price} · live ${t.price}` }); } catch { /* ignore */ }
-    }
-  }, [triggered, settings.alertsEnabled]);
-
-  const enableAlerts = async () => {
-    if (typeof Notification !== "undefined" && Notification.permission !== "granted") {
-      try { await Notification.requestPermission(); } catch { /* ignore */ }
-    }
-    setSettings(s => ({ ...s, alertsEnabled: !s.alertsEnabled })); touch();
-  };
-
-  // ── Import / export ──────────────────────────────────────────────────────
-  // The console's state lives server-side, which means there is no way to seed it except through
-  // this UI — pasting a payload here is strictly better than handing round Redis credentials.
-  // It also doubles as backup/restore and as the migration path between stores.
-  const exportJson = () => JSON.stringify({ watchlist: wl, journal, settings }, null, 2);
+  // ── import / export ──
+  const exportJson = () => JSON.stringify({ rows, settings }, null, 2);
   const doImport = (mode) => {
     setImportMsg(null);
-    let parsed;
-    try { parsed = JSON.parse(importTxt); } catch { setImportMsg({ err: "That is not valid JSON." }); return; }
-    const inWl = Array.isArray(parsed?.watchlist) ? parsed.watchlist : null;
-    const inJr = Array.isArray(parsed?.journal) ? parsed.journal : null;
-    if (!inWl && !inJr && !parsed?.settings) { setImportMsg({ err: "No watchlist, journal or settings found in that payload." }); return; }
-    // Normalise + de-dupe by symbol so a re-paste updates rather than duplicating rows.
-    const clean = (inWl || []).map(w => ({
-      id: w.id || `${String(w.symbol || "").toUpperCase()}-${Math.random().toString(36).slice(2, 8)}`,
-      symbol: String(w.symbol || "").toUpperCase(),
-      side: w.side === "long" || w.side === "short" ? w.side : null,
-      entry: w.entry ?? null, stop: w.stop ?? null,
-      targets: Array.isArray(w.targets) ? w.targets : [],
-      riskPct: w.riskPct ?? null, currency: (w.currency || "USD").toUpperCase(),
-      status: w.status || "idea", note: w.note || "",
-      addedAt: w.addedAt || new Date().toISOString(),
-    })).filter(w => w.symbol);
-    if (mode === "replace") {
-      setWl(clean);
-      if (inJr) setJournal(inJr);
-    } else {
-      const bySym = new Map(wl.map(w => [w.symbol, w]));
-      for (const w of clean) bySym.set(w.symbol, { ...(bySym.get(w.symbol) || {}), ...w, id: bySym.get(w.symbol)?.id || w.id });
-      setWl([...bySym.values()]);
-      if (inJr) setJournal(prev => [...inJr, ...prev]);
+    let p; try { p = JSON.parse(importTxt); } catch { setImportMsg({ err: "That is not valid JSON." }); return; }
+    const incoming = Array.isArray(p?.rows) ? p.rows : Array.isArray(p?.watchlist) ? migrateV1(p.watchlist) : null;
+    if (!incoming && !p?.settings) { setImportMsg({ err: "No rows or settings found in that payload." }); return; }
+    if (incoming) {
+      const clean = incoming.map(r => ({
+        id: r.id || `${String(r.symbol || "").toUpperCase()}-${Math.random().toString(36).slice(2, 8)}`,
+        symbol: String(r.symbol || "").toUpperCase(), currency: (r.currency || "USD").toUpperCase(),
+        thesis: r.thesis || "", levels: Array.isArray(r.levels) ? r.levels : [],
+        fills: Array.isArray(r.fills) ? r.fills : [], tags: Array.isArray(r.tags) ? r.tags : [],
+      })).filter(r => r.symbol);
+      if (mode === "replace") setRows(clean);
+      else {
+        const by = new Map(rows.map(r => [r.symbol, r]));
+        for (const r of clean) by.set(r.symbol, { ...(by.get(r.symbol) || {}), ...r, id: by.get(r.symbol)?.id || r.id });
+        setRows([...by.values()]);
+      }
+      setImportMsg({ ok: `Loaded ${clean.length} row${clean.length === 1 ? "" : "s"}. Press “Save to cloud” to sync.` });
     }
-    if (parsed.settings) setSettings(s => ({ ...s, ...parsed.settings }));
-    touch();
-    setImportMsg({ ok: `Loaded ${clean.length} position${clean.length === 1 ? "" : "s"}${parsed.settings ? " + settings" : ""}. Now press “Save to cloud” to sync.` });
-    setImportTxt("");
+    if (p.settings) setSettings(s => ({ ...s, ...p.settings }));
+    touch(); setImportTxt("");
   };
 
-  // ── small presentational helpers ──
-  const chip = (txt, col, bg, bd) => (
-    <span style={{ background: bg, color: col, border: "1px solid " + bd, borderRadius: 6, padding: "1px 7px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>{txt}</span>
-  );
-  // Currency chip — shown only when a position is NOT in the base currency, with the peg status,
-  // so a HKD or AED leg does not read as FX exposure it does not carry.
-  const posCcyChip = (ccy) => {
-    if (ccy === baseCcy) return null;
-    const r = fxRisk(ccy, baseCcy);
-    return chip(ccy + (r.real ? "" : " 🔒"), r.real ? C.amber : C.mid, r.real ? C.aBg : C.bg, r.real ? C.aBdr : C.bdr);
+  // ── presentation helpers ──
+  const chip = (t, col, bg, bd) => <span style={{ background: bg, color: col, border: "1px solid " + bd, borderRadius: 6, padding: "1px 7px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>{t}</span>;
+  const ccyChip = (ccy) => { if (ccy === baseCcy) return null; const r = fxRisk(ccy, baseCcy); return chip(ccy + (r.real ? "" : " 🔒"), r.real ? C.amber : C.mid, r.real ? C.aBg : C.bg, r.real ? C.aBdr : C.bdr); };
+  const fitChip = (f) => f === "tailwind" ? chip("regime tailwind", C.green, "#F0FDF4", "#BBF7D0") : f === "headwind" ? chip("fights regime", C.red, "#FEF2F2", "#FECACA") : null;
+  const nInput = (v, on, ph, w = 84) => <input value={v ?? ""} onChange={e => on(e.target.value)} placeholder={ph} inputMode="decimal" style={{ width: w, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} />;
+  const kindCol = (k) => k === "buy" ? C.green : k === "sell" ? C.blue : C.red;
+  const money = (v, ccy) => v == null ? "—" : fmtCcy(v, ccy);
+  const pnlCol = (v) => v == null ? C.muted : v > 0 ? C.green : v < 0 ? C.red : C.mid;
+
+  // A level's live state: how far away, and whether it is currently hit.
+  const LevelPill = ({ lv, price }) => {
+    const hit = levelHit(lv, price);
+    const d = distancePct(lv, price);
+    return (
+      <span title={lv.note || undefined} style={{
+        display: "inline-flex", gap: 5, alignItems: "baseline", padding: "2px 8px", borderRadius: 6,
+        border: "1.5px solid " + (hit ? kindCol(lv.kind) : C.bdr), background: hit ? (lv.kind === "buy" ? "#F0FDF4" : lv.kind === "sell" ? C.blBg : "#FEF2F2") : C.surf,
+        fontSize: 11.5, fontWeight: 700, color: hit ? kindCol(lv.kind) : C.mid,
+      }}>
+        {hit ? "●" : "○"} {lv.kind} {lv.at ?? "—"}{lv.to ? `–${lv.to}` : ""}
+        {d != null && !hit && <span style={{ color: C.lbl, fontWeight: 600 }}>{d > 0 ? "+" : ""}{d}%</span>}
+      </span>
+    );
   };
-  const fitChip = (fit) => fit === "tailwind" ? chip("regime tailwind", C.green, "#F0FDF4", "#BBF7D0")
-    : fit === "headwind" ? chip("fights regime", C.red, "#FEF2F2", "#FECACA")
-    : chip("regime-neutral", C.muted, C.bg, C.bdr);
-  const numInput = (val, onChange, ph, w = 92) => (
-    <input value={val ?? ""} onChange={e => onChange(e.target.value)} placeholder={ph} inputMode="decimal"
-      style={{ width: w, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} />
+
+  const RowCard = ({ r, mode }) => {
+    const price = priceOf(r);
+    const q = prices?.[r.symbol];
+    const fit = regimeFitFor(r.symbol, liveRegime);
+    const ins = INSURANCE_TICKERS[r.symbol];
+    const open = expanded === r.id;
+    const d = r.derived, p = r.pnl;
+    const active = (r.levels || []).filter(l => l.at != null);
+    const anyHit = active.some(l => levelHit(l, price));
+    return (
+      <div style={{ border: "1.5px solid " + (anyHit ? C.amber : C.bdr), borderLeft: "4px solid " + (anyHit ? C.amber : mode === "open" ? C.blue : C.bdr), borderRadius: 10, overflow: "hidden" }}>
+        <div onClick={() => setExpanded(open ? null : r.id)} style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", flexWrap: "wrap", cursor: "pointer", background: open ? C.bg : C.surf }}>
+          <b style={{ fontSize: 15, minWidth: 74 }}>{r.symbol}</b>
+          <span style={{ fontSize: 14, fontWeight: 700, minWidth: 62 }}>{price != null ? price.toFixed(2) : "—"}</span>
+          <span style={{ fontSize: 12.5, fontWeight: 800, minWidth: 54, color: q?.changePercent == null ? C.muted : q.changePercent >= 0 ? C.green : C.red }}>
+            {q?.changePercent == null ? "" : (q.changePercent >= 0 ? "+" : "") + q.changePercent.toFixed(2) + "%"}
+          </span>
+          {ccyChip(r.currency || "USD")}
+          {mode === "open" && (
+            <>
+              <span style={{ fontSize: 12, color: C.lbl }}>{d.qty} @ {d.avgCost?.toFixed(2)}</span>
+              <b style={{ fontSize: 13, color: pnlCol(p.total) }}>{p.total == null ? "—" : (p.total > 0 ? "+" : "") + money(p.total, r.currency)}</b>
+              {d.partiallyRealised && chip(`realised ${money(d.realized, r.currency)}`, C.green, "#F0FDF4", "#BBF7D0")}
+            </>
+          )}
+          {fitChip(fit.fit)}
+          {ins && chip("🛡 " + ins, "#B45309", "#FFFBEB", "#FDE68A")}
+          {anyHit && chip("⚡ level hit", C.amber, C.aBg, C.aBdr)}
+          <span style={{ marginLeft: "auto", color: C.lbl, fontSize: 12 }}>{open ? "▲" : "▼"}</span>
+        </div>
+
+        {/* levels always visible — this is the daily read */}
+        {active.length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "0 12px 9px" }}>
+            {active.map(l => <LevelPill key={l.id} lv={l} price={price} />)}
+          </div>
+        )}
+
+        {open && (
+          <div onClick={e => e.stopPropagation()} style={{ padding: 12, borderTop: "1px solid " + C.bdr, background: C.surf }}>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
+              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Currency<br />
+                <select value={r.currency || "USD"} onChange={e => upd(r.id, { currency: e.target.value })} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
+                  {CURRENCY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select></label>
+              <label style={{ flex: "1 1 240px", fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Thesis / why you are watching<br />
+                <input value={r.thesis || ""} onChange={e => upd(r.id, { thesis: e.target.value })} placeholder="e.g. accumulate on a pullback to the 200dma"
+                  style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
+            </div>
+
+            {/* levels editor */}
+            <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 5 }}>Levels</div>
+            {(r.levels || []).map(l => (
+              <div key={l.id} style={{ display: "flex", gap: 7, alignItems: "center", marginBottom: 5, flexWrap: "wrap" }}>
+                <select value={l.kind} onChange={e => updLevel(r.id, l.id, { kind: e.target.value })} style={{ padding: "4px 7px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 12, background: C.surf, color: kindCol(l.kind), fontWeight: 700 }}>
+                  <option value="buy">buy</option><option value="sell">sell</option><option value="stop">stop</option>
+                </select>
+                {nInput(l.at, v => updLevel(r.id, l.id, { at: v === "" ? null : +v }), "at", 78)}
+                <span style={{ color: C.lbl, fontSize: 12 }}>to</span>
+                {nInput(l.to, v => updLevel(r.id, l.id, { to: v === "" ? null : +v }), "(zone)", 78)}
+                <input value={l.note || ""} onChange={e => updLevel(r.id, l.id, { note: e.target.value })} placeholder="note"
+                  style={{ flex: "1 1 130px", padding: "4px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 12, background: C.surf, color: C.text }} />
+                <button onClick={() => delLevel(r.id, l.id)} style={{ cursor: "pointer", background: "none", border: "none", color: C.red, fontWeight: 800, fontSize: 13 }}>✕</button>
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+              {["buy", "sell", "stop"].map(k => (
+                <button key={k} onClick={() => addLevel(r.id, k)} style={{ cursor: "pointer", background: C.surf, color: kindCol(k), border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>+ {k}</button>
+              ))}
+              <span style={{ fontSize: 11, color: C.lbl, alignSelf: "center" }}>leave “to” blank for a single price, or fill it for a zone</span>
+            </div>
+
+            {/* fills */}
+            <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, margin: "12px 0 5px" }}>
+              Fills {d.nFills > 0 && <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0, color: C.lbl }}>· {d.bought} bought · {d.sold} sold · avg {d.avgCost?.toFixed(2) ?? "—"}</span>}
+            </div>
+            {(d.fills || []).map(f => (
+              <div key={f.id} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 12, color: C.mid, marginBottom: 3 }}>
+                <b style={{ color: f.side === "buy" ? C.green : C.blue, minWidth: 32 }}>{f.side}</b>
+                <span>{f.qty} @ {f.price}</span>
+                <span style={{ color: C.lbl }}>{f.date || "no date"}</span>
+                {f.note && <span style={{ color: C.muted, fontSize: 11.5 }}>{f.note}</span>}
+                <button onClick={() => delFill(r.id, f.id)} style={{ marginLeft: "auto", cursor: "pointer", background: "none", border: "none", color: C.red, fontWeight: 800 }}>✕</button>
+              </div>
+            ))}
+            {d.warnings?.map((w, i) => <div key={i} style={{ fontSize: 11.5, color: C.amber, fontWeight: 700, marginTop: 4 }}>⚠ {w}</div>)}
+            <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+              <Btn onClick={() => setFillFor({ rowId: r.id, side: "buy", qty: "", price: price ?? "", date: new Date().toISOString().slice(0, 10), note: "" })} color="#fff" bgColor={C.green} label="+ Buy fill" />
+              {d.qty > 0 && <Btn onClick={() => setFillFor({ rowId: r.id, side: "sell", qty: "", price: price ?? "", date: new Date().toISOString().slice(0, 10), note: "" })} color="#fff" bgColor={C.blue} label="− Sell fill" />}
+              <Btn onClick={() => del(r.id)} color={C.red} bgColor={C.surf} label="✕ Remove" />
+            </div>
+
+            {mode === "open" && (
+              <div style={{ marginTop: 10, padding: "9px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 9, fontSize: 12.5, color: C.mid, lineHeight: 1.7 }}>
+                {d.qty} @ avg {d.avgCost?.toFixed(4)} · market {money(p.marketValue, r.currency)}
+                <br />Unrealised <b style={{ color: pnlCol(p.unrealized) }}>{p.unrealized == null ? "—" : money(p.unrealized, r.currency)}</b>
+                {p.unrealizedPct != null && <span style={{ color: C.lbl }}> ({p.unrealizedPct > 0 ? "+" : ""}{p.unrealizedPct}%)</span>}
+                {" · "}Realised <b style={{ color: pnlCol(d.realized) }}>{money(d.realized, r.currency)}</b>
+                {d.realizedPct != null && <span style={{ color: C.lbl }}> ({d.realizedPct > 0 ? "+" : ""}{d.realizedPct}% on capital taken out)</span>}
+                {d.partiallyRealised && <div style={{ color: C.green, fontSize: 11.5, marginTop: 3 }}>Scaled out {d.sold} of {d.bought} — still open on {d.qty}.</div>}
+              </div>
+            )}
+            {fit.where && <div style={{ marginTop: 8, fontSize: 12, color: C.mid }}><b style={{ color: fit.fit === "tailwind" ? C.green : C.red }}>{fit.fit === "tailwind" ? "Regime tailwind" : "Fights the regime"}:</b> {liveRegime?.label} {fit.fit === "tailwind" ? "favours" : "disfavours"} “{fit.where}”.</div>}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const Section = ({ title, note, list, mode }) => (
+    <Card>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: list.length ? 10 : 0 }}>
+        <SLabel>{title}</SLabel>
+        <span style={{ fontSize: 12, color: C.muted }}>{list.length}</span>
+        {note && <span style={{ fontSize: 11.5, color: C.lbl }}>{note}</span>}
+      </div>
+      {list.length === 0
+        ? <div style={{ fontSize: 12.5, color: C.muted, fontStyle: "italic", marginTop: 8 }}>Nothing here yet.</div>
+        : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{list.map(r => <RowCard key={r.id} r={r} mode={mode} />)}</div>}
+    </Card>
   );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* purpose + regime context */}
+      {/* purpose + regime */}
       <div style={{ background: liveRegime?.bg || C.surf, border: "1.5px solid " + (liveRegime?.bdr || C.bdr), borderTop: "4px solid " + (liveRegime?.color || C.blue), borderRadius: 12, padding: "12px 16px" }}>
-        <div style={{ fontSize: 13.5, color: C.mid, lineHeight: 1.5 }}>
-          <b style={{ color: C.text }}>Your trade console.</b> A watchlist with your levels, regime-scaled sizing and a journal — read against the live regime.
-          <span style={{ color: C.muted }}> Prices are from the same feed as the rest of the dashboard (poll-cadence, not streaming); nothing here places orders.</span>
+        <div style={{ fontSize: 13.5, color: C.mid, lineHeight: 1.55 }}>
+          <b style={{ color: C.text }}>Setups and levels.</b> What you are waiting for, and whether it has arrived —
+          checked against live prices each time this loads.
+          <span style={{ color: C.muted }}> Spot, swing and long holds only; day trades and scalps stay in the broker. Poll-cadence, not streaming; nothing here places orders.</span>
         </div>
-        <div style={{ marginTop: 8, display: "flex", gap: "6px 14px", flexWrap: "wrap", alignItems: "baseline", fontSize: 13 }}>
+        <div style={{ marginTop: 7, display: "flex", gap: "5px 14px", flexWrap: "wrap", alignItems: "baseline", fontSize: 13 }}>
           <span style={{ color: C.lbl, fontWeight: 700 }}>Live regime:</span>
           <b style={{ color: liveRegime?.color }}>{liveRegime?.label} {regimeProbFor(liveRegime?.id)}%</b>
-          <span style={{ color: C.bdr }}>·</span>
-          <span style={{ color: C.lbl, fontWeight: 700 }}>size ×</span>
-          <b style={{ color: C.text }}>{rm.mult.toFixed(2)}</b>
-          <span style={{ color: C.muted, fontSize: 12 }}>({rm.reasons.length > 1 ? rm.reasons.slice(1).join("; ") : (mergedSizing[liveRegime?.id]?.note || liveRegime?.label || "base")})</span>
-          {contested && chip("⚖ CONTESTED", C.amber, C.aBg || "#FFFBEB", C.aBdr || "#FDE68A")}
-          {regimeDiverged && chip("📌 PINNED≠LIVE", C.amber, C.aBg || "#FFFBEB", C.aBdr || "#FDE68A")}
+          {contested && chip("⚖ CONTESTED", C.amber, C.aBg, C.aBdr)}
+          {regimeDiverged && chip("📌 PINNED≠LIVE", C.amber, C.aBg, C.aBdr)}
         </div>
       </div>
 
-      {/* triggered-levels strip */}
-      {triggered.length > 0 && (
-        <div style={{ background: "#FFF7ED", border: "1.5px solid #FED7AA", borderRadius: 12, padding: "10px 14px" }}>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: "#B45309", marginBottom: 6 }}>⚡ Levels hit (at last poll)</div>
+      {/* level hits — the reason this tab exists */}
+      {hits.length > 0 && (
+        <div style={{ background: C.aBg, border: "1.5px solid " + C.aBdr, borderRadius: 12, padding: "11px 14px" }}>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: C.amber, marginBottom: 7 }}>⚡ Levels hit ({hits.length})</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {triggered.map(t => t.hits.map(h => (
-              <span key={t.w.id + h.level} style={{ background: C.surf, border: "1.5px solid #FED7AA", borderRadius: 8, padding: "3px 9px", fontSize: 12.5, fontWeight: 700, color: C.text }}>
-                <b>{t.w.symbol}</b> {h.kind === "stop" ? "🛑 stop" : h.kind === "target" ? "🎯 " + h.level : "⊙ entry"} @ {h.price} · live {t.price}
+            {hits.map((h, i) => (
+              <span key={i} style={{ background: C.surf, border: "1.5px solid " + kindCol(h.level.kind), borderRadius: 8, padding: "4px 10px", fontSize: 12.5, fontWeight: 700 }}>
+                <b>{h.position.symbol}</b> <span style={{ color: kindCol(h.level.kind) }}>{h.level.kind}</span> {h.level.at}{h.level.to ? `–${h.level.to}` : ""} · live {h.price}
+                {h.level.note && <span style={{ color: C.lbl, fontWeight: 500 }}> · {h.level.note}</span>}
               </span>
-            )))}
+            ))}
           </div>
         </div>
       )}
 
-      {/* settings */}
+      {/* toolbar */}
       <Card>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-          <SLabel>Console settings</SLabel>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {kvOn === false && (
-              <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }} title="Add the Upstash integration in Vercel to sync this book across devices. Until then it lives in this browser only.">
-                ⚠ this browser only — cross-device sync not configured
-              </span>
-            )}
-            {kvOn === true && <span style={{ fontSize: 11.5, color: C.green, fontWeight: 700 }} title="Console state is stored server-side in Redis and follows you across devices.">☁ syncing across devices</span>}
+        <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
+          <input value={addSym} onChange={e => setAddSym(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addRow(); }} placeholder="Add a setup (ticker)"
+            style={{ width: 180, padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 13, background: C.surf, color: C.text, textTransform: "uppercase" }} />
+          <Btn onClick={addRow} color="#fff" bgColor={C.blue} label="+ Add" />
+          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700, display: "flex", gap: 6, alignItems: "center" }}>
+            Base
+            <select value={baseCcy} onChange={e => { setSettings(s => ({ ...s, baseCurrency: e.target.value })); touch(); }} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
+              {CURRENCY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+          <button onClick={async () => { if (typeof Notification !== "undefined" && Notification.permission !== "granted") { try { await Notification.requestPermission(); } catch { /* ignore */ } } setSettings(s => ({ ...s, alertsEnabled: !s.alertsEnabled })); touch(); }}
+            style={{ cursor: "pointer", background: settings.alertsEnabled ? C.green : C.surf, color: settings.alertsEnabled ? "#fff" : C.mid, border: "1.5px solid " + (settings.alertsEnabled ? C.green : C.bdr), borderRadius: 8, padding: "6px 11px", fontSize: 12.5, fontWeight: 800 }}>
+            {settings.alertsEnabled ? "🔔 Alerts on" : "🔕 Alerts off"}
+          </button>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 9, alignItems: "center" }}>
+            {kvOn === false && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>⚠ this browser only</span>}
+            {kvOn === true && <span style={{ fontSize: 11.5, color: C.green, fontWeight: 700 }}>☁ syncing</span>}
             {saveMsg && <span style={{ fontSize: 12, color: C.mid }}>{saveMsg}</span>}
-            <Btn onClick={() => fetchPrices(wlSymbols)} disabled={pricesLoading || !wlSymbols.length} color={C.mid} bgColor={C.bg} label={pricesLoading ? "…" : "🔄 Prices"} />
+            <Btn onClick={() => fetchPrices([...symbols, ...fxSyms])} disabled={pricesLoading || !symbols.length} color={C.mid} bgColor={C.bg} label={pricesLoading ? "…" : "🔄 Prices"} />
             <Btn onClick={saveCloud} disabled={saving} color="#fff" bgColor={dirty ? C.blue : C.bdrMd} label={saving ? "Saving…" : dirty ? "☁ Save to cloud" : "☁ Synced"} />
           </div>
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
-          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Account equity ($)<br />{numInput(settings.equity, v => { setSettings(s => ({ ...s, equity: v === "" ? null : v })); touch(); }, "e.g. 100000", 120)}</label>
-          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Base currency<br />
-            <select value={baseCcy} onChange={e => { setSettings(s => ({ ...s, baseCurrency: e.target.value })); touch(); }} style={{ padding: "6px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
-              {CURRENCY_CODES.map(c => <option key={c} value={c}>{c} — {CURRENCIES[c].label}</option>)}
-            </select>
-          </label>
-          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Base risk / trade (%)<br />{numInput(settings.baseRiskPct, v => { setSettings(s => ({ ...s, baseRiskPct: v === "" ? null : v })); touch(); }, "1.0", 80)}</label>
-          <button onClick={enableAlerts} style={{ cursor: "pointer", background: settings.alertsEnabled ? C.green : C.surf, color: settings.alertsEnabled ? "#fff" : C.mid, border: "1.5px solid " + (settings.alertsEnabled ? C.green : C.bdr), borderRadius: 8, padding: "7px 12px", fontSize: 12.5, fontWeight: 800 }}>
-            {settings.alertsEnabled ? "🔔 Alerts on" : "🔕 Alerts off"}
-          </button>
-        </div>
-        {/* editable regime multipliers */}
-        <div style={{ marginTop: 12 }}>
-          <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Regime sizing multipliers (× on base risk)</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-            {Object.keys(REGIME_SIZING).map(k => {
-              const cur = settings?.sizing?.[k] ?? REGIME_SIZING[k].mult;
-              const isLive = liveRegime?.id === k;
-              return (
-                <label key={k} style={{ fontSize: 12, color: isLive ? C.text : C.lbl, fontWeight: isLive ? 800 : 600, border: "1.5px solid " + (isLive ? (liveRegime?.color || C.blue) : C.bdr), borderRadius: 8, padding: "5px 9px", background: isLive ? (liveRegime?.bg || C.surf) : C.surf }}>
-                  {REGIME_SIZING[k].label}{isLive ? " ● live" : ""}<br />
-                  {numInput(cur, v => { setSettings(s => ({ ...s, sizing: { ...(s.sizing || {}), [k]: v === "" ? null : v } })); touch(); }, String(REGIME_SIZING[k].mult), 64)}
-                </label>
-              );
-            })}
-          </div>
-          <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Credit-DANGER caps the multiplier at {CREDIT_DANGER_CAP_LABEL}; a contested or pinned≠live regime applies an extra ×0.7 haircut. Suggestions only — you size the trade.</div>
-        </div>
       </Card>
 
-      {/* import / export — the only way to seed server-side state without sharing credentials */}
+      <Section title="Setups — waiting" note="no position yet; levels are being watched" list={setups} mode="setup" />
+      <Section title="Open positions" note="spot / swing holds, scaled in and out" list={openPos} mode="open" />
+
+      {/* archive: brief, with the performance summary */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+          <SLabel>Archive — closed</SLabel>
+          <span style={{ fontSize: 12, color: C.muted }}>{archived.length}</span>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 14, alignItems: "baseline", fontSize: 13 }}>
+            <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>REALISED </span><b style={{ color: pnlCol(summary.realized) }}>{fmtCcy(summary.realized, baseCcy)}</b></span>
+            <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>UNREALISED </span><b style={{ color: pnlCol(summary.unrealized) }}>{fmtCcy(summary.unrealized, baseCcy)}</b></span>
+            <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>WIN RATE </span><b style={{ color: C.text }}>{summary.winRate == null ? "—" : summary.winRate + "%"}</b></span>
+            <button onClick={() => setShowArchive(v => !v)} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{showArchive ? "Hide" : "Show"}</button>
+          </div>
+        </div>
+        {summary.unconverted > 0 && (
+          <div style={{ marginTop: 7, fontSize: 11.5, color: C.amber, fontWeight: 700 }}>
+            ⚠ {summary.unconverted} position{summary.unconverted === 1 ? "" : "s"} excluded from the totals — no FX rate available to convert into {baseCcy}. Refresh prices.
+          </div>
+        )}
+
+        {/* realised curve — when profit was actually taken */}
+        {curve.length > 1 && (
+          <div style={{ marginTop: 12, height: 190 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={curve} margin={{ top: 5, right: 8, left: 0, bottom: 0 }}>
+                <defs><linearGradient id="rc" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={C.green} stopOpacity={0.35} /><stop offset="100%" stopColor={C.green} stopOpacity={0.03} />
+                </linearGradient></defs>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.bdr} vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: C.lbl }} tickLine={false} axisLine={{ stroke: C.bdr }} />
+                <YAxis tick={{ fontSize: 10, fill: C.lbl }} tickLine={false} axisLine={false} width={54} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid " + C.bdr }}
+                  formatter={(v, n) => [fmtCcy(v, baseCcy), n === "cumulative" ? "cumulative realised" : n]}
+                  labelFormatter={(l, pl) => `${l}${pl?.[0]?.payload?.symbol ? " · " + pl[0].payload.symbol : ""}`} />
+                <Area type="monotone" dataKey="cumulative" stroke={C.green} strokeWidth={2} fill="url(#rc)" />
+              </AreaChart>
+            </ResponsiveContainer>
+            <div style={{ fontSize: 11, color: C.lbl, textAlign: "center" }}>Cumulative realised P&amp;L in {baseCcy} — one step per sell fill, so the curve marks when profit was actually taken.</div>
+          </div>
+        )}
+
+        {showArchive && archived.length > 0 && (
+          <div style={{ marginTop: 12, overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 520 }}>
+              <thead><tr>{["Symbol", "Held", "Bought", "Avg cost", "Realised", "Return"].map(h => (
+                <th key={h} style={{ textAlign: "left", color: C.mid, padding: "6px 10px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700, fontSize: 11.5 }}>{h}</th>))}</tr></thead>
+              <tbody>
+                {archived.map(r => (
+                  <tr key={r.id}>
+                    <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr, fontWeight: 700 }}>{r.symbol} {ccyChip(r.currency)}</td>
+                    <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr, color: C.lbl }}>{r.derived.firstDate || "?"} → {r.derived.lastDate || "?"}</td>
+                    <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr }}>{r.derived.bought}</td>
+                    <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr }}>{r.derived.proceeds ? (r.derived.proceeds / (r.derived.sold || 1)).toFixed(2) : "—"}</td>
+                    <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr, fontWeight: 700, color: pnlCol(r.derived.realized) }}>{money(r.derived.realized, r.currency)}</td>
+                    <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr, color: pnlCol(r.derived.realizedPct) }}>{r.derived.realizedPct == null ? "—" : (r.derived.realizedPct > 0 ? "+" : "") + r.derived.realizedPct + "%"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* fill form */}
+      {fillFor && (
+        <Card style={{ borderTop: "4px solid " + (fillFor.side === "buy" ? C.green : C.blue) }}>
+          <SLabel>Record a {fillFor.side} — {rows.find(r => r.id === fillFor.rowId)?.symbol}</SLabel>
+          <div style={{ marginTop: 9, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Side<br />
+              <select value={fillFor.side} onChange={e => setFillFor(f => ({ ...f, side: e.target.value }))} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
+                <option value="buy">buy</option><option value="sell">sell</option>
+              </select></label>
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Quantity<br />{nInput(fillFor.qty, v => setFillFor(f => ({ ...f, qty: v })), "")}</label>
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Price<br />{nInput(fillFor.price, v => setFillFor(f => ({ ...f, price: v })), "")}</label>
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Date<br />
+              <input type="date" value={fillFor.date} onChange={e => setFillFor(f => ({ ...f, date: e.target.value }))} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
+            <label style={{ flex: "1 1 200px", fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Note<br />
+              <input value={fillFor.note} onChange={e => setFillFor(f => ({ ...f, note: e.target.value }))} placeholder="optional"
+                style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
+          </div>
+          <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <Btn onClick={saveFill} color="#fff" bgColor={fillFor.side === "buy" ? C.green : C.blue} label="Record fill" />
+            <Btn onClick={() => setFillFor(null)} color={C.mid} bgColor={C.bg} label="Cancel" />
+            <span style={{ fontSize: 11, color: C.lbl }}>Selling part of a position keeps it open and books the realised P&amp;L at your average cost.</span>
+          </div>
+        </Card>
+      )}
+
+      {/* import / export */}
       <Card>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <SLabel>Import / export</SLabel>
-          <span style={{ fontSize: 11.5, color: C.muted }}>seed from a broker export, back up, or move between devices</span>
-          <button onClick={() => setPortOpen(o => !o)} style={{ marginLeft: "auto", cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700 }}>
-            {portOpen ? "Hide" : "Open"}
-          </button>
+          <span style={{ fontSize: 11.5, color: C.muted }}>seed, back up, or move between devices</span>
+          <button onClick={() => setPortOpen(o => !o)} style={{ marginLeft: "auto", cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700 }}>{portOpen ? "Hide" : "Open"}</button>
         </div>
         {portOpen && (
           <div style={{ marginTop: 10 }}>
-            <textarea value={importTxt} onChange={e => setImportTxt(e.target.value)}
-              placeholder='Paste a payload, e.g. {"watchlist":[{"symbol":"AMZN","entry":234.82,"currency":"USD","status":"in-trade"}]}'
-              style={{ width: "100%", boxSizing: "border-box", minHeight: 110, padding: "9px 11px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 12, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", background: C.surf, color: C.text, lineHeight: 1.5 }} />
+            <textarea value={importTxt} onChange={e => setImportTxt(e.target.value)} placeholder='{"rows":[{"symbol":"GLD","currency":"USD","thesis":"...","levels":[{"kind":"buy","at":300,"to":310}],"fills":[]}]}'
+              style={{ width: "100%", boxSizing: "border-box", minHeight: 100, padding: "9px 11px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 12, fontFamily: "ui-monospace, Menlo, monospace", background: C.surf, color: C.text }} />
             <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               <Btn onClick={() => doImport("merge")} disabled={!importTxt.trim()} color="#fff" bgColor={C.blue} label="Merge in" />
               <Btn onClick={() => doImport("replace")} disabled={!importTxt.trim()} color={C.red} bgColor={C.surf} label="Replace all" />
-              <Btn onClick={() => { setImportTxt(exportJson()); setImportMsg({ ok: "Current state exported below — copy it somewhere safe." }); }} color={C.mid} bgColor={C.bg} label="⬇ Export current" />
-              {importMsg && (
-                <span style={{ fontSize: 12, fontWeight: 600, color: importMsg.err ? C.red : C.green }}>
-                  {importMsg.err || importMsg.ok}
-                </span>
-              )}
-            </div>
-            <div style={{ marginTop: 7, fontSize: 11, color: C.lbl, lineHeight: 1.55 }}>
-              <b>Merge in</b> upserts by symbol (a re-paste updates a row rather than duplicating it); <b>Replace all</b> swaps the whole book.
-              Either way nothing reaches the server until you press <b>Save to cloud</b> — so an import can be reviewed, edited, or abandoned by reloading first.
+              <Btn onClick={() => { setImportTxt(exportJson()); setImportMsg({ ok: "Exported below — copy it somewhere safe." }); }} color={C.mid} bgColor={C.bg} label="⬇ Export" />
+              {importMsg && <span style={{ fontSize: 12, fontWeight: 600, color: importMsg.err ? C.red : C.green }}>{importMsg.err || importMsg.ok}</span>}
             </div>
           </div>
         )}
       </Card>
 
-      {/* add symbol */}
-      <Card>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <SLabel>Watchlist</SLabel>
-          <span style={{ color: C.muted, fontSize: 12 }}>{wl.length} instrument{wl.length === 1 ? "" : "s"}</span>
-          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-            <input value={addSym} onChange={e => setAddSym(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addSymbol(); }} placeholder="Add ticker (e.g. NVDA)"
-              style={{ width: 170, padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 13, background: C.surf, color: C.text, textTransform: "uppercase" }} />
-            <Btn onClick={addSymbol} color="#fff" bgColor={C.blue} label="+ Add" />
-          </div>
-        </div>
-
-        {wl.length === 0 ? (
-          <div style={{ color: C.muted, fontSize: 13, marginTop: 12, fontStyle: "italic" }}>No instruments yet. Add the tickers you actually trade — each row gets levels, R:R, regime-scaled sizing and a regime-fit read.</div>
-        ) : (
-          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-            {wl.map(w => {
-              const q = prices?.[w.symbol];
-              const price = q?.price ?? null;
-              const chg = q?.changePercent ?? null;
-              const fit = regimeFitFor(w.symbol, liveRegime);
-              const ins = INSURANCE_TICKERS[w.symbol];
-              const rr = rMultiple({ entry: w.entry, stop: w.stop, target: w.targets?.[0] });
-              const dist = price != null ? distanceToLevels({ price, entry: w.entry, stop: w.stop, targets: w.targets }) : null;
-              const open = expanded === w.id;
-              // Sizing must be dimensionally consistent: equity is held in the BASE currency while
-              // entry/stop are quoted in the POSITION's currency, so convert equity across before
-              // dividing by a stop distance. Without this an HKD-quoted stop would be measured
-              // against a USD equity and oversize the position by the ~7.8x cross.
-              const posCcy = w.currency || "USD";
-              const equityInPos = equityNum == null ? null : convert(equityNum, baseCcy, posCcy, fxRates);
-              const sug = suggestedSize({ equity: equityInPos, baseRiskPct: baseRiskNum, regime: regimeCtx, entry: w.entry, stop: w.stop, sizing: mergedSizing });
-              const own = w.riskPct != null && w.riskPct !== "" ? positionSize({ equity: equityInPos, riskPct: w.riskPct, entry: w.entry, stop: w.stop }) : null;
-              const risk = fxRisk(posCcy, baseCcy);
-              const notionalBase = sug?.size ? convert(sug.size.notional, posCcy, baseCcy, fxRates) : null;
-              return (
-                <div key={w.id} style={{ border: "1.5px solid " + C.bdr, borderRadius: 10, overflow: "hidden" }}>
-                  {/* row header */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", flexWrap: "wrap", background: open ? C.bg : C.surf, cursor: "pointer" }} onClick={() => setExpanded(open ? null : w.id)}>
-                    <b style={{ fontSize: 15, color: C.text, minWidth: 62 }}>{w.symbol}</b>
-                    <span style={{ fontSize: 14, color: C.text, fontWeight: 700, minWidth: 66 }}>{price != null ? price.toFixed(2) : "—"}</span>
-                    <span style={{ fontSize: 12.5, fontWeight: 800, color: chg == null ? C.muted : chg >= 0 ? C.green : C.red, minWidth: 56 }}>{chg == null ? "" : (chg >= 0 ? "+" : "") + chg.toFixed(2) + "%"}</span>
-                    {posCcyChip(w.currency || "USD")}
-                    {fitChip(fit.fit)}
-                    {ins && chip("🛡 insurance: " + ins, "#B45309", "#FFFBEB", "#FDE68A")}
-                    {rr.rr != null && chip(`R:R ${rr.rr}`, rr.rr >= 2 ? C.green : rr.rr >= 1 ? C.amber : C.red, C.bg, C.bdr)}
-                    {chip(w.status, C.mid, C.bg, C.bdr)}
-                    <span style={{ marginLeft: "auto", color: C.lbl, fontSize: 12 }}>{open ? "▲" : "▼ setup"}</span>
-                  </div>
-
-                  {/* expanded setup */}
-                  {open && (
-                    <div style={{ padding: "12px", borderTop: "1px solid " + C.bdr, background: C.surf }} onClick={e => e.stopPropagation()}>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-end" }}>
-                        <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Entry<br />{numInput(w.entry, v => updateItem(w.id, { entry: v === "" ? null : v }), "")}</label>
-                        <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Stop<br />{numInput(w.stop, v => updateItem(w.id, { stop: v === "" ? null : v }), "")}</label>
-                        <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Targets (comma)<br />
-                          <input defaultValue={(w.targets || []).join(", ")} onBlur={e => updateItem(w.id, { targets: e.target.value.split(",").map(x => +x.trim()).filter(x => Number.isFinite(x)).slice(0, 4) })} placeholder="e.g. 200, 220"
-                            style={{ width: 130, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} />
-                        </label>
-                        <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Your risk %<br />{numInput(w.riskPct, v => updateItem(w.id, { riskPct: v === "" ? null : v }), String(baseRiskNum), 70)}</label>
-                        <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Entry date<br />
-                          <input type="date" value={w.entryDate || ""} onChange={e => updateItem(w.id, { entryDate: e.target.value })}
-                            title="The date you actually opened this position. Used to look the regime up from the regime log rather than assuming today's."
-                            style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} />
-                        </label>
-                        <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Currency<br />
-                          <select value={w.currency || "USD"} onChange={e => updateItem(w.id, { currency: e.target.value })} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
-                            {CURRENCY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
-                          </select>
-                        </label>
-                        <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Status<br />
-                          <select value={w.status} onChange={e => updateItem(w.id, { status: e.target.value })} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
-                            {["idea", "armed", "in-trade", "closed"].map(s => <option key={s} value={s}>{s}</option>)}
-                          </select>
-                        </label>
-                      </div>
-
-                      {/* computed R:R + sizing */}
-                      <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 10 }}>
-                        <div style={{ flex: "1 1 240px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 9, padding: "10px 12px" }}>
-                          <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Risk / reward</div>
-                          {rr.side ? (
-                            <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.7 }}>
-                              Side <b style={{ color: C.text }}>{rr.side}</b> · R <b style={{ color: C.text }}>{rr.riskPerShare ?? "—"}</b>/sh · reward <b style={{ color: C.text }}>{rr.rewardPerShare ?? "—"}</b>/sh · <b style={{ color: rr.rr >= 2 ? C.green : rr.rr >= 1 ? C.amber : C.red }}>{rr.rr ?? "—"}R</b>
-                              {dist && <div style={{ color: C.muted, marginTop: 3 }}>to stop {dist.stop.pct ?? "—"}% · to T1 {dist.targets?.[0]?.pct ?? "—"}%</div>}
-                            </div>
-                          ) : <div style={{ fontSize: 12.5, color: C.muted, fontStyle: "italic" }}>Enter entry + stop to compute R:R.</div>}
-                        </div>
-                        <div style={{ flex: "1 1 240px", background: liveRegime?.bg || C.bg, border: "1px solid " + (liveRegime?.bdr || C.bdr), borderRadius: 9, padding: "10px 12px" }}>
-                          <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Regime-scaled size</div>
-                          {sug?.size ? (
-                            <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.7 }}>
-                              Suggested <b style={{ color: C.text }}>{sug.size.shares}</b> sh ({fmtCcy(sug.size.notional, posCcy)}
-                              {posCcy !== baseCcy && notionalBase != null ? <span style={{ color: C.lbl }}> ≈ {fmtCcy(notionalBase, baseCcy)}</span> : null}
-                              {" "}· {sug.size.notionalPct}% of book) at <b style={{ color: liveRegime?.color }}>{sug.effRiskPct}%</b> risk (base {baseRiskNum}% × {sug.mult})
-                              {own && <div style={{ color: C.muted, marginTop: 3 }}>your {w.riskPct}% → {own.shares} sh ({fmtCcy(own.notional, posCcy)})</div>}
-                              {posCcy !== baseCcy && (
-                                <div style={{ marginTop: 4, fontSize: 11.5, color: risk.real ? C.amber : C.green, lineHeight: 1.45 }}>
-                                  {risk.real ? "⚠ FX risk: " : "🔒 no FX risk: "}{risk.note}
-                                  {fxRates[posCcy] ? <span style={{ color: C.lbl }}> · 1 {baseCcy} = {(fxRates[posCcy] / (fxRates[baseCcy] || 1)).toFixed(4)} {posCcy}</span> : <span style={{ color: C.red }}> · rate unavailable — sizing not converted</span>}
-                                </div>
-                              )}
-                            </div>
-                          ) : <div style={{ fontSize: 12.5, color: C.muted, fontStyle: "italic" }}>Set account equity + entry + stop for a size.</div>}
-                        </div>
-                      </div>
-
-                      {fit.where && <div style={{ marginTop: 8, fontSize: 12, color: C.mid }}><b style={{ color: fit.fit === "tailwind" ? C.green : C.red }}>{fit.fit === "tailwind" ? "Regime tailwind" : "Fights the regime"}:</b> {liveRegime?.label} {fit.fit === "tailwind" ? "favours" : "disfavours"} “{fit.where}”.</div>}
-
-                      <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <input value={w.note ?? ""} onChange={e => updateItem(w.id, { note: e.target.value })} placeholder="thesis / note"
-                          style={{ flex: "1 1 260px", padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 12.5, background: C.surf, color: C.text }} />
-                        <Btn onClick={() => openCloseFor(w)} color="#fff" bgColor={C.green} label="✔ Close position" />
-                        <Btn onClick={() => removeItem(w.id)} color={C.red} bgColor={C.surf} label="✕ Remove" />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Card>
-
-      {/* close-position form */}
-      {closeForm && (() => {
-        const preview = closeTrade({ entry: closeForm.entry, stop: closeForm.stop, exit: closeForm.exit, shares: closeForm.shares, side: closeForm.side, currency: closeForm.currency });
-        const atEntry = regimeOnDate(regimeHistory, closeForm.entryDate || null);
-        const inp = { padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text };
-        return (
-          <Card style={{ borderTop: "4px solid " + C.green }}>
-            <SLabel>Close position — {closeForm.symbol}</SLabel>
-            <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
-              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Entry<br />{numInput(closeForm.entry, v => setCloseForm(f => ({ ...f, entry: v })), "", 88)}</label>
-              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Stop <span style={{ fontWeight: 400 }}>(for R)</span><br />{numInput(closeForm.stop, v => setCloseForm(f => ({ ...f, stop: v })), "none", 88)}</label>
-              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Exit<br />{numInput(closeForm.exit, v => setCloseForm(f => ({ ...f, exit: v })), "", 88)}</label>
-              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Shares<br />{numInput(closeForm.shares, v => setCloseForm(f => ({ ...f, shares: v })), "", 80)}</label>
-              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Entry date<br />
-                <input type="date" value={closeForm.entryDate} onChange={e => setCloseForm(f => ({ ...f, entryDate: e.target.value }))} style={inp} /></label>
-              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Exit date<br />
-                <input type="date" value={closeForm.dateOut} onChange={e => setCloseForm(f => ({ ...f, dateOut: e.target.value }))} style={inp} /></label>
-            </div>
-
-            {/* Live preview — what will be recorded, including WHICH measure applies. */}
-            <div style={{ marginTop: 11, padding: "9px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 9, fontSize: 12.5, color: C.mid, lineHeight: 1.7 }}>
-              {preview.ok ? (
-                <>
-                  <b style={{ color: preview.win ? C.green : C.red }}>
-                    {preview.measure === "R" ? `${preview.realizedR > 0 ? "+" : ""}${preview.realizedR}R` : `${preview.pctReturn > 0 ? "+" : ""}${preview.pctReturn}%`}
-                  </b>
-                  {preview.pnl != null && <span> · P&amp;L {fmtCcy(preview.pnl, closeForm.currency)}</span>}
-                  <span style={{ color: C.lbl }}> · {preview.pctReturn > 0 ? "+" : ""}{preview.pctReturn}%</span>
-                  {preview.note && <div style={{ color: C.amber, fontSize: 11.5, marginTop: 3 }}>⚠ {preview.note}</div>}
-                </>
-              ) : <span style={{ color: C.muted, fontStyle: "italic" }}>Enter an exit price to see what will be recorded.</span>}
-              <div style={{ marginTop: 5, paddingTop: 5, borderTop: "1px solid " + C.bdr, fontSize: 11.5 }}>
-                <b style={{ color: C.lbl }}>Regime at entry: </b>
-                {atEntry.regime
-                  ? <b style={{ color: REGIMES.find(r => r.id === atEntry.regime)?.color }}>{REGIMES.find(r => r.id === atEntry.regime)?.label}{atEntry.exact ? "" : " (prior session)"}</b>
-                  : <span style={{ color: C.amber, fontWeight: 700 }}>unknown</span>}
-                {atEntry.note && <span style={{ color: C.muted }}> — {atEntry.note}</span>}
-                {!closeForm.entryDate && <span style={{ color: C.muted }}> Set an entry date to attribute this trade to a regime.</span>}
-              </div>
-            </div>
-
-            <input value={closeForm.notes} onChange={e => setCloseForm(f => ({ ...f, notes: e.target.value }))} placeholder="what happened / why you closed"
-              style={{ marginTop: 10, width: "100%", boxSizing: "border-box", padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 12.5, background: C.surf, color: C.text }} />
-            <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <Btn onClick={saveClose} disabled={!preview.ok} color="#fff" bgColor={C.green} label="Close & record" />
-              <Btn onClick={() => setCloseForm(null)} color={C.mid} bgColor={C.bg} label="Cancel" />
-              <span style={{ fontSize: 11, color: C.lbl }}>Closing moves this out of the watchlist and into the journal. Remember to press <b>Save to cloud</b>.</span>
-            </div>
-          </Card>
-        );
-      })()}
-
-      {/* performance by regime */}
-      <Card>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-          <SLabel>Performance by regime</SLabel>
-          <span style={{ fontSize: 11.5, color: C.muted }}>{perf.totalClosed} closed trade{perf.totalClosed === 1 ? "" : "s"}</span>
-        </div>
-        {perf.note && (
-          <div style={{ marginTop: 8, padding: "9px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, fontSize: 12, color: C.muted, lineHeight: 1.6 }}>
-            {perf.note}
-          </div>
-        )}
-        {perf.rows.length > 0 && (
-          <div style={{ marginTop: 10, overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 460 }}>
-              <thead><tr>
-                {["Regime at entry", "Trades", "Win rate", "Avg R", "Total R", "Avg %"].map(h => (
-                  <th key={h} style={{ textAlign: "left", color: C.mid, padding: "6px 10px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700, fontSize: 11.5 }}>{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {perf.rows.map(r => {
-                  const reg = REGIMES.find(x => x.id === r.regime);
-                  return (
-                    <tr key={r.regime}>
-                      <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr, fontWeight: 700, color: reg?.color || C.muted }}>
-                        {reg?.label || "Unknown"}
-                        {r.regime === "unknown" && <span style={{ color: C.lbl, fontWeight: 400, fontSize: 11 }}> — predates the log</span>}
-                      </td>
-                      <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr }}>{r.n}</td>
-                      <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr }}>{r.winRate == null ? "—" : r.winRate + "%"}</td>
-                      <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr, color: r.avgR == null ? C.muted : r.avgR >= 0 ? C.green : C.red, fontWeight: 700 }}>
-                        {r.avgR == null ? "—" : (r.avgR > 0 ? "+" : "") + r.avgR + "R"}
-                      </td>
-                      <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr, color: r.totalR == null ? C.muted : r.totalR >= 0 ? C.green : C.red }}>
-                        {r.totalR == null ? "—" : (r.totalR > 0 ? "+" : "") + r.totalR + "R"}
-                      </td>
-                      <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr, color: r.avgPct == null ? C.muted : r.avgPct >= 0 ? C.green : C.red }}>
-                        {r.avgPct == null ? "—" : (r.avgPct > 0 ? "+" : "") + r.avgPct + "%"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            <div style={{ marginTop: 7, fontSize: 11, color: C.lbl, lineHeight: 1.55 }}>
-              R is only defined where a stop was recorded ({perf.rows.reduce((a, r) => a + r.nWithR, 0)} of {perf.totalClosed}); the rest are measured in % return, and the two are never averaged together.
-            </div>
-          </div>
-        )}
-      </Card>
-
-      {/* journal list */}
-      <Card>
-        <SLabel>Journal</SLabel>
-        {journal.length === 0 ? (
-          <div style={{ color: C.muted, fontSize: 13, marginTop: 10, fontStyle: "italic" }}>No closed trades yet. Use “Close position” on a watchlist row: it records the result and looks the regime at entry up from the regime log by your entry date — or marks it unknown when the trade predates the log, rather than assuming today’s.</div>
-        ) : (
-          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-            {journal.map(j => (
-              <div key={j.id} style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", padding: "8px 10px", border: "1px solid " + C.bdr, borderRadius: 8, background: C.surf }}>
-                <b style={{ color: C.text, minWidth: 56 }}>{j.symbol}</b>
-                {j.side && chip(j.side, C.mid, C.bg, C.bdr)}
-                {j.realizedR != null && chip(`${j.realizedR >= 0 ? "+" : ""}${j.realizedR}R`, j.realizedR >= 0 ? C.green : C.red, C.bg, C.bdr)}
-                <span style={{ fontSize: 12, color: C.muted }}>{j.dateIn || "?"}{j.dateOut ? " → " + j.dateOut : ""}</span>
-                {j.regimeAtEntry && <span style={{ fontSize: 11.5, color: C.lbl }}>· regime: {j.regimeAtEntry}</span>}
-                {j.thesis && <span style={{ fontSize: 12, color: C.mid, flex: "1 1 180px" }}>{j.thesis}</span>}
-                <Btn onClick={() => removeJournal(j.id)} color={C.red} bgColor={C.surf} label="✕" />
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      <div style={{ color: C.lbl, fontSize: 11.5, textAlign: "center", lineHeight: 1.5 }}>
-        Prices: /api/prices (Yahoo, poll-cadence) · sizing + R:R are arithmetic over your inputs (lib/console.js) · state syncs to your private store on “Save to cloud”, and mirrors to this browser automatically. Not investment advice; no orders are placed.
+      <div style={{ color: C.lbl, fontSize: 11.5, textAlign: "center", lineHeight: 1.55 }}>
+        Prices: /api/prices (Yahoo, poll-cadence — levels are checked when this loads or you refresh, not continuously).
+        Positions are derived from fills at average cost, so a scaled position reports realised and unrealised side by side.
+        Not investment advice; no orders are placed.
       </div>
     </div>
   );

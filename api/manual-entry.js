@@ -17,7 +17,7 @@ const DATA_PATH = 'data/manual_entry.json';
 // GIT (data/manual_entry.json): curated macro inputs — fedPath, oasRecon, intervention, recession
 //   overrides, southbound. Version history is a FEATURE here: you want to see when a recession
 //   override changed and what it was before.
-// REDIS (Upstash, lib/kv.js): the trade console — positions, cost basis, journal, settings.
+// REDIS (Upstash, lib/kv.js): the trade console — setups, levels, fills, settings.
 //   Personal, high-churn, and a permanent diffable history of a real book is a liability, not a
 //   feature. Redis writes replace; nothing accumulates.
 // Until the Upstash env vars exist, console reads fall back to whatever is already in the git
@@ -29,9 +29,9 @@ async function readConsole(gitFallback) {
     // First run after wiring Upstash: nothing in Redis yet, so serve (and thereby migrate) the
     // copy already committed to git. The next save writes it to Redis.
     if (gitFallback) return { ...gitFallback, _store: 'git-fallback' };
-    return { watchlist: [], journal: [], settings: {}, _store: 'kv-empty' };
+    return { rows: [], settings: {}, _store: 'kv-empty' };
   }
-  return { ...(gitFallback || { watchlist: [], journal: [], settings: {} }), _store: 'git' };
+  return { ...(gitFallback || { rows: [], settings: {} }), _store: 'git' };
 }
 
 function ghHeaders() {
@@ -46,7 +46,7 @@ async function readStore() {
   const repo = process.env.GITHUB_REPO;
   const branch = process.env.GITHUB_BRANCH || 'main';
   const r = await fetch(`https://api.github.com/repos/${repo}/contents/${DATA_PATH}?ref=${encodeURIComponent(branch)}`, { headers: ghHeaders() });
-  const emptyConsole = () => ({ watchlist: [], journal: [], settings: {} });
+  const emptyConsole = () => ({ rows: [], settings: {} });
   if (!r.ok) return { store: { fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, recession: {}, console: emptyConsole() }, sha: null };
   const meta = await r.json();
   let store = { fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, recession: {}, console: emptyConsole() };
@@ -58,9 +58,8 @@ async function readStore() {
   store.recession ||= {};   // manual overrides for the Wall Street recession sources
   store.southbound ||= { series: [] };   // HKEX Southbound Stock Connect daily flow (hand-entered)
   store.southbound.series ||= [];
-  store.console ||= emptyConsole();       // Tier 3 trade console — watchlist / journal / settings
-  store.console.watchlist ||= [];
-  store.console.journal ||= [];
+  store.console ||= emptyConsole();       // trade console — setups / positions / settings
+  store.console.rows ||= [];
   store.console.settings ||= {};
   return { store, sha: meta.sha };
 }
@@ -81,59 +80,46 @@ export function zqMovesPriced(impliedRate, effr) {
 // synced payload can never bloat the committed store file. cs = capped string, cn = number-or-null.
 const cs = (v, max = 200) => (v == null ? null : String(v).slice(0, max));
 const cn = (v) => (v == null || v === '' || !Number.isFinite(+v)) ? null : +v;
-function sanitizeWatchItem(w) {
-  if (!w || typeof w !== 'object') return null;
-  const sym = cs(w.symbol, 20);
+// v2 shape: a row is a SETUP or a POSITION, distinguished only by whether it has fills. Levels are
+// watch targets (buy/sell/stop, optionally a zone); fills are the trade record. Everything else —
+// quantity, average cost, realised P&L, open vs closed — is DERIVED client-side by
+// lib/positions.js, so nothing computed is trusted from the payload.
+function sanitizeLevel(l) {
+  if (!l || typeof l !== 'object') return null;
+  const kind = ['buy', 'sell', 'stop'].includes(l.kind) ? l.kind : null;
+  if (!kind) return null;
+  const at = cn(l.at);
+  if (at == null) return null;                       // a level without a price is not a level
+  return { id: cs(l.id, 16) || Math.random().toString(36).slice(2, 8), kind, at, to: cn(l.to), note: cs(l.note, 160) };
+}
+function sanitizeFill(f) {
+  if (!f || typeof f !== 'object') return null;
+  const side = (f.side === 'buy' || f.side === 'sell') ? f.side : null;
+  const qty = cn(f.qty), price = cn(f.price);
+  if (!side || qty == null || qty <= 0 || price == null || price < 0) return null;
+  return { id: cs(f.id, 16) || Math.random().toString(36).slice(2, 8), side, qty, price, date: cs(f.date, 12), note: cs(f.note, 200) };
+}
+function sanitizeRow(r) {
+  if (!r || typeof r !== 'object') return null;
+  const sym = cs(r.symbol, 24);
   if (!sym) return null;
   return {
-    id: cs(w.id, 48) || `${sym}-${Math.random().toString(36).slice(2, 8)}`,
+    id: cs(r.id, 48) || `${sym}-${Math.random().toString(36).slice(2, 8)}`,
     symbol: sym.toUpperCase(),
-    side: (w.side === 'long' || w.side === 'short') ? w.side : null,
-    entry: cn(w.entry), stop: cn(w.stop),
-    targets: Array.isArray(w.targets) ? w.targets.map(cn).filter(x => x != null).slice(0, 4) : [],
-    riskPct: cn(w.riskPct),
-    entryDate: cs(w.entryDate, 12),
-    currency: /^[A-Z]{3}$/.test(String(w.currency || '').toUpperCase()) ? String(w.currency).toUpperCase() : 'USD',
-    status: cs(w.status, 16) || 'idea',
-    note: cs(w.note, 500),
-    addedAt: cs(w.addedAt, 40) || new Date().toISOString(),
+    currency: /^[A-Z]{3}$/.test(String(r.currency || '').toUpperCase()) ? String(r.currency).toUpperCase() : 'USD',
+    thesis: cs(r.thesis, 600),
+    levels: Array.isArray(r.levels) ? r.levels.map(sanitizeLevel).filter(Boolean).slice(0, 12) : [],
+    fills: Array.isArray(r.fills) ? r.fills.map(sanitizeFill).filter(Boolean).slice(0, 200) : [],
+    tags: Array.isArray(r.tags) ? r.tags.map(t => cs(t, 24)).filter(Boolean).slice(0, 8) : [],
   };
 }
-function sanitizeJournalItem(j) {
-  if (!j || typeof j !== 'object') return null;
-  const sym = cs(j.symbol, 20);
-  if (!sym) return null;
-  return {
-    id: cs(j.id, 48) || `${sym}-${Math.random().toString(36).slice(2, 8)}`,
-    symbol: sym.toUpperCase(),
-    side: (j.side === 'long' || j.side === 'short') ? j.side : null,
-    thesis: cs(j.thesis, 1000),
-    entryPrice: cn(j.entryPrice), exitPrice: cn(j.exitPrice), shares: cn(j.shares),
-    stop: cn(j.stop), currency: /^[A-Z]{3}$/.test(String(j.currency || '').toUpperCase()) ? String(j.currency).toUpperCase() : 'USD',
-    realizedR: cn(j.realizedR), pctReturn: cn(j.pctReturn), pnl: cn(j.pnl),
-    measure: j.measure === 'R' ? 'R' : 'pct',
-    regimeAtEntry: cs(j.regimeAtEntry, 64),
-    // The regime ID is what performanceByRegime groups on; null means "predates the log", which is
-    // a real answer and must round-trip as null rather than being coerced to a string.
-    regimeAtEntryId: j.regimeAtEntryId == null ? null : cs(j.regimeAtEntryId, 8),
-    regimeAtExitId: j.regimeAtExitId == null ? null : cs(j.regimeAtExitId, 8),
-    dateIn: cs(j.dateIn, 12), dateOut: cs(j.dateOut, 12),
-    notes: cs(j.notes, 1000),
-  };
-}
+
 function sanitizeConsoleSettings(s) {
   if (!s || typeof s !== 'object') return {};
   const out = {
-    equity: cn(s.equity), baseRiskPct: cn(s.baseRiskPct), alertsEnabled: !!s.alertsEnabled,
+    alertsEnabled: !!s.alertsEnabled,
     baseCurrency: /^[A-Z]{3}$/.test(String(s.baseCurrency || '').toUpperCase()) ? String(s.baseCurrency).toUpperCase() : 'USD',
   };
-  if (s.sizing && typeof s.sizing === 'object') {
-    out.sizing = {};
-    for (const k of ['ref', 'inf', 'stag', 'def']) {
-      const m = cn(s.sizing[k]?.mult ?? s.sizing[k]);
-      if (m != null) out.sizing[k] = Math.max(0, Math.min(3, m));   // clamp multiplier to 0–3×
-    }
-  }
   return out;
 }
 
@@ -300,24 +286,18 @@ export default async function handler(req, res) {
   let consoleResult = null;
   if (consoleIn && typeof consoleIn === 'object') {
     const prev = await readConsole(store.console);
-    const watchlist = Array.isArray(consoleIn.watchlist)
-      ? consoleIn.watchlist.map(sanitizeWatchItem).filter(Boolean).slice(0, 100)
-      : (prev.watchlist || []);
-    const journal = Array.isArray(consoleIn.journal)
-      ? consoleIn.journal.map(sanitizeJournalItem).filter(Boolean).slice(0, 1000)
-      : (prev.journal || []);
+    const rows = Array.isArray(consoleIn.rows)
+      ? consoleIn.rows.map(sanitizeRow).filter(Boolean).slice(0, 200)
+      : (prev.rows || []);
     const settings = consoleIn.settings ? sanitizeConsoleSettings(consoleIn.settings) : (prev.settings || {});
-    const payload = { watchlist, journal, settings, updatedAt: new Date().toISOString() };
+    const payload = { rows, settings, updatedAt: new Date().toISOString() };
 
     if (kvConfigured()) {
       const ok = await kvSetJson(CONSOLE_KEY, payload);
       consoleResult = ok ? { stored: 'kv' } : { stored: 'failed', error: 'Redis write failed — state kept locally in your browser' };
     } else {
-      // No Redis yet: say so plainly rather than silently accepting. The browser keeps its local
-      // copy, so nothing is lost — it just will not follow you to another device.
       consoleResult = { stored: 'none', error: 'cross-device sync not configured (KV_REST_API_URL / KV_REST_API_TOKEN unset) — saved locally in this browser only' };
     }
-    // Console never counts toward `saved`, which drives the GIT commit below.
     if (consoleResult.stored === 'kv') saved.push('console→kv');
   }
 
