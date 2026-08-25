@@ -16,6 +16,7 @@ import { STATUS, creditStatus, deriveAction, headerSignal, STAGES } from "../lib
 import { HORIZON, HORIZON_LABEL, consensusFor, calendarWindow, dispersionRead, NO_CONVERSION_NOTE } from "../lib/recession.js";
 import { buildViews, evaluateViews, regimeCluster, divergenceRead } from "../lib/analystViews.js";
 import { CURRENCIES, CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, toUsd, fxRisk, fmtCcy } from "../lib/fxrates.js";
+import { regimeOnDate, closeTrade, performanceByRegime } from "../lib/journal.js";
 import { REGIME_SIZING, rMultiple, positionSize, regimeMultiplier, suggestedSize, distanceToLevels, triggeredLevels, tradeSide, DEFAULT_BASE_RISK_PCT } from "../lib/console.js";
 import { observationAge } from "../lib/gates.js";
 import { trend as trendOf } from "../lib/series.js";
@@ -5215,7 +5216,7 @@ function regimeFitFor(sym, regime) {
   return { fit: "neutral", where: null };
 }
 
-function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contested, regimeDiverged, prices, fetchPrices, pricesLoading }) {
+function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, creditDanger, contested, regimeDiverged, prices, fetchPrices, pricesLoading }) {
   const LS = "dvcap_console_v1";
   const [wl, setWl]             = useState([]);
   const [journal, setJournal]   = useState([]);
@@ -5227,7 +5228,7 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
   const [saveMsg, setSaveMsg]   = useState(null);
   const [expanded, setExpanded] = useState(null);
   const [addSym, setAddSym]     = useState("");
-  const [jForm, setJForm]       = useState(null);   // open journal form (prefilled from a row or blank)
+  const [closeForm, setCloseForm] = useState(null); // close-a-position form
   const [portOpen, setPortOpen] = useState(false);  // import/export panel
   const [importTxt, setImportTxt] = useState("");
   const [importMsg, setImportMsg] = useState(null);
@@ -5320,30 +5321,45 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
     setTimeout(() => setSaveMsg(null), 6000);
   };
 
-  // Journal helpers.
-  const openJournalFor = (w) => setJForm({
-    id: null, symbol: w?.symbol || "", side: w?.side || (w?.entry != null && w?.stop != null ? tradeSide(w.entry, w.stop) : null),
-    thesis: w?.note || "", entryPrice: w?.entry ?? "", exitPrice: "", stop: w?.stop ?? "", shares: "", dateIn: new Date().toISOString().slice(0, 10), dateOut: "", notes: "",
+  // ── Closing a position ───────────────────────────────────────────────────
+  // A trade is a LIFECYCLE, not a single event. The old flow only accepted a completed round trip
+  // typed by hand, which is why nine open positions could never become a record of anything.
+  const openCloseFor = (w) => setCloseForm({
+    id: w.id, symbol: w.symbol, side: w.side || tradeSide(w.entry, w.stop) || "long",
+    currency: w.currency || "USD",
+    entry: w.entry ?? "", stop: w.stop ?? "", entryDate: w.entryDate || "",
+    exit: "", shares: "", dateOut: new Date().toISOString().slice(0, 10), notes: "",
   });
-  const saveJournal = () => {
-    const f = jForm; if (!f || !f.symbol) return;
-    const e = +f.entryPrice, x = +f.exitPrice, s = +f.stop;
-    const side = f.side || tradeSide(e, s);
-    let realizedR = null;
-    if (Number.isFinite(e) && Number.isFinite(x) && Number.isFinite(s) && Math.abs(e - s) > 0) {
-      realizedR = +(((side === "short" ? (e - x) : (x - e)) / Math.abs(e - s))).toFixed(2);
-    }
+
+  const saveClose = () => {
+    const f = closeForm; if (!f) return;
+    const res = closeTrade({ entry: f.entry, stop: f.stop, exit: f.exit, shares: f.shares, side: f.side, currency: f.currency });
+    if (!res.ok) { setSaveMsg(res.error); setTimeout(() => setSaveMsg(null), 5000); return; }
+    // Regime at ENTRY is looked up from the log by the entry date — never assumed to be today's.
+    const atEntry = regimeOnDate(regimeHistory, f.entryDate || null);
     const row = {
-      id: `${f.symbol.toUpperCase()}-${Math.random().toString(36).slice(2, 8)}`,
-      symbol: f.symbol.toUpperCase(), side: side || null, thesis: f.thesis || null,
-      entryPrice: Number.isFinite(e) ? e : null, exitPrice: Number.isFinite(x) ? x : null,
-      shares: Number.isFinite(+f.shares) ? +f.shares : null, realizedR,
-      regimeAtEntry: liveRegime ? `${liveRegime.label} ${regimeProbFor(liveRegime.id)}%` : null,
-      dateIn: f.dateIn || null, dateOut: f.dateOut || null, notes: f.notes || null,
+      id: `${f.symbol}-${Math.random().toString(36).slice(2, 8)}`,
+      symbol: f.symbol, side: f.side, currency: f.currency,
+      entryPrice: +f.entry, exitPrice: +f.exit,
+      stop: f.stop === "" ? null : +f.stop,
+      shares: f.shares === "" ? null : +f.shares,
+      realizedR: res.realizedR, pctReturn: res.pctReturn, pnl: res.pnl, measure: res.measure,
+      regimeAtEntryId: atEntry.regime,
+      regimeAtEntry: atEntry.regime
+        ? `${REGIMES.find(r => r.id === atEntry.regime)?.label || atEntry.regime}${atEntry.exact ? "" : " (prior session)"}`
+        : "unknown — predates the regime log",
+      regimeAtExitId: liveRegime?.id ?? null,
+      dateIn: f.entryDate || null, dateOut: f.dateOut || null,
+      notes: f.notes || null,
     };
-    setJournal(prev => [row, ...prev]); setJForm(null); touch();
+    setJournal(prev => [row, ...prev]);
+    // The position is closed, so it leaves the live watchlist.
+    setWl(prev => prev.filter(w => w.id !== f.id));
+    setCloseForm(null); setExpanded(null); touch();
   };
+
   const removeJournal = (id) => { setJournal(prev => prev.filter(j => j.id !== id)); touch(); };
+  const perf = useMemo(() => performanceByRegime(journal), [journal]);
 
   // Poll-cadence level alerts: which rows have hit a level at the current price.
   const triggered = useMemo(() => {
@@ -5606,6 +5622,11 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
                             style={{ width: 130, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} />
                         </label>
                         <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Your risk %<br />{numInput(w.riskPct, v => updateItem(w.id, { riskPct: v === "" ? null : v }), String(baseRiskNum), 70)}</label>
+                        <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Entry date<br />
+                          <input type="date" value={w.entryDate || ""} onChange={e => updateItem(w.id, { entryDate: e.target.value })}
+                            title="The date you actually opened this position. Used to look the regime up from the regime log rather than assuming today's."
+                            style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} />
+                        </label>
                         <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Currency<br />
                           <select value={w.currency || "USD"} onChange={e => updateItem(w.id, { currency: e.target.value })} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
                             {CURRENCY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -5653,7 +5674,7 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
                       <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <input value={w.note ?? ""} onChange={e => updateItem(w.id, { note: e.target.value })} placeholder="thesis / note"
                           style={{ flex: "1 1 260px", padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 12.5, background: C.surf, color: C.text }} />
-                        <Btn onClick={() => openJournalFor(w)} color="#fff" bgColor={C.green} label="📓 Log trade" />
+                        <Btn onClick={() => openCloseFor(w)} color="#fff" bgColor={C.green} label="✔ Close position" />
                         <Btn onClick={() => removeItem(w.id)} color={C.red} bgColor={C.surf} label="✕ Remove" />
                       </div>
                     </div>
@@ -5665,39 +5686,114 @@ function TradeConsole({ liveRegime, regimeProbFor, liveInd, creditDanger, contes
         )}
       </Card>
 
-      {/* journal form */}
-      {jForm && (
-        <Card>
-          <SLabel>Log a trade — {jForm.symbol || "?"}</SLabel>
-          <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
-            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Symbol<br />
-              <input value={jForm.symbol} onChange={e => setJForm(f => ({ ...f, symbol: e.target.value.toUpperCase() }))} style={{ width: 90, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
-            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Side<br />
-              <select value={jForm.side || ""} onChange={e => setJForm(f => ({ ...f, side: e.target.value || null }))} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
-                <option value="">—</option><option value="long">long</option><option value="short">short</option>
-              </select></label>
-            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Entry<br />{numInput(jForm.entryPrice, v => setJForm(f => ({ ...f, entryPrice: v })), "", 80)}</label>
-            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Stop<br />{numInput(jForm.stop, v => setJForm(f => ({ ...f, stop: v })), "", 80)}</label>
-            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Exit<br />{numInput(jForm.exitPrice, v => setJForm(f => ({ ...f, exitPrice: v })), "", 80)}</label>
-            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Shares<br />{numInput(jForm.shares, v => setJForm(f => ({ ...f, shares: v })), "", 80)}</label>
-            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Date out<br />
-              <input type="date" value={jForm.dateOut} onChange={e => setJForm(f => ({ ...f, dateOut: e.target.value }))} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
+      {/* close-position form */}
+      {closeForm && (() => {
+        const preview = closeTrade({ entry: closeForm.entry, stop: closeForm.stop, exit: closeForm.exit, shares: closeForm.shares, side: closeForm.side, currency: closeForm.currency });
+        const atEntry = regimeOnDate(regimeHistory, closeForm.entryDate || null);
+        const inp = { padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text };
+        return (
+          <Card style={{ borderTop: "4px solid " + C.green }}>
+            <SLabel>Close position — {closeForm.symbol}</SLabel>
+            <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
+              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Entry<br />{numInput(closeForm.entry, v => setCloseForm(f => ({ ...f, entry: v })), "", 88)}</label>
+              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Stop <span style={{ fontWeight: 400 }}>(for R)</span><br />{numInput(closeForm.stop, v => setCloseForm(f => ({ ...f, stop: v })), "none", 88)}</label>
+              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Exit<br />{numInput(closeForm.exit, v => setCloseForm(f => ({ ...f, exit: v })), "", 88)}</label>
+              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Shares<br />{numInput(closeForm.shares, v => setCloseForm(f => ({ ...f, shares: v })), "", 80)}</label>
+              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Entry date<br />
+                <input type="date" value={closeForm.entryDate} onChange={e => setCloseForm(f => ({ ...f, entryDate: e.target.value }))} style={inp} /></label>
+              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Exit date<br />
+                <input type="date" value={closeForm.dateOut} onChange={e => setCloseForm(f => ({ ...f, dateOut: e.target.value }))} style={inp} /></label>
+            </div>
+
+            {/* Live preview — what will be recorded, including WHICH measure applies. */}
+            <div style={{ marginTop: 11, padding: "9px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 9, fontSize: 12.5, color: C.mid, lineHeight: 1.7 }}>
+              {preview.ok ? (
+                <>
+                  <b style={{ color: preview.win ? C.green : C.red }}>
+                    {preview.measure === "R" ? `${preview.realizedR > 0 ? "+" : ""}${preview.realizedR}R` : `${preview.pctReturn > 0 ? "+" : ""}${preview.pctReturn}%`}
+                  </b>
+                  {preview.pnl != null && <span> · P&amp;L {fmtCcy(preview.pnl, closeForm.currency)}</span>}
+                  <span style={{ color: C.lbl }}> · {preview.pctReturn > 0 ? "+" : ""}{preview.pctReturn}%</span>
+                  {preview.note && <div style={{ color: C.amber, fontSize: 11.5, marginTop: 3 }}>⚠ {preview.note}</div>}
+                </>
+              ) : <span style={{ color: C.muted, fontStyle: "italic" }}>Enter an exit price to see what will be recorded.</span>}
+              <div style={{ marginTop: 5, paddingTop: 5, borderTop: "1px solid " + C.bdr, fontSize: 11.5 }}>
+                <b style={{ color: C.lbl }}>Regime at entry: </b>
+                {atEntry.regime
+                  ? <b style={{ color: REGIMES.find(r => r.id === atEntry.regime)?.color }}>{REGIMES.find(r => r.id === atEntry.regime)?.label}{atEntry.exact ? "" : " (prior session)"}</b>
+                  : <span style={{ color: C.amber, fontWeight: 700 }}>unknown</span>}
+                {atEntry.note && <span style={{ color: C.muted }}> — {atEntry.note}</span>}
+                {!closeForm.entryDate && <span style={{ color: C.muted }}> Set an entry date to attribute this trade to a regime.</span>}
+              </div>
+            </div>
+
+            <input value={closeForm.notes} onChange={e => setCloseForm(f => ({ ...f, notes: e.target.value }))} placeholder="what happened / why you closed"
+              style={{ marginTop: 10, width: "100%", boxSizing: "border-box", padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 12.5, background: C.surf, color: C.text }} />
+            <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <Btn onClick={saveClose} disabled={!preview.ok} color="#fff" bgColor={C.green} label="Close & record" />
+              <Btn onClick={() => setCloseForm(null)} color={C.mid} bgColor={C.bg} label="Cancel" />
+              <span style={{ fontSize: 11, color: C.lbl }}>Closing moves this out of the watchlist and into the journal. Remember to press <b>Save to cloud</b>.</span>
+            </div>
+          </Card>
+        );
+      })()}
+
+      {/* performance by regime */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+          <SLabel>Performance by regime</SLabel>
+          <span style={{ fontSize: 11.5, color: C.muted }}>{perf.totalClosed} closed trade{perf.totalClosed === 1 ? "" : "s"}</span>
+        </div>
+        {perf.note && (
+          <div style={{ marginTop: 8, padding: "9px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, fontSize: 12, color: C.muted, lineHeight: 1.6 }}>
+            {perf.note}
           </div>
-          <input value={jForm.notes} onChange={e => setJForm(f => ({ ...f, notes: e.target.value }))} placeholder="notes / what happened"
-            style={{ marginTop: 10, width: "100%", boxSizing: "border-box", padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 12.5, background: C.surf, color: C.text }} />
-          <div style={{ marginTop: 6, fontSize: 11.5, color: C.muted }}>Regime at entry auto-stamps: <b style={{ color: liveRegime?.color }}>{liveRegime ? `${liveRegime.label} ${regimeProbFor(liveRegime.id)}%` : "—"}</b>. Realized R computes from entry/stop/exit.</div>
-          <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
-            <Btn onClick={saveJournal} color="#fff" bgColor={C.green} label="Save to journal" />
-            <Btn onClick={() => setJForm(null)} color={C.mid} bgColor={C.bg} label="Cancel" />
+        )}
+        {perf.rows.length > 0 && (
+          <div style={{ marginTop: 10, overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 460 }}>
+              <thead><tr>
+                {["Regime at entry", "Trades", "Win rate", "Avg R", "Total R", "Avg %"].map(h => (
+                  <th key={h} style={{ textAlign: "left", color: C.mid, padding: "6px 10px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700, fontSize: 11.5 }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {perf.rows.map(r => {
+                  const reg = REGIMES.find(x => x.id === r.regime);
+                  return (
+                    <tr key={r.regime}>
+                      <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr, fontWeight: 700, color: reg?.color || C.muted }}>
+                        {reg?.label || "Unknown"}
+                        {r.regime === "unknown" && <span style={{ color: C.lbl, fontWeight: 400, fontSize: 11 }}> — predates the log</span>}
+                      </td>
+                      <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr }}>{r.n}</td>
+                      <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr }}>{r.winRate == null ? "—" : r.winRate + "%"}</td>
+                      <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr, color: r.avgR == null ? C.muted : r.avgR >= 0 ? C.green : C.red, fontWeight: 700 }}>
+                        {r.avgR == null ? "—" : (r.avgR > 0 ? "+" : "") + r.avgR + "R"}
+                      </td>
+                      <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr, color: r.totalR == null ? C.muted : r.totalR >= 0 ? C.green : C.red }}>
+                        {r.totalR == null ? "—" : (r.totalR > 0 ? "+" : "") + r.totalR + "R"}
+                      </td>
+                      <td style={{ padding: "6px 10px", borderBottom: "1px solid " + C.bdr, color: r.avgPct == null ? C.muted : r.avgPct >= 0 ? C.green : C.red }}>
+                        {r.avgPct == null ? "—" : (r.avgPct > 0 ? "+" : "") + r.avgPct + "%"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div style={{ marginTop: 7, fontSize: 11, color: C.lbl, lineHeight: 1.55 }}>
+              R is only defined where a stop was recorded ({perf.rows.reduce((a, r) => a + r.nWithR, 0)} of {perf.totalClosed}); the rest are measured in % return, and the two are never averaged together.
+            </div>
           </div>
-        </Card>
-      )}
+        )}
+      </Card>
 
       {/* journal list */}
       <Card>
         <SLabel>Journal</SLabel>
         {journal.length === 0 ? (
-          <div style={{ color: C.muted, fontSize: 13, marginTop: 10, fontStyle: "italic" }}>No trades logged. Use “Log trade” on a watchlist row — each entry stamps the regime you were in, so you can later see how you do by regime.</div>
+          <div style={{ color: C.muted, fontSize: 13, marginTop: 10, fontStyle: "italic" }}>No closed trades yet. Use “Close position” on a watchlist row: it records the result and looks the regime at entry up from the regime log by your entry date — or marks it unknown when the trade predates the log, rather than assuming today’s.</div>
         ) : (
           <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
             {journal.map(j => (
@@ -6096,6 +6192,7 @@ export default function App() {
         {/* ── TRADE CONSOLE (Tier 3) ── */}
         {tab === "console" && (
           <TradeConsole
+            regimeHistory={regimeHistory}
             liveRegime={liveRegime}
             regimeProbFor={regimeProbFor}
             liveInd={liveInd}

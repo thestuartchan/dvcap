@@ -92,6 +92,7 @@ function sanitizeWatchItem(w) {
     entry: cn(w.entry), stop: cn(w.stop),
     targets: Array.isArray(w.targets) ? w.targets.map(cn).filter(x => x != null).slice(0, 4) : [],
     riskPct: cn(w.riskPct),
+    entryDate: cs(w.entryDate, 12),
     currency: /^[A-Z]{3}$/.test(String(w.currency || '').toUpperCase()) ? String(w.currency).toUpperCase() : 'USD',
     status: cs(w.status, 16) || 'idea',
     note: cs(w.note, 500),
@@ -108,8 +109,14 @@ function sanitizeJournalItem(j) {
     side: (j.side === 'long' || j.side === 'short') ? j.side : null,
     thesis: cs(j.thesis, 1000),
     entryPrice: cn(j.entryPrice), exitPrice: cn(j.exitPrice), shares: cn(j.shares),
-    realizedR: cn(j.realizedR),
-    regimeAtEntry: cs(j.regimeAtEntry, 48),
+    stop: cn(j.stop), currency: /^[A-Z]{3}$/.test(String(j.currency || '').toUpperCase()) ? String(j.currency).toUpperCase() : 'USD',
+    realizedR: cn(j.realizedR), pctReturn: cn(j.pctReturn), pnl: cn(j.pnl),
+    measure: j.measure === 'R' ? 'R' : 'pct',
+    regimeAtEntry: cs(j.regimeAtEntry, 64),
+    // The regime ID is what performanceByRegime groups on; null means "predates the log", which is
+    // a real answer and must round-trip as null rather than being coerced to a string.
+    regimeAtEntryId: j.regimeAtEntryId == null ? null : cs(j.regimeAtEntryId, 8),
+    regimeAtExitId: j.regimeAtExitId == null ? null : cs(j.regimeAtExitId, 8),
     dateIn: cs(j.dateIn, 12), dateOut: cs(j.dateOut, 12),
     notes: cs(j.notes, 1000),
   };
