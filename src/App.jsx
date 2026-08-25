@@ -5210,6 +5210,317 @@ function regimeFitFor(sym, regime) {
   return { fit: "neutral", where: null };
 }
 
+
+// A number field that COMMITS ON BLUR OR ENTER, not per keystroke — so a multi-digit quantity can
+// be typed. `dk` is the draft key; while a draft exists it wins over the stored value.
+const NumCommit = ({ dk, value, onCommit, placeholder, width = 84, title, drafts, setDraft, clearDraft }) => {
+  const draft = drafts[dk];
+  const shown = draft !== undefined ? draft : (value ?? "");
+  const commit = () => {
+    if (draft === undefined) return;
+    const n = draft === "" ? null : +draft;
+    clearDraft(dk);
+    if (draft !== "" && !Number.isFinite(n)) return;   // reject junk rather than storing NaN
+    onCommit(n);
+  };
+  return (
+    <input
+      value={shown} title={title} placeholder={placeholder} inputMode="decimal"
+      onChange={e => setDraft(dk, e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); } if (e.key === "Escape") clearDraft(dk); }}
+      style={{
+        width, padding: "5px 8px", borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text,
+        border: "1.5px solid " + (draft !== undefined ? C.blue : C.bdr),
+      }} />
+  );
+};
+
+
+// The fill form, rendered INLINE inside the row it belongs to (see PositionRow). It previously sat
+// in its own card near the bottom of the page, so pressing "Record a buy" on a row appeared to do
+// nothing — the form it opened was off-screen.
+const FillForm = ({ ctx, symbol }) => {
+  const { fillFor, setFillFor, saveFill, nInput } = ctx;
+  if (!fillFor) return null;
+  return (
+
+      <div style={{ marginTop: 10, padding: "11px 12px", borderRadius: 9, background: C.bg, border: "1.5px solid " + (fillFor.side === "buy" ? C.green : C.blue) }}>
+        <SLabel>
+          {fillFor.intent === "stopped" ? "Stopped out" : fillFor.intent === "sell" ? "Record a sell" : "Record a buy"}
+          {" — "}{symbol}
+        </SLabel>
+        <div style={{ marginTop: 9, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Side<br />
+            <select value={fillFor.side} onChange={e => setFillFor(f => ({ ...f, side: e.target.value }))} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
+              <option value="buy">buy</option><option value="sell">sell</option>
+            </select></label>
+          <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Quantity <span style={{ fontWeight: 400, color: C.muted }}>(your position size)</span><br />{nInput(fillFor.qty, v => setFillFor(f => ({ ...f, qty: v })), "shares")}</label>
+          <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Price<br />{nInput(fillFor.price, v => setFillFor(f => ({ ...f, price: v })), "")}</label>
+          <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Date<br />
+            <input type="date" value={fillFor.date} onChange={e => setFillFor(f => ({ ...f, date: e.target.value }))} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
+          <label style={{ flex: "1 1 200px", fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Note<br />
+            <input value={fillFor.note} onChange={e => setFillFor(f => ({ ...f, note: e.target.value }))} placeholder="optional"
+              style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
+        </div>
+        <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <Btn onClick={saveFill} color="#fff" bgColor={fillFor.side === "buy" ? C.green : C.blue} label="Record fill" />
+          <Btn onClick={() => setFillFor(null)} color={C.mid} bgColor={C.bg} label="Cancel" />
+          <span style={{ fontSize: 11, color: C.lbl }}>
+            {fillFor.intent === "stopped"
+              ? "Prefilled to sell the whole position at your stop. Adjust if you were filled elsewhere."
+              : "Selling part keeps the position open and books realised P&L at your average cost; selling all of it moves the row to Archive."}
+          </span>
+        </div>
+      </div>
+    
+  );
+};
+
+// ── Console row components, at MODULE SCOPE ──────────────────────────────────
+// These were originally declared inside TradeConsole. That is a React trap: a component declared
+// inside another gets a NEW function identity on every parent render, so React treats it as a
+// different component type, unmounts the old tree and mounts a fresh one. Every DOM node is
+// replaced — which destroys focus mid-typing. It is why entering a quantity kicked the cursor out
+// of the field after each character; holding the draft value in the parent preserved the VALUE but
+// could not preserve focus, because the input element itself was being recreated.
+// Hoisted here their identity is constant, so React re-renders in place and focus survives. Every
+// value they used from the closure is passed through a single `ctx` object.
+
+const LevelPill = ({ lv, price, ctx }) => {
+const { kindCol } = ctx;
+  const hit = levelHit(lv, price);
+  const d = distancePct(lv, price);
+  return (
+    <span title={lv.note || undefined} style={{
+      display: "inline-flex", gap: 5, alignItems: "baseline", padding: "2px 8px", borderRadius: 6,
+      border: "1.5px solid " + (hit ? kindCol(lv.kind) : C.bdr), background: hit ? (lv.kind === "buy" ? "#F0FDF4" : lv.kind === "sell" ? C.blBg : "#FEF2F2") : C.surf,
+      fontSize: 11.5, fontWeight: 700, color: hit ? kindCol(lv.kind) : C.mid,
+    }}>
+      {hit ? "●" : "○"} {lv.kind} {lv.at ?? "—"}{lv.to ? `–${lv.to}` : ""}
+      {d != null && !hit && <span style={{ color: C.lbl, fontWeight: 600 }}>{d > 0 ? "+" : ""}{d}%</span>}
+    </span>
+  );
+};
+
+const PositionRow = ({ r, mode, ctx }) => {
+const {
+  prices, priceOf, liveRegime, expanded, setExpanded, upd, del, addLevel, updLevel, delLevel,
+  openFill, delFill, NumCommit, nInput, chip, ccyChip, fitChip, kindCol, money, pnlCol,
+  equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
+} = ctx;
+  const price = priceOf(r);
+  const q = prices?.[r.symbol];
+  const fit = regimeFitFor(r.symbol, liveRegime);
+  const ins = INSURANCE_TICKERS[r.symbol];
+  const open = expanded === r.id;
+  const d = r.derived, p = r.pnl;
+  const active = (r.levels || []).filter(l => l.at != null);
+  const stopLevel = active.find(l => l.kind === "stop");
+  const anyHit = active.some(l => levelHit(l, price));
+  return (
+    <div style={{ border: "1.5px solid " + (anyHit ? C.amber : C.bdr), borderLeft: "4px solid " + (anyHit ? C.amber : mode === "open" ? C.blue : C.bdr), borderRadius: 10, overflow: "hidden" }}>
+      <div onClick={() => setExpanded(open ? null : r.id)} style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", flexWrap: "wrap", cursor: "pointer", background: open ? C.bg : C.surf }}>
+        <b style={{ fontSize: 15, minWidth: 74 }}>{r.symbol}</b>
+        <span style={{ fontSize: 14, fontWeight: 700, minWidth: 62 }}>{price != null ? price.toFixed(2) : "—"}</span>
+        <span style={{ fontSize: 12.5, fontWeight: 800, minWidth: 54, color: q?.changePercent == null ? C.muted : q.changePercent >= 0 ? C.green : C.red }}>
+          {q?.changePercent == null ? "" : (q.changePercent >= 0 ? "+" : "") + q.changePercent.toFixed(2) + "%"}
+        </span>
+        {ccyChip(r.currency || "USD")}
+        {mode === "open" && (
+          <>
+            <span style={{ fontSize: 12, color: C.lbl }}>{d.qty} @ {d.avgCost?.toFixed(2)}</span>
+            <b style={{ fontSize: 13, color: pnlCol(p.total) }}>{p.total == null ? "—" : (p.total > 0 ? "+" : "") + money(p.total, r.currency)}</b>
+            {d.partiallyRealised && chip(`realised ${money(d.realized, r.currency)}`, C.green, "#F0FDF4", "#BBF7D0")}
+          </>
+        )}
+        {fitChip(fit.fit)}
+        {ins && chip("🛡 " + ins, "#B45309", "#FFFBEB", "#FDE68A")}
+        {anyHit && chip("⚡ level hit", C.amber, C.aBg, C.aBdr)}
+        {d.needsQty && chip("⚠ quantity needed", C.amber, C.aBg, C.aBdr)}
+        {/* The actions that answer "how do I record what I did" — on the row, not hidden. */}
+        <span style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }} onClick={e => e.stopPropagation()}>
+          {mode === "setup" && (
+            <Btn onClick={() => openFill(r, "buy")} color="#fff" bgColor={C.green} label="✓ I bought" />
+          )}
+          {mode === "open" && (
+            <>
+              <Btn onClick={() => openFill(r, "buy")} color="#fff" bgColor={C.green} label="＋ Bought more" />
+              <Btn onClick={() => openFill(r, "sell")} color="#fff" bgColor={C.blue} label="－ Sold some" />
+              {stopLevel && <Btn onClick={() => openFill(r, "stopped")} color={C.red} bgColor={C.surf} label="🛑 Stopped out" />}
+            </>
+          )}
+          <span style={{ color: C.lbl, fontSize: 12, cursor: "pointer" }} onClick={() => setExpanded(open ? null : r.id)}>{open ? "▲ less" : "▼ edit"}</span>
+        </span>
+      </div>
+
+      {/* levels always visible — this is the daily read */}
+      {active.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "0 12px 9px" }}>
+          {active.map(l => <LevelPill key={l.id} lv={l} price={price} ctx={ctx} />)}
+        </div>
+      )}
+
+      {open && (
+        <div onClick={e => e.stopPropagation()} style={{ padding: 12, borderTop: "1px solid " + C.bdr, background: C.surf }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Currency<br />
+              <select value={r.currency || "USD"} onChange={e => upd(r.id, { currency: e.target.value })} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
+                {CURRENCY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select></label>
+            <label style={{ flex: "1 1 240px", fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Thesis / why you are watching<br />
+              <input value={r.thesis || ""} onChange={e => upd(r.id, { thesis: e.target.value })} placeholder="e.g. accumulate on a pullback to the 200dma"
+                style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
+          </div>
+
+          {/* levels editor */}
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 5 }}>Levels</div>
+          {(r.levels || []).map(l => (
+            <div key={l.id} style={{ display: "flex", gap: 7, alignItems: "center", marginBottom: 5, flexWrap: "wrap" }}>
+              <select value={l.kind} onChange={e => updLevel(r.id, l.id, { kind: e.target.value })} style={{ padding: "4px 7px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 12, background: C.surf, color: kindCol(l.kind), fontWeight: 700 }}>
+                <option value="buy">buy</option><option value="sell">sell</option><option value="stop">stop</option>
+              </select>
+              {nInput(l.at, v => updLevel(r.id, l.id, { at: v === "" ? null : +v }), "at", 78)}
+              <span style={{ color: C.lbl, fontSize: 12 }}>to</span>
+              {nInput(l.to, v => updLevel(r.id, l.id, { to: v === "" ? null : +v }), "(zone)", 78)}
+              <input value={l.note || ""} onChange={e => updLevel(r.id, l.id, { note: e.target.value })} placeholder="note"
+                style={{ flex: "1 1 130px", padding: "4px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 12, background: C.surf, color: C.text }} />
+              <button onClick={() => delLevel(r.id, l.id)} style={{ cursor: "pointer", background: "none", border: "none", color: C.red, fontWeight: 800, fontSize: 13 }}>✕</button>
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+            {["buy", "sell", "stop"].map(k => (
+              <button key={k} onClick={() => addLevel(r.id, k)} style={{ cursor: "pointer", background: C.surf, color: kindCol(k), border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>+ {k}</button>
+            ))}
+            <span style={{ fontSize: 11, color: C.lbl, alignSelf: "center" }}>leave “to” blank for a single price, or fill it for a zone</span>
+          </div>
+
+          {/* how much to buy */}
+          {(() => {
+            const mode = r.sizeMode || (stopLevel ? "risk" : "allocation");
+            const equityInPos = equityBase == null ? null : convert(equityBase, baseCcy, r.currency || "USD", fxRates);
+            const sug = sizeSuggestion({
+              mode, equityInPos, price, stop: stopLevel?.at,
+              baseRiskPct: baseRisk, targetPct: numOrNull(r.targetPct) ?? targetPct,
+              regime: regimeCtx, heldQty: d.qty || 0, tranches: numOrNull(r.tranches) || 1,
+              sizing: mergedSizing,
+            });
+            return (
+              <div style={{ marginTop: 12, padding: "10px 12px", background: liveRegime?.bg || C.bg, border: "1px solid " + (liveRegime?.bdr || C.bdr), borderRadius: 9 }}>
+                <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap", marginBottom: 7 }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>How much to buy</span>
+                  <select value={mode} onChange={e => upd(r.id, { sizeMode: e.target.value })}
+                    title="Risk: size so a stop-out costs a fixed % of the book. Allocation: hold a target % of the book — for long holds with no stop."
+                    style={{ padding: "3px 7px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 11.5, background: C.surf, color: C.text, fontWeight: 700 }}>
+                    <option value="risk">risk-based (needs a stop)</option>
+                    <option value="allocation">allocation (% of book)</option>
+                  </select>
+                  {mode === "allocation" && (
+                    <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700, display: "flex", gap: 5, alignItems: "center" }}>
+                      target % {nInput(r.targetPct ?? "", v => upd(r.id, { targetPct: v === "" ? null : +v }), String(targetPct), 58)}
+                    </label>
+                  )}
+                  <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700, display: "flex", gap: 5, alignItems: "center" }}>
+                    tranches {nInput(r.tranches ?? "", v => upd(r.id, { tranches: v === "" ? null : +v }), "1", 48)}
+                  </label>
+                </div>
+                {sug.ok ? (
+                  <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.75 }}>
+                    Full size <b style={{ color: C.text }} title={sug.rounded ? `rounded from ${sug.fullExact} — equity is approximate, so the extra digits are not meaningful` : undefined}>~{sug.fullQty}</b> ({money(sug.notional, r.currency)} · {sug.notionalPctOfBook}% of book)
+                    {sug.heldQty > 0 && <> · holding <b>{sug.heldQty}</b></>}
+                    {" · "}<b style={{ color: sug.roomQty > 0 ? C.green : C.muted }}>room for {sug.roomQty}</b>
+                    {sug.tranches > 1 && sug.trancheQty > 0 && <> · <b>{sug.trancheQty}</b> per tranche ×{sug.tranches}</>}
+                    {sug.riskAmount != null && (
+                      <div style={{ color: C.lbl }}>
+                        Risks <b style={{ color: C.red }}>{fmtCcy(sug.riskAmount, r.currency)}</b> at the {stopLevel?.at} stop ({sug.effPct}% of book · {money(sug.perShareRisk, r.currency)}/share)
+                      </div>
+                    )}
+                    <div style={{ color: C.muted, fontSize: 11.5 }}>
+                      {mode === "risk" ? `${baseRisk}%` : `${numOrNull(r.targetPct) ?? targetPct}%`} base × <b style={{ color: liveRegime?.color }}>{sug.mult}</b> regime — {sug.reasons[sug.reasons.length - 1]}
+                      {sug.perTenPctEquity > 0 && <> · a 10% move in your equity shifts this by ~{sug.perTenPctEquity} share{sug.perTenPctEquity === 1 ? "" : "s"}</>}
+                    </div>
+                    {sug.warnings.map((w, i) => <div key={i} style={{ color: C.amber, fontWeight: 700, fontSize: 11.5 }}>⚠ {w}</div>)}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12.5, color: C.muted, fontStyle: "italic" }}>
+                    {sug.why}
+                    {/^risk sizing needs a stop/.test(sug.why || "") && (
+                      <button onClick={() => upd(r.id, { sizeMode: "allocation" })} style={{ marginLeft: 8, cursor: "pointer", background: C.surf, color: C.blue, border: "1.5px solid " + C.bdr, borderRadius: 6, padding: "2px 8px", fontSize: 11.5, fontWeight: 700 }}>
+                        use allocation instead
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* fills */}
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, margin: "12px 0 5px" }}>
+            Fills {d.nFills > 0 && <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0, color: C.lbl }}>· {d.bought} bought · {d.sold} sold · avg {d.avgCost?.toFixed(2) ?? "—"}</span>}
+          </div>
+          {(d.fills || []).map(f => (
+            <div key={f.id} style={{ display: "flex", gap: 7, alignItems: "center", fontSize: 12, color: C.mid, marginBottom: 4, flexWrap: "wrap" }}>
+              <b style={{ color: f.side === "buy" ? C.green : C.blue, minWidth: 32 }}>{f.side}</b>
+              <NumCommit dk={`fq:${f.id}`} value={f.qty} placeholder="qty" width={78}
+                onCommit={q => { if (q != null && q > 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, qty: q } : x) }); }} />
+              <span style={{ color: C.lbl }}>@</span>
+              <NumCommit dk={`fp:${f.id}`} value={f.price} placeholder="price" width={92}
+                onCommit={p => { if (p != null && p >= 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, price: p } : x) }); }} />
+              <input type="date" value={f.date || ""} onChange={e => upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, date: e.target.value } : x) })}
+                style={{ padding: "4px 7px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 11.5, background: C.surf, color: C.text }} />
+              {f.note && <span style={{ color: C.muted, fontSize: 11.5 }}>{f.note}</span>}
+              <button onClick={() => delFill(r.id, f.id)} title="delete this fill" style={{ marginLeft: "auto", cursor: "pointer", background: "none", border: "none", color: C.red, fontWeight: 800 }}>✕</button>
+            </div>
+          ))}
+          {(d.incomplete || []).map(f => (
+            <div key={f.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12, marginTop: 5, padding: "7px 9px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 7 }}>
+              <b style={{ color: C.amber }}>⚠ quantity needed</b>
+              <span style={{ color: C.mid }}>{f.side} @ {f.price}{f.date ? ` · ${f.date}` : ""}</span>
+              <span style={{ color: C.lbl }}>how many?</span>
+              <NumCommit dk={`q:${f.id}`} value="" placeholder="qty" width={90}
+                title="Type the full quantity, then press Enter or click away."
+                onCommit={q => { if (q != null && q > 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, qty: q } : x) }); }} />
+              <span style={{ color: C.muted, fontSize: 11 }}>press Enter or click away to save — the price was imported, the size was not</span>
+            </div>
+          ))}
+          {d.warnings?.map((w, i) => <div key={i} style={{ fontSize: 11.5, color: C.amber, fontWeight: 700, marginTop: 4 }}>⚠ {w}</div>)}
+          <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+            <Btn onClick={() => openFill(r, "buy")} color="#fff" bgColor={C.green} label="+ Record a buy" />
+            {d.qty > 0 && <Btn onClick={() => openFill(r, "sell")} color="#fff" bgColor={C.blue} label="− Record a sell" />}
+            <Btn onClick={() => del(r.id)} color={C.red} bgColor={C.surf} label="✕ Remove" />
+          </div>
+
+          {mode === "open" && (
+            <div style={{ marginTop: 10, padding: "9px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 9, fontSize: 12.5, color: C.mid, lineHeight: 1.7 }}>
+              {d.qty} @ avg {d.avgCost?.toFixed(4)} · market {money(p.marketValue, r.currency)}
+              <br />Unrealised <b style={{ color: pnlCol(p.unrealized) }}>{p.unrealized == null ? "—" : money(p.unrealized, r.currency)}</b>
+              {p.unrealizedPct != null && <span style={{ color: C.lbl }}> ({p.unrealizedPct > 0 ? "+" : ""}{p.unrealizedPct}%)</span>}
+              {" · "}Realised <b style={{ color: pnlCol(d.realized) }}>{money(d.realized, r.currency)}</b>
+              {d.realizedPct != null && <span style={{ color: C.lbl }}> ({d.realizedPct > 0 ? "+" : ""}{d.realizedPct}% on capital taken out)</span>}
+              {d.partiallyRealised && <div style={{ color: C.green, fontSize: 11.5, marginTop: 3 }}>Scaled out {d.sold} of {d.bought} — still open on {d.qty}.</div>}
+            </div>
+          )}
+          {fit.where && <div style={{ marginTop: 8, fontSize: 12, color: C.mid }}><b style={{ color: fit.fit === "tailwind" ? C.green : C.red }}>{fit.fit === "tailwind" ? "Regime tailwind" : "Fights the regime"}:</b> {liveRegime?.label} {fit.fit === "tailwind" ? "favours" : "disfavours"} “{fit.where}”.</div>}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const Section = ({ title, note, list, mode, ctx }) => (
+  <Card>
+    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: list.length ? 10 : 0 }}>
+      <SLabel>{title}</SLabel>
+      <span style={{ fontSize: 12, color: C.muted }}>{list.length}</span>
+      {note && <span style={{ fontSize: 11.5, color: C.lbl }}>{note}</span>}
+    </div>
+    {list.length === 0
+      ? <div style={{ fontSize: 12.5, color: C.muted, fontStyle: "italic", marginTop: 8 }}>Nothing here yet.</div>
+      : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{list.map(r => <PositionRow key={r.id} r={r} mode={mode} ctx={ctx} />)}</div>}
+  </Card>
+);
+
 // ─── TRADE CONSOLE ───────────────────────────────────────────────────────────
 // SCOPE: spot, swing and long holds. Not day trades or scalps — those live in the broker and the
 // user's own tracker sheet, and duplicating them here produced a worse second copy of both.
@@ -5445,264 +5756,21 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
   const chip = (t, col, bg, bd) => <span style={{ background: bg, color: col, border: "1px solid " + bd, borderRadius: 6, padding: "1px 7px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>{t}</span>;
   const ccyChip = (ccy) => { if (ccy === baseCcy) return null; const r = fxRisk(ccy, baseCcy); return chip(ccy + (r.real ? "" : " 🔒"), r.real ? C.amber : C.mid, r.real ? C.aBg : C.bg, r.real ? C.aBdr : C.bdr); };
   const fitChip = (f) => f === "tailwind" ? chip("regime tailwind", C.green, "#F0FDF4", "#BBF7D0") : f === "headwind" ? chip("fights regime", C.red, "#FEF2F2", "#FECACA") : null;
-  // A number field that COMMITS ON BLUR OR ENTER, not per keystroke — so a multi-digit quantity can
-  // be typed. `dk` is the draft key; while a draft exists it wins over the stored value.
-  const NumCommit = ({ dk, value, onCommit, placeholder, width = 84, title }) => {
-    const draft = drafts[dk];
-    const shown = draft !== undefined ? draft : (value ?? "");
-    const commit = () => {
-      if (draft === undefined) return;
-      const n = draft === "" ? null : +draft;
-      clearDraft(dk);
-      if (draft !== "" && !Number.isFinite(n)) return;   // reject junk rather than storing NaN
-      onCommit(n);
-    };
-    return (
-      <input
-        value={shown} title={title} placeholder={placeholder} inputMode="decimal"
-        onChange={e => setDraft(dk, e.target.value)}
-        onBlur={commit}
-        onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); } if (e.key === "Escape") clearDraft(dk); }}
-        style={{
-          width, padding: "5px 8px", borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text,
-          border: "1.5px solid " + (draft !== undefined ? C.blue : C.bdr),
-        }} />
-    );
-  };
 
   const nInput = (v, on, ph, w = 84) => <input value={v ?? ""} onChange={e => on(e.target.value)} placeholder={ph} inputMode="decimal" style={{ width: w, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} />;
   const kindCol = (k) => k === "buy" ? C.green : k === "sell" ? C.blue : C.red;
   const money = (v, ccy) => v == null ? "—" : fmtCcy(v, ccy);
   const pnlCol = (v) => v == null ? C.muted : v > 0 ? C.green : v < 0 ? C.red : C.mid;
 
-  // A level's live state: how far away, and whether it is currently hit.
-  const LevelPill = ({ lv, price }) => {
-    const hit = levelHit(lv, price);
-    const d = distancePct(lv, price);
-    return (
-      <span title={lv.note || undefined} style={{
-        display: "inline-flex", gap: 5, alignItems: "baseline", padding: "2px 8px", borderRadius: 6,
-        border: "1.5px solid " + (hit ? kindCol(lv.kind) : C.bdr), background: hit ? (lv.kind === "buy" ? "#F0FDF4" : lv.kind === "sell" ? C.blBg : "#FEF2F2") : C.surf,
-        fontSize: 11.5, fontWeight: 700, color: hit ? kindCol(lv.kind) : C.mid,
-      }}>
-        {hit ? "●" : "○"} {lv.kind} {lv.at ?? "—"}{lv.to ? `–${lv.to}` : ""}
-        {d != null && !hit && <span style={{ color: C.lbl, fontWeight: 600 }}>{d > 0 ? "+" : ""}{d}%</span>}
-      </span>
-    );
+  // A level's live state: how far away, and whether it is currently hit.  // Everything the hoisted row components need from this closure, in one object. Recreated each
+  // render, which is fine: the COMPONENT identities are stable, so React re-renders rather than
+  // remounting, and focus is preserved.
+  const NumCommitBound = useCallback((p) => <NumCommit {...p} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} />, [drafts]);
+  const ctx = {
+    prices, priceOf, liveRegime, expanded, setExpanded, upd, del, addLevel, updLevel, delLevel,
+    openFill, delFill, fillFor, setFillFor, saveFill, NumCommit: NumCommitBound, nInput, chip, ccyChip, fitChip, kindCol, money, pnlCol,
+    equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
   };
-
-  const RowCard = ({ r, mode }) => {
-    const price = priceOf(r);
-    const q = prices?.[r.symbol];
-    const fit = regimeFitFor(r.symbol, liveRegime);
-    const ins = INSURANCE_TICKERS[r.symbol];
-    const open = expanded === r.id;
-    const d = r.derived, p = r.pnl;
-    const active = (r.levels || []).filter(l => l.at != null);
-    const stopLevel = active.find(l => l.kind === "stop");
-    const anyHit = active.some(l => levelHit(l, price));
-    return (
-      <div style={{ border: "1.5px solid " + (anyHit ? C.amber : C.bdr), borderLeft: "4px solid " + (anyHit ? C.amber : mode === "open" ? C.blue : C.bdr), borderRadius: 10, overflow: "hidden" }}>
-        <div onClick={() => setExpanded(open ? null : r.id)} style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", flexWrap: "wrap", cursor: "pointer", background: open ? C.bg : C.surf }}>
-          <b style={{ fontSize: 15, minWidth: 74 }}>{r.symbol}</b>
-          <span style={{ fontSize: 14, fontWeight: 700, minWidth: 62 }}>{price != null ? price.toFixed(2) : "—"}</span>
-          <span style={{ fontSize: 12.5, fontWeight: 800, minWidth: 54, color: q?.changePercent == null ? C.muted : q.changePercent >= 0 ? C.green : C.red }}>
-            {q?.changePercent == null ? "" : (q.changePercent >= 0 ? "+" : "") + q.changePercent.toFixed(2) + "%"}
-          </span>
-          {ccyChip(r.currency || "USD")}
-          {mode === "open" && (
-            <>
-              <span style={{ fontSize: 12, color: C.lbl }}>{d.qty} @ {d.avgCost?.toFixed(2)}</span>
-              <b style={{ fontSize: 13, color: pnlCol(p.total) }}>{p.total == null ? "—" : (p.total > 0 ? "+" : "") + money(p.total, r.currency)}</b>
-              {d.partiallyRealised && chip(`realised ${money(d.realized, r.currency)}`, C.green, "#F0FDF4", "#BBF7D0")}
-            </>
-          )}
-          {fitChip(fit.fit)}
-          {ins && chip("🛡 " + ins, "#B45309", "#FFFBEB", "#FDE68A")}
-          {anyHit && chip("⚡ level hit", C.amber, C.aBg, C.aBdr)}
-          {d.needsQty && chip("⚠ quantity needed", C.amber, C.aBg, C.aBdr)}
-          {/* The actions that answer "how do I record what I did" — on the row, not hidden. */}
-          <span style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }} onClick={e => e.stopPropagation()}>
-            {mode === "setup" && (
-              <Btn onClick={() => openFill(r, "buy")} color="#fff" bgColor={C.green} label="✓ I bought" />
-            )}
-            {mode === "open" && (
-              <>
-                <Btn onClick={() => openFill(r, "buy")} color="#fff" bgColor={C.green} label="＋ Bought more" />
-                <Btn onClick={() => openFill(r, "sell")} color="#fff" bgColor={C.blue} label="－ Sold some" />
-                {stopLevel && <Btn onClick={() => openFill(r, "stopped")} color={C.red} bgColor={C.surf} label="🛑 Stopped out" />}
-              </>
-            )}
-            <span style={{ color: C.lbl, fontSize: 12, cursor: "pointer" }} onClick={() => setExpanded(open ? null : r.id)}>{open ? "▲ less" : "▼ edit"}</span>
-          </span>
-        </div>
-
-        {/* levels always visible — this is the daily read */}
-        {active.length > 0 && (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "0 12px 9px" }}>
-            {active.map(l => <LevelPill key={l.id} lv={l} price={price} />)}
-          </div>
-        )}
-
-        {open && (
-          <div onClick={e => e.stopPropagation()} style={{ padding: 12, borderTop: "1px solid " + C.bdr, background: C.surf }}>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
-              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Currency<br />
-                <select value={r.currency || "USD"} onChange={e => upd(r.id, { currency: e.target.value })} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
-                  {CURRENCY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select></label>
-              <label style={{ flex: "1 1 240px", fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Thesis / why you are watching<br />
-                <input value={r.thesis || ""} onChange={e => upd(r.id, { thesis: e.target.value })} placeholder="e.g. accumulate on a pullback to the 200dma"
-                  style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
-            </div>
-
-            {/* levels editor */}
-            <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 5 }}>Levels</div>
-            {(r.levels || []).map(l => (
-              <div key={l.id} style={{ display: "flex", gap: 7, alignItems: "center", marginBottom: 5, flexWrap: "wrap" }}>
-                <select value={l.kind} onChange={e => updLevel(r.id, l.id, { kind: e.target.value })} style={{ padding: "4px 7px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 12, background: C.surf, color: kindCol(l.kind), fontWeight: 700 }}>
-                  <option value="buy">buy</option><option value="sell">sell</option><option value="stop">stop</option>
-                </select>
-                {nInput(l.at, v => updLevel(r.id, l.id, { at: v === "" ? null : +v }), "at", 78)}
-                <span style={{ color: C.lbl, fontSize: 12 }}>to</span>
-                {nInput(l.to, v => updLevel(r.id, l.id, { to: v === "" ? null : +v }), "(zone)", 78)}
-                <input value={l.note || ""} onChange={e => updLevel(r.id, l.id, { note: e.target.value })} placeholder="note"
-                  style={{ flex: "1 1 130px", padding: "4px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 12, background: C.surf, color: C.text }} />
-                <button onClick={() => delLevel(r.id, l.id)} style={{ cursor: "pointer", background: "none", border: "none", color: C.red, fontWeight: 800, fontSize: 13 }}>✕</button>
-              </div>
-            ))}
-            <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
-              {["buy", "sell", "stop"].map(k => (
-                <button key={k} onClick={() => addLevel(r.id, k)} style={{ cursor: "pointer", background: C.surf, color: kindCol(k), border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>+ {k}</button>
-              ))}
-              <span style={{ fontSize: 11, color: C.lbl, alignSelf: "center" }}>leave “to” blank for a single price, or fill it for a zone</span>
-            </div>
-
-            {/* how much to buy */}
-            {(() => {
-              const mode = r.sizeMode || (stopLevel ? "risk" : "allocation");
-              const equityInPos = equityBase == null ? null : convert(equityBase, baseCcy, r.currency || "USD", fxRates);
-              const sug = sizeSuggestion({
-                mode, equityInPos, price, stop: stopLevel?.at,
-                baseRiskPct: baseRisk, targetPct: numOrNull(r.targetPct) ?? targetPct,
-                regime: regimeCtx, heldQty: d.qty || 0, tranches: numOrNull(r.tranches) || 1,
-                sizing: mergedSizing,
-              });
-              return (
-                <div style={{ marginTop: 12, padding: "10px 12px", background: liveRegime?.bg || C.bg, border: "1px solid " + (liveRegime?.bdr || C.bdr), borderRadius: 9 }}>
-                  <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap", marginBottom: 7 }}>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>How much to buy</span>
-                    <select value={mode} onChange={e => upd(r.id, { sizeMode: e.target.value })}
-                      title="Risk: size so a stop-out costs a fixed % of the book. Allocation: hold a target % of the book — for long holds with no stop."
-                      style={{ padding: "3px 7px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 11.5, background: C.surf, color: C.text, fontWeight: 700 }}>
-                      <option value="risk">risk-based (needs a stop)</option>
-                      <option value="allocation">allocation (% of book)</option>
-                    </select>
-                    {mode === "allocation" && (
-                      <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700, display: "flex", gap: 5, alignItems: "center" }}>
-                        target % {nInput(r.targetPct ?? "", v => upd(r.id, { targetPct: v === "" ? null : +v }), String(targetPct), 58)}
-                      </label>
-                    )}
-                    <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700, display: "flex", gap: 5, alignItems: "center" }}>
-                      tranches {nInput(r.tranches ?? "", v => upd(r.id, { tranches: v === "" ? null : +v }), "1", 48)}
-                    </label>
-                  </div>
-                  {sug.ok ? (
-                    <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.75 }}>
-                      Full size <b style={{ color: C.text }} title={sug.rounded ? `rounded from ${sug.fullExact} — equity is approximate, so the extra digits are not meaningful` : undefined}>~{sug.fullQty}</b> ({money(sug.notional, r.currency)} · {sug.notionalPctOfBook}% of book)
-                      {sug.heldQty > 0 && <> · holding <b>{sug.heldQty}</b></>}
-                      {" · "}<b style={{ color: sug.roomQty > 0 ? C.green : C.muted }}>room for {sug.roomQty}</b>
-                      {sug.tranches > 1 && sug.trancheQty > 0 && <> · <b>{sug.trancheQty}</b> per tranche ×{sug.tranches}</>}
-                      {sug.riskAmount != null && (
-                        <div style={{ color: C.lbl }}>
-                          Risks <b style={{ color: C.red }}>{fmtCcy(sug.riskAmount, r.currency)}</b> at the {stopLevel?.at} stop ({sug.effPct}% of book · {money(sug.perShareRisk, r.currency)}/share)
-                        </div>
-                      )}
-                      <div style={{ color: C.muted, fontSize: 11.5 }}>
-                        {mode === "risk" ? `${baseRisk}%` : `${numOrNull(r.targetPct) ?? targetPct}%`} base × <b style={{ color: liveRegime?.color }}>{sug.mult}</b> regime — {sug.reasons[sug.reasons.length - 1]}
-                        {sug.perTenPctEquity > 0 && <> · a 10% move in your equity shifts this by ~{sug.perTenPctEquity} share{sug.perTenPctEquity === 1 ? "" : "s"}</>}
-                      </div>
-                      {sug.warnings.map((w, i) => <div key={i} style={{ color: C.amber, fontWeight: 700, fontSize: 11.5 }}>⚠ {w}</div>)}
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: 12.5, color: C.muted, fontStyle: "italic" }}>
-                      {sug.why}
-                      {/^risk sizing needs a stop/.test(sug.why || "") && (
-                        <button onClick={() => upd(r.id, { sizeMode: "allocation" })} style={{ marginLeft: 8, cursor: "pointer", background: C.surf, color: C.blue, border: "1.5px solid " + C.bdr, borderRadius: 6, padding: "2px 8px", fontSize: 11.5, fontWeight: 700 }}>
-                          use allocation instead
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* fills */}
-            <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, margin: "12px 0 5px" }}>
-              Fills {d.nFills > 0 && <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0, color: C.lbl }}>· {d.bought} bought · {d.sold} sold · avg {d.avgCost?.toFixed(2) ?? "—"}</span>}
-            </div>
-            {(d.fills || []).map(f => (
-              <div key={f.id} style={{ display: "flex", gap: 7, alignItems: "center", fontSize: 12, color: C.mid, marginBottom: 4, flexWrap: "wrap" }}>
-                <b style={{ color: f.side === "buy" ? C.green : C.blue, minWidth: 32 }}>{f.side}</b>
-                <NumCommit dk={`fq:${f.id}`} value={f.qty} placeholder="qty" width={78}
-                  onCommit={q => { if (q != null && q > 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, qty: q } : x) }); }} />
-                <span style={{ color: C.lbl }}>@</span>
-                <NumCommit dk={`fp:${f.id}`} value={f.price} placeholder="price" width={92}
-                  onCommit={p => { if (p != null && p >= 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, price: p } : x) }); }} />
-                <input type="date" value={f.date || ""} onChange={e => upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, date: e.target.value } : x) })}
-                  style={{ padding: "4px 7px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 11.5, background: C.surf, color: C.text }} />
-                {f.note && <span style={{ color: C.muted, fontSize: 11.5 }}>{f.note}</span>}
-                <button onClick={() => delFill(r.id, f.id)} title="delete this fill" style={{ marginLeft: "auto", cursor: "pointer", background: "none", border: "none", color: C.red, fontWeight: 800 }}>✕</button>
-              </div>
-            ))}
-            {(d.incomplete || []).map(f => (
-              <div key={f.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12, marginTop: 5, padding: "7px 9px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 7 }}>
-                <b style={{ color: C.amber }}>⚠ quantity needed</b>
-                <span style={{ color: C.mid }}>{f.side} @ {f.price}{f.date ? ` · ${f.date}` : ""}</span>
-                <span style={{ color: C.lbl }}>how many?</span>
-                <NumCommit dk={`q:${f.id}`} value="" placeholder="qty" width={90}
-                  title="Type the full quantity, then press Enter or click away."
-                  onCommit={q => { if (q != null && q > 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, qty: q } : x) }); }} />
-                <span style={{ color: C.muted, fontSize: 11 }}>press Enter or click away to save — the price was imported, the size was not</span>
-              </div>
-            ))}
-            {d.warnings?.map((w, i) => <div key={i} style={{ fontSize: 11.5, color: C.amber, fontWeight: 700, marginTop: 4 }}>⚠ {w}</div>)}
-            <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-              <Btn onClick={() => openFill(r, "buy")} color="#fff" bgColor={C.green} label="+ Record a buy" />
-              {d.qty > 0 && <Btn onClick={() => openFill(r, "sell")} color="#fff" bgColor={C.blue} label="− Record a sell" />}
-              <Btn onClick={() => del(r.id)} color={C.red} bgColor={C.surf} label="✕ Remove" />
-            </div>
-
-            {mode === "open" && (
-              <div style={{ marginTop: 10, padding: "9px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 9, fontSize: 12.5, color: C.mid, lineHeight: 1.7 }}>
-                {d.qty} @ avg {d.avgCost?.toFixed(4)} · market {money(p.marketValue, r.currency)}
-                <br />Unrealised <b style={{ color: pnlCol(p.unrealized) }}>{p.unrealized == null ? "—" : money(p.unrealized, r.currency)}</b>
-                {p.unrealizedPct != null && <span style={{ color: C.lbl }}> ({p.unrealizedPct > 0 ? "+" : ""}{p.unrealizedPct}%)</span>}
-                {" · "}Realised <b style={{ color: pnlCol(d.realized) }}>{money(d.realized, r.currency)}</b>
-                {d.realizedPct != null && <span style={{ color: C.lbl }}> ({d.realizedPct > 0 ? "+" : ""}{d.realizedPct}% on capital taken out)</span>}
-                {d.partiallyRealised && <div style={{ color: C.green, fontSize: 11.5, marginTop: 3 }}>Scaled out {d.sold} of {d.bought} — still open on {d.qty}.</div>}
-              </div>
-            )}
-            {fit.where && <div style={{ marginTop: 8, fontSize: 12, color: C.mid }}><b style={{ color: fit.fit === "tailwind" ? C.green : C.red }}>{fit.fit === "tailwind" ? "Regime tailwind" : "Fights the regime"}:</b> {liveRegime?.label} {fit.fit === "tailwind" ? "favours" : "disfavours"} “{fit.where}”.</div>}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const Section = ({ title, note, list, mode }) => (
-    <Card>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: list.length ? 10 : 0 }}>
-        <SLabel>{title}</SLabel>
-        <span style={{ fontSize: 12, color: C.muted }}>{list.length}</span>
-        {note && <span style={{ fontSize: 11.5, color: C.lbl }}>{note}</span>}
-      </div>
-      {list.length === 0
-        ? <div style={{ fontSize: 12.5, color: C.muted, fontStyle: "italic", marginTop: 8 }}>Nothing here yet.</div>
-        : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{list.map(r => <RowCard key={r.id} r={r} mode={mode} />)}</div>}
-    </Card>
-  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -5909,8 +5977,8 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
         );
       })()}
 
-      <Section title="Setups — waiting" note="no position yet; levels are being watched" list={setups} mode="setup" />
-      <Section title="Open positions" note="spot / swing holds, scaled in and out" list={openPos} mode="open" />
+      <Section title="Setups — waiting" note="no position yet; levels are being watched" list={setups} mode="setup" ctx={ctx} />
+      <Section title="Open positions" note="spot / swing holds, scaled in and out" list={openPos} mode="open" ctx={ctx} />
 
       {/* archive: brief, with the performance summary */}
       <Card>
@@ -5973,37 +6041,6 @@ function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, 
         )}
       </Card>
 
-      {/* fill form */}
-      {fillFor && (
-        <Card style={{ borderTop: "4px solid " + (fillFor.side === "buy" ? C.green : C.blue) }}>
-          <SLabel>
-            {fillFor.intent === "stopped" ? "Stopped out" : fillFor.intent === "sell" ? "Record a sell" : "Record a buy"}
-            {" — "}{rows.find(r => r.id === fillFor.rowId)?.symbol}
-          </SLabel>
-          <div style={{ marginTop: 9, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Side<br />
-              <select value={fillFor.side} onChange={e => setFillFor(f => ({ ...f, side: e.target.value }))} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
-                <option value="buy">buy</option><option value="sell">sell</option>
-              </select></label>
-            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Quantity <span style={{ fontWeight: 400, color: C.muted }}>(your position size)</span><br />{nInput(fillFor.qty, v => setFillFor(f => ({ ...f, qty: v })), "shares")}</label>
-            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Price<br />{nInput(fillFor.price, v => setFillFor(f => ({ ...f, price: v })), "")}</label>
-            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Date<br />
-              <input type="date" value={fillFor.date} onChange={e => setFillFor(f => ({ ...f, date: e.target.value }))} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
-            <label style={{ flex: "1 1 200px", fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Note<br />
-              <input value={fillFor.note} onChange={e => setFillFor(f => ({ ...f, note: e.target.value }))} placeholder="optional"
-                style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
-          </div>
-          <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <Btn onClick={saveFill} color="#fff" bgColor={fillFor.side === "buy" ? C.green : C.blue} label="Record fill" />
-            <Btn onClick={() => setFillFor(null)} color={C.mid} bgColor={C.bg} label="Cancel" />
-            <span style={{ fontSize: 11, color: C.lbl }}>
-              {fillFor.intent === "stopped"
-                ? "Prefilled to sell the whole position at your stop. Adjust if you were filled elsewhere."
-                : "Selling part keeps the position open and books realised P&L at your average cost; selling all of it moves the row to Archive."}
-            </span>
-          </div>
-        </Card>
-      )}
 
       {/* import / export */}
       <Card>
