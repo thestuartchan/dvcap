@@ -5,7 +5,7 @@
 // building rows whose private values are distinctive digit strings and asserting those strings
 // appear nowhere in the serialised output. A future edit that adds "· 600 @ 18.06" to a line fails
 // here rather than on a Discord server.
-import { publicView, buildCard, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS } from '../lib/tradecard.js';
+import { publicView, buildCard, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, isLongHold, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS } from '../lib/tradecard.js';
 import { isWebhookUrl, alertTtlMin, mentionFromEnv, webhookFromEnv } from '../lib/discord.js';
 import fs from 'node:fs';
 let pass=0,fail=0;
@@ -222,6 +222,21 @@ eq('an unpriced row does not lead', noprice[0].symbol, 'A');
 eq('it sorts last among the non-losers', noprice.map(v => v.symbol), ['A', 'C', 'B']);
 eq('an empty book sorts fine', sortForCard([]), []);
 ok('sorting does not mutate the input', (() => { const a = [V('X', 1), V('Y', -1)]; sortForCard(a); return a[0].symbol === 'X'; })());
+
+// ── a long hold in the red is not a swing going wrong ──
+ok('the label declares it', isLongHold({ label: 'long hold' }));
+ok('so does a tag', isLongHold({ tags: ['hold'] }));
+ok('a swing does not', !isLongHold({ label: '2x META' }));
+ok('nor does a coincidental word', !isLongHold({ label: 'holding pattern' }));
+const H = (symbol, pct, label = '') => ({ symbol, label, price: 10, avg: 10, pct, trims: [], stop: null, targets: [], days: 1, since: '', status: 'open', flags: [], tags: [] });
+const withHold = sortForCard([H('SWING_BAD', -36), H('HOLD_BAD', -24, 'long hold'), H('WIN', 11)]);
+eq('a broken swing still leads', withHold[0].symbol, 'SWING_BAD');
+eq('winners come next', withHold[1].symbol, 'WIN');
+eq('a long hold in the red does not get the prompt', withHold[2].symbol, 'HOLD_BAD');
+// A hold that hits a level is still a decision — that is the whole point of setting one.
+eq('a hold with a level hit leads anyway',
+  sortForCard([H('SWING', -30), { ...H('HOLD', -20, 'long hold'), flags: ['buy zone reached'] }])[0].symbol, 'HOLD');
+eq('the tag survives publicView', publicView({ symbol: 'X', tags: ['hold'], derived: {}, pnl: {} }).tags, ['hold']);
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);
