@@ -18,6 +18,17 @@ import { derivePosition, positionPnl, levelHits } from '../lib/positions.js';
 import { buildCard, buildAlert, diffRows, isCashLeg } from '../lib/tradecard.js';
 import { upsertCard, post, remove, webhookFromEnv, mentionFromEnv, alertTtlMin, CARD_KEY, ALERTS_KEY } from '../lib/discord.js';
 
+// A row's symbol is what you call it; the quote feed may call it something else. Mirrors the tab's
+// own resolution — Yahoo has no MNQ, and its MGC is an unrelated stock.
+const FUTURES_ROOTS = new Set(['MGC', 'MNQ', 'MES', 'MYM', 'M2K', 'MCL', 'SIL', 'GC', 'NQ', 'ES', 'CL', 'SI', 'HG', 'ZN', 'ZB']);
+const quoteSym = (r) => {
+  const explicit = String(r?.quoteSymbol || '').trim();
+  if (explicit) return explicit;
+  const sym = String(r?.symbol || '').trim();
+  return (r?.margined || FUTURES_ROOTS.has(sym.toUpperCase())) && !sym.includes('=') && !sym.includes('.')
+    ? `${sym.toUpperCase()}=F` : sym;
+};
+
 // Quotes come from the same passthrough the tab uses, so the card and the tab cannot disagree
 // about a price. A missing quote leaves a row's percentage null rather than stale.
 // /api/prices takes `tickers`, not `symbols`, and answers with the quote map at the TOP level
@@ -42,10 +53,10 @@ export async function snapshot(origin) {
   const stored = await kvGetJson(CONSOLE_KEY);
   const rows = Array.isArray(stored?.rows) ? stored.rows : [];
   const live = rows.filter(r => derivePosition(r.fills || [], { multiplier: r.multiplier }).status !== 'closed');
-  const prices = await quotesFor([...new Set(live.map(r => r.symbol).filter(Boolean))], origin);
+  const prices = await quotesFor([...new Set(live.map(quoteSym).filter(Boolean))], origin);
   return rows.map(r => {
     const derived = derivePosition(r.fills || [], { multiplier: r.multiplier });
-    const price = prices?.[r.symbol]?.price ?? null;
+    const price = prices?.[quoteSym(r)]?.price ?? null;
     const hits = levelHits([{ ...r, derived }], () => price)
       .map(h => `${h.level.kind} ${h.level.at}${h.level.to ? `–${h.level.to}` : ''} reached`);
     return { ...r, derived, price, pnl: positionPnl(derived, price), levelHits: hits };

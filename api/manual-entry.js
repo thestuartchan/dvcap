@@ -119,6 +119,8 @@ function sanitizeRow(r) {
     // Futures and anything else held on margin: market value is notional, not capital committed,
     // so it is kept out of every weight and cash figure.
     margined: !!r.margined,
+    // The ticker the QUOTE feed knows this by, when it differs from the display symbol.
+    quoteSymbol: cs(r.quoteSymbol, 24),
     sizeMode: (r.sizeMode === 'risk' || r.sizeMode === 'allocation') ? r.sizeMode : null,
     targetPct: cn(r.targetPct),
     tranches: cn(r.tranches),

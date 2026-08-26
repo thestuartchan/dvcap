@@ -77,8 +77,12 @@ export default async function handler(req, res) {
       });
       const data = await r.json();
       const meta = data?.chart?.result?.[0]?.meta;
-      if (meta) {
-        const price         = meta.regularMarketPrice ?? 0;
+      // A ticker Yahoo does not know must be ABSENT from the reply, not present with a price of
+      // zero. MNQ has no Yahoo listing, so `?? 0` handed the console a live price of 0.0000 and it
+      // dutifully reported the position down 100% — a fabricated number, produced by a default
+      // meant only to avoid a crash. Callers already handle a missing key.
+      if (meta && Number.isFinite(meta.regularMarketPrice) && meta.regularMarketPrice > 0) {
+        const price         = meta.regularMarketPrice;
         const prevClose     = meta.chartPreviousClose ?? meta.previousClose ?? price;
         const changePercent = prevClose ? ((price - prevClose) / prevClose) * 100 : 0;
         results[ticker] = {

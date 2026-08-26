@@ -322,5 +322,20 @@ eq('an option trim is a plain percentage', derivePosition([
   {date:'2', side:'sell', qty:5,  price:3},
 ], {multiplier: 100}).scaleOuts[0].pct, 50);
 
+// ── a price of ZERO is a missing price, not a real one ──
+// A futures ticker that did not resolve came back priced at 0, and the position dutifully reported
+// itself down 100% and −$59k. Nothing tracked here trades at zero while still open.
+const zeroed = derivePosition([{date:'2026-08-07', side:'buy', qty:1, price:29504.805}], {multiplier: 2});
+const zp = positionPnl(zeroed, 0);
+eq('a zero quote yields no market value', zp.marketValue, null);
+eq('and no unrealised figure', zp.unrealized, null);
+eq('and no percentage', zp.unrealizedPct, null);
+eq('total falls back to realised alone', zp.total, 0);
+// A real price still works, multiplier and all.
+const rp = positionPnl(zeroed, 29594.85);
+eq('a real quote prices the contract', rp.marketValue, 59189.7);
+eq('at the contract multiplier', rp.unrealized, 180.09);
+eq('negative quotes are refused too', positionPnl(zeroed, -5).marketValue, null);
+
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);

@@ -166,6 +166,19 @@ const daysBetween = (a, b) => {
 
 // A thin vertical rule between the row's three groups. Its own component so the header reads as
 // the three groups it is, rather than as a run of spans.
+// WHICH TICKER TO QUOTE. A row's symbol is what YOU call it; the quote feed may call it something
+// else entirely. Yahoo has no MNQ and its MGC is an unrelated $280 stock, so a futures row asking
+// for its own symbol got someone else's price or none at all. `quoteSymbol` overrides it per row,
+// and a bare futures root is given the =F suffix the feed expects.
+const FUTURES_ROOTS = new Set(['MGC', 'MNQ', 'MES', 'MYM', 'M2K', 'MCL', 'SIL', 'GC', 'NQ', 'ES', 'CL', 'SI', 'HG', 'ZN', 'ZB']);
+const quoteSym = (r) => {
+  const explicit = String(r?.quoteSymbol || '').trim();
+  if (explicit) return explicit;
+  const sym = String(r?.symbol || '').trim();
+  return (r?.margined || FUTURES_ROOTS.has(sym.toUpperCase())) && !sym.includes('=') && !sym.includes('.')
+    ? `${sym.toUpperCase()}=F` : sym;
+};
+
 const Div = () => <span className="dvcap-divider" style={{ width: 1, alignSelf: "stretch", background: C.bdr, margin: "0 2px", flexShrink: 0 }} />;
 
 // "held 5 weeks" beats "since 2026-07-15" in a row whose whole job is telling a swing from a
@@ -201,7 +214,7 @@ const {
   equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
 } = ctx;
   const price = priceOf(r);
-  const q = prices?.[r.symbol];
+  const q = prices?.[quoteSym(r)];
   const fit = regimeFitFor(r.symbol, liveRegime);
   const ins = INSURANCE_TICKERS[r.symbol];
   const open = expanded === r.id;
@@ -716,8 +729,9 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   // `rows` alone rather than from `derivedRows`, which depends on `prices` and would make the
   // fetch feed its own input.
   const symbols = useMemo(() => [...new Set(
-    rows.filter(r => derivePosition(r.fills || [], { multiplier: r.multiplier }).status !== "closed").map(r => r.symbol).filter(Boolean)
+    rows.filter(r => derivePosition(r.fills || [], { multiplier: r.multiplier }).status !== "closed").map(quoteSym).filter(Boolean)
   )], [rows]);
+  const quoteSymFor = quoteSym;   // re-exported through ctx for the row header's day-change lookup
   const usedCcys = useMemo(() => [...new Set([baseCcy, ...rows.map(r => r.currency || "USD")])], [rows, baseCcy]);
   const fxSyms = useMemo(() => fxSymbolsFor(usedCcys), [usedCcys]);
   const fetchKey = [...symbols, ...fxSyms].join(",");
@@ -735,7 +749,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
     const pinned = typeof r === "string" ? null : rateForRow(r);
     return convert(v, ccy, baseCcy, pinned != null ? { ...fxRates, [ccy]: pinned } : fxRates);
   };
-  const priceOf = (r) => prices?.[r.symbol]?.price ?? null;
+  const priceOf = (r) => prices?.[quoteSym(r)]?.price ?? null;
 
   // ── sizing context ──
   const numOrNull = (v) => (v == null || v === "" || !Number.isFinite(+v)) ? null : +v;
@@ -935,6 +949,8 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
         thesis: r.thesis || "", trade: r.trade ? String(r.trade).slice(0, 40) : "",
         multiplier: Number.isFinite(+r.multiplier) && +r.multiplier > 0 ? +r.multiplier : 1,
         fxRate: Number.isFinite(+r.fxRate) && +r.fxRate > 0 ? +r.fxRate : null,
+        margined: !!r.margined,
+        quoteSymbol: r.quoteSymbol ? String(r.quoteSymbol).slice(0, 24) : "",
         levels: Array.isArray(r.levels) ? r.levels : [],
         fills: Array.isArray(r.fills) ? r.fills : [], tags: Array.isArray(r.tags) ? r.tags : [],
       })).filter(r => r.symbol);
