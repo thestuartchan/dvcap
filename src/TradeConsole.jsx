@@ -18,7 +18,7 @@ import {
 import { C, SLabel, Card, Btn } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
 import { REGIMES } from "../lib/regimes.js";
-import { derivePosition, splitIntoTrades, collapseFills, positionPnl, levelHit, levelHits, distancePct, summarize, realizedCurve } from "../lib/positions.js";
+import { derivePosition, splitIntoTrades, collapseFills, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, realizedCurve } from "../lib/positions.js";
 import { CURRENCIES, CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy } from "../lib/fxrates.js";
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
 
@@ -302,26 +302,73 @@ const {
                 style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
           </div>
 
-          {/* levels editor */}
-          <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 5 }}>Levels</div>
-          {(r.levels || []).map(l => (
-            <div key={l.id} style={{ display: "flex", gap: 7, alignItems: "center", marginBottom: 5, flexWrap: "wrap" }}>
-              <select value={l.kind} onChange={e => updLevel(r.id, l.id, { kind: e.target.value })} style={{ padding: "4px 7px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 12, background: C.surf, color: kindCol(l.kind), fontWeight: 700 }}>
-                <option value="buy">buy</option><option value="sell">sell</option><option value="stop">stop</option>
-              </select>
-              {nInput(l.at, v => updLevel(r.id, l.id, { at: v === "" ? null : +v }), "at", 78)}
-              <span style={{ color: C.lbl, fontSize: 12 }}>to</span>
-              {nInput(l.to, v => updLevel(r.id, l.id, { to: v === "" ? null : +v }), "(zone)", 78)}
-              <input value={l.note || ""} onChange={e => updLevel(r.id, l.id, { note: e.target.value })} placeholder="note"
-                style={{ flex: "1 1 130px", padding: "4px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 12, background: C.surf, color: C.text }} />
-              <button onClick={() => delLevel(r.id, l.id)} style={{ cursor: "pointer", background: "none", border: "none", color: C.red, fontWeight: 800, fontSize: 13 }}>✕</button>
+          {/* ── LEVELS ──
+              These are ALERTS, not orders and not a record of anything. The row said none of that,
+              so "how do I flag a future buy without logging that I bought" had no answer visible
+              anywhere on screen. It is now the first line of the block, and each level states in
+              words what will make it fire. */}
+          <div style={{ marginTop: 12, padding: "10px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 9 }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>Levels</span>
+              <span style={{ fontSize: 11.5, color: C.lbl }}>
+                price alerts — <b>nothing is ordered and nothing is recorded.</b> When price reaches one the row flags and,
+                if notifications are on, your browser tells you. Recording an actual trade is <b style={{ color: C.green }}>Bought more</b> / <b style={{ color: C.blue }}>Sold some</b>.
+              </span>
             </div>
-          ))}
-          <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
-            {["buy", "sell", "stop"].map(k => (
-              <button key={k} onClick={() => addLevel(r.id, k)} style={{ cursor: "pointer", background: C.surf, color: kindCol(k), border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>+ {k}</button>
-            ))}
-            <span style={{ fontSize: 11, color: C.lbl, alignSelf: "center" }}>leave “to” blank for a single price, or fill it for a zone</span>
+
+            {(r.levels || []).length > 0 && (
+              <div style={{ display: "flex", gap: 7, marginTop: 9, marginBottom: 3, fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                <span style={{ width: 104 }}>Flag me when</span><span style={{ width: 88 }}>Price</span><span style={{ width: 100 }}>…through (opt)</span>
+              </div>
+            )}
+            {(r.levels || []).map(l => {
+              const hit = levelHit(l, price);
+              const dist = distancePct(l, price);
+              return (
+                <div key={l.id} style={{ display: "flex", gap: 7, alignItems: "center", marginBottom: 5, flexWrap: "wrap" }}>
+                  <select value={l.kind} onChange={e => updLevel(r.id, l.id, { kind: e.target.value })}
+                    style={{ width: 104, padding: "4px 7px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 12, background: C.surf, color: kindCol(l.kind), fontWeight: 700 }}>
+                    <option value="buy">it falls to</option><option value="sell">it rises to</option><option value="stop">it breaks below</option>
+                  </select>
+                  {/* Draft-backed, so a decimal point survives being typed. The old input coerced the
+                      raw string to a number on every keystroke, so "16." became 16 and the next two
+                      digits made 1685 — and backspacing past a decimal appeared to eat two
+                      characters. Same fix the fill inputs already carry. */}
+                  <NumCommit dk={`lv:${l.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={l.at} placeholder="price" width={88}
+                    onCommit={v => updLevel(r.id, l.id, { at: v })} />
+                  <NumCommit dk={`lt:${l.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={l.to} placeholder="optional" width={100}
+                    onCommit={v => updLevel(r.id, l.id, { to: v })} />
+                  <input value={l.note || ""} onChange={e => updLevel(r.id, l.id, { note: e.target.value })} placeholder="why (optional)"
+                    style={{ flex: "1 1 120px", minWidth: 90, padding: "4px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 12, background: C.surf, color: C.text }} />
+                  <button onClick={() => delLevel(r.id, l.id)} title="remove this level" style={{ cursor: "pointer", background: "none", border: "none", color: C.red, fontWeight: 800, fontSize: 13 }}>✕</button>
+                  {/* What this level will actually do, in words, including the tolerance band that a
+                      single price silently carries. */}
+                  <div style={{ flexBasis: "100%", fontSize: 11, color: hit ? kindCol(l.kind) : C.muted, fontWeight: hit ? 700 : 500, paddingLeft: 2 }}>
+                    {l.at == null ? "Set a price and this starts watching."
+                      : hit ? `⚡ Live now — ${price} is ${l.to != null ? `inside ${Math.min(l.at, l.to)}–${Math.max(l.at, l.to)}` : `within ${POINT_TOLERANCE_PCT}% of ${l.at}`}.`
+                      : l.to != null ? `Fires anywhere in ${Math.min(l.at, l.to)}–${Math.max(l.at, l.to)} · ${dist == null ? "" : `${Math.abs(dist)}% ${dist > 0 ? "above" : "below"} the last price`}`
+                      : `Single price — fires within ±${POINT_TOLERANCE_PCT}% of ${l.at} · ${dist == null ? "" : `${Math.abs(dist)}% ${dist > 0 ? "above" : "below"} the last price`}`}
+                    {/* A hit level and the act of recording the trade were on opposite ends of the
+                        card, which is what made the two feel like the same thing or unrelated
+                        things depending on where you looked. Selling needs something to sell. */}
+                    {hit && (l.kind === "buy" || d.qty > 0) && (
+                      <button onClick={() => openFill(r, l.kind === "sell" ? "sell" : l.kind === "stop" ? "stopped" : "buy")}
+                        style={{ marginLeft: 8, cursor: "pointer", background: kindCol(l.kind), color: "#fff", border: "none", borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 800 }}>
+                        record it
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+              {[["buy", "＋ buy zone"], ["sell", "＋ sell zone"], ["stop", "＋ stop"]].map(([k, label]) => (
+                <button key={k} onClick={() => addLevel(r.id, k)} style={{ cursor: "pointer", background: C.surf, color: kindCol(k), border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{label}</button>
+              ))}
+              <span style={{ fontSize: 11, color: C.lbl }}>
+                One price fires within ±{POINT_TOLERANCE_PCT}% of it. Fill the second box to watch a whole zone instead.
+              </span>
+            </div>
           </div>
 
           {/* how much to buy */}
@@ -661,11 +708,11 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   const del = (id) => { setRows(p => p.filter(r => r.id !== id)); touch(); };
   const addLevel = (id, kind) => {
     const r = rows.find(x => x.id === id); if (!r) return;
-    // Seed at the live price rather than blank: an empty row reads as broken, and the level is
-    // almost always set relative to where the thing is trading now.
-    const live = priceOf(r);
-    const at = live != null ? +live.toFixed(2) : null;
-    upd(id, { levels: [...(r.levels || []), { id: Math.random().toString(36).slice(2, 8), kind, at, to: null, note: "" }] });
+    // BLANK, not seeded at the live price. Seeding looked helpful and was actively wrong: a buy or
+    // sell level AT the current price is hit the instant it is created, so every new level arrived
+    // already flashing "⚡ level hit" and the row's alert state became meaningless. A level with no
+    // price is inert by construction — `active` filters on `at != null` — and the row says so.
+    upd(id, { levels: [...(r.levels || []), { id: Math.random().toString(36).slice(2, 8), kind, at: null, to: null, note: "" }] });
   };
   const updLevel = (id, lid, patch) => {
     const r = rows.find(x => x.id === id); if (!r) return;
