@@ -45,18 +45,6 @@ export async function snapshot(origin) {
   });
 }
 
-// Closed trades, as ratios only — a win rate and an average return, never a total.
-function closedStats(rows) {
-  const closed = rows.filter(r => r.derived.status === 'closed');
-  const pcts = closed.map(r => r.derived.realizedPct).filter(v => v != null);
-  if (!closed.length) return null;
-  return {
-    counted: closed.length,
-    winRate: Math.round((closed.filter(r => r.derived.realized > 0).length / closed.length) * 100),
-    avgPct: pcts.length ? +(pcts.reduce((a, b) => a + b, 0) / pcts.length).toFixed(2) : null,
-  };
-}
-
 export async function refresh(origin, { now = Date.now() } = {}) {
   const webhook = webhookFromEnv();
   if (!webhook) return { skipped: 'DISCORD_TRADES_WEBHOOK is unset or not a Discord webhook URL' };
@@ -85,7 +73,7 @@ export async function refresh(origin, { now = Date.now() } = {}) {
     if (!(await remove(webhook, a.id))) kept.push(a);   // keep it and retry next time
   }
 
-  const card = buildCard(live, { stats: closedStats(rows), updatedAt: new Date(now).toISOString() });
+  const card = buildCard(live, { updatedAt: new Date(now).toISOString() });
   const { id, created, failed } = await upsertCard(webhook, state.messageId, card);
 
   await kvSetJson(CARD_KEY, {

@@ -48,15 +48,18 @@ const scan = (label, payload) => {
   const leaked = secretStrings.filter(t => t.length > 3 && s.includes(t));
   eq(`${label} leaks nothing`, leaked, []);
 };
-scan('card', buildCard([row], { stats: { winRate: 63, avgPct: 3.15, counted: 16 } }));
+scan('card', buildCard([row]));
 scan('open alert', buildAlert({ kind: 'opened', row }, { mentionId: '12345' }));
 scan('close alert', buildAlert({ kind: 'closed', row }));
 scan('level alert', buildAlert({ kind: 'level', row, level: 'buy zone hit at 16.85' }));
 
-// The card carries ratios only — a win rate and an average return, never a total.
-const card = buildCard([row], { stats: { winRate: 63, avgPct: 3.15, counted: 16 } });
-ok('footer carries the win rate', card.embeds[0].footer.text.includes('63% win'));
-ok('footer carries no currency symbol', !/[$€£¥]/.test(JSON.stringify(card)));
+// The card is about what is ON, not about how the account has done. No footer, and no aggregate
+// of any kind — a win rate over the closed book describes the account, which is the same objection
+// that rules out the balance, one step further out.
+const card = buildCard([row]);
+ok('no footer at all', card.embeds[0].footer === undefined);
+ok('no currency symbol anywhere', !/[$€£¥]/.test(JSON.stringify(card)));
+ok('no win rate', !/win/i.test(JSON.stringify(card)));
 
 // ── R multiple ──
 eq('distance to a level below', distTo(16.5, 20.41), -19.2);
