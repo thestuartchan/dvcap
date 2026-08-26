@@ -210,7 +210,11 @@ const {
   // big?". Computed in the BASE currency, and simply absent when the FX rate or equity is missing
   // rather than shown as a figure that quietly means something else.
   const mvBase = p.marketValue == null ? null : convert(p.marketValue, r.currency || "USD", baseCcy, fxRates);
-  const weightPct = (equityBase > 0 && mvBase != null) ? +((mvBase / equityBase) * 100).toFixed(1) : null;
+  // A FUTURES position's market value is NOTIONAL, not capital committed — one MNQ contract controls
+  // ~$59k on a few thousand of margin. Counting that as 28% of the book would say the account is
+  // half in futures when almost none of its cash is there. Margined rows report their notional,
+  // labelled as such, and stay out of every weight and cash figure.
+  const weightPct = (equityBase > 0 && mvBase != null && !r.margined) ? +((mvBase / equityBase) * 100).toFixed(1) : null;
   const active = (r.levels || []).filter(l => l.at != null);
   const stopLevel = active.find(l => l.kind === "stop");
   // Hoisted out of the panel so the folded tab can state the answer without the panel being open.
@@ -278,6 +282,7 @@ const {
               <b style={{ fontSize: 13, color: pnlCol(p.total) }}>{p.total == null ? "—" : (p.total > 0 ? "+" : "") + money(p.total, r.currency)}</b>
               <b style={{ fontSize: 12.5, color: pnlCol(p.totalPct) }}>{p.totalPct == null ? "" : (p.totalPct > 0 ? "+" : "") + p.totalPct + "%"}</b>
               {weightPct != null && <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }}>{weightPct}% of book</span>}
+              {r.margined && mvBase != null && <span style={{ fontSize: 11, color: C.amber, whiteSpace: "nowrap" }} title="Notional controlled, not capital committed. A futures position is held on margin, so this is not a share of the book.">{money(mvBase, baseCcy)} notional</span>}
             </span>
             {d.partiallyRealised && chip(`incl. realised ${money(d.realized, r.currency)}`, C.green, "#F0FDF4", "#BBF7D0")}
           </>
@@ -1097,7 +1102,11 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
           const re = toBase(r.derived.realized, r);
           return { ...r, mvBase: mv, unBase: un, reBase: re, totalBase: (un ?? 0) + (re ?? 0) };
         });
-        const priced = held.filter(h => h.mvBase != null && h.mvBase > 0);
+        // Margined rows are out of invested/cash/weight for the same reason, but their P&L is
+        // entirely real and stays in the bars below.
+        const priced = held.filter(h => h.mvBase != null && h.mvBase > 0 && !h.margined);
+        const margined = held.filter(h => h.margined && h.mvBase != null);
+        const notional = margined.reduce((a, h) => a + h.mvBase, 0);
         const missing = held.length - priced.length;
         const totalMv = priced.reduce((a, h) => a + h.mvBase, 0);
         const pie = priced.map(h => ({ name: h.symbol, value: +h.mvBase.toFixed(2), pct: totalMv ? +((h.mvBase / totalMv) * 100).toFixed(1) : 0 }))
@@ -1175,6 +1184,12 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
             {pie.filter(p => p.pct < 5).length > 0 && (
               <div style={{ fontSize: 11, color: C.lbl, marginTop: 8, lineHeight: 1.5 }}>
                 <b style={{ color: C.muted }}>Under 5%:</b> {pie.filter(p => p.pct < 5).map(p => `${p.name} ${p.pct}%`).join(" · ")}
+              </div>
+            )}
+            {margined.length > 0 && (
+              <div style={{ fontSize: 11.5, color: C.amber, fontWeight: 700, marginTop: 8 }}>
+                Plus {margined.length} margined position{margined.length === 1 ? "" : "s"} controlling {money(notional, baseCcy)} of notional
+                <span style={{ fontWeight: 500, color: C.lbl }}> — futures are excluded from the weights and the cash figure above, because the notional is not capital you have committed. Their P&amp;L is in the bars.</span>
               </div>
             )}
             <div style={{ fontSize: 11, color: C.lbl, marginTop: 8, paddingTop: 8, borderTop: "1px solid " + C.bdr, lineHeight: 1.5 }}>

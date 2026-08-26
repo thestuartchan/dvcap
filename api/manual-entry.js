@@ -116,6 +116,9 @@ function sanitizeRow(r) {
     // Optional pinned FX rate for this row — units of its currency per 1 USD, matching the quote
     // convention. Absent means "use the live rate".
     fxRate: (Number.isFinite(+r.fxRate) && +r.fxRate > 0) ? +r.fxRate : null,
+    // Futures and anything else held on margin: market value is notional, not capital committed,
+    // so it is kept out of every weight and cash figure.
+    margined: !!r.margined,
     sizeMode: (r.sizeMode === 'risk' || r.sizeMode === 'allocation') ? r.sizeMode : null,
     targetPct: cn(r.targetPct),
     tranches: cn(r.tranches),
