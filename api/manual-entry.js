@@ -318,6 +318,21 @@ export default async function handler(req, res) {
       consoleResult = { stored: 'none', error: 'cross-device sync not configured (KV_REST_API_URL / KV_REST_API_TOKEN unset) — saved locally in this browser only' };
     }
     if (consoleResult.stored === 'kv') saved.push('console→kv');
+
+    // Push the Discord card the moment the book changes. Awaited rather than fired and forgotten,
+    // because a serverless function is frozen the instant it responds and a detached promise would
+    // simply never run — but wrapped, because a Discord outage must not turn a successful save into
+    // a failed one. The console is the record; the card is a notification about it.
+    if (consoleResult.stored === 'kv') {
+      try {
+        const { refresh } = await import('./tradecard.js');
+        const proto = req.headers['x-forwarded-proto'] || 'https';
+        consoleResult.discord = await refresh(`${proto}://${req.headers.host}`);
+      } catch (e) {
+        console.error('tradecard refresh after save', e?.message || e);
+        consoleResult.discord = { error: 'card refresh failed — the save itself is fine' };
+      }
+    }
   }
 
   // A console-only save has nothing to commit to git — return the KV result directly.

@@ -1,0 +1,34 @@
+# Refreshes the Discord trade card on a schedule.
+#
+# WHY HERE AND NOT vercel.json. The card has to keep up with prices moving while nobody is touching
+# the console, which wants a few minutes rather than a few hours. GitHub Actions gives 5-minute
+# granularity for free and costs no Vercel function, and this repo is already on GitHub — whereas a
+# Vercel cron would spend one of a limited set of slots and its granularity depends on the plan.
+#
+# The endpoint is idempotent: it edits ONE message in place and only posts when something actually
+# changed, so a duplicate run is harmless and a missed run self-corrects on the next one. GitHub
+# schedules are best-effort and can be late under load, which this design tolerates by construction.
+name: trade card
+
+on:
+  schedule:
+    - cron: '*/10 13-21 * * 1-5'   # every 10 min through the US session (UTC), weekdays
+    - cron: '0 1,7 * * 1-5'        # twice more for the HK session
+  workflow_dispatch:               # and on demand, for testing
+
+concurrency:
+  group: tradecard
+  cancel-in-progress: false        # let a slow run finish rather than leaving a half-written card
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refresh the card
+        run: |
+          code=$(curl -sS -o /tmp/out.json -w '%{http_code}' --max-time 45 \
+            "https://dvcap.vercel.app/api/tradecard") || true
+          echo "HTTP $code"; cat /tmp/out.json; echo
+          # The endpoint answers 200 with a reason rather than failing, so a skipped run (no webhook
+          # configured yet, Redis down) is visible in the log without turning the workflow red.
+          [ "$code" = "200" ] || exit 1
