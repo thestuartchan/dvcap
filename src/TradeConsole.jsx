@@ -166,7 +166,7 @@ const daysBetween = (a, b) => {
 
 // A thin vertical rule between the row's three groups. Its own component so the header reads as
 // the three groups it is, rather than as a run of spans.
-const Div = () => <span style={{ width: 1, alignSelf: "stretch", background: C.bdr, margin: "0 2px", flexShrink: 0 }} />;
+const Div = () => <span className="dvcap-divider" style={{ width: 1, alignSelf: "stretch", background: C.bdr, margin: "0 2px", flexShrink: 0 }} />;
 
 // "held 5 weeks" beats "since 2026-07-15" in a row whose whole job is telling a swing from a
 // scalp: the number you want is the DURATION, and the exact date is one click away in the editor.
@@ -288,7 +288,7 @@ const {
         {d.needsQty && chip("⚠ quantity needed", C.amber, C.aBg, C.aBdr)}
         </span>
         {/* The actions that answer "how do I record what I did" — on the row, not hidden. */}
-        <span style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+        <span className="dvcap-row-actions" style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", flexShrink: 0, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
           {mode === "setup" && (
             <Btn onClick={() => { setExpanded(r.id); openFill(r, "buy"); }} color="#fff" bgColor={C.green} label="✓ I bought" />
           )}
@@ -527,7 +527,7 @@ const {
               <input type="date" value={f.date || ""} onChange={e => upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, date: e.target.value } : x) })}
                 style={{ padding: "4px 7px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 11.5, background: C.surf, color: C.text }} />
               {f.note && <span style={{ color: C.muted, fontSize: 11.5 }}>{f.note}</span>}
-              <button onClick={() => delFill(r.id, f.id)} title="delete this fill" style={{ marginLeft: "auto", cursor: "pointer", background: "none", border: "none", color: C.red, fontWeight: 800 }}>✕</button>
+              <button onClick={() => delFill(r.id, f.id)} title="delete this fill" style={{ cursor: "pointer", background: "none", border: "none", color: C.red, fontWeight: 800 }}>✕</button>
             </div>
           ))}
           {(d.incomplete || []).map(f => (
@@ -1126,8 +1126,9 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
             )}
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               {/* weight */}
-              <div style={{ flex: "1 1 280px", minWidth: 260, height: 230 }}>
+              <div style={{ flex: "1 1 280px", minWidth: 260 }}>
                 <div style={{ fontSize: 10.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Weight by market value</div>
+                <div style={{ height: 230 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie data={pie} cx="50%" cy="48%" innerRadius={44} outerRadius={72} dataKey="value" stroke="#fff" strokeWidth={2}
@@ -1141,9 +1142,10 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
                       contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid " + C.bdr }} />
                   </PieChart>
                 </ResponsiveContainer>
+                </div>
               </div>
               {/* per-name P&L, split realised vs unrealised — the scale-out case made visible */}
-              <div style={{ flex: "1 1 320px", minWidth: 280, height: 230 }}>
+              <div style={{ flex: "1 1 320px", minWidth: 280 }}>
                 <div style={{ fontSize: 10.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <span>P&amp;L by position</span>
@@ -1153,6 +1155,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
                     </span>
                   </span>
                 </div>
+                <div style={{ height: 230 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={bars} layout="vertical" margin={{ left: 6, right: 18, top: 4, bottom: 6 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={C.bdr} horizontal={false} />
@@ -1166,6 +1169,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
+                </div>
               </div>
             </div>
             {pie.filter(p => p.pct < 5).length > 0 && (
@@ -1233,7 +1237,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
               );
             })}
           </div>
-          <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>Credit-DANGER caps the multiplier at ×{CREDIT_DANGER_CAP_LABEL}; a contested or pinned≠live regime applies a further ×0.7.</div>
+          <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>Credit-DANGER caps the multiplier at {CREDIT_DANGER_CAP_LABEL}; a contested or pinned≠live regime applies a further ×0.7.</div>
         </div>
       </Card>
 
@@ -1278,9 +1282,14 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
           </div>
         )}
 
-        {/* realised curve — when profit was actually taken */}
+        {/* Realised curve — when profit was actually taken.
+            The chart box is fixed-height and the ResponsiveContainer fills 100% of it, so anything
+            else inside overflows it: the caption was landing on top of the table header underneath,
+            which is what the mobile screenshot showed. Caption is a sibling now, not a child. The
+            two portfolio charts had the same shape, with their headings eating into the plot. */}
         {curve.length > 1 && (
-          <div style={{ marginTop: 12, height: 190 }}>
+          <div style={{ marginTop: 12 }}>
+          <div style={{ height: 190 }}>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={curve} margin={{ top: 5, right: 8, left: 0, bottom: 0 }}>
                 <defs><linearGradient id="rc" x1="0" y1="0" x2="0" y2="1">
@@ -1295,12 +1304,13 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
                 <Area type="monotone" dataKey="cumulative" stroke={C.green} strokeWidth={2} fill="url(#rc)" />
               </AreaChart>
             </ResponsiveContainer>
-            <div style={{ fontSize: 11, color: C.lbl, textAlign: "center" }}>Cumulative realised P&amp;L in {baseCcy} — one step per sell fill, so the curve marks when profit was actually taken.</div>
+          </div>
+            <div style={{ fontSize: 11, color: C.lbl, textAlign: "center", marginTop: 6 }}>Cumulative realised P&amp;L in {baseCcy} — one step per sell fill, so the curve marks when profit was actually taken.</div>
           </div>
         )}
 
         {showArchive && archived.length > 0 && (
-          <div style={{ marginTop: 12, overflowX: "auto" }}>
+          <div className="dvcap-wide-only" style={{ marginTop: 12, overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 520 }}>
               <thead><tr>{["Trade", "Held", "Size", "Entry", "Exit", "Realised", "Return"].map(h => (
                 <th key={h} style={{ textAlign: "left", color: C.mid, padding: "6px 10px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700, fontSize: 11.5 }}>{h}</th>))}</tr></thead>
@@ -1336,6 +1346,38 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
                 </td>
               </tr></tfoot>
             </table>
+          </div>
+        )}
+
+        {/* The same rows, laid out for a phone. Seven columns do not fit on one, and the four that
+            fell off the right were the ones carrying the result. */}
+        {showArchive && archived.length > 0 && (
+          <div className="dvcap-narrow-only" style={{ marginTop: 12 }}>
+            {[...archived].sort((a, b) => String(b.derived.lastDate || "").localeCompare(String(a.derived.lastDate || ""))).map(r => {
+              const days = daysBetween(r.derived.firstDate, r.derived.lastDate);
+              const d = r.derived;
+              return (
+                <div key={r.id} style={{ border: "1px solid " + C.bdr, borderLeft: "4px solid " + (d.realized >= 0 ? C.green : C.red), borderRadius: 9, padding: "9px 11px", marginBottom: 7 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap" }}>
+                    <b style={{ fontSize: 13.5 }}>{r.symbol}</b>
+                    {ccyChip(r.currency)}
+                    {d.multiplier > 1 ? <span style={{ fontWeight: 700, color: C.amber, fontSize: 11 }}>×{d.multiplier}</span> : null}
+                    {r.trade ? <span style={{ fontSize: 11.5, color: C.lbl }}>{r.trade}</span> : null}
+                    <span style={{ marginLeft: "auto", display: "inline-flex", gap: 7, alignItems: "baseline" }}>
+                      <b style={{ fontSize: 13, color: pnlCol(d.realized) }}>{(d.realized > 0 ? "+" : "") + money(d.realized, r.currency)}</b>
+                      <b style={{ fontSize: 12.5, color: pnlCol(d.realizedPct) }}>{d.realizedPct == null ? "" : (d.realizedPct > 0 ? "+" : "") + d.realizedPct + "%"}</b>
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: C.lbl, marginTop: 3 }}>
+                    {d.firstDate || "?"} → {d.lastDate || "?"}{days == null ? "" : ` · ${days}d`} · {d.bought} @ {d.avgEntry == null ? "—" : d.avgEntry.toFixed(4)} → {d.avgExit == null ? "—" : d.avgExit.toFixed(4)}
+                  </div>
+                </div>
+              );
+            })}
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.mid, marginTop: 8 }}>
+              {archiveStats.counted} closed in {baseCcy} · {archiveStats.wins} up / {archiveStats.losses} down
+              <b style={{ color: pnlCol(archiveStats.realized), marginLeft: 8 }}>{(archiveStats.realized > 0 ? "+" : "") + money(archiveStats.realized, baseCcy)}</b>
+            </div>
           </div>
         )}
       </Card>

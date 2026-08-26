@@ -24,3 +24,21 @@
 @keyframes dvcap-expand { from { opacity: 0; max-height: 0; transform: translateY(-3px); } to { opacity: 1; max-height: 4000px; transform: none; } }
 .dvcap-expand { animation: dvcap-expand 200ms ease-out both; overflow: hidden; }
 @media (prefers-reduced-motion: reduce) { .dvcap-expand { animation: none; max-height: none; } }
+
+/* ── Console on a narrow screen ───────────────────────────────────────────────
+   Inline styles win over stylesheet rules for the same property, so anything that needs to change
+   with viewport width has to live here and NOT be set inline. These are the only four. */
+@media (max-width: 700px) {
+  /* The rules between the row's three groups are meaningless once the groups have wrapped onto
+     separate lines — they render as a stray tick beside the ticker. */
+  .dvcap-divider { display: none; }
+  /* Buttons pushed right by margin-left:auto landed in the MIDDLE of a wrapped header. On a narrow
+     screen they get their own full-width line under the numbers, where they read as the row's
+     actions rather than as something inserted between two of its figures. */
+  .dvcap-row-actions { margin-left: 0 !important; width: 100%; justify-content: flex-start; }
+  /* A seven-column table cannot be read on a phone; the last four columns were simply off-screen
+     with nothing to say so. The same rows render as stacked cards instead. */
+  .dvcap-wide-only { display: none !important; }
+  .dvcap-narrow-only { display: block !important; }
+}
+.dvcap-narrow-only { display: none; }
