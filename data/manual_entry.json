@@ -1,13 +1,13 @@
 {
   "fedPath": {
     "latest": {
-      "date": "2026-08-25",
+      "date": "2026-08-26",
       "contract": "Dec-2026",
-      "price": 96.125,
-      "impliedRate": 3.875,
+      "price": 96.14,
+      "impliedRate": 3.86,
       "effr": 3.63,
-      "movesPriced": 0.98,
-      "enteredAt": "2026-08-25T07:27:24.616Z"
+      "movesPriced": 0.92,
+      "enteredAt": "2026-08-26T09:07:35.777Z"
     },
     "series": [
       {
@@ -72,6 +72,15 @@
         "effr": 3.63,
         "movesPriced": 0.98,
         "enteredAt": "2026-08-25T07:27:24.616Z"
+      },
+      {
+        "date": "2026-08-26",
+        "contract": "Dec-2026",
+        "price": 96.14,
+        "impliedRate": 3.86,
+        "effr": 3.63,
+        "movesPriced": 0.92,
+        "enteredAt": "2026-08-26T09:07:35.777Z"
       }
     ]
   },
