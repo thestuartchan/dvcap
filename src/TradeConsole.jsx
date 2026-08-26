@@ -101,6 +101,13 @@ const FillForm = ({ ctx, symbol }) => {
         <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <Btn onClick={saveFill} color="#fff" bgColor={fillFor.side === "buy" ? C.green : C.blue} label="Record fill" />
           <Btn onClick={() => setFillFor(null)} color={C.mid} bgColor={C.bg} label="Cancel" />
+          {/* Name the drift, since that is what a stop-out is actually about. */}
+          {fillFor.intent === "stopped" && fillFor.stopAt != null && Number.isFinite(+fillFor.price) && +fillFor.price !== +fillFor.stopAt && (() => {
+            const slip = ((+fillFor.price - +fillFor.stopAt) / +fillFor.stopAt) * 100;
+            return <span style={{ fontSize: 11.5, fontWeight: 800, color: slip < 0 ? C.red : C.green }}>
+              {slip < 0 ? "▼" : "▲"} {Math.abs(slip).toFixed(2)}% {slip < 0 ? "worse than" : "better than"} your {fillFor.stopAt} stop
+            </span>;
+          })()}
           <span style={{ fontSize: 11, color: C.lbl }}>
             {/* Every field here is free. The prefill exists to save typing, and saying so matters:
                 a form that opens with a level's price in it looks like it is recording THAT level,
@@ -108,7 +115,7 @@ const FillForm = ({ ctx, symbol }) => {
             <b>Nothing here is fixed</b> — change the price, size, side or date freely; a prefill is
             only a starting point.{" "}
             {fillFor.intent === "stopped"
-              ? "This one starts as the whole position at your stop, because that is the usual case."
+              ? "This one starts as the whole position at your stop, because that is the usual case — but a stop is a trigger, not a fill price, and gaps and slippage mean the real one is usually worse. Type what you actually got."
               : "Selling part keeps the position open and books realised P&L at your average cost; selling all of it moves the row to Archive."}
           </span>
         </div>
@@ -134,10 +141,14 @@ const { kindCol } = ctx;
   return (
     <span title={lv.note || undefined} style={{
       display: "inline-flex", gap: 5, alignItems: "baseline", padding: "2px 8px", borderRadius: 6,
-      border: "1.5px solid " + (hit ? kindCol(lv.kind) : C.bdr), background: hit ? (lv.kind === "buy" ? "#F0FDF4" : lv.kind === "sell" ? C.blBg : "#FEF2F2") : C.surf,
+      // Coloured at rest too, at reduced strength. A grey chip made every level look the same until
+      // it fired, which is the moment you least need help telling them apart — the read you want at
+      // a glance is "where are my stops", not "which one is live right now".
+      border: "1.5px solid " + kindCol(lv.kind) + (hit ? "" : "66"),
+      background: hit ? (lv.kind === "buy" ? "#F0FDF4" : lv.kind === "sell" ? C.blBg : "#FEF2F2") : C.surf,
       fontSize: 11.5, fontWeight: 700, color: hit ? kindCol(lv.kind) : C.mid,
     }}>
-      {hit ? "●" : "○"} {lv.kind} {lv.at ?? "—"}{lv.to ? `–${lv.to}` : ""}
+      <span style={{ color: kindCol(lv.kind) }}>{hit ? "●" : "○"}</span> {lv.kind} {lv.at ?? "—"}{lv.to ? `–${lv.to}` : ""}
       {d != null && !hit && <span style={{ color: C.lbl, fontWeight: 600 }}>{d > 0 ? "+" : ""}{d}%</span>}
     </span>
   );
@@ -185,7 +196,7 @@ const echoesDate = (label, iso) => {
 const PositionRow = ({ r, mode, ctx }) => {
 const {
   prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel,
-  openFill, delFill, fillFor, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip,
+  openFill, delFill, fillFor, sizeOpen, setSizeOpen, justMoved, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip,
   kindCol, money, pnlCol,
   equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
 } = ctx;
@@ -202,9 +213,24 @@ const {
   const weightPct = (equityBase > 0 && mvBase != null) ? +((mvBase / equityBase) * 100).toFixed(1) : null;
   const active = (r.levels || []).filter(l => l.at != null);
   const stopLevel = active.find(l => l.kind === "stop");
+  // Hoisted out of the panel so the folded tab can state the answer without the panel being open.
+  // One computation, so the summary can never disagree with the detail it hides.
+  const sizeMode = r.sizeMode || (stopLevel ? "risk" : "allocation");
+  const equityInPos = equityBase == null ? null : convert(equityBase, baseCcy, r.currency || "USD", fxRates);
+  const sug = sizeSuggestion({
+    mode: sizeMode, equityInPos, price, stop: stopLevel?.at,
+    baseRiskPct: baseRisk, targetPct: numOrNull(r.targetPct) ?? targetPct,
+    regime: regimeCtx, heldQty: d.qty || 0, tranches: numOrNull(r.tranches) || 1,
+    sizing: mergedSizing,
+  });
+  const sizeHint = sug.roomQty > 0 ? `room for ${sug.roomQty} more on ${sizeMode === "risk" ? "risk" : "allocation"} sizing`
+    : sug.fullQty > 0 ? `at or above full size — ${d.qty || 0} held vs ${sug.fullQty} suggested`
+    : sizeMode === "risk" && !stopLevel ? "add a stop and this will size the trade for you"
+    : "set your account equity to size this";
   const anyHit = active.some(l => levelHit(l, price));
   return (
-    <div style={{ border: "1.5px solid " + (anyHit ? C.amber : C.bdr), borderLeft: "4px solid " + (anyHit ? C.amber : mode === "open" ? C.blue : C.bdr), borderRadius: 10, overflow: "hidden" }}>
+    <div className={justMoved === r.id ? "dvcap-row-in dvcap-flash" : "dvcap-row-in"}
+      style={{ border: "1.5px solid " + (anyHit ? C.amber : C.bdr), borderLeft: "4px solid " + (anyHit ? C.amber : mode === "open" ? C.blue : C.bdr), borderRadius: 10, overflow: "hidden" }}>
       {/* The row is TWO blocks, not one wrapping run: an info block that flexes and wraps inside
           itself, and an action block that never leaves the top line. Letting the whole row wrap put
           0981.HK's buttons on a second line purely because its label was two words long. */}
@@ -387,16 +413,30 @@ const {
             </div>
           </div>
 
-          {/* how much to buy */}
+          {/* ── SIZE SUGGESTION, folded away ──
+              It is a calculator, not a control: it reads nothing, changes nothing and is never
+              applied — it answers "what size would my own rules give this?" and shows its working.
+              Open by default it dominated the card and read as a field you were required to fill
+              in. Shut, with its one-line answer on the tab, it is there when the question is live
+              and out of the way when it is not. */}
+          <div style={{ marginTop: 12 }}>
+            <button onClick={() => setSizeOpen(o => ({ ...o, [r.id]: !o[r.id] }))}
+              style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", textAlign: "left", cursor: "pointer",
+                background: C.surf, border: "1.5px solid " + C.bdr, borderRadius: 9, padding: "7px 11px", color: C.text }}>
+              <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, whiteSpace: "nowrap" }}>Size suggestion</span>
+              <span style={{ fontSize: 11.5, color: C.lbl }}>{sizeHint}</span>
+              <span style={{ marginLeft: "auto", fontSize: 11.5, color: C.blue, fontWeight: 700, whiteSpace: "nowrap" }}>{sizeOpen[r.id] ? "▲ hide" : "▼ show"}</span>
+            </button>
+            {sizeOpen[r.id] && (
+              <>
+                <div style={{ fontSize: 11.5, color: C.lbl, margin: "9px 2px 0", lineHeight: 1.65 }}>
+                  Suggestions only — nothing is applied and you never have to use it.
+                  <b> Risk-based</b> asks how many shares make a stop-out cost a fixed slice of the book, so it needs a stop.
+                  <b> Allocation</b> targets a percentage of the book instead, for holds where the thesis rather than a price
+                  is the exit. Both are scaled by the regime multiplier and netted against what you already hold.
+                </div>
           {(() => {
-            const mode = r.sizeMode || (stopLevel ? "risk" : "allocation");
-            const equityInPos = equityBase == null ? null : convert(equityBase, baseCcy, r.currency || "USD", fxRates);
-            const sug = sizeSuggestion({
-              mode, equityInPos, price, stop: stopLevel?.at,
-              baseRiskPct: baseRisk, targetPct: numOrNull(r.targetPct) ?? targetPct,
-              regime: regimeCtx, heldQty: d.qty || 0, tranches: numOrNull(r.tranches) || 1,
-              sizing: mergedSizing,
-            });
+            const mode = sizeMode;
             return (
               <div style={{ marginTop: 12, padding: "10px 12px", background: liveRegime?.bg || C.bg, border: "1px solid " + (liveRegime?.bdr || C.bdr), borderRadius: 9 }}>
                 <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap", marginBottom: 7 }}>
@@ -450,6 +490,9 @@ const {
               </div>
             );
           })()}
+              </>
+            )}
+          </div>
 
           {/* fills */}
           <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, margin: "12px 0 5px" }}>
@@ -584,6 +627,8 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   const [expanded, setExpanded] = useState(null);
   const [addSym, setAddSym]     = useState("");
   const [fillFor, setFillFor]   = useState(null);   // open "record a fill" form
+  const [sizeOpen, setSizeOpen] = useState({});     // per-row: is the size suggestion unfolded
+  const [moved, setMoved]       = useState(null);   // a row that just changed section, for the toast
   const [showArchive, setShowArchive] = useState(false);
   const [portOpen, setPortOpen] = useState(false);
   const [importTxt, setImportTxt] = useState("");
@@ -638,6 +683,8 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   }
 
   const touch = () => setDirty(true);
+  // The toast is a notice, not a dialogue: it goes on its own.
+  useEffect(() => { if (!moved) return; const t = setTimeout(() => setMoved(null), 9000); return () => clearTimeout(t); }, [moved]);
   const baseCcy = settings.baseCurrency || "USD";
 
   // ── prices + fx ──
@@ -783,6 +830,9 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       price: intent === "stopped" ? (stop?.at ?? live ?? "") : (live ?? ""),
       date: new Date().toISOString().slice(0, 10),
       note: intent === "stopped" ? "stopped out" : "",
+      // Kept so the form can report slippage against it. A stop triggers a sale; it does not price
+      // one, and on a gap the difference is the whole story of the trade.
+      stopAt: intent === "stopped" ? (stop?.at ?? null) : null,
     });
   };
 
@@ -791,8 +841,22 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
     const qty = +f.qty, price = +f.price;
     if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(price)) { setSaveMsg("A fill needs a positive quantity and a price."); setTimeout(() => setSaveMsg(null), 4000); return; }
     const r = rows.find(x => x.id === f.rowId); if (!r) return;
-    upd(f.rowId, { fills: [...(r.fills || []), { id: Math.random().toString(36).slice(2, 8), date: f.date, side: f.side, qty, price, note: f.note || "" }] });
+    const fills = [...(r.fills || []), { id: Math.random().toString(36).slice(2, 8), date: f.date, side: f.side, qty, price, note: f.note || "" }];
+    // A LIFECYCLE CHANGE needs saying out loud. Selling the last unit moves the row out of Open
+    // positions and into a section that is collapsed by default, so with no announcement the row
+    // simply disappeared — indistinguishable from having deleted it, on the one action in the tab
+    // that is hardest to undo.
+    const before = derivePosition(r.fills || [], { multiplier: r.multiplier });
+    const after = derivePosition(fills, { multiplier: r.multiplier });
+    upd(f.rowId, { fills });
     setFillFor(null);
+    if (after.status !== before.status) {
+      setMoved({
+        id: f.rowId, symbol: r.symbol, to: after.status, currency: r.currency,
+        realized: after.realized, realizedPct: after.realizedPct,
+      });
+      if (after.status === "closed") setShowArchive(true);   // land where the row went
+    }
   };
   const delFill = (rowId, fid) => {
     const r = rows.find(x => x.id === rowId); if (!r) return;
@@ -874,7 +938,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   // remounting, and focus is preserved.
   const ctx = {
     prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel,
-    openFill, delFill, fillFor, setFillFor, saveFill, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip, kindCol, money, pnlCol,
+    openFill, delFill, fillFor, setFillFor, saveFill, sizeOpen, setSizeOpen, justMoved: moved?.id ?? null, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip, kindCol, money, pnlCol,
     equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
   };
 
@@ -893,6 +957,25 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
             {saveMsg && <span style={{ fontSize: 11.5, color: C.mid }}>{saveMsg}</span>}
             <Btn onClick={saveCloud} disabled={saving} color="#fff" bgColor={C.blue} label={saving ? "Saving…" : "☁ Save to cloud"} />
           </span>
+        </div>
+      )}
+
+      {/* ── SECTION CHANGE ──
+          Says where the row went, and what it booked on the way. */}
+      {moved && (
+        <div className="dvcap-toast" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "9px 13px", borderRadius: 10,
+          background: moved.to === "closed" ? "#F0FDF4" : C.blBg, border: "1.5px solid " + (moved.to === "closed" ? "#BBF7D0" : C.blBdr) }}>
+          <b style={{ fontSize: 13, color: moved.to === "closed" ? C.green : C.blue }}>
+            {moved.symbol} {moved.to === "closed" ? "closed out" : moved.to === "open" ? "is now an open position" : "is back to a setup"}
+          </b>
+          {moved.to === "closed" && (
+            <span style={{ fontSize: 12.5, color: C.mid }}>
+              Realised <b style={{ color: pnlCol(moved.realized) }}>{(moved.realized > 0 ? "+" : "") + fmtCcy(moved.realized, moved.currency)}</b>
+              {moved.realizedPct != null && <b style={{ color: pnlCol(moved.realizedPct) }}> {(moved.realizedPct > 0 ? "+" : "") + moved.realizedPct}%</b>}
+              {" — moved to the archive below, nothing was deleted."}
+            </span>
+          )}
+          <button onClick={() => setMoved(null)} style={{ marginLeft: "auto", cursor: "pointer", background: "none", border: "none", color: C.mid, fontWeight: 800, fontSize: 13 }}>✕</button>
         </div>
       )}
 

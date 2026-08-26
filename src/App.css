@@ -1,1 +1,19 @@
 /* App.css — intentionally empty. All styles are inline in App.jsx. */
+
+/* ── Console transitions ──────────────────────────────────────────────────────
+   A position that is fully sold stops being an open position and reappears, folded away, in the
+   archive. Done instantly that reads as the row having been deleted, which is alarming for the one
+   action in the tab that is hardest to undo. These are the only two moving parts: rows arrive
+   rather than appear, and a row on its way out fades instead of vanishing. Both are short enough
+   to feel like feedback rather than animation, and both respect a reduced-motion preference. */
+@keyframes dvcap-row-in  { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes dvcap-row-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-6px); } }
+@keyframes dvcap-flash   { 0%,100% { box-shadow: 0 0 0 0 rgba(30,64,175,0); } 30% { box-shadow: 0 0 0 4px rgba(30,64,175,0.18); } }
+.dvcap-row-in  { animation: dvcap-row-in 220ms ease-out both; }
+.dvcap-row-out { animation: dvcap-row-out 260ms ease-in both; pointer-events: none; }
+.dvcap-flash   { animation: dvcap-flash 1100ms ease-out 1; }
+.dvcap-toast   { animation: dvcap-row-in 240ms ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .dvcap-row-in, .dvcap-row-out, .dvcap-flash, .dvcap-toast { animation: none; }
+  .dvcap-row-out { opacity: 0; }
+}
