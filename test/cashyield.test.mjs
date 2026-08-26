@@ -1,5 +1,5 @@
 // Regression tests for lib/cashyield.js — the yield conversions the cash-comparison card depends on.
-import { apyFromSec, afterWht, billFromDiscount, BILL_DAYS, compareCash } from '../lib/cashyield.js';
+import { apyFromSec, afterWht, billFromDiscount, BILL_DAYS, compareCash, secYieldProxy, proxyDivergence, SEC_YIELDS, PROXY, PROXY_DIVERGENCE_BP } from '../lib/cashyield.js';
 let pass=0,fail=0;
 const eq=(n,g,w)=>{const ok=JSON.stringify(g)===JSON.stringify(w);console.log(`${ok?'✅':'❌'} ${n}`+(ok?'':`  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`));ok?pass++:fail++;};
 
@@ -47,6 +47,39 @@ eq('dollar edge at size', apyCmp.dollarVsBank, 64);
 eq('fund gap, bp', apyCmp.fundGapBp, 14);
 // Withholding can flip the winner — the point of comparing after WHT rather than on the headline.
 eq('WHT flips it', compareCash({ usfrSec: 3.71, sgovSec: 3.57, usfrWht: 20, bankConvention: 'apy' }).best, 'SGOV');
+
+// ── the bill → fund proxy ──
+// The residual is fitted against DTB3 on the published figure's OWN date, so feeding that same
+// rate back in must reproduce the published SEC yield exactly. This is the calibration contract:
+// if it ever fails, the residual is stale and the card's ✓ is lying.
+for (const k of ['SGOV', 'USFR']) {
+  const y = SEC_YIELDS[k];
+  eq(`${k} proxy reproduces its published figure`, secYieldProxy(y.dtb3AtAsOf)[k], y.value);
+}
+
+// The conversion happens BEFORE the subtraction — the estimate must sit below the bond-equivalent
+// yield by exactly fee + residual, never below the raw discount rate by that amount.
+const px = secYieldProxy(3.72);
+eq('bond-equivalent is above the discount', px.bey > 3.72, true);
+eq('SGOV sits under the BEY by fee + residual', +(px.beyExact - PROXY.SGOV.expense - PROXY.SGOV.residual).toFixed(2), px.SGOV);
+eq('USFR margin is positive, not the old +0.20', PROXY.USFR.residual < 0, true);
+
+// ── the gap is ATTRIBUTED, not all charged to the model ──
+const div = proxyDivergence(3.72);
+eq('SGOV model error is nil', div.SGOV.modelBp, 0);
+eq('USFR model error is nil', div.USFR.modelBp, 0);
+eq('SGOV gap is the bill moving', div.SGOV.bp, div.SGOV.rateBp);
+eq('USFR gap is the bill moving', div.USFR.bp, div.USFR.rateBp);
+eq('neither is flagged', [div.SGOV.diverged, div.USFR.diverged], [false, false]);
+
+// A big move in the bill must NOT flag the model — that was the old behaviour, and it trained the
+// eye to ignore the flag.
+const moved = proxyDivergence(4.50);
+eq('a 78bp bill move leaves the model fitting', moved.SGOV.diverged, false);
+eq('and shows up entirely as rate movement', moved.SGOV.modelBp, 0);
+eq('with a large attributed rate gap', moved.SGOV.rateBp > PROXY_DIVERGENCE_BP, true);
+
+eq('no bill, no reconciliation', proxyDivergence(null), null);
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);

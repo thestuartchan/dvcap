@@ -7057,30 +7057,43 @@ export default function App() {
                       </div>
                     </div>
                   )}
-                  {/* A3 — DTB3 proxy reconciliation. Published SEC yields are dated manual issuer-page
-                      figures; the live 3-month bill drives a daily estimate, and a >10bp gap means the
-                      discount margin shifted → re-fetch the issuer page. */}
-                  {dtb3 != null && secDiv && (
+                  {/* A3 — DTB3 proxy reconciliation, on ONE basis and at the RIGHT DATE.
+                      DTB3 is a discount rate; a fund's SEC yield is bond-equivalent, so the bill is
+                      converted before anything is subtracted from it. The residual is fitted against
+                      the DTB3 print on the published figure's own date, so the ✓ tests the model
+                      rather than how far the bill has drifted since the fund last restated. */}
+                  {dtb3 != null && secDiv && (() => {
+                    const bey = secYieldProxy(dtb3)?.bey;
+                    return (
                     <div style={{ marginBottom: 12, padding: "8px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, fontSize: 11.5 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
-                        <span style={{ fontWeight: 800, color: C.mid }}>3M T-bill (DTB3) <b style={{ color: C.text }}>{dtb3.toFixed(2)}%</b> <span style={{ color: C.lbl, fontWeight: 600 }}>live · daily{liveInd?.asOf?.tbill3m ? ` · ${liveInd.asOf.tbill3m}` : ""}</span></span>
-                        <span style={{ color: C.lbl, fontStyle: "italic" }}>SGOV & USFR are pass-throughs of the bill<br />
+                        <span style={{ fontWeight: 800, color: C.mid }}>3M T-bill (DTB3) <b style={{ color: C.text }}>{dtb3.toFixed(2)}%</b> <span style={{ color: C.lbl, fontWeight: 600 }}>discount</span>
+                          {bey != null && <> → <b style={{ color: C.text }}>{bey.toFixed(2)}%</b> <span style={{ color: C.lbl, fontWeight: 600 }}>bond-equivalent</span></>}
+                          <span style={{ color: C.lbl, fontWeight: 600 }}> · live · daily{liveInd?.asOf?.tbill3m ? ` · ${liveInd.asOf.tbill3m}` : ""}</span></span>
+                        <span style={{ color: C.lbl, fontStyle: "italic" }}>SGOV &amp; USFR are pass-throughs of the bill<br />
                           <b>est</b> is a proxy for the published SEC yield — not an APY, which the comparison card computes separately</span>
                       </div>
                       {[["SGOV", PROXY.SGOV.formula], ["USFR", PROXY.USFR.formula]].map(([k, f]) => {
                         const d = secDiv[k];
+                        const sign = (n) => (n >= 0 ? "+" : "") + n + "bp";
                         return (
-                          <div key={k} style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "baseline", marginTop: 3 }}>
+                          <div key={k} style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "baseline", marginTop: 4 }}>
                             <span style={{ minWidth: 92, fontWeight: 700, color: C.mid }}>{k} est SEC</span>
                             <span style={{ fontWeight: 800, color: C.text }}>{d.est.toFixed(2)}%</span>
                             <span style={{ color: C.lbl }}>{f}</span>
-                            <span style={{ color: C.muted }}>· actual <b style={{ color: C.mid }}>{d.published.toFixed(2)}%</b> ({SEC_YIELDS[k].asOf})</span>
-                            <span style={{ fontWeight: 800, color: d.diverged ? C.amber : C.green }}>{d.diverged ? `⚠ ${d.bp >= 0 ? "+" : ""}${d.bp}bp — discount margin shifted, re-fetch` : "✓ reconciles"}</span>
+                            <span style={{ color: C.muted }}>· published <b style={{ color: C.mid }}>{d.published.toFixed(2)}%</b> ({SEC_YIELDS[k].asOf}{d.ageDays != null ? `, ${d.ageDays}d ago` : ""})</span>
+                            {/* The gap, ATTRIBUTED. Charging the whole thing to the model made a
+                                working proxy look broken every time the bill moved. */}
+                            <span style={{ color: C.muted }}>· gap {sign(d.bp)} = {sign(d.modelBp)} model {sign(d.rateBp)} bill since</span>
+                            <span style={{ fontWeight: 800, color: d.diverged ? C.amber : C.green }}>
+                              {d.diverged ? `⚠ model off ${sign(d.modelBp)} — re-fit the residual` : "✓ model fits"}</span>
+                            {d.stale && <span style={{ fontWeight: 800, color: C.amber }}>⚠ published figure {d.ageDays}d old — refresh from the issuer page</span>}
                           </div>
                         );
                       })}
                     </div>
-                  )}
+                    );
+                  })()}
                   {/* A4 — real yield PER INSTRUMENT off its SEC yield (funds) or spot (the bill). Each
                       shows its cushion vs headline CPI and the CPI level that flips it negative. */}
                   {headline != null && (
