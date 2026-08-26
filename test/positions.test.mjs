@@ -96,7 +96,8 @@ const rows=[
   {symbol:'A', currency:'USD', derived:derivePosition([{date:'1',side:'buy',qty:10,price:10},{date:'2',side:'sell',qty:10,price:12}]), pnl:{unrealized:null,marketValue:null}},
   {symbol:'B', currency:'HKD', derived:derivePosition([{date:'1',side:'buy',qty:10,price:10}]), pnl:{unrealized:100,marketValue:1000}},
 ];
-const idOnly = summarize(rows, (v,ccy) => ccy==='USD'? v : null);
+// The callback receives the ROW, so a caller can convert using more than the currency code.
+const idOnly = summarize(rows, (v,r) => (r.currency||'USD')==='USD' ? v : null);
 eq('closed counted', idOnly.closed, 1);
 eq('open counted', idOnly.open, 1);
 eq('unconvertible excluded from totals', idOnly.unrealized, 0);
@@ -110,7 +111,7 @@ const curve = realizedCurve([
    {date:'2026-08-05',side:'sell',qty:100,price:15},
    {date:'2026-08-09',side:'sell',qty:100,price:20},
  ])},
-], v=>v);
+], (v)=>v);
 eq('curve points = sells', curve.length, 2);
 eq('curve first gain', curve[0].gain, 500);
 eq('curve cumulative', curve[1].cumulative, 1500);
@@ -294,6 +295,15 @@ const totals = +mixed.reduce((a, r) => a + r.derived.realized, 0).toFixed(2);
 eq('curve ends where the totals do', mc.at(-1).cumulative, totals);
 eq('option leg carries its multiplier', mc[0].gain, -480);
 eq('share leg does not', mc[1].gain, -2.32);
+
+// A row may PIN the rate it was closed at — realised P&L is a historical fact, and re-converting it
+// at today's spot makes a finished trade's result drift for as long as it sits in the archive.
+// The callback gets the row precisely so it can honour that.
+const pinned = summarize([
+  {symbol:'HK', currency:'HKD', fxRate:7.80, derived:derivePosition([
+     {date:'1',side:'buy',qty:100,price:70},{date:'2',side:'sell',qty:100,price:80}]), pnl:{unrealized:null,marketValue:null}},
+], (v, r) => v / (r.fxRate ?? 7.84));
+eq('converted at the pinned rate, not spot', pinned.realized, +(1000/7.80).toFixed(2));
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);

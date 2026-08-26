@@ -113,6 +113,9 @@ function sanitizeRow(r) {
     // Contract multiplier (1 for shares, 100 for a US option). Money figures scale by it; prices
     // stay quoted, so an option archives at its premium rather than a per-contract dollar amount.
     multiplier: (Number.isFinite(+r.multiplier) && +r.multiplier > 0 && +r.multiplier <= 100000) ? +r.multiplier : 1,
+    // Optional pinned FX rate for this row — units of its currency per 1 USD, matching the quote
+    // convention. Absent means "use the live rate".
+    fxRate: (Number.isFinite(+r.fxRate) && +r.fxRate > 0) ? +r.fxRate : null,
     sizeMode: (r.sizeMode === 'risk' || r.sizeMode === 'allocation') ? r.sizeMode : null,
     targetPct: cn(r.targetPct),
     tranches: cn(r.tranches),

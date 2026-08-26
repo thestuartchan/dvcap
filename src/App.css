@@ -17,3 +17,10 @@
   .dvcap-row-in, .dvcap-row-out, .dvcap-flash, .dvcap-toast { animation: none; }
   .dvcap-row-out { opacity: 0; }
 }
+
+/* An expanded card body grows into place rather than appearing. Short enough to read as feedback
+   for the click, not as an effect. max-height is a ceiling, not a measurement — it only has to
+   exceed the tallest card for the reveal to look continuous. */
+@keyframes dvcap-expand { from { opacity: 0; max-height: 0; transform: translateY(-3px); } to { opacity: 1; max-height: 4000px; transform: none; } }
+.dvcap-expand { animation: dvcap-expand 200ms ease-out both; overflow: hidden; }
+@media (prefers-reduced-motion: reduce) { .dvcap-expand { animation: none; max-height: none; } }

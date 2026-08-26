@@ -318,12 +318,25 @@ const {
       )}
 
       {open && (
-        <div onClick={e => e.stopPropagation()} style={{ padding: 12, borderTop: "1px solid " + C.bdr, background: C.surf }}>
+        <div className="dvcap-expand" onClick={e => e.stopPropagation()} style={{ padding: 12, borderTop: "1px solid " + C.bdr, background: C.surf }}>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
             <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Currency<br />
               <select value={r.currency || "USD"} onChange={e => upd(r.id, { currency: e.target.value })} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
                 {CURRENCY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
               </select></label>
+            {/* Only shown when it can matter. Pinning is what stops a finished trade's dollar result
+                drifting with spot for as long as it is in the archive. */}
+            {(r.currency || "USD") !== baseCcy && (
+              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }} title={`Units of ${r.currency} per 1 ${baseCcy}. Leave blank to use the live rate; set it to the rate you actually got, and this row stops moving with spot.`}>
+                {r.currency}/{baseCcy} rate<br />
+                <NumCommit dk={`fx:${r.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft}
+                  value={r.fxRate} placeholder={fxRates[r.currency] ? `${fxRates[r.currency].toFixed(4)} live` : "live"} width={96}
+                  onCommit={v => upd(r.id, { fxRate: v })} />
+                <span style={{ display: "block", fontWeight: 500, color: C.muted, fontSize: 10.5, marginTop: 2 }}>
+                  {numOrNull(r.fxRate) != null ? "pinned — will not move with spot" : "using the live rate"}
+                </span>
+              </label>
+            )}
             <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Trade label<br />
               <input value={r.trade || ""} onChange={e => upd(r.id, { trade: e.target.value })} placeholder="e.g. Aug 18 entry"
                 style={{ width: 120, padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
@@ -705,7 +718,18 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   const fetchKey = [...symbols, ...fxSyms].join(",");
   useEffect(() => { const all = [...symbols, ...fxSyms]; if (all.length) fetchPrices(all); }, [fetchKey]);   // eslint-disable-line
   const { rates: fxRates } = useMemo(() => ratesFrom(prices), [prices]);
-  const toBase = (v, ccy) => convert(v, ccy || "USD", baseCcy, fxRates);
+  // WHICH RATE. Live spot from /api/prices, refreshed whenever prices are, EXCEPT where a row pins
+  // one. Realised P&L is a historical fact: a HK trade closed in July booked a specific number of
+  // dollars, and re-converting it at today's spot makes a finished result drift for as long as it
+  // sits in the archive. So a row may carry `fxRate` — units of its own currency per 1 USD, the
+  // same convention as the Yahoo quotes — and that wins for that row. Unrealised P&L is a live
+  // number by nature and always uses spot.
+  const rateForRow = (r) => numOrNull(r?.fxRate);
+  const toBase = (v, r) => {
+    const ccy = (typeof r === "string" ? r : r?.currency) || "USD";
+    const pinned = typeof r === "string" ? null : rateForRow(r);
+    return convert(v, ccy, baseCcy, pinned != null ? { ...fxRates, [ccy]: pinned } : fxRates);
+  };
   const priceOf = (r) => prices?.[r.symbol]?.price ?? null;
 
   // ── sizing context ──
@@ -739,7 +763,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   // leaking in. Its realised total was book-wide too, and only matched by luck: the moment an OPEN
   // position books a partial exit, book realised and archive realised diverge.
   const archiveStats = useMemo(() => {
-    const conv = archived.map(r => ({ r, v: toBase(r.derived.realized, r.currency) }));
+    const conv = archived.map(r => ({ r, v: toBase(r.derived.realized, r) }));
     const ok = conv.filter(c => c.v != null);
     const pcts = archived.map(r => r.derived.realizedPct).filter(v => v != null);
     return {
@@ -749,6 +773,12 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       winRate: ok.length ? Math.round((ok.filter(c => c.v > 0).length / ok.length) * 100) : null,
       avgPct: pcts.length ? +(pcts.reduce((a, b) => a + b, 0) / pcts.length).toFixed(2) : null,
       counted: ok.length, unconverted: conv.length - ok.length,
+      // Every non-base currency in the archive and the rate each one was converted at.
+      ccys: [...new Set(archived.map(r => r.currency || "USD"))].filter(c => c !== baseCcy).map(code => {
+        const pinned = archived.some(r => (r.currency || "USD") === code && numOrNull(r.fxRate) != null);
+        const one = archived.find(r => (r.currency || "USD") === code && numOrNull(r.fxRate) != null);
+        return { code, rate: pinned ? numOrNull(one.fxRate) : fxRates[code] ?? null, pinned };
+      }),
     };
   }, [archived, fxRates, baseCcy]);
   const curve    = useMemo(() => realizedCurve(derivedRows, toBase), [derivedRows, fxRates, baseCcy]);
@@ -899,6 +929,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
         symbol: String(r.symbol || "").toUpperCase(), currency: (r.currency || "USD").toUpperCase(),
         thesis: r.thesis || "", trade: r.trade ? String(r.trade).slice(0, 40) : "",
         multiplier: Number.isFinite(+r.multiplier) && +r.multiplier > 0 ? +r.multiplier : 1,
+        fxRate: Number.isFinite(+r.fxRate) && +r.fxRate > 0 ? +r.fxRate : null,
         levels: Array.isArray(r.levels) ? r.levels : [],
         fills: Array.isArray(r.fills) ? r.fills : [], tags: Array.isArray(r.tags) ? r.tags : [],
       })).filter(r => r.symbol);
@@ -1061,9 +1092,9 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
           at face value in the wrong currency. */}
       {openPos.length > 0 && (() => {
         const held = openPos.map(r => {
-          const mv = r.pnl.marketValue == null ? null : toBase(r.pnl.marketValue, r.currency);
-          const un = r.pnl.unrealized == null ? null : toBase(r.pnl.unrealized, r.currency);
-          const re = toBase(r.derived.realized, r.currency);
+          const mv = r.pnl.marketValue == null ? null : toBase(r.pnl.marketValue, r);
+          const un = r.pnl.unrealized == null ? null : toBase(r.pnl.unrealized, r);
+          const re = toBase(r.derived.realized, r);
           return { ...r, mvBase: mv, unBase: un, reBase: re, totalBase: (un ?? 0) + (re ?? 0) };
         });
         const priced = held.filter(h => h.mvBase != null && h.mvBase > 0);
@@ -1229,6 +1260,18 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
             <button onClick={() => setShowArchive(v => !v)} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{showArchive ? "Hide" : "Show"}</button>
           </div>
         </div>
+        {/* Which rate produced these numbers. A total in USD built from HKD rows is only as good as
+            the rate behind it, and that rate was invisible. */}
+        {archiveStats.ccys.length > 0 && (
+          <div style={{ marginTop: 6, fontSize: 11, color: C.muted }}>
+            Converted into {baseCcy} at {archiveStats.ccys.map(c => (
+              <span key={c.code} style={{ color: c.pinned ? C.mid : C.muted, fontWeight: c.pinned ? 700 : 500 }}>
+                {c.code} {c.rate ? c.rate.toFixed(4) : "—"}{c.pinned ? " (pinned)" : ""}{" "}
+              </span>
+            ))}
+            · live rates come from the same quote refresh as prices; a row can pin its own in the editor.
+          </div>
+        )}
         {archiveStats.unconverted > 0 && (
           <div style={{ marginTop: 7, fontSize: 11.5, color: C.amber, fontWeight: 700 }}>
             ⚠ {archiveStats.unconverted} closed trade{archiveStats.unconverted === 1 ? "" : "s"} excluded from these totals — no FX rate available to convert into {baseCcy}. Refresh prices.
