@@ -103,8 +103,13 @@ const FillForm = ({ ctx, symbol }) => {
           <Btn onClick={saveFill} color="#fff" bgColor={fillFor.side === "buy" ? C.green : C.blue} label="Record fill" />
           <Btn onClick={() => setFillFor(null)} color={C.mid} bgColor={C.bg} label="Cancel" />
           <span style={{ fontSize: 11, color: C.lbl }}>
+            {/* Every field here is free. The prefill exists to save typing, and saying so matters:
+                a form that opens with a level's price in it looks like it is recording THAT level,
+                when the whole point is that you fill where you fill. */}
+            <b>Nothing here is fixed</b> — change the price, size, side or date freely; a prefill is
+            only a starting point.{" "}
             {fillFor.intent === "stopped"
-              ? "Prefilled to sell the whole position at your stop. Adjust if you were filled elsewhere."
+              ? "This one starts as the whole position at your stop, because that is the usual case."
               : "Selling part keeps the position open and books realised P&L at your average cost; selling all of it moves the row to Archive."}
           </span>
         </div>
@@ -264,8 +269,8 @@ const {
           )}
           {mode === "open" && (
             <>
-              <Btn onClick={() => openFill(r, "buy")} color="#fff" bgColor={C.green} label="＋ Bought more" />
-              <Btn onClick={() => openFill(r, "sell")} color="#fff" bgColor={C.blue} label="－ Sold some" />
+              <Btn onClick={() => openFill(r, "buy")} color="#fff" bgColor={C.green} label="＋ Bought" />
+              <Btn onClick={() => openFill(r, "sell")} color="#fff" bgColor={C.blue} label="－ Sold" />
               {stopLevel && <Btn onClick={() => openFill(r, "stopped")} color={C.red} bgColor={C.surf} label="🛑 Stopped out" />}
             </>
           )}
@@ -312,7 +317,7 @@ const {
               <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>Levels</span>
               <span style={{ fontSize: 11.5, color: C.lbl }}>
                 price alerts — <b>nothing is ordered and nothing is recorded.</b> When price reaches one the row flags and,
-                if notifications are on, your browser tells you. Recording an actual trade is <b style={{ color: C.green }}>Bought more</b> / <b style={{ color: C.blue }}>Sold some</b>.
+                if notifications are on, your browser tells you. Recording an actual trade is <b style={{ color: C.green }}>Bought</b> / <b style={{ color: C.blue }}>Sold</b>.
               </span>
             </div>
 
@@ -354,7 +359,7 @@ const {
                     {hit && (l.kind === "buy" || d.qty > 0) && (
                       <button onClick={() => openFill(r, l.kind === "sell" ? "sell" : l.kind === "stop" ? "stopped" : "buy")}
                         style={{ marginLeft: 8, cursor: "pointer", background: kindCol(l.kind), color: "#fff", border: "none", borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 800 }}>
-                        record it
+                        record a fill
                       </button>
                     )}
                   </div>
