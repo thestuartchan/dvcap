@@ -1,5 +1,5 @@
 // Regression tests for lib/positions.js — fill-based accounting for scaled spot/swing positions.
-import { derivePosition, positionPnl, levelHit, distancePct, summarize, realizedCurve } from '../lib/positions.js';
+import { splitIntoTrades, collapseFills, derivePosition, positionPnl, levelHit, distancePct, summarize, realizedCurve } from '../lib/positions.js';
 let pass=0,fail=0;
 const eq=(n,g,w)=>{const ok=JSON.stringify(g)===JSON.stringify(w);console.log(`${ok?'✅':'❌'} ${n}`+(ok?'':`  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`));ok?pass++:fail++;};
 
@@ -180,6 +180,79 @@ eq('shares percentage matches', positionPnl(derivePosition(live.fills), 7.5).unr
 // A nonsense multiplier falls back to 1 rather than zeroing or NaN-ing the whole book.
 eq('zero multiplier rejected', derivePosition(live.fills, {multiplier: 0}).multiplier, 1);
 eq('junk multiplier rejected', derivePosition(live.fills, {multiplier: 'x'}).multiplier, 1);
+
+// ── splitting a symbol into separate trades ──
+const METU = [
+  {id:'a', date:'2026-08-05', side:'buy',  qty:40,  price:21.425},
+  {id:'b', date:'2026-08-05', side:'buy',  qty:160, price:21.4},
+  {id:'c', date:'2026-08-07', side:'sell', qty:200, price:21.3944},
+  {id:'d', date:'2026-08-18', side:'buy',  qty:596, price:18.064},
+  {id:'e', date:'2026-08-18', side:'buy',  qty:4,   price:18.065},
+];
+const trips = splitIntoTrades(METU);
+eq('METU is two trades, not one', trips.length, 2);
+eq('first trade is the round trip', trips[0].map(f=>f.id).join(''), 'abc');
+eq('second trade is the open one', trips[1].map(f=>f.id).join(''), 'de');
+eq('first trade closes flat', derivePosition(trips[0]).status, 'closed');
+eq('second trade is open', derivePosition(trips[1]).status, 'open');
+eq('realised follows the closed one', derivePosition(trips[0]).realized, -2.12);
+eq('and none follows the open one', derivePosition(trips[1]).realized, 0);
+
+// A scale-out that never reaches flat is ONE trade, however many fills it has.
+eq('partial exit does not split', splitIntoTrades([
+  {date:'2026-08-01', side:'buy',  qty:200, price:10},
+  {date:'2026-08-02', side:'sell', qty:50,  price:12},
+  {date:'2026-08-03', side:'buy',  qty:100, price:11},
+]).length, 1);
+eq('no fills, no trades', splitIntoTrades([]).length, 0);
+// A closing leg with no recorded entry is its own trade, not a short.
+const orphan = splitIntoTrades([
+  {date:'2026-08-19', side:'sell', qty:150, price:10.56},
+  {date:'2026-08-20', side:'buy',  qty:100, price:9},
+]);
+eq('leading sell stands alone', orphan.length, 2);
+eq('and does not go short', orphan[0].length, 1);
+
+// ── collapsing fills, only when it is arithmetically safe ──
+const c1 = collapseFills(trips[0]);
+eq('collapses 3 fills to 2', `${c1.from}->${c1.to}`, '3->2');
+eq('weighted, not averaged', c1.fills[0].price, 21.405);
+eq('sell survives intact', c1.fills[1].qty, 200);
+eq('collapse was exact', c1.exact, true);
+eq('no P&L drift', c1.delta, 0);
+
+const c2 = collapseFills(trips[1]);
+eq('two buys become one', c2.to, 1);
+eq('weighted buy price', c2.fills[0].price, 18.064007);
+
+// A CLOSED trade is order-independent: everything bought is sold, so interleaving cannot move
+// realised P&L and the collapse must come back exact however tangled the fills were.
+const tangled = collapseFills([
+  {date:'2026-08-01', side:'buy',  qty:100, price:10},
+  {date:'2026-08-02', side:'sell', qty:100, price:20},
+  {date:'2026-08-03', side:'buy',  qty:100, price:30},
+  {date:'2026-08-04', side:'sell', qty:100, price:40},
+]);
+eq('closed trade collapses exactly', tangled.exact, true);
+eq('closed trade keeps its P&L', tangled.delta, 0);
+
+// An OPEN trade that has already sold part is the real hazard: the sell was measured against the
+// average at that moment, and folding a later buy into one bulk average moves it. The function
+// must SAY so rather than quietly rewriting the trade.
+const risky = collapseFills([
+  {date:'2026-08-01', side:'buy',  qty:100, price:10},
+  {date:'2026-08-02', side:'sell', qty:50,  price:20},
+  {date:'2026-08-03', side:'buy',  qty:100, price:30},
+]);
+eq('open + partial sell flagged inexact', risky.exact, false);
+eq('and reports the drift', risky.delta, -500);
+
+// Multiplier is respected when checking exactness.
+eq('option collapse stays exact', collapseFills([
+  {date:'2026-07-28', side:'buy',  qty:5, price:3},
+  {date:'2026-07-28', side:'buy',  qty:3, price:3.2},
+  {date:'2026-07-30', side:'sell', qty:8, price:2.4},
+], {multiplier: 100}).exact, true);
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);

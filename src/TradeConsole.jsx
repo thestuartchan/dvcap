@@ -18,7 +18,7 @@ import {
 import { C, SLabel, Card, Btn } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
 import { REGIMES } from "../lib/regimes.js";
-import { derivePosition, positionPnl, levelHit, levelHits, distancePct, summarize, realizedCurve } from "../lib/positions.js";
+import { derivePosition, splitIntoTrades, collapseFills, positionPnl, levelHit, levelHits, distancePct, summarize, realizedCurve } from "../lib/positions.js";
 import { CURRENCIES, CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy } from "../lib/fxrates.js";
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
 
@@ -151,7 +151,7 @@ const daysBetween = (a, b) => {
 
 const PositionRow = ({ r, mode, ctx }) => {
 const {
-  prices, priceOf, liveRegime, expanded, setExpanded, upd, del, addLevel, updLevel, delLevel,
+  prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel,
   openFill, delFill, fillFor, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip,
   kindCol, money, pnlCol,
   equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
@@ -346,6 +346,35 @@ const {
             <Btn onClick={() => del(r.id)} color={C.red} bgColor={C.surf} label="✕ Remove" />
           </div>
 
+          {/* ── TIDYING ──
+              Two things the broker's fill stream gets wrong for a human reader, offered only when
+              they actually apply to this row. Splitting is the important one: a symbol exited and
+              re-entered is two TRADES, and no amount of averaging inside one row can express that. */}
+          {(() => {
+            const trips = splitIntoTrades(r.fills || []);
+            const col = collapseFills(r.fills || [], { multiplier: r.multiplier });
+            if (trips.length < 2 && col.to >= col.from) return null;
+            return (
+              <div style={{ marginTop: 9, padding: "9px 11px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 9 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Tidy up</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  {trips.length > 1 && (
+                    <Btn onClick={() => splitRow(r, trips)} color="#fff" bgColor={C.blue} label={`\u2442 Split into ${trips.length} trades`} />
+                  )}
+                  {col.to < col.from && (
+                    <Btn onClick={() => collapseRow(r, col)} color={C.mid} bgColor={C.surf} label={`\u21e5 Collapse ${col.from} fills to ${col.to}`} />
+                  )}
+                </div>
+                <div style={{ fontSize: 11.5, color: C.lbl, marginTop: 6, lineHeight: 1.6 }}>
+                  {trips.length > 1 && <>This row went flat and was re-entered, so it holds <b>{trips.length} separate trades</b>. Splitting gives each its own row — the closed ones move to the archive.<br /></>}
+                  {col.to < col.from && (col.exact
+                    ? <>Collapsing replaces the partial fills with one size-weighted average each way. Realised P&amp;L is unchanged.</>
+                    : <span style={{ color: C.amber, fontWeight: 700 }}>⚠ Collapsing this row would move realised P&amp;L by {col.delta > 0 ? "+" : ""}{col.delta} — it has sold part of an open position, so the sell was measured against a different average. Split it first.</span>)}
+                </div>
+              </div>
+            );
+          })()}
+
           {mode === "open" && (
             <div style={{ marginTop: 10, padding: "9px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 9, fontSize: 12.5, color: C.mid, lineHeight: 1.7 }}>
               {d.qty} @ avg {d.avgCost?.toFixed(4)} · market {money(p.marketValue, r.currency)}
@@ -522,6 +551,35 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
     setAddSym(""); setExpanded(id); touch();
   };
   const upd = (id, patch) => { setRows(p => p.map(r => r.id === id ? { ...r, ...patch } : r)); touch(); };
+
+  // Replace one row with one row PER TRADE, in place so the order of the book is preserved. Each
+  // new row inherits the thesis and levels but gets its own id and a date-range label, because from
+  // here on they have separate lifecycles — one may be closed and archived while another runs. The
+  // fills of each trade are collapsed at the same time: a closed trade collapses exactly, and an
+  // open one is left alone if it would not, which collapseFills reports.
+  const splitRow = (r, trips) => {
+    const made = trips.map((fills, i) => {
+      const c = collapseFills(fills, { multiplier: r.multiplier });
+      const use = c.exact ? c.fills : fills;
+      const d0 = use[0]?.date || "", d1 = use[use.length - 1]?.date || "";
+      const closed = derivePosition(use, { multiplier: r.multiplier }).status === "closed";
+      return {
+        ...r,
+        id: `${r.symbol}-${(d0 || d1 || i).toString().replace(/-/g, "")}-${i}`,
+        trade: r.trade || (closed && d1 && d1 !== d0 ? `${d0.slice(5)} → ${d1.slice(5)}` : d0 ? `from ${d0.slice(5)}` : `trade ${i + 1}`),
+        fills: use,
+      };
+    });
+    setRows(p => p.flatMap(x => x.id === r.id ? made : [x]));
+    setExpanded(null); touch();
+  };
+
+  // Collapse in place. Refused outright when it would move realised P&L — the button is already
+  // hidden in that case, but a stale render must not be able to rewrite a trade's history.
+  const collapseRow = (r, col) => {
+    if (!col?.exact || !col.fills?.length) return;
+    upd(r.id, { fills: col.fills });
+  };
   const del = (id) => { setRows(p => p.filter(r => r.id !== id)); touch(); };
   const addLevel = (id, kind) => {
     const r = rows.find(x => x.id === id); if (!r) return;
@@ -643,7 +701,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   // render, which is fine: the COMPONENT identities are stable, so React re-renders rather than
   // remounting, and focus is preserved.
   const ctx = {
-    prices, priceOf, liveRegime, expanded, setExpanded, upd, del, addLevel, updLevel, delLevel,
+    prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel,
     openFill, delFill, fillFor, setFillFor, saveFill, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip, kindCol, money, pnlCol,
     equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
   };
