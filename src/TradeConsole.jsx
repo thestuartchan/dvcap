@@ -149,6 +149,35 @@ const daysBetween = (a, b) => {
   return Math.round((t1 - t0) / 86400000);
 };
 
+// A thin vertical rule between the row's three groups. Its own component so the header reads as
+// the three groups it is, rather than as a run of spans.
+const Div = () => <span style={{ width: 1, alignSelf: "stretch", background: C.bdr, margin: "0 2px", flexShrink: 0 }} />;
+
+// "held 5 weeks" beats "since 2026-07-15" in a row whose whole job is telling a swing from a
+// scalp: the number you want is the DURATION, and the exact date is one click away in the editor.
+const heldFor = (from) => {
+  const d = daysBetween(from, new Date().toISOString().slice(0, 10));
+  if (d == null || d < 0) return null;
+  if (d === 0) return "today";
+  if (d === 1) return "1 day";
+  if (d < 21) return `${d} days`;
+  if (d < 60) return `${Math.round(d / 7)} weeks`;
+  return `${Math.round(d / 30)} months`;
+};
+
+// Does a free-text trade label already name this date? A row reading "Aug 18 · since 2026-08-18"
+// says one thing twice, and the label is the half the user wrote, so the derived half yields.
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+const echoesDate = (label, iso) => {
+  if (!label || !iso) return false;
+  const t = String(label).toLowerCase();
+  const [, mm, dd] = String(iso).split('-');
+  if (!mm || !dd) return false;
+  const day = String(+dd), mon = MONTHS[+mm - 1];
+  const hasDay = new RegExp(`\\b0?${day}\\b`).test(t);
+  return hasDay && (t.includes(mon) || new RegExp(`\\b0?${+mm}\\b`).test(t));
+};
+
 const PositionRow = ({ r, mode, ctx }) => {
 const {
   prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel,
@@ -162,43 +191,63 @@ const {
   const ins = INSURANCE_TICKERS[r.symbol];
   const open = expanded === r.id;
   const d = r.derived, p = r.pnl;
+  // Share of the book this position represents — the number that turns "+$957" into "is this too
+  // big?". Computed in the BASE currency, and simply absent when the FX rate or equity is missing
+  // rather than shown as a figure that quietly means something else.
+  const mvBase = p.marketValue == null ? null : convert(p.marketValue, r.currency || "USD", baseCcy, fxRates);
+  const weightPct = (equityBase > 0 && mvBase != null) ? +((mvBase / equityBase) * 100).toFixed(1) : null;
   const active = (r.levels || []).filter(l => l.at != null);
   const stopLevel = active.find(l => l.kind === "stop");
   const anyHit = active.some(l => levelHit(l, price));
   return (
     <div style={{ border: "1.5px solid " + (anyHit ? C.amber : C.bdr), borderLeft: "4px solid " + (anyHit ? C.amber : mode === "open" ? C.blue : C.bdr), borderRadius: 10, overflow: "hidden" }}>
-      <div onClick={() => setExpanded(open ? null : r.id)} style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", flexWrap: "wrap", cursor: "pointer", background: open ? C.bg : C.surf }}>
-        <b style={{ fontSize: 15, minWidth: 74 }}>{r.symbol}</b>
-        {/* A symbol can hold more than one trade at once — the label and the open date are what
-            tell two METU trades apart at a glance, so they sit in the header, not in the editor. */}
-        {r.trade ? <span style={{ fontSize: 11.5, color: C.mid, fontWeight: 700, background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6, padding: "1px 7px", whiteSpace: "nowrap" }}>{r.trade}</span> : null}
-        {d.multiplier > 1 ? chip(`×${d.multiplier}`, C.amber, C.aBg, C.aBdr) : null}
-        {mode === "open" && d.firstDate ? <span style={{ fontSize: 11.5, color: C.lbl, whiteSpace: "nowrap" }}>since {d.firstDate}</span> : null}
-        {/* ── TWO DIFFERENT NUMBERS, KEPT APART ──
-            The quote's move today and the position's return are both percentages, and side by side
-            with no label they read as one figure — HOOD showing "+8.17%" next to "+$507.91" looked
-            like the return on the position when it was the day's move on the tape, and the actual
-            return was +4.75%. The quote group is muted and carries the word "today"; the position
-            group is coloured, sits after a divider, and its percentage is the one that matches the
-            money beside it. */}
+      {/* The row is TWO blocks, not one wrapping run: an info block that flexes and wraps inside
+          itself, and an action block that never leaves the top line. Letting the whole row wrap put
+          0981.HK's buttons on a second line purely because its label was two words long. */}
+      <div onClick={() => setExpanded(open ? null : r.id)} style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", cursor: "pointer", background: open ? C.bg : C.surf }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap", flex: "1 1 auto", minWidth: 0 }}>
+        {/* ── THREE GROUPS, IN ONE ORDER, ALWAYS ──
+            WHO it is · WHAT it costs on the tape · WHAT it is doing for you. Everything about the
+            instrument sits left of the first divider, everything about the quote between the two,
+            and everything about your position — when you bought, how much, what it has made —
+            right of the second. Previously the entry date sat between the symbol and the price,
+            splitting the identity from the quote and putting position data on the wrong side of
+            the row. */}
+        <span style={{ display: "inline-flex", alignItems: "baseline", gap: 7, minWidth: 0 }}>
+          <b style={{ fontSize: 15 }}>{r.symbol}</b>
+          {/* A label that just restates the ticker ("AMD" on AMD) is noise, so it is dropped. */}
+          {r.trade && r.trade.trim().toUpperCase() !== r.symbol.toUpperCase()
+            ? <span style={{ fontSize: 11.5, color: C.mid, fontWeight: 700, background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6, padding: "1px 7px", whiteSpace: "nowrap" }}>{r.trade}</span> : null}
+          {d.multiplier > 1 ? chip(`×${d.multiplier}`, C.amber, C.aBg, C.aBdr) : null}
+          {ccyChip(r.currency || "USD")}
+        </span>
+
+        <Div />
+        {/* The tape. Muted, and labelled "today", so it can never be read as your return. */}
         <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }} title="Last price and today's move on the tape — not your return">
           <span style={{ fontSize: 14, fontWeight: 700 }}>{price != null ? price.toFixed(2) : "—"}</span>
           <span style={{ fontSize: 11.5, fontWeight: 700, color: q?.changePercent == null ? C.muted : q.changePercent >= 0 ? C.green : C.red, whiteSpace: "nowrap" }}>
             {q?.changePercent == null ? "" : `${q.changePercent >= 0 ? "▲" : "▼"}${Math.abs(q.changePercent).toFixed(2)}%`}
           </span>
-          <span style={{ fontSize: 10.5, color: C.muted, whiteSpace: "nowrap" }}>{q?.changePercent == null ? "" : "today"}</span>
+          <span style={{ fontSize: 10.5, color: C.muted }}>{q?.changePercent == null ? "" : "today"}</span>
         </span>
-        {ccyChip(r.currency || "USD")}
+
         {mode === "open" && (
           <>
-            <span style={{ width: 1, alignSelf: "stretch", background: C.bdr, margin: "0 3px" }} />
-            <span style={{ display: "inline-flex", alignItems: "baseline", gap: 7, flexWrap: "wrap" }}
+            <Div />
+            <span style={{ display: "inline-flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", minWidth: 0 }}
               title={d.partiallyRealised
                 ? `Unrealised ${money(p.unrealized, r.currency)} + realised ${money(d.realized, r.currency)}, against ${money(d.spent, r.currency)} deployed`
                 : "Your return on this position since entry"}>
+              {/* Held-since is POSITION data, so it belongs here — and it is suppressed when the
+                  trade label already names the same date, which is what made rows read
+                  "Aug 18 · since 2026-08-18". */}
+              {d.firstDate && !echoesDate(r.trade, d.firstDate)
+                ? <span style={{ fontSize: 11.5, color: C.lbl, whiteSpace: "nowrap" }}>held {heldFor(d.firstDate)}</span> : null}
               <span style={{ fontSize: 12, color: C.lbl, whiteSpace: "nowrap" }}>{d.qty} @ {d.avgCost?.toFixed(2)}</span>
               <b style={{ fontSize: 13, color: pnlCol(p.total) }}>{p.total == null ? "—" : (p.total > 0 ? "+" : "") + money(p.total, r.currency)}</b>
               <b style={{ fontSize: 12.5, color: pnlCol(p.totalPct) }}>{p.totalPct == null ? "" : (p.totalPct > 0 ? "+" : "") + p.totalPct + "%"}</b>
+              {weightPct != null && <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }}>{weightPct}% of book</span>}
             </span>
             {d.partiallyRealised && chip(`incl. realised ${money(d.realized, r.currency)}`, C.green, "#F0FDF4", "#BBF7D0")}
           </>
@@ -207,8 +256,9 @@ const {
         {ins && chip("🛡 " + ins, "#B45309", "#FFFBEB", "#FDE68A")}
         {anyHit && chip("⚡ level hit", C.amber, C.aBg, C.aBdr)}
         {d.needsQty && chip("⚠ quantity needed", C.amber, C.aBg, C.aBdr)}
+        </span>
         {/* The actions that answer "how do I record what I did" — on the row, not hidden. */}
-        <span style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }} onClick={e => e.stopPropagation()}>
+        <span style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }} onClick={e => e.stopPropagation()}>
           {mode === "setup" && (
             <Btn onClick={() => openFill(r, "buy")} color="#fff" bgColor={C.green} label="✓ I bought" />
           )}
@@ -223,6 +273,13 @@ const {
         </span>
       </div>
 
+      {/* Levels are the point of the console — a row without any is a holding, not a watched trade,
+          and silently showing nothing hides that. One quiet line, only when the row is collapsed. */}
+      {active.length === 0 && !open && (
+        <div style={{ padding: "0 12px 8px", fontSize: 11.5, color: C.muted }}>
+          No levels set — <span style={{ color: C.blue, fontWeight: 700, cursor: "pointer" }} onClick={() => setExpanded(r.id)}>add a buy, sell or stop</span> to get flagged when price reaches it.
+        </div>
+      )}
       {/* levels always visible — this is the daily read */}
       {active.length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "0 12px 9px" }}>
@@ -793,63 +850,6 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
         </div>
       </Card>
 
-      {/* sizing settings */}
-      <Card>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
-          <SLabel>Sizing</SLabel>
-          <span style={{ fontSize: 11.5, color: C.muted }}>suggestions only — shown beside your own number, never applied</span>
-          <span style={{ marginLeft: "auto", fontSize: 12.5 }}>
-            <span style={{ color: C.lbl, fontWeight: 700 }}>regime ×</span> <b style={{ color: liveRegime?.color }}>{rm.mult.toFixed(2)}</b>
-            <span style={{ color: C.muted, fontSize: 11.5 }}> ({rm.reasons[rm.reasons.length - 1]})</span>
-          </span>
-        </div>
-        <div style={{ marginTop: 9, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Account equity ({baseCcy})<br />
-            <NumCommit dk="equity" drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={settings.equity} placeholder="e.g. 208597" width={124}
-              title="A rough figure is fine — sizing is linear in equity, so being 5% out moves a suggestion by 5%."
-              onCommit={v => { setSettings(x => ({ ...x, equity: v, equityAsOf: new Date().toISOString().slice(0, 10) })); touch(); }} />
-            {(() => {
-              const f = equityFreshness(settings.equityAsOf);
-              if (settings.equity == null) return null;
-              return (
-                <div style={{ fontSize: 10.5, fontWeight: 600, color: f.stale ? C.amber : C.lbl, marginTop: 2 }}
-                  title={`Sizing scales linearly with equity, so it is refreshed on your schedule rather than synced — a figure within ~${EQUITY_STALE_DAYS} days is plenty.`}>
-                  {f.days == null ? "no date recorded" : f.days === 0 ? "as of today" : `as of ${settings.equityAsOf} · ${f.days}d ago`}
-                  {f.stale ? " ⚠" : ""}
-                </div>
-              );
-            })()}
-          </label>
-          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Risk / trade (%)<br />
-            {nInput(settings.baseRiskPct, v => { setSettings(x => ({ ...x, baseRiskPct: v === "" ? null : v })); touch(); }, "1", 64)}</label>
-          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Default allocation (%)<br />
-            {nInput(settings.targetPct, v => { setSettings(x => ({ ...x, targetPct: v === "" ? null : v })); touch(); }, "5", 64)}</label>
-          <div style={{ fontSize: 11.5, color: C.muted, flex: "1 1 240px", lineHeight: 1.55 }}>
-            <b style={{ color: C.mid }}>Equity is meant to be approximate.</b> Sizing is linear in it, so a figure 5% out moves a
-            suggestion by 5% — which never changes a swing decision. Refresh it when the book has moved materially, not daily;
-            sizes are rounded to match that precision.<br />
-            <b>Risk</b> sizes so a stop-out costs a fixed % of the book — for swings with an invalidation level.
-            <b> Allocation</b> targets a % of the book — for long holds where the thesis, not a price, is the exit.
-            Each position picks its own; both are scaled by the regime multiplier and netted against what you already hold.
-          </div>
-        </div>
-        <div style={{ marginTop: 11 }}>
-          <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Regime multipliers</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 9 }}>
-            {Object.keys(REGIME_SIZING).map(k => {
-              const isLive = liveRegime?.id === k;
-              return (
-                <label key={k} style={{ fontSize: 11.5, color: isLive ? C.text : C.lbl, fontWeight: isLive ? 800 : 600, border: "1.5px solid " + (isLive ? (liveRegime?.color || C.blue) : C.bdr), borderRadius: 8, padding: "5px 9px", background: isLive ? (liveRegime?.bg || C.surf) : C.surf }}>
-                  {REGIME_SIZING[k].label}{isLive ? " ● live" : ""}<br />
-                  {nInput(settings?.sizing?.[k] ?? REGIME_SIZING[k].mult, v => { setSettings(x => ({ ...x, sizing: { ...(x.sizing || {}), [k]: v === "" ? null : v } })); touch(); }, String(REGIME_SIZING[k].mult), 60)}
-                </label>
-              );
-            })}
-          </div>
-          <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>Credit-DANGER caps the multiplier at ×{CREDIT_DANGER_CAP_LABEL}; a contested or pinned≠live regime applies a further ×0.7.</div>
-        </div>
-      </Card>
-
       {/* ── CURRENT PORTFOLIO ──
           Same visual idiom as the Smart Money tab (donut for weight, horizontal bars for the
           per-name read) so the two tabs are read the same way. Everything is converted into the
@@ -945,8 +945,70 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
         );
       })()}
 
+      {/* sizing settings */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+          <SLabel>Sizing</SLabel>
+          <span style={{ fontSize: 11.5, color: C.muted }}>suggestions only — shown beside your own number, never applied</span>
+          <span style={{ marginLeft: "auto", fontSize: 12.5 }}>
+            <span style={{ color: C.lbl, fontWeight: 700 }}>regime ×</span> <b style={{ color: liveRegime?.color }}>{rm.mult.toFixed(2)}</b>
+            <span style={{ color: C.muted, fontSize: 11.5 }}> ({rm.reasons[rm.reasons.length - 1]})</span>
+          </span>
+        </div>
+        <div style={{ marginTop: 9, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Account equity ({baseCcy})<br />
+            <NumCommit dk="equity" drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={settings.equity} placeholder="e.g. 208597" width={124}
+              title="A rough figure is fine — sizing is linear in equity, so being 5% out moves a suggestion by 5%."
+              onCommit={v => { setSettings(x => ({ ...x, equity: v, equityAsOf: new Date().toISOString().slice(0, 10) })); touch(); }} />
+            {(() => {
+              const f = equityFreshness(settings.equityAsOf);
+              if (settings.equity == null) return null;
+              return (
+                <div style={{ fontSize: 10.5, fontWeight: 600, color: f.stale ? C.amber : C.lbl, marginTop: 2 }}
+                  title={`Sizing scales linearly with equity, so it is refreshed on your schedule rather than synced — a figure within ~${EQUITY_STALE_DAYS} days is plenty.`}>
+                  {f.days == null ? "no date recorded" : f.days === 0 ? "as of today" : `as of ${settings.equityAsOf} · ${f.days}d ago`}
+                  {f.stale ? " ⚠" : ""}
+                </div>
+              );
+            })()}
+          </label>
+          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Risk / trade (%)<br />
+            {nInput(settings.baseRiskPct, v => { setSettings(x => ({ ...x, baseRiskPct: v === "" ? null : v })); touch(); }, "1", 64)}</label>
+          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Default allocation (%)<br />
+            {nInput(settings.targetPct, v => { setSettings(x => ({ ...x, targetPct: v === "" ? null : v })); touch(); }, "5", 64)}</label>
+          <div style={{ fontSize: 11.5, color: C.muted, flex: "1 1 240px", lineHeight: 1.55 }}>
+            <b style={{ color: C.mid }}>Equity is meant to be approximate.</b> Sizing is linear in it, so a figure 5% out moves a
+            suggestion by 5% — which never changes a swing decision. Refresh it when the book has moved materially, not daily;
+            sizes are rounded to match that precision.<br />
+            <b>Risk</b> sizes so a stop-out costs a fixed % of the book — for swings with an invalidation level.
+            <b> Allocation</b> targets a % of the book — for long holds where the thesis, not a price, is the exit.
+            Each position picks its own; both are scaled by the regime multiplier and netted against what you already hold.
+          </div>
+        </div>
+        <div style={{ marginTop: 11 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Regime multipliers</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 9 }}>
+            {Object.keys(REGIME_SIZING).map(k => {
+              const isLive = liveRegime?.id === k;
+              return (
+                <label key={k} style={{ fontSize: 11.5, color: isLive ? C.text : C.lbl, fontWeight: isLive ? 800 : 600, border: "1.5px solid " + (isLive ? (liveRegime?.color || C.blue) : C.bdr), borderRadius: 8, padding: "5px 9px", background: isLive ? (liveRegime?.bg || C.surf) : C.surf }}>
+                  {REGIME_SIZING[k].label}{isLive ? " ● live" : ""}<br />
+                  {nInput(settings?.sizing?.[k] ?? REGIME_SIZING[k].mult, v => { setSettings(x => ({ ...x, sizing: { ...(x.sizing || {}), [k]: v === "" ? null : v } })); touch(); }, String(REGIME_SIZING[k].mult), 60)}
+                </label>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>Credit-DANGER caps the multiplier at ×{CREDIT_DANGER_CAP_LABEL}; a contested or pinned≠live regime applies a further ×0.7.</div>
+        </div>
+      </Card>
+
       <Section title="Setups — waiting" note="no position yet; levels are being watched" list={setups} mode="setup" ctx={ctx} />
-      <Section title="Open positions" note="spot / swing holds, scaled in and out" list={openPos} mode="open" ctx={ctx} />
+      {/* Biggest first. Import order is meaningless, and the position that most deserves a second
+          look each morning is the one carrying the most of the book. Rows whose market value cannot
+          be converted sort last rather than to the top as a zero. */}
+      <Section title="Open positions" note="spot / swing holds, scaled in and out"
+        list={[...openPos].sort((a, b) => (convert(b.pnl.marketValue, b.currency || "USD", baseCcy, fxRates) ?? -1) - (convert(a.pnl.marketValue, a.currency || "USD", baseCcy, fxRates) ?? -1))}
+        mode="open" ctx={ctx} />
 
       {/* archive: brief, with the performance summary */}
       <Card>
