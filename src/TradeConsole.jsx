@@ -683,6 +683,23 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   const openPos  = derivedRows.filter(r => r.derived.status === "open");
   const archived = derivedRows.filter(r => r.derived.status === "closed");
   const summary  = useMemo(() => summarize(derivedRows, toBase), [derivedRows, fxRates, baseCcy]);
+  // The archive's OWN numbers. It previously borrowed the book-wide summary, which is how a list of
+  // closed trades came to report an unrealised figure — that was the open positions' mark-to-market
+  // leaking in. Its realised total was book-wide too, and only matched by luck: the moment an OPEN
+  // position books a partial exit, book realised and archive realised diverge.
+  const archiveStats = useMemo(() => {
+    const conv = archived.map(r => ({ r, v: toBase(r.derived.realized, r.currency) }));
+    const ok = conv.filter(c => c.v != null);
+    const pcts = archived.map(r => r.derived.realizedPct).filter(v => v != null);
+    return {
+      realized: +ok.reduce((a, c) => a + c.v, 0).toFixed(2),
+      wins: ok.filter(c => c.v > 0).length,
+      losses: ok.filter(c => c.v < 0).length,
+      winRate: ok.length ? Math.round((ok.filter(c => c.v > 0).length / ok.length) * 100) : null,
+      avgPct: pcts.length ? +(pcts.reduce((a, b) => a + b, 0) / pcts.length).toFixed(2) : null,
+      counted: ok.length, unconverted: conv.length - ok.length,
+    };
+  }, [archived, fxRates, baseCcy]);
   const curve    = useMemo(() => realizedCurve(derivedRows, toBase), [derivedRows, fxRates, baseCcy]);
 
   // ── level alerts (poll cadence — checked whenever prices refresh) ──
@@ -1109,15 +1126,18 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
           <SLabel>Archive — closed</SLabel>
           <span style={{ fontSize: 12, color: C.muted }}>{archived.length}</span>
           <div style={{ marginLeft: "auto", display: "flex", gap: 14, alignItems: "baseline", fontSize: 13 }}>
-            <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>REALISED </span><b style={{ color: pnlCol(summary.realized) }}>{fmtCcy(summary.realized, baseCcy)}</b></span>
-            <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>UNREALISED </span><b style={{ color: pnlCol(summary.unrealized) }}>{fmtCcy(summary.unrealized, baseCcy)}</b></span>
-            <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>WIN RATE </span><b style={{ color: C.text }}>{summary.winRate == null ? "—" : summary.winRate + "%"}</b></span>
+            {/* Closed trades have no unrealised P&L by definition — every one of them is flat.
+                Average return replaces it: the figure that says whether the trades were any good,
+                which a total cannot, since it is dominated by whichever was largest. */}
+            <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>REALISED </span><b style={{ color: pnlCol(archiveStats.realized) }}>{fmtCcy(archiveStats.realized, baseCcy)}</b></span>
+            <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>AVG RETURN </span><b style={{ color: pnlCol(archiveStats.avgPct) }}>{archiveStats.avgPct == null ? "—" : (archiveStats.avgPct > 0 ? "+" : "") + archiveStats.avgPct + "%"}</b></span>
+            <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>WIN RATE </span><b style={{ color: C.text }}>{archiveStats.winRate == null ? "—" : archiveStats.winRate + "%"}</b></span>
             <button onClick={() => setShowArchive(v => !v)} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{showArchive ? "Hide" : "Show"}</button>
           </div>
         </div>
-        {summary.unconverted > 0 && (
+        {archiveStats.unconverted > 0 && (
           <div style={{ marginTop: 7, fontSize: 11.5, color: C.amber, fontWeight: 700 }}>
-            ⚠ {summary.unconverted} position{summary.unconverted === 1 ? "" : "s"} excluded from the totals — no FX rate available to convert into {baseCcy}. Refresh prices.
+            ⚠ {archiveStats.unconverted} closed trade{archiveStats.unconverted === 1 ? "" : "s"} excluded from these totals — no FX rate available to convert into {baseCcy}. Refresh prices.
           </div>
         )}
 
@@ -1169,24 +1189,15 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
               </tbody>
               {/* Totals are in the BASE currency, so a row whose FX rate is missing is left out and
                   counted rather than added at face value in the wrong currency. */}
-              {(() => {
-                const conv = archived.map(r => ({ r, v: toBase(r.derived.realized, r.currency) }));
-                const ok = conv.filter(c => c.v != null);
-                const skipped = conv.length - ok.length;
-                const tot = ok.reduce((a, c) => a + c.v, 0);
-                const wins = ok.filter(c => c.v > 0).length;
-                return (
-                  <tfoot><tr>
-                    <td colSpan={5} style={{ padding: "8px 10px", borderTop: "1.5px solid " + C.bdr, color: C.mid, fontWeight: 700 }}>
-                      {ok.length} closed trade{ok.length === 1 ? "" : "s"} in {baseCcy} · {wins} up / {ok.length - wins} down
-                      {skipped ? ` · ${skipped} excluded (no FX rate)` : ""}
-                    </td>
-                    <td colSpan={2} style={{ padding: "8px 10px", borderTop: "1.5px solid " + C.bdr, fontWeight: 800, color: pnlCol(tot) }}>
-                      {(tot > 0 ? "+" : "") + money(tot, baseCcy)}
-                    </td>
-                  </tr></tfoot>
-                );
-              })()}
+              <tfoot><tr>
+                <td colSpan={5} style={{ padding: "8px 10px", borderTop: "1.5px solid " + C.bdr, color: C.mid, fontWeight: 700 }}>
+                  {archiveStats.counted} closed trade{archiveStats.counted === 1 ? "" : "s"} in {baseCcy} · {archiveStats.wins} up / {archiveStats.losses} down
+                  {archiveStats.unconverted ? ` · ${archiveStats.unconverted} excluded (no FX rate)` : ""}
+                </td>
+                <td colSpan={2} style={{ padding: "8px 10px", borderTop: "1.5px solid " + C.bdr, fontWeight: 800, color: pnlCol(archiveStats.realized) }}>
+                  {(archiveStats.realized > 0 ? "+" : "") + money(archiveStats.realized, baseCcy)}
+                </td>
+              </tr></tfoot>
             </table>
           </div>
         )}
