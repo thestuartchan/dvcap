@@ -274,5 +274,26 @@ eq('return on everything deployed', scp.totalPct, 35);
 
 eq('a setup has no return', positionPnl(derivePosition([]), 10).totalPct, null);
 
+// ── the realised curve must agree with the totals it is drawn beside ──
+// It re-walks the fills to get a point per sell, so it is the one place the multiplier can be
+// forgotten. A book of one option trade and one share trade catches it: the curve's final
+// cumulative has to equal the sum of every row's realised P&L, or the chart contradicts the table
+// sitting above it.
+const mixed = [
+  { symbol: 'SPCX', currency: 'USD', derived: derivePosition([
+      {date:'2026-07-28', side:'buy',  qty:8, price:3},
+      {date:'2026-07-30', side:'sell', qty:8, price:2.4},
+    ], {multiplier: 100}) },
+  { symbol: 'METU', currency: 'USD', derived: derivePosition([
+      {date:'2026-08-05', side:'buy',  qty:200, price:21.405},
+      {date:'2026-08-07', side:'sell', qty:200, price:21.3934},
+    ]) },
+];
+const mc = realizedCurve(mixed);
+const totals = +mixed.reduce((a, r) => a + r.derived.realized, 0).toFixed(2);
+eq('curve ends where the totals do', mc.at(-1).cumulative, totals);
+eq('option leg carries its multiplier', mc[0].gain, -480);
+eq('share leg does not', mc[1].gain, -2.32);
+
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);

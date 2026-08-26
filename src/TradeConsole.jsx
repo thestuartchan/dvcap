@@ -13,13 +13,12 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
 import { C, SLabel, Card, Btn } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
-import { REGIMES } from "../lib/regimes.js";
 import { derivePosition, splitIntoTrades, collapseFills, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, realizedCurve } from "../lib/positions.js";
-import { CURRENCIES, CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy } from "../lib/fxrates.js";
+import { CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy } from "../lib/fxrates.js";
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
 
 // Shown in the sizing note; kept a constant so the copy and the cap cannot drift apart.
@@ -247,7 +246,7 @@ const {
               {/* Held-since is POSITION data, so it belongs here — and it is suppressed when the
                   trade label already names the same date, which is what made rows read
                   "Aug 18 · since 2026-08-18". */}
-              {d.firstDate && !echoesDate(r.trade, d.firstDate)
+              {d.firstDate && !echoesDate(r.trade, d.firstDate) && heldFor(d.firstDate)
                 ? <span style={{ fontSize: 11.5, color: C.lbl, whiteSpace: "nowrap" }}>held {heldFor(d.firstDate)}</span> : null}
               <span style={{ fontSize: 12, color: C.lbl, whiteSpace: "nowrap" }}>{d.qty} @ {d.avgCost?.toFixed(2)}</span>
               <b style={{ fontSize: 13, color: pnlCol(p.total) }}>{p.total == null ? "—" : (p.total > 0 ? "+" : "") + money(p.total, r.currency)}</b>
@@ -398,11 +397,15 @@ const {
                   </select>
                   {mode === "allocation" && (
                     <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700, display: "flex", gap: 5, alignItems: "center" }}>
-                      target % {nInput(r.targetPct ?? "", v => upd(r.id, { targetPct: v === "" ? null : +v }), String(targetPct), 58)}
+                      target % <NumCommit dk={`tp:${r.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft}
+                        value={r.targetPct} placeholder={String(targetPct)} width={58}
+                        onCommit={v => upd(r.id, { targetPct: v })} />
                     </label>
                   )}
                   <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700, display: "flex", gap: 5, alignItems: "center" }}>
-                    tranches {nInput(r.tranches ?? "", v => upd(r.id, { tranches: v === "" ? null : +v }), "1", 48)}
+                    tranches <NumCommit dk={`tr:${r.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft}
+                      value={r.tranches} placeholder="1" width={48}
+                      onCommit={v => upd(r.id, { tranches: v })} />
                   </label>
                 </div>
                 {sug.ok ? (
