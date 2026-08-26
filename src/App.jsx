@@ -3820,16 +3820,6 @@ function AxisBaskets({ ai, non }) {
   return <div style={{ marginTop: 4 }}>{line("AI", ai)}{line("non-AI", non)}</div>;
 }
 
-function MacroStat({ label, value, sub }) {
-  return (
-    <div style={{ minWidth: 90 }}>
-      <div style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 900, color: C.text }}>{value}</div>
-      {sub ? <div style={{ fontSize: 11, color: C.lbl }}>{sub}</div> : null}
-    </div>
-  );
-}
-
 // Business days between a YYYY-MM-DD and today (UTC). For the daily-cadence stale check.
 function bizDaysAgo(dateStr) {
   if (!dateStr) return null;

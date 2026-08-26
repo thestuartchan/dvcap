@@ -264,13 +264,13 @@ const {
         {/* The actions that answer "how do I record what I did" — on the row, not hidden. */}
         <span style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }} onClick={e => e.stopPropagation()}>
           {mode === "setup" && (
-            <Btn onClick={() => openFill(r, "buy")} color="#fff" bgColor={C.green} label="✓ I bought" />
+            <Btn onClick={() => { setExpanded(r.id); openFill(r, "buy"); }} color="#fff" bgColor={C.green} label="✓ I bought" />
           )}
           {mode === "open" && (
             <>
-              <Btn onClick={() => openFill(r, "buy")} color="#fff" bgColor={C.green} label="＋ Bought" />
-              <Btn onClick={() => openFill(r, "sell")} color="#fff" bgColor={C.blue} label="－ Sold" />
-              {stopLevel && <Btn onClick={() => openFill(r, "stopped")} color={C.red} bgColor={C.surf} label="🛑 Stopped out" />}
+              <Btn onClick={() => { setExpanded(r.id); openFill(r, "buy"); }} color="#fff" bgColor={C.green} label="＋ Bought" />
+              <Btn onClick={() => { setExpanded(r.id); openFill(r, "sell"); }} color="#fff" bgColor={C.blue} label="－ Sold" />
+              {stopLevel && <Btn onClick={() => { setExpanded(r.id); openFill(r, "stopped"); }} color={C.red} bgColor={C.surf} label="🛑 Stopped out" />}
             </>
           )}
           <span style={{ color: C.lbl, fontSize: 12, cursor: "pointer" }} onClick={() => setExpanded(open ? null : r.id)}>{open ? "▲ less" : "▼ edit"}</span>
@@ -362,7 +362,7 @@ const {
                         card, which is what made the two feel like the same thing or unrelated
                         things depending on where you looked. Selling needs something to sell. */}
                     {hit && (l.kind === "buy" || d.qty > 0) && (
-                      <button onClick={() => openFill(r, l.kind === "sell" ? "sell" : l.kind === "stop" ? "stopped" : "buy")}
+                      <button onClick={() => { setExpanded(r.id); openFill(r, l.kind === "sell" ? "sell" : l.kind === "stop" ? "stopped" : "buy"); }}
                         style={{ marginLeft: 8, cursor: "pointer", background: kindCol(l.kind), color: "#fff", border: "none", borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 800 }}>
                         record a fill
                       </button>
@@ -482,10 +482,20 @@ const {
           ))}
           {d.warnings?.map((w, i) => <div key={i} style={{ fontSize: 11.5, color: C.amber, fontWeight: 700, marginTop: 4 }}>⚠ {w}</div>)}
           <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-            <Btn onClick={() => openFill(r, "buy")} color="#fff" bgColor={C.green} label="+ Record a buy" />
-            {d.qty > 0 && <Btn onClick={() => openFill(r, "sell")} color="#fff" bgColor={C.blue} label="− Record a sell" />}
-            <Btn onClick={() => del(r.id)} color={C.red} bgColor={C.surf} label="✕ Remove" />
+            {/* The buy/sell pair lives in the row header, where it is reachable without expanding
+                anything. Repeating it here gave two controls for one action and made the pair down
+                here look like a different, more permanent kind of recording. */}
+            <Btn onClick={() => del(r.id)} color={C.red} bgColor={C.surf} label="✕ Remove this trade" />
           </div>
+
+          {/* ── THE FILL FORM ──
+              It had never been rendered. FillForm was written, wired into ctx and given a save
+              handler, but no JSX ever mounted it, so every Bought / Sold / record-a-fill button set
+              state that nothing displayed and appeared to do nothing at all. Guards did not catch it
+              because an unmounted component is not an undefined reference — scripts/check-dead-
+              components.mjs now looks for exactly this. It renders inside the row it belongs to, so
+              the form appears where the button was pressed. */}
+          {fillFor?.rowId === r.id && <FillForm ctx={ctx} symbol={r.symbol} />}
 
           {/* ── TIDYING ──
               Two things the broker's fill stream gets wrong for a human reader, offered only when
