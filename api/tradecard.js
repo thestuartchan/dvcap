@@ -15,7 +15,7 @@
 
 import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY } from '../lib/kv.js';
 import { derivePosition, positionPnl, levelHits } from '../lib/positions.js';
-import { buildCard, buildAlert, diffRows } from '../lib/tradecard.js';
+import { buildCard, buildAlert, diffRows, isCashLeg } from '../lib/tradecard.js';
 import { upsertCard, post, remove, webhookFromEnv, mentionFromEnv, alertTtlMin, CARD_KEY, ALERTS_KEY } from '../lib/discord.js';
 
 // Quotes come from the same passthrough the tab uses, so the card and the tab cannot disagree
@@ -51,7 +51,8 @@ export async function refresh(origin, { now = Date.now() } = {}) {
   if (!kvConfigured()) return { skipped: 'Redis is not configured — there is nowhere to keep the card id' };
 
   const rows = await snapshot(origin);
-  const live = rows.filter(r => r.derived.status !== 'closed');
+  // Cash parked in a bill fund is not a position the channel has anything to say about.
+  const live = rows.filter(r => r.derived.status !== 'closed' && !isCashLeg(r));
   const state = (await kvGetJson(CARD_KEY)) || {};
 
   // Announce first, so an event is not lost if the card edit fails.

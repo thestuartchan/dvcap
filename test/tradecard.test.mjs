@@ -5,7 +5,7 @@
 // building rows whose private values are distinctive digit strings and asserting those strings
 // appear nowhere in the serialised output. A future edit that adds "· 600 @ 18.06" to a line fails
 // here rather than on a Discord server.
-import { publicView, buildCard, buildAlert, diffRows, tradeLine, distTo, daysHeld, PUBLIC_FIELDS } from '../lib/tradecard.js';
+import { publicView, buildCard, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, fitLines, DESC_BUDGET, PUBLIC_FIELDS } from '../lib/tradecard.js';
 import { isWebhookUrl, alertTtlMin, mentionFromEnv, webhookFromEnv } from '../lib/discord.js';
 let pass=0,fail=0;
 const eq=(n,g,w)=>{const ok=JSON.stringify(g)===JSON.stringify(w);console.log(`${ok?'✅':'❌'} ${n}`+(ok?'':`  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`));ok?pass++:fail++;};
@@ -131,6 +131,38 @@ eq('a nonsense TTL is ignored', alertTtlMin({ TRADE_ALERT_TTL_MIN: 'soon' }), 0)
 eq('a negative TTL is ignored', alertTtlMin({ TRADE_ALERT_TTL_MIN: '-5' }), 0);
 eq('a mention id must look like one', mentionFromEnv({ DISCORD_USER_ID: 'me' }), null);
 eq('and is used when it does', mentionFromEnv({ DISCORD_USER_ID: '123456789012345678' }), '123456789012345678');
+
+// ── cash is not a position ──
+for (const sym of ['USFR', 'SGOV', 'BIL', 'SHV', 'TFLO', 'TBIL', 'JPST'])
+  ok(`${sym} is cash`, isCashLeg({ symbol: sym }));
+ok('a HK ticker suffix does not hide it', isCashLeg({ symbol: 'SGOV.US' }));
+ok('a real position is not', !isCashLeg({ symbol: 'METU' }));
+ok('nor is one that merely mentions cash flow', !isCashLeg({ symbol: 'AAPL', trade: 'cashflow compounder' }));
+ok('the label is an escape hatch', isCashLeg({ symbol: 'VMFXX', trade: 'cash sweep' }));
+ok('so is a tag', isCashLeg({ symbol: 'WHATEVER', tags: ['cash'] }));
+
+// ── the book has to fit an embed, and detail degrades before the list is cut ──
+const heavy = (i) => ({ symbol: `TICK${i}`, label: '', price: 123.45, avg: 98.76, pct: 24.99,
+  trims: [8, 14, 21, 45, 119, 33], stop: { at: 88.5, dist: -28 },
+  targets: [{ at: 150, dist: 21 }, { at: 180, dist: 46 }, { at: 220, dist: 78 }],
+  days: 77, since: '2026-06-10', status: 'open', flags: ['sell 150 reached'] });
+const mk = (n) => Array.from({ length: n }, (_, i) => heavy(i));
+ok('detail shrinks a line', tradeLine(heavy(1), 'compact').length < tradeLine(heavy(1), 'full').length);
+ok('and shrinks it again', tradeLine(heavy(1), 'minimal').length < tradeLine(heavy(1), 'compact').length);
+eq('a small book keeps full detail', fitLines(mk(10)).detail, 'full');
+eq('a large one drops to compact', fitLines(mk(25)).detail, 'compact');
+eq('a larger one to minimal', fitLines(mk(45)).detail, 'minimal');
+for (const n of [10, 25, 45, 61])
+  ok(`${n} maximal positions still fit the budget`, fitLines(mk(n)).body.length <= DESC_BUDGET);
+eq(`nothing is dropped at 61`, fitLines(mk(61)).dropped, 0);
+// Past the point where even minimal fits, the list is cut — but never silently.
+const over = fitLines(mk(120));
+ok('past the ceiling it cuts', over.dropped > 0);
+ok('and says how many are missing', /and \d+ more not shown/.test(over.body));
+ok('while still respecting the budget', over.body.length <= DESC_BUDGET);
+ok('a real card stays inside the description limit', buildCard(mk(120).map(v => ({
+  symbol: v.symbol, price: v.price, derived: { status: 'open', avgCost: v.avg, firstDate: '2026-06-10', scaleOuts: [] }, pnl: { totalPct: v.pct },
+}))).embeds[0].description.length <= 4096);
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);
