@@ -97,8 +97,17 @@ eq('the same hit does not fire twice', diffRows([{ ...open, levelHits: ['x'] }],
 
 // ── the card holds together with nothing in it ──
 const empty = buildCard([]);
-ok('an empty book still renders', empty.embeds[0].fields.length === 1);
-ok('and says so', empty.embeds[0].fields[0].name === 'Nothing open');
+ok('an empty book still renders', !!empty.embeds[0].description);
+ok('and says so', /nothing open/i.test(empty.embeds[0].description));
+ok('with no empty field block', empty.embeds[0].fields === undefined);
+
+// The count lives in the title once. A field wrapping the positions would have to be named, and
+// the only honest name repeats it.
+const titled = buildCard([row]);
+eq('title carries the count', titled.embeds[0].title, '📊 Portfolio · 1 position');
+ok('positions are the description, not a field', titled.embeds[0].description.includes('METU'));
+ok('and no field repeats the count', (titled.embeds[0].fields || []).every(f => !/^Open/.test(f.name)));
+eq('plural when it should be', buildCard([row, { ...row, id: 'r2', symbol: 'HOOD' }]).embeds[0].title, '📊 Portfolio · 2 positions');
 
 // ── mentions only fire when configured ──
 eq('no mention id, no ping', buildAlert({ kind: 'opened', row }).allowed_mentions.users, []);
