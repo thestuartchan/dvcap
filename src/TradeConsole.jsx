@@ -322,7 +322,7 @@ const {
 
             {(r.levels || []).length > 0 && (
               <div style={{ display: "flex", gap: 7, marginTop: 9, marginBottom: 3, fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4 }}>
-                <span style={{ width: 104 }}>Flag me when</span><span style={{ width: 88 }}>Price</span><span style={{ width: 100 }}>…through (opt)</span>
+                <span style={{ width: 190 }}>What kind, and when</span><span style={{ width: 88 }}>Price</span><span style={{ width: 100 }}>…through (opt)</span>
               </div>
             )}
             {(r.levels || []).map(l => {
@@ -330,9 +330,15 @@ const {
               const dist = distancePct(l, price);
               return (
                 <div key={l.id} style={{ display: "flex", gap: 7, alignItems: "center", marginBottom: 5, flexWrap: "wrap" }}>
+                  {/* Both halves, in one control. Naming only the behaviour ("it falls to") lost the
+                      difference between a BUY ZONE and a STOP — both fire on a falling price — and a
+                      buy zone promptly got created with "Stop Loss" written in its note. */}
+                  <span style={{ width: 9, height: 9, borderRadius: 9, background: kindCol(l.kind), flexShrink: 0 }} />
                   <select value={l.kind} onChange={e => updLevel(r.id, l.id, { kind: e.target.value })}
-                    style={{ width: 104, padding: "4px 7px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 12, background: C.surf, color: kindCol(l.kind), fontWeight: 700 }}>
-                    <option value="buy">it falls to</option><option value="sell">it rises to</option><option value="stop">it breaks below</option>
+                    style={{ width: 176, padding: "4px 7px", border: "1.5px solid " + kindCol(l.kind), borderRadius: 6, fontSize: 12, background: C.surf, color: kindCol(l.kind), fontWeight: 800 }}>
+                    <option value="buy">BUY ZONE · falls to</option>
+                    <option value="sell">SELL ZONE · rises to</option>
+                    <option value="stop">STOP · breaks below</option>
                   </select>
                   {/* Draft-backed, so a decimal point survives being typed. The old input coerced the
                       raw string to a number on every keystroke, so "16." became 16 and the next two
@@ -348,7 +354,7 @@ const {
                   {/* What this level will actually do, in words, including the tolerance band that a
                       single price silently carries. */}
                   <div style={{ flexBasis: "100%", fontSize: 11, color: hit ? kindCol(l.kind) : C.muted, fontWeight: hit ? 700 : 500, paddingLeft: 2 }}>
-                    {l.at == null ? "Set a price and this starts watching."
+                    {l.at == null ? `Type a price and this ${l.kind === "stop" ? "stop" : l.kind + " zone"} starts watching.`
                       : hit ? `⚡ Live now — ${price} is ${l.to != null ? `inside ${Math.min(l.at, l.to)}–${Math.max(l.at, l.to)}` : `within ${POINT_TOLERANCE_PCT}% of ${l.at}`}.`
                       : l.to != null ? `Fires anywhere in ${Math.min(l.at, l.to)}–${Math.max(l.at, l.to)} · ${dist == null ? "" : `${Math.abs(dist)}% ${dist > 0 ? "above" : "below"} the last price`}`
                       : `Single price — fires within ±${POINT_TOLERANCE_PCT}% of ${l.at} · ${dist == null ? "" : `${Math.abs(dist)}% ${dist > 0 ? "above" : "below"} the last price`}`}
@@ -371,6 +377,12 @@ const {
               ))}
               <span style={{ fontSize: 11, color: C.lbl }}>
                 One price fires within ±{POINT_TOLERANCE_PCT}% of it. Fill the second box to watch a whole zone instead.
+              </span>
+              {/* "How do I know it saved?" had no answer anywhere near the thing being edited — the
+                  only indicator was a toolbar button several screens up. */}
+              <span style={{ flexBasis: "100%", fontSize: 11, color: C.muted, marginTop: 2 }}>
+                A level is kept the moment you click away or press Enter — a <b>blue border means it is still uncommitted</b>.
+                Everything is saved in this browser straight away; <b>Save to cloud</b> is what carries it to your other devices.
               </span>
             </div>
           </div>
@@ -841,6 +853,22 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* ── STICKY SAVE STATE ──
+          The only answer to "did that save?" used to be a toolbar button at the top of the tab,
+          which is off screen the moment you open a row to edit it. This follows you down the page
+          and is the same control, so the question is answerable wherever the editing happens. */}
+      {dirty && (
+        <div style={{ position: "sticky", top: 8, zIndex: 20, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+          padding: "8px 13px", borderRadius: 10, background: C.aBg, border: "1.5px solid " + C.aBdr, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+          <b style={{ fontSize: 12.5, color: C.amber }}>Unsaved changes</b>
+          <span style={{ fontSize: 11.5, color: C.mid }}>Kept in this browser already — syncing carries them to your other devices.</span>
+          <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+            {saveMsg && <span style={{ fontSize: 11.5, color: C.mid }}>{saveMsg}</span>}
+            <Btn onClick={saveCloud} disabled={saving} color="#fff" bgColor={C.blue} label={saving ? "Saving…" : "☁ Save to cloud"} />
+          </span>
+        </div>
+      )}
+
       {/* purpose + regime */}
       <div style={{ background: liveRegime?.bg || C.surf, border: "1.5px solid " + (liveRegime?.bdr || C.bdr), borderTop: "4px solid " + (liveRegime?.color || C.blue), borderRadius: 12, padding: "12px 16px" }}>
         <div style={{ fontSize: 13.5, color: C.mid, lineHeight: 1.55 }}>
