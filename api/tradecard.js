@@ -20,12 +20,19 @@ import { upsertCard, post, remove, webhookFromEnv, mentionFromEnv, alertTtlMin, 
 
 // Quotes come from the same passthrough the tab uses, so the card and the tab cannot disagree
 // about a price. A missing quote leaves a row's percentage null rather than stale.
+// /api/prices takes `tickers`, not `symbols`, and answers with the quote map at the TOP level
+// rather than under a `prices` key. Getting either wrong fails the way it did on the first live
+// run: a 400, an empty map, every price "—" and every return 0.00%, with nothing saying so. The
+// timeout is generous because that endpoint deliberately paces its upstream calls 120ms apart.
 async function quotesFor(symbols, origin) {
   if (!symbols.length) return {};
   try {
-    const r = await fetch(`${origin}/api/prices?symbols=${encodeURIComponent(symbols.join(','))}`, { signal: AbortSignal.timeout(8000) });
-    return r.ok ? (await r.json())?.prices ?? {} : {};
-  } catch { return {}; }
+    const r = await fetch(`${origin}/api/prices?tickers=${encodeURIComponent(symbols.join(','))}`,
+      { signal: AbortSignal.timeout(20000) });
+    if (!r.ok) { console.error('tradecard: /api/prices returned', r.status); return {}; }
+    const j = await r.json();
+    return (j && typeof j === 'object' && !j.error) ? j : {};
+  } catch (e) { console.error('tradecard: price fetch failed', e?.message || e); return {}; }
 }
 
 // Console rows → the shape lib/tradecard.js expects. Note `levelHits`: a level's alert lives in the
@@ -56,7 +63,16 @@ export async function refresh(origin, { now = Date.now() } = {}) {
   const state = (await kvGetJson(CARD_KEY)) || {};
 
   // Announce first, so an event is not lost if the card edit fails.
-  const events = diffRows(state.rows || [], rows.map(r => ({ id: r.id, derived: { status: r.derived.status }, levelHits: r.levelHits })));
+  // The same exclusion the card uses. Filtering only the card meant USFR was kept off the list and
+  // still announced itself as a new trade, which is the one place cash had nothing to say at all.
+  const announceable = rows.filter(r => !isCashLeg(r));
+  const shape = (r) => ({ id: r.id, derived: { status: r.derived.status }, levelHits: r.levelHits });
+
+  // COLD START. With no stored snapshot every existing position looks new, so the first run
+  // announced the entire book — nine notifications for trades that were weeks old. A first run
+  // seeds the state silently; a channel's history should begin with the card, not with a backlog.
+  const firstRun = !state.rows;
+  const events = firstRun ? [] : diffRows(state.rows, announceable.map(shape));
   const mention = mentionFromEnv();
   const ttl = alertTtlMin();
   const pending = Array.isArray(state.alerts) ? [...state.alerts] : [];
@@ -81,11 +97,12 @@ export async function refresh(origin, { now = Date.now() } = {}) {
     messageId: id ?? state.messageId ?? null,
     alerts: kept,
     // Only what diffRows needs, so the stored snapshot cannot become a second copy of the book.
-    rows: rows.map(r => ({ id: r.id, derived: { status: r.derived.status }, levelHits: r.levelHits })),
+    rows: announceable.map(shape),
     updatedAt: new Date(now).toISOString(),
   });
 
-  return { posted: events.length, cardCreated: created, cardFailed: !!failed, open: live.length, sweptAlerts: pending.length - kept.length };
+  return { posted: events.length, seeded: firstRun, cardCreated: created, cardFailed: !!failed,
+           open: live.length, priced: live.filter(r => r.price != null).length, sweptAlerts: pending.length - kept.length };
 }
 
 // OPTIONAL SHARED SECRET. Without one this endpoint is reachable by anyone who knows the URL, and

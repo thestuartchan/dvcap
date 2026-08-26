@@ -7,6 +7,7 @@
 // here rather than on a Discord server.
 import { publicView, buildCard, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, fitLines, DESC_BUDGET, PUBLIC_FIELDS } from '../lib/tradecard.js';
 import { isWebhookUrl, alertTtlMin, mentionFromEnv, webhookFromEnv } from '../lib/discord.js';
+import fs from 'node:fs';
 let pass=0,fail=0;
 const eq=(n,g,w)=>{const ok=JSON.stringify(g)===JSON.stringify(w);console.log(`${ok?'✅':'❌'} ${n}`+(ok?'':`  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`));ok?pass++:fail++;};
 const ok=(n,c)=>eq(n,!!c,true);
@@ -163,6 +164,35 @@ ok('while still respecting the budget', over.body.length <= DESC_BUDGET);
 ok('a real card stays inside the description limit', buildCard(mk(120).map(v => ({
   symbol: v.symbol, price: v.price, derived: { status: 'open', avgCost: v.avg, firstDate: '2026-06-10', scaleOuts: [] }, pnl: { totalPct: v.pct },
 }))).embeds[0].description.length <= 4096);
+
+// ── the contract between api/tradecard.js and api/prices.js ──
+// This is not a unit test of either file; it is the seam between them, and the seam is where the
+// first live run broke. tradecard asked for ?symbols= while prices reads req.query.tickers, so the
+// call 400'd, every price came back null, and the card rendered "—" and "0.00%" for the whole book
+// without anything reporting a failure. Reading the parameter name out of the provider and
+// asserting the consumer uses it costs nothing and catches a rename from either side.
+const pricesSrc = fs.readFileSync(new URL('../api/prices.js', import.meta.url), 'utf8');
+const cardSrc = fs.readFileSync(new URL('../api/tradecard.js', import.meta.url), 'utf8');
+const wantsParam = /const \{ (\w+) \} = req\.query/.exec(pricesSrc)?.[1];
+const sendsParam = /api\/prices\?(\w+)=/.exec(cardSrc)?.[1];
+eq('the price endpoint still reads one named query param', typeof wantsParam, 'string');
+eq('and the card sends exactly that one', sendsParam, wantsParam);
+// The provider answers with the quote map at the top level, so the consumer must not reach into a
+// wrapper key that does not exist.
+ok('prices answers at the top level', /res\.status\(200\)\.json\(results\)/.test(pricesSrc));
+ok('and the card does not unwrap a missing key', !/await r\.json\(\)\)\?\.prices/.test(cardSrc));
+
+// ── cash is excluded from ALERTS too, not only from the card ──
+const cashRow = { id: 'c', symbol: 'USFR', trade: 'cash leg', derived: { status: 'open', firstDate: '2026-07-10' }, pnl: {} };
+ok('a cash row is recognised', isCashLeg(cashRow));
+// diffRows itself is unfiltered by design — the endpoint decides what is announceable — so the
+// test is that filtering with isCashLeg removes it before the diff sees it.
+eq('filtered out before the diff', diffRows([], [cashRow].filter(r => !isCashLeg(r))), []);
+eq('while a real position survives', diffRows([], [{ id: 'm', symbol: 'METU', derived: { status: 'open' }, pnl: {} }].filter(r => !isCashLeg(r))).length, 1);
+
+// ── a first run must not announce a book that is weeks old ──
+ok('the endpoint seeds silently on a cold start', /const firstRun = !state\.rows;/.test(cardSrc));
+ok('and only diffs once there is something to diff against', /firstRun \? \[\] : diffRows\(state\.rows/.test(cardSrc));
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);
