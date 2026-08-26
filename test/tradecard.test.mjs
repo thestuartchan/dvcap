@@ -5,18 +5,17 @@
 // building rows whose private values are distinctive digit strings and asserting those strings
 // appear nowhere in the serialised output. A future edit that adds "· 600 @ 18.06" to a line fails
 // here rather than on a Discord server.
-import { publicView, buildCard, buildAlert, diffRows, tradeLine, rMultiple, daysHeld, PUBLIC_FIELDS } from '../lib/tradecard.js';
+import { publicView, buildCard, buildAlert, diffRows, tradeLine, distTo, daysHeld, PUBLIC_FIELDS } from '../lib/tradecard.js';
 import { isWebhookUrl, alertTtlMin, mentionFromEnv, webhookFromEnv } from '../lib/discord.js';
 let pass=0,fail=0;
 const eq=(n,g,w)=>{const ok=JSON.stringify(g)===JSON.stringify(w);console.log(`${ok?'✅':'❌'} ${n}`+(ok?'':`  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`));ok?pass++:fail++;};
 const ok=(n,c)=>eq(n,!!c,true);
 
 // A row whose every private number is a string that could not occur by chance.
-// The four forbidden quantities: size, absolute P&L, market value, share of book. Entry price is
-// deliberately NOT among them — it is a realistic 18.06 here, because R is (price − entry) /
-// (entry − stop) and therefore implies the entry to anyone who knows the stop. That is accepted:
-// an entry price is what a trade-idea channel is FOR, it is not a size and it does not reach the
-// balance. The four below are the ones that do, and none may appear anywhere in a payload.
+// The four forbidden quantities: size, absolute P&L, market value, share of book. PRICES are not
+// among them — entry, stop and target are the idea itself, and are published deliberately. The four
+// below describe the size of the ACCOUNT rather than the merit of a trade, and none may appear
+// anywhere in a payload.
 const SECRET = { qty: 987654, realized: 555444.33, unrealized: 222111.99, mv: 888777.66, weight: 44.44 };
 const row = {
   id: 'r1', symbol: 'METU', trade: '2x META', currency: 'USD', price: 20.41,
@@ -34,6 +33,8 @@ const v = publicView(row, { today: '2026-08-26' });
 eq('symbol survives', v.symbol, 'METU');
 eq('percentage survives', v.pct, 12.99);
 eq('days held survives', v.days, 8);
+eq('the entry average is published', v.avg, 18.06);
+eq('the stop level is published', v.stop.at, 16.5);
 eq('quantity does not', v.qty, undefined);
 eq('the raw average cost field does not', v.avgCost, undefined);
 eq('market value does not', v.marketValue, undefined);
@@ -58,12 +59,18 @@ ok('footer carries the win rate', card.embeds[0].footer.text.includes('63% win')
 ok('footer carries no currency symbol', !/[$€£¥]/.test(JSON.stringify(card)));
 
 // ── R multiple ──
-eq('R from entry, stop and price', rMultiple({ entry: 18.06, stop: 16.5, price: 20.41 }), 1.5);
-eq('a losing trade is negative R', rMultiple({ entry: 18.06, stop: 16.5, price: 17.28 }), -0.5);
-eq('no stop, no R', rMultiple({ entry: 18.06, stop: null, price: 20.41 }), null);
-eq('a stop above entry is not a risk unit', rMultiple({ entry: 18.06, stop: 19, price: 20.41 }), null);
-ok('R is preferred when there is a stop', tradeLine(v).includes('+1.5R'));
-ok('and % when there is not', tradeLine(publicView({ ...row, levels: [] })).includes('12.99%'));
+eq('distance to a level below', distTo(16.5, 20.41), -19.2);
+eq('distance to a level above', distTo(25.25, 20.41), 23.7);
+eq('no price, no distance', distTo(16.5, null), null);
+// R is not printed: avg and SL are both on the line, which is the same information in a form the
+// reader can check rather than take on trust.
+const line = tradeLine(v);
+for (const part of ['METU', '20.41', 'avg 18.06', '+12.99%', 'SL 16.5', '8d'])
+  ok(`line carries ${part}`, line.includes(part));
+ok('no direction marker — every position here is long', !/ L · /.test(line));
+ok('trims appear when a position has been scaled out', tradeLine(publicView({ ...row, derived: { ...row.derived, scaleOuts: [{ pct: 8.2 }, { pct: 14.1 }] } })).includes('trimmed +8%, +14%'));
+ok('and not when it has not', !tradeLine(v).includes('trimmed'));
+ok('targets carry their distance', tradeLine(publicView({ ...row, levels: [...row.levels, { kind: 'sell', at: 25.25 }] })).includes('TP 25.25 (+24%)'));
 
 // ── days held ──
 eq('days held', daysHeld('2026-08-18', '2026-08-26'), 8);

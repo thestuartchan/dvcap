@@ -305,5 +305,22 @@ const pinned = summarize([
 ], (v, r) => v / (r.fxRate ?? 7.84));
 eq('converted at the pinned rate, not spot', pinned.realized, +(1000/7.80).toFixed(2));
 
+// ── each scale-out keeps the percentage it was taken at ──
+const trims = derivePosition([
+  {date:'2026-08-01', side:'buy',  qty:300, price:10},
+  {date:'2026-08-05', side:'sell', qty:100, price:11},     // +10%
+  {date:'2026-08-09', side:'sell', qty:100, price:12.5},   // +25%, against the SAME average
+]);
+eq('one entry per sell', trims.scaleOuts.length, 2);
+eq('first trim percentage', trims.scaleOuts[0].pct, 10);
+eq('selling does not move the average, so the second is measured off the same base', trims.scaleOuts[1].pct, 25);
+eq('trims are dated', trims.scaleOuts[0].date, '2026-08-05');
+eq('a position never sold has no trims', derivePosition([{date:'1',side:'buy',qty:10,price:5}]).scaleOuts, []);
+// The multiplier cancels in a percentage, so an option's trim reads the same as a share's.
+eq('an option trim is a plain percentage', derivePosition([
+  {date:'1', side:'buy',  qty:10, price:2},
+  {date:'2', side:'sell', qty:5,  price:3},
+], {multiplier: 100}).scaleOuts[0].pct, 50);
+
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);
