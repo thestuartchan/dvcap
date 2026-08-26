@@ -24,7 +24,7 @@ const row = {
   levelHits: ['buy zone hit at 16.85'],
   derived: { status: 'open', qty: SECRET.qty, avgCost: 18.06, avgEntry: 18.06,
              realized: SECRET.realized, spent: 108380, firstDate: '2026-08-18', lastDate: '2026-08-18', multiplier: 1 },
-  pnl: { total: SECRET.unrealized, totalPct: 12.99, unrealized: SECRET.unrealized, marketValue: SECRET.mv },
+  pnl: { total: SECRET.unrealized, totalPct: 6.01, unrealizedPct: 12.99, unrealized: SECRET.unrealized, marketValue: SECRET.mv },
   weightPct: SECRET.weight,
 };
 
@@ -193,6 +193,18 @@ eq('while a real position survives', diffRows([], [{ id: 'm', symbol: 'METU', de
 // ── a first run must not announce a book that is weeks old ──
 ok('the endpoint seeds silently on a cold start', /const firstRun = !state\.rows;/.test(cardSrc));
 ok('and only diffs once there is something to diff against', /firstRun \? \[\] : diffRows\(state\.rows/.test(cardSrc));
+
+// ── the percentage must agree with the two numbers printed beside it ──
+// price and avg are both on the line, so the reader derives (price − avg) / avg whether or not it
+// is offered. A total-return figure — right for the console, where it sits under its own
+// denominator — would contradict them.
+const consistent = publicView({ ...row, price: 251.06,
+  derived: { ...row.derived, avgCost: 331.5567 },
+  pnl: { unrealizedPct: -24.28, totalPct: -12.33 } });
+eq('the card takes the move from average cost', consistent.pct, -24.28);
+const derivable = ((251.06 - 331.5567) / 331.5567) * 100;
+ok('which is what the line implies', Math.abs(consistent.pct - derivable) < 0.01);
+ok('not the return on everything deployed', consistent.pct !== -12.33);
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);
