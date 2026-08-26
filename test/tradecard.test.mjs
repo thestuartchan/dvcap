@@ -5,7 +5,7 @@
 // building rows whose private values are distinctive digit strings and asserting those strings
 // appear nowhere in the serialised output. A future edit that adds "· 600 @ 18.06" to a line fails
 // here rather than on a Discord server.
-import { publicView, buildCard, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, fitLines, DESC_BUDGET, PUBLIC_FIELDS } from '../lib/tradecard.js';
+import { publicView, buildCard, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS } from '../lib/tradecard.js';
 import { isWebhookUrl, alertTtlMin, mentionFromEnv, webhookFromEnv } from '../lib/discord.js';
 import fs from 'node:fs';
 let pass=0,fail=0;
@@ -205,6 +205,23 @@ eq('the card takes the move from average cost', consistent.pct, -24.28);
 const derivable = ((251.06 - 331.5567) / 331.5567) * 100;
 ok('which is what the line implies', Math.abs(consistent.pct - derivable) < 0.01);
 ok('not the return on everything deployed', consistent.pct !== -12.33);
+
+// ── order decides what gets read ──
+const V = (symbol, pct, flags = []) => ({ symbol, label: '', price: 10, avg: 10, pct, trims: [], stop: null, targets: [], days: 1, since: '', status: 'open', flags });
+const ordered = sortForCard([V('WIN_SMALL', 1.4), V('LOSS_BIG', -36.5), V('WIN_BIG', 11), V('LOSS_SMALL', -1.1), V('HIT', -10.6, ['stop reached'])]);
+eq('a level hit comes first whatever it is doing', ordered[0].symbol, 'HIT');
+eq('then the worst loser', ordered[1].symbol, 'LOSS_BIG');
+eq('then the smaller loss', ordered[2].symbol, 'LOSS_SMALL');
+eq('winners after the losers', ordered[3].symbol, 'WIN_BIG');
+eq('best winner before the smaller one', ordered[4].symbol, 'WIN_SMALL');
+// A winner that has hit a target is still a decision, so it outranks the losers.
+eq('a winner with a hit still leads', sortForCard([V('L', -20), V('W', 30, ['sell zone reached'])])[0].symbol, 'W');
+// No price is not a zero, and must not sort as the worst position in the book.
+const noprice = sortForCard([V('A', -5), V('B', null), V('C', 5)]);
+eq('an unpriced row does not lead', noprice[0].symbol, 'A');
+eq('it sorts last among the non-losers', noprice.map(v => v.symbol), ['A', 'C', 'B']);
+eq('an empty book sorts fine', sortForCard([]), []);
+ok('sorting does not mutate the input', (() => { const a = [V('X', 1), V('Y', -1)]; sortForCard(a); return a[0].symbol === 'X'; })());
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);

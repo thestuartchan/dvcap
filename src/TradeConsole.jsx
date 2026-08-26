@@ -1123,7 +1123,10 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
         const priced = held.filter(h => h.mvBase != null && h.mvBase > 0 && !h.margined);
         const margined = held.filter(h => h.margined && h.mvBase != null);
         const notional = margined.reduce((a, h) => a + h.mvBase, 0);
-        const missing = held.length - priced.length;
+        // A margined row is EXCLUDED ON PURPOSE, not missing. Counting the two together made the
+        // card warn "2 positions not shown — no live price" about MGC and MNQ, which had prices and
+        // were deliberately kept out of these totals. Two different facts, two different lines.
+        const missing = held.filter(h => !h.margined && !(h.mvBase != null && h.mvBase > 0)).length;
         const totalMv = priced.reduce((a, h) => a + h.mvBase, 0);
         const pie = priced.map(h => ({ name: h.symbol, value: +h.mvBase.toFixed(2), pct: totalMv ? +((h.mvBase / totalMv) * 100).toFixed(1) : 0 }))
           .sort((a, b) => b.value - a.value);
