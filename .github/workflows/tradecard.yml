@@ -1,28 +1,45 @@
 # Refreshes the Discord trade card on a schedule.
 #
-# WHY HERE AND NOT vercel.json. The card has to keep up with prices moving while nobody is touching
-# the console, which wants a few minutes rather than a few hours. GitHub Actions gives 5-minute
-# granularity for free and costs no Vercel function, and this repo is already on GitHub — whereas a
-# Vercel cron would spend one of a limited set of slots and its granularity depends on the plan.
+# WHY THIS IS RARE, NOT FREQUENT. The console records spot, swing and long holds — positions
+# measured in weeks, one of them 77 days old. A price ten minutes newer changes nothing anybody
+# would act on, and an embed that visibly re-edits itself all day is noise rather than information.
+#
+# The schedule is also not the main path. Every console save pushes the card immediately, so
+# anything the account owner CHANGES is already live; this exists only for price drift and for level
+# alerts firing while nobody is looking. Four checkpoints a day covers that:
+#
+#   13:35 UTC  just after the US open        20:05 UTC  just after the US close
+#   17:00 UTC  midday                        01:35 UTC  the HK open, for the two HK positions
+#
+# COST, since a minute of CI per curl adds up. GitHub bills each job at a one-minute minimum, so
+# 4 runs × 5 weekdays ≈ 20 minutes a week, ~87 a month — against 2,000 free for a private repo, and
+# unmetered for a public one. The ten-minute version this replaced would have been ~1,200 a month:
+# 60% of the private-repo allowance, spent watching positions that move in weeks.
+#
+# Raise the cadence if and when levels are set and a hit needs catching promptly — that is the one
+# thing a slower schedule genuinely delays, and it is worth the minutes when it applies.
 #
 # The endpoint is idempotent: it edits ONE message in place and only posts when something actually
 # changed, so a duplicate run is harmless and a missed run self-corrects on the next one. GitHub
-# schedules are best-effort and can be late under load, which this design tolerates by construction.
+# schedules are best-effort and can run late under load; this design tolerates that by construction.
 name: trade card
 
 on:
   schedule:
-    - cron: '*/10 13-21 * * 1-5'   # every 10 min through the US session (UTC), weekdays
-    - cron: '0 1,7 * * 1-5'        # twice more for the HK session
-  workflow_dispatch:               # and on demand, for testing
+    - cron: '35 13 * * 1-5'
+    - cron: '0 17 * * 1-5'
+    - cron: '5 20 * * 1-5'
+    - cron: '35 1 * * 1-5'
+  workflow_dispatch:
 
 concurrency:
   group: tradecard
-  cancel-in-progress: false        # let a slow run finish rather than leaving a half-written card
+  cancel-in-progress: false      # let a slow run finish rather than leaving a half-written card
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
       - name: Refresh the card
         run: |
