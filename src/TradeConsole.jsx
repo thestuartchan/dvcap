@@ -434,6 +434,9 @@ const {
                   <b> Risk-based</b> asks how many shares make a stop-out cost a fixed slice of the book, so it needs a stop.
                   <b> Allocation</b> targets a percentage of the book instead, for holds where the thesis rather than a price
                   is the exit. Both are scaled by the regime multiplier and netted against what you already hold.
+                  <br /><b>Buy it in N goes</b> divides the room you have LEFT — not the full size — so it keeps working after
+                  you have already scaled in: full size 100 with 40 held is 60 of room, which in 3 goes is 20 a time. It changes
+                  nothing about how big the position should end up, only the size of each step towards it.
                 </div>
           {(() => {
             const mode = sizeMode;
@@ -455,9 +458,11 @@ const {
                     </label>
                   )}
                   <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700, display: "flex", gap: 5, alignItems: "center" }}>
-                    tranches <NumCommit dk={`tr:${r.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft}
-                      value={r.tranches} placeholder="1" width={48}
-                      onCommit={v => upd(r.id, { tranches: v })} />
+                    <span title="How many separate buys you intend to build the position with. The room left to buy is divided by this, so you get a per-buy size instead of one all-at-once number. It changes nothing about the full size — only how you get there.">
+                      buy it in <NumCommit dk={`tr:${r.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft}
+                        value={r.tranches} placeholder="1" width={48}
+                        onCommit={v => upd(r.id, { tranches: v })} /> goes
+                    </span>
                   </label>
                 </div>
                 {sug.ok ? (
@@ -465,7 +470,7 @@ const {
                     Full size <b style={{ color: C.text }} title={sug.rounded ? `rounded from ${sug.fullExact} — equity is approximate, so the extra digits are not meaningful` : undefined}>~{sug.fullQty}</b> ({money(sug.notional, r.currency)} · {sug.notionalPctOfBook}% of book)
                     {sug.heldQty > 0 && <> · holding <b>{sug.heldQty}</b></>}
                     {" · "}<b style={{ color: sug.roomQty > 0 ? C.green : C.muted }}>room for {sug.roomQty}</b>
-                    {sug.tranches > 1 && sug.trancheQty > 0 && <> · <b>{sug.trancheQty}</b> per tranche ×{sug.tranches}</>}
+                    {sug.tranches > 1 && sug.trancheQty > 0 && <> · <b>{sug.trancheQty}</b> per buy, {sug.tranches} times</>}
                     {sug.riskAmount != null && (
                       <div style={{ color: C.lbl }}>
                         Risks <b style={{ color: C.red }}>{fmtCcy(sug.riskAmount, r.currency)}</b> at the {stopLevel?.at} stop ({sug.effPct}% of book · {money(sug.perShareRisk, r.currency)}/share)
@@ -683,8 +688,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   }
 
   const touch = () => setDirty(true);
-  // The toast is a notice, not a dialogue: it goes on its own.
-  useEffect(() => { if (!moved) return; const t = setTimeout(() => setMoved(null), 9000); return () => clearTimeout(t); }, [moved]);
+
   const baseCcy = settings.baseCurrency || "USD";
 
   // ── prices + fx ──
@@ -963,7 +967,13 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       {/* ── SECTION CHANGE ──
           Says where the row went, and what it booked on the way. */}
       {moved && (
-        <div className="dvcap-toast" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "9px 13px", borderRadius: 10,
+        // STICKY, and it stays until dismissed. Rendered as an ordinary block at the top of the tab
+        // it appeared above wherever you were standing — you record a fill from the row, which is
+        // most of a page down, so the notice was off screen the entire time it existed. It also
+        // used to time out after nine seconds, which is not long enough to walk down to the archive
+        // and back, and a notice about the least reversible action in the tab should be dismissed
+        // deliberately rather than on a clock.
+        <div className="dvcap-toast" style={{ position: "sticky", top: 8, zIndex: 21, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "9px 13px", borderRadius: 10, boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
           background: moved.to === "closed" ? "#F0FDF4" : C.blBg, border: "1.5px solid " + (moved.to === "closed" ? "#BBF7D0" : C.blBdr) }}>
           <b style={{ fontSize: 13, color: moved.to === "closed" ? C.green : C.blue }}>
             {moved.symbol} {moved.to === "closed" ? "closed out" : moved.to === "open" ? "is now an open position" : "is back to a setup"}
@@ -975,7 +985,8 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
               {" — moved to the archive below, nothing was deleted."}
             </span>
           )}
-          <button onClick={() => setMoved(null)} style={{ marginLeft: "auto", cursor: "pointer", background: "none", border: "none", color: C.mid, fontWeight: 800, fontSize: 13 }}>✕</button>
+          <button onClick={() => setMoved(null)} title="dismiss"
+            style={{ marginLeft: "auto", cursor: "pointer", background: C.surf, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "2px 9px", color: C.mid, fontWeight: 800, fontSize: 12 }}>✕ Got it</button>
         </div>
       )}
 
