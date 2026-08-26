@@ -33,7 +33,7 @@ function trendBps(series, lookbackDays) {
 }
 import { laborStress, sahmAnnotation, laborVerdict, laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead, quitsRead, revisionTrackerRead, twelveMonthAvgRead, ytdDivergenceRead } from "../lib/labor.js";
 import { handoffChain } from "../lib/handoff.js";
-import { SEC_YIELDS, PROXY, secYieldProxy, proxyDivergence, apyFromSec, afterWht, compareCash } from "../lib/cashyield.js";
+import { SEC_YIELDS, PROXY, secYieldProxy, proxyDivergence, apyFromSec, afterWht, billFromDiscount, BILL_DAYS, compareCash } from "../lib/cashyield.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
 const SC = ["#1E40AF","#166534","#D97706","#6D28D9","#B45309","#BE185D","#0F766E","#F59E0B"];
@@ -1199,10 +1199,19 @@ function CashComparisonCard({ liveInd }) {
   const rows = [
     { k: "USFR", sec: usfrSec, apy: apyFromSec(usfrSec), aw: cmp.rows.USFR.afterWht, liq: "T+1", credit: "US Govt", wht: `${Number(cfg.usfrWht) || 0}%`, whtTag: "✓ VERIFIED · Jul 30 2026 distribution", whtOk: true },
     { k: "SGOV", sec: sgovSec, apy: apyFromSec(sgovSec), aw: cmp.rows.SGOV.afterWht, liq: "T+1", credit: "US Govt", wht: `${Number(cfg.sgovWht) || 0}%`, whtTag: "⚠ UNVERIFIED · no SGOV distribution observed", whtOk: false, star: true },
-    bill && { k: bill.src, sec: bill.value, apy: bill.value, aw: bill.value, liq: "to maturity", credit: "US Govt", wht: "0%", whtTag: null },
+    // The 6M bill is FRED DTB6, a DISCOUNT rate — not a fund SEC yield and not an APY. It used to
+    // be dropped raw into all three columns, which both mislabelled it and understated it by ~17bp
+    // against funds whose figures ARE compounded. It now shows its own quoted discount in the
+    // first column and the real conversions beside it.
+    bill && (() => {
+      const b = billFromDiscount(bill.value, BILL_DAYS["6M"]);
+      return b
+        ? { k: bill.src, sec: b.discount, secNote: "discount", apy: b.apy, aw: b.apy, ce: b.couponEquiv, liq: "to maturity", credit: "US Govt", wht: "0%", whtTag: null }
+        : { k: bill.src, sec: bill.value, secNote: "discount", apy: null, aw: null, liq: "to maturity", credit: "US Govt", wht: "0%", whtTag: null };
+    })(),
     { k: "Bank deposit", sec: null, apy: bankApy, aw: bankApy, liq: "LOCKED", credit: "Bank", bank: true },
   ].filter(Boolean);
-  const cols = ["", "SEC 30d", "APY", "After WHT", "Liquidity", "Credit"];
+  const cols = ["", "Quoted", "APY", "After WHT", "Liquidity", "Credit"];
   return (
     <Card>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
@@ -1220,7 +1229,9 @@ function CashComparisonCard({ liveInd }) {
             {rows.map((r, i) => (
               <tr key={r.k} style={{ background: i % 2 ? C.bg : "transparent" }}>
                 <td style={{ padding: "5px 8px", fontWeight: 700, color: r.bank ? C.muted : C.text, borderBottom: "1px solid " + C.bdr }}>{r.k}</td>
-                <td style={{ padding: "5px 8px", textAlign: "right", color: C.mid, borderBottom: "1px solid " + C.bdr }}>{pc(r.sec)}</td>
+                <td style={{ padding: "5px 8px", textAlign: "right", color: C.mid, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap" }}>
+                  {pc(r.sec)}{r.secNote ? <span style={{ color: C.muted, fontSize: 10, fontWeight: 700 }}> {r.secNote}</span> : null}
+                </td>
                 <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: 800, color: C.text, borderBottom: "1px solid " + C.bdr }}>{pc(r.apy)}</td>
                 <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700, color: C.mid, borderBottom: "1px solid " + C.bdr }}>{pc(r.aw)}{r.star ? "*" : ""}</td>
                 <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: r.liq === "LOCKED" ? 800 : 600, color: r.liq === "LOCKED" ? C.amber : C.muted, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap" }}>{r.liq}</td>
@@ -7053,13 +7064,14 @@ export default function App() {
                     <div style={{ marginBottom: 12, padding: "8px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, fontSize: 11.5 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
                         <span style={{ fontWeight: 800, color: C.mid }}>3M T-bill (DTB3) <b style={{ color: C.text }}>{dtb3.toFixed(2)}%</b> <span style={{ color: C.lbl, fontWeight: 600 }}>live · daily{liveInd?.asOf?.tbill3m ? ` · ${liveInd.asOf.tbill3m}` : ""}</span></span>
-                        <span style={{ color: C.lbl, fontStyle: "italic" }}>SGOV & USFR are pass-throughs of the bill</span>
+                        <span style={{ color: C.lbl, fontStyle: "italic" }}>SGOV & USFR are pass-throughs of the bill<br />
+                          <b>est</b> is a proxy for the published SEC yield — not an APY, which the comparison card computes separately</span>
                       </div>
                       {[["SGOV", PROXY.SGOV.formula], ["USFR", PROXY.USFR.formula]].map(([k, f]) => {
                         const d = secDiv[k];
                         return (
                           <div key={k} style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "baseline", marginTop: 3 }}>
-                            <span style={{ minWidth: 48, fontWeight: 700, color: C.mid }}>{k} est</span>
+                            <span style={{ minWidth: 92, fontWeight: 700, color: C.mid }}>{k} est SEC</span>
                             <span style={{ fontWeight: 800, color: C.text }}>{d.est.toFixed(2)}%</span>
                             <span style={{ color: C.lbl }}>{f}</span>
                             <span style={{ color: C.muted }}>· actual <b style={{ color: C.mid }}>{d.published.toFixed(2)}%</b> ({SEC_YIELDS[k].asOf})</span>
