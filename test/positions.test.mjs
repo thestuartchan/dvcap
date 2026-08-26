@@ -254,5 +254,25 @@ eq('option collapse stays exact', collapseFills([
   {date:'2026-07-30', side:'sell', qty:8, price:2.4},
 ], {multiplier: 100}).exact, true);
 
+// ── the percentage that matches the money ──
+const simple = derivePosition([{date:'2026-08-18', side:'buy', qty:600, price:18.064007}]);
+const sp = positionPnl(simple, 19.66);
+eq('total return = price move when nothing sold', sp.totalPct, sp.unrealizedPct);
+eq('and it is the right number', sp.totalPct, 8.84);   // matches the expanded card
+
+// After a scale-out the two diverge, and totalPct is the one that pairs with the money.
+const scaled = derivePosition([
+  {date:'2026-08-01', side:'buy',  qty:200, price:10},
+  {date:'2026-08-05', side:'sell', qty:100, price:15},
+]);
+const scp = positionPnl(scaled, 12);
+eq('realised on the half sold', scaled.realized, 500);
+eq('unrealised on the half held', scp.unrealized, 200);
+eq('total money', scp.total, 700);
+eq('price move from average cost', scp.unrealizedPct, 20);
+eq('return on everything deployed', scp.totalPct, 35);
+
+eq('a setup has no return', positionPnl(derivePosition([]), 10).totalPct, null);
+
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);

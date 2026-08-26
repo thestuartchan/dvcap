@@ -174,16 +174,33 @@ const {
         {r.trade ? <span style={{ fontSize: 11.5, color: C.mid, fontWeight: 700, background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6, padding: "1px 7px", whiteSpace: "nowrap" }}>{r.trade}</span> : null}
         {d.multiplier > 1 ? chip(`×${d.multiplier}`, C.amber, C.aBg, C.aBdr) : null}
         {mode === "open" && d.firstDate ? <span style={{ fontSize: 11.5, color: C.lbl, whiteSpace: "nowrap" }}>since {d.firstDate}</span> : null}
-        <span style={{ fontSize: 14, fontWeight: 700, minWidth: 62 }}>{price != null ? price.toFixed(2) : "—"}</span>
-        <span style={{ fontSize: 12.5, fontWeight: 800, minWidth: 54, color: q?.changePercent == null ? C.muted : q.changePercent >= 0 ? C.green : C.red }}>
-          {q?.changePercent == null ? "" : (q.changePercent >= 0 ? "+" : "") + q.changePercent.toFixed(2) + "%"}
+        {/* ── TWO DIFFERENT NUMBERS, KEPT APART ──
+            The quote's move today and the position's return are both percentages, and side by side
+            with no label they read as one figure — HOOD showing "+8.17%" next to "+$507.91" looked
+            like the return on the position when it was the day's move on the tape, and the actual
+            return was +4.75%. The quote group is muted and carries the word "today"; the position
+            group is coloured, sits after a divider, and its percentage is the one that matches the
+            money beside it. */}
+        <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }} title="Last price and today's move on the tape — not your return">
+          <span style={{ fontSize: 14, fontWeight: 700 }}>{price != null ? price.toFixed(2) : "—"}</span>
+          <span style={{ fontSize: 11.5, fontWeight: 700, color: q?.changePercent == null ? C.muted : q.changePercent >= 0 ? C.green : C.red, whiteSpace: "nowrap" }}>
+            {q?.changePercent == null ? "" : `${q.changePercent >= 0 ? "▲" : "▼"}${Math.abs(q.changePercent).toFixed(2)}%`}
+          </span>
+          <span style={{ fontSize: 10.5, color: C.muted, whiteSpace: "nowrap" }}>{q?.changePercent == null ? "" : "today"}</span>
         </span>
         {ccyChip(r.currency || "USD")}
         {mode === "open" && (
           <>
-            <span style={{ fontSize: 12, color: C.lbl }}>{d.qty} @ {d.avgCost?.toFixed(2)}</span>
-            <b style={{ fontSize: 13, color: pnlCol(p.total) }}>{p.total == null ? "—" : (p.total > 0 ? "+" : "") + money(p.total, r.currency)}</b>
-            {d.partiallyRealised && chip(`realised ${money(d.realized, r.currency)}`, C.green, "#F0FDF4", "#BBF7D0")}
+            <span style={{ width: 1, alignSelf: "stretch", background: C.bdr, margin: "0 3px" }} />
+            <span style={{ display: "inline-flex", alignItems: "baseline", gap: 7, flexWrap: "wrap" }}
+              title={d.partiallyRealised
+                ? `Unrealised ${money(p.unrealized, r.currency)} + realised ${money(d.realized, r.currency)}, against ${money(d.spent, r.currency)} deployed`
+                : "Your return on this position since entry"}>
+              <span style={{ fontSize: 12, color: C.lbl, whiteSpace: "nowrap" }}>{d.qty} @ {d.avgCost?.toFixed(2)}</span>
+              <b style={{ fontSize: 13, color: pnlCol(p.total) }}>{p.total == null ? "—" : (p.total > 0 ? "+" : "") + money(p.total, r.currency)}</b>
+              <b style={{ fontSize: 12.5, color: pnlCol(p.totalPct) }}>{p.totalPct == null ? "" : (p.totalPct > 0 ? "+" : "") + p.totalPct + "%"}</b>
+            </span>
+            {d.partiallyRealised && chip(`incl. realised ${money(d.realized, r.currency)}`, C.green, "#F0FDF4", "#BBF7D0")}
           </>
         )}
         {fitChip(fit.fit)}
@@ -382,7 +399,11 @@ const {
               {p.unrealizedPct != null && <span style={{ color: C.lbl }}> ({p.unrealizedPct > 0 ? "+" : ""}{p.unrealizedPct}%)</span>}
               {" · "}Realised <b style={{ color: pnlCol(d.realized) }}>{money(d.realized, r.currency)}</b>
               {d.realizedPct != null && <span style={{ color: C.lbl }}> ({d.realizedPct > 0 ? "+" : ""}{d.realizedPct}% on capital taken out)</span>}
-              {d.partiallyRealised && <div style={{ color: C.green, fontSize: 11.5, marginTop: 3 }}>Scaled out {d.sold} of {d.bought} — still open on {d.qty}.</div>}
+              {/* The header's single figure, spelled out — so the two never look like they disagree. */}
+              <br /><span style={{ color: C.lbl }}>Total </span><b style={{ color: pnlCol(p.total) }}>{p.total == null ? "—" : (p.total > 0 ? "+" : "") + money(p.total, r.currency)}</b>
+              {p.totalPct != null && <b style={{ color: pnlCol(p.totalPct) }}> {p.totalPct > 0 ? "+" : ""}{p.totalPct}%</b>}
+              <span style={{ color: C.lbl }}> on {money(d.spent, r.currency)} deployed{q?.changePercent != null ? ` · the quote itself is ${q.changePercent >= 0 ? "up" : "down"} ${Math.abs(q.changePercent).toFixed(2)}% today` : ""}</span>
+              {d.partiallyRealised && <div style={{ color: C.green, fontSize: 11.5, marginTop: 3 }}>Scaled out {d.sold} of {d.bought} — still open on {d.qty}. The unrealised percentage is the move from your average cost; the total is measured against everything you put in.</div>}
             </div>
           )}
           {fit.where && <div style={{ marginTop: 8, fontSize: 12, color: C.mid }}><b style={{ color: fit.fit === "tailwind" ? C.green : C.red }}>{fit.fit === "tailwind" ? "Regime tailwind" : "Fights the regime"}:</b> {liveRegime?.label} {fit.fit === "tailwind" ? "favours" : "disfavours"} “{fit.where}”.</div>}
