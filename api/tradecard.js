@@ -88,8 +88,22 @@ export async function refresh(origin, { now = Date.now() } = {}) {
   return { posted: events.length, cardCreated: created, cardFailed: !!failed, open: live.length, sweptAlerts: pending.length - kept.length };
 }
 
+// OPTIONAL SHARED SECRET. Without one this endpoint is reachable by anyone who knows the URL, and
+// while a repeated call posts nothing — alerts only fire on a diff, and the diff is stored — it can
+// still be used to make the card churn. Set TRADECARD_SECRET and the scheduler must present it.
+// Left unset it stays open, so the thing works before anyone has thought about hardening it.
+function authorised(req) {
+  const want = (process.env.TRADECARD_SECRET || '').trim();
+  if (!want) return true;
+  const got = String(req.query?.key ?? req.headers['x-tradecard-key'] ?? '').trim();
+  // Length-independent compare is overkill for a cron key, but a plain === leaks nothing either;
+  // the point is that the comparison happens at all.
+  return got.length === want.length && got === want;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') { res.status(405).json({ error: 'method not allowed' }); return; }
+  if (!authorised(req)) { res.status(401).json({ error: 'unauthorised' }); return; }
   const proto = req.headers['x-forwarded-proto'] || 'https';
   const origin = `${proto}://${req.headers.host}`;
   try {

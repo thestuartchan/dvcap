@@ -43,7 +43,10 @@ jobs:
     steps:
       - name: Refresh the card
         run: |
+          # TRADECARD_KEY is optional: set it as a repo secret only if TRADECARD_SECRET is also
+          # set in Vercel. With neither, the endpoint is open and this works unchanged.
           code=$(curl -sS -o /tmp/out.json -w '%{http_code}' --max-time 45 \
+            -H "x-tradecard-key: ${{ secrets.TRADECARD_KEY }}" \
             "https://dvcap.vercel.app/api/tradecard") || true
           echo "HTTP $code"; cat /tmp/out.json; echo
           # The endpoint answers 200 with a reason rather than failing, so a skipped run (no webhook
