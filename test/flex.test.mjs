@@ -68,6 +68,13 @@ eq('a date with a time parses', isoDate('20260805;123000'), '2026-08-05');
 eq('an already-ISO date passes through', isoDate('2026-08-05'), '2026-08-05');
 eq('and nothing is nothing', isoDate(''), null);
 
+// Some query templates emit `quantity` instead of `position`. Reading only one gives a book of
+// zero positions and no error at all.
+eq('either name for the quantity is read',
+  parseStatement('<OpenPosition symbol="X" assetCategory="STK" quantity="7" costBasisPrice="10" />').positions[0].qty, 7);
+eq('and a zero position is dropped, not carried as a row',
+  parseStatement('<OpenPosition symbol="X" assetCategory="STK" position="0" costBasisPrice="10" />').positions, []);
+
 // ── symbols ──
 eq('a futures month code is stripped', rootOf({ symbol: 'MGCZ6', assetCategory: 'FUT' }), 'MGC');
 eq('a two-digit year too', rootOf({ symbol: 'MNQU26', assetCategory: 'FUT' }), 'MNQ');
