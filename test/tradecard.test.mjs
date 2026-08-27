@@ -5,7 +5,7 @@
 // building rows whose private values are distinctive digit strings and asserting those strings
 // appear nowhere in the serialised output. A future edit that adds "· 600 @ 18.06" to a line fails
 // here rather than on a Discord server.
-import { publicView, buildCard, buildClosedCard, closedLine, rOf, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, isLongHold, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS } from '../lib/tradecard.js';
+import { publicView, buildCard, buildClosedCard, closedLine, rOf, isOptionTrade, showsOnCard, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, isLongHold, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS } from '../lib/tradecard.js';
 import { isWebhookUrl, alertTtlMin, mentionFromEnv, webhookFromEnv } from '../lib/discord.js';
 import fs from 'node:fs';
 let pass=0,fail=0;
@@ -267,13 +267,29 @@ const closedRow = (symbol, entry, exit, stop, date) => ({ symbol, levels: stop ?
 const cc = buildClosedCard([closedRow('TQQQ', 69.4, 69.44, 67.5, '2026-08-20'), closedRow('SPY', 2.74, 0.52, null, '2026-06-08')]);
 ok('titled by count', cc.embeds[0].title.includes('2 trades'));
 ok('a stopped trade reports R', /R/.test(cc.embeds[0].description.split('\n')[0]));
-ok('one without falls back to a percentage', cc.embeds[0].description.split('\n')[1].includes('%'));
-ok('and the card says why', /closed without a recorded stop/.test(cc.embeds[0].footer.text));
+// R OR NOTHING. A percentage in R's slot is a different measurement wearing its clothes, and a
+// column that switches between them cannot be read down.
+ok('one without shows no move at all', !/[%R]/.test(cc.embeds[0].description.split('\n')[1]));
+ok('and the card says why', /no R to show/.test(cc.embeds[0].footer.text));
+ok('days are labelled', cc.embeds[0].description.includes('held '));
 ok('every line carries the exit price', cc.embeds[0].description.split('\n').every(l => l.includes('out ')));
 eq('an empty archive still renders', /Nothing closed yet/.test(buildClosedCard([]).embeds[0].description), true);
 ok('no footer when every trade has R', buildClosedCard([closedRow('A', 10, 12, 9, '2026-08-01')]).embeds[0].footer === undefined);
 // It must be as private as the open card.
 scan('closed card', buildClosedCard([{ ...row, derived: { ...row.derived, status: 'closed', avgExit: 21.39, realizedPct: -0.05 } }]));
+
+// ── one exclusion rule, both cards ──
+ok('an option row is recognised by tag', isOptionTrade({ tags: ['archive', 'option'] }));
+ok('and by its multiplier when untagged', isOptionTrade({ multiplier: 100 }));
+ok('a margined x100 contract is not an option', !isOptionTrade({ multiplier: 100, margined: true }));
+ok('shares are not', !isOptionTrade({ multiplier: 1 }));
+ok('futures are not', !isOptionTrade({ multiplier: 10, margined: true }));
+// "If it does not make it onto the portfolio card it does not belong on the closed card" is only
+// true if ONE function decides for both.
+ok('cash is off both', !showsOnCard({ symbol: 'SGOV' }));
+ok('options are off both', !showsOnCard({ symbol: 'SPCX', tags: ['option'] }));
+ok('a share swing is on both', showsOnCard({ symbol: 'METU', multiplier: 1 }));
+ok('a futures hold is on both', showsOnCard({ symbol: 'MGC', multiplier: 10, margined: true }));
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);

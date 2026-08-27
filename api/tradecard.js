@@ -15,7 +15,7 @@
 
 import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY } from '../lib/kv.js';
 import { derivePosition, positionPnl, levelHits } from '../lib/positions.js';
-import { buildCard, buildClosedCard, buildAlert, diffRows, isCashLeg } from '../lib/tradecard.js';
+import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard } from '../lib/tradecard.js';
 import { upsertCard, post, remove, webhookFromEnv, mentionFromEnv, alertTtlMin, CARD_KEY, ALERTS_KEY } from '../lib/discord.js';
 
 // A row's symbol is what you call it; the quote feed may call it something else. Mirrors the tab's
@@ -69,14 +69,15 @@ export async function refresh(origin, { now = Date.now() } = {}) {
   if (!kvConfigured()) return { skipped: 'Redis is not configured — there is nowhere to keep the card id' };
 
   const rows = await snapshot(origin);
-  // Cash parked in a bill fund is not a position the channel has anything to say about.
-  const live = rows.filter(r => r.derived.status !== 'closed' && !isCashLeg(r));
+  // One rule for both cards: cash parked in a bill fund, and options, which this book treats as
+  // trades rather than holds.
+  const live = rows.filter(r => r.derived.status !== 'closed' && showsOnCard(r));
   const state = (await kvGetJson(CARD_KEY)) || {};
 
   // Announce first, so an event is not lost if the card edit fails.
   // The same exclusion the card uses. Filtering only the card meant USFR was kept off the list and
   // still announced itself as a new trade, which is the one place cash had nothing to say at all.
-  const announceable = rows.filter(r => !isCashLeg(r));
+  const announceable = rows.filter(showsOnCard);
   const shape = (r) => ({ id: r.id, derived: { status: r.derived.status }, levelHits: r.levelHits });
 
   // COLD START. With no stored snapshot every existing position looks new, so the first run
@@ -107,7 +108,7 @@ export async function refresh(origin, { now = Date.now() } = {}) {
   // A SECOND message for the closed book, edited in place like the first. Two messages rather than
   // two sections because they answer different questions and are read at different times — and
   // because one embed carrying both would hit Discord's 6000-character ceiling far sooner.
-  const closedRows = rows.filter(r => r.derived.status === 'closed' && !isCashLeg(r));
+  const closedRows = rows.filter(r => r.derived.status === 'closed' && showsOnCard(r));
   const closed = buildClosedCard(closedRows, { updatedAt: new Date(now).toISOString() });
   const c = closedRows.length ? await upsertCard(webhook, state.closedMessageId, closed) : { id: state.closedMessageId };
 
