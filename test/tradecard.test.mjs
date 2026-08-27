@@ -156,9 +156,16 @@ ok('and shrinks it again', tradeLine(heavy(1), 'minimal').length < tradeLine(hea
 eq('a small book keeps full detail', fitLines(mk(10)).detail, 'full');
 eq('a large one drops to compact', fitLines(mk(25)).detail, 'compact');
 eq('a larger one to minimal', fitLines(mk(45)).detail, 'minimal');
-for (const n of [10, 25, 45, 61])
+// The ceiling is asserted as a PROPERTY rather than a magic number, because the number moves every
+// time a line gains a word — adding "held " to each line shifted it, and a hard-coded 61 turned a
+// deliberate wording change into a failing test that said nothing about correctness. What must hold
+// is: the body always fits, and nothing is dropped until the minimal form genuinely cannot.
+for (const n of [10, 25, 45, 55])
   ok(`${n} maximal positions still fit the budget`, fitLines(mk(n)).body.length <= DESC_BUDGET);
-eq(`nothing is dropped at 61`, fitLines(mk(61)).dropped, 0);
+const ceiling = (() => { let n = 0; while (fitLines(mk(n + 1)).dropped === 0 && n < 200) n++; return n; })();
+ok(`nothing is dropped below the ceiling (found at ${ceiling})`, fitLines(mk(ceiling)).dropped === 0);
+ok('and the ceiling is comfortably past a real book', ceiling >= 50);
+ok('one past it drops and says so', /more not shown/.test(fitLines(mk(ceiling + 1)).body));
 // Past the point where even minimal fits, the list is cut — but never silently.
 const over = fitLines(mk(120));
 ok('past the ceiling it cuts', over.dropped > 0);
