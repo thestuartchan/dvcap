@@ -562,6 +562,11 @@ const {
           {(d.fills || []).map(f => (
             <div key={f.id} style={{ display: "flex", gap: 7, alignItems: "center", fontSize: 12, color: C.mid, marginBottom: 4, flexWrap: "wrap" }}>
               <b style={{ color: f.side === "buy" ? C.green : C.blue, minWidth: 32 }}>{f.side}</b>
+              {/* WHERE THIS FILL CAME FROM. A number you typed and a number the broker reported are
+                  not the same kind of fact, and once the statement starts writing fills the
+                  difference stops being obvious. The id is the broker's own, which is also what
+                  stops the same trade being recorded twice. */}
+              {f.tradeId && <span title={`recorded from the IBKR statement — trade ${f.tradeId}`} style={{ fontSize: 10, fontWeight: 800, color: C.blue, border: "1px solid " + C.bdr, borderRadius: 5, padding: "1px 5px", background: C.surf }}>IBKR</span>}
               <NumCommit dk={`fq:${f.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={f.qty} placeholder="qty" width={78}
                 onCommit={q => { if (q != null && q > 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, qty: q } : x) }); }} />
               <span style={{ color: C.lbl }}>@</span>
@@ -999,7 +1004,8 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
         rolledFrom: r.rolledFrom ? String(r.rolledFrom).slice(0, 48) : null,
         costBasisAck: Number.isFinite(+r.costBasisAck) && +r.costBasisAck > 0 ? +r.costBasisAck : null,
         levels: Array.isArray(r.levels) ? r.levels : [],
-        fills: Array.isArray(r.fills) ? r.fills : [], tags: Array.isArray(r.tags) ? r.tags : [],
+        fills: Array.isArray(r.fills) ? r.fills.map(f => (f && f.tradeId) ? { ...f, tradeId: String(f.tradeId).slice(0, 24) } : f) : [],
+        tags: Array.isArray(r.tags) ? r.tags : [],
       })).filter(r => r.symbol);
       if (mode === "replace") setRows(clean);
       else {

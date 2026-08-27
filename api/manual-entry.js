@@ -97,7 +97,11 @@ function sanitizeFill(f) {
   const side = (f.side === 'buy' || f.side === 'sell') ? f.side : null;
   const qty = cn(f.qty), price = cn(f.price);
   if (!side || qty == null || qty <= 0 || price == null || price < 0) return null;
-  return { id: cs(f.id, 16) || Math.random().toString(36).slice(2, 8), side, qty, price, date: cs(f.date, 12), note: cs(f.note, 200) };
+  return { id: cs(f.id, 16) || Math.random().toString(36).slice(2, 8), side, qty, price, date: cs(f.date, 12), note: cs(f.note, 200),
+    // IBKR's own trade id, when the fill came from a statement rather than a keystroke. It is what
+    // makes ingestion idempotent — a trade already carrying its id is never applied twice, which is
+    // what allows the Flex query to use a 30-day window and heal a missed run.
+    tradeId: cs(f.tradeId, 24) || null };
 }
 function sanitizeRow(r) {
   if (!r || typeof r !== 'object') return null;
@@ -148,6 +152,10 @@ function sanitizeConsoleSettings(s) {
     alertsEnabled: !!s.alertsEnabled,
     equity: cn(s.equity), equityAsOf: cs(s.equityAsOf, 12), baseRiskPct: cn(s.baseRiskPct), targetPct: cn(s.targetPct),
     baseCurrency: /^[A-Z]{3}$/.test(String(s.baseCurrency || '').toUpperCase()) ? String(s.baseCurrency).toUpperCase() : 'USD',
+    // The date from which the BROKER is the record of what was traded. Fills before it are whatever
+    // the console already holds — mostly bulk averages that no individual order will ever match —
+    // and are left alone. Set once, when trade ingestion is switched on.
+    flexTradesFrom: cs(s.flexTradesFrom, 12),
   };
   if (s.sizing && typeof s.sizing === 'object') {
     out.sizing = {};

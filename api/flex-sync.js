@@ -27,6 +27,7 @@ import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY } from '../lib/kv.js';
 // the book.
 const SEEN_KEY = 'dvcap:flex:seen:v1';
 import { derivePosition } from '../lib/positions.js';
+import { parseTrades, planTrades, applyPlan, verify, planTouches, summariseTrades } from '../lib/flexTrades.js';
 import { fetchStatement, reconcile, summarise, summariseActionable, actionable, signatureOf, planAck, flexEnv, flexConfigured, isoDate } from '../lib/flex.js';
 import { post, webhookFromEnv } from '../lib/discord.js';
 import { refresh } from './tradecard.js';
@@ -40,19 +41,23 @@ function authorised(req) {
   return got.length === want.length && got === want;
 }
 
-async function tell(rec, asOf) {
-  const sig = signatureOf(rec);
+async function tell(rec, asOf, tradePlan = null) {
+  // A recorded trade is a real event and is announced whether or not anything else is wrong — but
+  // it carries SYMBOLS and counts only. Quantities and prices never leave the console.
+  const traded = tradePlan ? summariseTrades(tradePlan) : '';
+  const sig = [signatureOf(rec), traded].filter(Boolean).join(' || ');
   const seen = await kvGetJson(SEEN_KEY);
   if (seen?.sig === sig) return { posted: false, reason: 'unchanged since the last run' };
   await kvSetJson(SEEN_KEY, { sig, at: new Date().toISOString() });
-  if (!actionable(rec).length) return { posted: false, reason: 'nothing needs acting on' };
+  const line = [traded, summariseActionable(rec)].filter(Boolean).join(' · ');
+  if (!line) return { posted: false, reason: 'nothing needs acting on' };
   const hook = webhookFromEnv();
   if (!hook) return { posted: false, reason: 'no webhook configured' };
-  await post(hook, { content: `🧾 IBKR statement ${asOf || ''} — ${summariseActionable(rec)}`.trim(), allowed_mentions: { parse: [] } });
+  await post(hook, { content: `🧾 IBKR statement ${asOf || ''} — ${line}`.trim(), allowed_mentions: { parse: [] } });
   return { posted: true };
 }
 
-export async function sync(origin, { apply = false, ack = [] } = {}) {
+export async function sync(origin, { apply = false, ack = [], trades = false, from: from0 = null } = {}) {
   if (!flexConfigured()) return { ok: false, error: 'IBKR_FLEX_TOKEN / IBKR_FLEX_QUERY_ID not set in the environment' };
   if (!kvConfigured()) return { ok: false, error: 'Redis not configured — there is nowhere to read the console from' };
 
@@ -84,6 +89,40 @@ export async function sync(origin, { apply = false, ack = [] } = {}) {
     // The rows it WOULD add, always — so a dry run shows exactly what an apply would do.
     adds: rec.adds,
   };
+  // ── TRADES ────────────────────────────────────────────────────────────────
+  // The Open Positions section cannot say whether an exit was recorded — a sold position is simply
+  // absent, which looks identical to one the console never knew about. The Trades section can.
+  //
+  // Nothing below writes on the strength of the trade list alone: the plan is applied to a COPY,
+  // re-derived, and held against the Open Positions section of the same statement. Only a batch
+  // that reconciles is committed, and a batch that does not is discarded whole.
+  let tradePlan = null, gate = null, tradeRows = null;
+  if (trades) {
+    const parsed = parseTrades(got.xml);
+    // The watermark is set once. Passing ?from=YYYY-MM-DD writes it into the console's settings so
+    // it survives, rather than being a flag that has to be remembered on every call.
+    const from = from0 || String(stored?.settings?.flexTradesFrom || '').slice(0, 10) || null;
+    result.trades = { inStatement: parsed.length, from };
+    if (!parsed.length) {
+      result.trades.note = 'no trades in the statement — add the Trades section to the Flex query, at Orders level of detail';
+    } else if (!from) {
+      // Refusing to guess the watermark. Ingesting a 30-day window against bulk-averaged history
+      // would fail adoption on nearly every trade and reject the batch anyway; worse, it might not.
+      result.trades.note = 'settings.flexTradesFrom is unset, so there is no date from which the broker is the record — set it in the console (or pass ?from=YYYY-MM-DD once) before trades are ingested';
+    } else {
+      tradePlan = planTrades(withDerived, parsed, { from });
+      const after = applyPlan(rows, tradePlan);
+      gate = verify(after, got.statement.positions, {
+        derive: (r) => derivePosition(r.fills || [], { multiplier: r.multiplier }),
+        roots: planTouches(tradePlan),
+      });
+      result.trades = { ...result.trades, plan: tradePlan, verified: gate.ok, problems: gate.problems, summary: summariseTrades(tradePlan) };
+      const changes = tradePlan.adopt.length + tradePlan.apply.length + tradePlan.creates.length;
+      if (changes && gate.ok) tradeRows = after;
+      else if (changes) result.trades.discarded = 'the batch did not reconcile against the statement’s own position list, so none of it was applied';
+    }
+  }
+
   // An ack is an explicit instruction naming the row and, implicitly, the number — so it writes on
   // its own rather than waiting for apply=1, which is about adding rows the request did not name.
   const plan = planAck(rec, ack);
@@ -97,16 +136,20 @@ export async function sync(origin, { apply = false, ack = [] } = {}) {
   // now only an ADD reached the channel — a quantity that disagreed, or a position open here and
   // gone at the broker, sat in a JSON response nobody had a reason to open. Scheduled runs now
   // announce anything actionable, once, and again only if what is wrong changes.
-  if (apply) result.told = await tell(rec, asOf);
-  if (!fresh.length && !plan.ack.length) return result;
+  if (apply) result.told = await tell(rec, asOf, apply && tradeRows ? tradePlan : null);
+  const writingTrades = apply && !!tradeRows;
+  if (!fresh.length && !plan.ack.length && !writingTrades && !from0) return result;
 
   const acked = new Map(plan.ack.map(a => [a.id, a.to]));
-  const merged = rows.map(r => acked.has(r.id) ? { ...r, costBasisAck: acked.get(r.id) } : r);
-  const next = { ...stored, rows: [...merged, ...fresh], settings: stored?.settings || {}, updatedAt: new Date().toISOString() };
+  const base = writingTrades ? tradeRows : rows;
+  const merged = base.map(r => acked.has(r.id) ? { ...r, costBasisAck: acked.get(r.id) } : r);
+  const settings = from0 ? { ...(stored?.settings || {}), flexTradesFrom: from0 } : (stored?.settings || {});
+  const next = { ...stored, rows: [...merged, ...fresh], settings, updatedAt: new Date().toISOString() };
   const wrote = await kvSetJson(CONSOLE_KEY, next);
   if (!wrote) return { ...result, ok: false, error: 'Redis write failed — nothing was changed' };
   result.applied = true;
   if (fresh.length) result.added = fresh.map(r => r.id);
+  if (writingTrades) result.trades.applied = true;
 
   // The card is a notification about the console, so it follows the write rather than replacing it:
   // a failed refresh does not undo a good save.
@@ -123,8 +166,13 @@ export default async function handler(req, res) {
   // ?ack=ARM-open,FOO-open — record the broker's cost basis on rows where the two accountings
   // legitimately differ, so the daily run stops reporting a difference that is expected.
   const ack = String(req.query?.ack ?? '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 20);
+  // ?trades=1 — read the Trades section too. Off by default while it proves itself; a dry run
+  // shows the whole plan and the verification result without writing anything.
+  const trades = String(req.query?.trades ?? '') === '1';
+  const fromQ = String(req.query?.from ?? '').trim();
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(fromQ) ? fromQ : null;
   try {
-    res.status(200).json(await sync(origin, { apply, ack }));
+    res.status(200).json(await sync(origin, { apply, ack, trades, from }));
   } catch (e) {
     console.error('flex-sync', e);
     res.status(200).json({ ok: false, error: String(e?.message || e) });   // never fail the cron
