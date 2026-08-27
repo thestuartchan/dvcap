@@ -5,7 +5,7 @@
 // building rows whose private values are distinctive digit strings and asserting those strings
 // appear nowhere in the serialised output. A future edit that adds "· 600 @ 18.06" to a line fails
 // here rather than on a Discord server.
-import { publicView, buildCard, buildClosedCard, closedLine, rOf, isOptionTrade, showsOnCard, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, isLongHold, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS } from '../lib/tradecard.js';
+import { publicView, buildCard, buildClosedCard, closedLine, rOf, isOptionTrade, showsOnCard, CLOSED_WINDOW_DAYS, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, isLongHold, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS } from '../lib/tradecard.js';
 import { isWebhookUrl, alertTtlMin, mentionFromEnv, webhookFromEnv } from '../lib/discord.js';
 import fs from 'node:fs';
 let pass=0,fail=0;
@@ -279,8 +279,10 @@ ok('a stopped trade reports R', /R/.test(cc.embeds[0].description.split('\n')[0]
 ok('one without shows no move at all', !/[%R]/.test(cc.embeds[0].description.split('\n')[1]));
 ok('and the card says why', /no R to show/.test(cc.embeds[0].footer.text));
 ok('days are labelled', cc.embeds[0].description.includes('held '));
-ok('every line carries the exit price', cc.embeds[0].description.split('\n').every(l => l.includes('out ')));
-eq('an empty archive still renders', /Nothing closed yet/.test(buildClosedCard([]).embeds[0].description), true);
+// "out" was doing no work — a price on a closed line is the exit by definition.
+ok('no redundant label on the exit price', !/\bout\b/.test(cc.embeds[0].description));
+ok('every line still carries the exit price', cc.embeds[0].description.split('\n').every(l => /\d/.test(l)));
+eq('an empty archive still renders', /Nothing closed in the last 90 days/.test(buildClosedCard([]).embeds[0].description), true);
 ok('no footer when every trade has R', buildClosedCard([closedRow('A', 10, 12, 9, '2026-08-01')]).embeds[0].footer === undefined);
 // It must be as private as the open card.
 scan('closed card', buildClosedCard([{ ...row, derived: { ...row.derived, status: 'closed', avgExit: 21.39, realizedPct: -0.05 } }]));
@@ -297,6 +299,30 @@ ok('cash is off both', !showsOnCard({ symbol: 'SGOV' }));
 ok('options are off both', !showsOnCard({ symbol: 'SPCX', tags: ['option'] }));
 ok('a share swing is on both', showsOnCard({ symbol: 'METU', multiplier: 1 }));
 ok('a futures hold is on both', showsOnCard({ symbol: 'MGC', multiplier: 10, margined: true }));
+
+// ── the closed card is a 90-day window, not the whole record ──
+const dated = (symbol, closedOn) => ({ symbol, levels: [],
+  derived: { status: 'closed', avgEntry: 10, avgExit: 11, avgCost: 10, realizedPct: 10, firstDate: closedOn, lastDate: closedOn, scaleOuts: [] }, pnl: {} });
+const win = buildClosedCard([dated('RECENT', '2026-08-20'), dated('EDGE', '2026-06-01'), dated('OLD', '2026-03-01')], { today: '2026-08-27' });
+ok('the recent one is in', win.embeds[0].description.includes('RECENT'));
+ok('so is one just inside the window', win.embeds[0].description.includes('EDGE'));
+ok('the old one is gone', !win.embeds[0].description.includes('OLD'));
+ok('and the title says which view this is', win.embeds[0].title.includes('last 90 days'));
+eq('the count is of the window, not the archive', win.embeds[0].title.includes('2 trades'), true);
+eq('the window is 90 days', CLOSED_WINDOW_DAYS, 90);
+// Exactly on the boundary is still in.
+ok('the boundary day is included', buildClosedCard([dated('B', '2026-05-29')], { today: '2026-08-27' }).embeds[0].description.includes('B'));
+// A trade whose exit date was never captured is KEPT — the window retires old trades, it does not
+// discard ones with missing data.
+ok('an undated close is kept', buildClosedCard([{ symbol: 'NODATE', levels: [],
+  derived: { status: 'closed', avgEntry: 10, avgExit: 11, avgCost: 10, realizedPct: 10, firstDate: null, lastDate: null, scaleOuts: [] }, pnl: {} }],
+  { today: '2026-08-27' }).embeds[0].description.includes('NODATE'));
+// Most recently CLOSED first, not most recently opened.
+const order = buildClosedCard([
+  { ...dated('OPENED_FIRST', '2026-08-25'), derived: { status: 'closed', avgEntry: 10, avgExit: 11, avgCost: 10, realizedPct: 10, firstDate: '2026-06-01', lastDate: '2026-08-25', scaleOuts: [] } },
+  { ...dated('CLOSED_LAST', '2026-08-26') },
+], { today: '2026-08-27' }).embeds[0].description.split('\n');
+eq('sorted by exit date', order[0].includes('CLOSED_LAST'), true);
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);
