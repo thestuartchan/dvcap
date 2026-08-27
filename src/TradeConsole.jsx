@@ -683,6 +683,9 @@ const Section = ({ title, note, list, mode, ctx }) => (
 // single-entry model could not represent at all.
 export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, creditDanger, contested, regimeDiverged, prices, fetchPrices, pricesLoading }) {
   const LS = "dvcap_console_v2";
+  // Dismissal is by TIMESTAMP, not a flag: the next run's news must reappear rather than being
+  // permanently silenced by one click on the last one.
+  const FLEX_SEEN_LS = "dvcap:flexnote:seen";
   const [rows, setRows]         = useState([]);     // unified: setups + positions
   const [settings, setSettings] = useState({ baseCurrency: "USD", alertsEnabled: false, equity: null, baseRiskPct: DEFAULT_BASE_RISK_PCT, targetPct: DEFAULT_TARGET_PCT, sizing: {} });
   const [loaded, setLoaded]     = useState(false);
@@ -696,6 +699,10 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   const [sizeOpen, setSizeOpen] = useState({});     // per-row: is the size suggestion unfolded
   const [moved, setMoved]       = useState(null);   // a row that just changed section, for the toast
   const [showArchive, setShowArchive] = useState(false);
+  // What the scheduled IBKR reconciliation last did. Server-owned: it arrives beside the console
+  // rather than inside it, because a save replaces the console object wholesale.
+  const [flexNote, setFlexNote] = useState(null);
+  const [noteSeen, setNoteSeen] = useState(() => { try { return localStorage.getItem("dvcap:flexnote:seen") || ""; } catch { return ""; } });
   const [portOpen, setPortOpen] = useState(false);
   const [importTxt, setImportTxt] = useState("");
   const [importMsg, setImportMsg] = useState(null);
@@ -723,6 +730,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
         if (c.settings) setSettings(s => ({ ...s, ...c.settings }));
       }
       setKvOn(j?.kv?.configured ?? null);
+      setFlexNote(j?.flexSync || null);
       setLoaded(true);
     }).catch(() => setLoaded(true));
   }, []);
@@ -1134,6 +1142,36 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
         </div>
       )}
 
+      {/* ── WHAT THE OVERNIGHT RECONCILIATION DID ──
+          The channel already gets a message, but the channel is somewhere else. This is the same
+          news where the work happens. */}
+      {flexNote && flexNote.at !== noteSeen && (flexNote.applied || flexNote.needsYou?.length || flexNote.discarded) && (
+        <div style={{ padding: "10px 13px", borderRadius: 10, border: "1.5px solid " + (flexNote.needsYou?.length || flexNote.discarded ? C.aBdr : C.bdr), background: flexNote.needsYou?.length || flexNote.discarded ? C.aBg : C.surf }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+            <b style={{ fontSize: 12.5, color: flexNote.needsYou?.length || flexNote.discarded ? C.amber : C.blue }}>
+              🧾 IBKR statement{flexNote.asOf ? ` · ${flexNote.asOf}` : ""}
+            </b>
+            <span style={{ fontSize: 12.5, color: C.mid }}>{flexNote.summary}</span>
+            <button onClick={() => { setNoteSeen(flexNote.at); try { localStorage.setItem(FLEX_SEEN_LS, flexNote.at); } catch { /* quota */ } }}
+              style={{ marginLeft: "auto", cursor: "pointer", background: "none", border: "none", color: C.lbl, fontSize: 12, fontWeight: 700 }}>✕ Got it</button>
+          </div>
+          {flexNote.discarded && (
+            <div style={{ marginTop: 6, fontSize: 11.5, color: C.amber, fontWeight: 700 }}>
+              Nothing was written — {flexNote.discarded}
+            </div>
+          )}
+          {flexNote.needsYou?.length > 0 && (
+            <div style={{ marginTop: 6, fontSize: 11.5, color: C.mid, display: "flex", gap: 7, flexWrap: "wrap" }}>
+              {flexNote.needsYou.map((n, i) => (
+                <span key={i} style={{ background: C.surf, border: "1px solid " + C.bdr, borderRadius: 7, padding: "2px 8px" }}>
+                  <b>{n.root}</b> · {n.what}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* toolbar */}
       <Card>
         <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
@@ -1153,6 +1191,12 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
           <div style={{ marginLeft: "auto", display: "flex", gap: 9, alignItems: "center" }}>
             {kvOn === false && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>⚠ this browser only</span>}
             {kvOn === true && <span style={{ fontSize: 11.5, color: C.green, fontWeight: 700 }}>☁ syncing</span>}
+            {/* Nothing to say, so say only that it looked. An absence of news is worth one line. */}
+            {flexNote && !flexNote.needsYou?.length && !flexNote.applied && !flexNote.discarded && (
+              <span title={`IBKR statement of ${flexNote.asOf} — ${flexNote.summary}`} style={{ fontSize: 11.5, color: C.muted }}>
+                IBKR ✓ {String(flexNote.at).slice(0, 10)}
+              </span>
+            )}
             {saveMsg && <span style={{ fontSize: 12, color: C.mid }}>{saveMsg}</span>}
             <Btn onClick={() => fetchPrices([...symbols, ...fxSyms])} disabled={pricesLoading || !symbols.length} color={C.mid} bgColor={C.bg} label={pricesLoading ? "…" : "🔄 Prices"} />
             <Btn onClick={saveCloud} disabled={saving} color="#fff" bgColor={dirty ? C.blue : C.bdrMd} label={saving ? "Saving…" : dirty ? "☁ Save to cloud" : "☁ Synced"} />

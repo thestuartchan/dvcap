@@ -9,7 +9,7 @@
 //     trusted by habit.
 // Both live in one endpoint to stay inside the 12-function Hobby cap (this is the 8th).
 
-import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY } from '../lib/kv.js';
+import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY } from '../lib/kv.js';
 
 const DATA_PATH = 'data/manual_entry.json';
 
@@ -186,6 +186,9 @@ export default async function handler(req, res) {
         southbound: { series: store.southbound.series.slice(-60) },
         // Console comes from Redis when configured, else the git copy (migration path).
         console: await readConsole(store.console),
+        // Served alongside the console rather than inside them: the POST replaces the console
+        // object wholesale, so a note kept in there would be wiped by the next browser save.
+        flexSync: kvConfigured() ? await kvGetJson(FLEX_NOTE_KEY) : null,
         kv: { configured: kvConfigured() },
       });
     } catch (e) {

@@ -21,7 +21,7 @@
 // The statement's own numbers are in the RESPONSE, which goes to the caller. The only thing that
 // reaches Discord is lib/flex.js's summary, which carries symbols and counts and no sizes.
 
-import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY } from '../lib/kv.js';
+import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY } from '../lib/kv.js';
 
 // What the channel was last told. Only the SIGNATURE, so this can never become a second copy of
 // the book.
@@ -137,13 +137,37 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   const have = new Set(rows.map(r => r.id));
   const fresh = apply ? rec.adds.filter(r => !have.has(r.id)) : [];
   if (apply) result.skipped = rec.adds.length - fresh.length;
+  // WHAT THE CONSOLE SHOWS. The channel gets a message; the console gets the same thing as state,
+  // so opening the tab answers "did the sync do anything" without going to Discord for it. Written
+  // on scheduled runs only — a dry run someone typed into a browser is not news to anybody.
+  const noteOf = () => ({
+    at: new Date().toISOString(),
+    asOf,
+    applied: !!(fresh.length || plan.ack.length || (apply && tradeRows)),
+    added: fresh.map(r => r.symbol),
+    recorded: tradePlan ? tradePlan.apply.length : 0,
+    opened: tradePlan ? tradePlan.creates.map(c => c.symbol) : [],
+    discarded: result.trades?.discarded || null,
+    // Everything that a human has to decide, flattened into one list the banner can render.
+    needsYou: [
+      ...rec.differs.map(d => ({ what: 'disagrees with the statement', root: d.root, id: d.id })),
+      ...rec.ambiguous.map(a => ({ what: 'ambiguous — two rows share this symbol', root: a.root })),
+      ...rec.report.filter(r => r.kind === 'missing-at-broker').map(r => ({ what: 'open here, not at the broker', root: r.root, id: r.id })),
+      ...((tradePlan?.report) || []).map(r => ({ what: r.kind.replace(/-/g, ' '), root: r.root })),
+    ].slice(0, 12),
+    summary: [tradePlan ? summariseTrades(tradePlan) : '', summariseActionable(rec)].filter(Boolean).join(' · ') || 'everything reconciles',
+  });
+
   // TELL SOMEONE. A reconciliation nobody reads is a reconciliation that does not exist, and until
   // now only an ADD reached the channel — a quantity that disagreed, or a position open here and
   // gone at the broker, sat in a JSON response nobody had a reason to open. Scheduled runs now
   // announce anything actionable, once, and again only if what is wrong changes.
   if (apply) result.told = await tell(rec, asOf, apply && tradeRows ? tradePlan : null);
   const writingTrades = apply && !!tradeRows;
-  if (!fresh.length && !plan.ack.length && !writingTrades && !from0) return result;
+  if (!fresh.length && !plan.ack.length && !writingTrades && !from0) {
+    if (apply) await kvSetJson(FLEX_NOTE_KEY, noteOf());
+    return result;
+  }
 
   const acked = new Map(plan.ack.map(a => [a.id, a.to]));
   const base = writingTrades ? tradeRows : rows;
@@ -162,6 +186,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   // The card is a notification about the console, so it follows the write rather than replacing it:
   // a failed refresh does not undo a good save.
   try { result.card = await refresh(origin); } catch (e) { result.card = { error: String(e?.message || e) }; }
+  if (apply) await kvSetJson(FLEX_NOTE_KEY, noteOf());
   return result;
 }
 
