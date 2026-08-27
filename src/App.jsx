@@ -33,6 +33,7 @@ function trendBps(series, lookbackDays) {
 }
 import { laborStress, sahmAnnotation, laborVerdict, laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead, quitsRead, revisionTrackerRead, twelveMonthAvgRead, ytdDivergenceRead } from "../lib/labor.js";
 import { handoffChain } from "../lib/handoff.js";
+import { coreSpread } from "../lib/inflation.js";
 import { SEC_YIELDS, PROXY, secYieldProxy, proxyDivergence, apyFromSec, afterWht, billFromDiscount, BILL_DAYS, compareCash } from "../lib/cashyield.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
@@ -7033,6 +7034,47 @@ export default function App() {
                     {reading("Core CPI", core, "Ex food & energy · BLS", trendOf(cHist), CPI_SERIES.core)}
                     {reading("Core PCE", pce, "Fed's preferred · BEA", trendOf(pHist), CPI_SERIES.pce)}
                   </div>
+                  {/* ── THE GAP BETWEEN THE TWO CORE SERIES ──
+                      Three tiles side by side invite the eye to read the smallest one, and for most
+                      of the last year that was core CPI. The two measure the same idea and disagree
+                      structurally: core PCE normally sits BELOW core CPI, because shelter is about a
+                      third of the CPI basket and a much smaller share of PCE. So the sign of the gap
+                      carries information the levels do not, and the card was not saying it.
+                      Both figures are the same vintage as the tiles above — a spread built from two
+                      release dates is a number about the calendar, not about inflation. */}
+                  {(() => {
+                    const sp = coreSpread(pce, core);
+                    if (!sp) return null;
+                    const col = sp.tone === "warn" ? C.amber : sp.tone === "watch" ? C.mid : C.green;
+                    const bg  = sp.tone === "warn" ? C.aBg : C.bg;
+                    const bdr = sp.tone === "warn" ? C.aBdr : C.bdr;
+                    return (
+                      <div style={{ marginBottom: 12, padding: "8px 12px", background: bg, border: "1px solid " + bdr, borderRadius: 8 }}>
+                        <div style={{ display: "flex", gap: 9, alignItems: "baseline", flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 10, fontWeight: 800, color: "#888", textTransform: "uppercase", letterSpacing: 0.5 }}>Core PCE − Core CPI</span>
+                          <b style={{ fontSize: 15, color: col }}>{sp.pp >= 0 ? "+" : "−"}{Math.abs(sp.pp).toFixed(2)}pp</b>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: col }}>{sp.label}</span>
+                        </div>
+                        <div style={{ fontSize: 11.5, color: C.mid, marginTop: 4, lineHeight: 1.5 }}>
+                          {sp.divergent ? (
+                            <>Core CPI at <b>{sp.cpi.toFixed(2)}%</b> reads close to target; core PCE at <b>{sp.pce.toFixed(2)}%</b> does not — and
+                            {" "}<b>PCE is the series the Fed targets</b>. An inversion of this sign usually means the disinflation is concentrated
+                            in shelter, which CPI weights far more heavily. Read the CPI tile alone and the card reports progress the Fed's own
+                            gauge does not show.</>
+                          ) : sp.inverted ? (
+                            <>PCE above core CPI is the wrong way round, though both series sit near target — the usual shelter-driven discount
+                            has not just closed but reversed.</>
+                          ) : sp.inLine ? (
+                            <>The two are within a tenth of a point, so the usual PCE discount to core CPI has gone. Neither series is currently
+                            telling a different story from the other.</>
+                          ) : (
+                            <>The usual relationship: PCE below core CPI, which is what a much lighter shelter weight and a chained basket imply.
+                            Nothing to reconcile between the two.</>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {/* Announced-but-not-yet-in-FRED print, explicitly labelled with its source.
                       Auto-retires once FRED's own asOf reaches the same period. */}
                   {pceAnn && (
