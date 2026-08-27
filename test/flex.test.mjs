@@ -6,7 +6,7 @@
 // and the two symbol conventions (futures month codes, Hong Kong numerics) that make raw string
 // matching fail.
 import { parseFlexResponse, parseStatement, reconcile, rootOf, classOf, autoAddable, rowFromPosition,
-         summarise, isoDate, matchKey, planAck, sendRequestUrl, statementUrl, fetchStatement, elements, attrs, COST_TOLERANCE_PCT } from '../lib/flex.js';
+         summarise, summariseActionable, actionable, signatureOf, isoDate, matchKey, planAck, sendRequestUrl, statementUrl, fetchStatement, elements, attrs, COST_TOLERANCE_PCT } from '../lib/flex.js';
 import { derivePosition } from '../lib/positions.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -259,6 +259,50 @@ const line = summarise(rec);
 ok('otherwise it names what happened', /HOOD/.test(line) && /not auto-added/.test(line));
 // Nothing in the summary is a size or a price — it goes to a channel.
 ok('and never a quantity', !/\b(50|100|1058)\b/.test(line));
+
+// ── what gets said out loud ──
+// A reconciliation nobody reads does not exist. But a channel that repeats the same disagreement
+// every morning becomes wallpaper, so the signature is over WHAT is wrong, not that something is.
+{
+  const armPos = parseStatement('<OpenPosition symbol="ARM" assetCategory="STK" currency="USD" multiplier="1" position="1" costBasisPrice="409.260003" />').positions;
+  const arm = row('ARM-open', 'ARM', [
+    { side: 'buy', qty: 8, price: 321.855, date: '2026-06-10' },
+    { side: 'buy', qty: 1, price: 409.17, date: '2026-06-22' },
+    { side: 'sell', qty: 8, price: 295.6375, date: '2026-07-07' }]);
+  const day1 = reconcile([arm], armPos, {});
+  eq('a disagreement is actionable', actionable(day1), ['differs:ARM-open:c409.260003']);
+  eq('and reads as itself', summariseActionable(day1), '1 disagrees with the statement (ARM)');
+  eq('the same disagreement tomorrow is the same signature', signatureOf(reconcile([arm], armPos, {})), signatureOf(day1));
+  // A DIFFERENT number is news again.
+  const moved = parseStatement('<OpenPosition symbol="ARM" assetCategory="STK" currency="USD" multiplier="1" position="1" costBasisPrice="450" />').positions;
+  ok('a new number changes it', signatureOf(reconcile([arm], moved, {})) !== signatureOf(day1));
+  // Acknowledged, it stops being actionable at all.
+  eq('an acknowledged row says nothing', actionable(reconcile([{ ...arm, costBasisAck: 409.260003 }], armPos, {})), []);
+}
+{
+  // The permanent residents are NOT actionable — the options are outside the console's scope for
+  // ever, so announcing them daily would train the reader to ignore the message.
+  const opts = parseStatement('<OpenPosition symbol="QQQ 260911C00737000" underlyingSymbol="QQQ" assetCategory="OPT" currency="USD" multiplier="100" position="15" costBasisPrice="8.77" />').positions;
+  const rec = reconcile([], opts, {});
+  eq('an out-of-scope option is reported but not announced', [rec.report.length, actionable(rec).length], [1, 0]);
+  eq('so the channel stays quiet', summariseActionable(rec), '');
+}
+{
+  // Nor is a position that moved after the statement was cut — that resolves itself tomorrow.
+  const metuPos = parseStatement('<OpenPosition symbol="METU" assetCategory="STK" currency="USD" multiplier="1" position="600" costBasisPrice="18.06" />').positions;
+  const closedHere = row('METU-open', 'METU', [
+    { side: 'buy', qty: 600, price: 18.06401, date: '2026-08-18' },
+    { side: 'sell', qty: 600, price: 19.975, date: '2026-08-27' }]);
+  eq('a trade closed since the statement is not announced', actionable(reconcile([closedHere], metuPos, { asOf: '2026-08-26' })), []);
+}
+{
+  // A position open here and gone at the broker IS actionable — that is the mirror of the failure
+  // this whole thing exists to catch, and it used to reach nobody because only adds were posted.
+  const gone = row('SOXS-open', 'SOXS', [{ side: 'buy', qty: 50, price: 52.63, date: '2026-08-01' }]);
+  const rec = reconcile([gone], [], { asOf: '2026-08-26' });
+  eq('a position missing at the broker is announced', actionable(rec), ['missing:SOXS-open']);
+  ok('and named', /SOXS/.test(summariseActionable(rec)));
+}
 
 // ── the two hops ──
 const responses = (...bodies) => { let i = 0; return async () => { const b = bodies[Math.min(i++, bodies.length - 1)]; return { ok: true, status: 200, text: async () => b }; }; };

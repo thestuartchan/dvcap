@@ -22,8 +22,12 @@
 // reaches Discord is lib/flex.js's summary, which carries symbols and counts and no sizes.
 
 import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY } from '../lib/kv.js';
+
+// What the channel was last told. Only the SIGNATURE, so this can never become a second copy of
+// the book.
+const SEEN_KEY = 'dvcap:flex:seen:v1';
 import { derivePosition } from '../lib/positions.js';
-import { fetchStatement, reconcile, summarise, planAck, flexEnv, flexConfigured, isoDate } from '../lib/flex.js';
+import { fetchStatement, reconcile, summarise, summariseActionable, actionable, signatureOf, planAck, flexEnv, flexConfigured, isoDate } from '../lib/flex.js';
 import { post, webhookFromEnv } from '../lib/discord.js';
 import { refresh } from './tradecard.js';
 
@@ -34,6 +38,18 @@ function authorised(req) {
   if (!want) return true;
   const got = String(req.query?.key ?? req.headers['x-tradecard-key'] ?? '').trim();
   return got.length === want.length && got === want;
+}
+
+async function tell(rec, asOf) {
+  const sig = signatureOf(rec);
+  const seen = await kvGetJson(SEEN_KEY);
+  if (seen?.sig === sig) return { posted: false, reason: 'unchanged since the last run' };
+  await kvSetJson(SEEN_KEY, { sig, at: new Date().toISOString() });
+  if (!actionable(rec).length) return { posted: false, reason: 'nothing needs acting on' };
+  const hook = webhookFromEnv();
+  if (!hook) return { posted: false, reason: 'no webhook configured' };
+  await post(hook, { content: `🧾 IBKR statement ${asOf || ''} — ${summariseActionable(rec)}`.trim(), allowed_mentions: { parse: [] } });
+  return { posted: true };
 }
 
 export async function sync(origin, { apply = false, ack = [] } = {}) {
@@ -77,6 +93,11 @@ export async function sync(origin, { apply = false, ack = [] } = {}) {
   const have = new Set(rows.map(r => r.id));
   const fresh = apply ? rec.adds.filter(r => !have.has(r.id)) : [];
   if (apply) result.skipped = rec.adds.length - fresh.length;
+  // TELL SOMEONE. A reconciliation nobody reads is a reconciliation that does not exist, and until
+  // now only an ADD reached the channel — a quantity that disagreed, or a position open here and
+  // gone at the broker, sat in a JSON response nobody had a reason to open. Scheduled runs now
+  // announce anything actionable, once, and again only if what is wrong changes.
+  if (apply) result.told = await tell(rec, asOf);
   if (!fresh.length && !plan.ack.length) return result;
 
   const acked = new Map(plan.ack.map(a => [a.id, a.to]));
@@ -90,8 +111,6 @@ export async function sync(origin, { apply = false, ack = [] } = {}) {
   // The card is a notification about the console, so it follows the write rather than replacing it:
   // a failed refresh does not undo a good save.
   try { result.card = await refresh(origin); } catch (e) { result.card = { error: String(e?.message || e) }; }
-  const hook = fresh.length ? webhookFromEnv() : null;
-  if (hook) await post(hook, { content: `🧾 IBKR statement ${asOf || ''} — ${summarise(rec)}`.trim(), allowed_mentions: { parse: [] } });
   return result;
 }
 
