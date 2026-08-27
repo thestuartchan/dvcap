@@ -14,6 +14,7 @@ const ok = (n, c) => eq(n, !!c, true);
 const derive = (r) => derivePosition(r.fills || [], { multiplier: r.multiplier });
 const withDerived = (rows) => rows.map(r => ({ ...r, derived: derive(r) }));
 const T = (a) => `<Trade ${Object.entries(a).map(([k, v]) => `${k}="${v}"`).join(' ')} />`;
+const POS = (attrs) => parseStatement(`<OpenPosition ${Object.entries(attrs).map(([k, v]) => `${k}="${v}"`).join(' ')} levelOfDetail="SUMMARY" />`).positions;
 
 // ── reading the section ──
 // A saved query can emit the same trade three times: once per execution, once per order, once per
@@ -24,7 +25,7 @@ const THREE = [
   T({ tradeID: '3', symbol: 'HOOD', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'BUY', quantity: 100, tradePrice: 107, ibCommission: -1, tradeDate: '20260821', levelOfDetail: 'CLOSED_LOT' }),
 ].join('');
 eq('one trade, not three', parseTrades(THREE).length, 1);
-eq('and it is the ORDER row', parseTrades(THREE)[0].tradeId, '2');
+eq('and it is the ORDER row', parseTrades(THREE)[0].tradeId, '2:HOOD');
 // Without ORDER rows, executions are the trade.
 eq('executions are the fallback', parseTrades(THREE.replace(/levelOfDetail="ORDER"/, 'levelOfDetail="EXECUTION"').replace(/tradeID="3"[^>]*CLOSED_LOT"\s*\/>/, '')).length, 2);
 // A closed lot is never a trade — it is an accounting view of one.
@@ -50,7 +51,7 @@ eq('futures roots come back rolled up', parseTrades(T({ tradeID: '14', symbol: '
 // configured — the same silent zero as reading `position` and not `quantity`.
 {
   const asOrder = '<Order tradeID="15" symbol="HOOD" assetCategory="STK" currency="USD" multiplier="1" buySell="BUY" quantity="100" tradePrice="107" ibCommission="-1" tradeDate="20260821" />';
-  eq('an <Order> row is a trade too', parseTrades(asOrder).map(t => t.tradeId), ['15']);
+  eq('an <Order> row is a trade too', parseTrades(asOrder).map(t => t.tradeId), ['15:HOOD']);
   eq('at order level of detail', parseTrades(asOrder)[0].levelOfDetail, 'ORDER');
   // The same order in both shapes is one trade, not two.
   const both = asOrder + T({ tradeID: '15', symbol: 'HOOD', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'BUY', quantity: 100, tradePrice: 107, ibCommission: -1, tradeDate: '20260821', levelOfDetail: 'ORDER' });
@@ -62,7 +63,7 @@ eq('futures roots come back rolled up', parseTrades(T({ tradeID: '14', symbol: '
   // An <Order> row has no tradeID at all — it carries ibOrderID. The first attempt read all 177 of
   // them and then dropped every one for having no id, which from outside is indistinguishable from
   // the section being missing. So the diagnostic says WHY, not only how many survived.
-  eq('an order id is an id', parseTrades('<Order ibOrderID="77" symbol="X" assetCategory="STK" currency="USD" multiplier="1" buySell="BUY" quantity="1" tradePrice="10" tradeDate="20260828" />')[0].tradeId, '77');
+  eq('an order id is an id', parseTrades('<Order ibOrderID="77" symbol="X" assetCategory="STK" currency="USD" multiplier="1" buySell="BUY" quantity="1" tradePrice="10" tradeDate="20260828" />')[0].tradeId, '77:X');
   eq('and a row with none says so', tradeSections('<Order symbol="X" assetCategory="STK" buySell="BUY" quantity="1" tradePrice="10" tradeDate="20260828" />').dropped, { noId: 1 });
   eq('a closed lot is counted as the wrong level', tradeSections(T({ tradeID: '1', symbol: 'X', assetCategory: 'STK', buySell: 'BUY', quantity: 1, tradePrice: 1, tradeDate: '20260821', levelOfDetail: 'CLOSED_LOT' })).dropped, { otherLevelOfDetail: 1 });
 }
@@ -77,7 +78,7 @@ eq('futures roots come back rolled up', parseTrades(T({ tradeID: '14', symbol: '
   const row = { id: 'HOOD-open', symbol: 'HOOD', fills: [{ id: 'f0', side: 'buy', qty: 100, price: 107.01, date: '2026-08-21' }] };
   const plan = planTrades(withDerived([row]), parseTrades(old + now), { from: '2026-08-27' });
   eq('nothing before the watermark is touched', plan.skipped.beforeWatermark, 1);
-  eq('and what is after it is recorded', plan.apply.map(a => a.fill.tradeId), ['21']);
+  eq('and what is after it is recorded', plan.apply.map(a => a.fill.tradeId), ['21:HOOD']);
 }
 
 // ── idempotence ──
@@ -88,7 +89,7 @@ eq('futures roots come back rolled up', parseTrades(T({ tradeID: '14', symbol: '
   const p1 = planTrades(withDerived([before]), t, { from: '2026-08-01' });
   const after = applyPlan([before], p1);
   eq('the first read records it', p1.apply.length, 1);
-  eq('with the broker’s id on the fill', after[0].fills[0].tradeId, '30');
+  eq('with the broker’s id on the fill', after[0].fills[0].tradeId, '30:HOOD');
   const p2 = planTrades(withDerived(after), t, { from: '2026-08-01' });
   eq('the second read records nothing', [p2.apply.length, p2.adopt.length], [0, 0]);
   eq('and says why', p2.skipped.alreadyRecorded, 1);
@@ -100,11 +101,11 @@ eq('futures roots come back rolled up', parseTrades(T({ tradeID: '14', symbol: '
   const t = parseTrades(T({ tradeID: '40', symbol: 'HOOD', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'BUY', quantity: 100, tradePrice: 107, ibCommission: -1, tradeDate: '20260828' }));
   const typed = { id: 'HOOD-open', symbol: 'HOOD', fills: [{ id: 'f0', side: 'buy', qty: 100, price: 107.01, date: '2026-08-28' }] };
   const plan = planTrades(withDerived([typed]), t, { from: '2026-08-01' });
-  eq('the hand-entered fill is adopted, not duplicated', plan.adopt, [{ rowId: 'HOOD-open', fillId: 'f0', tradeId: '40', root: 'HOOD' }]);
+  eq('the hand-entered fill is adopted, not duplicated', plan.adopt, [{ rowId: 'HOOD-open', fillId: 'f0', tradeId: '40:HOOD', root: 'HOOD' }]);
   eq('nothing is added', plan.apply, []);
   const after = applyPlan([typed], plan);
   eq('the position is unchanged', derive(after[0]).qty, 100);
-  eq('and the fill now carries the id', after[0].fills[0].tradeId, '40');
+  eq('and the fill now carries the id', after[0].fills[0].tradeId, '40:HOOD');
   // A price a little off — a remembered fill rather than an exact one — is still the same event.
   const near = { id: 'HOOD-open', symbol: 'HOOD', fills: [{ id: 'f0', side: 'buy', qty: 100, price: 107.2, date: '2026-08-28' }] };
   eq('a slightly different price still adopts', planTrades(withDerived([near]), t, { from: '2026-08-01' }).adopt.length, 1);
@@ -218,11 +219,51 @@ eq('futures roots come back rolled up', parseTrades(T({ tradeID: '14', symbol: '
   eq('and both are counted as out of scope', plan.skipped.outOfScope, 2);
 }
 
+// ── an order id is not unique per LEG ──
+// A futures roll placed as a combo is ONE order against TWO contracts. The bare order id makes the
+// Oct sell and the Dec buy the same trade, and deduplication throws one of them away — which is how
+// a roll came back as two adoptions carrying one id.
+{
+  const roll = '<Order ibOrderID="73569665" conid="111" symbol="MGCV6" underlyingSymbol="MGC" assetCategory="FUT" currency="USD" multiplier="10" buySell="SELL" quantity="-1" tradePrice="4613.8" ibCommission="-1.24" tradeDate="20260826" />' +
+               '<Order ibOrderID="73569665" conid="222" symbol="MGCZ6" underlyingSymbol="MGC" assetCategory="FUT" currency="USD" multiplier="10" buySell="BUY" quantity="1" tradePrice="4649.6" ibCommission="-1.24" tradeDate="20260826" />';
+  const parsed = parseTrades(roll);
+  eq('both legs of a combo survive', parsed.length, 2);
+  eq('because the id is qualified by the contract', parsed.map(t => t.tradeId), ['73569665:111', '73569665:222']);
+  eq('and they are still one order underneath', [...new Set(parsed.map(t => t.tradeId.split(':')[0]))], ['73569665']);
+  // A plain single-leg order is unaffected.
+  eq('a single-leg order keeps its shape', parseTrades('<Order ibOrderID="9" conid="5" symbol="HOOD" assetCategory="STK" currency="USD" multiplier="1" buySell="BUY" quantity="1" tradePrice="10" tradeDate="20260828" />')[0].tradeId, '9:5');
+}
+
+// ── the statement has one line per lot; the console can have several rows for it ──
+// A rolled-out contract and the one that replaced it are two rows and one position. Checking each
+// row against that single line failed the closed leg for holding nothing — which is precisely what
+// a closed leg holds — and rejected an otherwise correct batch.
+{
+  const leg = { id: 'MGC-20260826', symbol: 'MGC', margined: true, multiplier: 10, fills: [
+    { id: 'f0', side: 'buy', qty: 1, price: 4442.80464, date: '2026-08-17' },
+    { id: 'f1', side: 'sell', qty: 1, price: 4613.70464, date: '2026-08-26' }] };
+  const tip = { id: 'MGC-DEC26', symbol: 'MGC', margined: true, multiplier: 10, fills: [
+    { id: 'f0', side: 'buy', qty: 1, price: 4649.70464, date: '2026-08-26' }] };
+  const pos = POS({ symbol: 'MGCZ6', underlyingSymbol: 'MGC', assetCategory: 'FUT', currency: 'USD', multiplier: 10, position: 1, costBasisPrice: 4649.70464 });
+  const v = verify([leg, tip], pos, { derive, roots: ['MGC'] });
+  ok('the closed leg does not fail the batch', v.ok);
+  eq('and nothing is reported', v.problems, []);
+  // The check still bites: if the OPEN row is wrong, the batch is still rejected.
+  const wrong = { ...tip, fills: [{ id: 'f0', side: 'buy', qty: 2, price: 4649.70464, date: '2026-08-26' }] };
+  const bad = verify([leg, wrong], pos, { derive, roots: ['MGC'] });
+  ok('a wrong open quantity is still caught', !bad.ok);
+  eq('counting only what is open', [bad.problems[0].console, bad.problems[0].ibkr], [2, 1]);
+  // Two OPEN rows in one symbol: quantity is checkable, a blended average is not.
+  const twoOpen = [{ id: 'A', symbol: 'MGC', margined: true, multiplier: 10, fills: [{ id: 'f0', side: 'buy', qty: 1, price: 4000, date: '2026-08-01' }] },
+                   { id: 'B', symbol: 'MGC', margined: true, multiplier: 10, fills: [{ id: 'f0', side: 'buy', qty: 1, price: 5000, date: '2026-08-02' }] }];
+  const two = verify(twoOpen, POS({ symbol: 'MGCZ6', underlyingSymbol: 'MGC', assetCategory: 'FUT', currency: 'USD', multiplier: 10, position: 2, costBasisPrice: 4500 }), { derive, roots: ['MGC'] });
+  ok('two open rows summing to the statement pass on quantity', two.ok);
+}
+
 // ── THE GATE ──
 // The plan is applied to a copy and held against the Open Positions section of the SAME statement.
 // This is what makes unattended ingestion acceptable: the two sections would have to be wrong in
 // the same direction for a bad write to get through.
-const POS = (attrs) => parseStatement(`<OpenPosition ${Object.entries(attrs).map(([k, v]) => `${k}="${v}"`).join(' ')} levelOfDetail="SUMMARY" />`).positions;
 {
   const held = { id: 'HOOD-open', symbol: 'HOOD', fills: [{ id: 'f0', side: 'buy', qty: 100, price: 107.01, date: '2026-08-21' }] };
   const t = parseTrades(T({ tradeID: '90', symbol: 'HOOD', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'BUY', quantity: 50, tradePrice: 110, ibCommission: -1, tradeDate: '20260828' }));
@@ -235,6 +276,7 @@ const POS = (attrs) => parseStatement(`<OpenPosition ${Object.entries(attrs).map
   const bad = verify(after, POS({ symbol: 'HOOD', assetCategory: 'STK', currency: 'USD', multiplier: 1, position: 200, costBasisPrice: 108.01 }), { derive, roots: planTouches(plan) });
   ok('a quantity that does not reconcile is rejected', !bad.ok);
   eq('with both numbers', [bad.problems[0].console, bad.problems[0].ibkr], [150, 200]);
+  eq('and the row it is about', bad.problems[0].ids, ['HOOD-open']);
   // The quantity is right and the cost basis is not — a price read wrong is still a bad write.
   const badCost = verify(after, POS({ symbol: 'HOOD', assetCategory: 'STK', currency: 'USD', multiplier: 1, position: 150, costBasisPrice: 120 }), { derive, roots: planTouches(plan) });
   ok('a cost basis that does not reconcile is rejected too', !badCost.ok);

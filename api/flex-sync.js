@@ -57,7 +57,7 @@ async function tell(rec, asOf, tradePlan = null) {
   return { posted: true };
 }
 
-export async function sync(origin, { apply = false, ack = [], trades = false, from: from0 = null } = {}) {
+export async function sync(origin, { apply = false, ack = [], trades = false, from: from0 = null, peek = false } = {}) {
   if (!flexConfigured()) return { ok: false, error: 'IBKR_FLEX_TOKEN / IBKR_FLEX_QUERY_ID not set in the environment' };
   if (!kvConfigured()) return { ok: false, error: 'Redis not configured — there is nowhere to read the console from' };
 
@@ -112,6 +112,9 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
       // would fail adoption on nearly every trade and reject the batch anyway; worse, it might not.
       result.trades.note = 'settings.flexTradesFrom is unset, so there is no date from which the broker is the record — set it in the console (or pass ?from=YYYY-MM-DD once) before trades are ingested';
     } else {
+      // ?peek=1 returns the in-scope trades as parsed. Three times now a shape assumption has been
+      // wrong in a way that only real data could show, and each cost a round trip to find.
+      if (peek) result.trades.sample = parsed.filter(t => t.date >= from).slice(0, 25);
       tradePlan = planTrades(withDerived, parsed, { from });
       const after = applyPlan(rows, tradePlan);
       gate = verify(after, got.statement.positions, {
@@ -149,7 +152,10 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   const next = { ...stored, rows: [...merged, ...fresh], settings, updatedAt: new Date().toISOString() };
   const wrote = await kvSetJson(CONSOLE_KEY, next);
   if (!wrote) return { ...result, ok: false, error: 'Redis write failed — nothing was changed' };
-  result.applied = true;
+  // `applied` means ROWS CHANGED. Writing only the watermark is a settings change and used to set
+  // this true, which read as "the trades were ingested" on a run that ingested nothing.
+  result.applied = !!(fresh.length || plan.ack.length || writingTrades);
+  if (from0) result.watermarkSet = from0;
   if (fresh.length) result.added = fresh.map(r => r.id);
   if (writingTrades) result.trades.applied = true;
 
@@ -171,10 +177,11 @@ export default async function handler(req, res) {
   // ?trades=1 — read the Trades section too. Off by default while it proves itself; a dry run
   // shows the whole plan and the verification result without writing anything.
   const trades = String(req.query?.trades ?? '') === '1';
+  const peek = String(req.query?.peek ?? '') === '1';
   const fromQ = String(req.query?.from ?? '').trim();
   const from = /^\d{4}-\d{2}-\d{2}$/.test(fromQ) ? fromQ : null;
   try {
-    res.status(200).json(await sync(origin, { apply, ack, trades, from }));
+    res.status(200).json(await sync(origin, { apply, ack, trades, from, peek }));
   } catch (e) {
     console.error('flex-sync', e);
     res.status(200).json({ ok: false, error: String(e?.message || e) });   // never fail the cron
