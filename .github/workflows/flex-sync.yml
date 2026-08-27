@@ -1,0 +1,47 @@
+# Reconciles the trade console against IBKR's own statement, once each weekday morning.
+#
+# WHY DAILY AND NOT MORE OFTEN. Flex is a saved REPORT, not a feed. A "Last Business Day" query
+# answers with yesterday's close-of-business state, so running it twice would compare the console
+# against the same statement twice. The console's own saves already push the card immediately; this
+# is the backstop that catches what never got typed in.
+#
+# 12:00 UTC is 08:00 New York — after IBKR has generated the previous session's statement and before
+# the 13:35 card refresh, so anything added here is on the card at the open rather than a day later.
+#
+# The endpoint is dry-run by default; apply=1 is what makes it write. It only ever APPENDS rows, so
+# a duplicate run adds nothing the second time (ids are derived from the contract) and a missed run
+# self-corrects the next morning.
+name: flex sync
+
+on:
+  schedule:
+    - cron: '0 12 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Write the changes (unchecked = report only)'
+        type: boolean
+        default: true
+
+concurrency:
+  group: flex-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Reconcile against the IBKR statement
+        run: |
+          # Flex answers the first GetStatement with "still generating" and the function waits it
+          # out, so allow well past the usual few seconds before giving up.
+          apply=1
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.apply }}" != "true" ]; then apply=0; fi
+          code=$(curl -sS -o /tmp/flex.json -w '%{http_code}' --max-time 90 \
+            -H "x-tradecard-key: ${{ secrets.TRADECARD_KEY }}" \
+            "https://dvcap.vercel.app/api/flex-sync?apply=$apply") || true
+          echo "HTTP $code"; cat /tmp/flex.json; echo
+          # The endpoint answers 200 with a reason rather than failing, so "not configured yet" is
+          # visible in the log without turning the workflow red.
+          [ "$code" = "200" ] || exit 1
