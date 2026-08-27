@@ -6,7 +6,7 @@
 // and the two symbol conventions (futures month codes, Hong Kong numerics) that make raw string
 // matching fail.
 import { parseFlexResponse, parseStatement, reconcile, rootOf, classOf, autoAddable, rowFromPosition,
-         summarise, isoDate, matchKey, sendRequestUrl, statementUrl, fetchStatement, elements, attrs, COST_TOLERANCE_PCT } from '../lib/flex.js';
+         summarise, isoDate, matchKey, planAck, sendRequestUrl, statementUrl, fetchStatement, elements, attrs, COST_TOLERANCE_PCT } from '../lib/flex.js';
 import { derivePosition } from '../lib/positions.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -189,6 +189,30 @@ eq('a letter root is untouched', matchKey('MGC'), 'MGC');
   // If IBKR ever reports something ELSE, that is news again.
   const moved = parseStatement('<OpenPosition symbol="ARM" assetCategory="STK" currency="USD" multiplier="1" position="1" costBasisPrice="450.00" />').positions;
   eq('a new number is reported again', reconcile([{ ...arm, costBasisAck: 409.260003 }], moved, {}).differs.length, 1);
+}
+
+// Acknowledging by hand means editing a row, saving, and hoping the browser is running the build
+// that knows the field exists — which is how the first attempt at it was lost. Naming the row in
+// the request puts the whole round trip on the server.
+{
+  const arm = row('ARM-open', 'ARM', [
+    { side: 'buy', qty: 8, price: 321.855, date: '2026-06-10' },
+    { side: 'buy', qty: 1, price: 409.17, date: '2026-06-22' },
+    { side: 'sell', qty: 8, price: 295.6375, date: '2026-07-07' }]);
+  const armPos = parseStatement('<OpenPosition symbol="ARM" assetCategory="STK" currency="USD" multiplier="1" position="1" costBasisPrice="409.260003" />').positions;
+  const rec = reconcile([arm], armPos, {});
+  const plan = planAck(rec, ['ARM-open']);
+  eq('the plan names the row and the number', plan.ack, [{ id: 'ARM-open', from: 331.556667, to: 409.260003 }]);
+  eq('and nothing else', plan.refused, []);
+  eq('a row that already agrees has nothing to acknowledge', planAck(rec, ['HOOD-open']).ack, []);
+  ok('and says so', /already agrees|is not in it/.test(planAck(rec, ['HOOD-open']).refused[0].reason));
+  // A quantity break is a fill the console never recorded. Accepting a cost basis would paper over it.
+  const short = row('ARM-open', 'ARM', [{ side: 'buy', qty: 5, price: 300, date: '2026-06-10' }]);
+  const qtyRec = reconcile([short], armPos, {});
+  eq('a quantity break cannot be acknowledged', planAck(qtyRec, ['ARM-open']).ack, []);
+  ok('because it is not an accounting convention', /quantity disagrees/.test(planAck(qtyRec, ['ARM-open']).refused[0].reason));
+  eq('an empty request does nothing', planAck(rec, []), { ack: [], refused: [] });
+  eq('and blanks are skipped rather than refused', planAck(rec, ['', '  ']), { ack: [], refused: [] });
 }
 
 // ── the broker reports the CONTRACT, the card reports the TRADE ──

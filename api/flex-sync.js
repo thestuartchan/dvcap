@@ -23,7 +23,7 @@
 
 import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY } from '../lib/kv.js';
 import { derivePosition } from '../lib/positions.js';
-import { fetchStatement, reconcile, summarise, flexEnv, flexConfigured, isoDate } from '../lib/flex.js';
+import { fetchStatement, reconcile, summarise, planAck, flexEnv, flexConfigured, isoDate } from '../lib/flex.js';
 import { post, webhookFromEnv } from '../lib/discord.js';
 import { refresh } from './tradecard.js';
 
@@ -36,7 +36,7 @@ function authorised(req) {
   return got.length === want.length && got === want;
 }
 
-export async function sync(origin, { apply = false } = {}) {
+export async function sync(origin, { apply = false, ack = [] } = {}) {
   if (!flexConfigured()) return { ok: false, error: 'IBKR_FLEX_TOKEN / IBKR_FLEX_QUERY_ID not set in the environment' };
   if (!kvConfigured()) return { ok: false, error: 'Redis not configured — there is nowhere to read the console from' };
 
@@ -68,24 +68,29 @@ export async function sync(origin, { apply = false } = {}) {
     // The rows it WOULD add, always — so a dry run shows exactly what an apply would do.
     adds: rec.adds,
   };
-  if (!apply || !rec.adds.length) return result;
+  // An ack is an explicit instruction naming the row and, implicitly, the number — so it writes on
+  // its own rather than waiting for apply=1, which is about adding rows the request did not name.
+  const plan = planAck(rec, ack);
+  if (plan.ack.length || plan.refused.length) { result.acknowledged = plan.ack; result.refused = plan.refused; }
 
   // Append only. An id collision would overwrite an existing row, so a clash is skipped and said.
   const have = new Set(rows.map(r => r.id));
-  const fresh = rec.adds.filter(r => !have.has(r.id));
-  result.skipped = rec.adds.length - fresh.length;
-  if (!fresh.length) return result;
+  const fresh = apply ? rec.adds.filter(r => !have.has(r.id)) : [];
+  if (apply) result.skipped = rec.adds.length - fresh.length;
+  if (!fresh.length && !plan.ack.length) return result;
 
-  const next = { ...stored, rows: [...rows, ...fresh], settings: stored?.settings || {}, updatedAt: new Date().toISOString() };
+  const acked = new Map(plan.ack.map(a => [a.id, a.to]));
+  const merged = rows.map(r => acked.has(r.id) ? { ...r, costBasisAck: acked.get(r.id) } : r);
+  const next = { ...stored, rows: [...merged, ...fresh], settings: stored?.settings || {}, updatedAt: new Date().toISOString() };
   const wrote = await kvSetJson(CONSOLE_KEY, next);
   if (!wrote) return { ...result, ok: false, error: 'Redis write failed — nothing was changed' };
   result.applied = true;
-  result.added = fresh.map(r => r.id);
+  if (fresh.length) result.added = fresh.map(r => r.id);
 
   // The card is a notification about the console, so it follows the write rather than replacing it:
   // a failed refresh does not undo a good save.
   try { result.card = await refresh(origin); } catch (e) { result.card = { error: String(e?.message || e) }; }
-  const hook = webhookFromEnv();
+  const hook = fresh.length ? webhookFromEnv() : null;
   if (hook) await post(hook, { content: `🧾 IBKR statement ${asOf || ''} — ${summarise(rec)}`.trim(), allowed_mentions: { parse: [] } });
   return result;
 }
@@ -96,8 +101,11 @@ export default async function handler(req, res) {
   const proto = req.headers['x-forwarded-proto'] || 'https';
   const origin = `${proto}://${req.headers.host}`;
   const apply = String(req.query?.apply ?? '') === '1';
+  // ?ack=ARM-open,FOO-open — record the broker's cost basis on rows where the two accountings
+  // legitimately differ, so the daily run stops reporting a difference that is expected.
+  const ack = String(req.query?.ack ?? '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 20);
   try {
-    res.status(200).json(await sync(origin, { apply }));
+    res.status(200).json(await sync(origin, { apply, ack }));
   } catch (e) {
     console.error('flex-sync', e);
     res.status(200).json({ ok: false, error: String(e?.message || e) });   // never fail the cron
