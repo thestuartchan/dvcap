@@ -4,7 +4,7 @@
 // recorded INcorrectly cannot reach the console. Every plan is applied to a copy and held against
 // the Open Positions section of the same statement, and a batch that does not reconcile is
 // discarded whole. Most of what follows is about that gate.
-import { parseTrades, planTrades, applyPlan, verify, planTouches, summariseTrades, fillFrom } from '../lib/flexTrades.js';
+import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, fillFrom } from '../lib/flexTrades.js';
 import { parseStatement } from '../lib/flex.js';
 import { derivePosition } from '../lib/positions.js';
 let pass = 0, fail = 0;
@@ -44,6 +44,22 @@ eq('a contract price stays quoted', opt.price, 2.555);
 eq('only trades are trades', parseTrades(T({ tradeID: '13', symbol: 'X', assetCategory: 'STK', buySell: 'BUY', quantity: 1, tradePrice: 1, tradeDate: '20260821', transactionType: 'FracShareDist' })).length, 0);
 eq('a trade with no id cannot be deduplicated, so it is not used', parseTrades(T({ symbol: 'X', assetCategory: 'STK', buySell: 'BUY', quantity: 1, tradePrice: 1, tradeDate: '20260821' })).length, 0);
 eq('futures roots come back rolled up', parseTrades(T({ tradeID: '14', symbol: 'MGCZ6', underlyingSymbol: 'MGC', assetCategory: 'FUT', currency: 'USD', multiplier: 10, buySell: 'BUY', quantity: 1, tradePrice: 4649.6, ibCommission: -1, tradeDate: '20260826' }))[0].root, 'MGC');
+
+// Some saved queries emit order-level rows as <Order> rather than <Trade levelOfDetail="ORDER">.
+// Reading only one of the two answers "no trades in the statement" on a query that is correctly
+// configured — the same silent zero as reading `position` and not `quantity`.
+{
+  const asOrder = '<Order tradeID="15" symbol="HOOD" assetCategory="STK" currency="USD" multiplier="1" buySell="BUY" quantity="100" tradePrice="107" ibCommission="-1" tradeDate="20260821" />';
+  eq('an <Order> row is a trade too', parseTrades(asOrder).map(t => t.tradeId), ['15']);
+  eq('at order level of detail', parseTrades(asOrder)[0].levelOfDetail, 'ORDER');
+  // The same order in both shapes is one trade, not two.
+  const both = asOrder + T({ tradeID: '15', symbol: 'HOOD', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'BUY', quantity: 100, tradePrice: 107, ibCommission: -1, tradeDate: '20260821', levelOfDetail: 'ORDER' });
+  eq('and is not counted twice', parseTrades(both).length, 1);
+  // The container is not an element: <Trades count="1"> must not read as a trade.
+  eq('the wrapper is not a row', tradeSections('<Trades count="1"><Trade tradeID="1" /></Trades>').Trade, 1);
+  eq('and neither is a trade confirmation', tradeSections('<TradeConfirm tradeID="1" />').Trade, 0);
+  eq('a diagnostic says what the document held', tradeSections(asOrder), { Trade: 0, Order: 1, TradeConfirm: 0 });
+}
 
 // ── the watermark ──
 // The console's history is bulk averages — one fill of 600 METU standing for three orders — and no

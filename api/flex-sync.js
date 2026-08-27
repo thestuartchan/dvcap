@@ -27,7 +27,7 @@ import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY } from '../lib/kv.js';
 // the book.
 const SEEN_KEY = 'dvcap:flex:seen:v1';
 import { derivePosition } from '../lib/positions.js';
-import { parseTrades, planTrades, applyPlan, verify, planTouches, summariseTrades } from '../lib/flexTrades.js';
+import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades } from '../lib/flexTrades.js';
 import { fetchStatement, reconcile, summarise, summariseActionable, actionable, signatureOf, planAck, flexEnv, flexConfigured, isoDate } from '../lib/flex.js';
 import { post, webhookFromEnv } from '../lib/discord.js';
 import { refresh } from './tradecard.js';
@@ -104,7 +104,9 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
     const from = from0 || String(stored?.settings?.flexTradesFrom || '').slice(0, 10) || null;
     result.trades = { inStatement: parsed.length, from };
     if (!parsed.length) {
-      result.trades.note = 'no trades in the statement — add the Trades section to the Flex query, at Orders level of detail';
+      // Say what the document DID contain, so "nothing came back" is diagnosable without guessing.
+      result.trades.sections = tradeSections(got.xml);
+      result.trades.note = 'no trades in the statement — check the Flex query has the Trades section with Orders ticked, and that its period covers the days you traded';
     } else if (!from) {
       // Refusing to guess the watermark. Ingesting a 30-day window against bulk-averaged history
       // would fail adoption on nearly every trade and reject the batch anyway; worse, it might not.
