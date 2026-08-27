@@ -8,9 +8,18 @@
 # 12:00 UTC is 08:00 New York — after IBKR has generated the previous session's statement and before
 # the 13:35 card refresh, so anything added here is on the card at the open rather than a day later.
 #
-# The endpoint is dry-run by default; apply=1 is what makes it write. It only ever APPENDS rows, so
-# a duplicate run adds nothing the second time (ids are derived from the contract) and a missed run
-# self-corrects the next morning.
+# The endpoint is dry-run by default; apply=1 is what makes it write. trades=1 reads the Trades
+# section as well, which is what records exits — an Open Positions snapshot cannot, since a sold
+# position is simply absent from it.
+#
+# A duplicate run is harmless and a missed one heals itself: every ingested fill carries IBKR's own
+# order id (qualified by contract, since a combo roll is one order against two legs), so a trade
+# already recorded is never applied twice, and the query's 30-day window means the next run still
+# sees whatever the failed one would have.
+#
+# Nothing is written on the strength of the trade list alone. Each batch is applied to a copy,
+# re-derived, and checked against the Open Positions section of the same statement; a batch that
+# does not reconcile is discarded whole and reported rather than partly applied.
 name: flex sync
 
 on:
@@ -40,7 +49,7 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.apply }}" != "true" ]; then apply=0; fi
           code=$(curl -sS -o /tmp/flex.json -w '%{http_code}' --max-time 90 \
             -H "x-tradecard-key: ${{ secrets.TRADECARD_KEY }}" \
-            "https://dvcap.vercel.app/api/flex-sync?apply=$apply") || true
+            "https://dvcap.vercel.app/api/flex-sync?apply=$apply&trades=1") || true
           echo "HTTP $code"; cat /tmp/flex.json; echo
           # The endpoint answers 200 with a reason rather than failing, so "not configured yet" is
           # visible in the log without turning the workflow red.

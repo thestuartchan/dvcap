@@ -320,6 +320,10 @@ eq('futures roots come back rolled up', parseTrades(T({ tradeID: '14', symbol: '
   const held = { id: 'METU-open', symbol: 'METU', fills: [{ id: 'f0', side: 'buy', qty: 600, price: 18.06401, date: '2026-08-18' }] };
   const line = summariseTrades(planTrades(withDerived([held]), t, { from: '2026-08-01' }));
   ok('it names the symbol', /METU/.test(line));
+  // An adoption changed nothing the reader did not already know, so the channel does not hear it.
+  const adoptOnly = { adopt: [{ root: 'MGC' }], apply: [], creates: [], report: [] };
+  eq('a matched-by-hand batch says nothing to the channel', summariseTrades(adoptOnly, { forChannel: true }), '');
+  ok('but the endpoint still reports it', /matched 1/.test(summariseTrades(adoptOnly)));
   ok('and never the size', !/600/.test(line) && !/19\.975/.test(line));
 }
 eq('a fill carries the id that stops it being recorded twice', fillFrom({ tradeId: 'abc123', side: 'buy', qty: 1, price: 2, date: '2026-08-28' }).tradeId, 'abc123');

@@ -44,7 +44,7 @@ function authorised(req) {
 async function tell(rec, asOf, tradePlan = null) {
   // A recorded trade is a real event and is announced whether or not anything else is wrong — but
   // it carries SYMBOLS and counts only. Quantities and prices never leave the console.
-  const traded = tradePlan ? summariseTrades(tradePlan) : '';
+  const traded = tradePlan ? summariseTrades(tradePlan, { forChannel: true }) : '';
   const sig = [signatureOf(rec), traded].filter(Boolean).join(' || ');
   const seen = await kvGetJson(SEEN_KEY);
   if (seen?.sig === sig) return { posted: false, reason: 'unchanged since the last run' };
