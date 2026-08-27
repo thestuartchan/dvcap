@@ -5,7 +5,7 @@
 // building rows whose private values are distinctive digit strings and asserting those strings
 // appear nowhere in the serialised output. A future edit that adds "· 600 @ 18.06" to a line fails
 // here rather than on a Discord server.
-import { publicView, buildCard, buildClosedCard, closedLine, rOf, isOptionTrade, showsOnCard, CLOSED_WINDOW_DAYS, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, isLongHold, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS } from '../lib/tradecard.js';
+import { publicView, buildCard, buildClosedCard, closedLine, rOf, isOptionTrade, showsOnCard, CLOSED_WINDOW_DAYS, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, dirOf, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS } from '../lib/tradecard.js';
 import { isWebhookUrl, alertTtlMin, mentionFromEnv, webhookFromEnv } from '../lib/discord.js';
 import fs from 'node:fs';
 let pass=0,fail=0;
@@ -216,36 +216,49 @@ const derivable = ((251.06 - 331.5567) / 331.5567) * 100;
 ok('which is what the line implies', Math.abs(consistent.pct - derivable) < 0.01);
 ok('not the return on everything deployed', consistent.pct !== -12.33);
 
-// ── order decides what gets read ──
-const V = (symbol, pct, flags = []) => ({ symbol, label: '', price: 10, avg: 10, pct, trims: [], stop: null, targets: [], days: 1, since: '', status: 'open', flags });
-const ordered = sortForCard([V('WIN_SMALL', 1.4), V('LOSS_BIG', -36.5), V('WIN_BIG', 11), V('LOSS_SMALL', -1.1), V('HIT', -10.6, ['stop reached'])]);
-eq('a level hit comes first whatever it is doing', ordered[0].symbol, 'HIT');
-eq('then the worst loser', ordered[1].symbol, 'LOSS_BIG');
-eq('then the smaller loss', ordered[2].symbol, 'LOSS_SMALL');
-eq('winners after the losers', ordered[3].symbol, 'WIN_BIG');
-eq('best winner before the smaller one', ordered[4].symbol, 'WIN_SMALL');
-// A winner that has hit a target is still a decision, so it outranks the losers.
-eq('a winner with a hit still leads', sortForCard([V('L', -20), V('W', 30, ['sell zone reached'])])[0].symbol, 'W');
-// No price is not a zero, and must not sort as the worst position in the book.
-const noprice = sortForCard([V('A', -5), V('B', null), V('C', 5)]);
-eq('an unpriced row does not lead', noprice[0].symbol, 'A');
-eq('it sorts last among the non-losers', noprice.map(v => v.symbol), ['A', 'C', 'B']);
-eq('an empty book sorts fine', sortForCard([]), []);
-ok('sorting does not mutate the input', (() => { const a = [V('X', 1), V('Y', -1)]; sortForCard(a); return a[0].symbol === 'X'; })());
+// ── the dot says which way, even when the percentage rounds flat ──
+// MGC: one micro gold contract, ten cents up on 4,649.70. The move is +0.002%, which is 0.00 at the
+// two decimals the card prints — and the dot used to read that as "no price" and go grey.
+eq('a move too small to print is still a move', dirOf(0, 4649.80, 4649.70464) > 0, true);
+eq('and downward the same way', dirOf(0, 4649.60, 4649.70464) < 0, true);
+eq('a real percentage is used as-is', dirOf(-24.28, 251.06, 331.56), -24.28);
+eq('genuinely flat is flat', dirOf(0, 100, 100), 0);
+eq('nothing to compare stays nothing', dirOf(null, null, null), null);
+eq('a null percentage with no mark is nothing', dirOf(null, null, 10), null);
+// and the printed sign agrees with it, so neither half of the line contradicts the other.
+ok('the sign agrees with the dot',
+  tradeLine({ symbol: 'MGC', label: '', price: 4649.80, avg: 4649.70464, pct: 0, trims: [], stop: null, targets: [], days: 1, since: '', status: 'open', flags: [], tags: [] }).includes('**+0.00%**'));
+ok('and downward too',
+  tradeLine({ symbol: 'MGC', label: '', price: 4649.60, avg: 4649.70464, pct: 0, trims: [], stop: null, targets: [], days: 1, since: '', status: 'open', flags: [], tags: [] }).includes('**-0.00%**'));
+ok('a genuine flat gets no sign',
+  tradeLine({ symbol: 'X', label: '', price: 100, avg: 100, pct: 0, trims: [], stop: null, targets: [], days: 1, since: '', status: 'open', flags: [], tags: [] }).includes('**0.00%**'));
+ok('so the line goes green, not grey',
+  tradeLine({ symbol: 'MGC', label: '', price: 4649.80, avg: 4649.70464, pct: 0, trims: [], stop: null, targets: [], days: 1, since: '', status: 'open', flags: [], tags: [] }).startsWith('🟢'));
+ok('and a closed trade that scratched shows its direction too',
+  closedLine({ symbol: 'TQQQ', exit: 69.443, avg: 69.400203, realisedPct: 0, r: null, days: 4 }).startsWith('🟢'));
 
-// ── a long hold in the red is not a swing going wrong ──
-ok('the label declares it', isLongHold({ label: 'long hold' }));
-ok('so does a tag', isLongHold({ tags: ['hold'] }));
-ok('a swing does not', !isLongHold({ label: '2x META' }));
-ok('nor does a coincidental word', !isLongHold({ label: 'holding pattern' }));
-const H = (symbol, pct, label = '') => ({ symbol, label, price: 10, avg: 10, pct, trims: [], stop: null, targets: [], days: 1, since: '', status: 'open', flags: [], tags: [] });
-const withHold = sortForCard([H('SWING_BAD', -36), H('HOLD_BAD', -24, 'long hold'), H('WIN', 11)]);
-eq('a broken swing still leads', withHold[0].symbol, 'SWING_BAD');
-eq('winners come next', withHold[1].symbol, 'WIN');
-eq('a long hold in the red does not get the prompt', withHold[2].symbol, 'HOLD_BAD');
-// A hold that hits a level is still a decision — that is the whole point of setting one.
-eq('a hold with a level hit leads anyway',
-  sortForCard([H('SWING', -30), { ...H('HOLD', -20, 'long hold'), flags: ['buy zone reached'] }])[0].symbol, 'HOLD');
+// ── order decides what gets read ──
+const V = (symbol, pct, flags = []) => ({ symbol, label: '', price: 10, avg: 10, pct, trims: [], stop: null, targets: [], days: 1, since: '', status: 'open', flags, tags: [] });
+const ordered = sortForCard([V('WIN_SMALL', 1.4), V('LOSS_BIG', -36.5), V('WIN_BIG', 11), V('LOSS_SMALL', -1.1), V('HIT', -10.6, ['stop reached'])]);
+eq('one ranking, best to worst', ordered.map(v => v.symbol), ['WIN_BIG', 'WIN_SMALL', 'LOSS_SMALL', 'HIT', 'LOSS_BIG']);
+// The card is read from the BOTTOM to find work: the last line is the position furthest underwater.
+eq('the worst position is the last line', ordered[ordered.length - 1].symbol, 'LOSS_BIG');
+ok('and the percentages descend the whole way', ordered.every((v, i) => i === 0 || ordered[i - 1].pct >= v.pct));
+// A level hit no longer jumps the queue — it sits at its return and shouts on its own line instead.
+eq('a hit does not move a loser up', sortForCard([V('L', -20, ['stop reached']), V('W', 30)])[0].symbol, 'W');
+ok('the flag still rides along', tradeLine(V('L', -20, ['stop reached'])).includes('⚡ stop reached'));
+// A long hold is not special-cased either: INTC down 10% ranks below a swing up 2% and above one
+// down 30%, which is where its return puts it, and the reader can see that without a rule.
+eq('a hold in the red ranks by its return like anything else',
+  sortForCard([V('SWING_BAD', -36), { ...V('HOLD_BAD', -24), label: 'long hold' }, V('WIN', 11)]).map(v => v.symbol),
+  ['WIN', 'HOLD_BAD', 'SWING_BAD']);
+// No price is not a zero, and must not sort as the best position in the book either.
+const noprice = sortForCard([V('A', -5), V('B', null), V('C', 5)]);
+eq('an unpriced row sorts last, not first', noprice.map(v => v.symbol), ['C', 'A', 'B']);
+eq('two ties break on the symbol', sortForCard([V('ZZ', 4), V('AA', 4)]).map(v => v.symbol), ['AA', 'ZZ']);
+eq('an empty book sorts fine', sortForCard([]), []);
+ok('sorting does not mutate the input', (() => { const a = [V('X', 1), V('Y', 9)]; sortForCard(a); return a[0].symbol === 'X'; })());
+
 eq('the tag survives publicView', publicView({ symbol: 'X', tags: ['hold'], derived: {}, pnl: {} }).tags, ['hold']);
 
 // ── R ──
