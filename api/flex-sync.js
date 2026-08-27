@@ -46,11 +46,14 @@ export async function sync(origin, { apply = false } = {}) {
 
   const stored = await kvGetJson(CONSOLE_KEY);
   const rows = Array.isArray(stored?.rows) ? stored.rows : [];
+  // NOTE: no applyRolls. A rolled position's entry is back-adjusted for the card; the broker reports
+  // the contract, not the trade, so reconciling against the adjusted figure would disagree with
+  // every statement for ever. And CLOSED rows are passed in as well as open ones — the statement is
+  // a report about a past day, and reconcile needs to know what the console has finished since.
   const withDerived = rows.map(r => ({ ...r, derived: derivePosition(r.fills || [], { multiplier: r.multiplier }) }));
-  const open = withDerived.filter(r => r.derived.status !== 'closed');
 
   const asOf = isoDate(got.statement.toDate);
-  const rec = reconcile(open, got.statement.positions, { asOf });
+  const rec = reconcile(withDerived, got.statement.positions, { asOf });
   const result = {
     ok: true,
     account: got.statement.accountId,

@@ -6,7 +6,7 @@
 // and the two symbol conventions (futures month codes, Hong Kong numerics) that make raw string
 // matching fail.
 import { parseFlexResponse, parseStatement, reconcile, rootOf, classOf, autoAddable, rowFromPosition,
-         summarise, isoDate, sendRequestUrl, statementUrl, fetchStatement, elements, attrs, COST_TOLERANCE_PCT } from '../lib/flex.js';
+         summarise, isoDate, matchKey, sendRequestUrl, statementUrl, fetchStatement, elements, attrs, COST_TOLERANCE_PCT } from '../lib/flex.js';
 import { derivePosition } from '../lib/positions.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -122,6 +122,85 @@ const nvda = rec2.adds.find(r => r.symbol === 'NVDA');
 eq('at the broker average cost, as one fill', nvda.fills, [{ id: 'f0', side: 'buy', qty: 20, price: 175.25, date: '2026-08-27', note: 'IBKR position average cost' }]);
 eq('tagged so it is obvious where it came from', nvda.tags, ['new', 'flex']);
 ok('and says in the row that the history is flat by construction', /statement reports a position, not the fills/.test(nvda.thesis));
+
+// ── the same instrument under two names ──
+// IBKR reports SMIC as `981`; the console calls it `0981.HK` because the quote feed needs the
+// padded form. Stripping the suffix is not enough — `0981` and `981` are still different strings,
+// and the first live run announced the position as missing at the broker AND queued a duplicate
+// row to add beside it.
+eq('leading zeros do not make two instruments', matchKey('0981'), matchKey('981'));
+eq('a letter root is untouched', matchKey('MGC'), 'MGC');
+{
+  const smicPos = parseStatement('<OpenPosition symbol="981" assetCategory="STK" currency="HKD" conid="132135163" multiplier="1" position="500" costBasisPrice="70.478952" />').positions;
+  const consoleRow = row('0981.HK-open', '0981.HK', [{ side: 'buy', qty: 500, price: 70.478952, date: '2026-07-10' }]);
+  const r = reconcile([consoleRow], smicPos, { today: '2026-08-27' });
+  eq('so 981 and 0981.HK are one position', r.agree.map(a => a.id), ['0981.HK-open']);
+  eq('nothing is queued to add', r.adds, []);
+  eq('and nothing is reported missing', r.report, []);
+  // Added from scratch it comes back padded, with the suffix the quote feed needs.
+  eq('an unseen HK line is added in the console’s naming', reconcile([], smicPos, { today: '2026-08-27' }).adds[0].symbol, '0981.HK');
+}
+
+// ── a statement is a report about a PAST day ──
+// "Last Business Day" still holds yesterday's positions, so a trade closed this morning looks
+// exactly like a position the console forgot to record — and auto-adding it resurrects a trade that
+// was just exited. METU was sold in full on the 27th; the statement of the 26th still shows 600.
+{
+  const metuPos = parseStatement('<OpenPosition symbol="METU" assetCategory="STK" currency="USD" multiplier="1" position="600" costBasisPrice="18.064459" />').positions;
+  const closedHere = row('METU-open', 'METU', [
+    { side: 'buy', qty: 600, price: 18.06401, date: '2026-08-18' },
+    { side: 'sell', qty: 600, price: 19.975, date: '2026-08-27' }]);
+  const r = reconcile([closedHere], metuPos, { today: '2026-08-27', asOf: '2026-08-26' });
+  eq('a trade closed after the statement is not resurrected', r.adds, []);
+  eq('it is reported for what it is', r.report.map(x => x.kind), ['closed-since-statement']);
+  ok('naming both dates', /2026-08-26/.test(r.report[0].note) && /2026-08-27/.test(r.report[0].note));
+  // Closed BEFORE the statement and still held there is a genuine disagreement, and still added.
+  const older = row('METU-old', 'METU', [
+    { side: 'buy', qty: 600, price: 18.06401, date: '2026-08-18' },
+    { side: 'sell', qty: 600, price: 19.975, date: '2026-08-20' }]);
+  eq('one closed before it still is', reconcile([older], metuPos, { today: '2026-08-27', asOf: '2026-08-26' }).adds.length, 1);
+}
+// The mirror image: bought today, so the statement cannot know about it yet.
+{
+  const fresh = row('NEW-open', 'NVDA', [{ side: 'buy', qty: 10, price: 180, date: '2026-08-27' }]);
+  const r = reconcile([fresh], [], { today: '2026-08-27', asOf: '2026-08-26' });
+  eq('a position opened after the statement is not "missing at the broker"', r.report.map(x => x.kind), ['opened-since-statement']);
+  const old = row('OLD-open', 'NVDA', [{ side: 'buy', qty: 10, price: 180, date: '2026-08-01' }]);
+  eq('an older one still is', reconcile([old], [], { today: '2026-08-27', asOf: '2026-08-26' }).report[0].kind, 'missing-at-broker');
+}
+
+// ── a divergence that is real, permanent, and expected ──
+// IBKR reports a partially-exited position on the lots it actually matched; the console is
+// average-cost throughout. ARM sits at 409.26 there and 331.56 here and always will.
+{
+  const arm = row('ARM-open', 'ARM', [
+    { side: 'buy', qty: 8, price: 321.855, date: '2026-06-10' },
+    { side: 'buy', qty: 1, price: 409.17, date: '2026-06-22' },
+    { side: 'sell', qty: 8, price: 295.6375, date: '2026-07-07' }]);
+  const armPos = parseStatement('<OpenPosition symbol="ARM" assetCategory="STK" currency="USD" multiplier="1" position="1" costBasisPrice="409.260003" />').positions;
+  const r = reconcile([arm], armPos, { today: '2026-08-27' });
+  eq('the disagreement is reported', r.differs.map(d => d.root), ['ARM']);
+  ok('and explained rather than left as two numbers', /partly exited/.test(r.differs[0].note));
+  eq('the quantity is not the problem', r.differs[0].qty, null);
+  // Recording the broker's figure accepts it — against that exact number, not as a mute switch.
+  const acked = reconcile([{ ...arm, costBasisAck: 409.260003 }], armPos, { today: '2026-08-27' });
+  eq('an acknowledged divergence stops being reported', acked.differs, []);
+  eq('but is still marked as such rather than looking clean', acked.agree[0].acknowledged, true);
+  // If IBKR ever reports something ELSE, that is news again.
+  const moved = parseStatement('<OpenPosition symbol="ARM" assetCategory="STK" currency="USD" multiplier="1" position="1" costBasisPrice="450.00" />').positions;
+  eq('a new number is reported again', reconcile([{ ...arm, costBasisAck: 409.260003 }], moved, {}).differs.length, 1);
+}
+
+// ── the broker reports the CONTRACT, the card reports the TRADE ──
+// A rolled position's avgCost is back-adjusted through its legs (applyRolls). That is right for a
+// card and wrong here: reconciling against it would disagree with every statement for ever.
+{
+  const rolled = { id: 'MGC-DEC26', symbol: 'MGC', margined: true, multiplier: 10,
+    derived: { status: 'open', qty: 1, avgCost: 4478.80464, unadjustedAvgCost: 4649.70464, multiplier: 10, sold: 0 } };
+  const mgcPos = parseStatement('<OpenPosition symbol="MGCZ6" underlyingSymbol="MGC" assetCategory="FUT" currency="USD" multiplier="10" position="1" costBasisPrice="4649.70464" />').positions;
+  eq('the unadjusted basis is what is compared', reconcile([rolled], mgcPos, {}).agree.map(a => a.root), ['MGC']);
+  eq('so a roll does not generate a daily disagreement', reconcile([rolled], mgcPos, {}).differs, []);
+}
 
 // Hong Kong and futures come back in the console's own naming, not the broker's.
 const hkAdd = reconcile([], st.positions, { today: '2026-08-27' }).adds;

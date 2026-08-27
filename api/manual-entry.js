@@ -125,6 +125,12 @@ function sanitizeRow(r) {
     // bought another the same day" is also what closing a trade and opening a different one looks
     // like.
     rolledFrom: cs(r.rolledFrom, 48) || null,
+    // The IBKR cost basis for a position where the two accountings legitimately disagree — the
+    // console is average-cost, IBKR reports the lots it actually matched, and after a partial exit
+    // they diverge permanently (ARM: 331.56 here, 409.26 there). Recording the broker's number
+    // accepts that difference; the daily reconciliation stops flagging it, and starts again the day
+    // IBKR reports something other than this.
+    costBasisAck: cn(r.costBasisAck),
     // The ticker the QUOTE feed knows this by, when it differs from the display symbol.
     quoteSymbol: cs(r.quoteSymbol, 24),
     sizeMode: (r.sizeMode === 'risk' || r.sizeMode === 'allocation') ? r.sizeMode : null,

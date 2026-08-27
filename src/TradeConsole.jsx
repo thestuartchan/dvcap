@@ -992,6 +992,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
         margined: !!r.margined,
         quoteSymbol: r.quoteSymbol ? String(r.quoteSymbol).slice(0, 24) : "",
         rolledFrom: r.rolledFrom ? String(r.rolledFrom).slice(0, 48) : null,
+        costBasisAck: Number.isFinite(+r.costBasisAck) && +r.costBasisAck > 0 ? +r.costBasisAck : null,
         levels: Array.isArray(r.levels) ? r.levels : [],
         fills: Array.isArray(r.fills) ? r.fills : [], tags: Array.isArray(r.tags) ? r.tags : [],
       })).filter(r => r.symbol);
