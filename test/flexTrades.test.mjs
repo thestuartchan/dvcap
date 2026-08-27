@@ -58,7 +58,13 @@ eq('futures roots come back rolled up', parseTrades(T({ tradeID: '14', symbol: '
   // The container is not an element: <Trades count="1"> must not read as a trade.
   eq('the wrapper is not a row', tradeSections('<Trades count="1"><Trade tradeID="1" /></Trades>').Trade, 1);
   eq('and neither is a trade confirmation', tradeSections('<TradeConfirm tradeID="1" />').Trade, 0);
-  eq('a diagnostic says what the document held', tradeSections(asOrder), { Trade: 0, Order: 1, TradeConfirm: 0 });
+  eq('a diagnostic says what the document held', tradeSections(asOrder), { Trade: 0, Order: 1, TradeConfirm: 0, dropped: {} });
+  // An <Order> row has no tradeID at all — it carries ibOrderID. The first attempt read all 177 of
+  // them and then dropped every one for having no id, which from outside is indistinguishable from
+  // the section being missing. So the diagnostic says WHY, not only how many survived.
+  eq('an order id is an id', parseTrades('<Order ibOrderID="77" symbol="X" assetCategory="STK" currency="USD" multiplier="1" buySell="BUY" quantity="1" tradePrice="10" tradeDate="20260828" />')[0].tradeId, '77');
+  eq('and a row with none says so', tradeSections('<Order symbol="X" assetCategory="STK" buySell="BUY" quantity="1" tradePrice="10" tradeDate="20260828" />').dropped, { noId: 1 });
+  eq('a closed lot is counted as the wrong level', tradeSections(T({ tradeID: '1', symbol: 'X', assetCategory: 'STK', buySell: 'BUY', quantity: 1, tradePrice: 1, tradeDate: '20260821', levelOfDetail: 'CLOSED_LOT' })).dropped, { otherLevelOfDetail: 1 });
 }
 
 // ── the watermark ──
@@ -114,6 +120,54 @@ eq('futures roots come back rolled up', parseTrades(T({ tradeID: '14', symbol: '
   const amb = planTrades(withDerived([twice]), t, { from: '2026-08-01' });
   eq('two identical candidates is ambiguous', amb.report.map(r => r.kind), ['ambiguous-adoption']);
   eq('and nothing is written on a guess', [amb.adopt.length, amb.apply.length], [0, 0]);
+}
+
+// ── day trades stay in the broker ──
+// The console's scope is spot, swings and long holds. A statement window holds every scalp too, and
+// left alone each one would open a row, fill it, close it in the same breath and file it in the
+// archive — burying the swing record under exactly the trades that were kept out on purpose.
+{
+  const scalp = parseTrades(
+    T({ tradeID: '100', symbol: 'TSLA', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'BUY', quantity: 500, tradePrice: 400, ibCommission: -1, tradeDate: '20260828' }) +
+    T({ tradeID: '101', symbol: 'TSLA', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'SELL', quantity: -500, tradePrice: 402, ibCommission: -1, tradeDate: '20260828' }));
+  const plan = planTrades([], scalp, { from: '2026-08-01' });
+  eq('a same-day round trip opens nothing', [plan.creates.length, plan.apply.length], [0, 0]);
+  eq('and is counted as what it is', plan.skipped.dayTrades, 2);
+  eq('silently — it is not a problem to report', plan.report, []);
+}
+{
+  // The same round trip over two days is a SWING that never got recorded. Worth knowing about, so
+  // it is reported — and not filed automatically, because a completed trade the console never saw
+  // is a judgement call.
+  const swing = parseTrades(
+    T({ tradeID: '110', symbol: 'TSLA', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'BUY', quantity: 500, tradePrice: 400, ibCommission: -1, tradeDate: '20260826' }) +
+    T({ tradeID: '111', symbol: 'TSLA', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'SELL', quantity: -500, tradePrice: 402, ibCommission: -1, tradeDate: '20260828' }));
+  const plan = planTrades([], swing, { from: '2026-08-01' });
+  eq('a multi-day round trip is reported', plan.report.map(r => r.kind), ['round-trip-not-recorded']);
+  eq('with the days it spanned', plan.report[0].dates, ['2026-08-26', '2026-08-28']);
+  eq('and nothing is filed on its own', [plan.creates.length, plan.apply.length], [0, 0]);
+}
+{
+  // A scalp in a symbol the console DOES hold is applied, because it moved a tracked position and
+  // leaving it out would put the console's average cost at odds with the broker's.
+  const held = { id: 'HOOD-open', symbol: 'HOOD', fills: [{ id: 'f0', side: 'buy', qty: 100, price: 107.01, date: '2026-08-21' }] };
+  const inOut = parseTrades(
+    T({ tradeID: '120', symbol: 'HOOD', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'BUY', quantity: 50, tradePrice: 110, ibCommission: 0, tradeDate: '20260828' }) +
+    T({ tradeID: '121', symbol: 'HOOD', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'SELL', quantity: -50, tradePrice: 111, ibCommission: 0, tradeDate: '20260828' }));
+  const plan = planTrades(withDerived([held]), inOut, { from: '2026-08-01' });
+  eq('both legs land on the position they moved', plan.apply.length, 2);
+  eq('and it is not counted as a day trade', plan.skipped.dayTrades, 0);
+  eq('the position is back where it started', derive(applyPlan([held], plan)[0]).qty, 100);
+}
+{
+  // A buy that is still held at the end of the window is a new position, not a scalp.
+  const opened = parseTrades(
+    T({ tradeID: '130', symbol: 'NVDA', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'BUY', quantity: 20, tradePrice: 180, ibCommission: -1, tradeDate: '20260828' }) +
+    T({ tradeID: '131', symbol: 'NVDA', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'SELL', quantity: -5, tradePrice: 182, ibCommission: -1, tradeDate: '20260828' }));
+  const plan = planTrades([], opened, { from: '2026-08-01' });
+  eq('a partial exit the same day is still a position', plan.creates.length, 1);
+  eq('with both fills', plan.apply.length, 2);
+  eq('and 15 left', derive(applyPlan([], plan)[0]).qty, 15);
 }
 
 // ── exits, which is the whole reason this exists ──
