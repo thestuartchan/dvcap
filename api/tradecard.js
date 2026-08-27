@@ -14,7 +14,7 @@
 // reach Discord even by accident. See the header of that file.
 
 import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY } from '../lib/kv.js';
-import { derivePosition, positionPnl, levelHits } from '../lib/positions.js';
+import { derivePosition, positionPnl, levelHits, applyRolls } from '../lib/positions.js';
 import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard } from '../lib/tradecard.js';
 import { upsertCard, post, remove, webhookFromEnv, mentionFromEnv, alertTtlMin, CARD_KEY, ALERTS_KEY } from '../lib/discord.js';
 
@@ -54,13 +54,15 @@ export async function snapshot(origin) {
   const rows = Array.isArray(stored?.rows) ? stored.rows : [];
   const live = rows.filter(r => derivePosition(r.fills || [], { multiplier: r.multiplier }).status !== 'closed');
   const prices = await quotesFor([...new Set(live.map(quoteSym).filter(Boolean))], origin);
-  return rows.map(r => {
-    const derived = derivePosition(r.fills || [], { multiplier: r.multiplier });
-    const price = prices?.[quoteSym(r)]?.price ?? null;
-    const hits = levelHits([{ ...r, derived }], () => price)
-      .map(h => `${h.level.kind} ${h.level.at}${h.level.to ? `–${h.level.to}` : ''} reached`);
-    return { ...r, derived, price, pnl: positionPnl(derived, price), levelHits: hits };
-  });
+  // applyRolls BEFORE the P&L: a rolled contract's entry is back-adjusted through the legs behind
+  // it, so a percentage computed first would be the contract's rather than the trade's.
+  return applyRolls(rows.map(r => ({ ...r, derived: derivePosition(r.fills || [], { multiplier: r.multiplier }) })))
+    .map(r => {
+      const price = prices?.[quoteSym(r)]?.price ?? null;
+      const hits = levelHits([r], () => price)
+        .map(h => `${h.level.kind} ${h.level.at}${h.level.to ? `–${h.level.to}` : ''} reached`);
+      return { ...r, price, pnl: positionPnl(r.derived, price), levelHits: hits };
+    });
 }
 
 export async function refresh(origin, { now = Date.now() } = {}) {
@@ -77,7 +79,9 @@ export async function refresh(origin, { now = Date.now() } = {}) {
   // Announce first, so an event is not lost if the card edit fails.
   // The same exclusion the card uses. Filtering only the card meant USFR was kept off the list and
   // still announced itself as a new trade, which is the one place cash had nothing to say at all.
-  const announceable = rows.filter(showsOnCard);
+  // Legs are excluded here too: a roll would otherwise fire "🏁 Closed — MGC" on a position that
+  // is still open, which is the exact misreading the chaining exists to remove.
+  const announceable = rows.filter(r => !r.derived.rolledInto && showsOnCard(r));
   const shape = (r) => ({ id: r.id, derived: { status: r.derived.status }, levelHits: r.levelHits });
 
   // COLD START. With no stored snapshot every existing position looks new, so the first run
@@ -108,7 +112,9 @@ export async function refresh(origin, { now = Date.now() } = {}) {
   // A SECOND message for the closed book, edited in place like the first. Two messages rather than
   // two sections because they answer different questions and are read at different times — and
   // because one embed carrying both would hit Discord's 6000-character ceiling far sooner.
-  const closedRows = rows.filter(r => r.derived.status === 'closed' && showsOnCard(r));
+  // A rolled-out contract is not a closed trade — it was replaced, and its P&L now lives inside the
+  // position that replaced it. Left here it would post as a completed winner that no longer exists.
+  const closedRows = rows.filter(r => r.derived.status === 'closed' && !r.derived.rolledInto && showsOnCard(r));
   const closed = buildClosedCard(closedRows, { updatedAt: new Date(now).toISOString() });
   const c = closedRows.length ? await upsertCard(webhook, state.closedMessageId, closed) : { id: state.closedMessageId };
 

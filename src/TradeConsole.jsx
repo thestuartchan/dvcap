@@ -17,7 +17,7 @@ import {
 } from "recharts";
 import { C, SLabel, Card, Btn } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
-import { derivePosition, splitIntoTrades, collapseFills, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, realizedCurve } from "../lib/positions.js";
+import { derivePosition, applyRolls, splitIntoTrades, collapseFills, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, realizedCurve } from "../lib/positions.js";
 import { CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy } from "../lib/fxrates.js";
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
 
@@ -358,6 +358,26 @@ const {
             <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Trade label<br />
               <input value={r.trade || ""} onChange={e => upd(r.id, { trade: e.target.value })} placeholder="e.g. Aug 18 entry"
                 style={{ width: 120, padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
+            {/* ── ROLLED FROM ──
+                A futures roll is one continuous trade the broker has to book as two contracts.
+                Declared, never inferred: "sold one and bought another the same day" is also what
+                closing a trade and opening a different one looks like, and only you know which. */}
+            {ctx.rollCandidates(r).length > 0 && (
+              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Rolled from<br />
+                <select value={r.rolledFrom || ""} onChange={e => upd(r.id, { rolledFrom: e.target.value || null })}
+                  style={{ width: 168, padding: "5px 9px", border: "1.5px solid " + (r.rolledFrom ? C.blue : C.bdr), borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
+                  <option value="">— a new position —</option>
+                  {ctx.rollCandidates(r).map(c => (
+                    <option key={c.id} value={c.id}>{c.trade || c.id} · exited {c.derived.lastDate || "?"}</option>
+                  ))}
+                </select>
+                <span style={{ display: "block", fontWeight: 500, color: C.muted, fontSize: 10.5, marginTop: 2, maxWidth: 168 }}>
+                  {r.derived?.rollAdjusted
+                    ? `held since ${r.derived.firstDate} · entry back-adjusted from ${(r.derived.unadjustedAvgCost ?? r.derived.unadjustedAvgEntry)?.toFixed(2)} to ${(r.derived.avgCost ?? r.derived.avgEntry)?.toFixed(2)}`
+                    : "one continuous trade — the earlier contract's P&L moves into this position"}
+                </span>
+              </label>
+            )}
             <label style={{ flex: "1 1 240px", fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Thesis / why you are watching<br />
               <input value={r.thesis || ""} onChange={e => upd(r.id, { thesis: e.target.value })} placeholder="e.g. accumulate on a pullback to the 200dma"
                 style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
@@ -768,14 +788,34 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   const rm = regimeMultiplier(regimeCtx);
 
   // ── derive everything from fills ──
-  const derivedRows = useMemo(() => rows.map(r => {
-    const derived = derivePosition(r.fills || [], { multiplier: r.multiplier });
-    return { ...r, derived, pnl: positionPnl(derived, priceOf(r)) };
-  }), [rows, prices]);
+  // applyRolls runs BETWEEN the derive and the P&L: a rolled contract's entry is back-adjusted
+  // through the legs behind it, so a percentage computed first would describe the contract rather
+  // than the trade.
+  const derivedRows = useMemo(() => applyRolls(
+    rows.map(r => ({ ...r, derived: derivePosition(r.fills || [], { multiplier: r.multiplier }) })),
+  ).map(r => ({ ...r, pnl: positionPnl(r.derived, priceOf(r)) })), [rows, prices]);
 
   const setups   = derivedRows.filter(r => r.derived.status === "setup");
   const openPos  = derivedRows.filter(r => r.derived.status === "open");
-  const archived = derivedRows.filter(r => r.derived.status === "closed");
+  // A rolled-out contract is not a closed trade — it was replaced, and its P&L now sits inside the
+  // position that replaced it. Listing it in the archive would count the same gain twice.
+  const archived = derivedRows.filter(r => r.derived.status === "closed" && !r.derived.rolledInto);
+  const rolledOut = derivedRows.filter(r => r.derived.rolledInto);
+  // What a row may declare it was rolled out of: a FINISHED contract in the same symbol that no
+  // other row has already claimed. Restricting it to the same symbol is not pedantry — a roll is
+  // the same instrument in a later month, and offering the whole archive would make the commonest
+  // mistake (picking an unrelated closed trade) the easiest one to make.
+  const rollCandidates = useMemo(() => {
+    const claimed = new Set(derivedRows.map(r => r.rolledFrom).filter(Boolean));
+    const by = new Map();
+    for (const r of derivedRows) {
+      if (r.derived.status !== "closed") continue;
+      const k = String(r.symbol || "").toUpperCase();
+      by.set(k, [...(by.get(k) || []), r]);
+    }
+    return (row) => (by.get(String(row.symbol || "").toUpperCase()) || [])
+      .filter(c => c.id !== row.id && (!claimed.has(c.id) || row.rolledFrom === c.id));
+  }, [derivedRows]);
   const summary  = useMemo(() => summarize(derivedRows, toBase), [derivedRows, fxRates, baseCcy]);
   // The archive's OWN numbers. It previously borrowed the book-wide summary, which is how a list of
   // closed trades came to report an unrealised figure — that was the open positions' mark-to-market
@@ -951,6 +991,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
         fxRate: Number.isFinite(+r.fxRate) && +r.fxRate > 0 ? +r.fxRate : null,
         margined: !!r.margined,
         quoteSymbol: r.quoteSymbol ? String(r.quoteSymbol).slice(0, 24) : "",
+        rolledFrom: r.rolledFrom ? String(r.rolledFrom).slice(0, 48) : null,
         levels: Array.isArray(r.levels) ? r.levels : [],
         fills: Array.isArray(r.fills) ? r.fills : [], tags: Array.isArray(r.tags) ? r.tags : [],
       })).filter(r => r.symbol);
@@ -996,6 +1037,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
     prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel,
     openFill, delFill, fillFor, setFillFor, saveFill, sizeOpen, setSizeOpen, justMoved: moved?.id ?? null, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip, kindCol, money, pnlCol,
     equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
+    rollCandidates, rolledOut,
   };
 
   return (
@@ -1313,6 +1355,18 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
         {archiveStats.unconverted > 0 && (
           <div style={{ marginTop: 7, fontSize: 11.5, color: C.amber, fontWeight: 700 }}>
             ⚠ {archiveStats.unconverted} closed trade{archiveStats.unconverted === 1 ? "" : "s"} excluded from these totals — no FX rate available to convert into {baseCcy}. Refresh prices.
+          </div>
+        )}
+        {/* ROLLED-FORWARD CONTRACTS. These are flat and would once have sat in the archive as
+            completed trades, which double-counted them: their P&L now lives inside the position
+            that replaced them. They are listed rather than hidden — a contract that vanished from
+            the console entirely would be indistinguishable from one that was never recorded. */}
+        {rolledOut.length > 0 && (
+          <div style={{ marginTop: 9, fontSize: 11.5, color: C.muted }}>
+            <b style={{ color: C.mid }}>Rolled forward · {rolledOut.length}</b> — not counted above, because each one's P&L is carried inside the position that replaced it:{" "}
+            {rolledOut.map((r, i) => (
+              <span key={r.id}>{i ? " · " : ""}<b style={{ color: C.mid }}>{r.symbol}</b> {r.trade || r.id} → {r.derived.rolledInto} ({fmtCcy(r.derived.realized, r.currency)})</span>
+            ))}
           </div>
         )}
 

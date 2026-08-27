@@ -1,5 +1,5 @@
 // Regression tests for lib/positions.js — fill-based accounting for scaled spot/swing positions.
-import { splitIntoTrades, collapseFills, derivePosition, positionPnl, levelHit, distancePct, summarize, realizedCurve } from '../lib/positions.js';
+import { splitIntoTrades, collapseFills, derivePosition, positionPnl, levelHit, distancePct, summarize, realizedCurve, applyRolls } from '../lib/positions.js';
 let pass=0,fail=0;
 const eq=(n,g,w)=>{const ok=JSON.stringify(g)===JSON.stringify(w);console.log(`${ok?'✅':'❌'} ${n}`+(ok?'':`  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`));ok?pass++:fail++;};
 
@@ -336,6 +336,84 @@ const rp = positionPnl(zeroed, 29594.85);
 eq('a real quote prices the contract', rp.marketValue, 59189.7);
 eq('at the contract multiplier', rp.unrealized, 180.09);
 eq('negative quotes are refused too', positionPnl(zeroed, -5).marketValue, null);
+
+// ── a roll is one trade, not two ──────────────────────────────────────────────
+// Selling the Aug micro gold at 4613.80 and buying the Dec in the same order never ended the
+// position, but the broker books two contracts and the console followed — which is how MGC came to
+// post "+0.00%, held 1d" on a trade that had been long since 17 August and was well up.
+{
+  const leg = { id: 'MGC-AUG', symbol: 'MGC', multiplier: 10, fills: [
+    { side: 'buy', qty: 1, price: 4442.80464, date: '2026-08-17' },
+    { side: 'sell', qty: 1, price: 4613.70464, date: '2026-08-26' }] };
+  const tip = { id: 'MGC-DEC', symbol: 'MGC', multiplier: 10, rolledFrom: 'MGC-AUG', fills: [
+    { side: 'buy', qty: 1, price: 4649.70464, date: '2026-08-26' }] };
+  const derive = (r) => ({ ...r, derived: derivePosition(r.fills, { multiplier: r.multiplier }) });
+  const [L, T] = applyRolls([leg, tip].map(derive));
+
+  eq('the leg realised what it realised', L.derived.realized, 1709.00);
+  eq('but it is marked as replaced, not completed', L.derived.rolledInto, 'MGC-DEC');
+  // Back-adjustment: the new contract's cost less what the old one made, per unit. The gap between
+  // the two contracts is the calendar spread, and paying it is a real cost of staying in.
+  eq('the entry is back-adjusted', T.derived.avgCost, 4478.804640);
+  eq('the number it came from is kept', T.derived.unadjustedAvgCost, 4649.70464);
+  eq('and the chain it came through', T.derived.rollLegs, ['MGC-AUG']);
+  eq('held since the FIRST contract, not the current one', T.derived.firstDate, '2026-08-17');
+  eq('the legs’ realised is carried', T.derived.chainRealized, 1709.00);
+  // The whole point: the percentage now describes the trade rather than the contract.
+  const pnl = positionPnl(T.derived, 4649.80);
+  eq('so the return is the trade’s, not the contract’s', pnl.unrealizedPct, 3.82);
+  // And it reconciles: unrealised on the chain equals leg realised plus the tip's own move.
+  eq('unrealised equals everything the chain has made', pnl.unrealized, +(1709.00 + (4649.80 - 4649.70464) * 10).toFixed(2));
+
+  // Counted once. The leg is out of the summary and out of the curve, because its gain is now
+  // sitting inside the open position's unrealised.
+  const sum = summarize([L, { ...T, pnl }]);
+  eq('the account is not credited twice', sum.realized, 0);
+  eq('the total is the chain total', sum.total, pnl.unrealized);
+  eq('and the leg is not counted as a win', sum.wins, 0);
+  eq('nor as a closed trade', sum.closed, 0);
+  eq('the curve skips it too', realizedCurve([L, T]), []);
+  // Cash figures stay as they actually happened — a back-adjusted entry is a measuring convention.
+  eq('market value is untouched', pnl.marketValue, 46498.00);
+  eq('and so is what was spent', T.derived.spent, 46497.05);
+}
+{
+  // Three contracts deep, then closed for good: the chain's whole P&L lands on the final row.
+  const mk = (id, buy, sell, from) => ({ id, symbol: 'MNQ', multiplier: 2, rolledFrom: from,
+    fills: sell == null ? [{ side: 'buy', qty: 1, price: buy, date: '2026-03-01' }]
+      : [{ side: 'buy', qty: 1, price: buy, date: '2026-03-01' }, { side: 'sell', qty: 1, price: sell, date: '2026-06-01' }] });
+  const rows = [mk('A', 20000, 20500), mk('B', 20600, 21000, 'A'), mk('C', 21100, 22000, 'B')]
+    .map(r => ({ ...r, derived: derivePosition(r.fills, { multiplier: r.multiplier }) }));
+  const [A, B, C] = applyRolls(rows);
+  eq('every leg but the last is marked', [A.derived.rolledInto, B.derived.rolledInto, C.derived.rolledInto], ['B', 'C', null]);
+  eq('the chain is walked to the start', C.derived.rollLegs, ['B', 'A']);
+  eq('and the whole chain’s P&L is on the row that ended it', C.derived.realized, +(1000 + 800 + 1800).toFixed(2));
+  eq('the closed entry is back-adjusted too', C.derived.avgEntry, +(21100 - 1800 / 2).toFixed(6));
+  eq('the summary sees one trade, not three', summarize([A, B, C]).closed, 1);
+  eq('worth the chain total', summarize([A, B, C]).realized, 3600);
+}
+{
+  // The link is declared, and only a FINISHED contract may be rolled forward — pointing at a live
+  // one would fold a live position's P&L into another live position's entry.
+  const open = { id: 'X', symbol: 'X', fills: [{ side: 'buy', qty: 1, price: 10, date: '2026-01-01' }] };
+  const other = { id: 'Y', symbol: 'X', rolledFrom: 'X', fills: [{ side: 'buy', qty: 1, price: 12, date: '2026-02-01' }] };
+  const [x, y] = applyRolls([open, other].map(r => ({ ...r, derived: derivePosition(r.fills) })));
+  eq('an open row cannot be a leg', x.derived.rolledInto, undefined);
+  eq('so nothing is adjusted', y.derived.avgCost, 12);
+  // A dangling or self-referential link is ignored rather than throwing.
+  const [z] = applyRolls([{ id: 'Z', symbol: 'Z', rolledFrom: 'nope', derived: derivePosition([{ side: 'buy', qty: 1, price: 5, date: '2026-01-01' }]) }]);
+  eq('a link to nothing is ignored', z.derived.avgCost, 5);
+  const [self] = applyRolls([{ id: 'S', symbol: 'S', rolledFrom: 'S', derived: derivePosition([{ side: 'buy', qty: 1, price: 5, date: '2026-01-01' }]) }]);
+  eq('and so is a row pointing at itself', self.derived.avgCost, 5);
+  // Two rows claiming the same leg: the first wins, the second is left alone. A contract cannot be
+  // rolled into two positions.
+  const legC = { id: 'L', symbol: 'L', derived: derivePosition([{ side: 'buy', qty: 1, price: 10, date: '2026-01-01' }, { side: 'sell', qty: 1, price: 11, date: '2026-02-01' }]) };
+  const [, one, two] = applyRolls([legC,
+    { id: 'One', symbol: 'L', rolledFrom: 'L', derived: derivePosition([{ side: 'buy', qty: 1, price: 12, date: '2026-02-01' }]) },
+    { id: 'Two', symbol: 'L', rolledFrom: 'L', derived: derivePosition([{ side: 'buy', qty: 1, price: 12, date: '2026-02-01' }]) }]);
+  eq('only one row may claim a leg', [one.derived.rollAdjusted, two.derived.rollAdjusted], [true, undefined]);
+  eq('and the winner is adjusted by it', one.derived.avgCost, 11);
+}
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);

@@ -119,6 +119,12 @@ function sanitizeRow(r) {
     // Futures and anything else held on margin: market value is notional, not capital committed,
     // so it is kept out of every weight and cash figure.
     margined: !!r.margined,
+    // The contract this one replaced. A futures roll is one continuous trade that the broker has to
+    // book as two contracts; this is how the console is told they are the same position. See
+    // applyRolls in lib/positions.js — it is declared rather than inferred, because "sold one and
+    // bought another the same day" is also what closing a trade and opening a different one looks
+    // like.
+    rolledFrom: cs(r.rolledFrom, 48) || null,
     // The ticker the QUOTE feed knows this by, when it differs from the display symbol.
     quoteSymbol: cs(r.quoteSymbol, 24),
     sizeMode: (r.sizeMode === 'risk' || r.sizeMode === 'allocation') ? r.sizeMode : null,
