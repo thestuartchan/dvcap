@@ -241,6 +241,11 @@ const {
   const equityInPos = equityBase == null ? null : convert(equityBase, baseCcy, r.currency || "USD", fxRates);
   const sug = sizeSuggestion({
     mode: sizeMode, equityInPos, price, stop: stopLevel?.at,
+    // THE CONTRACT MULTIPLIER, which this call left out. Every suggestion for MGC or MNQ was
+    // computed as though one contract were one ounce or one index point, which sizes a futures
+    // position too LARGE by exactly the multiplier — the divisor was ten or two times too small.
+    // The row has carried it all along; it just never got here.
+    multiplier: numOrNull(r.multiplier) || 1,
     baseRiskPct: baseRisk, targetPct: numOrNull(r.targetPct) ?? targetPct,
     regime: regimeCtx, heldQty: d.qty || 0, tranches: numOrNull(r.tranches) || 1,
     sizing: mergedSizing,
@@ -523,13 +528,28 @@ const {
                 </div>
                 {sug.ok ? (
                   <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.75 }}>
-                    Full size <b style={{ color: C.text }} title={sug.rounded ? `rounded from ${sug.fullExact} — equity is approximate, so the extra digits are not meaningful` : undefined}>~{sug.fullQty}</b> ({money(sug.notional, r.currency)} · {sug.notionalPctOfBook}% of equity)
+                    Full size <b style={{ color: C.text }} title={sug.rounded ? `rounded from ${sug.fullExact} — equity is approximate, so the extra digits are not meaningful` : undefined}>~{sug.fullQty}</b>
+                    {sug.multiplier > 1 && <span style={{ color: C.lbl }}> {sug.unitName}{sug.fullQty === 1 ? "" : "s"} ×{sug.multiplier}</span>}
+                    {/* A MARGINED ROW'S NOTIONAL IS NOT A SHARE OF EQUITY. The portfolio card above
+                        excludes futures from every weight for exactly this reason and says so; this
+                        line calling the same figure "% of equity" would have the one screen
+                        contradicting itself, and now that the multiplier is applied the number is
+                        ten times larger than the one that was already wrong. */}
+                    {" ("}{money(sug.notional, r.currency)}{r.margined ? " notional" : ` · ${sug.notionalPctOfBook}% of equity`}{")"}
                     {sug.heldQty > 0 && <> · holding <b>{sug.heldQty}</b></>}
                     {" · "}<b style={{ color: sug.roomQty > 0 ? C.green : C.muted }}>room for {sug.roomQty}</b>
                     {sug.tranches > 1 && sug.trancheQty > 0 && <> · <b>{sug.trancheQty}</b> per buy, {sug.tranches} times</>}
-                    {sug.riskAmount != null && (
+                    {/* WHAT IT RISKS, then what you meant to risk. These were one number, and the
+                        one printed was the BUDGET — equity × risk % — which is not what a rounded
+                        quantity actually puts at stake. On a size that rounds down it overstates
+                        the risk; on a contract that rounds to one it can understate it badly. */}
+                    {sug.perUnitRisk != null && (
                       <div style={{ color: C.lbl }}>
-                        Risks <b style={{ color: C.red }}>{fmtCcy(sug.riskAmount, r.currency)}</b> at the {stopLevel?.at} stop ({sug.effPct}% of equity · {money(sug.perShareRisk, r.currency)}/share)
+                        Risks <b style={{ color: C.red }}>{fmtCcy(sug.riskAtSize, r.currency)}</b>
+                        {sug.riskAtSizePct != null && <> ({sug.riskAtSizePct}% of equity)</>} at the {stopLevel?.at} stop
+                        {" · "}{money(sug.perUnitRisk, r.currency)}/{sug.unitName}
+                        {sug.multiplier > 1 && <span style={{ color: C.muted }}> ({sug.pointRisk} pts × {sug.multiplier})</span>}
+                        <span style={{ color: C.muted }}> · budget was {fmtCcy(sug.riskAmount, r.currency)} at {sug.effPct}%</span>
                       </div>
                     )}
                     <div style={{ color: C.muted, fontSize: 11.5 }}>

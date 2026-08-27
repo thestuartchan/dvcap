@@ -8,8 +8,9 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "prebuild": "node scripts/check-undefined-refs.mjs && node scripts/check-undefined-idents.mjs && node scripts/check-required-props.mjs && node scripts/check-dead-components.mjs && node scripts/check-css-imported.mjs && node scripts/check-status-tokens.mjs && node scripts/check-no-llm-feeds.mjs",
-    "check:status": "node scripts/check-status-tokens.mjs"
+    "prebuild": "npm test && node scripts/check-undefined-refs.mjs && node scripts/check-undefined-idents.mjs && node scripts/check-required-props.mjs && node scripts/check-dead-components.mjs && node scripts/check-css-imported.mjs && node scripts/check-status-tokens.mjs && node scripts/check-no-llm-feeds.mjs",
+    "check:status": "node scripts/check-status-tokens.mjs",
+    "test": "for f in test/*.test.mjs; do node \"$f\" || exit 1; done"
   },
   "dependencies": {
     "react": "^19.2.6",
