@@ -15,7 +15,7 @@
 
 import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY } from '../lib/kv.js';
 import { derivePosition, positionPnl, levelHits } from '../lib/positions.js';
-import { buildCard, buildAlert, diffRows, isCashLeg } from '../lib/tradecard.js';
+import { buildCard, buildClosedCard, buildAlert, diffRows, isCashLeg } from '../lib/tradecard.js';
 import { upsertCard, post, remove, webhookFromEnv, mentionFromEnv, alertTtlMin, CARD_KEY, ALERTS_KEY } from '../lib/discord.js';
 
 // A row's symbol is what you call it; the quote feed may call it something else. Mirrors the tab's
@@ -104,15 +104,23 @@ export async function refresh(origin, { now = Date.now() } = {}) {
   const card = buildCard(live, { updatedAt: new Date(now).toISOString() });
   const { id, created, failed } = await upsertCard(webhook, state.messageId, card);
 
+  // A SECOND message for the closed book, edited in place like the first. Two messages rather than
+  // two sections because they answer different questions and are read at different times — and
+  // because one embed carrying both would hit Discord's 6000-character ceiling far sooner.
+  const closedRows = rows.filter(r => r.derived.status === 'closed' && !isCashLeg(r));
+  const closed = buildClosedCard(closedRows, { updatedAt: new Date(now).toISOString() });
+  const c = closedRows.length ? await upsertCard(webhook, state.closedMessageId, closed) : { id: state.closedMessageId };
+
   await kvSetJson(CARD_KEY, {
     messageId: id ?? state.messageId ?? null,
+    closedMessageId: c.id ?? state.closedMessageId ?? null,
     alerts: kept,
     // Only what diffRows needs, so the stored snapshot cannot become a second copy of the book.
     rows: announceable.map(shape),
     updatedAt: new Date(now).toISOString(),
   });
 
-  return { posted: events.length, seeded: firstRun, cardCreated: created, cardFailed: !!failed,
+  return { posted: events.length, seeded: firstRun, cardCreated: created, cardFailed: !!failed, closed: closedRows.length,
            open: live.length, priced: live.filter(r => r.price != null).length, sweptAlerts: pending.length - kept.length };
 }
 

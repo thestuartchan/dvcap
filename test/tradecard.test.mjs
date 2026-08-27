@@ -5,7 +5,7 @@
 // building rows whose private values are distinctive digit strings and asserting those strings
 // appear nowhere in the serialised output. A future edit that adds "· 600 @ 18.06" to a line fails
 // here rather than on a Discord server.
-import { publicView, buildCard, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, isLongHold, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS } from '../lib/tradecard.js';
+import { publicView, buildCard, buildClosedCard, closedLine, rOf, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, isLongHold, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS } from '../lib/tradecard.js';
 import { isWebhookUrl, alertTtlMin, mentionFromEnv, webhookFromEnv } from '../lib/discord.js';
 import fs from 'node:fs';
 let pass=0,fail=0;
@@ -74,7 +74,10 @@ for (const part of ['METU', '20.41', 'avg 18.06', '+12.99%', 'SL 16.5', '8d'])
 ok('no direction marker — every position here is long', !/ L · /.test(line));
 ok('trims appear when a position has been scaled out', tradeLine(publicView({ ...row, derived: { ...row.derived, scaleOuts: [{ pct: 8.2 }, { pct: 14.1 }] } })).includes('trimmed +8%, +14%'));
 ok('and not when it has not', !tradeLine(v).includes('trimmed'));
-ok('targets carry their distance', tradeLine(publicView({ ...row, levels: [...row.levels, { kind: 'sell', at: 25.25 }] })).includes('TP 25.25 (+24%)'));
+// A target reads in R when a stop makes R computable, and falls back to plain distance when it
+// does not — the reward on a unit of risk is the more useful of the two whenever it exists.
+ok('a target reads in R when there is a stop', tradeLine(publicView({ ...row, levels: [...row.levels, { kind: 'sell', at: 25.25 }] })).includes('TP 25.25 (+4.6R)'));
+ok('and in distance when there is not', tradeLine(publicView({ ...row, levels: [{ kind: 'sell', at: 25.25 }] })).includes('TP 25.25 (+24%)'));
 
 // ── days held ──
 eq('days held', daysHeld('2026-08-18', '2026-08-26'), 8);
@@ -237,6 +240,40 @@ eq('a long hold in the red does not get the prompt', withHold[2].symbol, 'HOLD_B
 eq('a hold with a level hit leads anyway',
   sortForCard([H('SWING', -30), { ...H('HOLD', -20, 'long hold'), flags: ['buy zone reached'] }])[0].symbol, 'HOLD');
 eq('the tag survives publicView', publicView({ symbol: 'X', tags: ['hold'], derived: {}, pnl: {} }).tags, ['hold']);
+
+// ── R ──
+eq('R from entry, stop and price', rOf(20.05, 18.06401, 16.5), 1.3);
+eq('a target in R is the reward on 1R of risk', rOf(25.25, 18.06401, 16.5), 4.6);
+eq('the stop itself is minus one R', rOf(16.5, 18.06401, 16.5), -1);
+eq('a loser is negative R', rOf(17.28, 18.06, 16.5), -0.5);
+// R exists only if a stop does — a position with no invalidation level has no risk unit to be a
+// multiple OF, so the answer is nothing rather than a number.
+eq('no stop, no R', rOf(20.05, 18.06, null), null);
+eq('a stop at entry is not a risk unit', rOf(20.05, 18.06, 18.06), null);
+eq('nor is one above it', rOf(20.05, 18.06, 19), null);
+
+const withStop = publicView({ symbol: 'METU', price: 20.05, levels: [{ kind: 'stop', at: 16.5 }, { kind: 'sell', at: 25.25 }],
+  derived: { status: 'open', avgCost: 18.06401, firstDate: '2026-08-18', scaleOuts: [] }, pnl: { unrealizedPct: 11 } });
+const wl = tradeLine(withStop);
+ok('R sits beside the percentage', wl.includes('(+1.3R)'));
+ok('the stop keeps its absolute price', wl.includes('SL 16.50'));
+ok('the target carries both price and R', wl.includes('TP 25.25 (+4.6R)'));
+ok('and no R at all without a stop', !/R\b/.test(tradeLine(publicView({ symbol: 'X', price: 20, levels: [], derived: { status: 'open', avgCost: 18, scaleOuts: [] }, pnl: { unrealizedPct: 11 } }))));
+
+// ── the closed card ──
+const closedRow = (symbol, entry, exit, stop, date) => ({ symbol, levels: stop ? [{ kind: 'stop', at: stop }] : [],
+  derived: { status: 'closed', avgEntry: entry, avgExit: exit, avgCost: entry, realizedPct: +(((exit - entry) / entry) * 100).toFixed(2),
+             firstDate: date, lastDate: date, scaleOuts: [] }, pnl: {} });
+const cc = buildClosedCard([closedRow('TQQQ', 69.4, 69.44, 67.5, '2026-08-20'), closedRow('SPY', 2.74, 0.52, null, '2026-06-08')]);
+ok('titled by count', cc.embeds[0].title.includes('2 trades'));
+ok('a stopped trade reports R', /R/.test(cc.embeds[0].description.split('\n')[0]));
+ok('one without falls back to a percentage', cc.embeds[0].description.split('\n')[1].includes('%'));
+ok('and the card says why', /closed without a recorded stop/.test(cc.embeds[0].footer.text));
+ok('every line carries the exit price', cc.embeds[0].description.split('\n').every(l => l.includes('out ')));
+eq('an empty archive still renders', /Nothing closed yet/.test(buildClosedCard([]).embeds[0].description), true);
+ok('no footer when every trade has R', buildClosedCard([closedRow('A', 10, 12, 9, '2026-08-01')]).embeds[0].footer === undefined);
+// It must be as private as the open card.
+scan('closed card', buildClosedCard([{ ...row, derived: { ...row.derived, status: 'closed', avgExit: 21.39, realizedPct: -0.05 } }]));
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);
