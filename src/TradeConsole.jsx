@@ -227,6 +227,11 @@ const {
   // ~$59k on a few thousand of margin. Counting that as 28% of the book would say the account is
   // half in futures when almost none of its cash is there. Margined rows report their notional,
   // labelled as such, and stay out of every weight and cash figure.
+  // SHARE OF ACCOUNT EQUITY, not of the invested book — the same denominator as "risk per trade"
+  // and "default allocation", so a suggestion and the position it is about are measured the same
+  // way. The donut above answers a different question, share of what is actually deployed, and both
+  // used to be called "of book": INTC read 3.5% in the donut and 1.3% here, on one screen, with
+  // nothing saying they were different measurements.
   const weightPct = (equityBase > 0 && mvBase != null && !r.margined) ? +((mvBase / equityBase) * 100).toFixed(1) : null;
   const active = (r.levels || []).filter(l => l.at != null);
   const stopLevel = active.find(l => l.kind === "stop");
@@ -294,7 +299,7 @@ const {
               <span style={{ fontSize: 12, color: C.lbl, whiteSpace: "nowrap" }}>{d.qty} @ {d.avgCost?.toFixed(2)}</span>
               <b style={{ fontSize: 13, color: pnlCol(p.total) }}>{p.total == null ? "—" : (p.total > 0 ? "+" : "") + money(p.total, r.currency)}</b>
               <b style={{ fontSize: 12.5, color: pnlCol(p.totalPct) }}>{p.totalPct == null ? "" : (p.totalPct > 0 ? "+" : "") + p.totalPct + "%"}</b>
-              {weightPct != null && <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }}>{weightPct}% of book</span>}
+              {weightPct != null && <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }}>{weightPct}% of equity</span>}
               {r.margined && mvBase != null && <span style={{ fontSize: 11, color: C.amber, whiteSpace: "nowrap" }} title="Notional controlled, not capital committed. A futures position is held on margin, so this is not a share of the book.">{money(mvBase, baseCcy)} notional</span>}
             </span>
             {d.partiallyRealised && chip(`incl. realised ${money(d.realized, r.currency)}`, C.green, "#F0FDF4", "#BBF7D0")}
@@ -499,7 +504,7 @@ const {
                     title="Risk: size so a stop-out costs a fixed % of the book. Allocation: hold a target % of the book — for long holds with no stop."
                     style={{ padding: "3px 7px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 11.5, background: C.surf, color: C.text, fontWeight: 700 }}>
                     <option value="risk">risk-based (needs a stop)</option>
-                    <option value="allocation">allocation (% of book)</option>
+                    <option value="allocation">allocation (% of equity)</option>
                   </select>
                   {mode === "allocation" && (
                     <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700, display: "flex", gap: 5, alignItems: "center" }}>
@@ -518,13 +523,13 @@ const {
                 </div>
                 {sug.ok ? (
                   <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.75 }}>
-                    Full size <b style={{ color: C.text }} title={sug.rounded ? `rounded from ${sug.fullExact} — equity is approximate, so the extra digits are not meaningful` : undefined}>~{sug.fullQty}</b> ({money(sug.notional, r.currency)} · {sug.notionalPctOfBook}% of book)
+                    Full size <b style={{ color: C.text }} title={sug.rounded ? `rounded from ${sug.fullExact} — equity is approximate, so the extra digits are not meaningful` : undefined}>~{sug.fullQty}</b> ({money(sug.notional, r.currency)} · {sug.notionalPctOfBook}% of equity)
                     {sug.heldQty > 0 && <> · holding <b>{sug.heldQty}</b></>}
                     {" · "}<b style={{ color: sug.roomQty > 0 ? C.green : C.muted }}>room for {sug.roomQty}</b>
                     {sug.tranches > 1 && sug.trancheQty > 0 && <> · <b>{sug.trancheQty}</b> per buy, {sug.tranches} times</>}
                     {sug.riskAmount != null && (
                       <div style={{ color: C.lbl }}>
-                        Risks <b style={{ color: C.red }}>{fmtCcy(sug.riskAmount, r.currency)}</b> at the {stopLevel?.at} stop ({sug.effPct}% of book · {money(sug.perShareRisk, r.currency)}/share)
+                        Risks <b style={{ color: C.red }}>{fmtCcy(sug.riskAmount, r.currency)}</b> at the {stopLevel?.at} stop ({sug.effPct}% of equity · {money(sug.perShareRisk, r.currency)}/share)
                       </div>
                     )}
                     <div style={{ color: C.muted, fontSize: 11.5 }}>
@@ -1245,7 +1250,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
             </div>
             {pie.filter(p => p.pct < 5).length > 0 && (
               <div style={{ fontSize: 11, color: C.lbl, marginTop: 8, lineHeight: 1.5 }}>
-                <b style={{ color: C.muted }}>Under 5%:</b> {pie.filter(p => p.pct < 5).map(p => `${p.name} ${p.pct}%`).join(" · ")}
+                <b style={{ color: C.muted }}>Under 5% of the invested book:</b> {pie.filter(p => p.pct < 5).map(p => `${p.name} ${p.pct}%`).join(" · ")}
               </div>
             )}
             {margined.length > 0 && (
