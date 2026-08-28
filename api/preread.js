@@ -7,8 +7,9 @@ import { UNIVERSE } from '../data/universe.js';
 import { assembleRegion } from '../lib/assemble.js';
 import { structure } from '../lib/regime.js';
 import { weekHighlights } from '../lib/calendar.js';
-import { marketState, localHour, localMinutesOfDay, halfDayLabels, freshness, freshnessText } from '../lib/sessions.js';
+import { marketState, localHour, localMinutesOfDay, halfDayLabels, freshness, freshnessText, sessionCloseMin } from '../lib/sessions.js';
 import { kvGetJson, kvSetJson, kvConfigured } from '../lib/kv.js';
+import { coreSpread } from '../lib/inflation.js';
 
 // One key, one small object per region. A skipped brief left NO trace anywhere — the only detector
 // was a human noticing an absence in a Discord channel, which is how this morning's was found.
@@ -52,6 +53,20 @@ export function prereadWindow(nowMin, targetHour, { lead = PREREAD_LEAD_MIN, win
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+// A wall-clock time in a named zone → the UTC instant, DST included. Done by probing rather than
+// by an offset table: format a candidate instant back into the zone and correct by the difference,
+// which is exact for every offset the IANA database defines and needs no dependency.
+function zonedToUtc(dateStr, hh, mm, tz) {
+  try {
+    const guess = Date.UTC(...dateStr.split('-').map(Number).map((v, i) => i === 1 ? v - 1 : v), hh, mm);
+    const seen = new Date(guess).toLocaleString('en-US', { timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const [d, t] = seen.split(', ');
+    const [mo, da, yr] = d.split('/').map(Number);
+    const [sh, sm] = t.split(':').map(Number);
+    return guess + (guess - Date.UTC(yr, mo - 1, da, sh % 24, sm));
+  } catch { return null; }
+}
+
 // Honest freshness label, keyed off the MARKET's state — not a blunt stale flag.
 //   market closed (pre/post/weekend) → "· prior close"  (expected; the pre-market case)
 //   market in lunch                  → "· lunch"         (mid-session, price frozen)
@@ -75,27 +90,59 @@ function displayQuote(q, region) {
   return { price: q.price, changePct: q.changePct, tail: freshLabel(q.sym, q) };
 }
 
-function buildBlocks(region, quotes, indices, macro, regime, cal) {
+function buildBlocks(region, quotes, indices, macro, regime, cal, cross) {
   const R = UNIVERSE[region];
   const names = R.names;
 
   // Line shape: bold ticker anchors the eye, then price, %chg, structure, leader ⭐,
   // freshness. `·` separators keep it scannable (Discord collapses runs of spaces).
-  const nameLines = quotes.map((q, i) => {
-    const m = names[i];
+  // ONE SHARED LABEL, ONCE. Before the open every line carries the same freshness tail — fifteen
+  // repetitions of "· prior close" on a brief that fires two hours before the market opens, which
+  // is a fact about the hour rather than about any name. When every quoted line agrees, the tail is
+  // lifted into the header; the moment they diverge (one exchange open, another shut, a delayed
+  // feed) it drops back onto the lines, because then it IS per-name information.
+  const nameQ = quotes.map((q, i) => ({ q, m: names[i], d: displayQuote(q, region) }));
+  const idxQ  = indices.map(q => ({ q, d: displayQuote(q, region) }));
+  const tails = [...nameQ, ...idxQ].map(x => x.d.tail);
+  const sharedTail = (tails.length && tails.every(t => t === tails[0]) && tails[0]) ? tails[0] : null;
+  const tailOf = (d) => sharedTail ? '' : d.tail;
+
+  const nameLines = nameQ.map(({ m, q, d }) => {
     const st = structure(q);
-    const d = displayQuote(q, region);
     const bits = [`**${m.name}**`, `${d.price != null ? withCommas(d.price) : '—'}`, fmtPct(d.changePct)];
     if (st) bits.push(st);
     let line = `• ${bits.join(' · ')}`;
     if (m.leader) line += ' ⭐';
-    return line + d.tail;
+    return line + tailOf(d);
   }).join('\n');
 
-  const idxLines = indices.map(q => {
-    const d = displayQuote(q, region);
-    return `• **${q._name}** · ${d.price != null ? withCommas(d.price) : '—'} · ${fmtPct(d.changePct)}${d.tail}`;
-  }).join('\n');
+  const idxLines = idxQ.map(({ q, d }) =>
+    `• **${q._name}** · ${d.price != null ? withCommas(d.price) : '—'} · ${fmtPct(d.changePct)}${tailOf(d)}`
+  ).join('\n');
+
+  // ── OVERNIGHT US ───────────────────────────────────────────────────────────
+  // The Asia brief fires at 06:45 HKT — 18:45 ET, nearly three hours after the US close — and the
+  // single most predictive input for the Asia open was nowhere on it. SOX especially: this book is
+  // semis-heavy and the overnight SOX print is what the Korean and Taiwanese names gap to. All of
+  // it was already fetched and simply never rendered. Not shown for the US brief, where the same
+  // numbers are the session about to start rather than a handoff into it.
+  const pct = (v) => v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`;
+  const crossRow = (group, name) => (cross?.[group]?.rows || []).find(r => r.name === name) || null;
+  const overnightLines = (() => {
+    if (region === 'us' || !cross) return null;
+    const sox = regime?.sox;
+    const legs = [
+      sox?.changePct != null ? `**SOX** ${pct(sox.changePct)}` : null,
+      ...['SMH', 'QQQ', 'SPY'].map(n => { const r = crossRow('breadth', n); return r?.changePct != null ? `**${n}** ${pct(r.changePct)}` : null; }),
+    ].filter(Boolean);
+    const vix = crossRow('volCredit', 'VIX'), hyg = crossRow('volCredit', 'HYG');
+    const risk = [
+      vix?.value != null ? `**VIX** ${vix.value}${vix.changePct != null ? ` ${pct(vix.changePct)}` : ''}` : null,
+      hyg?.changePct != null ? `**HYG** ${pct(hyg.changePct)}` : null,
+    ].filter(Boolean);
+    if (!legs.length && !risk.length) return null;
+    return [legs.length ? `• ${legs.join(' · ')}` : null, risk.length ? `• ${risk.join(' · ')}` : null].filter(Boolean).join('\n');
+  })();
 
   const oil = macro.wti?.price != null
     ? `• **WTI** $${macro.wti.price} ${regime.oil.above ? '▲' : '▼'}${macro.wti.stale ? ' ⚠️' : ''}\n• **Brent** $${macro.brent?.price ?? '—'}`
@@ -104,7 +151,19 @@ function buildBlocks(region, quotes, indices, macro, regime, cal) {
   const macroLines =
     `${oil}\n`
     + `• **US 2Y** ${macro.us2y?.value ?? '—'}% · **10Y** ${macro.us10y?.value ?? '—'}%\n`
-    + `• **HY OAS** ${macro.oas?.value ?? '—'} (${macro.oas?.date ?? 'n/a'}, last hard print) · ${regime.credit.state}`;
+    + `• **HY OAS** ${macro.oas?.value ?? '—'} (${macro.oas?.date ?? 'n/a'}, last hard print) · ${regime.credit.state}`
+    // THE GAP, NOT THE LEVEL. Core CPI and core PCE measure the same idea and disagree
+    // structurally — PCE normally runs below on a much lighter shelter weight — so the sign is
+    // the information. Only rendered when it is saying something: an inversion while the Fed's
+    // own gauge is still elevated.
+    + (() => {
+        const sp = coreSpread(macro.corePce?.value, macro.coreCpi?.value);
+        if (!sp) return '';
+        const tail = sp.divergent
+          ? ` — **inverted**, and PCE is what the Fed targets`
+          : sp.inverted ? ' — inverted, though both sit near target' : '';
+        return `\n• **Core PCE** ${sp.pce}% vs **core CPI** ${sp.cpi}% · ${sp.pp >= 0 ? '+' : '−'}${Math.abs(sp.pp).toFixed(2)}pp${tail}`;
+      })();
 
   const koreaLines = buildKorea(regime.korea);
 
@@ -116,16 +175,38 @@ function buildBlocks(region, quotes, indices, macro, regime, cal) {
     + `• **AI vs non-AI:** ${regime.aiAxis.stale ? 'stale — mkt open, awaiting live' : `${regime.aiAxis.label} (AI ${fmtPct(regime.aiAxis.ai)} vs non-AI ${fmtPct(regime.aiAxis.non)})`}\n`
     + `• **Credit** (global/OAS gate): ${regime.credit.compound || regime.credit.state} — ${regime.credit.note}\n`
     + `• **Oil:** ${regime.oil.label}`;
-  // Surface the Korea-local cluster to the model as a SEPARATE gate from OAS.
+  // The Korea cluster used to be repeated here verbatim — the same string, including the same
+  // parenthesised 1d figures, already printed under KOREA STRESS a few lines above. The gate is
+  // named so the regime list stays complete; the reading itself is not restated.
   if (regime.korea) {
-    regimeLines += `\n• **Korea** (local gate): ${regime.korea.cluster} — ${regime.korea.note}`;
+    regimeLines += `\n• **Korea** (local gate): ${regime.korea.cluster} — see Korea Stress above`;
   }
 
+  // WHEN, not just WHAT. "Fri 08-28 · US July PCE" does not say whether it lands inside your
+  // session or hours after it closes, and that is most of what the line is for. An entry may carry
+  // `time` (HH:MM) plus `tz`; when it does, the hour is shown in the READER's timezone and marked
+  // against this region's close. When it does not, nothing is claimed — the alternative would be
+  // inferring a release time from a title, which is how a brief starts inventing facts.
+  // Measured against the region's PRIMARY exchange — the one its first index trades on, which is
+  // also the latest close in each region (HK 16:00 outlasts Seoul and Tokyo; NYSE and LSE speak
+  // for their own). So "after your close" means after the last thing in this brief stops trading.
+  const primary = sessionCloseMin(R.indices?.[0]?.sym || '');
+  const whenTag = (e) => {
+    if (!e.time || !e.tz || !primary) return '';
+    const [hh, mm] = String(e.time).split(':').map(Number);
+    if (!Number.isFinite(hh)) return '';
+    const utc = zonedToUtc(e.date, hh, mm || 0, e.tz);
+    if (utc == null) return '';
+    const local = new Date(utc).toLocaleString('en-GB', { timeZone: primary.tz, hour: '2-digit', minute: '2-digit', hour12: false });
+    const [lh, lm] = local.split(':').map(Number);
+    const after = (lh * 60 + lm) > primary.closeMin;
+    return ` _(${local}${after ? ', after your close' : ''})_`;
+  };
   const calLines = cal.length
     ? cal.map(e => {
         const dow = DOW[new Date(e.date + 'T00:00:00Z').getUTCDay()];
         if (e.reported) return `• ~~**${dow} ${e.date.slice(5)}** · ${e.title}~~ _(reported)_`;
-        return `• **${dow} ${e.date.slice(5)}** · ${e.title}${e.scope === 'global' ? ' 🌐' : ''}`;
+        return `• **${dow} ${e.date.slice(5)}** · ${e.title}${e.scope === 'global' ? ' 🌐' : ''}${whenTag(e)}`;
       }).join('\n')
     : '• (nothing flagged in the next 10 days)';
 
@@ -136,7 +217,7 @@ function buildBlocks(region, quotes, indices, macro, regime, cal) {
     ? `🕐 **HALF DAY** — ${halfEx.join(', ')} ${halfEx.length === 1 ? 'closes' : 'close'} early today`
     : null;
 
-  return { nameLines, idxLines, macroLines, koreaLines, regimeLines, calLines, halfDayNote };
+  return { nameLines, idxLines, macroLines, koreaLines, regimeLines, calLines, halfDayNote, overnightLines, sharedTail };
 }
 
 // Korea-stress cluster block (Asia only). null when there's no Korea gate.
@@ -193,7 +274,10 @@ function assembleDiscord(region, label, blocks, read) {
   // explicit divider rather than relying on extra \n's).
   const RULE = '───────────────';
   const sections = [
-    `📋 **NAMES**\n${blocks.nameLines}`,
+    // The handoff comes FIRST for a brief that fires after the US close and before this region
+    // opens: it is the thing every line below reacts to.
+    ...(blocks.overnightLines ? [`🌙 **OVERNIGHT US** _(prior close)_\n${blocks.overnightLines}`] : []),
+    `📋 **NAMES**${blocks.sharedTail ? ` _(all${blocks.sharedTail.replace(/^ · /, ' ')})_` : ''}\n${blocks.nameLines}`,
     `📈 **INDICES**\n${blocks.idxLines}`,
     `🛢️ **MACRO**\n${blocks.macroLines}`,
     ...(blocks.koreaLines ? [`🇰🇷 **KOREA STRESS**\n${blocks.koreaLines}`] : []),
@@ -244,11 +328,11 @@ export default async function handler(req, res) {
     }
   }
 
-  const { quotes, idxRaw, macro, regime, read: composed } = await assembleRegion(region);
+  const { quotes, idxRaw, macro, regime, cross, read: composed } = await assembleRegion(region);
   // attach display names to indices
   const indices = idxRaw.map((q, i) => ({ ...q, _name: R.indices[i].name }));
   const cal = weekHighlights(new Date(), region, R.tz);
-  const blocks = buildBlocks(region, quotes, indices, macro, regime, cal);
+  const blocks = buildBlocks(region, quotes, indices, macro, regime, cal, cross);
   // The READ is the COMPOSED, deterministic one (lib/read.js) — same text the dashboard
   // shows. No model call in the read path: every figure is traceable to a parsed field, so
   // the Pre-Read cannot hallucinate a number or drift into positioning language.
