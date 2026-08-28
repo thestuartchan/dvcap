@@ -8,6 +8,11 @@ import { assembleRegion } from '../lib/assemble.js';
 import { structure } from '../lib/regime.js';
 import { weekHighlights } from '../lib/calendar.js';
 import { marketState, localHour, localMinutesOfDay, halfDayLabels, freshness, freshnessText } from '../lib/sessions.js';
+import { kvGetJson, kvSetJson, kvConfigured } from '../lib/kv.js';
+
+// One key, one small object per region. A skipped brief left NO trace anywhere — the only detector
+// was a human noticing an absence in a Discord channel, which is how this morning's was found.
+const PREREAD_LAST_KEY = 'dvcap:preread:last:v1';
 import { kofiaStoredLine, koreaFlowRead, koreaFlowImplication, withCommas } from '../lib/kofia.js';
 import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
 
@@ -22,6 +27,28 @@ function fmtPct(p) { return p == null ? '—' : `${p > 0 ? '+' : ''}${p.toFixed(
 // roughly 40min of positive cron jitter before a run would fall out of the window.
 const PREREAD_LEAD_MIN   = 15;
 const PREREAD_WINDOW_MIN = 55;
+// GRACE: how far BEFORE the window opens a firing is still accepted.
+//
+// The window used to open at exactly the minute the cron fires — every region computed
+// sinceOpen = 0 on a good day, which is the first accepted value. That tolerated up to 40 minutes
+// of LATE firing and not one second of early: a cron a minute ahead of schedule, or any clock skew
+// between Vercel's scheduler and this container's Intl evaluation, silently dropped the entire
+// day's brief. And a dropped brief is invisible — nothing recorded that it should have run.
+//
+// Five minutes of lead-in costs nothing. The DST pair must still be mutually exclusive, so the
+// TOTAL span stays at 60: the two candidate crons are exactly 60 local minutes apart, and the
+// later one lands at sinceOpen = GRACE + 60, outside a span of GRACE + WINDOW = 60.
+const PREREAD_GRACE_MIN  = 5;
+
+// Extracted so the arithmetic is testable. It decides whether a firing at `nowMin` (local minutes
+// past midnight) is the one that should deliver — the whole daily brief hangs on it, and it had
+// never been pinned by a test.
+export function prereadWindow(nowMin, targetHour, { lead = PREREAD_LEAD_MIN, window = PREREAD_WINDOW_MIN, grace = PREREAD_GRACE_MIN } = {}) {
+  const open = targetHour * 60 - lead - grace;
+  const span = grace + window;
+  const sinceOpen = nowMin - open;
+  return { open, close: open + span, span, sinceOpen, accept: sinceOpen >= 0 && sinceOpen < span };
+}
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -205,14 +232,14 @@ export default async function handler(req, res) {
   // absorbing up to ~an hour of positive cron jitter. Only scheduled calls pass cron=1 —
   // manual calls/dry-runs skip the gate, so tests always run.
   if (req.query.cron === '1') {
-    const nowMin    = localMinutesOfDay(R.tz);
-    const openMin   = R.prereadHourLocal * 60 - PREREAD_LEAD_MIN;   // window opens `lead` before target
-    const sinceOpen = nowMin - openMin;
-    if (sinceOpen < 0 || sinceOpen >= PREREAD_WINDOW_MIN) {
+    const nowMin = localMinutesOfDay(R.tz);
+    const w = prereadWindow(nowMin, R.prereadHourLocal);
+    const openMin = w.open;
+    if (!w.accept) {
       const hh = Math.floor(nowMin / 60), mm = String(nowMin % 60).padStart(2, '0');
       return res.status(200).json({
         region, skipped: true,
-        reason: `off-window (target ${R.prereadHourLocal}:00 ${R.tz}, delivery window ${Math.floor(openMin/60)}:${String(openMin%60).padStart(2,'0')}–${Math.floor((openMin+PREREAD_WINDOW_MIN)/60)}:${String((openMin+PREREAD_WINDOW_MIN)%60).padStart(2,'0')}, now ${hh}:${mm})`,
+        reason: `off-window (target ${R.prereadHourLocal}:00 ${R.tz}, delivery window ${Math.floor(openMin/60)}:${String(openMin%60).padStart(2,'0')}–${Math.floor(w.close/60)}:${String(w.close%60).padStart(2,'0')}, now ${hh}:${mm})`,
       });
     }
   }
@@ -254,5 +281,19 @@ export default async function handler(req, res) {
     }
   }
 
-  res.status(200).json({ region, message, regime, posted, generatedAt: new Date().toISOString() });
+  // WHAT RAN, AND WHEN. Written only on a confirmed post, so the record means "this brief reached
+  // the channel" rather than "the function executed". A gate skip deliberately does not write —
+  // the gap in the record IS the signal.
+  let previous = null;
+  if (kvConfigured()) {
+    try {
+      const log = (await kvGetJson(PREREAD_LAST_KEY)) || {};
+      previous = log[region] || null;
+      if (posted?.ok) {
+        await kvSetJson(PREREAD_LAST_KEY, { ...log, [region]: { at: new Date().toISOString(), cron: req.query.cron === '1' } });
+      }
+    } catch { /* the brief matters more than the bookkeeping */ }
+  }
+
+  res.status(200).json({ region, message, regime, posted, previous, generatedAt: new Date().toISOString() });
 }
