@@ -19,6 +19,7 @@ import { C, SLabel, Card, Btn } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
 import { derivePosition, applyRolls, splitIntoTrades, collapseFills, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, realizedCurve } from "../lib/positions.js";
 import { CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy } from "../lib/fxrates.js";
+import { addToLoser } from "../lib/discipline.js";
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
 
 // Shown in the sizing note; kept a constant so the copy and the cap cannot drift apart.
@@ -75,9 +76,17 @@ const NumCommit = ({ dk, value, onCommit, placeholder, width = 84, title, drafts
 // The fill form, rendered INLINE inside the row it belongs to (see PositionRow). It previously sat
 // in its own card near the bottom of the page, so pressing "Record a buy" on a row appeared to do
 // nothing — the form it opened was off-screen.
-const FillForm = ({ ctx, symbol }) => {
-  const { fillFor, setFillFor, saveFill, nInput } = ctx;
+const FillForm = ({ ctx, symbol, row }) => {
+  const { fillFor, setFillFor, saveFill, nInput, priceOf } = ctx;
   if (!fillFor) return null;
+  // THE ONE THING THE RECORD SAYS IS KNOWABLE BEFORE THE ORDER. Everything else on this screen
+  // measures a position; this names an act, at the moment it is about to happen. It does not block
+  // and it does not disable the button — a warning that stops you gets worked around, and the point
+  // is not to prevent the trade but to make sure it is taken on purpose.
+  const adding = row ? addToLoser({
+    derived: row.derived, pct: row.pnl?.unrealizedPct,
+    side: fillFor.side, fillPrice: fillFor.price,
+  }) : null;
   return (
 
       <div style={{ marginTop: 10, padding: "11px 12px", borderRadius: 9, background: C.bg, border: "1.5px solid " + (fillFor.side === "buy" ? C.green : C.blue) }}>
@@ -85,6 +94,22 @@ const FillForm = ({ ctx, symbol }) => {
           {fillFor.intent === "stopped" ? "Stopped out" : fillFor.intent === "sell" ? "Record a sell" : "Record a buy"}
           {" — "}{symbol}
         </SLabel>
+        {adding && (
+          <div style={{ marginTop: 9, padding: "9px 11px", borderRadius: 8, background: C.aBg, border: "1.5px solid " + C.amber }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: C.amber }}>
+              ⚠ This is add #{adding.addNumber} to a position that is down {Math.abs(adding.drawdownPct)}%
+              {adding.belowAverage === true && <span style={{ fontWeight: 700 }}> — below your {adding.avgCost?.toFixed(2)} average</span>}
+            </div>
+            <div style={{ fontSize: 11.5, color: C.mid, marginTop: 4, lineHeight: 1.55 }}>
+              {adding.evidence.line}{" "}
+              <span style={{ color: C.lbl }}>
+                From {adding.evidence.window}, reviewed {adding.evidence.asOf}. It is the strongest pattern in your record
+                and it is the only one visible before the order rather than after it. Nothing here stops you — record the
+                fill if that is the trade.
+              </span>
+            </div>
+          </div>
+        )}
         <div style={{ marginTop: 9, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
           <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Side<br />
             <select value={fillFor.side} onChange={e => setFillFor(f => ({ ...f, side: e.target.value }))} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
@@ -624,7 +649,7 @@ const {
               because an unmounted component is not an undefined reference — scripts/check-dead-
               components.mjs now looks for exactly this. It renders inside the row it belongs to, so
               the form appears where the button was pressed. */}
-          {fillFor?.rowId === r.id && <FillForm ctx={ctx} symbol={r.symbol} />}
+          {fillFor?.rowId === r.id && <FillForm ctx={ctx} symbol={r.symbol} row={r} />}
 
           {/* ── TIDYING ──
               Two things the broker's fill stream gets wrong for a human reader, offered only when
