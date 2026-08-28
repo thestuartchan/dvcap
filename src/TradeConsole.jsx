@@ -20,6 +20,7 @@ import { ASSETS } from "../lib/assets.js";
 import { derivePosition, applyRolls, splitIntoTrades, collapseFills, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, realizedCurve } from "../lib/positions.js";
 import { CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy } from "../lib/fxrates.js";
 import { addToLoser } from "../lib/discipline.js";
+import { decisionEntry, lastClosedWasWin } from "../lib/decisions.js";
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
 
 // Shown in the sizing note; kept a constant so the copy and the cap cannot drift apart.
@@ -119,6 +120,21 @@ const FillForm = ({ ctx, symbol, row }) => {
           <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Price<br />{nInput(fillFor.price, v => setFillFor(f => ({ ...f, price: v })), "")}</label>
           <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Date<br />
             <input type="date" value={fillFor.date} onChange={e => setFillFor(f => ({ ...f, date: e.target.value }))} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
+          {fillFor.side === "buy" && (
+            /* DECLARED, NOT INFERRED. A fill cannot say whether you meant to hold it, and the edge
+               is not demonstrated in either bucket — so entering as a swing and closing the same
+               session is the most likely way a process quietly becomes a different one. One click,
+               and it is the only thing on this form that asks for anything. */
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Holding this as<br />
+              <span style={{ display: "flex", gap: 5, marginTop: 2 }}>
+                {["swing", "intraday"].map(k => (
+                  <button key={k} onClick={() => setFillFor(f => ({ ...f, hold: f.hold === k ? null : k }))}
+                    style={{ cursor: "pointer", padding: "5px 10px", borderRadius: 7, fontSize: 12, fontWeight: 700,
+                      border: "1.5px solid " + (fillFor.hold === k ? C.blue : C.bdr),
+                      background: fillFor.hold === k ? C.blBg : C.surf, color: fillFor.hold === k ? C.blue : C.mid }}>{k}</button>
+                ))}
+              </span></label>
+          )}
           <label style={{ flex: "1 1 200px", fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Note<br />
             <input value={fillFor.note} onChange={e => setFillFor(f => ({ ...f, note: e.target.value }))} placeholder="optional"
               style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
@@ -262,19 +278,11 @@ const {
   const stopLevel = active.find(l => l.kind === "stop");
   // Hoisted out of the panel so the folded tab can state the answer without the panel being open.
   // One computation, so the summary can never disagree with the detail it hides.
+  // Computed once in the parent (with the contract multiplier, which this call site used to omit —
+  // every MGC and MNQ suggestion was sized as though one contract were one ounce or one index
+  // point). Read here so the card and the decision log cannot show different numbers.
   const sizeMode = r.sizeMode || (stopLevel ? "risk" : "allocation");
-  const equityInPos = equityBase == null ? null : convert(equityBase, baseCcy, r.currency || "USD", fxRates);
-  const sug = sizeSuggestion({
-    mode: sizeMode, equityInPos, price, stop: stopLevel?.at,
-    // THE CONTRACT MULTIPLIER, which this call left out. Every suggestion for MGC or MNQ was
-    // computed as though one contract were one ounce or one index point, which sizes a futures
-    // position too LARGE by exactly the multiplier — the divisor was ten or two times too small.
-    // The row has carried it all along; it just never got here.
-    multiplier: numOrNull(r.multiplier) || 1,
-    baseRiskPct: baseRisk, targetPct: numOrNull(r.targetPct) ?? targetPct,
-    regime: regimeCtx, heldQty: d.qty || 0, tranches: numOrNull(r.tranches) || 1,
-    sizing: mergedSizing,
-  });
+  const sug = r.sug;
   const sizeHint = sug.roomQty > 0 ? `room for ${sug.roomQty} more on ${sizeMode === "risk" ? "risk" : "allocation"} sizing`
     : sug.fullQty > 0 ? `at or above full size — ${d.qty || 0} held vs ${sug.fullQty} suggested`
     : sizeMode === "risk" && !stopLevel ? "add a stop and this will size the trade for you"
@@ -856,7 +864,24 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   // than the trade.
   const derivedRows = useMemo(() => applyRolls(
     rows.map(r => ({ ...r, derived: derivePosition(r.fills || [], { multiplier: r.multiplier }) })),
-  ).map(r => ({ ...r, pnl: positionPnl(r.derived, priceOf(r)) })), [rows, prices]);
+  ).map(r => {
+    const pnl = positionPnl(r.derived, priceOf(r));
+    // ONE SUGGESTION, computed here rather than inside the row. The row renders it and the decision
+    // log records it, and if each computed its own they could disagree — which would make the log
+    // a record of a number that was never on screen.
+    const price = priceOf(r);
+    const stopLevel = (r.levels || []).filter(l => l.at != null).find(l => l.kind === "stop");
+    const mode = r.sizeMode || (stopLevel ? "risk" : "allocation");
+    const equityInPos = equityBase == null ? null : convert(equityBase, baseCcy, r.currency || "USD", ratesFrom(prices).rates);
+    const sug = sizeSuggestion({
+      mode, equityInPos, price, stop: stopLevel?.at,
+      multiplier: numOrNull(r.multiplier) || 1,
+      baseRiskPct: baseRisk, targetPct: numOrNull(r.targetPct) ?? targetPct,
+      regime: regimeCtx, heldQty: r.derived.qty || 0, tranches: numOrNull(r.tranches) || 1,
+      sizing: mergedSizing,
+    });
+    return { ...r, pnl, sug, sizeMode: mode, stopLevel: stopLevel || null };
+  }), [rows, prices, equityBase, baseRisk, targetPct, baseCcy, mergedSizing, liveRegime?.id, creditDanger, contested, regimeDiverged]);
 
   const setups   = derivedRows.filter(r => r.derived.status === "setup");
   const openPos  = derivedRows.filter(r => r.derived.status === "open");
@@ -1004,6 +1029,28 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
     // that is hardest to undo.
     const before = derivePosition(r.fills || [], { multiplier: r.multiplier });
     const after = derivePosition(fills, { multiplier: r.multiplier });
+
+    // ── THE DECISION, CAPTURED WITH NO TYPING ────────────────────────────────
+    // Everything it records is already on screen at this moment: the suggestion, the fill, the
+    // row's stop, the regime, how the last closed trade went. Written here rather than on the
+    // cloud save, because a fill recorded and never synced is still a decision that was taken.
+    // Fire-and-forget: the log must never be able to block recording a fill.
+    try {
+      const derivedRow = derivedRows.find(x => x.id === f.rowId);
+      const entry = decisionEntry({
+        row: r, derived: before, pnl: derivedRow?.pnl,
+        fill: { side: f.side, qty, price },
+        suggestion: derivedRow?.sug ?? null,
+        regime: regimeCtx, intent: f.hold || null,
+        prevClosedWasWin: lastClosedWasWin(derivedRows),
+        reason: f.note || null,
+      });
+      fetch("/api/manual-entry", {
+        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+        body: JSON.stringify({ decision: entry }),
+      }).catch(() => { /* the fill is recorded either way */ });
+    } catch { /* never let logging break the thing being logged */ }
+
     upd(f.rowId, { fills });
     setFillFor(null);
     if (after.status !== before.status) {

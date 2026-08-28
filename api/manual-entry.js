@@ -10,6 +10,7 @@
 // Both live in one endpoint to stay inside the 12-function Hobby cap (this is the 8th).
 
 import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY } from '../lib/kv.js';
+import { appendDecision, overrideStats, DECISIONS_KEY } from '../lib/decisions.js';
 
 const DATA_PATH = 'data/manual_entry.json';
 
@@ -146,6 +147,23 @@ function sanitizeRow(r) {
   };
 }
 
+// Bounded like every other stored shape. A decision arrives from the browser and is kept for ever,
+// so nothing unbounded may enter it.
+function sanitizeDecision(d) {
+  const pick = ['at', 'id', 'symbol', 'side', 'sizeMode', 'intent', 'regimeId'];
+  const nums = ['takenQty', 'recommendedQty', 'overrideRatio', 'effPct', 'riskAtSize', 'multiplier',
+                'stopAt', 'addNumber', 'priorBuys', 'unrealisedPctBefore', 'regimeMult'];
+  const out = {};
+  for (const k of pick) out[k] = cs(d[k], k === 'symbol' ? 24 : 48);
+  for (const k of nums) out[k] = cn(d[k]);
+  out.stopSet = !!d.stopSet;
+  out.addToLoser = !!d.addToLoser;
+  out.prevClosedWasWin = typeof d.prevClosedWasWin === 'boolean' ? d.prevClosedWasWin : null;
+  out.warnings = Array.isArray(d.warnings) ? d.warnings.map(w => cs(w, 160)).filter(Boolean).slice(0, 6) : [];
+  out.reason = cs(d.reason, 400);
+  return out;
+}
+
 function sanitizeConsoleSettings(s) {
   if (!s || typeof s !== 'object') return {};
   const out = {
@@ -189,6 +207,9 @@ export default async function handler(req, res) {
         // Served alongside the console rather than inside them: the POST replaces the console
         // object wholesale, so a note kept in there would be wiped by the next browser save.
         flexSync: kvConfigured() ? await kvGetJson(FLEX_NOTE_KEY) : null,
+        // Stats only, not the log. The console needs to show the pattern, not re-read every
+        // decision ever taken on every page load.
+        decisions: kvConfigured() ? overrideStats(await kvGetJson(DECISIONS_KEY)) : null,
         kv: { configured: kvConfigured() },
       });
     } catch (e) {
@@ -204,7 +225,20 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'GITHUB_TOKEN / GITHUB_REPO not configured' });
   }
 
-  const { fedPath, oasRecon, intervention, recession, southbound, console: consoleIn } = req.body || {};
+  const { fedPath, oasRecon, intervention, recession, southbound, console: consoleIn, decision } = req.body || {};
+
+  // ── ONE DECISION, APPENDED ──────────────────────────────────────────────────
+  // Its own branch and its own key, deliberately. A decision is written the moment a fill is
+  // recorded, which is not when the console syncs — and the console object is REPLACED wholesale on
+  // sync, so a log kept inside it would be destroyed by the next save. Append-only, capped, and
+  // never rewritten: the point of the log is that it says what was decided at the time.
+  if (decision && typeof decision === 'object') {
+    if (!kvConfigured()) return res.status(200).json({ decision: { stored: 'none' } });
+    const log = await kvGetJson(DECISIONS_KEY);
+    const next = appendDecision(log, sanitizeDecision(decision));
+    const wrote = await kvSetJson(DECISIONS_KEY, next);
+    return res.status(wrote ? 200 : 502).json({ decision: { stored: wrote ? 'kv' : 'failed', n: next.length } });
+  }
   const { store, sha } = await readStore();
   const saved = [];
 
