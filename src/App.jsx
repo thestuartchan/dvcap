@@ -34,6 +34,7 @@ function trendBps(series, lookbackDays) {
 import { laborStress, sahmAnnotation, laborVerdict, laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead, quitsRead, revisionTrackerRead, twelveMonthAvgRead, ytdDivergenceRead } from "../lib/labor.js";
 import { handoffChain } from "../lib/handoff.js";
 import { coreSpread } from "../lib/inflation.js";
+import HOLIDAYS from "../data/holidays.json";
 import { SEC_YIELDS, PROXY, secYieldProxy, proxyDivergence, apyFromSec, afterWht, billFromDiscount, BILL_DAYS, compareCash } from "../lib/cashyield.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
@@ -3822,13 +3823,27 @@ function AxisBaskets({ ai, non }) {
 }
 
 // Business days between a YYYY-MM-DD and today (UTC). For the daily-cadence stale check.
+// US market holidays, so a print either side of one is not counted as having aged through it.
+// data/holidays.json is already maintained for lib/sessions.js; this reads the same list rather
+// than keeping a second one.
+// THE US LIST ONLY. data/holidays.json is keyed by exchange, so flattening it would let a Tokyo
+// or Seoul closure suppress a day the US bond market was open — and every series counted here
+// (DGS, DFII10, T10YIE, BAMLH0A0HYM2) is a US print. `half` days are excluded deliberately: an
+// early close is still a session and these series still print on it.
+const US_HOLIDAYS = new Set(HOLIDAYS?.US?.closed || []);
 function bizDaysAgo(dateStr) {
   if (!dateStr) return null;
   const d = new Date(dateStr + "T00:00:00Z");
   const now = new Date();
   const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   let n = 0;
-  while (d < end) { d.setUTCDate(d.getUTCDate() + 1); const wd = d.getUTCDay(); if (wd !== 0 && wd !== 6) n++; }
+  while (d < end) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    const wd = d.getUTCDay();
+    if (wd === 0 || wd === 6) continue;
+    if (US_HOLIDAYS.has(d.toISOString().slice(0, 10))) continue;   // the exchange was shut
+    n++;
+  }
   return n;
 }
 // Cadence-based freshness for a macro field → { stale, text }. daily > 2 biz days;
@@ -3845,7 +3860,12 @@ function macroFresh(field) {
       return { stale: true, text: `⚠ ${field.date} is a non-trading day` };
     }
     const bd = bizDaysAgo(field.date);
-    const stale = bd != null && bd > 2;
+    // MORE THAN ONE BUSINESS DAY BEHIND IS STALE. At the old threshold of two, a Wednesday print
+    // read on Friday rendered as current — and the ACM term premium, which lags by design and
+    // feeds the one macro read supporting the gold position, sat six calendar days old looking
+    // live. A number that has not moved since before the last session should not look like one
+    // that has.
+    const stale = bd != null && bd > 1;
     // Daily fields are last-hard-print series: label them as such so the date reads as
     // "when it last printed", not "as of now".
     const base = field.cadence === "daily" ? `last print ${field.date}` : field.date;
@@ -3872,7 +3892,52 @@ function BenchChip({ b }) {
 }
 
 // One macro cell: value + direction arrow (delta) + asOf/stale + source on hover.
-function MacroCell({ field, value, delta, deltaSuffix }) {
+// ── SPARKLINE ─────────────────────────────────────────────────────────────────
+// A point value hides direction, and on both series this is used for the direction is the read.
+// The 10Y real yield at 2.34% says nothing on its own; 2.34% having turned up over three weeks is
+// the restrictive-policy leg of the debasement classifier. HY OAS at the 6th percentile of three
+// years is not information either — whether it is compressing or widening from there is.
+//
+// Deliberately unlabelled: no axes, no ticks, no tooltip. It answers "which way" and hands the
+// level to the number above it. `mark` draws one reference line where a level has a stated
+// meaning, so the shape can be read against it rather than against the window's own extremes.
+function Spark({ series, days = 20, color = C.blue, mark = null, markLabel = null }) {
+  const rows = (Array.isArray(series) ? series : [])
+    .filter(r => r && Number.isFinite(+r.value))
+    .slice(-days)
+    .map(r => ({ d: r.date, v: +r.value }));
+  if (rows.length < 3) return null;                    // two points is a line, not a trend
+  const vals = rows.map(r => r.v);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  // The mark only belongs in frame when it is near the data. Stretching the axis to reach a
+  // threshold 200bp away would flatten the series into a straight line and hide the very
+  // movement the sparkline exists to show.
+  const span = hi - lo || Math.abs(hi) * 0.01 || 1;
+  const inFrame = mark != null && mark >= lo - span * 1.5 && mark <= hi + span * 1.5;
+  if (inFrame) { lo = Math.min(lo, mark); hi = Math.max(hi, mark); }
+  const pad = (hi - lo || 1) * 0.15;
+  const rising = vals[vals.length - 1] >= vals[0];
+  return (
+    <div style={{ marginTop: 4 }}>
+      <div style={{ height: 30, marginLeft: -4 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={rows} margin={{ top: 2, right: 2, bottom: 0, left: 0 }}>
+            <YAxis hide domain={[lo - pad, hi + pad]} />
+            {inFrame && <ReferenceLine y={mark} stroke={C.amber} strokeDasharray="2 2" strokeWidth={1} />}
+            <Line type="monotone" dataKey="v" stroke={color} strokeWidth={1.6} dot={false} isAnimationActive={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div style={{ fontSize: 10, color: C.muted, display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <span>{rows.length}d {rising ? "▲" : "▼"}</span>
+        {inFrame && markLabel && <span style={{ color: C.amber }}>┄ {markLabel}</span>}
+        {mark != null && !inFrame && <span title={`${markLabel} is outside this window`}>┄ {markLabel} off-scale</span>}
+      </div>
+    </div>
+  );
+}
+
+function MacroCell({ field, value, delta, deltaSuffix, extra = null }) {
   const mf = macroFresh(field);
   const suspect = !!field?.suspect;   // failed a sanity/relationship check → don't show clean
   const arrow = delta == null ? "" : delta > 0 ? "▲" : delta < 0 ? "▼" : "■";
@@ -3893,8 +3958,15 @@ function MacroCell({ field, value, delta, deltaSuffix }) {
         {suspect && <span style={{ color: C.amber, fontWeight: 700 }}>suspect ({field.src})</span>}
         {!suspect && delta != null && <span style={{ color: dcol, fontWeight: 700 }}>{arrow} {Math.abs(delta)}{deltaSuffix}</span>}
         {mf.text && <span style={{ color: mf.stale ? C.amber : C.lbl }}>{mf.text}</span>}
+        {/* A CHECK THAT STOPPED MUST SAY SO. A derived card that quietly renders "—" looks like a
+            feed outage; this one names the vintage mismatch that prevented it, so the blank is
+            legible rather than alarming. */}
+        {field?.align && field.align.checked === false && (
+          <span style={{ color: C.amber, fontWeight: 700 }} title={field.align.reason || ""}>⚠ not computed — inputs disagree on date</span>
+        )}
         <BenchChip b={field?.benchmark} />
       </div>
+      {extra}
     </MetricCard>
   );
 }
@@ -4538,10 +4610,21 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                     </span>
                   )} />
               )}
-              <MacroCell field={{ name: "2s10s", src: "DGS10−DGS2", date: data.macro.us10y?.date, cadence: "daily" }} value={data.macro.twos10s != null ? (data.macro.twos10s >= 0 ? "+" : "") + data.macro.twos10s + "bps" : "—"} delta={data.macro.twos10sDeltaBps} deltaSuffix="bps" />
+              {/* The date is the one BOTH legs share, from lib/derived.js — not the 10Y's standing
+                  in for the pair, which is what it used to be. When they disagree the spread is not
+                  computed, and the card says so rather than going blank. */}
+              <MacroCell
+                field={{ name: "2s10s", src: "DGS10−DGS2", date: data.macro.twos10sAlign?.date, cadence: "daily",
+                         align: data.macro.twos10sAlign }}
+                value={data.macro.twos10s != null ? (data.macro.twos10s >= 0 ? "+" : "") + data.macro.twos10s + "bps" : "—"}
+                delta={data.macro.twos10sDeltaBps} deltaSuffix="bps" />
               {/* DXY dedup'd — owned by the FX legs group in the Cross-asset card (a blend read
                   next to its EUR/JPY legs), so it is not repeated here. */}
-              <MacroCell field={data.macro.oas}   value={data.macro.oas?.value ?? "—"} delta={data.macro.oas?.deltaBps} deltaSuffix="bps" />
+              {/* 2.90 is the logged CALM/WATCH boundary from lib/gates.js. Drawn as a mark rather
+                  than a tripwire: the series has oscillated 6bp inside a single week at these
+                  levels, so the distance to it is noise and only the direction toward it is not. */}
+              <MacroCell field={data.macro.oas}   value={data.macro.oas?.value ?? "—"} delta={data.macro.oas?.deltaBps} deltaSuffix="bps"
+                extra={<Spark series={data.macro.oas?.series} days={20} color={C.mid} mark={2.9} markLabel="2.90 watch" />} />
             </MetricGrid>
             {data.macro.sanity && data.macro.sanity.length > 0 && (
               <div style={{ marginTop: 10, padding: "8px 12px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8, fontSize: 12, color: C.amber, fontWeight: 700 }}>
@@ -4554,7 +4637,8 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               <MetricGrid min={180}>
                 <MacroCell field={data.macro.gold} value={data.macro.gold?.value != null ? "$" + withCommas(data.macro.gold.value) : "—"} delta={data.macro.gold?.delta} deltaSuffix="" />
                 <MacroCell field={data.macro.btc} value={data.macro.btc?.value != null ? "$" + Math.round(data.macro.btc.value).toLocaleString("en-US") : "—"} delta={data.macro.btc?.delta != null ? Math.round(data.macro.btc.delta) : null} deltaSuffix="" />
-                <MacroCell field={data.macro.realYield} value={data.macro.realYield?.value != null ? data.macro.realYield.value + "%" : "—"} delta={data.macro.realYield?.deltaBps} deltaSuffix="bps" />
+                <MacroCell field={data.macro.realYield} value={data.macro.realYield?.value != null ? data.macro.realYield.value + "%" : "—"} delta={data.macro.realYield?.deltaBps} deltaSuffix="bps"
+                  extra={<Spark series={data.macro.realYield?.series} days={20} color={C.blue} />} />
                 <MacroCell field={data.macro.breakeven} value={data.macro.breakeven?.value != null ? data.macro.breakeven.value + "%" : "—"} delta={data.macro.breakeven?.deltaBps} deltaSuffix="bps" />
                 {/* 5y5y fwd BE relocated here from the dropped cross-asset regime group — this is
                     its only home. Sits with the other breakeven/inflation inputs. MOVE/OVX are
