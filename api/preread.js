@@ -56,7 +56,7 @@ const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 // A wall-clock time in a named zone → the UTC instant, DST included. Done by probing rather than
 // by an offset table: format a candidate instant back into the zone and correct by the difference,
 // which is exact for every offset the IANA database defines and needs no dependency.
-function zonedToUtc(dateStr, hh, mm, tz) {
+export function zonedToUtc(dateStr, hh, mm, tz) {
   try {
     const guess = Date.UTC(...dateStr.split('-').map(Number).map((v, i) => i === 1 ? v - 1 : v), hh, mm);
     const seen = new Date(guess).toLocaleString('en-US', { timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -185,25 +185,41 @@ function buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox) {
     regimeLines += `\n• **Korea** (local gate): ${regime.korea.cluster} — see Korea Stress above`;
   }
 
-  // WHEN, not just WHAT. "Fri 08-28 · US July PCE" does not say whether it lands inside your
-  // session or hours after it closes, and that is most of what the line is for. An entry may carry
-  // `time` (HH:MM) plus `tz`; when it does, the hour is shown in the READER's timezone and marked
-  // against this region's close. When it does not, nothing is claimed — the alternative would be
-  // inferring a release time from a title, which is how a brief starts inventing facts.
+  // WHEN, not just WHAT — AND ALWAYS IN GMT. "Fri 08-28 · US July PCE" does not say whether it
+  // lands inside your session or hours after it closes, and that is most of what the line is for.
+  //
+  // ONE CLOCK FOR THE WHOLE BRIEF. Every time shown anywhere is Z, matching the header, so a brief
+  // read from Hong Kong and one read from London describe the same instant with the same number.
+  // Rendering each region's local hour instead would mean the Asia and EU briefs quoted different
+  // times for the same release, which is precisely the ambiguity a shared clock removes.
+  //
+  // STORED IN ITS NATIVE CLOCK, THOUGH. `time` alone is read as UTC; `time` + `tz` is read in that
+  // zone. That is not inconsistency, it is what keeps the data from rotting: a US release is
+  // anchored to 08:30 ET, which is 12:30Z in summer and 13:30Z in winter, so storing the UTC value
+  // would be wrong for half of every year and would need editing twice annually. The conversion
+  // happens here, once, against the event's real date.
+  //
+  // An entry with no time claims nothing. Inferring a release hour from a title is how a brief
+  // starts inventing facts.
   // Measured against the region's PRIMARY exchange — the one its first index trades on, which is
   // also the latest close in each region (HK 16:00 outlasts Seoul and Tokyo; NYSE and LSE speak
   // for their own). So "after your close" means after the last thing in this brief stops trading.
   const primary = sessionCloseMin(R.indices?.[0]?.sym || '');
   const whenTag = (e) => {
-    if (!e.time || !e.tz || !primary) return '';
+    if (!e.time) return '';
     const [hh, mm] = String(e.time).split(':').map(Number);
     if (!Number.isFinite(hh)) return '';
-    const utc = zonedToUtc(e.date, hh, mm || 0, e.tz);
+    const utc = e.tz ? zonedToUtc(e.date, hh, mm || 0, e.tz)
+                     : Date.UTC(...e.date.split('-').map(Number).map((v, i) => i === 1 ? v - 1 : v), hh, mm || 0);
     if (utc == null) return '';
+    const z = new Date(utc).toISOString().slice(11, 16);
+    // The session comparison still happens in the exchange's own clock — that is the only place a
+    // local time means anything — but the number the reader sees stays Z.
+    if (!primary) return ` _(${z}Z)_`;
     const local = new Date(utc).toLocaleString('en-GB', { timeZone: primary.tz, hour: '2-digit', minute: '2-digit', hour12: false });
     const [lh, lm] = local.split(':').map(Number);
     const after = (lh * 60 + lm) > primary.closeMin;
-    return ` _(${local}${after ? ', after your close' : ''})_`;
+    return ` _(${z}Z${after ? ', after your close' : ''})_`;
   };
   const calLines = cal.length
     ? cal.map(e => {
