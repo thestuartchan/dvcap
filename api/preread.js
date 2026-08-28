@@ -90,7 +90,7 @@ function displayQuote(q, region) {
   return { price: q.price, changePct: q.changePct, tail: freshLabel(q.sym, q) };
 }
 
-function buildBlocks(region, quotes, indices, macro, regime, cal, cross) {
+function buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox) {
   const R = UNIVERSE[region];
   const names = R.names;
 
@@ -126,18 +126,21 @@ function buildBlocks(region, quotes, indices, macro, regime, cal, cross) {
   // semis-heavy and the overnight SOX print is what the Korean and Taiwanese names gap to. All of
   // it was already fetched and simply never rendered. Not shown for the US brief, where the same
   // numbers are the session about to start rather than a handoff into it.
-  const pct = (v) => v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`;
+  // A move smaller than half a tenth is not a direction, and "-0.0%" is a worse way of saying so
+  // than the word is.
+  const pct = (v) => v == null ? '—' : Math.abs(v) < 0.05 ? 'flat' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`;
+  // Cross-asset rows carry `price`, not `value` — reading the wrong one dropped VIX from the block
+  // silently, which is the same shape of bug as every other field-name miss this week.
   const crossRow = (group, name) => (cross?.[group]?.rows || []).find(r => r.name === name) || null;
   const overnightLines = (() => {
     if (region === 'us' || !cross) return null;
-    const sox = regime?.sox;
     const legs = [
       sox?.changePct != null ? `**SOX** ${pct(sox.changePct)}` : null,
       ...['SMH', 'QQQ', 'SPY'].map(n => { const r = crossRow('breadth', n); return r?.changePct != null ? `**${n}** ${pct(r.changePct)}` : null; }),
     ].filter(Boolean);
     const vix = crossRow('volCredit', 'VIX'), hyg = crossRow('volCredit', 'HYG');
     const risk = [
-      vix?.value != null ? `**VIX** ${vix.value}${vix.changePct != null ? ` ${pct(vix.changePct)}` : ''}` : null,
+      vix?.price != null ? `**VIX** ${vix.price}${vix.changePct != null ? ` ${pct(vix.changePct)}` : ''}${vix.benchmark?.band ? ` [${vix.benchmark.band}]` : ''}` : null,
       hyg?.changePct != null ? `**HYG** ${pct(hyg.changePct)}` : null,
     ].filter(Boolean);
     if (!legs.length && !risk.length) return null;
@@ -328,11 +331,11 @@ export default async function handler(req, res) {
     }
   }
 
-  const { quotes, idxRaw, macro, regime, cross, read: composed } = await assembleRegion(region);
+  const { quotes, idxRaw, macro, regime, cross, sox, read: composed } = await assembleRegion(region);
   // attach display names to indices
   const indices = idxRaw.map((q, i) => ({ ...q, _name: R.indices[i].name }));
   const cal = weekHighlights(new Date(), region, R.tz);
-  const blocks = buildBlocks(region, quotes, indices, macro, regime, cal, cross);
+  const blocks = buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox);
   // The READ is the COMPOSED, deterministic one (lib/read.js) — same text the dashboard
   // shows. No model call in the read path: every figure is traceable to a parsed field, so
   // the Pre-Read cannot hallucinate a number or drift into positioning language.
