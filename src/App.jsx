@@ -3344,7 +3344,14 @@ function PostureCard({ p }) {
         <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 2 }} title="The tape's what-to-do right now. Portfolio allocation lives on the Posture tab.">Tape stance</span>
         <span style={{ fontSize: 22, fontWeight: 900, color: col, lineHeight: 1.05 }}>{p.posture}</span>
         <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase" }}>weeks</span>
-        {p.tripwires && <span style={{ fontSize: 13, fontWeight: 800, color: C.muted }}>{p.tripwires} tripwires</span>}
+        {p.tripwires && (
+          <span style={{ fontSize: 13, fontWeight: 800, color: C.muted }} title={p.tripwiresNote || undefined}>
+            {p.tripwires} tripwires
+            {/* A denominator that shrinks silently reads as a different state rather than the same
+                state with a gauge unlit. */}
+            {p.tripwiresDark > 0 && <span style={{ color: C.amber }}> · {p.tripwiresDark} dark</span>}
+          </span>
+        )}
       </div>
       {p.working?.length > 0 && <Row label="Working" color={C.green}>{p.working.join(" · ")}</Row>}
       {p.not?.length > 0 && <Row label="Not" color={C.red}>{p.not.join(" · ")}</Row>}
@@ -5630,6 +5637,18 @@ export default function App() {
                 <div style={{ marginBottom: 10, padding: "8px 12px", background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 8, fontSize: 13, color: C.blue, fontWeight: 700 }}>
                   Live: 10Y {liveInd.tenY?.toFixed(2)}% · 2Y {liveInd.twoY?.toFixed(2)}% · Spread {liveInd.yieldSpread >= 0 ? "+" : ""}{liveInd.yieldSpread?.toFixed(2)}% · UE {liveInd.unemployment?.toFixed(1)}% · HY OAS {liveInd.creditSpread?.toFixed(2)}%
                   <span style={{ color: C.lbl, fontWeight: 400, marginLeft: 8 }}>Updated {fmtTime(indUpdated)}</span>
+                  {/* THE READER SUBTRACTS. 10Y 4.67 and 2Y 4.20 beside a spread of 0.39 is an
+                      arithmetic contradiction on one line, and it is not a data fault: FRED
+                      publishes T10Y2Y a day ahead of DGS10 and DGS2, so the spread is simply a
+                      later vintage than its own legs. Saying that is the difference between a card
+                      that looks broken and one that is legible. */}
+                  {liveInd.yieldSpreadCoherence?.checked === false && (
+                    <div style={{ fontWeight: 400, color: C.mid, fontSize: 11.5, marginTop: 4 }}
+                         title={liveInd.yieldSpreadCoherence.note}>
+                      ⓘ the spread is T10Y2Y as published ({liveInd.yieldSpreadCoherence.publishedDate}), a day ahead of the
+                      10Y/2Y legs ({liveInd.yieldSpreadCoherence.derivedDate}) — so it will not equal 10Y − 2Y above
+                    </div>
+                  )}
                 </div>
               )}
               {indError && (

@@ -586,13 +586,32 @@ export default async function handler(req, res) {
     const yieldSpread = publishedNewer ? spreadPublished.value : (derivedSpread ?? spreadPublished?.value ?? null);
     const yieldSpreadDate = publishedNewer ? spreadPublished.date : (derivedDate ?? spreadPublished?.date ?? null);
     const yieldSpreadSource = publishedNewer ? "T10Y2Y (published)" : "DGS10 − DGS2 (derived)";
-    // Coherence: on a SHARED date the two must agree. A gap means one leg is mis-mapped or
-    // stale, and silently preferring the newer number would hide that.
+    // ── COHERENCE, AND WHAT IT MEANS WHEN IT CANNOT RUN ─────────────────────
+    // On a shared date the published spread and the derived one must agree; a gap means a leg is
+    // mis-mapped or stale, and silently preferring the newer number would hide that.
+    //
+    // But the check only ever ran on a shared date and returned NULL otherwise — silently, with no
+    // note and nothing rendered. And a shared date is exactly what FRED does not give: T10Y2Y is
+    // published a day ahead of DGS10 and DGS2, the same way T10YIE runs ahead of its own inputs.
+    // So the guard has effectively never fired, while the tab shows 10Y 4.67, 2Y 4.20 and a spread
+    // of 0.39 on one line — three numbers where the reader's own subtraction gives 0.47. The card
+    // contradicts itself by 8bp and nothing says why.
+    //
+    // It now reports what it did. `checked:false` with the two dates is the honest answer when the
+    // vintages differ, and the frontend can say "spread is a day ahead of its legs" instead of
+    // presenting an arithmetic contradiction as a clean read.
     let yieldSpreadCoherence = null;
-    if (spreadPublished?.value != null && derivedSpread != null && derivedDate && spreadPublished.date === derivedDate) {
-      const gapBp = Math.round(Math.abs(spreadPublished.value - derivedSpread) * 100);
-      yieldSpreadCoherence = { sharedDate: derivedDate, gapBp, agree: gapBp <= 2, note: null };
-      yieldSpreadCoherence.note = `published T10Y2Y ${spreadPublished.value}% vs derived ${derivedSpread}% on ${derivedDate} (${gapBp}bp apart)`;
+    if (spreadPublished?.value != null && derivedSpread != null && derivedDate) {
+      if (spreadPublished.date === derivedDate) {
+        const gapBp = Math.round(Math.abs(spreadPublished.value - derivedSpread) * 100);
+        yieldSpreadCoherence = { checked: true, sharedDate: derivedDate, gapBp, agree: gapBp <= 2,
+          note: `published T10Y2Y ${spreadPublished.value}% vs derived ${derivedSpread}% on ${derivedDate} (${gapBp}bp apart)` };
+      } else {
+        const gapBp = Math.round(Math.abs(spreadPublished.value - derivedSpread) * 100);
+        yieldSpreadCoherence = { checked: false, agree: null, gapBp,
+          publishedDate: spreadPublished.date, derivedDate,
+          note: `not comparable — T10Y2Y is ${spreadPublished.value}% on ${spreadPublished.date} while DGS10 − DGS2 is ${derivedSpread}% on ${derivedDate}; ${gapBp}bp apart across different vintages, so the gap is a release-timing artefact and not necessarily a data fault` };
+      }
     }
 
     // ── Market-implied Fed policy change ──────────────────────────────────────
@@ -613,7 +632,7 @@ export default async function handler(req, res) {
     // Registered here rather than where it is computed: sanity is declared below that block,
     // so assigning into it earlier is a temporal-dead-zone ReferenceError on the one path
     // that matters — the sources disagreeing.
-    if (yieldSpreadCoherence && !yieldSpreadCoherence.agree) sanity.yieldSpread = yieldSpreadCoherence.note;
+    if (yieldSpreadCoherence && yieldSpreadCoherence.agree !== true) sanity.yieldSpread = yieldSpreadCoherence.note;
     chk("dxy", dxyRaw.latest); chk("tenY", tenY.value); chk("twoY", twoY.value);
     chk("unemployment", unemp.value); chk("creditSpread", hySpread.value);
 
