@@ -49,19 +49,19 @@
       "pct": 0.63
     },
     "instNet": {
-      "value": 184,
+      "value": -1188,
       "unit": "십억원",
-      "asOf": "2026-08-27"
+      "asOf": "2026-08-29"
     },
     "foreignNet": {
-      "value": 133,
+      "value": -852,
       "unit": "십억원",
-      "asOf": "2026-08-27"
+      "asOf": "2026-08-29"
     },
     "retailNet": {
-      "value": -1912,
+      "value": 419,
       "unit": "십억원",
-      "asOf": "2026-08-27"
+      "asOf": "2026-08-29"
     }
   },
   "history": [
@@ -1276,6 +1276,21 @@
         "value": 909000000,
         "asOf": "2026-08-29"
       }
+    },
+    {
+      "savedAt": "2026-08-29T12:04:02.895Z",
+      "instNet": {
+        "value": -1188,
+        "asOf": "2026-08-29"
+      },
+      "foreignNet": {
+        "value": -852,
+        "asOf": "2026-08-29"
+      },
+      "retailNet": {
+        "value": 419,
+        "asOf": "2026-08-29"
+      }
     }
   ],
   "series": {
@@ -2385,6 +2400,13 @@
         "unit": "십억원",
         "delta": null,
         "pct": null
+      },
+      {
+        "date": "2026-08-29",
+        "value": -852,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
       }
     ],
     "instNet": [
@@ -2527,6 +2549,13 @@
         "unit": "십억원",
         "delta": null,
         "pct": null
+      },
+      {
+        "date": "2026-08-29",
+        "value": -1188,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
       }
     ],
     "retailNet": [
@@ -2652,6 +2681,13 @@
       {
         "date": "2026-08-27",
         "value": -1912,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-08-29",
+        "value": 419,
         "unit": "십억원",
         "delta": null,
         "pct": null
