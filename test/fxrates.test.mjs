@@ -1,7 +1,8 @@
 // Regression tests for lib/fxrates.js — one convention, pegs, and null-safety.
-import { ratesFrom, convert, toUsd, fxRisk, fxSymbolsFor, fmtCcy } from '../lib/fxrates.js';
+import { ratesFrom, convert, toUsd, fxRisk, fxSymbolsFor, fmtCcy , resolveRowCurrency } from '../lib/fxrates.js';
 let pass=0,fail=0;
 const eq=(n,g,w)=>{const ok=JSON.stringify(g)===JSON.stringify(w);console.log(`${ok?'✅':'❌'} ${n}`+(ok?'':`  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`));ok?pass++:fail++;};
+const ok=(n,c)=>eq(n,!!c,true);
 
 // Live quotes as verified against Yahoo (XXX=X == units of XXX per 1 USD).
 const prices = { 'HKD=X':{price:7.8375}, 'AED=X':{price:3.6726}, 'KRW=X':{price:1382.21}, 'EUR=X':{price:0.8562} };
@@ -39,6 +40,46 @@ eq('same ccy no risk', fxRisk('USD','USD').real, false);
 eq('USD needs no fx symbol', fxSymbolsFor(['USD']), []);
 eq('symbols for book', fxSymbolsFor(['USD','HKD','AED']), ['HKD=X','AED=X']);
 eq('formats with sign', fmtCcy(1234.5,'HKD'), 'HK$1,235');
+
+
+// ─── resolveRowCurrency ──────────────────────────────────────────────────────
+// A row's currency belongs to the exchange, not to a preference, and every new row used to be
+// seeded USD regardless. The whole question is whether money has been recorded against the row.
+{
+  const r = resolveRowCurrency({ rowCcy: 'USD', quoteCcy: 'HKD' });
+  eq('an empty row takes the exchange\'s answer', [r.action, r.currency], ['adopt', 'HKD']);
+  ok('and says where it came from', /set from the exchange/.test(r.note));
+}
+{
+  const r = resolveRowCurrency({ rowCcy: 'USD', quoteCcy: 'HKD', hasFills: true });
+  eq('a row with fills is never rewritten underneath them', [r.action, r.currency], ['warn', 'USD']);
+  ok('it names both currencies', /USD/.test(r.note) && /HKD/.test(r.note));
+  ok('and says the money figures are the thing that is wrong', /cost basis and P&L are out/.test(r.note));
+}
+{
+  const r = resolveRowCurrency({ rowCcy: 'JPY', quoteCcy: 'HKD', userSet: true });
+  eq('a deliberate choice is not overruled on an empty row either', r.action, 'warn');
+  eq('and the row keeps what was chosen', r.currency, 'JPY');
+}
+{
+  eq('agreement is silent', resolveRowCurrency({ rowCcy: 'HKD', quoteCcy: 'HKD' }).action, 'ok');
+  eq('and case does not manufacture a disagreement', resolveRowCurrency({ rowCcy: 'hkd', quoteCcy: 'HKD' }).action, 'ok');
+}
+{
+  // Silence is not disagreement. MNQ has no Yahoo listing at all; futures and unknown tickers must
+  // not be able to flip a currency to null or warn about one.
+  eq('no quote leaves the row alone', resolveRowCurrency({ rowCcy: 'USD', quoteCcy: null }).action, 'ok');
+  eq('and a junk code is ignored, not adopted', resolveRowCurrency({ rowCcy: 'USD', quoteCcy: 'US' }).action, 'ok');
+  eq('as is an empty string', resolveRowCurrency({ rowCcy: 'USD', quoteCcy: '' }).action, 'ok');
+  eq('a missing row currency still defaults to USD', resolveRowCurrency({ quoteCcy: 'USD' }).currency, 'USD');
+  eq('and an entirely empty call does not throw', resolveRowCurrency().action, 'ok');
+}
+{
+  // Adoption must be idempotent, or the effect that applies it loops forever.
+  const first = resolveRowCurrency({ rowCcy: 'USD', quoteCcy: 'KRW' });
+  const again = resolveRowCurrency({ rowCcy: first.currency, quoteCcy: 'KRW' });
+  eq('adopting once settles it', again.action, 'ok');
+}
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);
