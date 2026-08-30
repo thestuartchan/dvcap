@@ -18,7 +18,7 @@ import {
 import { C, SLabel, Card, Btn } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
 import { derivePosition, applyRolls, splitIntoTrades, collapseFills, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, realizedCurve } from "../lib/positions.js";
-import { CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy } from "../lib/fxrates.js";
+import { CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy, resolveRowCurrency } from "../lib/fxrates.js";
 import { addToLoser } from "../lib/discipline.js";
 import { decisionEntry, lastClosedWasWin } from "../lib/decisions.js";
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
@@ -381,10 +381,20 @@ const {
       {open && (
         <div className="dvcap-expand" onClick={e => e.stopPropagation()} style={{ padding: 12, borderTop: "1px solid " + C.bdr, background: C.surf }}>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
+            {/* `ccySet` records that YOU chose this, which is what stops the exchange's answer
+                overwriting a deliberate choice on a row that has no fills yet. */}
             <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Currency<br />
-              <select value={r.currency || "USD"} onChange={e => upd(r.id, { currency: e.target.value })} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
+              <select value={r.currency || "USD"} onChange={e => upd(r.id, { currency: e.target.value, ccySet: true })} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
                 {CURRENCY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select></label>
+              </select>
+              {(() => {
+                // Never silently reinterpret fills that are already recorded — say the numbers are
+                // wrong and by how much, and leave the correction to a person.
+                const chk = resolveRowCurrency({ rowCcy: r.currency, quoteCcy: q?.currency, hasFills: (r.fills || []).length > 0, userSet: !!r.ccySet });
+                return chk.action === "warn"
+                  ? <span style={{ display: "block", fontWeight: 700, color: C.amber, fontSize: 10.5, marginTop: 3, maxWidth: 260, lineHeight: 1.4 }}>⚠ {chk.note}</span>
+                  : null;
+              })()}</label>
             {/* Only shown when it can matter. Pinning is what stops a finished trade's dollar result
                 drifting with spot for as long as it is in the archive. */}
             {(r.currency || "USD") !== baseCcy && (
@@ -929,6 +939,21 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
     };
   }, [archived, fxRates, baseCcy]);
   const curve    = useMemo(() => realizedCurve(derivedRows, toBase), [derivedRows, fxRates, baseCcy]);
+
+  // ── currency, taken from the exchange rather than assumed ──
+  // Every new row was seeded USD, so a non-US listing was valued in the wrong unit until someone
+  // caught it by hand. Only rows with NOTHING recorded against them are adopted — once fills exist
+  // or the picker has been touched, the row is left alone and the row itself warns instead.
+  useEffect(() => {
+    const fixes = rows.filter(r => resolveRowCurrency({
+      rowCcy: r.currency, quoteCcy: prices?.[quoteSym(r)]?.currency,
+      hasFills: (r.fills || []).length > 0, userSet: !!r.ccySet,
+    }).action === "adopt");
+    if (!fixes.length) return;
+    const patch = new Map(fixes.map(r => [r.id, prices[quoteSym(r)].currency]));
+    setRows(p => p.map(r => patch.has(r.id) ? { ...r, currency: patch.get(r.id) } : r));
+    touch();
+  }, [rows, prices]);
 
   // ── level alerts (poll cadence — checked whenever prices refresh) ──
   const hits = useMemo(() => levelHits(derivedRows.filter(r => r.derived.status !== "closed"), priceOf), [derivedRows, prices]);

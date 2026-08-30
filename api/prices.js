@@ -85,9 +85,16 @@ export default async function handler(req, res) {
         const price         = meta.regularMarketPrice;
         const prevClose     = meta.chartPreviousClose ?? meta.previousClose ?? price;
         const changePercent = prevClose ? ((price - prevClose) / prevClose) * 100 : 0;
+        // The exchange already knows what currency this thing trades in — asking the user to
+        // declare it, and defaulting to USD when they do not, is how a Hong Kong listing gets
+        // valued as dollars and reports a book ~7.8x too large. Only pass a plausible ISO code
+        // through; anything else is left absent so the caller keeps whatever it had.
+        const ccy = typeof meta.currency === "string" && /^[A-Za-z]{3}$/.test(meta.currency)
+          ? meta.currency.toUpperCase() : null;
         results[ticker] = {
           price: parseFloat(price.toFixed(2)),
           changePercent: parseFloat(changePercent.toFixed(2)),
+          ...(ccy ? { currency: ccy } : {}),
         };
       }
     } catch (e) {
