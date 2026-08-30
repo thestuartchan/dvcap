@@ -1637,7 +1637,17 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <SLabel>Import / export</SLabel>
           <span style={{ fontSize: 11.5, color: C.muted }}>seed, back up, or move between devices</span>
-          <button onClick={() => setPortOpen(o => !o)} style={{ marginLeft: "auto", cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700 }}>{portOpen ? "Hide" : "Open"}</button>
+          {/* Second save, at the far end of the tab. Editing happens down among the rows, and
+              scrolling back to the toolbar to commit it is where an unsaved book gets abandoned.
+              It sits in the HEADER, not in the panel below, because the panel collapses — a save
+              button you have to open something to reach is not a save button. Same handler and
+              same dirty state as the top one, so the two always read alike. */}
+          <div style={{ marginLeft: "auto", display: "flex", gap: 9, alignItems: "center" }}>
+            {kvOn === false && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>⚠ this browser only</span>}
+            {saveMsg && <span style={{ fontSize: 12, color: C.mid }}>{saveMsg}</span>}
+            <Btn onClick={saveCloud} disabled={saving} color="#fff" bgColor={dirty ? C.blue : C.bdrMd} label={saving ? "Saving…" : dirty ? "☁ Save to cloud" : "☁ Synced"} />
+            <button onClick={() => setPortOpen(o => !o)} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700 }}>{portOpen ? "Hide" : "Open"}</button>
+          </div>
         </div>
         {portOpen && (
           <div style={{ marginTop: 10 }}>
