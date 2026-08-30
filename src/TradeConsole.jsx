@@ -1267,9 +1267,6 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       {/* toolbar */}
       <Card>
         <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
-          <input value={addSym} onChange={e => setAddSym(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addRow(); }} placeholder="Add a setup (ticker)"
-            style={{ width: 180, padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 13, background: C.surf, color: C.text, textTransform: "uppercase" }} />
-          <Btn onClick={addRow} color="#fff" bgColor={C.blue} label="+ Add" />
           <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700, display: "flex", gap: 6, alignItems: "center" }}>
             Base
             <select value={baseCcy} onChange={e => { setSettings(s => ({ ...s, baseCurrency: e.target.value })); touch(); }} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
@@ -1462,6 +1459,22 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
             })}
           </div>
           <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>Credit-DANGER caps the multiplier at {CREDIT_DANGER_CAP_LABEL}; a contested or pinned≠live regime applies a further ×0.7.</div>
+        </div>
+      </Card>
+
+      {/* ── ADD A SETUP ──
+          Sits here, not in the top toolbar, because this is where the decision is made: equity,
+          risk % and the regime multiplier are read directly above, and the list a new ticker joins
+          is directly below. The toolbar keeps the account-level chrome — base currency, alerts,
+          sync state and the save button — which is status you want pinned at the top of the tab
+          rather than buried under the book. */}
+      <Card>
+        <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
+          <SLabel>Add a setup</SLabel>
+          <input value={addSym} onChange={e => setAddSym(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addRow(); }} placeholder="Ticker"
+            style={{ width: 180, padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 13, background: C.surf, color: C.text, textTransform: "uppercase" }} />
+          <Btn onClick={addRow} color="#fff" bgColor={C.blue} label="+ Add" />
+          <span style={{ fontSize: 11.5, color: C.muted }}>starts as a watched setup — add levels and a stop before it becomes a position</span>
         </div>
       </Card>
 
