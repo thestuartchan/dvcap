@@ -80,7 +80,12 @@ const INDICATORS = [
     ],
     // Returns independent assessment based on this indicator's own live value
     signal(liveVal, hist) {
-      const v = liveVal ?? 0.38;
+      // A MISSING PRINT IS NOT A READING. This used to substitute a hardcoded level and then
+      // classify it, so a dead feed produced a confident status badge off a number nobody had
+      // fetched — and the constant drifts: unemployment sat at 4.4 here while the live series
+      // printed 4.1. There is no honest default for "what is the level", so say there isn't one.
+      if (liveVal == null) return { label: "No print", text: "The live series is unavailable, so this indicator has no current reading. The chart below is history only.", state: "UNKNOWN" };
+      const v = liveVal;
       if (v < -0.5) return { label: "Deep Inversion", text: "Severe inversion — historically the strongest recession predictor. Average lead time: 12–18 months.", state: "DANGER" };
       if (v < 0)    return { label: "Inverted", text: "Curve still inverted — markets pricing Fed cuts ahead of deteriorating growth.", state: "DANGER" };
       // Positive but not yet normal. WHICH reading this is depends on how long ago the curve
@@ -93,7 +98,7 @@ const INDICATORS = [
     },
   },
   {
-    id:"unemp", name:"Unemployment Rate", current:"4.4%",
+    id:"unemp", name:"Unemployment Rate", current:"—",
     status:"AMBER", label:"↑ since '23 low", color:"#92400E", areaColor:"#F59E0B",
     dataKey:"unempHistory", data:UNEMP_DATA, refLine:4.0, yDomain:[3.0,5.5],
     yFmt: v=>`${v.toFixed(1)}%`,
@@ -105,7 +110,8 @@ const INDICATORS = [
       {val:5.0, label:"Recession confirmed",color:"#7F1D1D", dash:"3 2"},
     ],
     signal(liveVal) {
-      const v = liveVal ?? 4.4;
+      if (liveVal == null) return { label: "No print", text: "The live series is unavailable, so this indicator has no current reading. The chart below is history only.", state: "UNKNOWN" };
+      const v = liveVal;
       if (v >= 5.5)  return { label:"Recession Confirmed",  text:"Unemployment above 5.5% — recession is underway by historical standards. Capital preservation is the priority.", state:"DANGER" };
       if (v >= 5.0)  return { label:"Recession Zone",       text:"Crossed 5.0% — recession historically confirmed at this level. Defensive positioning warranted.",              state:"DANGER" };
       if (v >= 4.5)  return { label:"Sahm Rule Triggered",  text:"At or above the Sahm Rule threshold. Labour market deteriorating — leading indicator for recession.",           state:"WATCH" };
@@ -125,7 +131,8 @@ const INDICATORS = [
       {val:6.0, label:"🔴 Recession likely", color:"#DC2626", dash:"4 2"},
     ],
     signal(liveVal) {
-      const v = liveVal ?? 2.75;
+      if (liveVal == null) return { label: "No print", text: "The live series is unavailable, so this indicator has no current reading. The chart below is history only.", state: "UNKNOWN" };
+      const v = liveVal;
       if (v >= 6.0)  return { label:"Recession Imminent",  text:"Spreads above 6% — markets pricing systemic stress. This is the deflationary trip wire. Rotate to Treasuries and cash immediately.", state:"DANGER" };
       if (v >= 4.5)  return { label:"Alert — Act Now",     text:"Breached the 4.5% alert threshold. Insurance accumulation phase is over — full defensive rotation warranted.",                      state:"DANGER" };
       if (v >= 3.5)  return { label:"Widening — Watch",    text:"Spreads widening toward the alert zone. Begin building insurance positions. Don't wait for 4.5% to confirm.",                       state:"WATCH" };
@@ -2757,13 +2764,18 @@ function IndicatorChart({ ind, live }) {
         </div>
         <div style={{ flex: "1 1 220px", display: "flex", flexDirection: "column", gap: 10 }}>
           <p style={{ color: C.mid, fontSize: 14, lineHeight: 1.75, margin: 0 }}>
-                {typeof ind.detail === "function"
-                  ? ind.detail(ind.id === "yield"  && live ? live.yieldSpread
-                              : ind.id === "unemp"  && live ? live.unemployment
-                              : ind.id === "credit" && live ? live.creditSpread
-                              : (ind.id === "yield" ? 0.38 : ind.id === "unemp" ? 4.4 : 2.75),
-                              (live && live[ind.dataKey]) || ind.data || [])
-                  : ind.detail}
+                {(() => {
+                  if (typeof ind.detail !== "function") return ind.detail;
+                  const v = ind.id === "yield"  && live ? live.yieldSpread
+                          : ind.id === "unemp"  && live ? live.unemployment
+                          : ind.id === "credit" && live ? live.creditSpread
+                          : null;
+                  // Was a hardcoded level here too. detail() writes a full paragraph of analysis
+                  // around whatever it is handed, so a stale constant produced a confident,
+                  // specific, wrong read whenever the feed was down.
+                  if (v == null) return "No live print for this series, so there is no current read. The chart and thresholds below are history.";
+                  return ind.detail(v, (live && live[ind.dataKey]) || ind.data || []);
+                })()}
               </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             {ind.thresholds.map((th, i) => (
@@ -3458,8 +3470,25 @@ function ScenarioBoard({ scenarios }) {
 // run-up into each upcoming event and how stretched above the 50d line — the "priced for
 // perfection" read (AMD: record double-beat, −9%).
 function EventPositioning({ e }) {
-  if (!e || !e.available) return null;
+  if (!e) return null;
   const pct = (v, s = "%") => v == null ? "—" : `${v >= 0 ? "+" : ""}${v}${s}`;
+  // The module went to the trouble of saying WHY it has nothing — that the list has run out, or
+  // that the next print is simply further off than the horizon — and the card threw it away by
+  // returning null. An empty fortnight and a list nobody has restocked looked identical, which is
+  // the exact confusion the reason string exists to prevent.
+  if (!e.available) {
+    return (
+      <Card>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+          <SLabel>📅 Event positioning</SLabel>
+          <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>what's already priced in · run-up into the catalyst</span>
+        </div>
+        <div style={{ fontSize: 11.5, color: e.past === e.configured && e.configured ? C.amber : C.mid, fontWeight: e.past === e.configured && e.configured ? 700 : 500, marginTop: 6 }}>
+          {e.reason || "Nothing upcoming."}
+        </div>
+      </Card>
+    );
+  }
   return (
     <Card>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
@@ -3484,11 +3513,19 @@ function EventPositioning({ e }) {
               <div style={{ fontSize: 11.5, fontWeight: 700, color: col, marginTop: 3, lineHeight: 1.45 }}>
                 {ev.status === "PARTIAL" ? "No verdict — " : ""}{ev.reading}
               </div>
+              {/* Reading positioning into the wrong day is the one way this card misleads without
+                  looking wrong, so an unresolved date is stated rather than quietly picked. */}
+              {ev.dateNote && (
+                <div style={{ fontSize: 10.5, color: C.amber, fontWeight: 700, marginTop: 2 }}>⚠ {ev.dateNote}</div>
+              )}
             </div>
           );
         })}
       </div>
-      <div style={{ fontSize: 10, color: C.lbl, marginTop: 5 }}>IV percentile (the cleanest leg) needs an options feed — not shown; run-up + stretch are the proxies.</div>
+      <div style={{ fontSize: 10, color: C.lbl, marginTop: 5 }}>
+        IV percentile (the cleanest leg) needs an options feed — not shown; run-up + stretch are the proxies.
+        {e.next && ` Next past the horizon: ${e.next.name} (${e.next.sym}) in ${e.next.daysTo}d.`}
+      </div>
     </Card>
   );
 }
@@ -5676,7 +5713,11 @@ export default function App() {
                   // unemployment rate, and the Sahm reference carries its understatement
                   // caveat: a rate that fell on labour-force exit suppresses the rule.
                   { icon: labStress.severe ? "🚨" : "⚠️",
-                    text: `Unemployment at ${laborView?.u3?.value != null ? laborView.u3.value.toFixed(1) : (liveInd ? liveInd.unemployment.toFixed(1) : "4.4")}%`
+                    // The only one of these on a rendered path — and it stated a fabricated 4.4%
+                    // as fact whenever both sources were missing. It now says the print is absent,
+                    // which is the true thing and the one that prompts a refresh.
+                    text: `${(() => { const u = laborView?.u3?.value ?? liveInd?.unemployment ?? null;
+                              return u == null ? "Unemployment — no live print" : `Unemployment at ${u.toFixed(1)}%`; })()}`
                       + `${laborView?.empPop?.value != null ? `, emp-pop ${laborView.empPop.value.toFixed(1)}% (${laborView.empPop.delta >= 0 ? "+" : "−"}${Math.abs(laborView.empPop.delta ?? 0).toFixed(1)}pp)` : ""}. `
                       + `${labStress.known ? labStress.note[0].toUpperCase() + labStress.note.slice(1) + "." : "Employment print unavailable."}`
                       + `${(() => { const sn = sahmAnnotation(laborVerdictFor(liveInd), laborView?.payrolls?.delta ?? null); return sn ? ` ${sn.title} ${sn.text}` : ""; })()}` },

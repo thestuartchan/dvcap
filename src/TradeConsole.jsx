@@ -1267,9 +1267,6 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       {/* toolbar */}
       <Card>
         <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
-          <input value={addSym} onChange={e => setAddSym(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addRow(); }} placeholder="Add a setup (ticker)"
-            style={{ width: 180, padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 13, background: C.surf, color: C.text, textTransform: "uppercase" }} />
-          <Btn onClick={addRow} color="#fff" bgColor={C.blue} label="+ Add" />
           <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700, display: "flex", gap: 6, alignItems: "center" }}>
             Base
             <select value={baseCcy} onChange={e => { setSettings(s => ({ ...s, baseCurrency: e.target.value })); touch(); }} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
@@ -1465,6 +1462,22 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
         </div>
       </Card>
 
+      {/* ── ADD A SETUP ──
+          Sits here, not in the top toolbar, because this is where the decision is made: equity,
+          risk % and the regime multiplier are read directly above, and the list a new ticker joins
+          is directly below. The toolbar keeps the account-level chrome — base currency, alerts,
+          sync state and the save button — which is status you want pinned at the top of the tab
+          rather than buried under the book. */}
+      <Card>
+        <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
+          <SLabel>Add a setup</SLabel>
+          <input value={addSym} onChange={e => setAddSym(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addRow(); }} placeholder="Ticker"
+            style={{ width: 180, padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 13, background: C.surf, color: C.text, textTransform: "uppercase" }} />
+          <Btn onClick={addRow} color="#fff" bgColor={C.blue} label="+ Add" />
+          <span style={{ fontSize: 11.5, color: C.muted }}>starts as a watched setup — add levels and a stop before it becomes a position</span>
+        </div>
+      </Card>
+
       <Section title="Setups — waiting" note="no position yet; levels are being watched" list={setups} mode="setup" ctx={ctx} />
       {/* Biggest first. Import order is meaningless, and the position that most deserves a second
           look each morning is the one carrying the most of the book. Rows whose market value cannot
@@ -1624,7 +1637,17 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <SLabel>Import / export</SLabel>
           <span style={{ fontSize: 11.5, color: C.muted }}>seed, back up, or move between devices</span>
-          <button onClick={() => setPortOpen(o => !o)} style={{ marginLeft: "auto", cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700 }}>{portOpen ? "Hide" : "Open"}</button>
+          {/* Second save, at the far end of the tab. Editing happens down among the rows, and
+              scrolling back to the toolbar to commit it is where an unsaved book gets abandoned.
+              It sits in the HEADER, not in the panel below, because the panel collapses — a save
+              button you have to open something to reach is not a save button. Same handler and
+              same dirty state as the top one, so the two always read alike. */}
+          <div style={{ marginLeft: "auto", display: "flex", gap: 9, alignItems: "center" }}>
+            {kvOn === false && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>⚠ this browser only</span>}
+            {saveMsg && <span style={{ fontSize: 12, color: C.mid }}>{saveMsg}</span>}
+            <Btn onClick={saveCloud} disabled={saving} color="#fff" bgColor={dirty ? C.blue : C.bdrMd} label={saving ? "Saving…" : dirty ? "☁ Save to cloud" : "☁ Synced"} />
+            <button onClick={() => setPortOpen(o => !o)} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700 }}>{portOpen ? "Hide" : "Open"}</button>
+          </div>
         </div>
         {portOpen && (
           <div style={{ marginTop: 10 }}>

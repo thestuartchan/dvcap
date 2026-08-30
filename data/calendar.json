@@ -18,27 +18,15 @@
     "tier": 1
   },
   {
-    "date": "2026-07-30",
-    "title": "Samsung Q2 full results (10:00 KST; prelim was Jul 7)",
-    "region": "ASIA",
-    "tier": 1
-  },
-  {
     "date": "2026-07-23",
-    "title": "US Initial Jobless Claims (fcst 212K)",
+    "title": "AMD AI event \u2014 Lisa Su keynote",
     "region": "US",
-    "tier": 2
+    "tier": 1
   },
   {
     "date": "2026-07-23",
     "title": "Intel Q2 earnings (AC)",
     "region": "US",
-    "tier": 1
-  },
-  {
-    "date": "2026-07-23",
-    "title": "STMicro Q2 earnings",
-    "region": "EU",
     "tier": 1
   },
   {
@@ -49,9 +37,15 @@
   },
   {
     "date": "2026-07-23",
-    "title": "AMD AI event \u2014 Lisa Su keynote",
-    "region": "US",
+    "title": "STMicro Q2 earnings",
+    "region": "EU",
     "tier": 1
+  },
+  {
+    "date": "2026-07-23",
+    "title": "US Initial Jobless Claims (fcst 212K)",
+    "region": "US",
+    "tier": 2
   },
   {
     "date": "2026-07-24",
@@ -82,6 +76,12 @@
   {
     "date": "2026-07-29",
     "title": "SK Hynix Q2 + new KRX shares list",
+    "region": "ASIA",
+    "tier": 1
+  },
+  {
+    "date": "2026-07-30",
+    "title": "Samsung Q2 full results (10:00 KST; prelim was Jul 7)",
     "region": "ASIA",
     "tier": 1
   },
@@ -122,14 +122,14 @@
   },
   {
     "date": "2026-08-28",
-    "title": "QCEW benchmark revision \u2014 restates the payroll base (deflation test)",
+    "title": "Jackson Hole \u2014 Warsh speaks (Fri AM)",
     "region": "US",
     "tier": 1,
     "scope": "global"
   },
   {
     "date": "2026-08-28",
-    "title": "Jackson Hole \u2014 Warsh speaks (Fri AM)",
+    "title": "QCEW benchmark revision \u2014 restates the payroll base (deflation test)",
     "region": "US",
     "tier": 1,
     "scope": "global"
@@ -139,6 +139,105 @@
     "title": "US July PCE",
     "region": "US",
     "tier": 1,
+    "scope": "global",
+    "time": "08:30",
+    "tz": "America/New_York"
+  },
+  {
+    "date": "2026-08-31",
+    "title": "China NBS Manufacturing + Non-Mfg PMI",
+    "region": "ASIA",
+    "tier": 1,
+    "scope": "global",
+    "time": "09:30",
+    "tz": "Asia/Shanghai"
+  },
+  {
+    "date": "2026-08-31",
+    "title": "Germany preliminary CPI",
+    "region": "EU",
+    "tier": 2,
+    "time": "14:00",
+    "tz": "Europe/Berlin"
+  },
+  {
+    "date": "2026-09-01",
+    "title": "US ISM Manufacturing PMI",
+    "region": "US",
+    "tier": 1,
+    "scope": "global",
+    "time": "10:00",
+    "tz": "America/New_York"
+  },
+  {
+    "date": "2026-09-01",
+    "title": "US JOLTS job openings \u2014 the quits rate the labour module reads",
+    "region": "US",
+    "tier": 1,
+    "scope": "global",
+    "time": "10:00",
+    "tz": "America/New_York"
+  },
+  {
+    "date": "2026-09-02",
+    "title": "AVGO earnings (AC) \u2014 AI-capex read into the semi complex",
+    "region": "US",
+    "tier": 1,
+    "scope": "global"
+  },
+  {
+    "date": "2026-09-02",
+    "title": "Fed Beige Book",
+    "region": "US",
+    "tier": 1,
+    "scope": "global",
+    "time": "14:00",
+    "tz": "America/New_York"
+  },
+  {
+    "date": "2026-09-02",
+    "title": "South Korea CPI",
+    "region": "ASIA",
+    "tier": 2,
+    "time": "08:00",
+    "tz": "Asia/Seoul"
+  },
+  {
+    "date": "2026-09-02",
+    "title": "US ADP employment report",
+    "region": "US",
+    "tier": 2,
+    "scope": "global",
+    "time": "08:15",
+    "tz": "America/New_York"
+  },
+  {
+    "date": "2026-09-03",
+    "title": "China RatingDog Services PMI",
+    "region": "ASIA",
+    "tier": 2
+  },
+  {
+    "date": "2026-09-03",
+    "title": "Fed's Waller speaks",
+    "region": "US",
+    "tier": 1,
+    "scope": "global"
+  },
+  {
+    "date": "2026-09-03",
+    "title": "US ISM Services PMI",
+    "region": "US",
+    "tier": 1,
+    "scope": "global",
+    "time": "10:00",
+    "tz": "America/New_York"
+  },
+  {
+    "date": "2026-09-03",
+    "title": "US weekly jobless claims",
+    "region": "US",
+    "tier": 2,
     "scope": "global",
     "time": "08:30",
     "tz": "America/New_York"
