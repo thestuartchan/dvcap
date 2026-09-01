@@ -3,6 +3,7 @@ import { C, SLabel, Card, Btn } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
 import { REGIMES, REGIME_PALETTE } from "../lib/regimes.js";
 import { TradeConsole } from "./TradeConsole.jsx";
+import { GexPanel } from "./GexPanel.jsx";
 import {
   AreaChart, Area, BarChart, Bar, RadarChart, PolarGrid,
   PolarAngleAxis, Radar, PieChart, Pie, Cell, LineChart, Line,
@@ -5369,6 +5370,7 @@ export default function App() {
     { id: "posture",    label: "🎯 Posture"      },
     { id: "insurance",  label: "🛡️ Insurance"   },
     { id: "income",     label: "💰 Income"       },
+    { id: "gex",        label: "🌀 Gamma"        },
   ];
 
   return (
@@ -5502,6 +5504,11 @@ export default function App() {
         )}
 
         <TabErrorBoundary key={tab} name={(TABS.find(t => t.id === tab)?.label || "This tab").replace(/^\S+\s/, "")}>
+
+        {/* ── GAMMA EXPOSURE ──
+            Self-contained: its own tab, its own endpoints, its own state. Nothing about it lives
+            in this file beyond the mount, which is the whole point of building it separately. */}
+        {tab === "gex" && <GexPanel />}
 
         {/* ── TRADE CONSOLE (Tier 3) ── */}
         {tab === "console" && (
