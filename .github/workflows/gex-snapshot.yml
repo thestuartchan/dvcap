@@ -1,0 +1,66 @@
+# Daily gamma-exposure capture.
+#
+# NOT A VERCEL CRON, deliberately, and against the brief which asked for one. Vercel was running
+# five cron entries for the pre-reads and only the first two were ever executed — the US brief went
+# dark for three weekdays on 2026-08-31 and the cause was position in the list, not code. All five
+# moved here on 2026-09-01. Adding a sixth Vercel entry would have put this capture in exactly the
+# slot that fails, and it would have failed SILENTLY: a missed pre-read is a missing message in a
+# channel, but a missed GEX snapshot is a permanent hole, because open interest is not served
+# historically by any free source. That asymmetry is why this one especially cannot live there.
+#
+# 13:00 UTC is 09:00 ET, pre-open. OCC settles open interest overnight, so Yahoo's `openInterest`
+# reflects the PRIOR session through the following morning and only starts drifting once the day's
+# trades begin clearing. Running pre-open captures settled numbers; running intraday captures a
+# field that is neither yesterday's nor today's.
+#
+# The 21:00 UTC run is optional and additive: same-day volume and closing IV, written over the same
+# dated row. It is included because it costs one CI minute and the data cannot be recovered later.
+name: gex snapshot
+
+on:
+  schedule:
+    - cron: '0 13 * * 1-5'    # 09:00 ET — pre-open, settled open interest
+    - cron: '0 21 * * 1-5'    # 17:00 ET — closing IV and the day's volume
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'Dry run? 1 = compute but write nothing'
+        required: true
+        default: '1'
+      symbols:
+        description: 'Comma-separated symbols (blank = SPY,QQQ)'
+        required: false
+        default: ''
+
+concurrency:
+  group: gex-snapshot
+  cancel-in-progress: false     # never abandon a half-written capture
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Capture the chain
+        run: |
+          DRY="${{ github.event.inputs.dry }}"
+          if [ -n "${{ github.event.schedule }}" ]; then DRY=0; fi
+          Q="dry=${DRY:-1}"
+          if [ -n "${{ github.event.inputs.symbols }}" ]; then Q="$Q&symbols=${{ github.event.inputs.symbols }}"; fi
+          code=$(curl -sS -o /tmp/gex.json -w '%{http_code}' --max-time 300 \
+            "https://dvcap.vercel.app/api/gex-snapshot?$Q") || true
+          echo "HTTP $code"
+          python3 - <<'PY' || cat /tmp/gex.json
+          import json
+          d = json.load(open('/tmp/gex.json'))
+          print('date:', d.get('date'), ' rate:', d.get('rate'), f"({d.get('rateSource')})", ' dry:', d.get('dry'))
+          for r in d.get('results', []):
+              if not r.get('ok'):
+                  print(f"  {r.get('symbol')}: FAILED — {r.get('reason')}")
+              else:
+                  print(f"  {r['symbol']}: {r['contracts']} contracts over {r['expiries']} expiries"
+                        f" | flip {r.get('flip')} | GEX {r.get('gexUsd')}"
+                        + (f" | FAILED EXPIRIES {r['failed']}" if r.get('failed') else '')
+                        + ('' if r.get('wrote') else ' | not written (dry)'))
+          PY
+          [ "$code" = "200" ] || exit 1

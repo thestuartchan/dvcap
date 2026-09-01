@@ -1,39 +1,15 @@
+import { yahooAuth } from "../lib/yahoo.js";
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
 // Yahoo's v7 quote endpoint carries trailingAnnualDividendYield but requires a
 // crumb + cookie. The v8 chart endpoint used for price does not — so dividends
 // are fetched separately and merged in. Any failure here leaves dividends null
 // and never affects the price feed.
-function extractCookies(resp) {
-  try {
-    const arr = typeof resp.headers.getSetCookie === "function" ? resp.headers.getSetCookie() : [];
-    const list = arr.length ? arr : (resp.headers.get("set-cookie") ? [resp.headers.get("set-cookie")] : []);
-    return list.map(c => c.split(";")[0]).filter(Boolean);
-  } catch (_) { return []; }
-}
-async function getYahooAuth() {
-  const cookies = [];
-  try {
-    const r1 = await fetch("https://fc.yahoo.com/", { headers: { "User-Agent": UA } });
-    cookies.push(...extractCookies(r1));
-  } catch (_) {}
-  const cookieHeader = cookies.join("; ");
-  let crumb = null;
-  try {
-    const r2 = await fetch("https://query1.finance.yahoo.com/v1/test/getcrumb", {
-      headers: { "User-Agent": UA, ...(cookieHeader ? { Cookie: cookieHeader } : {}) },
-    });
-    cookies.push(...extractCookies(r2));
-    const text = (await r2.text()).trim();
-    if (text && text.length < 50 && !text.includes("<")) crumb = text;
-  } catch (_) {}
-  return { crumb, cookie: cookies.join("; ") };
-}
 // Best-effort batched dividend fetch. Adds dividendYield/dividendRate to each
 // matched ticker in `results` (null when Yahoo has no dividend data).
 async function fetchDividends(tickerList, results) {
   try {
-    const { crumb, cookie } = await getYahooAuth();
+    const { crumb, cookie } = await yahooAuth();
     if (!crumb) return;
     const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(tickerList.join(","))}`
       + `&crumb=${encodeURIComponent(crumb)}&fields=trailingAnnualDividendYield,trailingAnnualDividendRate`;
