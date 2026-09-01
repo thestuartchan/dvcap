@@ -3,7 +3,7 @@
 // The log exists because the two patterns that cost this account money — adding to losers, and
 // sizing up after a win — are invisible in P&L until they are over. So the tests are mostly about
 // what is captured WITHOUT typing, and about not recording an inference as though it were a fact.
-import { decisionEntry, appendDecision, lastClosedWasWin, overrideStats, MAX_DECISIONS } from '../lib/decisions.js';
+import { decisionEntry, appendDecision, lastClosedWasWin, overrideStats, MAX_DECISIONS , overrideTrend, guardOutcomes, ACTIONS } from '../lib/decisions.js';
 import { derivePosition, positionPnl } from '../lib/positions.js';
 import { sizeSuggestion } from '../lib/sizing.js';
 let pass = 0, fail = 0;
@@ -119,6 +119,109 @@ const sug = sizeSuggestion({ mode: 'allocation', equityInPos: 208597, price: 91.
   eq('an empty log claims nothing', overrideStats([]), { n: 0 });
   // A sell is not an override of a buy suggestion.
   eq('sells are excluded', overrideStats([{ symbol: 'X', side: 'sell', overrideRatio: 9 }]), { n: 0 });
+}
+
+
+// ── P3: declined, actions, and reading the log back ──────────────────────────
+{
+  const base = { row: { id: 'r1', symbol: 'ARM', levels: [{ kind: 'stop', at: 300 }] },
+    derived: { qty: 100, fills: [{ side: 'buy' }] }, pnl: { unrealizedPct: -8.4 },
+    suggestion: { roomQty: 50 }, regime: { regimeId: 'stag' } };
+  const took = decisionEntry({ ...base, fill: { side: 'buy', qty: 75, price: 340 } });
+  const skip = decisionEntry({ ...base, fill: { side: 'buy', qty: 75, price: 340 }, action: 'declined' });
+
+  eq('a recorded buy is an open', took.action, 'opened');
+  eq('a sell is a close', decisionEntry({ ...base, fill: { side: 'sell', qty: 10, price: 1 } }).action, 'closed');
+  eq('an unknown action falls back rather than storing junk',
+    decisionEntry({ ...base, fill: { side: 'buy', qty: 1, price: 1 }, action: 'nonsense' }).action, 'opened');
+
+  // The whole reason `declined` exists as its own action.
+  eq('a declined trade records what was considered', skip.consideredQty, 75);
+  eq('and takes nothing', skip.takenQty, null);
+  // If a decline carried takenQty it would land in the override stats as though it had executed,
+  // making the one act that PROVES a guard worked look identical to ignoring one.
+  eq('so it cannot register as an override', skip.overrideRatio, null);
+  eq('while the executed one does', took.overrideRatio, 1.5);
+  eq('override stats count only what was executed', overrideStats([took, skip]).n, 1);
+  eq('and the fill price is kept either way', [took.fillPrice, skip.fillPrice], [340, 340]);
+}
+{
+  const e = decisionEntry({
+    row: { id: 'r1', symbol: 'X' }, derived: { qty: 0, fills: [] },
+    fill: { side: 'buy', qty: 10, price: 5 },
+    guards: { size: 'red', stopAtr: 'unknown' }, guardWorst: 'red', guardBreached: ['size'],
+  });
+  eq('guard states ride along with the decision', e.guards, { size: 'red', stopAtr: 'unknown' });
+  eq('with the worst one named', e.guardWorst, 'red');
+  eq('and what was breached', e.guardBreached, ['size']);
+  const none = decisionEntry({ row: { id: 'r', symbol: 'X' }, derived: { qty: 0, fills: [] }, fill: { side: 'buy', qty: 1, price: 1 } });
+  eq('a decision with no panel stores null, not an empty object', none.guards, null);
+}
+
+// ── override frequency over time ─────────────────────────────────────────────
+{
+  const mk = (at, ratio) => ({ at, id: 'x', symbol: 'X', side: 'buy', action: 'opened', overrideRatio: ratio });
+  const log = [mk('2026-07-05T00:00:00Z', 1.4), mk('2026-07-20T00:00:00Z', 0.9),
+               mk('2026-08-01T00:00:00Z', 1.6), mk('2026-08-02T00:00:00Z', 1.8)];
+  const t = overrideTrend(log);
+  eq('one bucket per month', t.map(x => x.period), ['2026-07', '2026-08']);
+  eq('counting how many exceeded the suggestion', t.map(x => x.over), [1, 2]);
+  eq('as a share', t.map(x => x.overPct), [50, 100]);
+  eq('with the mean ratio', t[1].meanRatio, 1.7);
+  // A single lifetime number cannot show a habit changing, which is the only thing this can
+  // eventually demonstrate about itself.
+  ok('so the trend is visible', t[1].overPct > t[0].overPct);
+  eq('declines are excluded here too',
+    overrideTrend([...log, { at: '2026-08-03T00:00:00Z', side: 'buy', action: 'declined', overrideRatio: 9 }])[1].n, 2);
+  eq('an empty log gives an empty trend', overrideTrend([]).length, 0);
+}
+
+// ── realised P&L by guard state ──────────────────────────────────────────────
+{
+  const mk = (id, q, guards) => ({ at: '2026-08-01T00:00:00Z', id, symbol: 'X', side: 'buy', action: 'opened', takenQty: q, guards });
+  const log = [
+    mk('a', 100, { stopAtr: 'red' }),
+    mk('b', 100, { stopAtr: 'green' }),
+    mk('c', 50, { stopAtr: 'red' }),
+    mk('c', 50, { stopAtr: 'red' }),
+  ];
+  const rows = [
+    { id: 'a', derived: { status: 'closed', realized: -500, bought: 100 } },
+    { id: 'b', derived: { status: 'closed', realized: 300, bought: 100 } },
+    { id: 'c', derived: { status: 'closed', realized: -800, bought: 100 } },
+  ];
+  const o = guardOutcomes(log, rows);
+  const g = o.guards.find(x => x.id === 'stopAtr');
+  // Row c was bought twice and made one result. Crediting -800 to each entry would double it and
+  // make the guard look twice as consequential as it is; each half-position carries half.
+  eq('a row bought twice splits its result pro rata', g.red.pnl, -1300);
+  eq('across three red decisions', g.red.n, 3);
+  eq('and the green one stands alone', [g.green.n, g.green.pnl], [1, 300]);
+  ok('the spread is reported', g.spread != null);
+  // n=1 on one side is an anecdote, and saying so is the point.
+  eq('but not called comparable on one green trade', g.comparable, false);
+  ok('and the attribution rule is stated in the object', /pro rata/.test(o.note));
+  ok('including that columns do not sum to account P&L', /do not sum/.test(o.note));
+}
+{
+  // Open positions have no realised result to attribute, and declines never entered anything.
+  const log = [{ at: 'a', id: 'a', symbol: 'X', side: 'buy', action: 'opened', takenQty: 10, guards: { size: 'red' } },
+               { at: 'b', id: 'b', symbol: 'X', side: 'buy', action: 'declined', takenQty: null, consideredQty: 10, guards: { size: 'red' } }];
+  const rows = [{ id: 'a', derived: { status: 'open', realized: 0, bought: 10 } },
+                { id: 'b', derived: { status: 'closed', realized: 500, bought: 10 } }];
+  const o = guardOutcomes(log, rows);
+  eq('an open position contributes nothing yet', o.decisions, 0);
+  eq('and a decline never contributes at all', o.guards.length, 0);
+}
+{
+  // A rolled row's result belongs to the contract it rolled into, not to this entry.
+  const log = [{ at: 'a', id: 'a', symbol: 'MGC', side: 'buy', action: 'opened', takenQty: 1, guards: { size: 'green' } }];
+  const rows = [{ id: 'a', derived: { status: 'closed', realized: -200, bought: 1, rolledInto: 'b' } }];
+  eq('a rolled leg is not counted as a result', guardOutcomes(log, rows).decisions, 0);
+}
+{
+  eq('an empty call does not throw', guardOutcomes().guards.length, 0);
+  eq('nor a null log with real rows', guardOutcomes(null, [{ id: 'a', derived: { status: 'closed', realized: 1, bought: 1 } }]).decisions, 0);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
