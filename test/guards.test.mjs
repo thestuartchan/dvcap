@@ -174,5 +174,31 @@ const hoursAgo = (h) => new Date(Date.now() - h * 3600000).toISOString();
   eq('and can be overridden', sizeGuard({ takenQty: 105, suggestedQty: 100 }, strict).state, 'red');
 }
 
+{
+  // The guard must not paint five different problems the same colour either. A missing STOP is a
+  // risk finding and reads amber; a missing FEED is an absence of information and reads grey.
+  const g = (st) => stopAtrGuard({ width: { known: false, status: st, note: st } });
+  eq('no stop is a finding, not a blank', g('no-stop').state, 'amber');
+  eq('a failed fetch is a blank', g('fetch-failed').state, 'unknown');
+  eq('an unknown ticker is a blank', g('no-data').state, 'unknown');
+  eq('a short history is a blank', g('short-history').state, 'unknown');
+  eq('and so is still-loading', g('loading').state, 'unknown');
+  // The reason survives into the value, so the decision log records WHICH blank it was.
+  eq('the reason is carried, not just the colour', g('fetch-failed').value.reason, 'fetch-failed');
+}
+
+{
+  // The guard must not paint five different problems the same colour either. A missing STOP is a
+  // risk finding and reads amber; a missing FEED is an absence of information and reads grey.
+  const g = (st) => stopAtrGuard({ width: { known: false, status: st, note: st } });
+  eq('no stop is a finding, not a blank', g('no-stop').state, 'amber');
+  eq('a failed fetch is a blank', g('fetch-failed').state, 'unknown');
+  eq('an unknown ticker is a blank', g('no-data').state, 'unknown');
+  eq('a short history is a blank', g('short-history').state, 'unknown');
+  eq('and so is still-loading', g('loading').state, 'unknown');
+  // The reason survives into the value, so the decision log records WHICH blank it was.
+  eq('the reason is carried, not just the colour', g('fetch-failed').value.reason, 'fetch-failed');
+}
+
 console.log(`\n${fail ? '❌' : '✅'} ${fail ? `${fail} FAILED, ` : 'ALL '}${pass} PASSED`);
 process.exit(fail ? 1 : 0);

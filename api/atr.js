@@ -9,7 +9,7 @@
 // is a discontinuity between two different instruments and true range scores it as a real day's
 // move — measured, it inflates ATR to 2.4x on the day and is still a third too wide a trading
 // month later, which is exactly the month the new contract is being sized in.
-import { yahooDailyOHLC } from '../lib/yahoo.js';
+import { yahooDailyOHLCDetailed } from '../lib/yahoo.js';
 import { atrSummary, ATR_PERIOD } from '../lib/atr.js';
 
 const MAX_SYMBOLS = 24;   // the console asks for its open rows, not a universe
@@ -22,18 +22,22 @@ export default async function handler(req, res) {
 
   const out = {};
   for (let i = 0; i < list.length; i++) {
-    // Same 120ms stagger as api/prices.js — the keyless endpoint refuses a burst, and a refused
-    // fetch here becomes a silently missing ATR, which the panel must render as "unknown" rather
-    // than as a stop that passed.
+    // Same 120ms stagger as api/prices.js — the keyless endpoint refuses a burst.
     if (i > 0) await new Promise(r => setTimeout(r, 120));
+    const sym = list[i];
     try {
-      const bars = await yahooDailyOHLC(list[i], '1y');
-      const s = atrSummary(bars, p);
-      // A symbol with no usable bars is ABSENT from the reply, not present with a null ATR. The
-      // caller already renders a missing key as unknown; an explicit null invites it to be read
-      // as a computed zero.
-      if (s.atr != null) out[list[i]] = s;
-    } catch { /* one bad symbol never takes the others down */ }
+      const d = await yahooDailyOHLCDetailed(sym, '1y');
+      if (!d.ok) { out[sym] = { status: d.status, httpStatus: d.httpStatus ?? null, error: d.error ?? null }; continue; }
+      const s = atrSummary(d.bars, p);
+      // EVERY SYMBOL GETS A KEY. Omitting it made "we could not reach Yahoo", "Yahoo has never
+      // heard of this ticker" and "this listed three weeks ago" identical to the client, which
+      // then had one sentence for all three. A status is always present; `atr` may be null.
+      out[sym] = s.atr != null
+        ? { status: 'ok', ...s }
+        : { status: 'short-history', bars: d.bars.length, needed: p + 1, period: p };
+    } catch (e) {
+      out[sym] = { status: 'fetch-failed', error: String(e?.name || e).slice(0, 60) };
+    }
   }
 
   res.setHeader('Cache-Control', 's-maxage=21600, stale-while-revalidate=86400');
