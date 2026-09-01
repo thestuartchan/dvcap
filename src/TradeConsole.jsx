@@ -20,7 +20,10 @@ import { ASSETS } from "../lib/assets.js";
 import { derivePosition, applyRolls, splitIntoTrades, collapseFills, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, realizedCurve } from "../lib/positions.js";
 import { CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy, resolveRowCurrency } from "../lib/fxrates.js";
 import { addToLoser } from "../lib/discipline.js";
-import { decisionEntry, lastClosedWasWin } from "../lib/decisions.js";
+import { decisionEntry, lastClosedWasWin, overrideTrend, guardOutcomes } from "../lib/decisions.js";
+import { atrSummary, stopWidth } from "../lib/atr.js";
+import { preTradeGuards, guardStates } from "../lib/guards.js";
+import { riskCoverage, rowExposure, stopOf } from "../lib/exposure.js";
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
 
 // Shown in the sizing note; kept a constant so the copy and the cap cannot drift apart.
@@ -77,13 +80,36 @@ const NumCommit = ({ dk, value, onCommit, placeholder, width = 84, title, drafts
 // The fill form, rendered INLINE inside the row it belongs to (see PositionRow). It previously sat
 // in its own card near the bottom of the page, so pressing "Record a buy" on a row appeared to do
 // nothing — the form it opened was off-screen.
+// P1 — one guard, rendered. Colour carries the state and the note carries the reason, because a
+// coloured dot with no sentence teaches nothing and gets tuned out inside a week.
+const GUARD_TONE = {
+  red:     { fg: C.red,   bg: C.rBg, bd: C.rBdr, mark: "●" },
+  amber:   { fg: C.amber, bg: C.aBg, bd: C.aBdr, mark: "●" },
+  green:   { fg: C.green, bg: C.gBg, bd: C.gBdr, mark: "●" },
+  unknown: { fg: C.muted, bg: C.surf, bd: C.bdr, mark: "○" },
+};
+const GuardRow = ({ g }) => {
+  const t = GUARD_TONE[g.state] || GUARD_TONE.unknown;
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "baseline", padding: "4px 8px", borderRadius: 6,
+                  background: g.state === "green" ? "transparent" : t.bg,
+                  border: "1px solid " + (g.state === "green" ? "transparent" : t.bd) }}>
+      <span style={{ color: t.fg, fontSize: 11, lineHeight: 1.4 }}>{t.mark}</span>
+      <span style={{ fontSize: 11, fontWeight: 800, color: C.lbl, minWidth: 124 }}>{g.label}</span>
+      <span style={{ fontSize: 11.5, color: g.state === "green" ? C.muted : t.fg,
+                     fontWeight: g.state === "red" ? 700 : 500, lineHeight: 1.45 }}>{g.note}</span>
+    </div>
+  );
+};
+
 const FillForm = ({ ctx, symbol, row }) => {
-  const { fillFor, setFillFor, saveFill, nInput, priceOf } = ctx;
+  const { fillFor, setFillFor, saveFill, declineFill, nInput, priceOf, guardPanel } = ctx;
   if (!fillFor) return null;
-  // THE ONE THING THE RECORD SAYS IS KNOWABLE BEFORE THE ORDER. Everything else on this screen
-  // measures a position; this names an act, at the moment it is about to happen. It does not block
-  // and it does not disable the button — a warning that stops you gets worked around, and the point
-  // is not to prevent the trade but to make sure it is taken on purpose.
+  // THE PRE-TRADE PANEL. Everything else on this screen measures a position; this names an act, at
+  // the moment it is about to happen. It does not block and it does not disable the button — a
+  // warning that stops you is a warning you learn to click through without reading. The point is
+  // not to prevent the trade but to make sure it is taken on purpose, and to record which of these
+  // were lit when it was, so that later the log can say whether any of them were worth heeding.
   const adding = row ? addToLoser({
     derived: row.derived, pct: row.pnl?.unrealizedPct,
     side: fillFor.side, fillPrice: fillFor.price,
@@ -108,6 +134,25 @@ const FillForm = ({ ctx, symbol, row }) => {
                 and it is the only one visible before the order rather than after it. Nothing here stops you — record the
                 fill if that is the trade.
               </span>
+            </div>
+          </div>
+        )}
+        {/* The other seven. Rendered BELOW the add-to-loser banner rather than folded into it,
+            because that one carries evidence and the rest carry state — and above the inputs,
+            because a panel under the Record button is a panel read after the decision. */}
+        {guardPanel && (
+          <div style={{ marginTop: 9, padding: "8px 9px", borderRadius: 8, background: C.surf, border: "1px solid " + C.bdr }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 5, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, color: C.lbl, textTransform: "uppercase" }}>Before you record this</span>
+              <span style={{ fontSize: 10.5, fontWeight: 800,
+                             color: guardPanel.worst === "red" ? C.red : guardPanel.worst === "amber" ? C.amber : C.muted }}>
+                {guardPanel.red ? `${guardPanel.red} flagged` : guardPanel.amber ? `${guardPanel.amber} worth a look` : "nothing flagged"}
+                {guardPanel.unknown ? ` · ${guardPanel.unknown} unknown` : ""}
+              </span>
+              <span style={{ marginLeft: "auto", fontSize: 10, color: C.muted }}>advisory — none of this blocks the fill</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              {guardPanel.guards.filter(g => g.id !== "addToLoser" || !adding).map(g => <GuardRow key={g.id} g={g} />)}
             </div>
           </div>
         )}
@@ -141,6 +186,12 @@ const FillForm = ({ ctx, symbol, row }) => {
         </div>
         <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <Btn onClick={saveFill} color="#fff" bgColor={fillFor.side === "buy" ? C.green : C.blue} label="Record fill" />
+          {/* Distinct from Cancel, which means "I mis-clicked". This one means "I looked and chose
+              not to", and it is the only action in this console that produces evidence a guard
+              worked rather than evidence one was ignored. */}
+          {fillFor.side === "buy" && (
+            <Btn onClick={declineFill} color={C.amber} bgColor={C.aBg} label="Decided against it" />
+          )}
           <Btn onClick={() => setFillFor(null)} color={C.mid} bgColor={C.bg} label="Cancel" />
           {/* Name the drift, since that is what a stop-out is actually about. */}
           {fillFor.intent === "stopped" && fillFor.stopAt != null && Number.isFinite(+fillFor.price) && +fillFor.price !== +fillFor.stopAt && (() => {
@@ -837,6 +888,34 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   const fxSyms = useMemo(() => fxSymbolsFor(usedCcys), [usedCcys]);
   const fetchKey = [...symbols, ...fxSyms].join(",");
   useEffect(() => { const all = [...symbols, ...fxSyms]; if (all.length) fetchPrices(all); }, [fetchKey]);   // eslint-disable-line
+
+  // ── ATR, on its own cadence ──
+  // Price is a two-minute number; ATR is a daily one computed from a year of bars, so it rides a
+  // separate route with a six-hour edge cache rather than pulling 250 bars per symbol every time
+  // the price refreshes. A symbol the feed cannot serve is simply ABSENT from the map, which the
+  // panel renders as unknown — never as a stop that passed.
+  const [atrBySym, setAtrBySym] = useState({});
+  // The decision log, read back. Fetched once per mount — it is an audit view, not a live number,
+  // and re-pulling a thousand entries on every price tick would be absurd.
+  const [decisionLog, setDecisionLog] = useState(null);
+  const [logOpen, setLogOpen] = useState(false);
+  useEffect(() => {
+    if (!logOpen || decisionLog != null) return;
+    fetch("/api/manual-entry?decisions=full", { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => setDecisionLog(Array.isArray(j?.decisionLog) ? j.decisionLog : []))
+      .catch(() => setDecisionLog([]));
+  }, [logOpen, decisionLog]);
+  useEffect(() => {
+    const syms = [...new Set(rows.filter(r => (r.fills || []).length || r.levels?.length).map(quoteSym).filter(Boolean))];
+    if (!syms.length) return;
+    let cancelled = false;
+    fetch(`/api/atr?tickers=${encodeURIComponent(syms.join(","))}`, { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (!cancelled && j && typeof j === "object") setAtrBySym(j); })
+      .catch(() => { /* no ATR is a known unknown, never a blocker */ });
+    return () => { cancelled = true; };
+  }, [fetchKey]);   // eslint-disable-line
   const { rates: fxRates } = useMemo(() => ratesFrom(prices), [prices]);
   // WHICH RATE. Live spot from /api/prices, refreshed whenever prices are, EXCEPT where a row pins
   // one. Realised P&L is a historical fact: a HK trade closed in July booked a specific number of
@@ -1069,6 +1148,12 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
         regime: regimeCtx, intent: f.hold || null,
         prevClosedWasWin: lastClosedWasWin(derivedRows),
         reason: f.note || null,
+        // P1 → P3. What was lit at the moment of the decision, recorded beside what was done
+        // about it. Neither number means anything alone: a red guard on a trade that worked and a
+        // red guard on one that did not are the same record until there are enough of both.
+        guards: guardPanel ? guardStates(guardPanel) : null,
+        guardWorst: guardPanel?.worst ?? null,
+        guardBreached: guardPanel?.breached ?? null,
       });
       fetch("/api/manual-entry", {
         method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
@@ -1086,6 +1171,34 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       if (after.status === "closed") setShowArchive(true);   // land where the row went
     }
   };
+  // ── THE TRADE NOT TAKEN ──
+  // A log of executions can measure how often a guard was ignored but never how often one worked,
+  // because the trade you talked yourself out of leaves no trace anywhere else in this system.
+  // This is that trace: same panel state, same book conditions, action 'declined'.
+  const declineFill = () => {
+    const f = fillFor; if (!f) return;
+    const r = rows.find(x => x.id === f.rowId);
+    try {
+      const dr = derivedRows.find(x => x.id === f.rowId);
+      const entry = decisionEntry({
+        row: r, derived: dr?.derived, pnl: dr?.pnl,
+        fill: { side: f.side, qty: numOrNull(f.qty), price: numOrNull(f.price) },
+        suggestion: dr?.sug ?? null, regime: regimeCtx, intent: f.hold || null,
+        prevClosedWasWin: lastClosedWasWin(derivedRows),
+        reason: f.note || null, action: "declined",
+        guards: guardPanel ? guardStates(guardPanel) : null,
+        guardWorst: guardPanel?.worst ?? null, guardBreached: guardPanel?.breached ?? null,
+      });
+      fetch("/api/manual-entry", {
+        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+        body: JSON.stringify({ decision: entry }),
+      }).catch(() => { /* the decision still stands whether or not it synced */ });
+    } catch { /* never let logging break anything */ }
+    setFillFor(null);
+    setSaveMsg("Logged as declined — no fill recorded.");
+    setTimeout(() => setSaveMsg(null), 5000);
+  };
+
   const delFill = (rowId, fid) => {
     const r = rows.find(x => x.id === rowId); if (!r) return;
     upd(rowId, { fills: (r.fills || []).filter(f => f.id !== fid) });
@@ -1170,11 +1283,68 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   // A level's live state: how far away, and whether it is currently hit.  // Everything the hoisted row components need from this closure, in one object. Recreated each
   // render, which is fine: the COMPONENT identities are stable, so React re-renders rather than
   // remounting, and focus is preserved.
+  // ── P4 — the three numbers, computed once and read by both the header and the panel ──
+  const exposureRows = useMemo(() => derivedRows.map(r => ({ ...r, livePrice: priceOf(r) })), [derivedRows, prices]);
+  const coverage = useMemo(
+    () => riskCoverage(exposureRows, { equityBase, rates: fxRates, base: baseCcy }),
+    [exposureRows, equityBase, fxRates, baseCcy]);
+
+  // ── P1 — everything the pre-trade panel needs, assembled where the state lives ──
+  // Built here rather than inside the form because the form knows one row and half of these
+  // questions are about the whole book. Recomputed as the quantity is typed, so the panel is a
+  // live read on the trade being entered rather than on the one that was opened.
+  const guardPanel = useMemo(() => {
+    if (!fillFor || fillFor.side !== "buy") return null;
+    const r = rows.find(x => x.id === fillFor.rowId);
+    const dr = derivedRows.find(x => x.id === fillFor.rowId);
+    if (!r || !dr) return null;
+    const qty = numOrNull(fillFor.qty), price = numOrNull(fillFor.price) ?? priceOf(dr);
+
+    // Notional AFTER this fill — the question is what you will be holding, not what you hold.
+    const afterQty = (dr.derived?.qty || 0) + (qty || 0);
+    const after = rowExposure({ ...r, livePrice: price }, { rates: fxRates, base: baseCcy, qty: afterQty, price });
+    const addBase = rowExposure({ ...r, livePrice: price }, { rates: fxRates, base: baseCcy, qty: qty || 0, price }).notionalBase;
+
+    const sum = atrBySym[quoteSym(r)] || null;
+    const width = stopWidth({ price, stop: stopOf(r), atr: sum?.atr ?? null });
+
+    // The most recent close of THIS instrument, wherever the row now lives.
+    const closes = derivedRows
+      .filter(x => x.symbol === r.symbol && x.derived?.status === "closed" && x.derived?.lastDate)
+      .sort((a, b) => String(a.derived.lastDate).localeCompare(String(b.derived.lastDate)));
+    const lastRow = closes[closes.length - 1];
+    const lastSell = lastRow ? [...(lastRow.derived.fills || [])].reverse().find(f => f.side === "sell") : null;
+    const lastClose = lastRow ? {
+      at: `${lastRow.derived.lastDate}T23:59:59Z`, price: lastSell?.price ?? lastRow.derived.avgExit ?? null,
+      realized: lastRow.derived.realized ?? null,
+    } : null;
+
+    // The previous closed trade anywhere in the account, and how big it was.
+    const prevAll = derivedRows
+      .filter(x => x.derived?.status === "closed" && !x.derived.rolledInto && x.derived.lastDate)
+      .sort((a, b) => String(a.derived.lastDate).localeCompare(String(b.derived.lastDate)));
+    const prev = prevAll[prevAll.length - 1];
+    const prevClosed = prev ? {
+      win: prev.derived.realized == null || prev.derived.realized === 0 ? null : prev.derived.realized > 0,
+      size: prev.derived.bought ?? null, realized: prev.derived.realized ?? null, symbol: prev.symbol,
+    } : null;
+
+    return preTradeGuards({
+      takenQty: qty, suggestedQty: dr.sug?.roomQty ?? dr.sug?.fullQty ?? null,
+      notionalBase: after.notionalBase, equityBase,
+      // Gross already counts this row at its CURRENT size, so only the increment is added.
+      bookNotionalBase: coverage.gross.amount == null ? null : coverage.gross.amount + (addBase || 0),
+      futuresNotionalBase: coverage.futures.amount, rows: coverage.futures.rows,
+      width, lastClose, prevClosed,
+      add: addToLoser({ derived: dr.derived, pct: dr.pnl?.unrealizedPct, side: "buy", fillPrice: price }),
+    });
+  }, [fillFor, rows, derivedRows, atrBySym, equityBase, fxRates, baseCcy, coverage, prices]);
+
   const ctx = {
     prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel,
-    openFill, delFill, fillFor, setFillFor, saveFill, sizeOpen, setSizeOpen, justMoved: moved?.id ?? null, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip, kindCol, money, pnlCol,
+    openFill, delFill, fillFor, setFillFor, saveFill, declineFill, sizeOpen, setSizeOpen, justMoved: moved?.id ?? null, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip, kindCol, money, pnlCol,
     equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
-    rollCandidates, rolledOut,
+    rollCandidates, rolledOut, guardPanel, coverage,
   };
 
   return (
@@ -1287,6 +1457,56 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
             </div>
           )}
         </div>
+      )}
+
+      {/* ── P4 — RISK COVERAGE ──
+          Three numbers, same units, never summed, and never collapsed into one. A single
+          portfolio-heat figure would report the first of these and name itself after all three:
+          on this book two of nine non-cash rows carry a stop, so risk-to-stop describes a fifth of
+          the exposure. The gap between the first and second number IS the finding. */}
+      {(coverage.gross.rows > 0 || coverage.undefined.rows > 0) && (
+        <Card>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+            <SLabel>Risk coverage</SLabel>
+            <span style={{ fontSize: 11.5, color: C.muted }}>three measures, not one — they do not add up</span>
+            {coverage.unpriced > 0 && (
+              <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }}>
+                ⚠ {coverage.unpriced} row{coverage.unpriced === 1 ? "" : "s"} unpriced and out of every figure below
+              </span>
+            )}
+          </div>
+          <div style={{ marginTop: 9, display: "flex", gap: 22, flexWrap: "wrap" }}>
+            {[
+              { k: "defined", label: "Defined risk", c: coverage.defined, col: C.green,
+                note: "what a stop-out costs, across rows that have one" },
+              { k: "undefined", label: "Undefined exposure", c: coverage.undefined,
+                col: coverage.undefined.pctOfEquity != null && coverage.undefined.pctOfEquity > 20 ? C.red : C.amber,
+                note: "market value riding with no stop at all" },
+              { k: "gross", label: "Gross notional", c: coverage.gross, col: C.mid,
+                note: "every row at full contract value, futures included" },
+            ].map(x => (
+              <div key={x.k} style={{ flex: "1 1 190px", minWidth: 170 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>{x.label}</div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 7, marginTop: 2 }}>
+                  <b style={{ fontSize: 18, color: x.col }}>
+                    {x.c.pctOfEquity == null ? "—" : `${x.c.pctOfEquity}%`}
+                  </b>
+                  <span style={{ fontSize: 12, color: C.mid }}>{x.c.amount == null ? "—" : fmtCcy(x.c.amount, baseCcy)}</span>
+                  <span style={{ fontSize: 11, color: C.muted }}>· {x.c.rows} row{x.c.rows === 1 ? "" : "s"}</span>
+                </div>
+                <div style={{ fontSize: 10.5, color: C.muted, marginTop: 2, lineHeight: 1.45 }}>{x.note}</div>
+              </div>
+            ))}
+          </div>
+          {coverage.futures.rows > 0 && (
+            <div style={{ fontSize: 11.5, color: C.mid, marginTop: 9, paddingTop: 8, borderTop: "1px solid " + C.bdr }}>
+              <b style={{ color: C.amber }}>{coverage.futures.pctOfEquity == null ? "—" : `${coverage.futures.pctOfEquity}%`}</b>
+              {" of that gross figure is "}{coverage.futures.rows} margined row{coverage.futures.rows === 1 ? "" : "s"}
+              {" — "}{fmtCcy(coverage.futures.amount, baseCcy)} of notional.
+              <span style={{ color: C.lbl }}> Excluded from the weights, cash and donut below on purpose, because the notional is not capital you have committed — and included here on purpose, because it is what the book controls.</span>
+            </div>
+          )}
+        </Card>
       )}
 
       {/* toolbar */}
@@ -1485,6 +1705,82 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
           </div>
           <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>Credit-DANGER caps the multiplier at {CREDIT_DANGER_CAP_LABEL}; a contested or pinned≠live regime applies a further ×0.7.</div>
         </div>
+      </Card>
+
+      {/* ── P3 — DID THE GUARDS MEAN ANYTHING ──
+          The log's whole purpose is to be read back, and it cannot answer its own question yet:
+          an entry records a decision and the outcome arrives weeks later. So this shows what IS
+          knowable — how often the suggestion is exceeded, whether that is changing, and, once
+          positions have closed, what the trades entered under a red guard actually did. */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+          <SLabel>Decision log</SLabel>
+          <span style={{ fontSize: 11.5, color: C.muted }}>what was flagged, what was done, what it came to</span>
+          <button onClick={() => setLogOpen(o => !o)} style={{ marginLeft: "auto", cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{logOpen ? "Hide" : "Show"}</button>
+        </div>
+        {logOpen && (decisionLog == null ? (
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>Loading…</div>
+        ) : decisionLog.length === 0 ? (
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 8, lineHeight: 1.55 }}>
+            Nothing logged yet. Entries are written when you record a fill or decline one — there is nothing to type.
+          </div>
+        ) : (() => {
+          const trend = overrideTrend(decisionLog);
+          const out = guardOutcomes(decisionLog, derivedRows);
+          const declined = decisionLog.filter(d => d.action === "declined").length;
+          return (
+            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ fontSize: 12, color: C.mid }}>
+                <b>{decisionLog.length}</b> decisions logged · <b>{declined}</b> declined
+                <span style={{ color: C.lbl }}>{declined === 0 ? " — a log with no declines can measure when a guard was ignored, never when one worked." : ""}</span>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>Override frequency</div>
+                {trend.length === 0 ? <div style={{ fontSize: 11.5, color: C.muted }}>No sized buys logged yet.</div> : (
+                  <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                    {trend.map(t => (
+                      <div key={t.period} style={{ fontSize: 11.5 }}>
+                        <span style={{ color: C.lbl, fontWeight: 700 }}>{t.period}</span>{" "}
+                        <b style={{ color: t.overPct >= 50 ? C.amber : C.mid }}>{t.overPct}%</b>
+                        <span style={{ color: C.muted }}> over ({t.over}/{t.n}) · mean ×{t.meanRatio}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>Realised P&amp;L by guard state at entry</div>
+                {out.guards.length === 0 ? (
+                  <div style={{ fontSize: 11.5, color: C.muted }}>No logged entry has closed yet — this fills in as positions are exited.</div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                    {out.guards.map(g => (
+                      <div key={g.id} style={{ display: "flex", gap: 10, alignItems: "baseline", fontSize: 11.5, flexWrap: "wrap" }}>
+                        <span style={{ fontWeight: 800, color: C.mid, minWidth: 110 }}>{g.id}</span>
+                        {["green", "amber", "red", "unknown"].filter(k => g[k]).map(k => (
+                          <span key={k} style={{ color: k === "red" ? C.red : k === "amber" ? C.amber : k === "green" ? C.green : C.muted }}>
+                            {k} <b>{fmtCcy(g[k].pnl, baseCcy)}</b> <span style={{ color: C.muted }}>({g[k].n}, avg {fmtCcy(g[k].avg, baseCcy)})</span>
+                          </span>
+                        ))}
+                        {/* Only claim a difference when both sides have enough entries to be a
+                            comparison rather than an anecdote. */}
+                        {g.comparable && g.spread != null && (
+                          <span style={{ fontWeight: 800, color: g.spread > 0 ? C.green : C.red }}>
+                            green − red = {fmtCcy(g.spread, baseCcy)}/trade
+                          </span>
+                        )}
+                        {!g.comparable && <span style={{ color: C.muted }}>too few either side to compare</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 6, lineHeight: 1.5 }}>{out.note}</div>
+              </div>
+            </div>
+          );
+        })())}
       </Card>
 
       {/* ── ADD A SETUP ──

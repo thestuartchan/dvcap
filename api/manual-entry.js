@@ -10,7 +10,8 @@
 // Both live in one endpoint to stay inside the 12-function Hobby cap (this is the 8th).
 
 import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY } from '../lib/kv.js';
-import { appendDecision, overrideStats, DECISIONS_KEY } from '../lib/decisions.js';
+import { appendDecision, overrideStats, DECISIONS_KEY, ACTIONS } from '../lib/decisions.js';
+import { GUARD_STATES } from '../lib/guards.js';
 
 const DATA_PATH = 'data/manual_entry.json';
 
@@ -151,11 +152,27 @@ function sanitizeRow(r) {
 // so nothing unbounded may enter it.
 function sanitizeDecision(d) {
   const pick = ['at', 'id', 'symbol', 'side', 'sizeMode', 'intent', 'regimeId'];
-  const nums = ['takenQty', 'recommendedQty', 'overrideRatio', 'effPct', 'riskAtSize', 'multiplier',
-                'stopAt', 'addNumber', 'priorBuys', 'unrealisedPctBefore', 'regimeMult'];
+  const nums = ['takenQty', 'consideredQty', 'recommendedQty', 'overrideRatio', 'effPct', 'riskAtSize',
+                'multiplier', 'stopAt', 'fillPrice', 'addNumber', 'priorBuys', 'unrealisedPctBefore', 'regimeMult'];
   const out = {};
   for (const k of pick) out[k] = cs(d[k], k === 'symbol' ? 24 : 48);
   for (const k of nums) out[k] = cn(d[k]);
+  // THE ALLOWLIST IS THE POINT, so new fields have to be added here on purpose — a delete-list
+  // would have let these through silently and would fail open on the next one. P1's guard states,
+  // and what was actually done about them.
+  out.action = ACTIONS.includes(d.action) ? d.action : 'opened';
+  out.guardWorst = cs(d.guardWorst, 8);
+  out.guardBreached = Array.isArray(d.guardBreached) ? d.guardBreached.map(x => cs(x, 24)).filter(Boolean).slice(0, 8) : null;
+  // States only, and only ones this build knows about — an unrecognised id or a non-state value is
+  // dropped rather than stored, so the log cannot be used to write arbitrary keys into Redis.
+  out.guards = null;
+  if (d.guards && typeof d.guards === 'object' && !Array.isArray(d.guards)) {
+    const g = {};
+    for (const [k, v] of Object.entries(d.guards)) {
+      if (/^[a-zA-Z]{1,24}$/.test(k) && GUARD_STATES.includes(v)) g[k] = v;
+    }
+    out.guards = Object.keys(g).length ? g : null;
+  }
   out.stopSet = !!d.stopSet;
   out.addToLoser = !!d.addToLoser;
   out.prevClosedWasWin = typeof d.prevClosedWasWin === 'boolean' ? d.prevClosedWasWin : null;
@@ -192,6 +209,8 @@ export default async function handler(req, res) {
     }
     try {
       const { store } = await readStore();
+      const full = String(req.query?.decisions || '') === 'full';
+      const fullLog = full && kvConfigured() ? (await kvGetJson(DECISIONS_KEY)) || [] : null;
       // NOT edge-cached. This response now carries the trade console — real positions and cost
       // basis — and a shared s-maxage cache would both hold private state at the edge and serve a
       // stale book to a second device, defeating the cross-device sync this store exists for.
@@ -208,8 +227,12 @@ export default async function handler(req, res) {
         // object wholesale, so a note kept in there would be wiped by the next browser save.
         flexSync: kvConfigured() ? await kvGetJson(FLEX_NOTE_KEY) : null,
         // Stats only, not the log. The console needs to show the pattern, not re-read every
-        // decision ever taken on every page load.
+        // decision ever taken on every page load. The full array is served ONLY when explicitly
+        // asked for (?decisions=full), which the audit view does once when it is opened — it
+        // carries symbols, sizes and fill prices, so it is opt-in rather than riding along on
+        // every page load. The response is already `private, no-store`.
         decisions: kvConfigured() ? overrideStats(await kvGetJson(DECISIONS_KEY)) : null,
+        ...(full && kvConfigured() ? { decisionLog: fullLog } : {}),
         kv: { configured: kvConfigured() },
       });
     } catch (e) {
