@@ -2,7 +2,7 @@
 // The cases that matter are the ones where a point value would mislead: a roll gap scored as a
 // real day's move, a thin series producing a confident percentile, and a missing ATR reading as
 // a stop that passed.
-import { trueRange, atrSeries, atrSummary, stopInAtr, stopWidth, ATR_PERIOD, ATR_TIGHT_STOP } from '../lib/atr.js';
+import { trueRange, atrSeries, atrSummary, stopInAtr, stopWidth, ATR_PERIOD, ATR_TIGHT_STOP, ATR_STATUS } from '../lib/atr.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const ok = (n, c) => eq(n, !!c, true);
@@ -130,7 +130,11 @@ const flat = (n, h = 101, l = 99, c = 100) => Array.from({ length: n }, (_, i) =
   // The failure that would matter: unknown must never render as a passing check.
   const noAtr = stopWidth({ price: 100, stop: 99, atr: null });
   eq('a missing ATR is unknown, never a pass', [noAtr.known, noAtr.tight, noAtr.atrs], [false, false, null]);
-  ok('and names the reason', /no ATR/.test(noAtr.note));
+  // This used to assert the note said "no ATR", which was the generic string five different
+  // causes shared. With no status supplied the caller has not said why, so it reports the most
+  // common cause by name rather than a catch-all.
+  eq('and defaults to a NAMED cause, not a catch-all', noAtr.status, ATR_STATUS.NOT_REQUESTED);
+  ok('with a sentence a reader can act on', /not requested/.test(noAtr.note));
 
   const noStop = stopWidth({ price: 100, stop: null, atr: 2 });
   eq('and so is a missing stop', [noStop.known, noStop.tight], [false, false]);
@@ -140,6 +144,50 @@ const flat = (n, h = 101, l = 99, c = 100) => Array.from({ length: n }, (_, i) =
   eq('the period is Wilder\'s 14', ATR_PERIOD, 14);
   eq('and the tight-stop threshold is one ATR', ATR_TIGHT_STOP, 1.0);
   eq('an empty call does not throw', stopWidth().known, false);
+}
+
+// ── WHY THERE IS NO ATR ──────────────────────────────────────────────────────
+// Five causes used to share one string, "no ATR for this symbol": never requested, request failed,
+// ticker unknown, too few bars, still loading. One message for five problems is indistinguishable
+// from a broken feature. Each has a different remedy, so each gets its own status and sentence.
+{
+  const S = ATR_STATUS;
+  const w = (o) => stopWidth({ price: 100, stop: 95, atr: null, ...o });
+
+  eq('still loading says so', w({ status: S.LOADING }).status, S.LOADING);
+  ok('and reads as temporary', /loading/i.test(w({ status: S.LOADING }).note));
+
+  eq('never requested is its own state', w({ status: S.NOT_REQUESTED }).status, S.NOT_REQUESTED);
+  ok('and says the row was not asked about', /not requested/i.test(w({ status: S.NOT_REQUESTED }).note));
+
+  const f = w({ status: S.FETCH_FAILED, detail: { httpStatus: 429 } });
+  eq('a failed fetch is distinct from missing data', f.status, S.FETCH_FAILED);
+  ok('it names the HTTP status', /429/.test(f.note));
+  ok('and says it is worth retrying', /retryable/.test(f.note));
+
+  const nd = w({ status: S.NO_DATA, detail: { symbol: 'ASTX' } });
+  eq('an unknown ticker is not a failed fetch', nd.status, S.NO_DATA);
+  ok('and points at the ticker, which is the thing to fix', /check the ticker/.test(nd.note));
+  ok('naming it', /ASTX/.test(nd.note));
+
+  const sh = w({ status: S.SHORT_HISTORY, detail: { bars: 6, needed: 15, period: 14 } });
+  eq('a recent listing is not an error at all', sh.status, S.SHORT_HISTORY);
+  ok('it says how many bars there are', /6 bars/.test(sh.note));
+  ok('and how many are needed', /needs 15/.test(sh.note));
+
+  // Every one of the five must produce a DIFFERENT sentence, which is the whole point.
+  const notes = [S.LOADING, S.NOT_REQUESTED, S.FETCH_FAILED, S.NO_DATA, S.SHORT_HISTORY]
+    .map(st => w({ status: st, detail: { httpStatus: 500, symbol: 'X', bars: 1, needed: 15 } }).note);
+  eq('five causes, five distinct messages', new Set(notes).size, 5);
+}
+{
+  // A missing stop is reported ahead of any ATR problem: it is the user's to fix, not the feed's,
+  // and it is a real finding rather than an absence of data.
+  const noStop = stopWidth({ price: 100, stop: null, atr: null, status: ATR_STATUS.FETCH_FAILED });
+  eq('no stop wins over a feed problem', noStop.status, ATR_STATUS.NO_STOP);
+  ok('and says so plainly', /no stop set/.test(noStop.note));
+  const good = stopWidth({ price: 100, stop: 92, atr: 4 });
+  eq('a computed width is ok', good.status, ATR_STATUS.OK);
 }
 
 console.log(`\n${fail ? '❌' : '✅'} ${fail ? `${fail} FAILED, ` : 'ALL '}${pass} PASSED`);

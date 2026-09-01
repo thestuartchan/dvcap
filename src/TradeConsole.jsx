@@ -21,7 +21,7 @@ import { derivePosition, applyRolls, splitIntoTrades, collapseFills, positionPnl
 import { CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy, resolveRowCurrency } from "../lib/fxrates.js";
 import { addToLoser } from "../lib/discipline.js";
 import { decisionEntry, lastClosedWasWin, overrideTrend, guardOutcomes } from "../lib/decisions.js";
-import { atrSummary, stopWidth } from "../lib/atr.js";
+import { stopWidth, ATR_STATUS } from "../lib/atr.js";
 import { preTradeGuards, guardStates } from "../lib/guards.js";
 import { riskCoverage, rowExposure, stopOf } from "../lib/exposure.js";
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
@@ -906,16 +906,47 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       .then(j => setDecisionLog(Array.isArray(j?.decisionLog) ? j.decisionLog : []))
       .catch(() => setDecisionLog([]));
   }, [logOpen, decisionLog]);
+  // `atrFetch` is the state of the REQUEST; `atrBySym` is the state of each SYMBOL. They are not
+  // the same thing and conflating them is what made four different problems render as one sentence.
+  const [atrFetch, setAtrFetch] = useState({ status: "idle", asked: [] });
   useEffect(() => {
-    const syms = [...new Set(rows.filter(r => (r.fills || []).length || r.levels?.length).map(quoteSym).filter(Boolean))];
-    if (!syms.length) return;
+    // EVERY OPEN ROW, not only those with fills or levels. The old filter excluded any row with
+    // neither — which is precisely a setup you have just added and are about to size. The stop
+    // guard was therefore guaranteed to be blank on the one trade it exists to inform.
+    const syms = [...new Set(rows
+      .filter(r => derivePosition(r.fills || [], { multiplier: r.multiplier }).status !== "closed")
+      .map(quoteSym).filter(Boolean))];
+    if (!syms.length) { setAtrFetch({ status: "idle", asked: [] }); return; }
     let cancelled = false;
+    setAtrFetch({ status: "loading", asked: syms });
     fetch(`/api/atr?tickers=${encodeURIComponent(syms.join(","))}`, { credentials: "include" })
-      .then(r => r.ok ? r.json() : null)
-      .then(j => { if (!cancelled && j && typeof j === "object") setAtrBySym(j); })
-      .catch(() => { /* no ATR is a known unknown, never a blocker */ });
+      .then(async r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(j => {
+        if (cancelled) return;
+        setAtrBySym(j && typeof j === "object" ? j : {});
+        setAtrFetch({ status: "ok", asked: syms });
+      })
+      .catch(e => {
+        // Swallowing this was the bug. A failed request is a DIFFERENT fact from a symbol with no
+        // history, and the panel now says which — and says it is worth retrying.
+        if (!cancelled) setAtrFetch({ status: "failed", asked: syms, error: String(e.message || e) });
+      });
     return () => { cancelled = true; };
   }, [fetchKey]);   // eslint-disable-line
+
+  // Resolve one symbol to {atr, status, detail} — the request state and the per-symbol state
+  // combined, in that order of precedence.
+  const atrFor = (sym) => {
+    if (atrFetch.status === "failed") return { atr: null, status: ATR_STATUS.FETCH_FAILED, detail: { symbol: sym, error: atrFetch.error } };
+    if (!atrFetch.asked.includes(sym)) return { atr: null, status: ATR_STATUS.NOT_REQUESTED, detail: { symbol: sym } };
+    const hit = atrBySym[sym];
+    if (!hit) return { atr: null, status: atrFetch.status === "loading" ? ATR_STATUS.LOADING : ATR_STATUS.NOT_REQUESTED, detail: { symbol: sym } };
+    if (hit.status === "ok") return { atr: hit.atr, status: ATR_STATUS.OK, detail: hit, summary: hit };
+    return { atr: null, status: hit.status, detail: { symbol: sym, ...hit } };
+  };
   const { rates: fxRates } = useMemo(() => ratesFrom(prices), [prices]);
   // WHICH RATE. Live spot from /api/prices, refreshed whenever prices are, EXCEPT where a row pins
   // one. Realised P&L is a historical fact: a HK trade closed in July booked a specific number of
@@ -1305,8 +1336,8 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
     const after = rowExposure({ ...r, livePrice: price }, { rates: fxRates, base: baseCcy, qty: afterQty, price });
     const addBase = rowExposure({ ...r, livePrice: price }, { rates: fxRates, base: baseCcy, qty: qty || 0, price }).notionalBase;
 
-    const sum = atrBySym[quoteSym(r)] || null;
-    const width = stopWidth({ price, stop: stopOf(r), atr: sum?.atr ?? null });
+    const a = atrFor(quoteSym(r));
+    const width = stopWidth({ price, stop: stopOf(r), atr: a.atr, status: a.status, detail: a.detail });
 
     // The most recent close of THIS instrument, wherever the row now lives.
     const closes = derivedRows
@@ -1338,7 +1369,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       width, lastClose, prevClosed,
       add: addToLoser({ derived: dr.derived, pct: dr.pnl?.unrealizedPct, side: "buy", fillPrice: price }),
     });
-  }, [fillFor, rows, derivedRows, atrBySym, equityBase, fxRates, baseCcy, coverage, prices]);
+  }, [fillFor, rows, derivedRows, atrBySym, atrFetch, equityBase, fxRates, baseCcy, coverage, prices]);
 
   const ctx = {
     prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel,
