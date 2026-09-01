@@ -5138,7 +5138,9 @@ function AnalystViewBoard({ live, probFor, engineRegime, consensus }) {
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [tab, setTab]           = useState("macro");
+  // Lands on the first tab of the first group. Declaring Trade Desk first and then opening in the
+  // middle of Market Watch is the kind of small incoherence that makes an ordering feel arbitrary.
+  const [tab, setTab]           = useState("global");
   const [pbRegions, setPbRegions] = useState(["asia", "eu", "us"]); // Global Playbook — multi-select, default All
   const toggleRegion = (r) => setPbRegions(prev => {
     const next = prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r];
@@ -5361,29 +5363,54 @@ export default function App() {
 
   const fmtTime = d => d ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
 
-  const TABS = [
-    { id: "console",    label: "🎚️ Console"      },
-    { id: "macro",      label: "🌐 Macro"        },
-    { id: "global",     label: "🌏 Global Playbook" },
-    { id: "smartmoney", label: "🏦 Smart Money"  },
-    { id: "indicators", label: "📡 Indicators"  },
-    { id: "posture",    label: "🎯 Posture"      },
-    { id: "insurance",  label: "🛡️ Insurance"   },
-    { id: "income",     label: "💰 Income"       },
-    { id: "gex",        label: "🌀 Gamma"        },
+  // ── TWO LEVELS, BECAUSE NINE TABS IN ONE ROW IS A LIST, NOT A STRUCTURE ──
+  // Nine peers scrolling sideways on a phone told you nothing about which of them belonged
+  // together, and the one you wanted was as likely to be off-screen as not. Grouped, the top row
+  // answers "what am I doing" and the second answers "which part of it" — and the second row is
+  // three items rather than nine, which is the difference between scrolling and reading.
+  //
+  // Order is deliberate: the desk you act at, then the market you read, then the longer-horizon
+  // playbook you revisit rather than watch.
+  const TAB_GROUPS = [
+    { id: "desk", label: "Trade Desk", hint: "act", tabs: [
+      { id: "global",     label: "🌏 Daily Overview" },
+      { id: "gex",        label: "🌀 Gamma"          },
+      { id: "console",    label: "🎚️ Console"        },
+    ] },
+    { id: "watch", label: "Market Watch", hint: "read", tabs: [
+      { id: "macro",      label: "🌐 Macro"          },
+      { id: "smartmoney", label: "🏦 Smart Money"    },
+      { id: "indicators", label: "📡 Indicators"     },
+    ] },
+    { id: "playbook", label: "Playbook", hint: "revisit", tabs: [
+      { id: "posture",    label: "🎯 Posture"        },
+      { id: "insurance",  label: "🛡️ Insurance"      },
+      { id: "income",     label: "💰 Income"         },
+    ] },
   ];
+  // Flat list kept so every existing lookup — the error boundary's tab name, most of all — keeps
+  // working against one array rather than each one learning about groups.
+  const TABS = TAB_GROUPS.flatMap(g => g.tabs);
+  // The open group is DERIVED from the open tab, never stored alongside it. Two sources of truth
+  // for "where am I" is how a tab bar ends up highlighting one thing while showing another.
+  const activeGroup = TAB_GROUPS.find(g => g.tabs.some(t => t.id === tab)) || TAB_GROUPS[0];
 
   return (
     <div style={{ background: C.bg, minHeight: "100vh", width: "100%", color: C.text, fontFamily: "'DM Sans', system-ui, sans-serif" }}>
       {/* ── HEADER ── */}
-      <div className="mwd-sticky-header" style={{ background: C.surf, borderBottom: "2px solid " + C.bdr, padding: "14px 16px 0", position: "sticky", top: 0, zIndex: 100 }}>
+      {/* ── MASTHEAD — scrolls away on purpose ──
+          The whole header used to be sticky: title, tagline, refresh, status block, tabs and the
+          regime strip, all pinned. On a phone that is most of the screen permanently occupied by a
+          name you already know. What has to stay is what you NAVIGATE and MONITOR with; the title
+          is not that, so it scrolls and the bar below it pins. */}
+      <div className="mwd-masthead" style={{ background: C.surf, padding: "14px 16px 0" }}>
         <div style={{ maxWidth: 1080, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
             <div>
-              <h1 style={{ margin: 0, fontSize: 19, fontWeight: 900, letterSpacing: -0.5 }}>
+              <h1 className="mwd-title" style={{ margin: 0, fontSize: 19, fontWeight: 900, letterSpacing: -0.5 }}>
                 📊 Market Watch Dashboard
               </h1>
-              <p style={{ margin: 0, color: C.muted, fontSize: 13 }}>
+              <p className="mwd-tagline" style={{ margin: 0, color: C.muted, fontSize: 13 }}>
                 Recession indicators · Crash insurance · Income · Smart money · Macro regime
               </p>
             </div>
@@ -5428,9 +5455,40 @@ export default function App() {
               })()}
             </div>
           </div>
-          {/* Tab bar — scrolls horizontally on mobile */}
-          <div style={{ display: "flex", gap: 0, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
-            {TABS.map(t => (
+        </div>
+      </div>
+
+      {/* ── STICKY NAV ──
+          Groups, tabs and the regime strip. Roughly a third the height of the old sticky header,
+          which is what makes pinning it worth doing rather than something to scroll past. */}
+      <div className="mwd-sticky-nav" style={{ background: C.surf, borderBottom: "2px solid " + C.bdr, padding: "8px 16px 0", position: "sticky", top: 0, zIndex: 100 }}>
+        <div style={{ maxWidth: 1080, margin: "0 auto" }}>
+          {/* ── GROUP ROW ──
+              Selecting a group moves to its FIRST tab rather than leaving the second row pointing
+              at a section you are not on. A group button that changes the menu without changing
+              the page is the thing people click twice and then stop trusting. */}
+          <div className="mwd-tabrow" style={{ display: "flex", gap: 6, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
+            {TAB_GROUPS.map(g => {
+              const on = g.id === activeGroup.id;
+              return (
+                <button key={g.id} onClick={() => { if (!on) setTab(g.tabs[0].id); }} style={{
+                  background: on ? C.blBg : "transparent",
+                  border: "1.5px solid " + (on ? C.blue : C.bdr),
+                  borderRadius: 999, color: on ? C.blue : C.mid,
+                  padding: "5px 13px", fontSize: 13, fontWeight: 800,
+                  cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+                }}>
+                  {g.label}
+                  <span className="mwd-group-hint" style={{ fontSize: 10, fontWeight: 700, color: on ? C.blue : C.muted, opacity: 0.7, marginLeft: 6 }}>{g.hint}</span>
+                </button>
+              );
+            })}
+          </div>
+          {/* ── TAB ROW — only the open group's tabs ──
+              Three items, not nine. On a phone this is the whole difference between a row you read
+              and a row you scroll hunting for something you cannot see. */}
+          <div className="mwd-tabrow" style={{ display: "flex", gap: 0, marginTop: 6, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
+            {activeGroup.tabs.map(t => (
               <button key={t.id} onClick={() => setTab(t.id)} style={{
                 background: "none", border: "none",
                 borderBottom: "3px solid " + (tab === t.id ? C.blue : "transparent"),

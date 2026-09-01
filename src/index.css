@@ -13,7 +13,13 @@ html, body {
   color: #1C1F2E;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
+  /* `clip`, NOT `hidden`. Per spec, setting one axis to anything other than `visible` forces the
+     other axis to compute to `auto` — which makes <body> a scroll container and silently defeats
+     every `position: sticky` inside it. The header carried position:sticky and top:0 for months
+     and scrolled away regardless, with nothing in the CSS or the JSX looking wrong.
+     `overflow-x: clip` suppresses horizontal scrolling without establishing a scroll container,
+     so the sticky nav pins and phones still cannot drag the page sideways. */
+  overflow-x: clip;
 }
 
 #root {
@@ -138,10 +144,40 @@ button, input, textarea, select { font-family: inherit; }
   flex: 1 1 200px;
 }
 
-/* Sticky header padding adjustment on mobile */
+/* ── HEADER ON SMALL SCREENS ────────────────────────────────────────────────
+   The masthead scrolls away; only .mwd-sticky-nav pins. Everything here is about keeping that
+   pinned strip short, because every pixel it occupies is a pixel of chart you cannot see. */
 @media (max-width: 640px) {
-  .mwd-sticky-header { padding: 10px 12px 0 !important; }
+  .mwd-masthead    { padding: 10px 12px 0 !important; }
+  .mwd-sticky-nav  { padding: 6px 12px 0 !important; }
   .mwd-content-pad { padding: 12px !important; }
+
+  /* The tagline is a description of the product, read once. It costs a line of the fold on every
+     screen thereafter, so below 640px it goes. */
+  .mwd-tagline { display: none !important; }
+  .mwd-title   { font-size: 16px !important; }
+
+  /* "act / read / revisit" earns its place on a wide screen and steals width on a narrow one,
+     where the group names alone already fit. */
+  .mwd-group-hint { display: none !important; }
+}
+
+/* Both nav rows scroll sideways rather than wrap: a wrapped row silently doubles the height of
+   the one element whose height matters most. The scrollbar itself is hidden — it is a two or
+   three item row and a visible bar would be most of it. */
+.mwd-tabrow { scrollbar-width: none; -ms-overflow-style: none; }
+.mwd-tabrow::-webkit-scrollbar { display: none; }
+
+/* Touch targets and fit. 8px vertical padding is comfortable with a mouse and small with a thumb,
+   so the rows get more height below 640px — but the horizontal padding comes DOWN, because three
+   tabs that fit are worth more than three tabs that scroll. Sideways scrolling still works if a
+   longer label ever needs it; it just should not be needed for the common case. */
+@media (max-width: 640px) {
+  .mwd-tabrow button { padding-top: 9px !important; padding-bottom: 9px !important; }
+  .mwd-tabrow + .mwd-tabrow button { padding-left: 9px !important; padding-right: 9px !important; font-size: 13px !important; }
+}
+@media (max-width: 400px) {
+  .mwd-tabrow + .mwd-tabrow button { padding-left: 7px !important; padding-right: 7px !important; font-size: 12.5px !important; }
 }
 
 /* Card padding: tighter on mobile */
