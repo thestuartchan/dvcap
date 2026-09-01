@@ -1,0 +1,107 @@
+# The three regional pre-reads, scheduled here rather than in vercel.json.
+#
+# WHY THEY MOVED. Vercel ran five cron entries and only the first two were ever executed. The
+# evidence, read off the endpoint's own last-post record on 2026-09-01:
+#
+#   asia  entry #1        last posted 08-31 23:18Z   ✓
+#   eu    entries #2, #3  last posted 09-01 08:01Z   ✓ (via #2)
+#   us    entries #4, #5  last posted 08-28 12:55Z   ✗ — three weekdays dark
+#
+# The endpoint was healthy throughout: assembleRegion returned a full brief on demand, the DST gate
+# computed the right window, and the deployment was current. What failed was the schedule, and it
+# failed by POSITION in the list — which is the shape of a plan cron limit, not a bug in the code.
+#
+# It would also have kept going. Each region has two entries, one per DST half of the year, and the
+# gate accepts exactly one of them. EU is currently served by #2 (07:45Z = 08:45 BST). On 25 October
+# London goes to GMT and the accepting entry becomes #3 (08:45Z) — which is past the same cut-off
+# that killed US. Fixing only US would have bought eight weeks.
+#
+# GitHub Actions has no such cap, and this repo already schedules flex-sync and tradecard here, so
+# this is the proven path rather than a new one.
+#
+# TIMES ARE UNCHANGED — the same five UTC slots vercel.json carried. The endpoint's own gate still
+# decides which one posts, so the DST pair stays mutually exclusive and a duplicate run is a no-op
+# that answers `skipped: true`.
+#
+# ON LATE RUNS. GitHub schedules are best-effort and can lag under load. The gate accepts a 60-minute
+# window opening 20 minutes before the target, and these fire 5 minutes into it — so roughly 55
+# minutes of delay is absorbed silently. Beyond that the run reports `skipped` with the reason and
+# the day is simply missed, which is the same failure mode as before and is visible in the log.
+#
+# COST: 5 runs x 5 weekdays x ~1 min billed ≈ 25 min/week, ~108/month against 2,000 free.
+name: pre-read
+
+on:
+  schedule:
+    - cron: '45 22 * * 0-4'    # asia  — 07:00 HKT target (no DST in HK/KR/TW/JP)
+    - cron: '45 7 * * 1-5'     # eu    — 09:00 London, BST half of the year
+    - cron: '45 8 * * 1-5'     # eu    — 09:00 London, GMT half (live from 25 Oct)
+    - cron: '45 12 * * 1-5'    # us    — 09:00 ET, EDT half
+    - cron: '45 13 * * 1-5'    # us    — 09:00 ET, EST half (live from 1 Nov)
+  workflow_dispatch:
+    inputs:
+      region:
+        description: 'Region to run (asia | eu | us)'
+        required: true
+        default: 'us'
+      post:
+        description: 'Post to Discord? 0 = dry run, 1 = post for real'
+        required: true
+        default: '0'
+      gate:
+        description: 'Apply the time-window gate? 1 = yes (as scheduled), 0 = force'
+        required: true
+        default: '1'
+
+concurrency:
+  group: preread
+  cancel-in-progress: false
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Work out which region this run is for
+        id: pick
+        run: |
+          # A scheduled run knows its region only from the cron line that started it; a manual one
+          # is told. Mapping it here keeps one job rather than five near-identical ones.
+          case "${{ github.event.schedule }}" in
+            '45 22 * * 0-4') R=asia ;;
+            '45 7 * * 1-5')  R=eu ;;
+            '45 8 * * 1-5')  R=eu ;;
+            '45 12 * * 1-5') R=us ;;
+            '45 13 * * 1-5') R=us ;;
+            *)               R="${{ github.event.inputs.region }}" ;;
+          esac
+          POST="${{ github.event.inputs.post }}";  [ -n "${{ github.event.schedule }}" ] && POST=1
+          GATE="${{ github.event.inputs.gate }}";  [ -n "${{ github.event.schedule }}" ] && GATE=1
+          echo "region=${R:-us}"      >> "$GITHUB_OUTPUT"
+          echo "post=${POST:-0}"      >> "$GITHUB_OUTPUT"
+          echo "gate=${GATE:-1}"      >> "$GITHUB_OUTPUT"
+          echo "region=${R:-us} post=${POST:-0} gate=${GATE:-1}"
+
+      - name: Assemble and deliver the brief
+        run: |
+          Q="region=${{ steps.pick.outputs.region }}&post=${{ steps.pick.outputs.post }}"
+          [ "${{ steps.pick.outputs.gate }}" = "1" ] && Q="$Q&cron=1"
+          code=$(curl -sS -o /tmp/out.json -w '%{http_code}' --max-time 180 \
+            "https://dvcap.vercel.app/api/preread?$Q") || true
+          echo "HTTP $code"
+          # `skipped` is a normal answer, not a failure: the DST pair means one of the two entries
+          # is always off-window by design. Print the reason so a genuinely missed day is legible.
+          # Python opens the file itself rather than taking it on stdin: a heredoc and a `<`
+          # redirect both claim fd 0, the redirect wins, and python would read the JSON as its
+          # own program. The `|| cat` below would have hidden that on every single run.
+          python3 - <<'PY' || cat /tmp/out.json
+          import json
+          d=json.load(open('/tmp/out.json'))
+          if d.get('skipped'): print('SKIPPED —', d.get('reason'))
+          else:
+              p=d.get('posted')
+              print('posted:', json.dumps(p) if p else '(dry run, not posted)')
+              print('previous run:', json.dumps(d.get('previous')))
+              print('brief bytes:', len(d.get('message') or ''))
+          PY
+          [ "$code" = "200" ] || exit 1
