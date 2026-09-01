@@ -1,36 +1,29 @@
-// api/gex.js — read side. The stored series, and optionally today's raw chain for the by-strike
-// chart. Separate from the snapshot route so a page load can never trigger a capture.
-import { kvConfigured, kvGetJson } from '../lib/kv.js';
-import { RAW_KEY, SERIES_KEY, GEX_SYMBOLS } from './gex-snapshot.js';
-import { walls } from '../lib/gex.js';
+// api/gex.js — ONE function, two modes.
+//
+// It was two routes. Vercel's Hobby plan caps a deployment at 12 Serverless Functions and this
+// project has exactly 12 with them merged; as two it was 13 and the entire deployment stopped
+// shipping, leaving the previous build live. /api/atr answered 200 while both GEX routes 404'd and
+// nothing announced the cause. Splitting them again means finding that out the hard way a second
+// time, so the mode is a query parameter and the work lives in lib/gexStore.js.
+//
+//   GET /api/gex?symbol=QQQ          read the stored series (default)
+//   GET /api/gex?snapshot=1[&dry=1]  capture today's chain — the cron target
+import { kvConfigured } from '../lib/kv.js';
+import { captureGex, readGex, GEX_SYMBOLS } from '../lib/gexStore.js';
 
 export default async function handler(req, res) {
-  if (!kvConfigured()) return res.status(200).json({ available: false, reason: 'KV not configured' });
-  const symbol = String(req.query?.symbol || 'QQQ').toUpperCase();
-  if (!GEX_SYMBOLS.includes(symbol)) return res.status(400).json({ error: `unknown symbol ${symbol}` });
+  res.setHeader('Cache-Control', 'private, no-store');
+  if (!kvConfigured()) return res.status(200).json({ available: false, ok: false, reason: 'KV not configured' });
 
-  const series = (await kvGetJson(SERIES_KEY)) || {};
-  const rows = Array.isArray(series[symbol]) ? series[symbol] : [];
-  const latest = rows.length ? rows[rows.length - 1] : null;
-
-  // The by-strike profile is rebuilt from the raw chain rather than stored twice — it is a view of
-  // the same numbers, and storing it would let the two drift apart.
-  let byStrike = null;
-  if (latest?.date) {
-    const raw = await kvGetJson(RAW_KEY(symbol, latest.date));
-    if (raw?.contracts?.length && raw.spot != null) {
-      byStrike = walls(raw.contracts, {
-        S: raw.spot, r: latest.rate ?? 0, q: latest.divYield ?? 0, now: raw.asOf,
-      }).byStrike;
-    }
+  if (String(req.query?.snapshot || '') === '1') {
+    const symbols = String(req.query?.symbols || '').trim()
+      ? String(req.query.symbols).split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+      : GEX_SYMBOLS;
+    const out = await captureGex({ symbols, dry: req.query?.dry === '1' });
+    return res.status(200).json(out);
   }
 
-  res.setHeader('Cache-Control', 'private, no-store');
-  return res.status(200).json({
-    available: rows.length > 0, symbol, symbols: GEX_SYMBOLS,
-    latest, series: rows.slice(-180), byStrike,
-    // A one-row series cannot show day-over-day anything, and the panel says so rather than
-    // drawing a single point and calling it a time series.
-    days: rows.length,
-  });
+  const symbol = String(req.query?.symbol || 'QQQ').toUpperCase();
+  if (!GEX_SYMBOLS.includes(symbol)) return res.status(400).json({ error: `unknown symbol ${symbol}` });
+  return res.status(200).json(await readGex(symbol));
 }
