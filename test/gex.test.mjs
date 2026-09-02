@@ -3,8 +3,7 @@
 // code and copying what it said.
 import {
   gexSummary, netGammaAt, flipLevel, flipFragility, walls, toDollarGex,
-  contractGamma, gammaGrid, GEX_CONVENTIONS, CONTRACT_MULTIPLIER,
-} from '../lib/gex.js';
+  contractGamma, gammaGrid, GEX_CONVENTIONS, CONTRACT_MULTIPLIER, heatCells, heatAlpha, HEAT_ROWS, HEAT_PCTL, HEAT_ALPHA_FLOOR } from '../lib/gex.js';
 import { gamma } from '../lib/blackscholes.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -234,6 +233,75 @@ const PE = (k, oi, e, T, iv = 0.22) => ({ type: 'put', strike: k, oi, iv, T, exp
   ok('and says so', /no expiry breakdown/.test(g.note));
   eq('an empty chain does not throw', gammaGrid([], { S: 707 }).expiries.length, 0);
   eq('nor a null one', gammaGrid(null, { S: 707 }).expiries.length, 0);
+}
+
+// ── THE HEATMAP SHAPING ─────────────────────────────────────────────────────
+{
+  // A book with one enormous cell and a real, consistent level underneath it — the shape the
+  // scaling exists to survive. If the outlier owns the scale, the level disappears.
+  const mk = () => {
+    const cells = [];
+    const exps = ['2026-09-02', '2026-09-04', '2026-09-18'];
+    exps.forEach((expiry, i) => {
+      for (let strike = 690; strike <= 720; strike += 5) {
+        cells.push({ expiry, strike, netGexUsd: (strike === 710 ? 40e6 : 6e6) * (i === 0 ? 3 : 1) });
+      }
+    });
+    cells.push({ expiry: '2026-09-02', strike: 705, netGexUsd: -4000e6 }); // the outlier
+    return { cells, expiries: exps.map(e => ({ expiry: e })) };
+  };
+  const h = heatCells(mk());
+  eq('every expiry becomes a column', h.expiries.length, 3);
+  ok('the cap is far below the outlier', h.cap < 4000e6 / 10);
+  // The test that matters is the RENDERED opacity, not the raw ratio — that is the quantity a
+  // reader actually sees, and the sqrt is precisely what stands between a small cell and invisible.
+  const ordinary = heatAlpha(6e6, h.cap);
+  ok('an ordinary cell renders clearly visible', ordinary > 0.45);
+  ok('and still well below a heavy one', ordinary < heatAlpha(40e6, h.cap) - 0.2);
+  eq('the outlier is clamped rather than allowed to set the range', heatAlpha(4000e6, h.cap), 1);
+  eq('as is the cell that defines the cap', heatAlpha(h.cap, h.cap), 1);
+  // Against a max-based scale the same cell would have been effectively blank. This is the bug.
+  ok('a max-based scale would have hidden it', Math.sqrt(6e6 / 4000e6) < 0.04);
+  // And the scale must NOT be the max — that is the bug being prevented, stated as a test.
+  let max = 0;
+  for (const k of h.strikes) for (const e of h.expiries) max = Math.max(max, Math.abs(h.at.get(`${e}|${k}`) || 0));
+  ok('the cap is not the maximum cell', h.cap < max);
+  ok('and an ordinary cell WOULD have been invisible against the maximum', ordinary / max < 0.01);
+}
+{
+  // Strikes are ranked by gross gamma across all expiries, not by nearness to spot.
+  const cells = [];
+  for (let strike = 600; strike <= 800; strike += 5) {
+    cells.push({ expiry: '2026-09-02', strike, netGexUsd: strike === 780 ? 900e6 : 1e6 });
+  }
+  const h = heatCells({ cells, expiries: [{ expiry: '2026-09-02' }] });
+  ok('the heaviest strike is kept however far from spot it sits', h.strikes.includes(780));
+  eq('the row count is capped', h.strikes.length, HEAT_ROWS);
+  eq('and the total is reported so the trim is visible', h.total, 41);
+  // Descending, because that is how a price ladder reads.
+  ok('strikes come back high to low', h.strikes.every((k, i, a) => i === 0 || a[i - 1] > k));
+}
+{
+  eq('no grid returns null rather than an empty shell', heatCells(null), null);
+  eq('no cells too', heatCells({ cells: [], expiries: [{ expiry: 'x' }] }), null);
+  eq('cells with no expiry rows too', heatCells({ cells: [{ expiry: 'x', strike: 1, netGexUsd: 5 }], expiries: [] }), null);
+  // All-zero cells must not produce a cap of zero that then divides.
+  const z = heatCells({ cells: [{ expiry: 'x', strike: 700, netGexUsd: 0 }], expiries: [{ expiry: 'x' }] });
+  eq('an all-zero book gives a zero cap, which the panel guards on', z.cap, 0);
+  eq('the percentile is stated, not buried', HEAT_PCTL, 0.90);
+}
+
+{
+  // heatAlpha's own edges. A blank cell has to mean "no gamma here" and nothing else.
+  eq('zero shades as nothing', heatAlpha(0, 100), 0);
+  eq('null shades as nothing', heatAlpha(null, 100), 0);
+  eq('a zero cap cannot divide', heatAlpha(50, 0), 0);
+  eq('nor a missing one', heatAlpha(50, null), 0);
+  ok('sign does not change the shading, only the colour does', heatAlpha(-30, 100) === heatAlpha(30, 100));
+  ok('a tiny but real cell still clears the floor', heatAlpha(1, 1e9) >= HEAT_ALPHA_FLOOR);
+  ok('and is visibly weaker than a mid one', heatAlpha(1, 1e9) < heatAlpha(5e8, 1e9));
+  ok('shading rises with size', heatAlpha(10, 100) < heatAlpha(50, 100) && heatAlpha(50, 100) < heatAlpha(90, 100));
+  ok('and never exceeds one', heatAlpha(1e12, 100) <= 1);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

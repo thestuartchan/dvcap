@@ -5,13 +5,14 @@
 // re-fetched, so a history of flip levels and net gamma only exists if something captured it daily.
 // That is the whole reason this module stores anything at all, and it is why the series chart is
 // given equal weight rather than tucked underneath.
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ReferenceLine, ReferenceArea, ResponsiveContainer, Cell,
 } from "recharts";
 import { C, Card, SLabel, Btn } from "./ui.jsx";
 import { gexRead, ageOf } from "../lib/gexRead.js";
+import { heatCells, heatAlpha } from "../lib/gex.js";
 
 const fmtUsd = (v) => {
   if (v == null || !Number.isFinite(+v)) return "—";
@@ -80,12 +81,16 @@ export function GexPanel() {
   const grid = live?.grid || data?.grid || null;
   const fresh = ageOf(latest?.asOf || (latest?.date ? `${latest.date}T13:00:00Z` : null));
   const read = useMemo(
-    () => gexRead({ row: latest, byStrike: strikeSource || [], live: !!live }),
-    [latest, strikeSource, live]);
+    () => gexRead({ row: latest, byStrike: strikeSource || [], grid, live: !!live }),
+    [latest, strikeSource, grid, live]);
 
   const strikeRows = useMemo(() => (strikeSource || []).map(r => ({
     strike: r.strike, net: r.netGexUsd, call: r.callGexUsd, put: r.putGexUsd == null ? null : -r.putGexUsd,
   })), [strikeSource]);
+
+  // The shaping — which strikes are worth pixels and how the colour scale is capped — is in
+  // lib/gex.js, where it is tested. The panel only draws what comes back.
+  const heat = useMemo(() => heatCells(grid), [grid]);
 
   const seriesRows = useMemo(() => (data?.series || []).map(r => ({
     date: r.date, gex: r.gexUsd, flip: r.flipLevel, spot: r.spot,
@@ -218,7 +223,126 @@ export function GexPanel() {
         </div>
       </Card>
 
-      {/* 1 — net gamma by strike */}
+      {/* 1 — WHICH EXPIRY THE WALLS LIVE IN
+          Placed ABOVE the by-strike profile deliberately. That chart sums every expiry, which is
+          the right aggregate and the wrong diagnostic: a wall six expiries agree on is a level; a
+          wall that exists because today's expiry has enormous gamma at one strike is gone tomorrow,
+          and sizing around it is sizing around a number that will not survive the session. Whether
+          the profile below is a level or one day's book has to be settled before it is read, not
+          after. */}
+      {grid?.expiries?.length > 0 && (
+        <Card>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+            <SLabel>Gamma by expiry</SLabel>
+            <span style={{ fontSize: 11.5, color: C.muted }}>is the wall a level, or one expiry's book?</span>
+            {grid.dominated && (
+              <span style={{ fontSize: 10.5, fontWeight: 800, color: C.amber, background: C.aBg,
+                             border: "1px solid " + C.aBdr, borderRadius: 5, padding: "1px 7px" }}>
+                ⚠ concentrated
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 11.5, color: grid.dominated ? C.amber : C.mid, marginTop: 6, lineHeight: 1.55 }}>
+            {grid.note}
+          </div>
+          <div style={{ marginTop: 9, display: "flex", flexDirection: "column", gap: 4 }}>
+            {grid.expiries.map((e, i) => {
+              const w = Math.max(2, Math.min(100, e.shareOfAbs ?? 0));
+              const agrees = e.peakCallStrike === latest.callWall || e.peakPutStrike === latest.putWall;
+              return (
+                // A rule between rows, because on a phone these wrap onto two or three lines each
+                // and a continuation line then sits directly above the NEXT expiry's date. Without
+                // a separator "peak 705 / 710" reads as belonging to the row below it.
+                <div key={e.expiry} style={{ display: "flex", gap: 9, alignItems: "center", fontSize: 11.5,
+                                             flexWrap: "wrap", paddingBottom: 4,
+                                             borderBottom: i === grid.expiries.length - 1 ? "none" : "1px solid " + C.bg }}>
+                  <span style={{ fontWeight: 800, color: C.mid, minWidth: 86 }}>{e.expiry}</span>
+                  <span style={{ minWidth: 44, textAlign: "right", fontWeight: 800,
+                                 color: (e.shareOfAbs ?? 0) >= 50 ? C.amber : C.lbl }}>{e.shareOfAbs}%</span>
+                  <span style={{ flex: "0 0 120px", height: 8, background: C.bg, borderRadius: 4, overflow: "hidden" }}>
+                    <span style={{ display: "block", width: `${w}%`, height: "100%",
+                                   background: (e.netGexUsd ?? 0) >= 0 ? C.green : C.red }} />
+                  </span>
+                  <span style={{ color: C.mid, minWidth: 74 }}>{fmtUsd(e.netGexUsd)}</span>
+                  <span style={{ color: C.muted }}>
+                    peak {fmtNum(e.peakPutStrike)} / {fmtNum(e.peakCallStrike)}
+                    {/* Agreement with the headline wall is the signal: several expiries pointing at
+                        the same strike is what makes it a level rather than an artefact. */}
+                    {agrees && <b style={{ color: C.green }}> ✓ matches headline</b>}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── THE SAME BOOK AT CELL RESOLUTION ──
+              An expiry row says "2026-09-18 carries 41% and its heaviest call strike is 715". It
+              cannot say whether 715 is heavy in that expiry ALONE or in four of them — and that is
+              the difference between a level worth a stop and an artefact that expires. A column of
+              colour at one strike answers it at a glance; a table of numbers does not. */}
+          {heat && (
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid " + C.bdr }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+                <SLabel>Strike × expiry</SLabel>
+                <span style={{ fontSize: 11.5, color: C.muted }}>
+                  the {heat.shown} heaviest of {heat.total} strikes · green = positive gamma, red = negative
+                </span>
+              </div>
+              {/* Scrolls on its own rather than widening the page — the strike column is pinned so a
+                  row stays identifiable once the expiries run off the right on a phone. */}
+              <div style={{ marginTop: 8, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                <div style={{ display: "grid", gridTemplateColumns: `56px repeat(${heat.expiries.length}, minmax(58px, 1fr))`,
+                              gap: 2, minWidth: 56 + heat.expiries.length * 60 }}>
+                  <div style={{ position: "sticky", left: 0, background: C.surf, zIndex: 1 }} />
+                  {heat.expiries.map(e => (
+                    <div key={e} style={{ fontSize: 9.5, fontWeight: 800, color: C.lbl, textAlign: "center",
+                                          letterSpacing: 0.2, paddingBottom: 2 }}>
+                      {e.slice(5)}
+                    </div>
+                  ))}
+                  {heat.strikes.map(k => {
+                    // Spot and the flip zone are drawn ONTO the grid rather than beside it. A strike
+                    // being heavy matters entirely relative to where price is standing.
+                    const isSpot = latest?.spot != null && Math.abs(k - latest.spot) <= 2.5;
+                    const inZone = latest?.flipZoneLo != null && latest?.flipZoneHi != null
+                      && k >= latest.flipZoneLo - 2.5 && k <= latest.flipZoneHi + 2.5;
+                    return (
+                      <Fragment key={k}>
+                        <div style={{ position: "sticky", left: 0, background: C.surf, zIndex: 1,
+                                      fontSize: 10, fontWeight: 800, textAlign: "right", paddingRight: 6,
+                                      lineHeight: "20px",
+                                      color: isSpot ? C.blue : inZone ? C.amber : C.lbl }}>
+                          {fmtNum(k, 0)}{isSpot ? " ◂" : inZone ? " ·" : ""}
+                        </div>
+                        {heat.expiries.map(e => {
+                          const v = heat.at.get(`${e}|${k}`);
+                          const a = heatAlpha(v, heat.cap);
+                          return (
+                            <div key={e} title={`${e} · ${fmtNum(k, 0)} · ${fmtUsd(v ?? 0)}`}
+                              style={{ height: 20, borderRadius: 3,
+                                       background: a === 0 ? C.bg
+                                         : `rgba(${v > 0 ? "22,101,52" : "153,27,27"},${a})`,
+                                       border: "1px solid " + (isSpot ? C.blBdr : "transparent") }} />
+                          );
+                        })}
+                      </Fragment>
+                    );
+                  })}
+                </div>
+              </div>
+              <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 7, lineHeight: 1.5 }}>
+                A strike coloured across several columns is a level the whole book agrees on. One
+                bright cell in the nearest expiry with nothing behind it is that expiry's positioning
+                and it stops existing when the contract does. ◂ marks spot; · marks the flip zone.
+                Shading is compressed — capped at the 90th percentile and square-rooted — so one huge
+                cell cannot blank the rest. Read it for WHERE, not how much; hover for the figure.
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* 2 — net gamma by strike, read in the light of the breakdown above */}
       <Card>
         <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
           <SLabel>Net gamma by strike</SLabel>
@@ -253,64 +377,34 @@ export function GexPanel() {
         )}
       </Card>
 
-      {/* ── WHICH EXPIRY THE WALLS LIVE IN ──
-          The by-strike chart above sums every expiry, which is the right aggregate and the wrong
-          diagnostic. A wall six expiries agree on is a level; a wall that exists because today's
-          expiry has enormous gamma at one strike is gone tomorrow, and sizing around it is sizing
-          around a number that will not survive the session. */}
-      {grid?.expiries?.length > 0 && (
-        <Card>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
-            <SLabel>Gamma by expiry</SLabel>
-            <span style={{ fontSize: 11.5, color: C.muted }}>is the wall a level, or one expiry's book?</span>
-            {grid.dominated && (
-              <span style={{ fontSize: 10.5, fontWeight: 800, color: C.amber, background: C.aBg,
-                             border: "1px solid " + C.aBdr, borderRadius: 5, padding: "1px 7px" }}>
-                ⚠ concentrated
-              </span>
-            )}
-          </div>
-          <div style={{ fontSize: 11.5, color: grid.dominated ? C.amber : C.mid, marginTop: 6, lineHeight: 1.55 }}>
-            {grid.note}
-          </div>
-          <div style={{ marginTop: 9, display: "flex", flexDirection: "column", gap: 4 }}>
-            {grid.expiries.map(e => {
-              const w = Math.max(2, Math.min(100, e.shareOfAbs ?? 0));
-              const agrees = e.peakCallStrike === latest.callWall || e.peakPutStrike === latest.putWall;
-              return (
-                <div key={e.expiry} style={{ display: "flex", gap: 9, alignItems: "center", fontSize: 11.5, flexWrap: "wrap" }}>
-                  <span style={{ fontWeight: 800, color: C.mid, minWidth: 86 }}>{e.expiry}</span>
-                  <span style={{ minWidth: 44, textAlign: "right", fontWeight: 800,
-                                 color: (e.shareOfAbs ?? 0) >= 50 ? C.amber : C.lbl }}>{e.shareOfAbs}%</span>
-                  <span style={{ flex: "0 0 120px", height: 8, background: C.bg, borderRadius: 4, overflow: "hidden" }}>
-                    <span style={{ display: "block", width: `${w}%`, height: "100%",
-                                   background: (e.netGexUsd ?? 0) >= 0 ? C.green : C.red }} />
-                  </span>
-                  <span style={{ color: C.mid, minWidth: 74 }}>{fmtUsd(e.netGexUsd)}</span>
-                  <span style={{ color: C.muted }}>
-                    peak {fmtNum(e.peakPutStrike)} / {fmtNum(e.peakCallStrike)}
-                    {/* Agreement with the headline wall is the signal: several expiries pointing at
-                        the same strike is what makes it a level rather than an artefact. */}
-                    {agrees && <b style={{ color: C.green }}> ✓ matches headline</b>}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
-
-      {/* 2 — the history, which is the reason any of this is stored */}
+      {/* 3 — the history, which is the reason any of this is stored */}
       <Card>
         <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
           <SLabel>Net GEX and flip over time</SLabel>
           <span style={{ fontSize: 11.5, color: C.muted }}>{data.days} capture{data.days === 1 ? "" : "s"}</span>
         </div>
-        {data.days < 2 ? (
+        {/* TWO POINTS DRAW A TREND THAT ISN'T THERE. Recharts will happily connect a pair with a
+            confident straight line, and the eye reads slope off it — but with two captures there is
+            no way to tell a move from noise, and the one thing this chart is for is seeing
+            positioning shift over days. Three is the first count at which a direction can be
+            wrong. Below it the numbers are listed instead, which is honest about what they are. */}
+        {data.days < 3 ? (
           <div style={{ fontSize: 12, color: C.mid, marginTop: 8, lineHeight: 1.55 }}>
-            One capture so far. A single point is not a series — this chart fills in as the daily
-            snapshot runs, and it cannot be back-filled, because open interest is not served
-            historically by any free source.
+            {data.days === 1 ? "One capture so far. A single point is not a series"
+              : "Two captures so far. Two points draw a straight line whatever they contain, and a slope off two readings is not a trend"}
+            {" "}— this chart appears at three, fills in as the daily snapshot runs, and cannot be
+            back-filled, because open interest is not served historically by any free source.
+            {seriesRows.length > 0 && (
+              <div style={{ marginTop: 7, display: "flex", flexDirection: "column", gap: 3 }}>
+                {seriesRows.map(r => (
+                  <div key={r.date} style={{ display: "flex", gap: 12, fontSize: 11.5, flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 800, color: C.mid, minWidth: 86 }}>{r.date}</span>
+                    <span style={{ color: (r.gex ?? 0) >= 0 ? C.green : C.red, minWidth: 74 }}>{fmtUsd(r.gex)}</span>
+                    <span style={{ color: C.muted }}>flip {fmtNum(r.flip)} · spot {fmtNum(r.spot)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <div style={{ height: 280, marginTop: 8 }}>

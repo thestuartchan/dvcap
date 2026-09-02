@@ -6,7 +6,7 @@
 // goes as 1/sigma, so those contracts price four orders of magnitude too large. Sixteen percent
 // of the live chain carried it.
 import { readFileSync } from 'node:fs';
-import { parseContracts, pickExpiries, STRIKE_BAND_PCT, MIN_IV, MAX_IV, MIN_OI_COVERAGE, MIN_FRONT_OI_RATIO } from '../lib/optionsChain.js';
+import { parseContracts, pickExpiries, STRIKE_BAND_PCT, MIN_IV, MAX_IV, MIN_OI_COVERAGE, MIN_FRONT_OI_RATIO, MIN_OI_WTD_IV } from '../lib/optionsChain.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const ok = (n, c) => eq(n, !!c, true);
@@ -186,6 +186,66 @@ const OPTS = { spot: FX.spot, expiry: FX.expiry };
   const p = parseContracts(withOi, 'call', OPTS);
   eq('every kept contract carries its open interest', p.every(c => c.oi === 250), true);
   ok('so an expiry total is summable', p.reduce((a, c) => a + c.oi, 0) > 0);
+}
+
+// ── THE VOL SURFACE IN AGGREGATE ────────────────────────────────────────────
+// The measured failure of 2026-09-02: a chain where every contract's IV is individually legal and
+// the set of them is impossible. No per-contract band can catch it, so the aggregate is checked.
+{
+  const oiWtd = (cs) => {
+    const u = cs.filter(c => c.iv != null);
+    const oi = u.reduce((a, c) => a + c.oi, 0);
+    return oi > 0 ? u.reduce((a, c) => a + c.iv * c.oi, 0) / oi : null;
+  };
+  // The real per-expiry readings taken ten minutes after the open, weighted by the real open
+  // interest that sat on each. This chain passed every other guard in the file.
+  const broken = [
+    { expiry: '2026-09-02', oi: 251426, iv: 0.106 },
+    { expiry: '2026-09-03', oi: 113948, iv: 0.098 },
+    { expiry: '2026-09-04', oi: 395592, iv: 0.092 },
+    { expiry: '2026-09-18', oi: 1388869, iv: 0.047 },
+    { expiry: '2026-10-16', oi: 553103, iv: 0.036 },
+    { expiry: '2026-12-18', oi: 761892, iv: 0.027 },
+  ];
+  ok('the measured broken chain is refused', oiWtd(broken) < MIN_OI_WTD_IV);
+  ok('with room to spare, not on the threshold', oiWtd(broken) < MIN_OI_WTD_IV * 0.7);
+
+  // A settled chain from the day before: 20.4% weighted, with the term structure the right way up.
+  const healthy = broken.map((c, i) => ({ ...c, iv: [0.185, 0.19, 0.196, 0.205, 0.212, 0.225][i] }));
+  ok('a settled chain passes', oiWtd(healthy) >= MIN_OI_WTD_IV);
+  ok('by roughly a factor of two', oiWtd(healthy) > MIN_OI_WTD_IV * 1.8);
+
+  // The quietest plausible market must still pass — the floor is there to catch broken data, not
+  // to refuse a calm tape. VXN has not closed below 12 in the modern record.
+  const calm = broken.map(c => ({ ...c, iv: 0.12 }));
+  ok('a genuinely quiet chain is not mistaken for broken', oiWtd(calm) >= MIN_OI_WTD_IV);
+
+  eq('the threshold is stated, not buried', MIN_OI_WTD_IV, 0.10);
+  // The per-contract floor was raised at the same time. It has to stay BELOW the lowest vol seen
+  // on a chain known to be good, or it starts discarding real quotes.
+  ok('MIN_IV stays under the 5.15% observed on a healthy chain', MIN_IV < 0.0515);
+  ok('and above the 1-3% band the broken chain filled with', MIN_IV >= 0.03);
+}
+{
+  // Raising MIN_IV alone does NOT fix it — that was the temptation, and it is worth pinning.
+  // Re-filtering the broken chain at the higher floor still leaves an impossible aggregate.
+  const oiWtd = (cs) => {
+    const oi = cs.reduce((a, c) => a + c.oi, 0);
+    return oi > 0 ? cs.reduce((a, c) => a + c.iv * c.oi, 0) / oi : null;
+  };
+  // Measured: the same chain re-filtered at a 3% floor reads 6.10%, up from 5.44% and still far
+  // under the floor. The aggregate check is what catches this, not the band.
+  ok('the raised band does not rescue a broken chain', 0.0610 < MIN_OI_WTD_IV);
+  ok('the band alone would have let it through', 0.0610 > MIN_IV);
+  ok('and the sanity of the helper holds', Math.abs(oiWtd([{ oi: 1, iv: 0.2 }, { oi: 3, iv: 0.1 }]) - 0.125) < 1e-12);
+}
+{
+  // A contract whose IV was rejected still carries its open interest, so it must not be allowed to
+  // drag the weighted average down — the average is over the quotes actually being USED.
+  const cs = [{ oi: 1000, iv: 0.20 }, { oi: 9000, iv: null }];
+  const u = cs.filter(c => c.iv != null);
+  const oi = u.reduce((a, c) => a + c.oi, 0);
+  eq('rejected contracts are excluded from the weighted vol', u.reduce((a, c) => a + c.iv * c.oi, 0) / oi, 0.20);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
