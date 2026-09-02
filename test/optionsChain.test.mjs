@@ -6,7 +6,7 @@
 // goes as 1/sigma, so those contracts price four orders of magnitude too large. Sixteen percent
 // of the live chain carried it.
 import { readFileSync } from 'node:fs';
-import { parseContracts, pickExpiries, STRIKE_BAND_PCT, MIN_IV, MAX_IV, MIN_OI_COVERAGE } from '../lib/optionsChain.js';
+import { parseContracts, pickExpiries, STRIKE_BAND_PCT, MIN_IV, MAX_IV, MIN_OI_COVERAGE, MIN_FRONT_OI_RATIO } from '../lib/optionsChain.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const ok = (n, c) => eq(n, !!c, true);
@@ -152,6 +152,40 @@ const OPTS = { spot: FX.spot, expiry: FX.expiry };
   eq('the threshold sits between the observed broken and settled cases', MIN_OI_COVERAGE, 0.6);
   ok('above the 30% measured on a half-populated feed', MIN_OI_COVERAGE > 0.30);
   ok('and below the ~90% a settled chain gives', MIN_OI_COVERAGE < 0.90);
+}
+
+// ── counting contracts was the wrong metric ──────────────────────────────────
+// A coverage check by CONTRACT COUNT passed a chain that was structurally broken. Measured on the
+// row stored 2026-09-02 12:14 UTC: the three nearest expiries carried 3.6% of the gross gamma
+// between them while the three far ones carried 96%. The front expiry HAD contracts with open
+// interest — the amounts were just tiny — so it satisfied a count check and contributed nothing.
+// The read drawn from it said "the walls are a multi-expiry level", which is exactly backwards:
+// they looked like one BECAUSE the near expiries were missing.
+{
+  // The guard is self-calibrating — nearest expiry's OI against the median expiry's — so it needs
+  // no absolute floor and holds as the book grows or shrinks.
+  const ratio = (per) => {
+    const ois = per.map(e => e.oi).filter(v => v > 0).sort((a, b) => a - b);
+    const med = ois.length ? ois[Math.floor(ois.length / 2)] : 0;
+    return med > 0 ? per[0].oi / med : 0;
+  };
+  const broken = [{ oi: 900 }, { oi: 4000 }, { oi: 3800 }, { oi: 85000 }, { oi: 79000 }, { oi: 51000 }];
+  const healthy = [{ oi: 60000 }, { oi: 40000 }, { oi: 38000 }, { oi: 85000 }, { oi: 79000 }, { oi: 51000 }];
+  ok('the observed broken shape is refused', ratio(broken) < MIN_FRONT_OI_RATIO);
+  ok('and by a wide margin, not a hair', ratio(broken) < MIN_FRONT_OI_RATIO / 5);
+  ok('a healthy shape passes', ratio(healthy) >= MIN_FRONT_OI_RATIO);
+  ok('comfortably', ratio(healthy) > MIN_FRONT_OI_RATIO * 4);
+  // A front expiry that is merely SMALLER than the monthlies is normal and must not be refused.
+  const modest = [{ oi: 18000 }, { oi: 40000 }, { oi: 38000 }, { oi: 85000 }, { oi: 79000 }, { oi: 51000 }];
+  ok('a legitimately lighter front weekly still passes', ratio(modest) >= MIN_FRONT_OI_RATIO);
+  eq('the threshold is stated, not buried', MIN_FRONT_OI_RATIO, 0.15);
+}
+{
+  // parseContracts now reports OI magnitude per expiry, which is what the guard sums.
+  const withOi = FX.calls.map(c => ({ ...c, openInterest: 250 }));
+  const p = parseContracts(withOi, 'call', OPTS);
+  eq('every kept contract carries its open interest', p.every(c => c.oi === 250), true);
+  ok('so an expiry total is summable', p.reduce((a, c) => a + c.oi, 0) > 0);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
