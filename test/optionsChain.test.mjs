@@ -6,7 +6,7 @@
 // goes as 1/sigma, so those contracts price four orders of magnitude too large. Sixteen percent
 // of the live chain carried it.
 import { readFileSync } from 'node:fs';
-import { parseContracts, pickExpiries, STRIKE_BAND_PCT, MIN_IV, MAX_IV } from '../lib/optionsChain.js';
+import { parseContracts, pickExpiries, STRIKE_BAND_PCT, MIN_IV, MAX_IV, MIN_OI_COVERAGE } from '../lib/optionsChain.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const ok = (n, c) => eq(n, !!c, true);
@@ -120,6 +120,38 @@ const OPTS = { spot: FX.spot, expiry: FX.expiry };
     { strike: FX.spot, openInterest: 500, impliedVolatility: 0.2 },
   ];
   eq('only the contract with real open interest survives', parseContracts(mixed, 'call', OPTS).length, 1);
+}
+
+// ── partial open interest is worse than none ─────────────────────────────────
+// Yahoo repopulates openInterest PROGRESSIVELY through the pre-market. Measured on QQQ 2026-09-02:
+// 0% at 09:30 UTC, 30% at 11:00. Zero is easy — nothing computes and the failure is obvious. A
+// third is the dangerous case: it passes any "is there data" check and produces a full, confident,
+// wrong answer. The live recompute at 30% coverage returned +$0.10B against -$2.75B from the
+// settled chain, a flipped sign, with a flip zone 0.24 wide that the fragility test called stable
+// because there was almost no put gamma left to reweight.
+{
+  const band = FX.calls.filter(c => c.strike >= FX.spot * 0.9 && c.strike <= FX.spot * 1.1);
+  ok('the fixture has in-band strikes to count', band.length >= 4);
+  const parsed = parseContracts(band, 'call', OPTS);
+  eq('inBand counts every strike that passed the band, before the OI filter', parsed.inBand, band.length);
+  ok('and is at least as large as the kept count', parsed.inBand >= parsed.length);
+}
+{
+  // Coverage is kept-over-in-band, so a chain where most strikes have no OI reads as thin even
+  // though it is not empty.
+  const third = FX.calls.map((c, i) => ({ ...c, openInterest: i % 3 === 0 ? 500 : 0 }));
+  const p3 = parseContracts(third, 'call', OPTS);
+  ok('a third-populated chain keeps some contracts', p3.length > 0);
+  ok('but coverage is well under the threshold', (p3.length / p3.inBand) < MIN_OI_COVERAGE);
+  const full = FX.calls.map(c => ({ ...c, openInterest: 500 }));
+  const pf = parseContracts(full, 'call', OPTS);
+  eq('a fully populated chain covers everything in band', pf.length, pf.inBand);
+  ok('comfortably over the threshold', (pf.length / pf.inBand) >= MIN_OI_COVERAGE);
+}
+{
+  eq('the threshold sits between the observed broken and settled cases', MIN_OI_COVERAGE, 0.6);
+  ok('above the 30% measured on a half-populated feed', MIN_OI_COVERAGE > 0.30);
+  ok('and below the ~90% a settled chain gives', MIN_OI_COVERAGE < 0.90);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
