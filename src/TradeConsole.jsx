@@ -11,6 +11,7 @@
 // price feed, and the regime history. Everything else is derived here or imported from lib/.
 
 import { useState, useEffect, useMemo } from "react";
+import { FUTURES_MULTIPLIER, multiplierFor, backfillMultipliers } from '../lib/futures.js';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
@@ -262,7 +263,10 @@ const daysBetween = (a, b) => {
 // else entirely. Yahoo has no MNQ and its MGC is an unrelated $280 stock, so a futures row asking
 // for its own symbol got someone else's price or none at all. `quoteSymbol` overrides it per row,
 // and a bare futures root is given the =F suffix the feed expects.
-const FUTURES_ROOTS = new Set(['MGC', 'MNQ', 'MES', 'MYM', 'M2K', 'MCL', 'SIL', 'GC', 'NQ', 'ES', 'CL', 'SI', 'HG', 'ZN', 'ZB']);
+// ONE LIST, NOT TWO. This was a hand-kept set that had drifted to fifteen of the contracts in
+// lib/futures.js and had no idea what any of them was worth — which is how MGC ended up quoted
+// correctly and valued at a tenth of the truth. Same table now answers both questions.
+const FUTURES_ROOTS = new Set(Object.keys(FUTURES_MULTIPLIER));
 const quoteSym = (r) => {
   const explicit = String(r?.quoteSymbol || '').trim();
   if (explicit) return explicit;
@@ -816,6 +820,9 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   // What the scheduled IBKR reconciliation last did. Server-owned: it arrives beside the console
   // rather than inside it, because a save replaces the console object wholesale.
   const [flexNote, setFlexNote] = useState(null);
+  // What the backfill did, shown once. A number changing under the reader without a word is how
+  // the original error survived a month.
+  const [multNote, setMultNote] = useState(null);
   const [noteSeen, setNoteSeen] = useState(() => { try { return localStorage.getItem("dvcap:flexnote:seen") || ""; } catch { return ""; } });
   const [portOpen, setPortOpen] = useState(false);
   const [importTxt, setImportTxt] = useState("");
@@ -834,12 +841,20 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   useEffect(() => {
     try {
       const c = JSON.parse(localStorage.getItem(LS) || "null");
-      if (c) { setRows(c.rows || []); setSettings(s => ({ ...s, ...(c.settings || {}) })); }
+      if (c) { setRows(backfillMultipliers(c.rows || []).rows); setSettings(s => ({ ...s, ...(c.settings || {}) })); }
     } catch { /* no cache */ }
     fetch("/api/manual-entry").then(r => r.json()).then(j => {
       const c = j?.console;
       if (c && typeof c === "object") {
-        if (Array.isArray(c.rows)) setRows(c.rows);
+        // ONE-TIME BACKFILL of contract multipliers — see lib/futures.js. A margined row that never
+        // had one computed every money figure at ×1; MGC published −$242.00 against a true
+        // −$2,420.00. Applied on load and saved by the normal persist effect, so it needs no
+        // separate write path. Idempotent: a row that already carries a multiplier is untouched.
+        if (Array.isArray(c.rows)) {
+          const back = backfillMultipliers(c.rows);
+          setRows(back.rows);
+          if (back.changed || back.review.length) setMultNote({ fixed: back.fixed, review: back.review });
+        }
         else if (Array.isArray(c.watchlist)) setRows(migrateV1(c.watchlist));   // one-time v1 → v2
         if (c.settings) setSettings(s => ({ ...s, ...c.settings }));
       }
@@ -1082,7 +1097,13 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
     const sym = addSym.trim().toUpperCase();
     if (!sym) return;
     const id = `${sym}-${Math.random().toString(36).slice(2, 8)}`;
-    setRows(p => [...p, { id, symbol: sym, currency: "USD", thesis: "", levels: [], fills: [], tags: [] }]);
+    // THE CONTRACT SIZE IS SET WHEN THE TRADE IS SET UP, not remembered later. A futures row whose
+    // multiplier is filled in afterwards is a row that computed every money figure at x1 until
+    // somebody noticed — MGC ran a month that way. A known root arrives already margined and
+    // already sized; anything else is a share at x1, which is correct rather than assumed.
+    const known = multiplierFor(sym, { margined: FUTURES_ROOTS.has(sym) });
+    setRows(p => [...p, { id, symbol: sym, currency: "USD", thesis: "", levels: [], fills: [], tags: [],
+      ...(known.source === "table" ? { multiplier: known.multiplier, margined: true } : {}) }]);
     setAddSym(""); setExpanded(id); touch();
   };
   const upd = (id, patch) => { setRows(p => p.map(r => r.id === id ? { ...r, ...patch } : r)); touch(); };
@@ -1266,7 +1287,10 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
         id: r.id || `${String(r.symbol || "").toUpperCase()}-${Math.random().toString(36).slice(2, 8)}`,
         symbol: String(r.symbol || "").toUpperCase(), currency: (r.currency || "USD").toUpperCase(),
         thesis: r.thesis || "", trade: r.trade ? String(r.trade).slice(0, 40) : "",
-        multiplier: Number.isFinite(+r.multiplier) && +r.multiplier > 0 ? +r.multiplier : 1,
+        // A margined row with no multiplier is filled from the table rather than coerced to 1 —
+        // `|| 1` on a futures contract is not a default, it is a specific wrong answer.
+        multiplier: Number.isFinite(+r.multiplier) && +r.multiplier > 0 ? +r.multiplier
+          : (multiplierFor(r.symbol, { margined: !!r.margined }).multiplier ?? 1),
         fxRate: Number.isFinite(+r.fxRate) && +r.fxRate > 0 ? +r.fxRate : null,
         margined: !!r.margined,
         quoteSymbol: r.quoteSymbol ? String(r.quoteSymbol).slice(0, 24) : "",
@@ -1463,6 +1487,37 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       {/* ── WHAT THE OVERNIGHT RECONCILIATION DID ──
           The channel already gets a message, but the channel is somewhere else. This is the same
           news where the work happens. */}
+      {/* WHAT THE BACKFILL DID. Contract sizes were filled in on load; saying so is the point —
+          MGC read −$242.00 for a month against a true −$2,420.00, and the archive total moves with
+          it. `review` is the list a table must not touch: symbols that are both a futures root and
+          a real equity ticker (MET is MetLife, PL is Planet Labs), where only a human knows which. */}
+      {multNote && (multNote.fixed.length > 0 || multNote.review.length > 0) && (
+        <Card style={{ borderColor: C.aBdr, background: C.aBg, marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+            <b style={{ fontSize: 12.5, color: C.amber }}>Contract sizes</b>
+            <button onClick={() => setMultNote(null)}
+              style={{ cursor: "pointer", fontSize: 11, fontWeight: 800, border: "1px solid " + C.aBdr,
+                       background: "transparent", color: C.amber, borderRadius: 6, padding: "2px 8px" }}>✕ Got it</button>
+          </div>
+          {multNote.fixed.length > 0 && (
+            <div style={{ fontSize: 12, color: C.text, marginTop: 6, lineHeight: 1.6 }}>
+              Set on {multNote.fixed.length} margined row{multNote.fixed.length === 1 ? "" : "s"}:{" "}
+              {multNote.fixed.map(f => `${f.symbol} ×${f.to}`).join(", ")}. Every money figure on
+              {multNote.fixed.length === 1 ? " it was" : " them was"} previously computed at ×1, so
+              realised P&L and the archive total have changed — the percentages have not, because a
+              percentage is multiplier-free.
+            </div>
+          )}
+          {multNote.review.length > 0 && (
+            <div style={{ fontSize: 12, color: C.mid, marginTop: 6, lineHeight: 1.6 }}>
+              Not touched, because only you know which they are:{" "}
+              <b>{multNote.review.map(r => r.symbol).join(", ")}</b>. These are named like futures
+              contracts but are not marked margined, and each is also a real share ticker. If one is
+              a contract, tick margined on it; if it is stock, it is already right at ×1.
+            </div>
+          )}
+        </Card>
+      )}
       {flexNote && flexNote.at !== noteSeen && (flexNote.applied || flexNote.needsYou?.length || flexNote.discarded) && (
         <div style={{ padding: "10px 13px", borderRadius: 10, border: "1.5px solid " + (flexNote.needsYou?.length || flexNote.discarded ? C.aBdr : C.bdr), background: flexNote.needsYou?.length || flexNote.discarded ? C.aBg : C.surf }}>
           <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
