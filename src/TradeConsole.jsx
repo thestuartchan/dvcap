@@ -11,6 +11,7 @@
 // price feed, and the regime history. Everything else is derived here or imported from lib/.
 
 import { useState, useEffect, useMemo } from "react";
+import { FUTURES_MULTIPLIER, multiplierFor } from '../lib/futures.js';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
@@ -262,7 +263,10 @@ const daysBetween = (a, b) => {
 // else entirely. Yahoo has no MNQ and its MGC is an unrelated $280 stock, so a futures row asking
 // for its own symbol got someone else's price or none at all. `quoteSymbol` overrides it per row,
 // and a bare futures root is given the =F suffix the feed expects.
-const FUTURES_ROOTS = new Set(['MGC', 'MNQ', 'MES', 'MYM', 'M2K', 'MCL', 'SIL', 'GC', 'NQ', 'ES', 'CL', 'SI', 'HG', 'ZN', 'ZB']);
+// ONE LIST, NOT TWO. This was a hand-kept set that had drifted to fifteen of the contracts in
+// lib/futures.js and had no idea what any of them was worth — which is how MGC ended up quoted
+// correctly and valued at a tenth of the truth. Same table now answers both questions.
+const FUTURES_ROOTS = new Set(Object.keys(FUTURES_MULTIPLIER));
 const quoteSym = (r) => {
   const explicit = String(r?.quoteSymbol || '').trim();
   if (explicit) return explicit;
@@ -1082,7 +1086,13 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
     const sym = addSym.trim().toUpperCase();
     if (!sym) return;
     const id = `${sym}-${Math.random().toString(36).slice(2, 8)}`;
-    setRows(p => [...p, { id, symbol: sym, currency: "USD", thesis: "", levels: [], fills: [], tags: [] }]);
+    // THE CONTRACT SIZE IS SET WHEN THE TRADE IS SET UP, not remembered later. A futures row whose
+    // multiplier is filled in afterwards is a row that computed every money figure at x1 until
+    // somebody noticed — MGC ran a month that way. A known root arrives already margined and
+    // already sized; anything else is a share at x1, which is correct rather than assumed.
+    const known = multiplierFor(sym, { margined: FUTURES_ROOTS.has(sym) });
+    setRows(p => [...p, { id, symbol: sym, currency: "USD", thesis: "", levels: [], fills: [], tags: [],
+      ...(known.source === "table" ? { multiplier: known.multiplier, margined: true } : {}) }]);
     setAddSym(""); setExpanded(id); touch();
   };
   const upd = (id, patch) => { setRows(p => p.map(r => r.id === id ? { ...r, ...patch } : r)); touch(); };
@@ -1266,7 +1276,10 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
         id: r.id || `${String(r.symbol || "").toUpperCase()}-${Math.random().toString(36).slice(2, 8)}`,
         symbol: String(r.symbol || "").toUpperCase(), currency: (r.currency || "USD").toUpperCase(),
         thesis: r.thesis || "", trade: r.trade ? String(r.trade).slice(0, 40) : "",
-        multiplier: Number.isFinite(+r.multiplier) && +r.multiplier > 0 ? +r.multiplier : 1,
+        // A margined row with no multiplier is filled from the table rather than coerced to 1 —
+        // `|| 1` on a futures contract is not a default, it is a specific wrong answer.
+        multiplier: Number.isFinite(+r.multiplier) && +r.multiplier > 0 ? +r.multiplier
+          : (multiplierFor(r.symbol, { margined: !!r.margined }).multiplier ?? 1),
         fxRate: Number.isFinite(+r.fxRate) && +r.fxRate > 0 ? +r.fxRate : null,
         margined: !!r.margined,
         quoteSymbol: r.quoteSymbol ? String(r.quoteSymbol).slice(0, 24) : "",
