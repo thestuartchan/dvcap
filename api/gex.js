@@ -19,7 +19,10 @@ export default async function handler(req, res) {
     const symbols = String(req.query?.symbols || '').trim()
       ? String(req.query.symbols).split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
       : GEX_SYMBOLS;
-    const out = await captureGex({ symbols, dry: req.query?.dry === '1' });
+    // `session` lets the workflow be explicit rather than relying on the clock; `dry=1` computes
+    // and returns without writing, which is what the panel's live-refresh button uses.
+    const session = ['open', 'close'].includes(String(req.query?.session || '')) ? String(req.query.session) : null;
+    const out = await captureGex({ symbols, dry: req.query?.dry === '1', session });
     return res.status(200).json(out);
   }
 

@@ -49,7 +49,14 @@ jobs:
         run: |
           DRY="${{ github.event.inputs.dry }}"
           if [ -n "${{ github.event.schedule }}" ]; then DRY=0; fi
-          Q="dry=${DRY:-1}"
+          # Explicit, rather than inferred from the clock: the 13:00 run is canonical and the
+          # 21:00 run only overlays closing figures onto it.
+          case "${{ github.event.schedule }}" in
+            '0 13 * * 1-5') SESSION=open ;;
+            '0 21 * * 1-5') SESSION=close ;;
+            *)              SESSION=open ;;
+          esac
+          Q="dry=${DRY:-1}&session=$SESSION"
           if [ -n "${{ github.event.inputs.symbols }}" ]; then Q="$Q&symbols=${{ github.event.inputs.symbols }}"; fi
           code=$(curl -sS -o /tmp/gex.json -w '%{http_code}' --max-time 300 \
             "https://dvcap.vercel.app/api/gex?snapshot=1&$Q") || true
@@ -62,7 +69,7 @@ jobs:
               if not r.get('ok'):
                   print(f"  {r.get('symbol')}: FAILED — {r.get('reason')}")
               else:
-                  print(f"  {r['symbol']}: {r['contracts']} contracts over {r['expiries']} expiries"
+                  print(f"  {r['symbol']} [{r.get('session')}]: {r['contracts']} contracts over {r['expiries']} expiries"
                         f" | flip {r.get('flip')} | GEX {r.get('gexUsd')}"
                         + (f" | FAILED EXPIRIES {r['failed']}" if r.get('failed') else '')
                         + ('' if r.get('wrote') else ' | not written (dry)'))

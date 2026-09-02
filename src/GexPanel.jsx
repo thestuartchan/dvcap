@@ -11,6 +11,7 @@ import {
   ReferenceLine, ReferenceArea, ResponsiveContainer, Cell,
 } from "recharts";
 import { C, Card, SLabel, Btn } from "./ui.jsx";
+import { gexRead, ageOf } from "../lib/gexRead.js";
 
 const fmtUsd = (v) => {
   if (v == null || !Number.isFinite(+v)) return "—";
@@ -23,15 +24,11 @@ const fmtUsd = (v) => {
 };
 const fmtNum = (v, d = 2) => (v == null || !Number.isFinite(+v)) ? "—" : (+v).toFixed(d);
 
-// How old the capture is, in calendar days. The snapshot runs pre-open on weekdays, so anything
-// past three days means a run was missed and the numbers below describe a book that has moved.
-function staleness(dateStr) {
-  if (!dateStr) return { days: null, stale: true, note: "no capture on record" };
-  const d = Date.parse(`${dateStr}T00:00:00Z`);
-  if (!Number.isFinite(d)) return { days: null, stale: true, note: "unreadable capture date" };
-  const days = Math.floor((Date.now() - d) / 86400000);
-  return { days, stale: days > 3, note: days === 0 ? "captured today" : `captured ${days}d ago` };
-}
+// Staleness is measured in HOURS, from the capture timestamp — not in days from the date.
+// The flip moved four points and its zone tripled inside ninety minutes on 2026-09-01. A row
+// labelled "captured today" at 14:00 off an 09:00 capture is not wrong, it is stale, and stale
+// reads precise. ageOf() lives in lib/gexRead.js so the thresholds are tested rather than styled.
+const TONE_FOR_AGE = { fresh: C.green, aging: C.mid, stale: C.amber, "previous-session": C.red, unknown: C.amber };
 
 function Stat({ label, value, sub, color }) {
   return (
@@ -47,6 +44,26 @@ export function GexPanel() {
   const [symbol, setSymbol] = useState("QQQ");
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
+  // A LIVE RECOMPUTE IS NOT A SECOND OPINION. Open interest settles overnight and does not move
+  // during the session, so this re-prices the SAME positioning at the current spot and time decay
+  // — which is the question you are actually asking when you look at it mid-session. It writes
+  // nothing: the stored series stays the clean pre-open record.
+  const [live, setLive] = useState(null);
+  const [liveBusy, setLiveBusy] = useState(false);
+  const refreshLive = async () => {
+    setLiveBusy(true);
+    try {
+      const r = await fetch(`/api/gex?snapshot=1&dry=1&symbols=${encodeURIComponent(symbol)}`, { credentials: "include" });
+      const j = await r.json();
+      const hit = (j?.results || []).find(x => x.symbol === symbol && x.ok);
+      // The snapshot result carries headline figures; re-read the stored row for the rest and
+      // overlay. A live read that silently dropped the walls would be a downgrade, not a refresh.
+      if (hit) setLive({ row: { ...(data?.latest || {}), ...hit.row, asOf: new Date().toISOString() }, byStrike: hit.byStrike || null });
+      else setLive(null);
+    } catch { setLive(null); }
+    setLiveBusy(false);
+  };
+  useEffect(() => { setLive(null); }, [symbol]);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,12 +75,16 @@ export function GexPanel() {
     return () => { cancelled = true; };
   }, [symbol]);
 
-  const latest = data?.latest || null;
-  const fresh = staleness(latest?.date);
+  const latest = live?.row || data?.latest || null;
+  const strikeSource = live?.byStrike || data?.byStrike || null;
+  const fresh = ageOf(latest?.asOf || (latest?.date ? `${latest.date}T13:00:00Z` : null));
+  const read = useMemo(
+    () => gexRead({ row: latest, byStrike: strikeSource || [], live: !!live }),
+    [latest, strikeSource, live]);
 
-  const strikeRows = useMemo(() => (data?.byStrike || []).map(r => ({
+  const strikeRows = useMemo(() => (strikeSource || []).map(r => ({
     strike: r.strike, net: r.netGexUsd, call: r.callGexUsd, put: r.putGexUsd == null ? null : -r.putGexUsd,
-  })), [data]);
+  })), [strikeSource]);
 
   const seriesRows = useMemo(() => (data?.series || []).map(r => ({
     date: r.date, gex: r.gexUsd, flip: r.flipLevel, spot: r.spot,
@@ -82,10 +103,17 @@ export function GexPanel() {
         ))}
       </div>
       {latest && (
-        <span style={{ fontSize: 11.5, fontWeight: 700, color: fresh.stale ? C.amber : C.muted }}>
-          {fresh.stale ? "⚠ " : ""}{fresh.note}
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: live ? C.green : (TONE_FOR_AGE[fresh.level] || C.muted) }}>
+          {live ? "● live" : `${fresh.stale ? "⚠ " : ""}${fresh.label}`}
         </span>
       )}
+      <button onClick={refreshLive} disabled={liveBusy}
+        style={{ marginLeft: "auto", cursor: liveBusy ? "wait" : "pointer", background: C.surf, color: C.blue,
+                 border: "1.5px solid " + C.blue, borderRadius: 8, padding: "4px 11px", fontSize: 12, fontWeight: 800,
+                 opacity: liveBusy ? 0.6 : 1, whiteSpace: "nowrap" }}
+        title="Recompute the stored positioning at the current spot and time decay. Writes nothing.">
+        {liveBusy ? "Recomputing…" : "↻ Live recompute"}
+      </button>
     </div>
   );
 
@@ -106,8 +134,40 @@ export function GexPanel() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* ── THE READ ──
+          Every other card here is a number that means nothing without the mechanism behind it, and
+          the mechanism is one sentence: dealers hedge, and their hedging either leans against a
+          move or into it. This says which, in words, and abstains when spot is inside the flip zone
+          — which is the common case on a real chain and genuinely is not a regime read. A panel
+          that always has an opinion is one nobody should size off. */}
       <Card>
         {header}
+        {read.ok && (
+          <div style={{ marginTop: 10, padding: "11px 13px", borderRadius: 9,
+                        background: read.state === "amplify" ? C.rBg : read.state === "damp" ? C.gBg : C.surf,
+                        border: "1.5px solid " + (read.state === "amplify" ? C.rBdr : read.state === "damp" ? C.gBdr : C.bdr) }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+              <b style={{ fontSize: 15, color: read.state === "amplify" ? C.red : read.state === "damp" ? C.green : C.mid }}>
+                {read.headline}
+              </b>
+              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase",
+                             color: read.confidence === "clear" ? C.green : read.confidence === "low" ? C.amber : C.muted }}>
+                {read.confidence === "clear" ? "clear" : read.confidence === "low" ? "low confidence" : "no read"}
+              </span>
+            </div>
+            <ul style={{ margin: "7px 0 0", paddingLeft: 17, fontSize: 12, color: C.mid, lineHeight: 1.65 }}>
+              {read.lines.map((l, i) => <li key={i}>{l}</li>)}
+            </ul>
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid " + C.bdr, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+              <b style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase" }}>What it means for a trade </b>
+              {read.stance}
+            </div>
+            <div style={{ marginTop: 6, fontSize: 10.5, color: C.lbl, lineHeight: 1.5 }}>
+              This is a statement about how big moves are, not which way they go — an amplified rally
+              fits it exactly as well as a selloff. It changes stop distance and size, not direction.
+            </div>
+          </div>
+        )}
         <div style={{ marginTop: 10, display: "flex", gap: 20, flexWrap: "wrap" }}>
           <Stat label="Spot" value={fmtNum(latest.spot)} sub={latest.date} />
           <Stat label="Net GEX" value={fmtUsd(latest.gexUsd)} sub="per 1% move"
@@ -133,6 +193,19 @@ export function GexPanel() {
                         border: "1px solid " + (latest.flipFragile ? C.aBdr : C.bdr),
                         color: latest.flipFragile ? C.amber : C.mid }}>
             {latest.flipFragile ? "⚠ " : ""}{latest.flipNote}
+          </div>
+        )}
+        {/* The open-to-close change, which the overwrite used to destroy. It is a read on positioning
+            decaying through the session, and on 2026-09-01 it was large enough to flip the flip
+            from usable to unusable. */}
+        {latest.close?.asOf && !live && (
+          <div style={{ marginTop: 9, fontSize: 11.5, color: C.mid, paddingTop: 8, borderTop: "1px solid " + C.bdr, lineHeight: 1.55 }}>
+            <b style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase" }}>Open → close </b>
+            GEX {fmtUsd(latest.gexUsd)} → {fmtUsd(latest.close.gexUsd)} ·
+            flip {fmtNum(latest.flipLevel)} → {fmtNum(latest.close.flipLevel)}
+            <span style={{ color: C.lbl }}> — the figures above are the PRE-OPEN capture, computed on
+              open interest OCC settled overnight. The close reading sits alongside rather than
+              replacing it, because same-day expiries decay through the session and move all of this.</span>
           </div>
         )}
         <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 7, lineHeight: 1.5 }}>
