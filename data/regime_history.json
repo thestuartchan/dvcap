@@ -779,6 +779,42 @@
         "twoY": 4.34
       },
       "loggedAt": "2026-09-01T12:10:20.128Z"
+    },
+    {
+      "date": "2026-09-02",
+      "stagflation_p": 55,
+      "reflationary_p": 5,
+      "deflationary_p": 35,
+      "inflationary_p": 5,
+      "hawkish_repricing": "INSUFFICIENT_DATA",
+      "live_regime": "stag",
+      "view_regime": "stag",
+      "pinned": true,
+      "hyg_chg": -0.89,
+      "hyg_qqq_divergence": 0.38,
+      "inputs": {
+        "weightedRecessionProb": 15,
+        "cpi": 3.30386,
+        "kalshi2027": 32,
+        "tape": {
+          "gold": "down",
+          "tlt": "down",
+          "xlu": "up",
+          "xlp": "up",
+          "spy": "down",
+          "qqq": "down",
+          "iwm": "down",
+          "btc": "down",
+          "breakevenBp": 0
+        },
+        "ladderSpread": -1.16,
+        "u3": 4.1,
+        "empPop": 58.9,
+        "oas": 2.63,
+        "tenY": 4.75,
+        "twoY": 4.34
+      },
+      "loggedAt": "2026-09-02T07:15:41.173Z"
     }
   ]
 }
