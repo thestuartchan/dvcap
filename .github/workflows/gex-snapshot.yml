@@ -15,13 +15,24 @@
 # sixteen. A 13:00 UTC run would have captured a full chain with nothing to weight it with, every
 # single day — and gamma exposure IS open interest weighted by gamma.
 #
-# 14:15 UTC is 10:15 ET, 45 minutes after the open, by which point the field is populated and the
-# opening auction has settled. The open interest read then is still the PRIOR session's settled
-# number — it does not change again until the following overnight — so the intent of the pre-open
-# plan survives, at a time the vendor actually answers.
+# 15:15 UTC, and it is 15:15 rather than 14:15 BECAUSE OF DST. The US open is 13:30 UTC in summer
+# and 14:30 UTC in winter, so a fixed UTC cron drifts an hour against the session:
 #
-# The 21:00 UTC run is optional and additive: same-day volume and closing IV, written over the same
-# dated row. It is included because it costs one CI minute and the data cannot be recovered later.
+#   14:15 UTC   EDT -> 10:15 ET, 45 min after the open        fine
+#               EST -> 09:15 ET, 15 min BEFORE the open       the exact failure just fixed
+#   15:15 UTC   EDT -> 11:15 ET, 105 min after the open       fine
+#               EST -> 10:15 ET,  45 min after the open       fine
+#
+# One entry that works in both halves of the year beats a DST pair needing a gate this endpoint
+# does not have. Later in the summer session is harmless: open interest is settled overnight and
+# does not move once populated, so any time after the field fills reads the same number.
+#
+# Dubai, where this is read, is UTC+4 year-round — so the capture lands at 19:15 local, and the US
+# session runs 17:30 to 00:00 local in summer, an hour later in winter.
+#
+# The 22:00 UTC run is optional and additive: same-day volume and closing IV, overlaid onto the same
+# dated row rather than replacing it. 22:00 for the same DST reason — 21:00 UTC is 16:00 ET in
+# winter, which is the closing bell itself rather than after it. It is included because it costs one CI minute and the data cannot be recovered later.
 #
 # The endpoint is /api/gex?snapshot=1, not a route of its own. Vercel's Hobby plan caps a
 # deployment at 12 Serverless Functions; as two routes this project hit 13 and the whole deployment
@@ -30,8 +41,8 @@ name: gex snapshot
 
 on:
   schedule:
-    - cron: '15 14 * * 1-5'   # 10:15 ET — settled OI, once Yahoo actually serves it
-    - cron: '0 21 * * 1-5'    # 17:00 ET — closing IV and the day's volume
+    - cron: '15 15 * * 1-5'   # 10:15 ET winter / 11:15 summer — after the open in BOTH
+    - cron: '0 22 * * 1-5'    # 17:00 ET winter / 18:00 summer — safely AFTER the bell in both
   workflow_dispatch:
     inputs:
       dry:
@@ -59,8 +70,8 @@ jobs:
           # Explicit, rather than inferred from the clock: the 13:00 run is canonical and the
           # 21:00 run only overlays closing figures onto it.
           case "${{ github.event.schedule }}" in
-            '15 14 * * 1-5') SESSION=open ;;
-            '0 21 * * 1-5') SESSION=close ;;
+            '15 15 * * 1-5') SESSION=open ;;
+            '0 22 * * 1-5') SESSION=close ;;
             *)              SESSION=open ;;
           esac
           Q="dry=${DRY:-1}&session=$SESSION"
