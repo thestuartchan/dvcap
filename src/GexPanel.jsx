@@ -58,7 +58,7 @@ export function GexPanel() {
       const hit = (j?.results || []).find(x => x.symbol === symbol && x.ok);
       // The snapshot result carries headline figures; re-read the stored row for the rest and
       // overlay. A live read that silently dropped the walls would be a downgrade, not a refresh.
-      if (hit) setLive({ row: { ...(data?.latest || {}), ...hit.row, asOf: new Date().toISOString() }, byStrike: hit.byStrike || null });
+      if (hit) setLive({ row: { ...(data?.latest || {}), ...hit.row, asOf: new Date().toISOString() }, byStrike: hit.byStrike || null, grid: hit.grid || null });
       else setLive(null);
     } catch { setLive(null); }
     setLiveBusy(false);
@@ -77,6 +77,7 @@ export function GexPanel() {
 
   const latest = live?.row || data?.latest || null;
   const strikeSource = live?.byStrike || data?.byStrike || null;
+  const grid = live?.grid || data?.grid || null;
   const fresh = ageOf(latest?.asOf || (latest?.date ? `${latest.date}T13:00:00Z` : null));
   const read = useMemo(
     () => gexRead({ row: latest, byStrike: strikeSource || [], live: !!live }),
@@ -251,6 +252,53 @@ export function GexPanel() {
           </div>
         )}
       </Card>
+
+      {/* ── WHICH EXPIRY THE WALLS LIVE IN ──
+          The by-strike chart above sums every expiry, which is the right aggregate and the wrong
+          diagnostic. A wall six expiries agree on is a level; a wall that exists because today's
+          expiry has enormous gamma at one strike is gone tomorrow, and sizing around it is sizing
+          around a number that will not survive the session. */}
+      {grid?.expiries?.length > 0 && (
+        <Card>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+            <SLabel>Gamma by expiry</SLabel>
+            <span style={{ fontSize: 11.5, color: C.muted }}>is the wall a level, or one expiry's book?</span>
+            {grid.dominated && (
+              <span style={{ fontSize: 10.5, fontWeight: 800, color: C.amber, background: C.aBg,
+                             border: "1px solid " + C.aBdr, borderRadius: 5, padding: "1px 7px" }}>
+                ⚠ concentrated
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 11.5, color: grid.dominated ? C.amber : C.mid, marginTop: 6, lineHeight: 1.55 }}>
+            {grid.note}
+          </div>
+          <div style={{ marginTop: 9, display: "flex", flexDirection: "column", gap: 4 }}>
+            {grid.expiries.map(e => {
+              const w = Math.max(2, Math.min(100, e.shareOfAbs ?? 0));
+              const agrees = e.peakCallStrike === latest.callWall || e.peakPutStrike === latest.putWall;
+              return (
+                <div key={e.expiry} style={{ display: "flex", gap: 9, alignItems: "center", fontSize: 11.5, flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 800, color: C.mid, minWidth: 86 }}>{e.expiry}</span>
+                  <span style={{ minWidth: 44, textAlign: "right", fontWeight: 800,
+                                 color: (e.shareOfAbs ?? 0) >= 50 ? C.amber : C.lbl }}>{e.shareOfAbs}%</span>
+                  <span style={{ flex: "0 0 120px", height: 8, background: C.bg, borderRadius: 4, overflow: "hidden" }}>
+                    <span style={{ display: "block", width: `${w}%`, height: "100%",
+                                   background: (e.netGexUsd ?? 0) >= 0 ? C.green : C.red }} />
+                  </span>
+                  <span style={{ color: C.mid, minWidth: 74 }}>{fmtUsd(e.netGexUsd)}</span>
+                  <span style={{ color: C.muted }}>
+                    peak {fmtNum(e.peakPutStrike)} / {fmtNum(e.peakCallStrike)}
+                    {/* Agreement with the headline wall is the signal: several expiries pointing at
+                        the same strike is what makes it a level rather than an artefact. */}
+                    {agrees && <b style={{ color: C.green }}> ✓ matches headline</b>}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {/* 2 — the history, which is the reason any of this is stored */}
       <Card>
