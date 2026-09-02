@@ -19,25 +19,58 @@
 # GitHub Actions has no such cap, and this repo already schedules flex-sync and tradecard here, so
 # this is the proven path rather than a new one.
 #
-# TIMES ARE UNCHANGED — the same five UTC slots vercel.json carried. The endpoint's own gate still
-# decides which one posts, so the DST pair stays mutually exclusive and a duplicate run is a no-op
-# that answers `skipped: true`.
+# ON LATE RUNS — AND WHY THE SCHEDULE IS NOW A POLL. GitHub schedules are best-effort, and the
+# effort on 2026-09-02 was poor enough to lose the entire day. Every run reported success:
 #
-# ON LATE RUNS. GitHub schedules are best-effort and can lag under load. The gate accepts a 60-minute
-# window opening 20 minutes before the target, and these fire 5 minutes into it — so roughly 55
-# minutes of delay is absorbed silently. Beyond that the run reports `skipped` with the reason and
-# the day is simply missed, which is the same failure mode as before and is visible in the log.
+#   cron 22:45 asia   ran 00:31   1h46 late   SKIPPED — off-window
+#   cron 07:45 eu     ran 12:17   4h32 late   SKIPPED — off-window
+#   cron 08:45 eu     ran 12:58   4h13 late   SKIPPED — off-window
+#   cron 12:45 us     never ran
+#   cron 13:45 us     never ran
 #
-# COST: 5 runs x 5 weekdays x ~1 min billed ≈ 25 min/week, ~108/month against 2,000 free.
+# The gate was right to refuse: a brief written for 09:00 London is worthless at 13:58, and
+# widening the window to accept it would deliver a stale brief rather than fix anything. The
+# endpoint was healthy, the deployment current, the code correct. The scheduler simply did not
+# turn up — the same failure shape as the Vercel cron cap, one layer out.
+#
+# So a single precisely-timed firing is the wrong bet. Each scheduled invocation is queued
+# INDEPENDENTLY, so many attempts spread across the hours that matter give the gate several
+# chances to catch one inside its window, and one arriving on time is enough. Attempts sit on odd
+# minutes: :00, :15, :30 and :45 are the most contended minutes on the platform, and :45 is
+# exactly where all five of the old entries sat.
+#
+# THE DST PAIRS ARE GONE. They existed because Vercel fires a cron line once and the UTC hour of a
+# local 09:00 moves twice a year. Polling removes the need entirely — the gate resolves each
+# region's real local time through Intl on every attempt, so it is DST-correct by construction and
+# the 25 Oct and 1 Nov landmines are defused rather than rescheduled.
+#
+# SAFE ONLY BECAUSE OF THE DEDUPE. Several attempts landing in one window would post the brief
+# several times. api/preread.js now refuses a region that has already delivered on its own local
+# calendar date, so the extra attempts are no-ops that say so. The two changes ship together and
+# neither is correct alone.
+#
+# COVERAGE, checked against the gate's own window [target-15min, target+40min). Every case gets
+# three in-window attempts, in both DST halves:
+#
+#   asia  23:00 UTC  window 22:45-23:40   ->  23:07  23:23  23:39
+#   eu    08:00 UTC  window 07:45-08:40   ->  08:07  08:23  08:39   (BST)
+#         09:00 UTC  window 08:45-09:40   ->  09:07  09:23  09:39   (GMT)
+#   us    13:00 UTC  window 12:45-13:40   ->  13:07  13:23  13:39   (EDT)
+#         14:00 UTC  window 13:45-14:40   ->  14:07  14:23  14:39   (EST)
+#
+# COST: 24 attempts a weekday, one job each, ~1 min billed — 120 runs/week, ~520/month against
+# 2,000 free. Each job calls all three regions, but that is three HTTP requests inside one job.
+
 name: pre-read
 
 on:
   schedule:
-    - cron: '45 22 * * 0-4'    # asia  — 07:00 HKT target (no DST in HK/KR/TW/JP)
-    - cron: '45 7 * * 1-5'     # eu    — 09:00 London, BST half of the year
-    - cron: '45 8 * * 1-5'     # eu    — 09:00 London, GMT half (live from 25 Oct)
-    - cron: '45 12 * * 1-5'    # us    — 09:00 ET, EDT half
-    - cron: '45 13 * * 1-5'    # us    — 09:00 ET, EST half (live from 1 Nov)
+    # Asia targets 07:00 HKT = 23:00 UTC year-round (no DST in HK/KR/TW/JP).
+    - cron: '7,23,39 22-23 * * 0-4'
+    # Europe targets 09:00 London = 08:00 UTC in BST, 09:00 UTC in GMT. Both covered.
+    - cron: '7,23,39 7-9 * * 1-5'
+    # US targets 09:00 ET = 13:00 UTC in EDT, 14:00 UTC in EST. Both covered.
+    - cron: '7,23,39 12-14 * * 1-5'
   workflow_dispatch:
     inputs:
       region:
@@ -62,46 +95,49 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
-      - name: Work out which region this run is for
+      - name: Decide what this run is allowed to do
         id: pick
         run: |
-          # A scheduled run knows its region only from the cron line that started it; a manual one
-          # is told. Mapping it here keeps one job rather than five near-identical ones.
-          case "${{ github.event.schedule }}" in
-            '45 22 * * 0-4') R=asia ;;
-            '45 7 * * 1-5')  R=eu ;;
-            '45 8 * * 1-5')  R=eu ;;
-            '45 12 * * 1-5') R=us ;;
-            '45 13 * * 1-5') R=us ;;
-            *)               R="${{ github.event.inputs.region }}" ;;
-          esac
-          POST="${{ github.event.inputs.post }}";  [ -n "${{ github.event.schedule }}" ] && POST=1
-          GATE="${{ github.event.inputs.gate }}";  [ -n "${{ github.event.schedule }}" ] && GATE=1
-          echo "region=${R:-us}"      >> "$GITHUB_OUTPUT"
-          echo "post=${POST:-0}"      >> "$GITHUB_OUTPUT"
-          echo "gate=${GATE:-1}"      >> "$GITHUB_OUTPUT"
-          echo "region=${R:-us} post=${POST:-0} gate=${GATE:-1}"
+          # A scheduled attempt no longer maps to one region — it tries all three and the gate
+          # decides which, if any, is due. Only a manual run picks a single region, and only a
+          # manual run may skip the gate or suppress the post.
+          if [ -n "${{ github.event.schedule }}" ]; then
+            echo "regions=asia eu us" >> "$GITHUB_OUTPUT"
+            echo "post=1"             >> "$GITHUB_OUTPUT"
+            echo "gate=1"             >> "$GITHUB_OUTPUT"
+          else
+            echo "regions=${{ github.event.inputs.region }}" >> "$GITHUB_OUTPUT"
+            echo "post=${{ github.event.inputs.post }}"      >> "$GITHUB_OUTPUT"
+            echo "gate=${{ github.event.inputs.gate }}"      >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Assemble and deliver the brief
         run: |
-          Q="region=${{ steps.pick.outputs.region }}&post=${{ steps.pick.outputs.post }}"
-          [ "${{ steps.pick.outputs.gate }}" = "1" ] && Q="$Q&cron=1"
-          code=$(curl -sS -o /tmp/out.json -w '%{http_code}' --max-time 180 \
-            "https://dvcap.vercel.app/api/preread?$Q") || true
-          echo "HTTP $code"
-          # `skipped` is a normal answer, not a failure: the DST pair means one of the two entries
-          # is always off-window by design. Print the reason so a genuinely missed day is legible.
-          # Python opens the file itself rather than taking it on stdin: a heredoc and a `<`
-          # redirect both claim fd 0, the redirect wins, and python would read the JSON as its
-          # own program. The `|| cat` below would have hidden that on every single run.
-          python3 - <<'PY' || cat /tmp/out.json
-          import json
-          d=json.load(open('/tmp/out.json'))
-          if d.get('skipped'): print('SKIPPED —', d.get('reason'))
+          set -u
+          fail=0
+          for R in ${{ steps.pick.outputs.regions }}; do
+            Q="region=$R&post=${{ steps.pick.outputs.post }}"
+            [ "${{ steps.pick.outputs.gate }}" = "1" ] && Q="$Q&cron=1"
+            code=$(curl -sS -o "/tmp/$R.json" -w '%{http_code}' --max-time 180 \
+              "https://dvcap.vercel.app/api/preread?$Q") || true
+            echo "── $R — HTTP $code"
+            # `skipped` is a normal answer: most attempts are outside the window by design, and one
+            # that lands after the brief already went says so. Print the reason either way, so a
+            # genuinely missed day stays legible in the log.
+            # Python opens the file itself rather than taking it on stdin: a heredoc and a `<`
+            # redirect both claim fd 0, the redirect wins, and python would read the JSON as its
+            # own program. A `|| cat` fallback would have hidden that on every single run.
+            R="$R" python3 - <<'PY' || cat "/tmp/$R.json"
+          import json, os
+          r = os.environ['R']
+          d = json.load(open(f'/tmp/{r}.json'))
+          if d.get('skipped'): print('   SKIPPED —', d.get('reason'))
           else:
-              p=d.get('posted')
-              print('posted:', json.dumps(p) if p else '(dry run, not posted)')
-              print('previous run:', json.dumps(d.get('previous')))
-              print('brief bytes:', len(d.get('message') or ''))
+              p = d.get('posted')
+              print('   posted:', json.dumps(p) if p else '(dry run, not posted)')
+              print('   previous run:', json.dumps(d.get('previous')))
+              print('   brief bytes:', len(d.get('message') or ''))
           PY
-          [ "$code" = "200" ] || exit 1
+            [ "$code" = "200" ] || fail=1
+          done
+          exit $fail

@@ -5,7 +5,7 @@
 // building rows whose private values are distinctive digit strings and asserting those strings
 // appear nowhere in the serialised output. A future edit that adds "· 600 @ 18.06" to a line fails
 // here rather than on a Discord server.
-import { publicView, buildCard, buildClosedCard, closedLine, rOf, isOptionTrade, showsOnCard, CLOSED_WINDOW_DAYS, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, dirOf, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS } from '../lib/tradecard.js';
+import { publicView, buildCard, buildClosedCard, closedLine, rOf, lockedPct, isOptionTrade, showsOnCard, CLOSED_WINDOW_DAYS, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, dirOf, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS } from '../lib/tradecard.js';
 import { isWebhookUrl, alertTtlMin, mentionFromEnv, webhookFromEnv } from '../lib/discord.js';
 import fs from 'node:fs';
 let pass=0,fail=0;
@@ -336,6 +336,71 @@ const order = buildClosedCard([
   { ...dated('CLOSED_LAST', '2026-08-26') },
 ], { today: '2026-08-27' }).embeds[0].description.split('\n');
 eq('sorted by exit date', order[0].includes('CLOSED_LAST'), true);
+
+// ── A STOP ABOVE ENTRY IS A FLOOR, NOT A RISK ───────────────────────────────
+// The ASTX line from the 2026-08-27 card, which read "SL 10.50 (-1%)" while the stop sat 14% above
+// the average. Every number below is from that card.
+{
+  eq('a stop above entry reports what it books', lockedPct(10.50, 9.20), 14.1);
+  eq('an ordinary stop reports nothing', lockedPct(32.25, 35.40), null);
+  eq('a stop exactly at entry is not a floor', lockedPct(9.20, 9.20), null);
+  eq('nor a hair below it', lockedPct(9.19, 9.20), null);
+  ok('a hair above it is', lockedPct(9.21, 9.20) > 0);
+  eq('no entry, no answer', lockedPct(10.50, null), null);
+  eq('no stop, no answer', lockedPct(null, 9.20), null);
+  eq('a zero entry cannot divide', lockedPct(10.50, 0), null);
+
+  const astx = publicView({
+    symbol: 'ASTX', price: 10.62, pnl: { unrealizedPct: 15.43 },
+    derived: { avgCost: 9.20, firstDate: '2026-08-26', status: 'open' },
+    levels: [{ kind: 'stop', at: 10.50 }, { kind: 'sell', at: 12.10 }],
+  }, { today: '2026-08-27' });
+  eq('the view carries the floor', astx.stop.locked, 14.1);
+  eq('and still carries the distance from here', astx.stop.dist, -1.1);
+  eq('R stays null - there is no risk unit to divide by', astx.r, null);
+
+  const line = tradeLine(astx);
+  ok('the line says what triggering the stop books', line.includes('+14% locked'));
+  ok('and keeps the room left before it triggers', line.includes('SL 10.50 (-1%)'));
+  ok('room first, then outcome', line.indexOf('(-1%)') < line.indexOf('locked'));
+
+  const iren = publicView({
+    symbol: 'IREN', price: 37.49, pnl: { unrealizedPct: 5.90 },
+    derived: { avgCost: 35.40, firstDate: '2026-08-26', status: 'open' },
+    levels: [{ kind: 'stop', at: 32.25 }],
+  }, { today: '2026-08-27' });
+  eq('a normal position carries no floor', iren.stop.locked, null);
+  ok('and its line is unchanged', !tradeLine(iren).includes('locked'));
+  eq('R still works where a risk unit exists', iren.r, 0.7);
+
+  ok('the floor survives compact detail', tradeLine(astx, 'compact').includes('locked'));
+}
+
+// ── A DISTANCE THAT ROUNDS TO ZERO IS NOT ZERO ──────────────────────────────
+{
+  const rklb = publicView({
+    symbol: 'RKLB', price: 62.58, pnl: { unrealizedPct: -2.98 },
+    derived: { avgCost: 64.50, firstDate: '2026-08-26', status: 'open' },
+    levels: [{ kind: 'stop', at: 62.45 }],
+  }, { today: '2026-08-27' });
+  const line = tradeLine(rklb);
+  ok('a sub-1% distance keeps a digit', line.includes('(-0.2%)'));
+  ok('and no longer reads as zero', !line.includes('(-0%)'));
+
+  const iren = publicView({
+    symbol: 'IREN', price: 37.49, pnl: { unrealizedPct: 5.9 },
+    derived: { avgCost: 35.40, firstDate: '2026-08-26', status: 'open' },
+    levels: [{ kind: 'stop', at: 32.25 }],
+  }, { today: '2026-08-27' });
+  ok('an ordinary distance stays whole', tradeLine(iren).includes('(-14%)'));
+
+  const tight = publicView({
+    symbol: 'X', price: 100, pnl: { unrealizedPct: 0 },
+    derived: { avgCost: 100, firstDate: '2026-08-26', status: 'open' },
+    levels: [{ kind: 'stop', at: 99.998 }],
+  }, { today: '2026-08-27' });
+  ok('a truly negligible distance is allowed to read as zero', /\(-?0%\)/.test(tradeLine(tight)));
+}
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);
