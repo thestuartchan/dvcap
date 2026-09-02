@@ -1,5 +1,5 @@
 // test/futures.test.mjs — the contract sizes, and the promise that an unknown one stays unknown.
-import { FUTURES_MULTIPLIER, futuresRoot, multiplierFor } from '../lib/futures.js';
+import { FUTURES_MULTIPLIER, futuresRoot, multiplierFor, backfillMultipliers } from '../lib/futures.js';
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log(`✅ ${name}`); } else { fail++; console.log(`❌ ${name}`); } };
@@ -84,6 +84,56 @@ const eq = (name, got, want) => { const g = JSON.stringify(got), w = JSON.string
   // resolves to a different contract.
   ok('no root rewrites to another', Object.keys(FUTURES_MULTIPLIER).every(k => futuresRoot(k) === k));
   eq('the table is frozen', Object.isFrozen(FUTURES_MULTIPLIER), true);
+}
+
+// ── THE BACKFILL ────────────────────────────────────────────────────────────
+{
+  const rows = [
+    { id: 'mgc1', symbol: 'MGC', margined: true },                    // the broken one — no field
+    { id: 'mgc2', symbol: 'MGC', margined: true, multiplier: 10 },    // already right
+    { id: 'mnq',  symbol: 'MNQ', margined: true, multiplier: 1 },     // coerced to 1 at some point
+    { id: 'met',  symbol: 'MET', multiplier: 1 },                     // MetLife, NOT micro ether
+    { id: 'nvda', symbol: 'NVDA', multiplier: 1 },                    // a plain share
+    { id: 'zc',   symbol: 'ZC', margined: true },                     // a contract nobody knows
+  ];
+  const out = backfillMultipliers(rows);
+  const by = Object.fromEntries(out.rows.map(r => [r.id, r]));
+
+  eq('the broken row is given its contract size', by.mgc1.multiplier, 10);
+  eq('a row coerced to 1 is corrected', by.mnq.multiplier, 2);
+  eq('a row that was already right is untouched', by.mgc2.multiplier, 10);
+  eq('two rows were fixed', out.fixed.length, 2);
+  eq('and it says which, and from what', out.fixed.map(f => `${f.symbol}:${f.from}->${f.to}`), ['MGC:null->10', 'MNQ:1->2']);
+
+  // THE LINE THAT MUST NOT BE CROSSED. MET is MetLife. Repricing it at x0.1 would be a worse bug
+  // than the one being fixed, so a symbol match alone never changes anything.
+  eq('MetLife is not repriced as micro ether', by.met.multiplier, 1);
+  ok('it is raised for a human instead', out.review.some(r => r.symbol === 'MET' && r.wouldBe === 0.1));
+  eq('a plain share is neither fixed nor raised', by.nvda.multiplier, 1);
+  ok('and is not in the review list', !out.review.some(r => r.symbol === 'NVDA'));
+  // Every colliding root must behave the same way, not just the one that was thought of.
+  for (const sym of ['MET', 'PL', 'CL', 'ES', 'NG', 'SI', 'HG', 'GC', 'RB', 'HO']) {
+    const r = backfillMultipliers([{ id: 'x', symbol: sym, multiplier: 1 }]);
+    eq(`${sym} as a share is left alone`, r.rows[0].multiplier, 1);
+    eq(`and ${sym} is raised rather than guessed`, r.review.length, 1);
+  }
+
+  // An unknown contract is not invented, and not silently left looking fine either.
+  eq('an unknown contract gets no multiplier', by.zc.multiplier, undefined);
+  ok('and is not claimed as fixed', !out.fixed.some(f => f.symbol === 'ZC'));
+
+  // Idempotent — running it twice changes nothing the second time.
+  const again = backfillMultipliers(out.rows);
+  eq('a second pass fixes nothing', again.fixed.length, 0);
+  eq('and the rows are unchanged', JSON.stringify(again.rows), JSON.stringify(out.rows));
+  eq('an empty book is fine', backfillMultipliers([]).fixed.length, 0);
+  eq('so is nonsense', backfillMultipliers(null).rows.length, 0);
+
+  // The archive figure this whole thing exists for.
+  const move = (4385.40 - 4506.40) * 2;
+  eq('MGC realised, before', +move.toFixed(2), -242);
+  eq('MGC realised, after the backfill', +(move * by.mgc1.multiplier).toFixed(2), -2420);
+  eq('and the archive total moves with it', +(4978.81 + 242 - 2420).toFixed(2), 2800.81);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
