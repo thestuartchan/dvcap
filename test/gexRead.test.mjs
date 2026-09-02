@@ -107,5 +107,41 @@ const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600000).toISOString();
   eq('an empty call does not throw', gexRead().ok, false);
 }
 
+// ── CONCENTRATION BELONGS NEXT TO THE WALLS, NOT SIX SCREENS BELOW THEM ─────
+{
+  const row = { asOf: hoursAgo(1), spot: 700, gexUsd: -5e9, flipLevel: 715,
+    flipZoneLo: 712, flipZoneHi: 718, callWall: 740, putWall: 690 };
+  const dominated = { dominated: true, frontExpiry: '2026-09-02', frontShare: 71.4,
+    expiries: [{ expiry: '2026-09-02' }, { expiry: '2026-09-04' }] };
+  const spread = { dominated: false, frontExpiry: '2026-09-02', frontShare: 18.2,
+    expiries: [{ expiry: '2026-09-02' }, { expiry: '2026-09-04' }, { expiry: '2026-09-18' }] };
+
+  const d = gexRead({ row, grid: dominated, now: NOW });
+  ok('a dominated book is called out in the read', d.lines.some(l => l.includes('71.4%')));
+  ok('and names the expiry that owns it', d.lines.some(l => l.includes('2026-09-02') && l.includes('expires')));
+  eq('and is flagged on the object', d.concentrated, true);
+  // The point of moving it: it has to land AFTER the walls line, where it qualifies something.
+  const wallAt = d.lines.findIndex(l => l.includes('Walls at'));
+  const concAt = d.lines.findIndex(l => l.includes('71.4%'));
+  ok('the walls are stated first, then qualified', wallAt >= 0 && concAt === wallAt + 1);
+
+  const sp = gexRead({ row, grid: spread, now: NOW });
+  ok('a spread book says so too', sp.lines.some(l => l.includes('3 expiries')));
+  eq('and is not flagged', sp.concentrated, false);
+  ok('silence is not the same as agreement — both cases speak', sp.lines.length === d.lines.length);
+
+  // Concentration qualifies the WALLS. It does not make the regime read wrong, and must not
+  // quietly downgrade a clear flip read into a low-confidence one.
+  const plain = gexRead({ row, now: NOW });
+  eq('confidence is unchanged by concentration', d.confidence, plain.confidence);
+  eq('and the headline too', d.headline, plain.headline);
+  eq('no grid means no line rather than a guess', plain.lines.some(l => l.includes('expiries')), false);
+  eq('and no flag', plain.concentrated, false);
+  // A single-expiry grid has nothing to compare across, so the "holds across N expiries" claim
+  // would be vacuous.
+  const one = gexRead({ row, grid: { dominated: false, frontShare: 100, expiries: [{ expiry: '2026-09-02' }] }, now: NOW });
+  eq('one expiry makes no cross-expiry claim', one.lines.some(l => l.includes('hold across')), false);
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
