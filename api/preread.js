@@ -7,7 +7,7 @@ import { UNIVERSE } from '../data/universe.js';
 import { assembleRegion } from '../lib/assemble.js';
 import { structure } from '../lib/regime.js';
 import { weekHighlights } from '../lib/calendar.js';
-import { marketState, localHour, localMinutesOfDay, halfDayLabels, freshness, freshnessText, sessionCloseMin } from '../lib/sessions.js';
+import { marketState, localHour, localMinutesOfDay, localDateIn, halfDayLabels, freshness, freshnessText, sessionCloseMin } from '../lib/sessions.js';
 import { kvGetJson, kvSetJson, kvConfigured } from '../lib/kv.js';
 import { coreSpread } from '../lib/inflation.js';
 
@@ -335,6 +335,28 @@ export default async function handler(req, res) {
   // absorbing up to ~an hour of positive cron jitter. Only scheduled calls pass cron=1 —
   // manual calls/dry-runs skip the gate, so tests always run.
   if (req.query.cron === '1') {
+    // ── ONCE A DAY, WHATEVER THE SCHEDULER DOES ──────────────────────────────
+    // The window gate alone was enough while exactly one firing per region arrived per day. It is
+    // not enough now: GitHub's scheduler delivered every run on 2026-09-02 between 1h46m and 4h32m
+    // late, and two of the five never arrived at all, so the fix is to fire MANY attempts and let
+    // the gate pick the one that lands in the window. That only works if a second attempt landing
+    // in the same window is harmless — otherwise the cure is a double-posted brief.
+    //
+    // Asked in the REGION'S day, not UTC's. Asia targets 07:00 HKT, which is the previous calendar
+    // day in UTC; a UTC-dated check would call the second attempt a new day and post it again.
+    const todayLocal = localDateIn(R.tz);
+    if (kvConfigured() && todayLocal) {
+      try {
+        const log = (await kvGetJson(PREREAD_LAST_KEY)) || {};
+        const last = log[region];
+        if (last?.localDate === todayLocal) {
+          return res.status(200).json({
+            region, skipped: true, previous: last,
+            reason: `already delivered for ${todayLocal} (posted ${last.at}) — a later attempt in the same window is a duplicate, not a retry`,
+          });
+        }
+      } catch { /* a KV failure must not silence the brief — fall through to the window gate */ }
+    }
     const nowMin = localMinutesOfDay(R.tz);
     const w = prereadWindow(nowMin, R.prereadHourLocal);
     const openMin = w.open;
@@ -393,7 +415,10 @@ export default async function handler(req, res) {
       const log = (await kvGetJson(PREREAD_LAST_KEY)) || {};
       previous = log[region] || null;
       if (posted?.ok) {
-        await kvSetJson(PREREAD_LAST_KEY, { ...log, [region]: { at: new Date().toISOString(), cron: req.query.cron === '1' } });
+        // localDate is what the dedupe reads back. Written only on a confirmed post, so a failed
+        // delivery leaves the day open for the next attempt rather than marking it done.
+        await kvSetJson(PREREAD_LAST_KEY, { ...log, [region]: {
+          at: new Date().toISOString(), localDate: localDateIn(R.tz), cron: req.query.cron === '1' } });
       }
     } catch { /* the brief matters more than the bookkeeping */ }
   }

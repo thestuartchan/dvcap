@@ -1,4 +1,5 @@
 // test/preread.test.mjs — the delivery window.
+import { localDateIn } from '../lib/sessions.js';
 //
 // The whole daily brief hangs on this arithmetic and it had never been pinned. The Asia brief was
 // skipped on 2026-08-28; the endpoint was healthy and the schedule correct, and the only structural
@@ -45,6 +46,37 @@ ok('no target hour admits both', Array.from({ length: 24 }, (_, t) =>
   eq('and close is span past it', w.close, w.open + w.span);
   ok('the first minute is in', prereadWindow(w.open, 7).accept);
   ok('and the closing minute is out', !prereadWindow(w.close, 7).accept);
+}
+
+// ── THE DEDUPE HAS TO ASK IN THE REGION'S DAY ───────────────────────────────
+// The schedule is now a poll: many attempts per window, and the gate accepts whichever lands
+// inside it. That is only safe because a region that has already delivered today refuses the
+// later attempts — and "today" has to mean the region's calendar day, not UTC's.
+{
+  // 23:10 UTC on 2026-09-02. Hong Kong is already on the 3rd; New York is still on the 2nd. The
+  // Asia pre-read targets 07:00 HKT, so it fires in exactly this band — a UTC-dated check would
+  // call the second attempt a new day and post the brief twice.
+  const t = new Date('2026-09-02T23:10:00Z');
+  eq('UTC and Hong Kong disagree about the date here', localDateIn('Asia/Hong_Kong', t), '2026-09-03');
+  eq('and New York does not', localDateIn('America/New_York', t), '2026-09-02');
+  ok('which is the whole reason the check is per-region',
+    localDateIn('Asia/Hong_Kong', t) !== t.toISOString().slice(0, 10));
+
+  // Two attempts inside one Asia window must agree they are the same day.
+  const a1 = new Date('2026-09-02T23:07:00Z'), a2 = new Date('2026-09-02T23:39:00Z');
+  eq('two attempts in one window are one day', localDateIn('Asia/Hong_Kong', a1), localDateIn('Asia/Hong_Kong', a2));
+  // And the next day's window must not be.
+  eq('the next day is a different day', localDateIn('Asia/Hong_Kong', new Date('2026-09-03T23:07:00Z')), '2026-09-04');
+
+  // DST is the other thing this must survive: London's local date is unaffected by the BST/GMT
+  // switch, which is precisely why the cron pairs could be deleted.
+  eq('London in BST', localDateIn('Europe/London', new Date('2026-09-02T08:07:00Z')), '2026-09-02');
+  eq('London in GMT', localDateIn('Europe/London', new Date('2026-11-03T09:07:00Z')), '2026-11-03');
+  // Just before local midnight in GMT, UTC and London agree; the point is it never throws or drifts.
+  eq('and across a year boundary', localDateIn('Europe/London', new Date('2027-01-01T00:30:00Z')), '2027-01-01');
+
+  eq('a nonsense zone yields null rather than a wrong date',
+    (() => { try { return localDateIn('Not/AZone', t); } catch { return null; } })(), null);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
