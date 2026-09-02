@@ -332,42 +332,57 @@ eq('a fill carries the id that stops it being recorded twice', fillFrom({ tradeI
 // verify() decides whether a whole batch is written. On 2026-09-02 it discarded one because ASTX
 // had been sold down by hand after the 09-01 statement was cut — both sides right, nothing written.
 {
-  const derive = () => { throw new Error('derive should be given per call'); };
-  const astxDerived = {
-    status: 'open', qty: 100, avgCost: 9.2,
-    fills: [
-      { side: 'buy',  qty: 500, price: 9.2,  date: '2026-09-01' },
-      { side: 'sell', qty: 400, price: 10.6, date: '2026-09-02' },
-    ],
-  };
-  const rows = [{ id: 'astx', symbol: 'ASTX' }];
+  const derive = (r) => derivePosition(r.fills || [], { multiplier: r.multiplier });
   const pos = [{ root: 'ASTX', symbol: 'ASTX', qty: 500, costBasisPrice: 9.2, assetCategory: 'STK' }];
-  const d = () => astxDerived;
+  const rowWith = (fills) => [{ id: 'astx', symbol: 'ASTX', fills }];
+  const sold = rowWith([
+    { side: 'buy',  qty: 500, price: 9.2,  date: '2026-09-01' },
+    { side: 'sell', qty: 400, price: 10.6, date: '2026-09-02' },
+  ]);
 
-  const blind = verify(rows, pos, { derive: d, roots: ['ASTX'] });
-  eq('without a statement date the live quantity is compared, and fails', blind.ok, false);
-
-  const dated = verify(rows, pos, { derive: d, roots: ['ASTX'], asOf: '2026-09-01' });
-  eq('rewound to the statement day it passes', dated.ok, true);
+  eq('without a statement date the live quantity is compared, and fails',
+    verify(sold, pos, { derive, roots: ['ASTX'] }).ok, false);
+  const dated = verify(sold, pos, { derive, roots: ['ASTX'], asOf: '2026-09-01' });
+  eq('re-derived to the statement day it passes', dated.ok, true);
   eq('with nothing left to report', dated.problems.length, 0);
 
-  // The gate must NOT have been loosened. A rewind that lands somewhere else still fails, and the
-  // message says the rewind was tried so the reader is not left comparing the wrong two numbers.
-  const bad = verify(rows, [{ ...pos[0], qty: 900 }], { derive: d, roots: ['ASTX'], asOf: '2026-09-01' });
+  // THE HOLE THAT WAS LEFT. A BUY after the statement reconciles the quantity and moves the
+  // average — 9.67 against a statement of 9.20 — so the batch was discarded on a cost basis nobody
+  // disagreed about. Rewinding one field and not the other was not a fix.
+  const bought = rowWith([
+    { side: 'buy', qty: 500, price: 9.20, date: '2026-09-01' },
+    { side: 'buy', qty: 100, price: 12.00, date: '2026-09-02' },
+  ]);
+  ok('the live average really has moved', Math.abs(derive(bought[0]).avgCost - 9.2) > 0.4);
+  eq('and an add after the statement now passes the gate',
+    verify(bought, pos, { derive, roots: ['ASTX'], asOf: '2026-09-01' }).ok, true);
+
+  // Quantity back to the statement's figure but the average moved — the shape that slips past a
+  // quantity-only check entirely.
+  const churn = rowWith([
+    { side: 'buy',  qty: 500, price: 9.20,  date: '2026-09-01' },
+    { side: 'buy',  qty: 100, price: 12.00, date: '2026-09-02' },
+    { side: 'sell', qty: 100, price: 12.50, date: '2026-09-02' },
+  ]);
+  eq('a round trip after the statement passes too',
+    verify(churn, pos, { derive, roots: ['ASTX'], asOf: '2026-09-01' }).ok, true);
+
+  // The gate must NOT have been loosened.
+  const bad = verify(sold, [{ ...pos[0], qty: 900 }], { derive, roots: ['ASTX'], asOf: '2026-09-01' });
   eq('an unexplained gap still fails the gate', bad.ok, false);
   ok('and says it was rewound', bad.problems[0].why.includes('rewound to 2026-09-01'));
   eq('reporting the as-of figure', bad.problems[0].console, 500);
   eq('and the live one alongside it', bad.problems[0].liveNow, 100);
+  eq('a cost the statement never claimed still fails',
+    verify(bought, [{ ...pos[0], costBasisPrice: 7.5 }], { derive, roots: ['ASTX'], asOf: '2026-09-01' }).ok, false);
 
   // A row that has not traded since the statement is unaffected either way.
-  const quiet = () => ({ status: 'open', qty: 500, avgCost: 9.2,
-    fills: [{ side: 'buy', qty: 500, price: 9.2, date: '2026-09-01' }] });
-  eq('a quiet row passes with a date', verify(rows, pos, { derive: quiet, roots: ['ASTX'], asOf: '2026-09-01' }).ok, true);
-  eq('and without one', verify(rows, pos, { derive: quiet, roots: ['ASTX'] }).ok, true);
-  // And a quiet row that genuinely disagrees still fails with the plain message.
-  const wrong = verify(rows, [{ ...pos[0], qty: 250 }], { derive: quiet, roots: ['ASTX'], asOf: '2026-09-01' });
+  const quiet = rowWith([{ side: 'buy', qty: 500, price: 9.2, date: '2026-09-01' }]);
+  eq('a quiet row passes with a date', verify(quiet, pos, { derive, roots: ['ASTX'], asOf: '2026-09-01' }).ok, true);
+  eq('and without one', verify(quiet, pos, { derive, roots: ['ASTX'] }).ok, true);
+  const wrong = verify(quiet, [{ ...pos[0], qty: 250 }], { derive, roots: ['ASTX'], asOf: '2026-09-01' });
   eq('a real mismatch still fails', wrong.ok, false);
-  ok('with the plain message, since no rewind happened', !wrong.problems[0].why.includes('rewound'));
+  ok('with the plain message, since nothing moved', !wrong.problems[0].why.includes('rewound'));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

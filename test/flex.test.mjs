@@ -6,7 +6,7 @@
 // and the two symbol conventions (futures month codes, Hong Kong numerics) that make raw string
 // matching fail.
 import { parseFlexResponse, parseStatement, reconcile, rootOf, classOf, autoAddable, rowFromPosition,
-         summarise, summariseActionable, actionable, signatureOf, isoDate, matchKey, planAck, sendRequestUrl, statementUrl, fetchStatement, elements, attrs, COST_TOLERANCE_PCT, qtyAsOf } from '../lib/flex.js';
+         summarise, summariseActionable, actionable, signatureOf, isoDate, matchKey, planAck, sendRequestUrl, statementUrl, fetchStatement, elements, attrs, COST_TOLERANCE_PCT, asOfState } from '../lib/flex.js';
 import { derivePosition } from '../lib/positions.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -344,11 +344,17 @@ eq('elements are found whether or not they self-close', elements('<A x="1"/><A x
   };
   const stmt = [{ root: 'ASTX', symbol: 'ASTX', qty: 500, costBasisPrice: 9.2, assetCategory: 'STK' }];
 
-  eq('rewinding undoes the sell', qtyAsOf(astx, '2026-09-01'), 500);
-  eq('a fill ON the statement date is not undone', qtyAsOf(astx, '2026-09-02'), null);
-  eq('no asOf, no rewind', qtyAsOf(astx, null), null);
+  const derive = (r) => derivePosition(r.fills || [], { multiplier: r.multiplier });
+  const back = asOfState(astx, '2026-09-01', derive);
+  eq('re-deriving to the statement day gives its quantity', back.qty, 500);
+  // The cost too, which the arithmetic rewind could not do — see the note in lib/flex.js.
+  eq('and its cost basis', back.avgCost, 9.2);
+  eq('and says how many fills moved', back.moved, 1);
+  eq('a fill ON the statement date is not excluded', asOfState(astx, '2026-09-02', derive), null);
+  eq('no asOf, no rewind', asOfState(astx, null, derive), null);
+  eq('no deriver, no rewind', asOfState(astx, '2026-09-01', null), null);
 
-  const rec = reconcile([astx], stmt, { today: '2026-09-02', asOf: '2026-09-01' });
+  const rec = reconcile([astx], stmt, { today: '2026-09-02', asOf: '2026-09-01', derive });
   eq('it is no longer called a disagreement', rec.differs.length, 0);
   const chg = rec.report.filter(r => r.kind === 'changed-since-statement');
   eq('it is reported as movement since the statement', chg.length, 1);
@@ -360,14 +366,14 @@ eq('elements are found whether or not they self-close', elements('<A x="1"/><A x
   ok('and it does not page anyone', !actionable(rec).some(a => a.includes('astx')));
 
   // A rewind that does NOT reconcile is a real finding and must survive.
-  const wrong = reconcile([astx], [{ ...stmt[0], qty: 900 }], { today: '2026-09-02', asOf: '2026-09-01' });
+  const wrong = reconcile([astx], [{ ...stmt[0], qty: 900 }], { today: '2026-09-02', asOf: '2026-09-01', derive });
   eq('an unexplained gap is still a disagreement', wrong.differs.length, 1);
   eq('and it shows what the rewind produced', wrong.differs[0].qty.asOf, 500);
   eq('against what the broker says', wrong.differs[0].qty.ibkr, 900);
 
   // With no fills after the statement, nothing changes — the old path is untouched.
   const settled = { ...astx, derived: { ...astx.derived, fills: [astx.derived.fills[0]], qty: 500, sold: 0, lastDate: '2026-09-01' } };
-  eq('a quiet row still reconciles normally', reconcile([settled], stmt, { today: '2026-09-02', asOf: '2026-09-01' }).agree.length, 1);
+  eq('a quiet row still reconciles normally', reconcile([settled], stmt, { today: '2026-09-02', asOf: '2026-09-01', derive }).agree.length, 1);
 }
 
 // ── A SETUP IS NOT A POSITION ───────────────────────────────────────────────
@@ -398,6 +404,32 @@ eq('elements are found whether or not they self-close', elements('<A x="1"/><A x
   eq('an incomplete buy is still a position',
     reconcile([pending], [], { today: '2026-09-02', asOf: '2026-09-01' })
       .report.filter(r => r.kind === 'missing-at-broker').length, 1);
+}
+
+{
+  // A BUY after the statement is the case the arithmetic rewind could not reach: it reconciles the
+  // quantity and leaves the average somewhere the statement never claimed. Measured at 9.67 against
+  // a statement of 9.20, and the batch was discarded on a figure nobody disagreed about.
+  const derive = (r) => derivePosition(r.fills || [], { multiplier: r.multiplier });
+  const fills = [
+    { side: 'buy', qty: 500, price: 9.20, date: '2026-09-01' },
+    { side: 'buy', qty: 100, price: 12.00, date: '2026-09-02' },
+  ];
+  const row = { id: 'astx', symbol: 'ASTX', fills, derived: derive({ fills }) };
+  ok('the live average has moved off the statement', Math.abs(row.derived.avgCost - 9.2) > 0.4);
+  const back = asOfState(row, '2026-09-01', derive);
+  eq('but the as-of average is the statement’s', back.avgCost, 9.2);
+  eq('as is the as-of quantity', back.qty, 500);
+
+  const stmt = [{ root: 'ASTX', symbol: 'ASTX', qty: 500, costBasisPrice: 9.2, assetCategory: 'STK' }];
+  const rec = reconcile([row], stmt, { today: '2026-09-02', asOf: '2026-09-01', derive });
+  eq('so an add after the statement is not a disagreement', rec.differs.length, 0);
+  eq('it is movement since the statement', rec.report.filter(r => r.kind === 'changed-since-statement').length, 1);
+
+  // A cost that does NOT re-derive to the statement is still a disagreement, with both figures.
+  const bad = reconcile([row], [{ ...stmt[0], costBasisPrice: 7.5 }], { today: '2026-09-02', asOf: '2026-09-01', derive });
+  eq('a cost that does not reconcile still differs', bad.differs.length, 1);
+  eq('carrying the as-of figure it was compared against', bad.differs[0].avg.asOf, 9.2);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

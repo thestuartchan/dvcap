@@ -74,7 +74,10 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   const withDerived = rows.map(r => ({ ...r, derived: derivePosition(r.fills || [], { multiplier: r.multiplier }) }));
 
   const asOf = isoDate(got.statement.toDate);
-  const rec = reconcile(withDerived, got.statement.positions, { asOf });
+  // The deriver goes in so reconcile can ask what a row looked like on the statement's own day —
+  // the same function that produced `derived` above, so the two can never drift apart.
+  const deriveRow = (r) => derivePosition(r.fills || [], { multiplier: r.multiplier });
+  const rec = reconcile(withDerived, got.statement.positions, { asOf, derive: deriveRow });
   const result = {
     ok: true,
     account: got.statement.accountId,
@@ -118,7 +121,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
       tradePlan = planTrades(withDerived, parsed, { from });
       const after = applyPlan(rows, tradePlan);
       gate = verify(after, got.statement.positions, {
-        derive: (r) => derivePosition(r.fills || [], { multiplier: r.multiplier }),
+        derive: deriveRow,
         roots: planTouches(tradePlan),
         asOf,
       });
