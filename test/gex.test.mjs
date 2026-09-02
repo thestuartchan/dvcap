@@ -3,7 +3,7 @@
 // code and copying what it said.
 import {
   gexSummary, netGammaAt, flipLevel, flipFragility, walls, toDollarGex,
-  contractGamma, GEX_CONVENTIONS, CONTRACT_MULTIPLIER,
+  contractGamma, gammaGrid, GEX_CONVENTIONS, CONTRACT_MULTIPLIER,
 } from '../lib/gex.js';
 import { gamma } from '../lib/blackscholes.js';
 let pass = 0, fail = 0;
@@ -181,6 +181,59 @@ const OPTS = { r: 0.04, q: 0.005 };
   eq('an empty chain summarises to nulls, not zeros that look computed', [s.flipLevel, s.callWall, s.putWall], [null, null, null]);
   eq('with the counts honest', [s.contracts, s.contractsUsed], [0, 0]);
   eq('and no ADV normalisation without an ADV', gexSummary(CHAIN, { S: 100, ...OPTS }).gexPctOfAdv, null);
+}
+
+// ── which expiry is the wall actually in ─────────────────────────────────────
+// walls() sums every expiry into one number per strike — the right aggregate, the wrong
+// diagnostic. On 2026-09-01 this book's call and put walls both landed within a point of spot
+// (707/708 against 707.14) while a commercial provider had them at 713/710: the shape you get when
+// one 0DTE expiry swamps five others, not when several expiries agree on a level.
+const CE = (k, oi, e, T, iv = 0.20) => ({ type: 'call', strike: k, oi, iv, T, expiry: e });
+const PE = (k, oi, e, T, iv = 0.22) => ({ type: 'put', strike: k, oi, iv, T, expiry: e });
+{
+  // One enormous same-day expiry against five ordinary ones.
+  const g = gammaGrid([
+    CE(707, 90000, '2026-09-02', 0.002), PE(708, 90000, '2026-09-02', 0.002),
+    CE(713, 4000, '2026-09-11', 0.03), PE(710, 4000, '2026-09-11', 0.03),
+    CE(715, 3000, '2026-09-18', 0.05), PE(705, 3000, '2026-09-18', 0.05),
+  ], { S: 707.14, r: 0.037, q: 0.005 });
+  eq('the nearest expiry is identified', g.frontExpiry, '2026-09-02');
+  ok('and its share of gross gamma measured', g.frontShare > 90);
+  eq('dominance is flagged', g.dominated, true);
+  ok('the note says the walls belong to one expiry', /one expiry|largely that one/.test(g.note));
+  ok('and that it expires', /expires/.test(g.note));
+  // The point of the whole function: each expiry's OWN peak strike, so a reader can see whether
+  // they agree. Here they plainly do not.
+  eq('each expiry reports its own peak strikes',
+    g.expiries.map(e => e.peakCallStrike), [707, 713, 715]);
+  ok('which disagree, which is the finding', new Set(g.expiries.map(e => e.peakCallStrike)).size === 3);
+}
+{
+  // A book several expiries agree on. The aggregate wall is then a real level.
+  const g = gammaGrid([
+    CE(715, 5000, '2026-09-11', 0.03), CE(715, 5000, '2026-09-18', 0.05), CE(715, 4500, '2026-10-16', 0.12),
+    PE(700, 5000, '2026-09-11', 0.03), PE(700, 5000, '2026-09-18', 0.05), PE(700, 4500, '2026-10-16', 0.12),
+  ], { S: 707, r: 0.037, q: 0.005 });
+  eq('a spread book is not flagged as dominated', g.dominated, false);
+  ok('the note calls it a multi-expiry level', /multi-expiry/.test(g.note));
+  ok('and every expiry agrees on the peak', new Set(g.expiries.map(e => e.peakCallStrike)).size === 1);
+}
+{
+  const g = gammaGrid([CE(710, 1000, '2026-09-11', 0.03), PE(700, 800, '2026-09-11', 0.03)], { S: 707 });
+  eq('a single expiry is trivially 100% of itself', g.frontShare, 100);
+  eq('and is flagged, because it is still one expiry', g.dominated, true);
+  eq('cells carry strike and expiry', g.cells.length, 2);
+  ok('with a dollar figure each', g.cells.every(c => c.netGexUsd != null));
+}
+{
+  // Contracts with no expiry cannot be placed in the grid and are dropped rather than pooled into
+  // a phantom bucket that would read as its own expiry.
+  const g = gammaGrid([{ type: 'call', strike: 710, oi: 1000, iv: 0.2, T: 0.03 }], { S: 707 });
+  eq('an expiry-less contract is dropped', g.expiries.length, 0);
+  eq('with no share to report', g.frontShare, null);
+  ok('and says so', /no expiry breakdown/.test(g.note));
+  eq('an empty chain does not throw', gammaGrid([], { S: 707 }).expiries.length, 0);
+  eq('nor a null one', gammaGrid(null, { S: 707 }).expiries.length, 0);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
