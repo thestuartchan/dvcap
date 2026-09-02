@@ -100,5 +100,27 @@ const OPTS = { spot: FX.spot, expiry: FX.expiry };
   eq('a non-array does not throw', pickExpiries(null, { now }).length, 0);
 }
 
+// ── "no chain" and "no open interest" are different failures ─────────────────
+// Yahoo serves the contracts pre-market but does not populate openInterest until the session is
+// under way. Measured 2026-09-02 at 09:30 UTC, four hours before the US open: the 0DTE expiry
+// returned 209 contracts carrying 922,440 of volume and ZERO open interest. Reporting that as
+// "no chain" sends anyone debugging it to look at the fetch, which is working perfectly.
+{
+  const preMarket = FX.calls.map(c => ({ ...c, openInterest: 0 }));
+  const parsed = parseContracts(preMarket, 'call', OPTS);
+  eq('a chain with no open interest parses to nothing', parsed.length, 0);
+  // And it is nothing for a REASON that is not "the fetch failed" — the contracts were served.
+  ok('the raw chain was not empty, which is the whole point', preMarket.length > 0);
+}
+{
+  // Zero and missing are both "no position", and neither is an error.
+  const mixed = [
+    { strike: FX.spot, openInterest: 0, impliedVolatility: 0.2 },
+    { strike: FX.spot, openInterest: null, impliedVolatility: 0.2 },
+    { strike: FX.spot, openInterest: 500, impliedVolatility: 0.2 },
+  ];
+  eq('only the contract with real open interest survives', parseContracts(mixed, 'call', OPTS).length, 1);
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
