@@ -6,7 +6,7 @@
 // and the two symbol conventions (futures month codes, Hong Kong numerics) that make raw string
 // matching fail.
 import { parseFlexResponse, parseStatement, reconcile, rootOf, classOf, autoAddable, rowFromPosition,
-         summarise, summariseActionable, actionable, signatureOf, isoDate, matchKey, planAck, sendRequestUrl, statementUrl, fetchStatement, elements, attrs, COST_TOLERANCE_PCT } from '../lib/flex.js';
+         summarise, summariseActionable, actionable, signatureOf, isoDate, matchKey, planAck, sendRequestUrl, statementUrl, fetchStatement, elements, attrs, COST_TOLERANCE_PCT, qtyAsOf } from '../lib/flex.js';
 import { derivePosition } from '../lib/positions.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -327,6 +327,78 @@ eq('attributes are read off a tag', attrs('<X a="1" b="two" />'), { a: '1', b: '
 eq('entities are decoded', attrs('<X d="AT&amp;T" />').d, 'AT&T');
 eq('and not double-decoded', attrs('<X d="&amp;lt;" />').d, '&lt;');
 eq('elements are found whether or not they self-close', elements('<A x="1"/><A x="2"></A>', 'A').map(a => a.x), ['1', '2']);
+
+// ── A STATEMENT DESCRIBES ONE DAY; THE CONSOLE KEPT TRADING ─────────────────
+// The live case from 2026-09-02. Bought 500 ASTX @ 9.20 on 09-01, sold 400 @ 10.60 on 09-02,
+// 100 left. The statement is cut on 09-01 and says 500. Both are right about their own day, and
+// the reconciler called it a disagreement.
+{
+  const astx = {
+    id: 'astx', symbol: 'ASTX',
+    derived: { status: 'open', qty: 100, avgCost: 9.2, unadjustedAvgCost: 9.2, sold: 400,
+      firstDate: '2026-09-01', lastDate: '2026-09-02',
+      fills: [
+        { side: 'buy',  qty: 500, price: 9.2,  date: '2026-09-01' },
+        { side: 'sell', qty: 400, price: 10.6, date: '2026-09-02' },
+      ] },
+  };
+  const stmt = [{ root: 'ASTX', symbol: 'ASTX', qty: 500, costBasisPrice: 9.2, assetCategory: 'STK' }];
+
+  eq('rewinding undoes the sell', qtyAsOf(astx, '2026-09-01'), 500);
+  eq('a fill ON the statement date is not undone', qtyAsOf(astx, '2026-09-02'), null);
+  eq('no asOf, no rewind', qtyAsOf(astx, null), null);
+
+  const rec = reconcile([astx], stmt, { today: '2026-09-02', asOf: '2026-09-01' });
+  eq('it is no longer called a disagreement', rec.differs.length, 0);
+  const chg = rec.report.filter(r => r.kind === 'changed-since-statement');
+  eq('it is reported as movement since the statement', chg.length, 1);
+  eq('carrying both figures and the rewind', chg[0].qty.console, 100);
+  eq('the broker figure', chg[0].qty.ibkr, 500);
+  eq('and what the console rewinds to', chg[0].qty.asOf, 500);
+  // Deliberately NOT actionable — it resolves itself when the next statement is cut, and posting
+  // it daily is how a channel becomes wallpaper.
+  ok('and it does not page anyone', !actionable(rec).some(a => a.includes('astx')));
+
+  // A rewind that does NOT reconcile is a real finding and must survive.
+  const wrong = reconcile([astx], [{ ...stmt[0], qty: 900 }], { today: '2026-09-02', asOf: '2026-09-01' });
+  eq('an unexplained gap is still a disagreement', wrong.differs.length, 1);
+  eq('and it shows what the rewind produced', wrong.differs[0].qty.asOf, 500);
+  eq('against what the broker says', wrong.differs[0].qty.ibkr, 900);
+
+  // With no fills after the statement, nothing changes — the old path is untouched.
+  const settled = { ...astx, derived: { ...astx.derived, fills: [astx.derived.fills[0]], qty: 500, sold: 0, lastDate: '2026-09-01' } };
+  eq('a quiet row still reconciles normally', reconcile([settled], stmt, { today: '2026-09-02', asOf: '2026-09-01' }).agree.length, 1);
+}
+
+// ── A SETUP IS NOT A POSITION ───────────────────────────────────────────────
+// NVDA and DBA on the same run: watchlist rows with no fills, reported as "open here but not at
+// the broker". True of every setup that will ever exist, so it tells nobody anything.
+{
+  const setup = (sym) => ({ id: sym.toLowerCase(), symbol: sym,
+    derived: { status: 'setup', qty: 0, avgCost: null, fills: [] } });
+  const rec = reconcile([setup('NVDA'), setup('DBA')], [], { today: '2026-09-02', asOf: '2026-09-01' });
+  eq('setups are not reported as missing at the broker',
+    rec.report.filter(r => r.kind === 'missing-at-broker').length, 0);
+  eq('nor as anything else', rec.report.length, 0);
+  ok('and nothing about them is actionable', !actionable(rec).length);
+
+  // A REAL position absent from the statement must still be reported — this is the line the fix
+  // must not cross.
+  const held = { id: 'held', symbol: 'GOOGL',
+    derived: { status: 'open', qty: 50, avgCost: 354.85, firstDate: '2026-06-01', fills: [
+      { side: 'buy', qty: 50, price: 354.85, date: '2026-06-01' }] } };
+  const rec2 = reconcile([held], [], { today: '2026-09-02', asOf: '2026-09-01' });
+  eq('a genuinely held position is still flagged',
+    rec2.report.filter(r => r.kind === 'missing-at-broker').length, 1);
+
+  // A row with an incomplete fill is 'open' (held, pending a quantity) and must stay in scope.
+  const pending = { id: 'p', symbol: 'INTC',
+    derived: { status: 'open', qty: 0, needsQty: true, avgCost: null, firstDate: '2026-08-01',
+      fills: [], incomplete: [{ side: 'buy', price: 98.72, date: '2026-08-01' }] } };
+  eq('an incomplete buy is still a position',
+    reconcile([pending], [], { today: '2026-09-02', asOf: '2026-09-01' })
+      .report.filter(r => r.kind === 'missing-at-broker').length, 1);
+}
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

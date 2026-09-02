@@ -120,6 +120,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
       gate = verify(after, got.statement.positions, {
         derive: (r) => derivePosition(r.fills || [], { multiplier: r.multiplier }),
         roots: planTouches(tradePlan),
+        asOf,
       });
       result.trades = { ...result.trades, plan: tradePlan, verified: gate.ok, problems: gate.problems, summary: summariseTrades(tradePlan) };
       const changes = tradePlan.adopt.length + tradePlan.apply.length + tradePlan.creates.length;
