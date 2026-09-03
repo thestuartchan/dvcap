@@ -232,10 +232,11 @@
     }
   ],
   "intervention": {
-    "active": true,
-    "since": "2026-08-21",
+    "active": false,
+    "since": null,
     "note": null,
-    "setAt": "2026-08-21T11:20:37.089Z"
+    "clearedAt": "2026-09-03T08:25:46.706Z",
+    "previousSince": "2026-08-21"
   },
   "recession": {},
   "southbound": {
