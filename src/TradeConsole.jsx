@@ -1526,8 +1526,8 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
           </div>
           {multNote.fixed.length > 0 && (
             <div style={{ fontSize: 12, color: C.text, marginTop: 6, lineHeight: 1.6 }}>
-              Set on {multNote.fixed.length} margined row{multNote.fixed.length === 1 ? "" : "s"}:{" "}
-              {multNote.fixed.map(f => `${f.symbol} ×${f.to}`).join(", ")}. Every money figure on
+              Set on {multNote.fixed.length} row{multNote.fixed.length === 1 ? "" : "s"}:{" "}
+              {multNote.fixed.map(f => `${f.symbol} ×${f.to}${f.alsoMargined ? " (also marked margined)" : ""}`).join(", ")}. Every money figure on
               {multNote.fixed.length === 1 ? " it was" : " them was"} previously computed at ×1, so
               realised P&L and the archive total have changed — the percentages have not, because a
               percentage is multiplier-free.

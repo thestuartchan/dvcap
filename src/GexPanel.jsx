@@ -51,20 +51,38 @@ export function GexPanel() {
   // nothing: the stored series stays the clean pre-open record.
   const [live, setLive] = useState(null);
   const [liveBusy, setLiveBusy] = useState(false);
+  // WHY THE RECOMPUTE DID NOTHING. The button used to answer a refusal by setting live to null,
+  // which leaves the stored row on screen unchanged and says nothing at all — so a working guard
+  // and a broken button look identical. The IV guard added on 2026-09-03 made refusals common,
+  // and every one of them was invisible.
+  const [liveErr, setLiveErr] = useState(null);
   const refreshLive = async () => {
     setLiveBusy(true);
+    setLiveErr(null);
     try {
       const r = await fetch(`/api/gex?snapshot=1&dry=1&symbols=${encodeURIComponent(symbol)}`, { credentials: "include" });
       const j = await r.json();
-      const hit = (j?.results || []).find(x => x.symbol === symbol && x.ok);
+      const row = (j?.results || []).find(x => x.symbol === symbol);
+      const hit = row?.ok ? row : null;
+      // A REFUSAL IS AN ANSWER. The chain guards report what was wrong with the feed — a vol
+      // surface that collapses the gamma calculation, open interest not yet populated — and that
+      // is the most useful thing the button can say when it cannot say a number.
+      if (!hit) {
+        setLiveErr(row?.reason
+          || j?.reason
+          || `no result came back for ${symbol}`);
+      }
       // The snapshot result carries headline figures; re-read the stored row for the rest and
       // overlay. A live read that silently dropped the walls would be a downgrade, not a refresh.
       if (hit) setLive({ row: { ...(data?.latest || {}), ...hit.row, asOf: new Date().toISOString() }, byStrike: hit.byStrike || null, grid: hit.grid || null });
       else setLive(null);
-    } catch { setLive(null); }
+    } catch (e) {
+      setLive(null);
+      setLiveErr(`the recompute could not be reached — ${String(e?.message || e)}`);
+    }
     setLiveBusy(false);
   };
-  useEffect(() => { setLive(null); }, [symbol]);
+  useEffect(() => { setLive(null); setLiveErr(null); }, [symbol]);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,11 +141,22 @@ export function GexPanel() {
     </div>
   );
 
+  const liveErrCard = liveErr ? (
+    <div style={{ marginTop: 8, padding: "7px 10px", borderRadius: 7, background: C.aBg,
+                  border: "1px solid " + C.aBdr, fontSize: 11.5, color: C.amber, lineHeight: 1.55 }}>
+      <b>Live recompute refused</b> — {liveErr}
+      <div style={{ color: C.mid, marginTop: 3 }}>
+        The figures below are the stored capture and are unchanged. A refusal is the guard working:
+        a chain that computes a confident number off a broken vol surface is worse than no number.
+      </div>
+    </div>
+  ) : null;
+
   if (err) return <Card>{header}<div style={{ fontSize: 12.5, color: C.red, marginTop: 8 }}>Could not load: {err}</div></Card>;
   if (!data) return <Card>{header}<div style={{ fontSize: 12.5, color: C.muted, marginTop: 8 }}>Loading…</div></Card>;
   if (!data.available) {
     return (
-      <Card>{header}
+      <Card>{header}{liveErrCard}
         <div style={{ fontSize: 12.5, color: C.mid, marginTop: 8, lineHeight: 1.6 }}>
           Nothing captured yet. The snapshot runs pre-open each weekday and writes one row per symbol;
           the by-strike chart appears after the first run and the time series becomes meaningful after
@@ -148,6 +177,7 @@ export function GexPanel() {
           that always has an opinion is one nobody should size off. */}
       <Card>
         {header}
+        {liveErrCard}
         {read.ok && (
           <div style={{ marginTop: 10, padding: "11px 13px", borderRadius: 9,
                         background: read.state === "amplify" ? C.rBg : read.state === "damp" ? C.gBg : C.surf,

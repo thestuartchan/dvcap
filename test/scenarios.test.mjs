@@ -169,5 +169,45 @@ const NOW = '2026-09-03T08:00:00Z';
   eq('an unverified scenario states no consequence', unver.confirmed, false);
 }
 
+// ── SUPPRESSING EVIDENCE MUST NOT STRENGTHEN A CONCLUSION ───────────────────
+// The ATR gate turned a real-but-small reading into a neutral, and neutrals were excluded from the
+// denominator — so every input the gate silenced made the scenario EASIER to confirm. Measured on
+// the 2026-09-03 board with the real TLT floor of 0.40%: Scenario A read CONFIRMED 1/1 with the
+// duration leg it is named for suppressed.
+{
+  const a = A(evaluateScenarios({
+    tlt: { value: 0.10, atr: 0.792, date: 'd' },            // the real measured TLT floor
+    tenThirtyDeltaBps: { value: -2, atr: 3.0, date: 'd' },
+  }, undefined, { now: NOW }));
+  eq('the readable leg still agrees', [a.met, a.total], [1, 1]);
+  eq('but the scenario is not confirmed', a.confirmed, false);
+  eq('it is INCOMPLETE, which is a different message from PARTIAL', a.status, 'INCOMPLETE');
+  eq('and the duration leg is the one that was suppressed', a.conditions[0].met, null);
+  eq('so no consequence is stated', !!(a.consequence && a.confirmed), false);
+
+  // The property, not just the example: silencing an input can never raise the verdict.
+  const both = A(evaluateScenarios({
+    tlt: { value: 0.95, atr: 0.792, date: 'd' },
+    tenThirtyDeltaBps: { value: -6, atr: 3.0, date: 'd' },
+  }, undefined, { now: NOW }));
+  eq('with both legs readable and agreeing it confirms', both.status, 'CONFIRMED');
+  ok('and confirming is strictly harder than being incomplete', both.confirmed && !a.confirmed);
+
+  // A missing feed is disqualifying for the same reason a too-small move is.
+  const missing = A(evaluateScenarios({
+    tenThirtyDeltaBps: { value: -6, atr: 3.0, date: 'd' },
+  }, undefined, { now: NOW }));
+  eq('an absent input also blocks confirmation', missing.confirmed, false);
+  eq('and reports the same way', missing.status, 'INCOMPLETE');
+
+  // PARTIAL still means what it meant: readable evidence that disagrees.
+  const mixed = A(evaluateScenarios({
+    tlt: { value: -0.95, atr: 0.792, date: 'd' },
+    tenThirtyDeltaBps: { value: -6, atr: 3.0, date: 'd' },
+  }, undefined, { now: NOW }));
+  eq('disagreeing but readable evidence is PARTIAL', mixed.status, 'PARTIAL');
+  eq('with everything readable', mixed.allReadable, true);
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
