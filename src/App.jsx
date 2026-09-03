@@ -3247,6 +3247,21 @@ function CrossRow({ r }) {
       ) : (
         <div style={{ fontSize: 10, color: C.amber, fontWeight: 700, marginTop: 2 }}>no direction</div>
       )}
+      {/* THE SAME MOVE IN THE DOLLAR'S FRAME. EUR/USD rises when the dollar weakens and USD/JPY
+          falls when it does, so the row cannot be read left to right on its face — which is what
+          the section heading asks the reader to do. The quoted percentage above is untouched;
+          this is the second reading, so the cards and the note above them agree. */}
+      {(() => {
+        const u = r.usdLeg;
+        return u ? (
+          <div style={{ fontSize: 10, color: C.lbl, marginTop: 1, whiteSpace: "nowrap" }}
+            title={u.inverted
+              ? `${r.name} is quoted as dollars per ${u.vs}, so it moves opposite to the dollar. Inverted here so every leg reads the same way.`
+              : `${r.name} is quoted as ${u.vs} per dollar, so it already moves with the dollar.`}>
+            {u.label}
+          </div>
+        ) : null;
+      })()}
       {r.benchmark && <div style={{ marginTop: 1 }}><BenchChip b={r.benchmark} /></div>}
     </MetricCard>
   );
