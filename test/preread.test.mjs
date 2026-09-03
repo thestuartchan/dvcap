@@ -90,21 +90,26 @@ ok('an hour late does not', !at(7, 40, 7).accept);
 // only a working scheduler fixes that morning. But the same rule was refusing Europe at 09:40
 // while its brief is written to land into a session that runs to 10:00 and beyond.
 {
-  const asia = (h, m) => prereadWindow(h * 60 + m, 7, { deadlineMin: 8 * 60 });
-  ok('an Asia brief at 07:55 now delivers', asia(7, 55).accept);
-  ok('one at 07:59 still does', asia(7, 59).accept);
-  ok('and at 08:00, when Korea and Japan open, it does not', !asia(8, 0).accept);
-  ok('nor at 08:02, which is when the run actually arrived', !asia(8, 2).accept);
+  // Deadlines are the open PLUS FIFTEEN — a brief landing in the first minutes of a session is
+  // still the brief it was meant to be.
+  const asia = (h, m) => prereadWindow(h * 60 + m, 7, { deadlineMin: 8 * 60 + 15 });
+  ok('an Asia brief at 07:55 delivers', asia(7, 55).accept);
+  ok('and at 08:02 — the run that was refused on 2026-09-03 — it now does too', asia(8, 2).accept);
+  ok('fifteen minutes into the Korea/Japan open is the line', !asia(8, 15).accept);
+  ok('one minute inside it is not', asia(8, 14).accept);
   eq('and it reports how late against the target, not the window', asia(8, 2).lateMin, 62);
+  // The old fixed rule would have refused it, which is the whole reason it changed.
+  ok('the old 55-minute rule refused that run', !prereadWindow(8 * 60 + 2, 7).accept);
 
   const eu = (h, m) => prereadWindow(h * 60 + m, 9, { deadlineMin: 10 * 60 });
   ok('Europe at 09:55 now delivers, where the old rule refused it', eu(9, 55).accept);
   ok('but 10:00 is the line', !eu(10, 0).accept);
   ok('the old rule would have refused 09:55', !prereadWindow(9 * 60 + 55, 9).accept);
 
-  const us = (h, m) => prereadWindow(h * 60 + m, 9, { deadlineMin: 9 * 60 + 30 });
-  ok('the US keeps its old span where the deadline is tighter than it', us(9, 35).accept);
-  ok('because a deadline must never SHRINK the window', prereadWindow(9 * 60 + 35, 9).accept);
+  const us = (h, m) => prereadWindow(h * 60 + m, 9, { deadlineMin: 9 * 60 + 45 });
+  ok('the US delivers fifteen minutes into the open', us(9, 44).accept);
+  ok('and not a minute later', !us(9, 45).accept);
+  ok('a deadline must never SHRINK the window', prereadWindow(9 * 60 + 35, 9).accept);
 
   // Early is still early, deadline or not.
   ok('nothing opens before lead+grace', !asia(6, 39).accept);
@@ -156,6 +161,40 @@ ok('an hour late does not', !at(7, 40, 7).accept);
   eq('and the US is on its own day', of(st({}, '2026-09-02T23:10:00Z'), 'us').today, '2026-09-02');
   // A region with no config is skipped rather than guessed at.
   eq('an unconfigured region is not invented', prereadStatus({}, { regions: { x: {} }, now: new Date(), localDateIn, localMinutesOfDay }).length, 0);
+}
+
+// ── ONE CRON MINUTE, THREE REGIONS, BOTH DST HALVES ────────────────────────
+// The schedule in vercel.json is a single entry firing at minute 42 of three hours. That is only
+// possible because of the open-plus-fifteen deadlines, and it is the property the whole schedule
+// rests on, so it is asserted rather than left to a comment.
+{
+  const TZ = { asia: 'Asia/Hong_Kong', eu: 'Europe/London', us: 'America/New_York' };
+  const HOUR = { asia: 22, eu: 8, us: 13 };
+  const TARGET = { asia: 7, eu: 9, us: 9 };
+  const DEADLINE = { asia: 8 * 60 + 15, eu: 10 * 60, us: 9 * 60 + 45 };
+  const CRON_MIN = 42;
+  const halves = ['2026-09-03', '2026-12-03'];   // BST/EDT and GMT/EST
+
+  const landsIn = (region, day, minute) => {
+    const t = new Date(Date.parse(`${day}T00:00:00Z`) + (HOUR[region] * 60 + minute) * 60000);
+    const local = localMinutesOfDay(TZ[region], t);
+    return prereadWindow(local, TARGET[region], { deadlineMin: DEADLINE[region] }).accept;
+  };
+
+  for (const region of ['asia', 'eu', 'us']) {
+    for (const day of halves) {
+      ok(`${region} is delivered at :${CRON_MIN} on ${day}`, landsIn(region, day, CRON_MIN));
+    }
+  }
+  // The US is the binding constraint, and the reason the old deadline could not be collapsed:
+  // with 09:30 no minute of 13:xx UTC works in both halves.
+  const worksBoth = (dl) => Array.from({ length: 60 }, (_, m) => m).filter(m => halves.every(day => {
+    const t = new Date(Date.parse(`${day}T00:00:00Z`) + (13 * 60 + m) * 60000);
+    return prereadWindow(localMinutesOfDay('America/New_York', t), 9, { deadlineMin: dl }).accept;
+  }));
+  eq('at the old 09:30 deadline no US minute works year-round', worksBoth(9 * 60 + 30).length, 0);
+  ok('at 09:45 a band opens up', worksBoth(9 * 60 + 45).length > 0);
+  ok('and the chosen minute is inside it', worksBoth(9 * 60 + 45).includes(CRON_MIN));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

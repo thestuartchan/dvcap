@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/preread?all=1&post=1&cron=1",
-      "schedule": "45 7,8,12,13,22 * * *"
+      "schedule": "42 8,13,22 * * *"
     }
   ]
 }
