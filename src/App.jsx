@@ -5006,6 +5006,33 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               {/* The just-saved flag wins over the deployed bundle: assemble.js reads the
                   store at build time, so without this the annotation would not appear until
                   the commit-back triggers a redeploy. */}
+              {/* THE PER-LEG FLAGS ARE THE SOURCE OF TRUTH, AND THEY STAND ALONE.
+                  This used to be nested inside the legacy boolean's card, which meant clearing
+                  that boolean — as the operator did at 08:25 on 2026-09-03 — silently took the
+                  per-leg flags off the screen with it. The old annotation is retired; the flags
+                  below are what Gate 2 and every contamination check actually read, so they render
+                  on their own terms.
+                  Scoped per currency: a JPY flag contaminates the yen leg and DXY only because DXY
+                  contains it. It says nothing about EUR/USD — a different market with a different
+                  central bank. */}
+              {data.contamination?.any && (
+                <div style={{ marginBottom: 8, padding: "7px 10px", background: C.aBg,
+                  border: "1px solid " + C.aBdr, borderRadius: 6, fontSize: 11.5, lineHeight: 1.55 }}>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "baseline" }}>
+                    <b style={{ fontSize: 11.5, color: C.amber }}>Intervention — by leg</b>
+                    {Object.values(data.contamination.flagged).map(f => (
+                      <span key={f.currency} title={f.why}
+                        style={{ fontSize: 10.5, fontWeight: 800, color: C.amber, background: C.surf,
+                                 border: "1px solid " + C.aBdr, borderRadius: 4, padding: "1px 6px" }}>
+                        ⚑ {f.currency} {f.regime ? f.regime.grade : "EVENT"}
+                        {f.regime?.since ? ` · since ${f.regime.since}` : ""}
+                        {f.regime?.review ? ` · review ${f.regime.review}` : ""}
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: 11, color: C.mid }}>{data.contamination.note}</div>
+                </div>
+              )}
               {(liveIntervention ? liveIntervention.active : data.intervention?.active) && (
                 <div style={{ marginBottom: 8, padding: "7px 10px", background: C.aBg,
                   border: "1px solid " + C.aBdr, borderRadius: 6,
@@ -5017,30 +5044,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                         dxyChangePct: data.cross?.fx?.rows?.find(r => r.sym === 'DX-Y.NYB')?.changePct ?? null,
                       }).annotation
                     : data.intervention?.annotation)}
-                  {/* PER LEG, NOT "THE DOLLAR". The line above is the legacy single-boolean
-                      annotation and it says "treat the dollar leg as contaminated", which reads as
-                      all of it. A yen flag says nothing about EUR/USD — the euro is a different
-                      market with a different central bank. What it contaminates is the yen leg, and
-                      DXY only because DXY contains it. */}
-                  {data.contamination?.any && (
-                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid " + C.aBdr,
-                                  fontWeight: 600, color: C.text }}>
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "baseline" }}>
-                        {Object.values(data.contamination.flagged).map(f => (
-                          <span key={f.currency} title={f.why}
-                            style={{ fontSize: 10.5, fontWeight: 800, color: C.amber, background: C.surf,
-                                     border: "1px solid " + C.aBdr, borderRadius: 4, padding: "1px 6px" }}>
-                            ⚑ {f.currency} {f.regime ? f.regime.grade : "EVENT"}
-                            {f.regime?.since ? ` · since ${f.regime.since}` : ""}
-                            {f.regime?.review ? ` · review ${f.regime.review}` : ""}
-                          </span>
-                        ))}
-                      </div>
-                      <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.5, color: C.mid }}>
-                        {data.contamination.note}
-                      </div>
-                    </div>
-                  )}
+
                 </div>
               )}
               {/* F4 — USD/KRW attribution. Gate 2's reading depends on WHY the won moved, and
