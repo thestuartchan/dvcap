@@ -134,5 +134,40 @@ const NOW = '2026-09-03T08:00:00Z';
   eq('no previous, no flip claim', A(first).flippedNow, false);
 }
 
+// ── A CONCLUSION IS NOT A STANDING ASSERTION ────────────────────────────────
+// `consequence` is the one field on the board that tells the reader what to do, and it was
+// rendered on every card regardless of whether the scenario held. On the 2026-09-03 board every
+// scenario was UNREADABLE and all six printed an instruction — including A "Duration leg
+// validated" beside B "Skip the bond leg", which cannot both be true.
+{
+  const noisy = evaluateScenarios({
+    tlt: { value: 0.10, atr: 0.62, date: '2026-09-03' },
+    tenThirtyDeltaBps: { value: -2, atr: 4.1, date: '2026-09-03' },
+  }, undefined, { now: NOW });
+  ok('the board is unreadable on that data', noisy.every(s => s.status === 'UNREADABLE'));
+  ok('so nothing is confirmed', noisy.every(s => !s.confirmed));
+  // The card renders `consequence && confirmed`, so this is the condition that suppresses it.
+  eq('and no scenario qualifies to state one', noisy.filter(s => s.consequence && s.confirmed).length, 0);
+  // A and B are mutually exclusive by construction — they must never both qualify.
+  const both = noisy.filter(s => (s.id === 'A' || s.id === 'B') && s.confirmed);
+  eq('A and B can never both hold', both.length === 2, false);
+  // Implication is the unconfirmed reading, and it makes no claim of validation.
+  const a = A(noisy);
+  ok('an unconfirmed card still says what it would mean', !!a.implication);
+  ok('without asserting it has happened', !/validated|on track/i.test(a.implication));
+
+  // And where a scenario DOES hold, the consequence is available as before.
+  const real = A(evaluateScenarios({
+    tlt: { value: 0.95, atr: 0.62, date: 'd' }, tenThirtyDeltaBps: { value: -6, atr: 4.1, date: 'd' },
+  }, undefined, { now: NOW }));
+  eq('a confirmed scenario keeps its consequence', real.confirmed && !!real.consequence, true);
+  // An UNVERIFIED scenario must not qualify either — mixed vintages are not a conclusion.
+  const unver = A(evaluateScenarios({
+    tlt: { value: 0.95, atr: 0.62, date: '2026-09-03' },
+    tenThirtyDeltaBps: { value: -6, atr: 4.1, date: '2026-09-01' },
+  }, undefined, { now: NOW }));
+  eq('an unverified scenario states no consequence', unver.confirmed, false);
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

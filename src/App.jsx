@@ -3498,9 +3498,20 @@ function ScenarioBoard({ scenarios }) {
                   );
                 })}
               </div>
-              {/* A2 — the consequence: what to DO, not just what's true. Emphasised when confirmed. */}
-              {s.consequence && (
-                <div style={{ marginTop: 4, fontSize: 11, fontWeight: s.confirmed ? 800 : 600, color: s.confirmed ? toneCol : C.muted, lineHeight: 1.45 }}>
+              {/* A2 — the consequence, AND ONLY WHERE THE SCENARIO HOLDS.
+                  This used to render on every card, muted when unconfirmed, which made it a
+                  standing assertion rather than a conclusion. On the 2026-09-03 board every
+                  scenario was UNREADABLE — both inputs under the noise floor — and all six still
+                  printed an instruction, including two that contradict each other outright:
+                  A "Duration leg validated — USFR → IEF/TLT sequencing on track" beside B "Skip
+                  the bond leg — go bills → equities directly". "Validated" on a scenario with no
+                  evaluable condition is simply false, and font weight is not the difference
+                  between a conclusion and its opposite.
+                  Unconfirmed cards carry `implication` instead, which states what it WOULD mean
+                  without claiming it does. lib/posture.js already filtered on confirmed, so its
+                  DO list was never affected. */}
+              {s.consequence && s.confirmed && (
+                <div style={{ marginTop: 4, fontSize: 11, fontWeight: 800, color: toneCol, lineHeight: 1.45 }}>
                   → {s.consequence}
                 </div>
               )}
