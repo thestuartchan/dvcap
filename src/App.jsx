@@ -906,6 +906,18 @@ function bookSinceFiling(fund, prices) {
 
 
 
+// How long a reading has stood, in the coarsest honest unit. A scenario that turned this morning
+// and one stuck at 2/2 for three weeks rendered identically before this; the age is the difference.
+function ageSince(iso) {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "";
+  const h = (Date.now() - t) / 3600000;
+  if (h < 0) return "";                       // clock skew — say nothing rather than lie
+  if (h < 24) return h < 1 ? "just turned" : `${Math.round(h)}h`;
+  const d = Math.round(h / 24);
+  return d < 14 ? `${d}d` : `${Math.round(d / 7)}w`;
+}
+
 // P0.2 — Regime-SHIFT scenarios. The recession-consensus engine produces four states
 // (stag/ref/def/inf) and cannot derive these two: Debasement is a currency-devaluation regime and
 // Hawkish Rates Repricing is a long-end break — neither is a consensus recession outcome. They are
@@ -3438,7 +3450,7 @@ function ScenarioBoard({ scenarios }) {
           const TBG  = { red: C.rBg, amber: C.aBg, green: C.gBg };
           const TBDR = { red: C.rBdr, amber: C.aBdr, green: C.gBdr };
           const bg  = s.confirmed ? (TBG[s.tone] || C.bg) : C.bg;
-          const bdr = s.confirmed ? (TBDR[s.tone] || C.bdrMd) : C.bdrMd;
+          const bdr = s.unverified ? C.amber : s.confirmed ? (TBDR[s.tone] || C.bdrMd) : C.bdrMd;
           const countCol = s.confirmed ? toneCol : (s.total > 0 && s.met === s.total - 1 ? C.amber : C.muted);
           return (
             <div key={s.id} style={{ padding: "8px 10px", borderRadius: 8, background: bg,
@@ -3451,27 +3463,70 @@ function ScenarioBoard({ scenarios }) {
                     ▲ CHANGED {changed[s.id]} → {s.met}/{s.total}
                   </span>
                 )}
+                {/* A composite whose inputs come from different days is not a reading. It is shown
+                    as UNVERIFIED with the dates, never as a tick and never as a blank card. */}
+                {s.unverified && (
+                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: C.amber,
+                                 background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 4, padding: "1px 5px" }}
+                    title={s.vintage?.reason || "inputs span different observation dates"}>
+                    ⚠ UNVERIFIED
+                  </span>
+                )}
                 <span style={{ fontSize: 10.5, color: C.muted, fontWeight: 600, fontStyle: "italic" }}>{s.gloss}</span>
+                {/* HOW LONG IT HAS SAID THIS. A board stuck at 2/2 for three weeks and one that
+                    turned this morning used to render identically. */}
+                {s.lastFlipped && (
+                  <span style={{ fontSize: 9.5, color: C.lbl, fontWeight: 700 }}
+                    title={`this reading last changed ${s.lastFlipped}`}>
+                    {ageSince(s.lastFlipped)}
+                  </span>
+                )}
                 <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 900, color: countCol }}>
-                  {s.total > 0 ? `${s.met}/${s.total}` : "n/a"} {s.confirmed ? "✓" : "✗"}
+                  {s.unverified ? "—" : s.total > 0 ? `${s.met}/${s.total}` : "n/a"} {s.unverified ? "" : s.confirmed ? "✓" : "✗"}
                   {s.unavailable > 0 && <span style={{ color: C.lbl, fontWeight: 600, fontSize: 10 }}> · {s.unavailable} n/a</span>}
+                  {s.neutral > 0 && <span style={{ color: C.lbl, fontWeight: 600, fontSize: 10 }} title="inputs that moved less than half their own ATR — too small to confirm or deny"> · {s.neutral} below noise</span>}
                 </span>
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 14px", marginTop: 4 }}>
                 {s.conditions.map((c, i) => {
                   const cc = c.met === null ? C.lbl : c.met ? toneCol : C.muted;
                   return (
-                    <span key={i} style={{ fontSize: 11, fontWeight: 600, color: cc, fontVariantNumeric: "tabular-nums" }}>
+                    <span key={i} title={c.reason || undefined} style={{ fontSize: 11, fontWeight: 600, color: cc, fontVariantNumeric: "tabular-nums" }}>
                       {c.met === null ? "·" : c.met ? "✓" : "✗"} {c.label}
                       <span style={{ color: C.lbl, fontWeight: 700 }}> {c.display}</span>
                     </span>
                   );
                 })}
               </div>
-              {/* A2 — the consequence: what to DO, not just what's true. Emphasised when confirmed. */}
-              {s.consequence && (
-                <div style={{ marginTop: 4, fontSize: 11, fontWeight: s.confirmed ? 800 : 600, color: s.confirmed ? toneCol : C.muted, lineHeight: 1.45 }}>
+              {/* A2 — the consequence, AND ONLY WHERE THE SCENARIO HOLDS.
+                  This used to render on every card, muted when unconfirmed, which made it a
+                  standing assertion rather than a conclusion. On the 2026-09-03 board every
+                  scenario was UNREADABLE — both inputs under the noise floor — and all six still
+                  printed an instruction, including two that contradict each other outright:
+                  A "Duration leg validated — USFR → IEF/TLT sequencing on track" beside B "Skip
+                  the bond leg — go bills → equities directly". "Validated" on a scenario with no
+                  evaluable condition is simply false, and font weight is not the difference
+                  between a conclusion and its opposite.
+                  Unconfirmed cards carry `implication` instead, which states what it WOULD mean
+                  without claiming it does. lib/posture.js already filtered on confirmed, so its
+                  DO list was never affected. */}
+              {s.consequence && s.confirmed && (
+                <div style={{ marginTop: 4, fontSize: 11, fontWeight: 800, color: toneCol, lineHeight: 1.45 }}>
                   → {s.consequence}
+                </div>
+              )}
+              {/* OBSERVATION, NOT INSTRUCTION. What it would mean, and the single thing that would
+                  break it. A scenario nobody can state a disproof for is a mood, not a reading —
+                  which is why the falsifier is the more useful of the two. */}
+              {(s.implication || s.falsifier) && (
+                <div style={{ marginTop: 3, fontSize: 10.5, color: C.lbl, lineHeight: 1.5 }}>
+                  {s.implication && <div>means · {s.implication}</div>}
+                  {s.falsifier && <div>breaks if · {s.falsifier}</div>}
+                </div>
+              )}
+              {s.unverified && s.vintage?.reason && (
+                <div style={{ marginTop: 3, fontSize: 10, color: C.amber, lineHeight: 1.45 }}>
+                  ⚠ {s.vintage.reason}
                 </div>
               )}
             </div>
@@ -4951,6 +5006,33 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               {/* The just-saved flag wins over the deployed bundle: assemble.js reads the
                   store at build time, so without this the annotation would not appear until
                   the commit-back triggers a redeploy. */}
+              {/* THE PER-LEG FLAGS ARE THE SOURCE OF TRUTH, AND THEY STAND ALONE.
+                  This used to be nested inside the legacy boolean's card, which meant clearing
+                  that boolean — as the operator did at 08:25 on 2026-09-03 — silently took the
+                  per-leg flags off the screen with it. The old annotation is retired; the flags
+                  below are what Gate 2 and every contamination check actually read, so they render
+                  on their own terms.
+                  Scoped per currency: a JPY flag contaminates the yen leg and DXY only because DXY
+                  contains it. It says nothing about EUR/USD — a different market with a different
+                  central bank. */}
+              {data.contamination?.any && (
+                <div style={{ marginBottom: 8, padding: "7px 10px", background: C.aBg,
+                  border: "1px solid " + C.aBdr, borderRadius: 6, fontSize: 11.5, lineHeight: 1.55 }}>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "baseline" }}>
+                    <b style={{ fontSize: 11.5, color: C.amber }}>Intervention — by leg</b>
+                    {Object.values(data.contamination.flagged).map(f => (
+                      <span key={f.currency} title={f.why}
+                        style={{ fontSize: 10.5, fontWeight: 800, color: C.amber, background: C.surf,
+                                 border: "1px solid " + C.aBdr, borderRadius: 4, padding: "1px 6px" }}>
+                        ⚑ {f.currency} {f.regime ? f.regime.grade : "EVENT"}
+                        {f.regime?.since ? ` · since ${f.regime.since}` : ""}
+                        {f.regime?.review ? ` · review ${f.regime.review}` : ""}
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: 11, color: C.mid }}>{data.contamination.note}</div>
+                </div>
+              )}
               {(liveIntervention ? liveIntervention.active : data.intervention?.active) && (
                 <div style={{ marginBottom: 8, padding: "7px 10px", background: C.aBg,
                   border: "1px solid " + C.aBdr, borderRadius: 6,
@@ -4962,6 +5044,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                         dxyChangePct: data.cross?.fx?.rows?.find(r => r.sym === 'DX-Y.NYB')?.changePct ?? null,
                       }).annotation
                     : data.intervention?.annotation)}
+
                 </div>
               )}
               {/* F4 — USD/KRW attribution. Gate 2's reading depends on WHY the won moved, and
