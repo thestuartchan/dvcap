@@ -27,28 +27,44 @@ function fmtPct(p) { return p == null ? '—' : `${p > 0 ? '+' : ''}${p.toFixed(
 // in the handler. Firing at target-15 with a 55-min window delivers ~on-time and tolerates
 // roughly 40min of positive cron jitter before a run would fall out of the window.
 const PREREAD_LEAD_MIN   = 15;
+
+// ── THE WINDOW IS A DEADLINE NOW, NOT A DURATION ─────────────────────────────
+// It used to be a fixed 55 minutes, chosen so the two DST candidate crons (exactly 60 local
+// minutes apart) could never both pass. The same-day dedupe removed that constraint: a second
+// firing in one window is now a no-op that says so, so the span is free to describe something
+// real instead.
+//
+// And it has to, because the old one measured the wrong thing. A brief is useful until the market
+// it is about opens; 55 minutes is a number with no relationship to that. Measured 2026-09-03:
+// the only run GitHub delivered all day arrived at 08:02 HKT and was refused for being 22 minutes
+// outside a window that had closed at 07:40 — while Hong Kong itself was still 88 minutes from
+// opening. Each region now carries `prereadDeadlineLocal` in data/universe.js with the reason it
+// is where it is: Korea/Japan's open for Asia, an hour into the session for Europe, the NYSE open
+// for the US.
+//
+// FALLBACK. A region without a deadline keeps the old 55, so this cannot silently widen anything
+// that was not given a considered figure.
 const PREREAD_WINDOW_MIN = 55;
-// GRACE: how far BEFORE the window opens a firing is still accepted.
-//
-// The window used to open at exactly the minute the cron fires — every region computed
-// sinceOpen = 0 on a good day, which is the first accepted value. That tolerated up to 40 minutes
-// of LATE firing and not one second of early: a cron a minute ahead of schedule, or any clock skew
-// between Vercel's scheduler and this container's Intl evaluation, silently dropped the entire
-// day's brief. And a dropped brief is invisible — nothing recorded that it should have run.
-//
-// Five minutes of lead-in costs nothing. The DST pair must still be mutually exclusive, so the
-// TOTAL span stays at 60: the two candidate crons are exactly 60 local minutes apart, and the
-// later one lands at sinceOpen = GRACE + 60, outside a span of GRACE + WINDOW = 60.
+// GRACE: how far BEFORE the window opens a firing is still accepted. Five minutes of lead-in
+// costs nothing, and the alternative was losing a whole day to a cron a minute early or to clock
+// skew between the scheduler and this container's Intl evaluation — a dropped brief that recorded
+// nothing at all.
 const PREREAD_GRACE_MIN  = 5;
 
-// Extracted so the arithmetic is testable. It decides whether a firing at `nowMin` (local minutes
-// past midnight) is the one that should deliver — the whole daily brief hangs on it, and it had
-// never been pinned by a test.
-export function prereadWindow(nowMin, targetHour, { lead = PREREAD_LEAD_MIN, window = PREREAD_WINDOW_MIN, grace = PREREAD_GRACE_MIN } = {}) {
+export function prereadWindow(nowMin, targetHour, { lead = PREREAD_LEAD_MIN, window = PREREAD_WINDOW_MIN, grace = PREREAD_GRACE_MIN, deadlineMin = null } = {}) {
   const open = targetHour * 60 - lead - grace;
-  const span = grace + window;
+  // The deadline wins where a region states one, but never SHRINKS the window below the old
+  // behaviour — a region whose deadline sits inside the legacy span would otherwise start
+  // refusing firings it used to accept, which is a regression wearing the clothes of a fix.
+  const close = Math.max(open + grace + window, Number.isFinite(deadlineMin) ? deadlineMin : 0);
   const sinceOpen = nowMin - open;
-  return { open, close: open + span, span, sinceOpen, accept: sinceOpen >= 0 && sinceOpen < span };
+  return {
+    accept: nowMin >= open && nowMin < close,
+    open, close, sinceOpen,
+    // How late against the TARGET, which is what the reader cares about — not against the window,
+    // which is an implementation detail. Negative means early.
+    lateMin: nowMin - targetHour * 60,
+  };
 }
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -315,10 +331,11 @@ function assembleDiscord(region, label, blocks, read) {
   ].join('\n\n');
 }
 
-export default async function handler(req, res) {
-  const region = (req.query.region || 'asia').toLowerCase();
+// One region, start to finish. Extracted from the handler so a single call can run all three —
+// see the note on ALL MODE below — and so every exit is a value rather than a write to `res`.
+async function runRegion(region, req) {
   const R = UNIVERSE[region];
-  if (!R) return res.status(400).json({ error: 'bad region' });
+  if (!R) return { status: 400, body: { error: 'bad region' } };
 
   // DST-safe, LEAD-TIMED cron gating. Vercel crons are UTC-only and would drift an hour
   // across daylight-saving shifts. For DST-observing regions (EU/US) we schedule the cron at
@@ -350,22 +367,22 @@ export default async function handler(req, res) {
         const log = (await kvGetJson(PREREAD_LAST_KEY)) || {};
         const last = log[region];
         if (last?.localDate === todayLocal) {
-          return res.status(200).json({
+          return { status: 200, body: {
             region, skipped: true, previous: last,
             reason: `already delivered for ${todayLocal} (posted ${last.at}) — a later attempt in the same window is a duplicate, not a retry`,
-          });
+          } };
         }
       } catch { /* a KV failure must not silence the brief — fall through to the window gate */ }
     }
     const nowMin = localMinutesOfDay(R.tz);
-    const w = prereadWindow(nowMin, R.prereadHourLocal);
+    const w = prereadWindow(nowMin, R.prereadHourLocal, { deadlineMin: R.prereadDeadlineLocal ?? null });
     const openMin = w.open;
     if (!w.accept) {
       const hh = Math.floor(nowMin / 60), mm = String(nowMin % 60).padStart(2, '0');
-      return res.status(200).json({
-        region, skipped: true,
+      return { status: 200, body: {
+        region, skipped: true, lateMin: w.lateMin,
         reason: `off-window (target ${R.prereadHourLocal}:00 ${R.tz}, delivery window ${Math.floor(openMin/60)}:${String(openMin%60).padStart(2,'0')}–${Math.floor(w.close/60)}:${String(w.close%60).padStart(2,'0')}, now ${hh}:${mm})`,
-      });
+      } };
     }
   }
 
@@ -423,5 +440,39 @@ export default async function handler(req, res) {
     } catch { /* the brief matters more than the bookkeeping */ }
   }
 
-  res.status(200).json({ region, message, regime, posted, previous, generatedAt: new Date().toISOString() });
+  return { status: 200, body: { region, message, regime, posted, previous, generatedAt: new Date().toISOString() } };
+}
+
+// ── ALL MODE, AND WHY IT EXISTS ──────────────────────────────────────────────
+// Vercel's Hobby plan allows two CRON ENTRIES, and the original design spent five on this — one
+// per region per DST half — of which only the first two ever ran. Moving to GitHub Actions traded
+// that cap for a worse problem: measured across two independent workflows on 2026-09-02/03, its
+// scheduler ran jobs between 53 minutes and 3h24m late and dropped six of seven firings outright.
+// Vercel's crons, over the same period, were 16 to 33 minutes late and never missed.
+//
+// So the reliable scheduler comes back, and the cap stops mattering: ONE entry, one path, a
+// schedule carrying every candidate hour, and this mode runs all three regions on each firing.
+// The window gate keeps the wrong ones out and the same-day dedupe makes a repeat a no-op, so
+// firing five times a day to deliver three briefs costs nothing but a few hundred milliseconds.
+//
+// `message` is deliberately not echoed here — three full briefs would make a response nobody
+// reads, and the length is the part worth logging.
+async function runAll(req, regions = ['asia', 'eu', 'us']) {
+  const results = {};
+  for (const rg of regions) {
+    const r = await runRegion(rg, req);
+    const b = r.body || {};
+    results[rg] = b.skipped
+      ? { skipped: true, reason: b.reason, ...(b.lateMin != null ? { lateMin: b.lateMin } : {}) }
+      : { posted: b.posted ?? null, bytes: (b.message || '').length, previous: b.previous ?? null };
+  }
+  const delivered = Object.keys(results).filter(k => results[k]?.posted?.ok);
+  return { status: 200, body: { all: true, delivered, results, generatedAt: new Date().toISOString() } };
+}
+
+export default async function handler(req, res) {
+  const r = req.query.all === '1'
+    ? await runAll(req)
+    : await runRegion((req.query.region || 'asia').toLowerCase(), req);
+  res.status(r.status).json(r.body);
 }

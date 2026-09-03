@@ -10,6 +10,11 @@
 // Both live in one endpoint to stay inside the 12-function Hobby cap (this is the 8th).
 
 import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY } from '../lib/kv.js';
+import { prereadStatus } from '../lib/preread.js';
+import { localDateIn, localMinutesOfDay } from '../lib/sessions.js';
+import { UNIVERSE } from '../data/universe.js';
+// The endpoint that posts the briefs owns this key; read-only here.
+const PREREAD_LAST_KEY = 'dvcap:preread:last:v1';
 import { appendDecision, overrideStats, DECISIONS_KEY, ACTIONS } from '../lib/decisions.js';
 import { GUARD_STATES } from '../lib/guards.js';
 
@@ -226,6 +231,12 @@ export default async function handler(req, res) {
         // Served alongside the console rather than inside them: the POST replaces the console
         // object wholesale, so a note kept in there would be wiped by the next browser save.
         flexSync: kvConfigured() ? await kvGetJson(FLEX_NOTE_KEY) : null,
+        // WHETHER THE BRIEFS ACTUALLY ARRIVED. Carried on the console's own payload so a missed
+        // pre-read is visible where the reader already is, instead of being discovered days later
+        // as an absence in a chat channel.
+        preread: kvConfigured()
+          ? prereadStatus((await kvGetJson(PREREAD_LAST_KEY)) || {}, { regions: UNIVERSE, localDateIn, localMinutesOfDay })
+          : null,
         // Stats only, not the log. The console needs to show the pattern, not re-read every
         // decision ever taken on every page load. The full array is served ONLY when explicitly
         // asked for (?decisions=full), which the audit view does once when it is opened — it
