@@ -1,5 +1,5 @@
 // test/futures.test.mjs — the contract sizes, and the promise that an unknown one stays unknown.
-import { FUTURES_MULTIPLIER, futuresRoot, multiplierFor, backfillMultipliers } from '../lib/futures.js';
+import { FUTURES_MULTIPLIER, futuresRoot, multiplierFor, backfillMultipliers, EQUITY_AMBIGUOUS, isUnambiguousFuture } from '../lib/futures.js';
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log(`✅ ${name}`); } else { fail++; console.log(`❌ ${name}`); } };
@@ -134,6 +134,52 @@ const eq = (name, got, want) => { const g = JSON.stringify(got), w = JSON.string
   eq('MGC realised, before', +move.toFixed(2), -242);
   eq('MGC realised, after the backfill', +(move * by.mgc1.multiplier).toFixed(2), -2420);
   eq('and the archive total moves with it', +(4978.81 + 242 - 2420).toFixed(2), 2800.81);
+}
+
+// ── THE ROW THAT WAS STILL NOT FIXED ────────────────────────────────────────
+// The first backfill required `margined` on every root, so the hand-entered MGC row — which never
+// carried that flag — went to a review list instead of being corrected, and the archive still
+// read -$242.00. But nothing trades as "MGC" except the contract: the caution was owed to roots
+// that are ALSO share tickers, and it was applied to all of them indiscriminately.
+{
+  const rows = [
+    { id: 'mgc', symbol: 'MGC' },                    // no margined flag, no multiplier
+    { id: 'mnq', symbol: 'MNQ' },
+    { id: 'met', symbol: 'MET', multiplier: 1 },     // MetLife
+    { id: 'sil', symbol: 'SIL', multiplier: 1 },     // Global X Silver Miners ETF
+    { id: 'cl',  symbol: 'CL',  multiplier: 1 },     // Colgate
+    { id: 'nvda', symbol: 'NVDA' },
+  ];
+  const out = backfillMultipliers(rows);
+  const by = Object.fromEntries(out.rows.map(r => [r.id, r]));
+
+  eq('MGC is fixed from the symbol alone', by.mgc.multiplier, 10);
+  eq('and so is MNQ', by.mnq.multiplier, 2);
+  ok('recorded as identified by symbol', out.fixed.every(f => f.by === 'symbol'));
+  // A contract is held on margin whether or not the row said so, and the exposure figures read it.
+  eq('and the row is marked margined', by.mgc.margined, true);
+  ok('which the report states rather than doing quietly', out.fixed.every(f => f.alsoMargined === true));
+
+  // THE LINE THAT MUST NOT MOVE. Every ambiguous root stays untouched and goes to review.
+  for (const sym of [...EQUITY_AMBIGUOUS]) {
+    const r = backfillMultipliers([{ id: 'x', symbol: sym, multiplier: 1 }]);
+    eq(`${sym} is not repriced from its symbol`, r.rows[0].multiplier, 1);
+    eq(`and ${sym} is raised for review`, r.review.length, 1);
+  }
+  eq('MetLife survives this pass too', by.met.multiplier, 1);
+  eq('so does the silver ETF', by.sil.multiplier, 1);
+  eq('and Colgate', by.cl.multiplier, 1);
+  eq('three ambiguous rows went to review', out.review.length, 3);
+  eq('a plain share is neither', by.nvda.multiplier, undefined);
+
+  // The predicate itself, stated.
+  eq('MGC is unambiguous', isUnambiguousFuture('MGC'), true);
+  eq('a dated contract code too', isUnambiguousFuture('MGCZ6'), true);
+  eq('SIL is not', isUnambiguousFuture('SIL'), false);
+  eq('nor is an equity', isUnambiguousFuture('NVDA'), false);
+
+  // The figure this exists for.
+  eq('MGC realised, after', +((4385.40 - 4506.40) * 2 * by.mgc.multiplier).toFixed(2), -2420);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
