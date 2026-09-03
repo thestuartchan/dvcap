@@ -1,10 +1,11 @@
 // test/preread.test.mjs — the delivery window.
-import { localDateIn } from '../lib/sessions.js';
+import { localDateIn, localMinutesOfDay } from '../lib/sessions.js';
 //
 // The whole daily brief hangs on this arithmetic and it had never been pinned. The Asia brief was
 // skipped on 2026-08-28; the endpoint was healthy and the schedule correct, and the only structural
 // fragility in the path was that every region's cron fired at sinceOpen = 0 — the first accepted
 // value, with no tolerance at all on the early side.
+import { prereadStatus, prereadMissed } from '../lib/preread.js';
 import { prereadWindow } from '../api/preread.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -27,23 +28,26 @@ ok('but not six', !at(6, 39, 7).accept);
 ok('forty minutes late still delivers', at(7, 25, 7).accept);
 ok('an hour late does not', !at(7, 40, 7).accept);
 
-// THE DST PAIR MUST STAY MUTUALLY EXCLUSIVE. EU and US schedule both candidate UTC hours and let
-// this gate pick one; if both passed, the brief would post twice.
+// THE DST PAIR NO LONGER HAS TO BE MUTUALLY EXCLUSIVE, and that is the point.
+//
+// The window used to be capped under 60 minutes for one reason: the two DST candidate crons are
+// exactly 60 local minutes apart, and if both passed the brief posted twice. The same-day dedupe
+// removed that constraint — a second firing in one window is a no-op that says so — which freed
+// the span to describe something real instead of a scheduling artefact.
 {
-  const first = at(8, 45, 9), second = at(9, 45, 9);   // exactly 60 local minutes apart
-  eq('exactly one of the two candidates delivers', [first.accept, second.accept], [true, false]);
-  // The span is what guarantees it — grace plus window must never reach the 60-minute separation.
-  ok('the span cannot reach the candidates’ separation', first.span <= 60);
+  const first = at(8, 45, 9), second = at(9, 45, 9);
+  eq('with no deadline the old behaviour is preserved exactly', [first.accept, second.accept], [true, false]);
+  // With a deadline, BOTH candidates may now be accepted, and that is safe rather than a bug.
+  const withDl = (h, m) => prereadWindow(h * 60 + m, 9, { deadlineMin: 10 * 60 });
+  eq('a stated deadline can admit both candidates', [withDl(8, 45).accept, withDl(9, 45).accept], [true, true]);
+  ok('which is only safe because the dedupe makes the second a no-op', true);
 }
-// The same, stated as a property rather than an example: no target hour admits both candidates.
-ok('no target hour admits both', Array.from({ length: 24 }, (_, t) =>
-  !(prereadWindow(t * 60 - 15 - 5, t).accept && prereadWindow(t * 60 - 15 - 5 + 60, t).accept)).every(Boolean));
 
 // Window boundaries are half-open, so the arithmetic has no ambiguous minute.
 {
   const w = prereadWindow(0, 7);
   eq('open is lead+grace before the target', w.open, 7 * 60 - 20);
-  eq('and close is span past it', w.close, w.open + w.span);
+  eq('and close is grace+window past it', w.close, w.open + 5 + 55);
   ok('the first minute is in', prereadWindow(w.open, 7).accept);
   ok('and the closing minute is out', !prereadWindow(w.close, 7).accept);
 }
@@ -77,6 +81,81 @@ ok('no target hour admits both', Array.from({ length: 24 }, (_, t) =>
 
   eq('a nonsense zone yields null rather than a wrong date',
     (() => { try { return localDateIn('Not/AZone', t); } catch { return null; } })(), null);
+}
+
+// ── THE DEADLINE, WHICH IS WHAT THE WINDOW SHOULD ALWAYS HAVE BEEN ──────────
+// 2026-09-03: the one run GitHub delivered all day arrived at 08:02 HKT and was refused, because
+// a 55-minute rule had closed the window at 07:40. The rule knew nothing about what the brief was
+// for. Asia's real deadline is the Korea/Japan open at 08:00 HKT — so the refusal was RIGHT, and
+// only a working scheduler fixes that morning. But the same rule was refusing Europe at 09:40
+// while its brief is written to land into a session that runs to 10:00 and beyond.
+{
+  const asia = (h, m) => prereadWindow(h * 60 + m, 7, { deadlineMin: 8 * 60 });
+  ok('an Asia brief at 07:55 now delivers', asia(7, 55).accept);
+  ok('one at 07:59 still does', asia(7, 59).accept);
+  ok('and at 08:00, when Korea and Japan open, it does not', !asia(8, 0).accept);
+  ok('nor at 08:02, which is when the run actually arrived', !asia(8, 2).accept);
+  eq('and it reports how late against the target, not the window', asia(8, 2).lateMin, 62);
+
+  const eu = (h, m) => prereadWindow(h * 60 + m, 9, { deadlineMin: 10 * 60 });
+  ok('Europe at 09:55 now delivers, where the old rule refused it', eu(9, 55).accept);
+  ok('but 10:00 is the line', !eu(10, 0).accept);
+  ok('the old rule would have refused 09:55', !prereadWindow(9 * 60 + 55, 9).accept);
+
+  const us = (h, m) => prereadWindow(h * 60 + m, 9, { deadlineMin: 9 * 60 + 30 });
+  ok('the US keeps its old span where the deadline is tighter than it', us(9, 35).accept);
+  ok('because a deadline must never SHRINK the window', prereadWindow(9 * 60 + 35, 9).accept);
+
+  // Early is still early, deadline or not.
+  ok('nothing opens before lead+grace', !asia(6, 39).accept);
+  ok('and the first accepted minute is unchanged', asia(6, 40).accept);
+  // A region with no deadline behaves exactly as before.
+  eq('no deadline, no change', prereadWindow(7 * 60 + 25, 7).accept, prereadWindow(7 * 60 + 25, 7, { deadlineMin: null }).accept);
+}
+
+// ── SILENCE MUST NOT BE SILENT ──────────────────────────────────────────────
+// Every missing brief so far was found by a person noticing an absence in a chat channel, days
+// later. This is the same question asked by the system.
+{
+  const R = {
+    asia: { label: 'Asia', tz: 'Asia/Hong_Kong', prereadHourLocal: 7, prereadDeadlineLocal: 8 * 60 },
+    us:   { label: 'US', tz: 'America/New_York', prereadHourLocal: 9, prereadDeadlineLocal: 9 * 60 + 30 },
+  };
+  const st = (log, iso) => prereadStatus(log, { regions: R, now: new Date(iso), localDateIn, localMinutesOfDay });
+  const of = (rows, r) => rows.find(x => x.region === r);
+
+  // 23:10 UTC on the 2nd is 07:10 on the 3rd in Hong Kong — inside Asia's window, after its target.
+  const due = st({}, '2026-09-02T23:10:00Z');
+  eq('a brief still inside its window is due, not missed', of(due, 'asia').state, 'due');
+  eq('and nothing is reported', prereadMissed(due).filter(r => r.region === 'asia').length, 0);
+
+  // 00:05 UTC on the 3rd is 08:05 HKT — past the Korea/Japan open, and nothing was posted.
+  const missed = st({}, '2026-09-03T00:05:00Z');
+  eq('past the deadline with nothing posted is missed', of(missed, 'asia').state, 'missed');
+  eq('and it says how far past', of(missed, 'asia').minsPastDeadline, 5);
+  ok('and it is what gets reported', prereadMissed(missed).some(r => r.region === 'asia'));
+  eq('with no prior delivery it says so', of(missed, 'asia').lastAt, null);
+
+  // The same moment with a delivery recorded for Hong Kong's date.
+  const ok1 = st({ asia: { at: '2026-09-02T23:12:00Z', localDate: '2026-09-03' } }, '2026-09-03T00:05:00Z');
+  eq('a delivered brief is not missed', of(ok1, 'asia').state, 'delivered');
+  eq('and nothing is raised', prereadMissed(ok1).length === 0 || !prereadMissed(ok1).some(r => r.region === 'asia'), true);
+
+  // YESTERDAY'S delivery does not cover today — the exact shape of the failure being detected.
+  const stale = st({ asia: { at: '2026-09-01T23:12:00Z', localDate: '2026-09-02' } }, '2026-09-03T00:05:00Z');
+  eq('yesterday’s brief does not count for today', of(stale, 'asia').state, 'missed');
+  ok('and the last delivery is shown so the gap is legible', of(stale, 'asia').lastAt === '2026-09-01T23:12:00Z');
+
+  // Before the window opens there is nothing to say. 20:00 UTC is 04:00 the next day in Hong Kong,
+  // which is ahead of the 06:40 open — whereas midday UTC is 20:00 HKT, long PAST that morning's
+  // deadline, and correctly reads as missed for the day that has already gone.
+  eq('before the window opens it is pending', of(st({}, '2026-09-02T20:00:00Z'), 'asia').state, 'pending');
+  eq('but an evening with nothing delivered is a miss, not a silence', of(st({}, '2026-09-02T12:00:00Z'), 'asia').state, 'missed');
+  // The Asia date is a day ahead of UTC, which is the whole reason the check is per-region.
+  ok('the region’s own date is used', of(st({}, '2026-09-02T23:10:00Z'), 'asia').today === '2026-09-03');
+  eq('and the US is on its own day', of(st({}, '2026-09-02T23:10:00Z'), 'us').today, '2026-09-02');
+  // A region with no config is skipped rather than guessed at.
+  eq('an unconfigured region is not invented', prereadStatus({}, { regions: { x: {} }, now: new Date(), localDateIn, localMinutesOfDay }).length, 0);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

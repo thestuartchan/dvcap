@@ -12,6 +12,13 @@ export const UNIVERSE = {
     label: 'Asia',
     tz: 'Asia/Hong_Kong',
     prereadHourLocal: 7,          // 07:00 HKT = pre-market brief, before Korea/Japan (08:00 HKT / 09:00 local) open. HK/KR/TW/JP keep no DST, so 23:00 UTC maps here year-round.
+    // WHEN THE BRIEF STOPS BEING A PRE-READ. The target has a reason and so does the deadline:
+    // Korea and Japan open at 08:00 HKT, and a brief that lands after that is a commentary, not a
+    // pre-read. The gate accepts anything up to here rather than for a fixed number of minutes —
+    // see prereadWindow. Measured 2026-09-03: the only run the scheduler delivered arrived at
+    // 08:02 HKT, two minutes past this line, and a 55-minute rule that knew nothing about the open
+    // refused it at 07:40 while there was still 88 minutes before Hong Kong itself opened.
+    prereadDeadlineLocal: 8 * 60,   // 08:00 HKT — Korea/Japan open
     names: [
       { sym: '0981.HK',   name: 'SMIC',        role: 'foundry-mature',  leader: true  },
       { sym: '1347.HK',   name: 'Hua Hong',    role: 'foundry-mature'                 },
@@ -38,6 +45,9 @@ export const UNIVERSE = {
     label: 'Europe',
     tz: 'Europe/London',
     prereadHourLocal: 9,          // ~09:00 London, into the EU open
+    // Deliberately the loosest of the three: this one is written to land INTO the open rather than
+    // before it, so an hour past target is still the brief it was meant to be.
+    prereadDeadlineLocal: 10 * 60,  // 10:00 London — an hour into the session
     names: [
       { sym: 'ASML.AS',  name: 'ASML',    role: 'litho',   leader: true },
       { sym: 'ASM.AS',   name: 'ASM Intl',role: 'equip'                },
@@ -57,6 +67,8 @@ export const UNIVERSE = {
     label: 'US',
     tz: 'America/New_York',
     prereadHourLocal: 9,          // ~09:00 ET, pre-open
+    // The NYSE open. Past it there is a tape to read and the brief is redundant.
+    prereadDeadlineLocal: 9 * 60 + 30,  // 09:30 ET — the US open
     names: [
       { sym: 'NVDA', name: 'NVDA', role: 'gpu',             leader: true },
       { sym: 'MU',   name: 'MU',   role: 'memory',          leader: true },

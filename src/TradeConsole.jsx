@@ -823,6 +823,10 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   // What the backfill did, shown once. A number changing under the reader without a word is how
   // the original error survived a month.
   const [multNote, setMultNote] = useState(null);
+  // Whether each regional brief actually reached the channel today. Three Asia pre-reads went
+  // missing and every one was found by a person noticing an absence in Discord; nothing in the
+  // system said anything because nothing was asked.
+  const [preread, setPreread] = useState(null);
   const [noteSeen, setNoteSeen] = useState(() => { try { return localStorage.getItem("dvcap:flexnote:seen") || ""; } catch { return ""; } });
   const [portOpen, setPortOpen] = useState(false);
   const [importTxt, setImportTxt] = useState("");
@@ -860,6 +864,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       }
       setKvOn(j?.kv?.configured ?? null);
       setFlexNote(j?.flexSync || null);
+      setPreread(Array.isArray(j?.preread) ? j.preread : null);
       setLoaded(true);
     }).catch(() => setLoaded(true));
   }, []);
@@ -1487,6 +1492,26 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       {/* ── WHAT THE OVERNIGHT RECONCILIATION DID ──
           The channel already gets a message, but the channel is somewhere else. This is the same
           news where the work happens. */}
+      {/* A BRIEF THAT DID NOT ARRIVE. Only 'missed' is shown — a region still inside its window is
+          'due', not late, and saying otherwise trains the reader to ignore the line. */}
+      {preread?.some(r => r.state === "missed") && (
+        <Card style={{ borderColor: C.rBdr, background: C.rBg, marginBottom: 12 }}>
+          <b style={{ fontSize: 12.5, color: C.red }}>Pre-read not delivered</b>
+          <div style={{ fontSize: 12, color: C.text, marginTop: 5, lineHeight: 1.6 }}>
+            {preread.filter(r => r.state === "missed").map(r => (
+              <div key={r.region}>
+                <b>{r.label}</b> — nothing posted for {r.today}
+                {r.minsPastDeadline != null && `, ${r.minsPastDeadline < 120 ? `${r.minsPastDeadline} min` : `${Math.round(r.minsPastDeadline / 60)}h`} past the deadline`}
+                {r.lastAt ? ` · last delivered ${String(r.lastAt).slice(0, 16).replace("T", " ")}Z` : " · never delivered"}
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, color: C.mid, marginTop: 6, lineHeight: 1.5 }}>
+            The brief is still assembled on demand — this says the scheduled delivery did not land,
+            not that the data is missing.
+          </div>
+        </Card>
+      )}
       {/* WHAT THE BACKFILL DID. Contract sizes were filled in on load; saying so is the point —
           MGC read −$242.00 for a month against a true −$2,420.00, and the archive total moves with
           it. `review` is the list a table must not touch: symbols that are both a futures root and

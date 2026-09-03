@@ -19,58 +19,36 @@
 # GitHub Actions has no such cap, and this repo already schedules flex-sync and tradecard here, so
 # this is the proven path rather than a new one.
 #
-# ON LATE RUNS — AND WHY THE SCHEDULE IS NOW A POLL. GitHub schedules are best-effort, and the
-# effort on 2026-09-02 was poor enough to lose the entire day. Every run reported success:
+# WHAT THIS IS NOW: A BACKUP, NOT THE SCHEDULE.
 #
-#   cron 22:45 asia   ran 00:31   1h46 late   SKIPPED — off-window
-#   cron 07:45 eu     ran 12:17   4h32 late   SKIPPED — off-window
-#   cron 08:45 eu     ran 12:58   4h13 late   SKIPPED — off-window
-#   cron 12:45 us     never ran
-#   cron 13:45 us     never ran
+# The polling attempt above was built on the assumption that each scheduled invocation is queued
+# independently, so many attempts give many chances. That is false on this account. Measured
+# 2026-09-02/03 across two unrelated workflows:
 #
-# The gate was right to refuse: a brief written for 09:00 London is worthless at 13:58, and
-# widening the window to accept it would deliver a stale brief rather than fix anything. The
-# endpoint was healthy, the deployment current, the code correct. The scheduler simply did not
-# turn up — the same failure shape as the Vercel cron cap, one layer out.
+#   preread   6 attempts scheduled in the asia band     1 ran, at 00:02, and 23 min late
+#   gex       cron 0 22                                 ran 22:53   53 min late
+#   gex       cron 15 15                                ran 18:39   3h24 late
+#   gex       cron 0 22                                 ran 23:52   1h53 late
 #
-# So a single precisely-timed firing is the wrong bet. Each scheduled invocation is queued
-# INDEPENDENTLY, so many attempts spread across the hours that matter give the gate several
-# chances to catch one inside its window, and one arriving on time is enough. Attempts sit on odd
-# minutes: :00, :15, :30 and :45 are the most contended minutes on the platform, and :45 is
-# exactly where all five of the old entries sat.
+# Six of seven preread firings were dropped outright, and the one that survived arrived two minutes
+# after Korea and Japan opened — past the point where a pre-read is a pre-read at all.
 #
-# THE DST PAIRS ARE GONE. They existed because Vercel fires a cron line once and the UTC hour of a
-# local 09:00 moves twice a year. Polling removes the need entirely — the gate resolves each
-# region's real local time through Intl on every attempt, so it is DST-correct by construction and
-# the 25 Oct and 1 Nov landmines are defused rather than rescheduled.
+# Vercel's crons over the same period ran 16 to 33 minutes late and never missed one. So the
+# schedule moves back there (vercel.json — one entry, `all=1`, every candidate hour, which is what
+# makes it fit the Hobby cap of two that the original five-entry design blew through).
 #
-# SAFE ONLY BECAUSE OF THE DEDUPE. Several attempts landing in one window would post the brief
-# several times. api/preread.js now refuses a region that has already delivered on its own local
-# calendar date, so the extra attempts are no-ops that say so. The two changes ship together and
-# neither is correct alone.
-#
-# COVERAGE, checked against the gate's own window [target-15min, target+40min). Every case gets
-# three in-window attempts, in both DST halves:
-#
-#   asia  23:00 UTC  window 22:45-23:40   ->  23:07  23:23  23:39
-#   eu    08:00 UTC  window 07:45-08:40   ->  08:07  08:23  08:39   (BST)
-#         09:00 UTC  window 08:45-09:40   ->  09:07  09:23  09:39   (GMT)
-#   us    13:00 UTC  window 12:45-13:40   ->  13:07  13:23  13:39   (EDT)
-#         14:00 UTC  window 13:45-14:40   ->  14:07  14:23  14:39   (EST)
-#
-# COST: 24 attempts a weekday, one job each, ~1 min billed — 120 runs/week, ~520/month against
-# 2,000 free. Each job calls all three regions, but that is three HTTP requests inside one job.
+# This file stays because a second independent trigger is free and the same-day dedupe makes a
+# duplicate a no-op. It is belt and braces: when GitHub does turn up on time it delivers, and when
+# it does not, Vercel already has.
 
 name: pre-read
 
 on:
   schedule:
-    # Asia targets 07:00 HKT = 23:00 UTC year-round (no DST in HK/KR/TW/JP).
-    - cron: '7,23,39 22-23 * * 0-4'
-    # Europe targets 09:00 London = 08:00 UTC in BST, 09:00 UTC in GMT. Both covered.
-    - cron: '7,23,39 7-9 * * 1-5'
-    # US targets 09:00 ET = 13:00 UTC in EDT, 14:00 UTC in EST. Both covered.
-    - cron: '7,23,39 12-14 * * 1-5'
+    # The same candidate hours as vercel.json, offset a few minutes so the two triggers do not
+    # arrive together and race for the same window. Whichever lands first delivers; the other is a
+    # no-op that says "already delivered".
+    - cron: '52 7,8,12,13,22 * * *'
   workflow_dispatch:
     inputs:
       region:
