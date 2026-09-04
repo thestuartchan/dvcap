@@ -385,5 +385,46 @@ eq('a fill carries the id that stops it being recorded twice', fillFrom({ tradeI
   ok('with the plain message, since nothing moved', !wrong.problems[0].why.includes('rewound'));
 }
 
+// ── AN ADOPTION IS NOT A CHANGE, SO IT CANNOT FAIL THE GATE ─────────────────
+// 2026-09-03: a batch that opened TQQQ and recorded two of its fills was discarded in full because
+// ARM disagreed with the statement. The plan's only involvement with ARM was matching five fills
+// already entered by hand.
+{
+  const plan = {
+    adopt: [{ root: 'ARM', rowId: 'arm', fillId: 'f1', tradeId: 't1' },
+            { root: 'ARM', rowId: 'arm', fillId: 'f2', tradeId: 't2' }],
+    apply: [{ root: 'TQQQ', rowId: 'tqqq', fill: { side: 'buy', qty: 1000, price: 69.4, date: '2026-09-03' } }],
+    creates: [{ id: 'tqqq', symbol: 'TQQQ' }],
+    report: [],
+  };
+  eq('only what the plan changes is verified', planTouches(plan).sort(), ['TQQQ']);
+  ok('an adopted root is not in scope', !planTouches(plan).includes('ARM'));
+
+  // WHY that is sound: adoption stamps a tradeId and moves no quantity or price, so the derived
+  // position is identical before and after. Asserted rather than asserted-about.
+  const rows = [{ id: 'arm', symbol: 'ARM', fills: [
+    { id: 'f1', side: 'buy', qty: 10, price: 246.73, date: '2026-06-01' },
+    { id: 'f2', side: 'sell', qty: 4, price: 240.00, date: '2026-08-01' }] }];
+  const derive = (r) => derivePosition(r.fills || [], { multiplier: r.multiplier });
+  const before = derive(rows[0]);
+  const after = derive(applyPlan(rows, { ...plan, apply: [], creates: [] }).find(r => r.id === 'arm'));
+  eq('adoption moves no quantity', after.qty, before.qty);
+  eq('and no average cost', after.avgCost, before.avgCost);
+  ok('it only stamps the trade id', applyPlan(rows, { ...plan, apply: [], creates: [] })
+    .find(r => r.id === 'arm').fills.every(f => f.tradeId));
+
+  // THE LINE THAT MUST NOT MOVE: a root the plan genuinely changes is still gated.
+  const pos = [{ root: 'TQQQ', symbol: 'TQQQ', qty: 500, costBasisPrice: 69.4, assetCategory: 'STK' }];
+  const applied = [{ id: 'tqqq', symbol: 'TQQQ', fills: [{ side: 'buy', qty: 1000, price: 69.4, date: '2026-09-03' }] }];
+  const bad = verify(applied, pos, { derive, roots: planTouches(plan), asOf: '2026-09-03' });
+  eq('a changed root that disagrees still fails', bad.ok, false);
+  const good = verify(applied, [{ ...pos[0], qty: 1000 }], { derive, roots: planTouches(plan), asOf: '2026-09-03' });
+  eq('and passes when it agrees', good.ok, true);
+
+  // And a plan with nothing but adoptions has nothing to verify — which is correct, not a hole:
+  // it changes nothing, so there is no new state to hold against the statement.
+  eq('a pure-adoption plan verifies nothing', planTouches({ ...plan, apply: [], creates: [] }).length, 0);
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
