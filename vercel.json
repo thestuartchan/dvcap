@@ -1,8 +1,12 @@
 {
   "crons": [
     {
-      "path": "/api/preread?all=1&post=1&cron=1",
-      "schedule": "42 8,13,22 * * *"
+      "path": "/api/preread?region=asia&post=1&cron=1",
+      "schedule": "42 22 * * *"
+    },
+    {
+      "path": "/api/preread?region=us&post=1&cron=1",
+      "schedule": "42 13 * * *"
     }
   ]
 }

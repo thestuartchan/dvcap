@@ -1,52 +1,61 @@
 # Pre-read schedule — why it looks like this, and what to do if it breaks
 
-## One cron entry, three hours, minute 42
+## Two entries, one firing each, Asia and US
 
 ```
-42 8,13,22 * * *   ->  /api/preread?all=1&post=1&cron=1
+42 22 * * *  ->  /api/preread?region=asia&post=1&cron=1
+42 13 * * *  ->  /api/preread?region=us&post=1&cron=1
 ```
 
-Each firing runs all three regions; the window gate keeps the wrong ones out and the same-day
-dedupe makes a repeat a no-op. Minute 42 is not arbitrary. It is the intersection of every
-region's delivery window across BOTH daylight-saving halves:
+## WHAT WENT WRONG, AND THE DISTINCTION THAT MATTERS
 
-| region | cron hour (UTC) | minutes that land in-window year-round |
-|---|---|---|
-| asia | 22 | 40–59 |
-| eu   | 08 | 40–59 |
-| us   | 13 | **40–44** |
+The previous version of this file asked ONE entry to fire at three hours:
+`42 8,13,22 * * *`. That is not a cron the Hobby plan will accept, and the
+failure mode is the expensive one: **Vercel rejects the deployment**. The build
+never completes, the previous deployment keeps serving, and the site looks
+completely normal while every merge silently stops reaching production.
 
-The US is the binding constraint, and only because its deadline is the open plus fifteen. With the
-previous 09:30 ET deadline there is **no** minute at 13:MM UTC that lands inside the US window in
-both halves of the year — which is why the original design needed a separate entry per DST half,
-blew through the Hobby cap of two, and silently ran only the first two of five.
+It blocked six pull requests for a day — the intervention flags, Gate 2, the
+scenario thresholds, the MGC backfill, the recompute refusals, the heatmap
+figures — none of them anything to do with cron.
 
-There are no DST pairs any more. The gate resolves each region's real local time through `Intl` on
-every firing, so the 25 October and 1 November transitions need no change here.
+The distinction that was got wrong:
 
-## If Vercel throttles cron frequency
+| overage | what Vercel does |
+|---|---|
+| more ENTRIES than the cap (2) | deploys, silently runs only the first two |
+| more FIRINGS PER DAY than the cap (1) | **rejects the deployment** |
 
-The Hobby plan caps cron ENTRIES at two. Whether it also caps how often one entry may fire is not
-documented anywhere we can rely on, and the current entry asks for three firings a day. If only one
-lands, the console's missed-brief card will say so within a day — that is what it is for.
+The original five-entry config deployed fine and ran only two, which is what sent
+this to GitHub Actions in the first place. A multi-hour schedule looks like a
+tidier way to say the same thing and is not the same thing at all.
 
-**The fallback is decided in advance: keep Asia and US, drop EU.** Use both slots, one hour each,
-so a per-entry daily cap cannot take a region away:
+So: one hour per entry, and never a comma in the hours field on this plan.
 
-```json
-{ "crons": [
-  { "path": "/api/preread?region=asia&post=1&cron=1", "schedule": "42 22 * * *" },
-  { "path": "/api/preread?region=us&post=1&cron=1",   "schedule": "42 13 * * *" }
-] }
-```
+## Which regions, and why these two
 
-Europe then rides on the GitHub Actions backup alone. It is the right one to sacrifice: its brief is
-written to land *into* the session rather than ahead of it, so it loses least by arriving late.
+Two entries is the cap and there are three regions, so one loses. Per the
+operator's instruction: **keep Asia and US, drop EU.** Europe rides the GitHub
+Actions backup alone, and it is the right one to sacrifice — its brief is written
+to land INTO the session rather than ahead of it, so it loses least by arriving
+late or not at all.
 
-The second slot is deliberately left empty today so this switch needs no other change.
+Times are UTC and the gate resolves each region's real local time through `Intl`
+on every firing, so the DST transitions need no change here. 22:42 UTC is 06:42
+HKT year-round (no DST in HK/KR/TW/JP). 13:42 UTC is 09:42 ET in EDT and 08:42 in
+EST — both inside the US window of 08:40 to 09:45, which only works because the
+deadline is the open plus fifteen.
 
 ## The backup trigger
 
-`.github/workflows/preread.yml` fires the same three hours a few minutes later. GitHub's scheduler
-dropped six of seven firings on 2026-09-02/03 and ran others up to 3h24m late, so it is a backup and
-nothing more. It costs nothing and the dedupe makes a double delivery impossible.
+`.github/workflows/preread.yml` fires all three regions at the same hours a few
+minutes later, and is the ONLY trigger Europe has. GitHub's scheduler dropped six
+of seven firings on 2026-09-02/03 and ran others up to 3h24m late, so it is a
+backup and nothing more. The same-day dedupe makes a double delivery impossible.
+
+## If a brief goes missing
+
+The console shows a red card for any region past its deadline with nothing
+posted, with how late it is and when that region last delivered. That is the
+detector — a missing brief should never again be found by noticing an absence in
+a chat channel.
