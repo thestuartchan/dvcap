@@ -7,7 +7,7 @@ import { UNIVERSE } from '../data/universe.js';
 import { assembleRegion } from '../lib/assemble.js';
 import { structure } from '../lib/regime.js';
 import { weekHighlights } from '../lib/calendar.js';
-import { marketState, localHour, localMinutesOfDay, localDateIn, isWeekendIn, localWeekday, halfDayLabels, freshness, freshnessText, sessionCloseMin } from '../lib/sessions.js';
+import { marketState, localHour, localMinutesOfDay, localDateIn, isWeekendIn, localWeekday, closedExchanges, halfDayLabels, freshness, freshnessText, sessionCloseMin } from '../lib/sessions.js';
 import { kvGetJson, kvSetJson, kvConfigured } from '../lib/kv.js';
 import { coreSpread } from '../lib/inflation.js';
 
@@ -361,14 +361,26 @@ async function runRegion(region, req) {
   // This gate binds on DELIVERY, not on the cron flag: a manual ?post=1 on a Saturday is the same
   // mistake made by hand. Dry runs (no post) are never blocked, so the brief stays testable any
   // day of the week, and ?force=1 posts anyway for the deliberate exception.
-  if (req.query.post === '1' && req.query.force !== '1' && isWeekendIn(R.tz)) {
+  if (req.query.post === '1' && req.query.force !== '1') {
     const localDate = localDateIn(R.tz);
-    return { status: 200, body: {
-      region, skipped: true, weekend: true, localDate,
-      localWeekday: ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][localWeekday(R.tz)],
-      reason: `${localDate} is a weekend in ${R.tz} — there is no session to be ahead of. `
-            + `Add &force=1 to post anyway; drop &post=1 to assemble it without delivering.`,
-    } };
+    const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][localWeekday(R.tz)] ?? null;
+    // Every exchange the region covers, judged in ITS OWN local date — a region spans several and
+    // they do not close together. One market shut out of four is content for the brief; all four
+    // shut means there is no session to be ahead of.
+    const shut = closedExchanges([...R.names.map(n => n.sym), ...R.indices.map(i => i.sym)]);
+    if (shut.allClosed) {
+      const weekend = isWeekendIn(R.tz);
+      return { status: 200, body: {
+        region, skipped: true, noSession: true, weekend, localDate, localWeekday: dayName,
+        closedExchanges: shut.closed,
+        reason: weekend
+          ? `${localDate} is a weekend in ${R.tz} — there is no session to be ahead of. `
+            + `Add &force=1 to post anyway; drop &post=1 to assemble it without delivering.`
+          : `${localDate} is a full-day closure for every exchange this region covers `
+            + `(${shut.closed.join(', ')}, per data/holidays.json) — there is no session to be `
+            + `ahead of. Add &force=1 to post anyway; drop &post=1 to assemble without delivering.`,
+      } };
+    }
   }
 
   if (req.query.cron === '1') {
