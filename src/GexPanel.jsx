@@ -23,6 +23,21 @@ const fmtUsd = (v) => {
   if (a >= 1e3) return `${s}$${(a / 1e3).toFixed(1)}K`;
   return `${s}$${a.toFixed(0)}`;
 };
+// The cell figure. fmtUsd renders "−$369.4M", which does not fit a sixty-pixel cell — this drops
+// the currency and a digit, because in a grid the reader is comparing cells to each other rather
+// than reading an exact dollar amount. The tooltip still carries the full number.
+const fmtCell = (v) => {
+  if (v == null || !Number.isFinite(+v) || v === 0) return "";
+  const a = Math.abs(v), s = v < 0 ? "−" : "";
+  if (a >= 1e9) return `${s}${(a / 1e9).toFixed(a >= 1e10 ? 0 : 1)}B`;
+  if (a >= 1e6) return `${s}${(a / 1e6).toFixed(a >= 1e8 ? 0 : a >= 1e7 ? 0 : 1)}M`;
+  if (a >= 1e3) return `${s}${Math.round(a / 1e3)}K`;
+  // BELOW A THOUSAND, PRINT NOTHING. Rounding these gave "−0", "−6", "−853" — figures that read as
+  // small round numbers when what they mean is "negligible", five or more orders below the cells
+  // beside them. The faint shade already says something is there; a number that has to be decoded
+  // as noise is worse than the absence of one.
+  return "";
+};
 const fmtNum = (v, d = 2) => (v == null || !Number.isFinite(+v)) ? "—" : (+v).toFixed(d);
 
 // Staleness is measured in HOURS, from the capture timestamp — not in days from the date.
@@ -321,8 +336,8 @@ export function GexPanel() {
               {/* Scrolls on its own rather than widening the page — the strike column is pinned so a
                   row stays identifiable once the expiries run off the right on a phone. */}
               <div style={{ marginTop: 8, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-                <div style={{ display: "grid", gridTemplateColumns: `56px repeat(${heat.expiries.length}, minmax(58px, 1fr))`,
-                              gap: 2, minWidth: 56 + heat.expiries.length * 60 }}>
+                <div style={{ display: "grid", gridTemplateColumns: `56px repeat(${heat.expiries.length}, minmax(66px, 1fr))`,
+                              gap: 2, minWidth: 56 + heat.expiries.length * 68 }}>
                   <div style={{ position: "sticky", left: 0, background: C.surf, zIndex: 1 }} />
                   {heat.expiries.map(e => (
                     <div key={e} style={{ fontSize: 9.5, fontWeight: 800, color: C.lbl, textAlign: "center",
@@ -352,7 +367,20 @@ export function GexPanel() {
                               style={{ height: 20, borderRadius: 3,
                                        background: a === 0 ? C.bg
                                          : `rgba(${v > 0 ? "22,101,52" : "153,27,27"},${a})`,
-                                       border: "1px solid " + (isSpot ? C.blBdr : "transparent") }} />
+                                       border: "1px solid " + (isSpot ? C.blBdr : "transparent"),
+                                       display: "flex", alignItems: "center", justifyContent: "center",
+                                       overflow: "hidden" }}>
+                              {/* THE FIGURE, NOT ONLY THE SHADE. Colour answers "where" at a glance
+                                  and cannot answer "how much" — the scale is compressed on purpose,
+                                  so two cells that look alike can differ several-fold. Text flips to
+                                  white once the ground is dark enough to swallow the tone colour;
+                                  a blank cell stays blank, because there is nothing to print. */}
+                              <span style={{ fontSize: 8.5, fontWeight: 800, lineHeight: 1,
+                                             fontVariantNumeric: "tabular-nums", letterSpacing: -0.2,
+                                             color: a >= 0.55 ? "#fff" : (v > 0 ? C.green : C.red) }}>
+                                {fmtCell(v)}
+                              </span>
+                            </div>
                           );
                         })}
                       </Fragment>
@@ -365,7 +393,8 @@ export function GexPanel() {
                 bright cell in the nearest expiry with nothing behind it is that expiry's positioning
                 and it stops existing when the contract does. ◂ marks spot; · marks the flip zone.
                 Shading is compressed — capped at the 90th percentile and square-rooted — so one huge
-                cell cannot blank the rest. Read it for WHERE, not how much; hover for the figure.
+                cell cannot blank the rest, which means two cells of similar colour can differ
+                several-fold. The figure in each is the exact one; hover for full precision.
               </div>
             </div>
           )}
