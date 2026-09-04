@@ -32,10 +32,32 @@ actually is (`isWeekendIn(R.tz)`) and refuses to deliver on a weekend regardless
 of what fired it, including a manual `?post=1`. `&force=1` overrides; a dry run
 without `post=1` is never blocked, so the brief stays testable on any day.
 
-Weekends only. A holiday calendar is per-market and per-year, and the guard
-deliberately does not pretend to be one — Lunar New Year and Golden Week will
-still deliver a brief for a shut market. An unknown weekday is not treated as a
-weekend, so the guard can never silence a brief it is unsure about.
+An unknown weekday is not treated as a weekend, so the guard can never silence a
+brief it is unsure about.
+
+## Holidays, judged per exchange
+
+`data/holidays.json` was already hand-maintained for `marketState()`, so the same
+guard covers full-day closures. **Monday 2026-09-07 is in it as a US closure —
+Labor Day —** which the US brief was three days from ignoring.
+
+A region spans several exchanges and they do not close together, so the brief is
+suppressed only when **every** exchange the region covers is shut. One market
+closed out of four is content for the brief, not a reason to skip it: in the six
+weeks after this was written Asia has nine partial-closure days (TSE for the
+September run of Japanese holidays, KRX and TWSE for Chuseok and National Day,
+SEHK for 1 and 19 October) and the brief goes out on all of them.
+
+Each closure is checked against that exchange's **own** local date, which matters
+for the same reason the cron week does: the Asia cron fires the previous UTC day,
+so a UTC-dated lookup would check the wrong day. Futures (CME) are excluded —
+they run the globex week and must never make a region look open on a day its cash
+markets are shut.
+
+`data/holidays.json` is hand-maintained and **must be topped up each year**. A
+missing date degrades safely: the brief still goes out, as it always did. Lunar
+dates (Chuseok, Mid-Autumn) warrant a re-check annually. Half-days are not
+suppressed — the brief fires pre-open and a short session is still a session.
 
 ## ⚠ 1 NOVEMBER 2026 — MOVE THE US ENTRY TO `42 13 * * 1-5`
 

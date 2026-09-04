@@ -1,6 +1,6 @@
 // test/preread.test.mjs — the delivery window.
 import { readFileSync } from 'node:fs';
-import { localDateIn, localMinutesOfDay, localWeekday, isWeekendIn } from '../lib/sessions.js';
+import { localDateIn, localMinutesOfDay, localWeekday, isWeekendIn, closedExchanges, localDateStr } from '../lib/sessions.js';
 //
 // The whole daily brief hangs on this arithmetic and it had never been pinned. The Asia brief was
 // skipped on 2026-08-28; the endpoint was healthy and the schedule correct, and the only structural
@@ -262,6 +262,43 @@ ok('an hour late does not', !at(7, 40, 7).accept);
   // vercel.json is schema-validated; an unknown key can reject the whole deployment.
   ok('no extra keys on any cron entry',
      cfg.crons.every(c => JSON.stringify(Object.keys(c).sort()) === '["path","schedule"]'));
+}
+
+// ── A HOLIDAY IS THE SAME BUG AS A WEEKEND ────────────────────────────────────────────────────
+// data/holidays.json was already hand-maintained for marketState(), and Monday 2026-09-07 sits in
+// it as a US closure. Labor Day. The US brief was three days from delivering a pre-market read for
+// a shut market by exactly the mechanism that produced the Saturday Asia one.
+{
+  const { UNIVERSE } = await import('../data/universe.js');
+  const syms = r => [...UNIVERSE[r].names.map(n => n.sym), ...UNIVERSE[r].indices.map(i => i.sym)];
+  const asiaAt = iso => closedExchanges(syms('asia'), new Date(iso));
+  const usAt   = iso => closedExchanges(syms('us'),   new Date(iso));
+
+  ok('US Labor Day 2026-09-07 is all-closed', usAt('2026-09-07T12:42:00Z').allClosed);
+  ok('US Thanksgiving 2026-11-26 is all-closed', usAt('2026-11-26T12:42:00Z').allClosed);
+  ok('the Tuesday after Labor Day is NOT', !usAt('2026-09-08T12:42:00Z').allClosed);
+  ok('Asia Saturday is all-closed', asiaAt('2026-09-04T22:42:00Z').allClosed);
+  ok('Asia Monday is not', !asiaAt('2026-09-06T22:42:00Z').allClosed);
+
+  // A region spans several exchanges and they do NOT close together. Suppressing on the first
+  // closure would have silenced the brief on nine days in the next six weeks alone — days when
+  // three of four Asian markets trade normally and the brief is exactly what you want.
+  const hkNationalDay = asiaAt('2026-09-30T22:42:00Z');     // 2026-10-01 in Hong Kong
+  eq('HK National Day closes SEHK only', hkNationalDay.closed, ['SEHK']);
+  ok('and the Asia brief still goes out', !hkNationalDay.allClosed);
+  const krxTwse = asiaAt('2026-10-08T22:42:00Z');           // 2026-10-09 KRX + TWSE
+  eq('two of four shut', krxTwse.closed.sort(), ['KRX', 'TWSE']);
+  ok('still not all-closed', !krxTwse.allClosed);
+
+  // The closure is judged in each exchange's OWN local date. The Asia cron fires the previous UTC
+  // day, so a UTC-dated holiday lookup would check the wrong day entirely.
+  eq('SEHK sees its own local date', localDateStr('Asia/Hong_Kong', new Date('2026-09-30T22:42:00Z')), '2026-10-01');
+
+  // Futures never make a region look open on a day its cash markets are shut.
+  ok('CME is not counted as a cash exchange',
+     !closedExchanges(['CL=F', 'GC=F'], new Date('2026-09-07T12:42:00Z')).exchanges.includes('CME'));
+  // Unknown is never a reason to silence the brief.
+  eq('no cash exchanges -> not all-closed', closedExchanges([], new Date()).allClosed, false);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
