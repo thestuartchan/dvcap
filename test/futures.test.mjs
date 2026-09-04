@@ -1,5 +1,5 @@
 // test/futures.test.mjs — the contract sizes, and the promise that an unknown one stays unknown.
-import { FUTURES_MULTIPLIER, futuresRoot, multiplierFor, backfillMultipliers, EQUITY_AMBIGUOUS, isUnambiguousFuture } from '../lib/futures.js';
+import { FUTURES_MULTIPLIER, futuresRoot, multiplierFor, backfillMultipliers, EQUITY_AMBIGUOUS, isUnambiguousFuture, quoteConvention, looksMisquoted, FX_MISQUOTE_RATIO } from '../lib/futures.js';
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log(`✅ ${name}`); } else { fail++; console.log(`❌ ${name}`); } };
@@ -46,9 +46,20 @@ const eq = (name, got, want) => { const g = JSON.stringify(got), w = JSON.string
   eq('an unknown contract returns null', unknown.multiplier, null);
   eq('and says so', unknown.source, 'unknown');
   ok('it is emphatically not 1', unknown.multiplier !== 1);
-  // Grains and FX are left out deliberately — the units are ambiguous, so no answer beats a guess.
-  for (const sym of ['ZC', 'ZS', 'ZW', '6E', '6J']) {
+  // GRAINS are still left out deliberately: quoted in cents per bushel, so the multiplier is 50 or
+  // 5,000 depending on the units the price was entered in, and a table cannot know which.
+  for (const sym of ['ZC', 'ZS', 'ZW']) {
     ok(`${sym} is deliberately absent rather than guessed`, multiplierFor(sym, { margined: true }).source === 'unknown');
+  }
+  // FX WAS in this list and is not any more. It was excluded for the same reason — a quoting
+  // convention a table cannot infer — but the convention is now CARRIED rather than guessed, so
+  // the contracts can be named. The pairs still absent stay absent.
+  for (const sym of ['6J', 'MJY', '6E', 'M6E']) {
+    ok(`${sym} is known now that its convention is carried`, multiplierFor(sym, { margined: true }).source === 'table');
+    ok(`and ${sym} states its quotation`, !!quoteConvention(sym));
+  }
+  for (const sym of ['6S', '6C', 'MSF']) {
+    ok(`${sym} is not guessed at just because its neighbours are known`, multiplierFor(sym, { margined: true }).source === 'unknown');
   }
 }
 
@@ -180,6 +191,64 @@ const eq = (name, got, want) => { const g = JSON.stringify(got), w = JSON.string
 
   // The figure this exists for.
   eq('MGC realised, after', +((4385.40 - 4506.40) * 2 * by.mgc.multiplier).toFixed(2), -2420);
+}
+
+// ── CME FX, AND THE TRAP THAT KEPT IT OUT ───────────────────────────────────
+// MJY was unrecognised because FX was deliberately excluded: these contracts are quoted in US
+// dollars per unit of the foreign currency, so a yen future prints 0.00641 while USD/JPY — the
+// number anyone says out loud — is 156.115. Reciprocals, ~24,000x apart, opposite directions.
+{
+  eq('MJY is a micro yen contract', multiplierFor('MJY', { margined: true }).multiplier, 1250000);
+  eq('and the standard is ten times it', FUTURES_MULTIPLIER['6J'] / FUTURES_MULTIPLIER.MJY, 10);
+  eq('the euro micro likewise', FUTURES_MULTIPLIER['6E'] / FUTURES_MULTIPLIER.M6E, 10);
+  eq('sterling', FUTURES_MULTIPLIER['6B'] / FUTURES_MULTIPLIER.M6B, 10);
+  eq('the Australian dollar', FUTURES_MULTIPLIER['6A'] / FUTURES_MULTIPLIER.M6A, 10);
+
+  // Notional sanity, against the live prices the feed actually returned on 2026-09-04. A micro
+  // should be a few thousand dollars and a standard a few tens of thousands; an order of magnitude
+  // either way would mean the contract size is wrong.
+  const mjy = 1250000 * 0.00641, sixJ = 12500000 * 0.006411;
+  ok('a micro yen lot is a few thousand dollars', mjy > 5000 && mjy < 15000);
+  ok('a standard is a few tens of thousands', sixJ > 50000 && sixJ < 120000);
+  const m6e = 12500 * 1.1618;
+  ok('and the euro micro sits in the same band', m6e > 5000 && m6e < 25000);
+
+  // Dated contract codes still reduce, including the digit-led roots.
+  eq('a dated micro yen', futuresRoot('MJYZ6'), 'MJY');
+  eq('a dated standard yen', futuresRoot('6JZ6'), '6J');
+  eq('and the bare roots are themselves', [futuresRoot('6J'), futuresRoot('MJY')], ['6J', 'MJY']);
+  // MJY must be identifiable from the symbol — it is not a share ticker.
+  eq('MJY is unambiguous', isUnambiguousFuture('MJY'), true);
+  ok('and is not in the ambiguous set', !EQUITY_AMBIGUOUS.has('MJY'));
+}
+{
+  // THE CONVENTION IS CARRIED, so a row can say which number it wants rather than leaving the
+  // reader to notice the price has four leading zeros.
+  const c = quoteConvention('MJY');
+  eq('the unit is stated', c.unit, 'USD per JPY');
+  eq('and the currency', c.currency, 'JPY');
+  ok('the note names the trap explicitly', /0\.0064/.test(c.note) && /156/.test(c.note));
+  ok('and says the two are reciprocals', /reciprocal/i.test(c.note));
+  eq('a dated code still resolves', quoteConvention('MJYZ6').currency, 'JPY');
+  eq('a metal is not FX', quoteConvention('MGC'), null);
+  eq('nor an equity', quoteConvention('NVDA'), null);
+  eq('nor nothing at all', quoteConvention(null), null);
+}
+{
+  // A factor-of-ten gap is not a market move in any currency pair. It is the wrong convention.
+  eq('entering USD/JPY on a yen future is caught', looksMisquoted('MJY', 156, 0.00641), 24337);
+  eq('and the reverse mistake too', looksMisquoted('MJY', 0.00641, 156), 24337);
+  eq('a correct entry is silent', looksMisquoted('MJY', 0.0064, 0.00641), null);
+  eq('so is an ordinary move', looksMisquoted('MJY', 0.0070, 0.00641), null);
+  // The boundary, and that it is a ratio rather than a difference.
+  eq('exactly ten times is caught', looksMisquoted('MJY', 0.0641, 0.00641), 10);
+  eq('nine times is not', looksMisquoted('MJY', 0.05769, 0.00641), null);
+  eq('the threshold is stated', FX_MISQUOTE_RATIO, 10);
+  // Only FX. A metal moving ten-fold is a data problem, not a convention one, and is not this
+  // function's business to name.
+  eq('a non-FX contract is not checked', looksMisquoted('MGC', 45000, 4500), null);
+  eq('missing inputs say nothing', looksMisquoted('MJY', null, 0.00641), null);
+  eq('nor a zero price', looksMisquoted('MJY', 0, 0.00641), null);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

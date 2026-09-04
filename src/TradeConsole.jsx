@@ -11,7 +11,7 @@
 // price feed, and the regime history. Everything else is derived here or imported from lib/.
 
 import { useState, useEffect, useMemo } from "react";
-import { FUTURES_MULTIPLIER, multiplierFor, backfillMultipliers } from '../lib/futures.js';
+import { FUTURES_MULTIPLIER, multiplierFor, backfillMultipliers, quoteConvention, looksMisquoted } from '../lib/futures.js';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
@@ -364,6 +364,31 @@ const {
           {r.trade && r.trade.trim().toUpperCase() !== r.symbol.toUpperCase()
             ? <span style={{ fontSize: 11.5, color: C.mid, fontWeight: 700, background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6, padding: "1px 7px", whiteSpace: "nowrap" }}>{r.trade}</span> : null}
           {d.multiplier > 1 ? chip(`×${d.multiplier}`, C.amber, C.aBg, C.aBdr) : null}
+          {/* AN FX CONTRACT IS QUOTED THE OTHER WAY UP. A yen future prints 0.00641 while USD/JPY
+              — the number anyone says out loud — is 156. Reciprocals, ~24,000x apart, and a fill
+              entered in the wrong one is wrong by that factor AND in the wrong direction. The row
+              says which number it wants rather than leaving it to be inferred from the leading
+              zeros. */}
+          {(() => {
+            const q = quoteConvention(r.symbol);
+            return q ? <span title={q.note}
+              style={{ fontSize: 10.5, fontWeight: 800, color: C.blue, background: C.blBg,
+                       border: "1px solid " + C.blBdr, borderRadius: 6, padding: "1px 7px", whiteSpace: "nowrap" }}>
+              {q.unit}
+            </span> : null;
+          })()}
+          {/* And if a recorded fill is already in the wrong units, say so — a factor of ten is not
+              a market move in any currency pair. */}
+          {(() => {
+            const bad = (r.fills || [])
+              .map(f => looksMisquoted(r.symbol, f?.price, price))
+              .filter(Boolean);
+            return bad.length ? <span title={`A recorded fill is about ${bad[0]}x away from the live price. That is not a move — it is the other side of the quotation. Re-enter it in ${quoteConvention(r.symbol)?.unit}.`}
+              style={{ fontSize: 10.5, fontWeight: 800, color: C.red, background: C.rBg,
+                       border: "1px solid " + C.rBdr, borderRadius: 6, padding: "1px 7px", whiteSpace: "nowrap" }}>
+              ⚠ fill {bad[0]}× off quote
+            </span> : null;
+          })()}
           {ccyChip(r.currency || "USD")}
         </span>
 
