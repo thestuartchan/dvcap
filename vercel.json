@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/preread?region=us&post=1&cron=1",
-      "schedule": "42 13 * * *"
+      "schedule": "42 12 * * *"
     }
   ]
 }

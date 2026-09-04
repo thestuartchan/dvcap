@@ -48,7 +48,11 @@ on:
     # The same three hours as vercel.json (see docs/preread-schedule.md for why minute 42), offset
     # so the two triggers do not arrive together and race for the same window. Whichever lands
     # first delivers; the other is a no-op that says "already delivered".
-    - cron: '49 8,13,22 * * *'
+    # FOUR HOURS, NOT THREE. GitHub executes a multi-hour schedule (Vercel does not), so the backup
+    # can cover BOTH US daylight-saving halves where the Vercel entry cannot: 12:49 is 08:49 ET in
+    # EDT and 13:49 is 08:49 ET in EST. That is what stands behind the US brief on 1 November, when
+    # the Vercel entry goes stale until it is moved.
+    - cron: '49 8,12,13,22 * * *'
   workflow_dispatch:
     inputs:
       region:
