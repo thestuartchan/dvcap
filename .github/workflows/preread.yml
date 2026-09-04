@@ -57,7 +57,12 @@ on:
     # Asia and the US, which have the Vercel entries. This is belt and braces, a few minutes after
     # them: 12:49 is 08:49 ET in EDT and 13:49 is 08:49 ET in EST, so the backup covers both halves
     # where a single Vercel entry cannot.
-    - cron: '49 12,13,22 * * *'
+    # Split because these two are DIFFERENT regions whose UTC day-of-week does not agree.
+    # 12/13 UTC is the US, same calendar day in ET, so Mon-Fri UTC is Mon-Fri ET.
+    # 22 UTC is Asia, the NEXT day in HKT, so Sun-Thu UTC is Mon-Fri HKT. Sharing one
+    # `* * *` line delivered a Saturday-morning Hong Kong pre-read every Friday night.
+    - cron: '49 12,13 * * 1-5'   # US backup
+    - cron: '49 22 * * 0-4'      # Asia backup (UTC Sun-Thu = HKT Mon-Fri)
   workflow_dispatch:
     inputs:
       region:

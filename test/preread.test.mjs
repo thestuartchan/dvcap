@@ -1,5 +1,6 @@
 // test/preread.test.mjs — the delivery window.
-import { localDateIn, localMinutesOfDay } from '../lib/sessions.js';
+import { readFileSync } from 'node:fs';
+import { localDateIn, localMinutesOfDay, localWeekday, isWeekendIn } from '../lib/sessions.js';
 //
 // The whole daily brief hangs on this arithmetic and it had never been pinned. The Asia brief was
 // skipped on 2026-08-28; the endpoint was healthy and the schedule correct, and the only structural
@@ -195,6 +196,72 @@ ok('an hour late does not', !at(7, 40, 7).accept);
   eq('at the old 09:30 deadline no US minute works year-round', worksBoth(9 * 60 + 30).length, 0);
   ok('at 09:45 a band opens up', worksBoth(9 * 60 + 45).length > 0);
   ok('and the chosen minute is inside it', worksBoth(9 * 60 + 45).includes(CRON_MIN));
+}
+
+// ── THE CRON WEEK IS NOT THE REGION'S WEEK ────────────────────────────────────────────────────
+// Both entries were `* * *` and delivered a pre-market brief every weekend. The Asia one is the
+// trap: its firing lands the NEXT calendar day locally, so its UTC week runs one ahead, and the
+// obvious `1-5` would have delivered Tue-Sat in Hong Kong. These tests assert the real mapping
+// from the UTC instants the cron actually fires at, not from the cron string.
+{
+  const HK = 'Asia/Hong_Kong', NY = 'America/New_York';
+  const at = iso => new Date(iso);
+  const dayName = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  // Asia fires 22:42 UTC. Walk a whole UTC week and record which local day each lands on.
+  const asiaWeek = [];
+  for (let d = 30; d <= 36; d++) {           // 2026-08-30 (Sun) .. 2026-09-05 (Sat) UTC
+    const iso = d <= 31 ? `2026-08-${d}` : `2026-09-0${d - 31}`;
+    const t = at(`${iso}T22:42:00Z`);
+    asiaWeek.push([dayName[t.getUTCDay()], dayName[localWeekday(HK, t)]]);
+  }
+  eq('Asia local day is one AHEAD of the UTC day, all week', asiaWeek,
+     [['Sun','Mon'],['Mon','Tue'],['Tue','Wed'],['Wed','Thu'],['Thu','Fri'],['Fri','Sat'],['Sat','Sun']]);
+  // The firing the user actually saw: Friday night UTC, Saturday morning in Hong Kong.
+  ok('Fri 22:42 UTC is a WEEKEND in Asia — the brief that fired', isWeekendIn(HK, at('2026-09-04T22:42:00Z')));
+  eq('and its local date is the Saturday', localDateIn(HK, at('2026-09-04T22:42:00Z')), '2026-09-05');
+  ok('Sat 22:42 UTC is also a weekend in Asia', isWeekendIn(HK, at('2026-09-05T22:42:00Z')));
+  ok('Sun 22:42 UTC is a TRADING day in Asia (Monday)', !isWeekendIn(HK, at('2026-09-06T22:42:00Z')));
+  ok('Thu 22:42 UTC is a trading day in Asia (Friday)', !isWeekendIn(HK, at('2026-09-03T22:42:00Z')));
+
+  // 0-4 (Sun-Thu UTC) is exactly the set of Asia firings that land on a weekday. The point of
+  // this assertion is that 1-5 is NOT — the intuitive fix is the wrong one.
+  const SUN = Date.UTC(2026, 8, 6, 22, 42);   // 2026-09-06 22:42Z is a Sunday in UTC
+  const asiaUtcDaysThatWork = [0,1,2,3,4,5,6]
+    .map(i => new Date(SUN + i * 864e5))
+    .filter(d => !isWeekendIn(HK, d))
+    .map(d => d.getUTCDay());
+  eq('Asia wants UTC Sun-Thu = 0-4', asiaUtcDaysThatWork, [0,1,2,3,4]);
+
+  // US fires 12:42 UTC and lands the SAME day, so its UTC week and local week agree.
+  eq('US local day equals the UTC day', localWeekday(NY, at('2026-09-07T12:42:00Z')), 1);
+  ok('Sat 12:42 UTC is a weekend in the US', isWeekendIn(NY, at('2026-09-05T12:42:00Z')));
+  ok('Sun 12:42 UTC is a weekend in the US', isWeekendIn(NY, at('2026-09-06T12:42:00Z')));
+  ok('Mon 12:42 UTC is a trading day in the US', !isWeekendIn(NY, at('2026-09-07T12:42:00Z')));
+  ok('Fri 12:42 UTC is a trading day in the US', !isWeekendIn(NY, at('2026-09-04T12:42:00Z')));
+
+  // The guard must not over-reach: an unknown weekday is not a weekend, so it can never silence
+  // a brief it is unsure about.
+  eq('bogus timezone yields no weekday', localWeekday('Not/AZone'), null);
+  eq('an INVALID DATE yields null, it does not throw', localWeekday('Asia/Hong_Kong', new Date('nope')), null);
+  ok('and an invalid date is not called a weekend', !isWeekendIn('Asia/Hong_Kong', new Date('nope')));
+  ok('and is therefore NOT called a weekend', !isWeekendIn('Not/AZone'));
+
+  // EU fires 07-09 UTC into a same-day local morning, so its existing 1-5 was already right.
+  ok('Sat 08:00 UTC is a weekend in London', isWeekendIn('Europe/London', at('2026-09-05T08:00:00Z')));
+  ok('Wed 08:00 UTC is not', !isWeekendIn('Europe/London', at('2026-09-02T08:00:00Z')));
+}
+
+// The shipped cron strings must match the mapping proved above. A schedule is the one part of
+// this that no runtime test would otherwise touch.
+{
+  const cfg = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
+  const sched = Object.fromEntries(cfg.crons.map(c => [c.path.match(/region=(\w+)/)[1], c.schedule]));
+  eq('asia cron is Sun-Thu UTC', sched.asia, '42 22 * * 0-4');
+  eq('us cron is Mon-Fri UTC', sched.us, '42 12 * * 1-5');
+  ok('neither entry fires all seven days', !Object.values(sched).some(v => v.endsWith('* * *')));
+  // vercel.json is schema-validated; an unknown key can reject the whole deployment.
+  ok('no extra keys on any cron entry',
+     cfg.crons.every(c => JSON.stringify(Object.keys(c).sort()) === '["path","schedule"]'));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

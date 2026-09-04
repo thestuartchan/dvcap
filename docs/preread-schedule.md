@@ -3,11 +3,41 @@
 ## Two entries, one firing each, Asia and US
 
 ```
-42 22 * * *  ->  /api/preread?region=asia&post=1&cron=1     06:42 HKT, year-round
-42 12 * * *  ->  /api/preread?region=us&post=1&cron=1       08:42 ET in EDT  ** MOVE TO 13 ON 1 NOV **
+42 22 * * 0-4  ->  /api/preread?region=asia&post=1&cron=1   06:42 HKT, year-round
+42 12 * * 1-5  ->  /api/preread?region=us&post=1&cron=1     08:42 ET in EDT  ** MOVE TO 13 ON 1 NOV **
 ```
 
-## ⚠ 1 NOVEMBER 2026 — MOVE THE US ENTRY TO `42 13 * * *`
+## The day-of-week field runs a day ahead of Asia
+
+Both entries were `* * *` and delivered a pre-market brief every Saturday and
+Sunday. Fixing that is not as simple as writing `1-5` on both, because **a cron's
+day-of-week is evaluated in UTC and a pre-read's day is the region's**:
+
+| cron (UTC) | region | local time | local day |
+|---|---|---|---|
+| Fri 22:42 | Asia | 06:42 HKT | **Saturday** |
+| Sat 22:42 | Asia | 06:42 HKT | **Sunday** |
+| Sun 22:42 | Asia | 06:42 HKT | Monday ✓ |
+| Sat 12:42 | US | 08:42 ET | **Saturday** |
+| Mon 12:42 | US | 08:42 ET | Monday ✓ |
+
+The US brief lands on the same calendar day it fires, so `1-5` is right there.
+The Asia brief lands the **next** day, so its UTC week runs one ahead: `0-4`
+(Sun–Thu UTC) is Mon–Fri in Hong Kong. `1-5` on the Asia entry would have
+delivered Tuesday through **Saturday** — the obvious fix makes it worse.
+
+That offset is invisible in a cron string and cannot be unit-tested there, so the
+schedule is only the first layer. `api/preread.js` asks the region what day it
+actually is (`isWeekendIn(R.tz)`) and refuses to deliver on a weekend regardless
+of what fired it, including a manual `?post=1`. `&force=1` overrides; a dry run
+without `post=1` is never blocked, so the brief stays testable on any day.
+
+Weekends only. A holiday calendar is per-market and per-year, and the guard
+deliberately does not pretend to be one — Lunar New Year and Golden Week will
+still deliver a brief for a shut market. An unknown weekday is not treated as a
+weekend, so the guard can never silence a brief it is unsure about.
+
+## ⚠ 1 NOVEMBER 2026 — MOVE THE US ENTRY TO `42 13 * * 1-5`
 
 There is no single UTC hour that serves the US in both daylight-saving halves,
 and the reason is Vercel's punctuality rather than arithmetic.
