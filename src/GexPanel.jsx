@@ -63,7 +63,7 @@ export function GexPanel() {
   // A LIVE RECOMPUTE IS NOT A SECOND OPINION. Open interest settles overnight and does not move
   // during the session, so this re-prices the SAME positioning at the current spot and time decay
   // — which is the question you are actually asking when you look at it mid-session. It writes
-  // nothing: the stored series stays the clean pre-open record.
+  // nothing: the stored series stays the clean scheduled record.
   const [live, setLive] = useState(null);
   const [liveBusy, setLiveBusy] = useState(false);
   // WHY THE RECOMPUTE DID NOTHING. The button used to answer a refusal by setting live to null,
@@ -173,7 +173,7 @@ export function GexPanel() {
     return (
       <Card>{header}{liveErrCard}
         <div style={{ fontSize: 12.5, color: C.mid, marginTop: 8, lineHeight: 1.6 }}>
-          Nothing captured yet. The snapshot runs pre-open each weekday and writes one row per symbol;
+          Nothing captured yet. The snapshot runs mid-session each weekday and writes one row per symbol;
           the by-strike chart appears after the first run and the time series becomes meaningful after
           a few. <b>Open interest cannot be back-filled</b> — Yahoo and OCC serve today only — so the
           history starts from the first successful capture and no earlier.
@@ -254,9 +254,17 @@ export function GexPanel() {
             <b style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase" }}>Open → close </b>
             GEX {fmtUsd(latest.gexUsd)} → {fmtUsd(latest.close.gexUsd)} ·
             flip {fmtNum(latest.flipLevel)} → {fmtNum(latest.close.flipLevel)}
-            <span style={{ color: C.lbl }}> — the figures above are the PRE-OPEN capture, computed on
-              open interest OCC settled overnight. The close reading sits alongside rather than
-              replacing it, because same-day expiries decay through the session and move all of this.</span>
+            {/* NOT "PRE-OPEN". That label survived the schedule that replaced it: the capture was
+                moved to 15:15 UTC precisely BECAUSE Yahoo does not serve open interest before the
+                US open, and the cron comment says "after the open in BOTH" while this said the
+                opposite. Open interest is still OCC's overnight settle — that part was right —
+                but the reading is taken during the session, and in practice GitHub has been
+                running it three hours later still. */}
+            <span style={{ color: C.lbl }}> — the figures above are the FIRST capture of the day,
+              taken during the session on open interest OCC settled overnight. Open interest does
+              not change intraday, so the positioning is the same one the close reading uses; what
+              differs is the spot and the time decay it was priced at. The close sits alongside
+              rather than replacing it, because same-day expiries decay through the session.</span>
           </div>
         )}
         <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 7, lineHeight: 1.5 }}>
