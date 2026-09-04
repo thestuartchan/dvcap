@@ -7,7 +7,7 @@ import { UNIVERSE } from '../data/universe.js';
 import { assembleRegion } from '../lib/assemble.js';
 import { structure } from '../lib/regime.js';
 import { weekHighlights } from '../lib/calendar.js';
-import { marketState, localHour, localMinutesOfDay, localDateIn, halfDayLabels, freshness, freshnessText, sessionCloseMin } from '../lib/sessions.js';
+import { marketState, localHour, localMinutesOfDay, localDateIn, isWeekendIn, localWeekday, halfDayLabels, freshness, freshnessText, sessionCloseMin } from '../lib/sessions.js';
 import { kvGetJson, kvSetJson, kvConfigured } from '../lib/kv.js';
 import { coreSpread } from '../lib/inflation.js';
 
@@ -351,6 +351,26 @@ async function runRegion(region, req) {
   // DST candidate crons (exactly 60min apart in local time) can never both pass, while still
   // absorbing up to ~an hour of positive cron jitter. Only scheduled calls pass cron=1 —
   // manual calls/dry-runs skip the gate, so tests always run.
+  // ── NO BRIEF FOR A SESSION THAT WILL NOT HAPPEN ────────────────────────────────────────────
+  // The gate below decides WHEN in the day to post and whether today's brief already went out.
+  // Neither asks whether there is a session at all, so a Friday-night UTC cron delivered a
+  // "pre-market" read at 06:42 Saturday in Hong Kong. Asked in the REGION'S timezone, because for
+  // Asia the UTC day and the local day are different days — which is the whole reason the cron's
+  // own day-of-week field could not have fixed this on its own.
+  //
+  // This gate binds on DELIVERY, not on the cron flag: a manual ?post=1 on a Saturday is the same
+  // mistake made by hand. Dry runs (no post) are never blocked, so the brief stays testable any
+  // day of the week, and ?force=1 posts anyway for the deliberate exception.
+  if (req.query.post === '1' && req.query.force !== '1' && isWeekendIn(R.tz)) {
+    const localDate = localDateIn(R.tz);
+    return { status: 200, body: {
+      region, skipped: true, weekend: true, localDate,
+      localWeekday: ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][localWeekday(R.tz)],
+      reason: `${localDate} is a weekend in ${R.tz} — there is no session to be ahead of. `
+            + `Add &force=1 to post anyway; drop &post=1 to assemble it without delivering.`,
+    } };
+  }
+
   if (req.query.cron === '1') {
     // ── ONCE A DAY, WHATEVER THE SCHEDULER DOES ──────────────────────────────
     // The window gate alone was enough while exactly one firing per region arrived per day. It is
