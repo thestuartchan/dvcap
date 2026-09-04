@@ -18,7 +18,7 @@ import { deriveRegimeProbabilities, CONTESTED_GAP } from "../lib/regimeProb.js";
 import { minersPairImplication } from "../lib/regimeState.js";
 import { southboundTrend, southboundLevelTrend, southboundRead, ahPremiumRead, sbStale } from "../lib/southbound.js";
 import { STATUS, creditStatus, deriveAction, headerSignal, STAGES } from "../lib/status.js";
-import { HORIZON, HORIZON_LABEL, consensusFor, calendarWindow, dispersionRead, NO_CONVERSION_NOTE } from "../lib/recession.js";
+import { HORIZON, HORIZON_LABEL, consensusFor, calendarWindow, dispersionRead, NO_CONVERSION_NOTE, consensusVintage } from "../lib/recession.js";
 import { buildViews, evaluateViews, regimeCluster, divergenceRead } from "../lib/analystViews.js";
 import { CURRENCIES, CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, toUsd, fxRisk, fmtCcy } from "../lib/fxrates.js";
 import { derivePosition, positionPnl, levelHit, levelHits, distancePct, summarize, realizedCurve } from "../lib/positions.js";
@@ -1996,14 +1996,21 @@ const FED_LANGUAGE_STATES = {
   },
 };
 
-// Section A — the consensus inputs are a VINTAGE, not a live feed. The refresh is deliberately
-// deferred (Aug 7 jobs, Aug 28 BLS benchmark), but the engine keeps producing live-looking
-// output in the meantime, so the vintage is stamped on the regime block itself rather than
-// only in the table below it.
-const CONSENSUS_VINTAGE = {
-  asOf: "2026-06-30", label: "as of Jun 2026", staleNote: "2 months stale",
-  deferredUntil: "Aug 7 (July Employment Situation) and Aug 28 (BLS benchmark revision)",
+// Section A — the consensus inputs are a VINTAGE, not a live feed. The refresh was deliberately
+// deferred pending two releases, but the engine keeps producing live-looking output in the
+// meantime, so the vintage is stamped on the regime block itself rather than only in the table
+// below it. The age and the deferral are DERIVED (lib/recession.js::consensusVintage) — both were
+// hardcoded prose, so the age could not tick and the deferral could not expire.
+const CONSENSUS_VINTAGE_BASE = {
+  asOf: "2026-06-30",
+  // The releases the refresh waits on, with the date each actually lands. Once the last one is in
+  // the past the refresh stops being deferred and starts being owed.
+  gatedOn: [
+    { date: "2026-08-07", label: "July Employment Situation" },
+    { date: "2026-08-28", label: "BLS benchmark revision" },
+  ],
 };
+const CONSENSUS_VINTAGE = consensusVintage(CONSENSUS_VINTAGE_BASE);
 
 // ─── WALL STREET RECESSION PROBABILITY ────────────────────────────────────────
 // Manually-updated source table. Last refreshed June 29, 2026 (post Iran peace
@@ -5459,7 +5466,19 @@ export default function App() {
     setStage5(function(v) { const n = !v; try { localStorage.setItem("posture_stage5_active", String(n)); } catch (_) {} return n; });
   }
 
-  const fmtTime = d => d ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
+  // "Updated 14:32" on a payload cached three weeks ago reads exactly like one fetched two
+  // minutes ago, because the clock face repeats every day. The last successful indicator fetch is
+  // restored from localStorage and re-rendered as "Live:" whether or not today's fetch worked, so
+  // the timestamp is the only thing standing between a stale payload and a confident misread of
+  // the macro board. Anything not from today therefore carries its DATE and says how old it is.
+  const fmtTime = d => {
+    if (!d) return "—";
+    const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const iso = x => new Date(x.getTime() - x.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    if (iso(d) === iso(new Date())) return t;
+    const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+    return `${iso(d)} ${t} — ${days < 1 ? "yesterday" : days + "d old"}`;
+  };
 
   // ── TWO LEVELS, BECAUSE NINE TABS IN ONE ROW IS A LIST, NOT A STRUCTURE ──
   // Nine peers scrolling sideways on a phone told you nothing about which of them belonged
@@ -5780,7 +5799,7 @@ export default function App() {
                       {(contested
                         ? [`⚖️ ${topTwoLabels.join(" and ")} are separated by ${gapPP}pp — that is a tie, not a winner.`,
                            "🚫 Directional recommendation suppressed. A 1-in-2 call cannot support a deployment instruction.",
-                           `🗓️ Consensus inputs are ${CONSENSUS_VINTAGE.label} (${CONSENSUS_VINTAGE.staleNote}); refresh is deferred to after Aug 7 and Aug 28.`]
+                           `🗓️ Consensus inputs are ${CONSENSUS_VINTAGE.label} (${CONSENSUS_VINTAGE.staleNote}); ${CONSENSUS_VINTAGE.dueNote}.`]
                         : cfg.bullets).map((t, i) => (
                         <div key={i} style={{ flex: "1 1 200px" }}>
                           <span style={{ color: "#fff", fontSize: 14, lineHeight: 1.7, opacity: 0.92 }}>{t}</span>
@@ -6956,6 +6975,26 @@ export default function App() {
                 Transmission to duration shows up in the 30Y and 5s30s rows below, which move
                 daily and are early enough for the positions actually held. */}
 
+            {/* ── FEED FAILURES — a blank tile must not read as "nothing was published" ──
+                api/indicators.js records every FRED request that failed after a retry. Core PCE
+                sat blank here for weeks while FRED carried it at 3.3%: the fetch was failing and
+                said so only to a server log. A dash and a failure looked identical. They no
+                longer do — if this strip is absent, every feed answered. ── */}
+            {Array.isArray(liveInd?.feedErrors) && liveInd.feedErrors.length > 0 && (
+              <div style={{ marginBottom: 12, padding: "9px 12px", background: C.rBg, border: "1.5px solid " + C.rBdr, borderRadius: 8, fontSize: 12, lineHeight: 1.55, color: C.red }}>
+                <b>⚠ {liveInd.feedErrors.length} data feed{liveInd.feedErrors.length > 1 ? "s" : ""} failed to load.</b>{" "}
+                <span style={{ color: C.mid }}>
+                  Any tile below fed by {liveInd.feedErrors.length > 1 ? "these series" : "this series"} is blank because the request failed, not because
+                  no figure has been published. Retried once before being reported.
+                </span>
+                <div style={{ marginTop: 5, fontFamily: "ui-monospace, monospace", fontSize: 11, color: C.mid }}>
+                  {liveInd.feedErrors.map((e, i) => (
+                    <div key={i}>{e.series} — {e.error || "unknown error"}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* ── F.1 — REGIME first. Ordered by decision relevance, fast-moving above
                 slow-moving: regime + contested guard, then rates, then CPI, then the
                 labour module, then the consensus block (slowest). Credit stays on the
@@ -6966,8 +7005,17 @@ export default function App() {
                 <SLabel>Regime Probability — Derived from Recession Consensus + Live CPI</SLabel>
                 {/* Section A — vintage stamped ON the regime block, because the engine keeps
                     producing live-looking output from inputs that are months old. */}
-                <span style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 800, color: C.amber, background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 5, padding: "2px 7px" }}>
+                {/* Red once the refresh is actually owed. Amber for "old but waiting on a
+                    release" and amber for "old and nothing is coming" looked identical, so the
+                    chip could not distinguish a deferral from a lapse. */}
+                <span style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 800,
+                               color: CONSENSUS_VINTAGE.refreshDue ? C.red : C.amber,
+                               background: CONSENSUS_VINTAGE.refreshDue ? C.rBg : C.aBg,
+                               border: "1px solid " + (CONSENSUS_VINTAGE.refreshDue ? C.rBdr : C.aBdr),
+                               borderRadius: 5, padding: "2px 7px" }}
+                      title={CONSENSUS_VINTAGE.dueNote}>
                   Consensus inputs {CONSENSUS_VINTAGE.label} — {CONSENSUS_VINTAGE.staleNote}
+                  {CONSENSUS_VINTAGE.refreshDue ? " · REFRESH DUE" : ""}
                 </span>
               </div>
               {derivedRegimes?.contested && (

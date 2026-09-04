@@ -8,6 +8,45 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "FRED_API_KEY not configured" });
   }
 
+  // ── A FAILED FETCH IS NOT AN EMPTY SERIES ───────────────────────────────────
+  // Returning [] on any error made the two indistinguishable, and the tile renders a dash either
+  // way — which reads as "nothing has been published". Core PCE sat blank on the dashboard while
+  // FRED had it through 2026-07-01 at 3.34%, the same vintage core CPI was displaying happily
+  // beside it. The series was fine, the transformation was fine, the code was the same code; the
+  // request failed and said so only to a server log nobody reads.
+  //
+  // There are 33 FRED call sites in this file and most of them fire at once, so a throttle or a
+  // blip on one of thirty-three is not a rare event. Failures are now RECORDED, and one transient
+  // failure is retried before being believed.
+  const feedErrors = [];
+  async function fredFetch(url, label, tries = 2) {
+    let last = null;
+    for (let i = 0; i < tries; i++) {
+      try {
+        const r = await fetch(url);
+        if (r.ok) return await r.json();
+        last = `HTTP ${r.status}`;
+        // 429 and 5xx are worth a second ask; a 400 means the request itself is wrong and a retry
+        // will fail identically.
+        if (r.status !== 429 && r.status < 500) break;
+      } catch (e) { last = String(e?.message || e); }
+      if (i + 1 < tries) await new Promise(res => setTimeout(res, 400));
+    }
+    feedErrors.push({ series: label, error: last });
+    console.error("FRED fetch failed (" + label + "):", last);
+    return null;
+  }
+
+  async function fredPc1History(seriesId, limit = 25) {
+    const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=${limit}&units=pc1&api_key=${FRED_KEY}&file_type=json`;
+    const d = await fredFetch(url, seriesId);
+    if (!d) return [];
+    return (d.observations || [])
+      .filter(o => o.value !== "." && o.value !== "" && o.value !== "NA")
+      .map(o => ({ date: o.date, value: parseFloat(o.value) }))
+      .reverse(); // chronological order, oldest → newest
+  }
+
   // ── Fetch single latest value from FRED ────────────────────────────────────
   // Returns { value, date } — the observation DATE is the metric's real asOf (source
   // timestamp), which the P0 staleness system needs. Never fetch-time.
@@ -20,8 +59,8 @@ export default async function handler(req, res) {
   // fredLabor/fredHistory/fredPc1History below, which lib/fred.js does not implement at all.
   async function fredLatest(seriesId) {
     const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=2&api_key=${FRED_KEY}&file_type=json`;
-    const r = await fetch(url);
-    const d = await r.json();
+    const d = await fredFetch(url, seriesId);
+    if (!d) return { value: 0, date: null };
     const obs = (d.observations || []).filter(o => o.value !== "." && o.value !== "");
     return obs.length ? { value: parseFloat(obs[0].value), date: obs[0].date } : { value: 0, date: null };
   }
@@ -55,8 +94,8 @@ export default async function handler(req, res) {
   // cpiYoY:0 bug. Filter "." and take the latest real value, like fredLatest.
   async function fredYoY(seriesId) {
     const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&units=pc1&sort_order=desc&limit=3&api_key=${FRED_KEY}&file_type=json`;
-    const r = await fetch(url);
-    const d = await r.json();
+    const d = await fredFetch(url, `${seriesId} (yoy)`);
+    if (!d) return 0;
     const obs = (d.observations || []).filter(o => o.value !== "." && o.value !== "");
     return obs.length ? parseFloat(parseFloat(obs[0].value).toFixed(2)) : 0;
   }
@@ -64,8 +103,8 @@ export default async function handler(req, res) {
   // ── Fetch two observations for direction (rising/falling) ──────────────────
   async function fredTwo(seriesId) {
     const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=3&api_key=${FRED_KEY}&file_type=json`;
-    const r = await fetch(url);
-    const d = await r.json();
+    const d = await fredFetch(url, seriesId);
+    if (!d) return { latest: 0, prev: 0 };
     const obs = (d.observations || []).filter(o => o.value !== "." && o.value !== "");
     return obs.length >= 2
       ? { latest: parseFloat(obs[0].value), prev: parseFloat(obs[1].value) }
@@ -78,9 +117,8 @@ export default async function handler(req, res) {
   async function fredPair(seriesId) {
     try {
       const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=6&api_key=${FRED_KEY}&file_type=json`;
-      const r = await fetch(url);
-      if (!r.ok) return { value: null, date: null, prev: null, prevDate: null };
-      const d = await r.json();
+      const d = await fredFetch(url, seriesId);
+      if (!d) return { value: null, date: null, prev: null, prevDate: null };
       const obs = (d.observations || [])
         .filter(o => o.value !== "." && o.value != null && o.value !== "")
         .map(o => ({ value: parseFloat(o.value), date: o.date }))
@@ -137,7 +175,11 @@ export default async function handler(req, res) {
         fetch(`https://api.stlouisfed.org/fred/series?series_id=${id}&${base}`),
         fetch(`https://api.stlouisfed.org/fred/series/observations?series_id=${id}&sort_order=desc&limit=16&${base}`),
       ]);
-      if (!metaR.ok || !obsR.ok) return { id, ok: false, error: `HTTP ${metaR.status}/${obsR.status}` };
+      if (!metaR.ok || !obsR.ok) {
+        const err = `HTTP ${metaR.status}/${obsR.status}`;
+        feedErrors.push({ series: id, error: err });
+        return { id, ok: false, error: err };
+      }
       const title = (await metaR.json())?.seriess?.[0]?.title ?? null;
       const obs = ((await obsR.json())?.observations || [])
         .filter(o => o.value !== '.' && o.value != null && o.value !== '')
@@ -155,7 +197,9 @@ export default async function handler(req, res) {
         history: obs.slice(0, 16).reverse(),
       };
     } catch (e) {
-      return { id, ok: false, error: String(e?.message || e) };
+      const err = String(e?.message || e);
+      feedErrors.push({ series: id, error: err });
+      return { id, ok: false, error: err };
     }
   }
 
@@ -164,8 +208,8 @@ export default async function handler(req, res) {
   // transform: optional function to post-process the value
   async function fredHistory(seriesId, observationStart, transform) {
     const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&observation_start=${observationStart}&sort_order=asc&api_key=${FRED_KEY}&file_type=json`;
-    const r = await fetch(url);
-    const d = await r.json();
+    const d = await fredFetch(url, `${seriesId} (history)`);
+    if (!d) return [];
     const obs = (d.observations || []).filter(o => o.value !== "." && o.value !== "");
 
     // Thin the data: for daily series we sample ~monthly to keep payload small
@@ -480,25 +524,6 @@ export default async function handler(req, res) {
   // Behaviour is unchanged bar an 8s per-leg fetch timeout the lib version carries — strictly a
   // robustness gain (a hung Yahoo leg can no longer stall the whole indicators response).
 
-  // ── Fetch YoY % change history (units=pc1) — returns [{date, value}] chrono ──
-  // FRED computes the year-over-year % server-side. Returns [] on any failure so
-  // the rest of the payload is unaffected. Used for the CPI inflation tracker.
-  async function fredPc1History(seriesId, limit = 25) {
-    try {
-      const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=${limit}&units=pc1&api_key=${FRED_KEY}&file_type=json`;
-      const r = await fetch(url);
-      if (!r.ok) { console.error("FRED pc1 status (" + seriesId + "):", r.status); return []; }
-      const d = await r.json();
-      return (d.observations || [])
-        .filter(o => o.value !== "." && o.value !== "" && o.value !== "NA")
-        .map(o => ({ date: o.date, value: parseFloat(o.value) }))
-        .reverse(); // chronological order, oldest → newest
-    } catch (e) {
-      console.error("FRED pc1 history error (" + seriesId + "):", e.message);
-      return [];
-    }
-  }
-
   const START_DATE = "2022-01-01"; // Chart history start
 
   try {
@@ -716,6 +741,11 @@ export default async function handler(req, res) {
         "Polymarket": polymarketFeed,
         "NY Fed Yield Curve Model": nyFedCurveFeed,
       },
+      // ── Feed failures, surfaced rather than swallowed ────────────────────────
+      // Every FRED helper above records here instead of quietly returning an empty series. A
+      // tile with no number is then distinguishable from a tile whose fetch failed, and the UI
+      // says which. Empty on a clean fetch, so `feedErrors.length` is the whole test.
+      feedErrors,
       smicAH: smicAHFeed,   // SMIC A/H premium — mainland-sentiment gauge for the Southbound panel
       sanity,  // { metric: "out-of-band" } for any value outside its plausible band
     };
