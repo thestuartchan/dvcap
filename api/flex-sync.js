@@ -71,12 +71,12 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   // the contract, not the trade, so reconciling against the adjusted figure would disagree with
   // every statement for ever. And CLOSED rows are passed in as well as open ones — the statement is
   // a report about a past day, and reconcile needs to know what the console has finished since.
-  const withDerived = rows.map(r => ({ ...r, derived: derivePosition(r.fills || [], { multiplier: r.multiplier }) }));
+  const withDerived = rows.map(r => ({ ...r, derived: derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side }) }));
 
   const asOf = isoDate(got.statement.toDate);
   // The deriver goes in so reconcile can ask what a row looked like on the statement's own day —
   // the same function that produced `derived` above, so the two can never drift apart.
-  const deriveRow = (r) => derivePosition(r.fills || [], { multiplier: r.multiplier });
+  const deriveRow = (r) => derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side });
   const rec = reconcile(withDerived, got.statement.positions, { asOf, derive: deriveRow });
   const result = {
     ok: true,

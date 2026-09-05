@@ -52,11 +52,11 @@ async function quotesFor(symbols, origin) {
 export async function snapshot(origin) {
   const stored = await kvGetJson(CONSOLE_KEY);
   const rows = Array.isArray(stored?.rows) ? stored.rows : [];
-  const live = rows.filter(r => derivePosition(r.fills || [], { multiplier: r.multiplier }).status !== 'closed');
+  const live = rows.filter(r => derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side }).status !== 'closed');
   const prices = await quotesFor([...new Set(live.map(quoteSym).filter(Boolean))], origin);
   // applyRolls BEFORE the P&L: a rolled contract's entry is back-adjusted through the legs behind
   // it, so a percentage computed first would be the contract's rather than the trade's.
-  return applyRolls(rows.map(r => ({ ...r, derived: derivePosition(r.fills || [], { multiplier: r.multiplier }) })))
+  return applyRolls(rows.map(r => ({ ...r, derived: derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side }) })))
     .map(r => {
       const price = prices?.[quoteSym(r)]?.price ?? null;
       const hits = levelHits([r], () => price)

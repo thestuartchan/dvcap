@@ -63,13 +63,13 @@ const pos = (fills, price, multiplier = 1) => {
 // that is still underwater is the same behaviour: more capital into a losing idea.
 {
   const deep = pos([{ side: 'buy', qty: 30, price: 100, date: '2026-08-01' }], 90);
-  eq('a fill under the average is marked', addToLoser({ ...deep, side: 'buy', fillPrice: 88 }).belowAverage, true);
+  eq('a long fill under the average is marked', addToLoser({ ...deep, side: 'buy', fillPrice: 88 }).worseThanAverage, true);
   // Barely underwater, and the fill prints back above the average on a bounce. Still the same act:
   // more capital into a position that has not worked.
   const shallow = pos([{ side: 'buy', qty: 30, price: 100, date: '2026-08-01' }], 99.5);
   eq('a fill above the average still fires', addToLoser({ ...shallow, side: 'buy', fillPrice: 100.5 }).addNumber, 2);
-  eq('and is marked as not below', addToLoser({ ...shallow, side: 'buy', fillPrice: 100.5 }).belowAverage, false);
-  eq('with no fill price, no claim either way', addToLoser({ ...deep, side: 'buy' }).belowAverage, null);
+  eq('and is marked as not below', addToLoser({ ...shallow, side: 'buy', fillPrice: 100.5 }).worseThanAverage, false);
+  eq('with no fill price, no claim either way', addToLoser({ ...deep, side: 'buy' }).worseThanAverage, null);
 }
 // The evidence is point-in-time and says so. A figure the console cannot recompute must carry the
 // date it was derived, or it becomes folklore.

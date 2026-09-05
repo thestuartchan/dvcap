@@ -19,6 +19,7 @@ import {
 import { C, SLabel, Card, Btn } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
 import { derivePosition, applyRolls, splitIntoTrades, collapseFills, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, realizedCurve } from "../lib/positions.js";
+import { sideOf, isShort, openSideFor, closeSideFor, geometryCheck, SIDES, SIDE_LABEL, DEFAULT_SIDE } from "../lib/side.js";
 import { CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy, resolveRowCurrency } from "../lib/fxrates.js";
 import { addToLoser } from "../lib/discipline.js";
 import { decisionEntry, lastClosedWasWin, overrideTrend, guardOutcomes } from "../lib/decisions.js";
@@ -119,14 +120,16 @@ const FillForm = ({ ctx, symbol, row }) => {
 
       <div style={{ marginTop: 10, padding: "11px 12px", borderRadius: 9, background: C.bg, border: "1.5px solid " + (fillFor.side === "buy" ? C.green : C.blue) }}>
         <SLabel>
-          {fillFor.intent === "stopped" ? "Stopped out" : fillFor.intent === "sell" ? "Record a sell" : "Record a buy"}
+          {fillFor.intent === "stopped" ? "Stopped out"
+            : fillFor.intent === "sell" ? (isShort(row?.side) ? "Record a cover" : "Record a sell")
+            : (isShort(row?.side) ? "Record a short sale" : "Record a buy")}
           {" — "}{symbol}
         </SLabel>
         {adding && (
           <div style={{ marginTop: 9, padding: "9px 11px", borderRadius: 8, background: C.aBg, border: "1.5px solid " + C.amber }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: C.amber }}>
               ⚠ This is add #{adding.addNumber} to a position that is down {Math.abs(adding.drawdownPct)}%
-              {adding.belowAverage === true && <span style={{ fontWeight: 700 }}> — below your {adding.avgCost?.toFixed(2)} average</span>}
+              {adding.worseThanAverage === true && <span style={{ fontWeight: 700 }}> — {adding.adverseSide} your {adding.avgCost?.toFixed(2)} average</span>}
             </div>
             <div style={{ fontSize: 11.5, color: C.mid, marginTop: 4, lineHeight: 1.55 }}>
               {adding.evidence.line}{" "}
@@ -227,9 +230,9 @@ const FillForm = ({ ctx, symbol, row }) => {
 // Hoisted here their identity is constant, so React re-renders in place and focus survives. Every
 // value they used from the closure is passed through a single `ctx` object.
 
-const LevelPill = ({ lv, price, ctx }) => {
+const LevelPill = ({ lv, price, ctx, side }) => {
 const { kindCol } = ctx;
-  const hit = levelHit(lv, price);
+  const hit = levelHit(lv, price, side);
   const d = distancePct(lv, price);
   return (
     <span title={lv.note || undefined} style={{
@@ -342,7 +345,7 @@ const {
     : sug.fullQty > 0 ? `at or above full size — ${d.qty || 0} held vs ${sug.fullQty} suggested`
     : sizeMode === "risk" && !stopLevel ? "add a stop and this will size the trade for you"
     : "set your account equity to size this";
-  const anyHit = active.some(l => levelHit(l, price));
+  const anyHit = active.some(l => levelHit(l, price, r.side));
   return (
     <div className={justMoved === r.id ? "dvcap-row-in dvcap-flash" : "dvcap-row-in"}
       style={{ border: "1.5px solid " + (anyHit ? C.amber : C.bdr), borderLeft: "4px solid " + (anyHit ? C.amber : mode === "open" ? C.blue : C.bdr), borderRadius: 10, overflow: "hidden" }}>
@@ -364,11 +367,32 @@ const {
           {r.trade && r.trade.trim().toUpperCase() !== r.symbol.toUpperCase()
             ? <span style={{ fontSize: 11.5, color: C.mid, fontWeight: 700, background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6, padding: "1px 7px", whiteSpace: "nowrap" }}>{r.trade}</span> : null}
           {d.multiplier > 1 ? chip(`×${d.multiplier}`, C.amber, C.aBg, C.aBdr) : null}
+          {/* SHORT IS MARKED, LONG IS NOT. Every number on a short row is the mirror of the one a
+              reader expects — the stop is above, the target below, and a falling price is a gain —
+              so the row says which it is rather than leaving the reader to infer it from levels
+              that look upside down. Long stays unmarked because it is the overwhelming majority
+              and a chip on every row is a chip nobody reads. */}
+          {isShort(r.side) ? chip("SHORT", C.blue, C.blBg, C.blBdr) : null}
           {/* AN FX CONTRACT IS QUOTED THE OTHER WAY UP. A yen future prints 0.00641 while USD/JPY
               — the number anyone says out loud — is 156. Reciprocals, ~24,000x apart, and a fill
               entered in the wrong one is wrong by that factor AND in the wrong direction. The row
               says which number it wants rather than leaving it to be inferred from the leading
               zeros. */}
+          {/* THE MISLABELLED SHORT. Direction is typed by hand and so are the levels, a moment
+              apart — a row marked LONG whose stop is above entry and whose targets are below is a
+              short that was never marked, and every figure on it will be inverted while looking
+              perfectly ordinary. Reported, never auto-corrected: inferring direction from where a
+              stop sits is the exact mistake this whole change removes. */}
+          {(() => {
+            const g = geometryCheck({
+              side: r.side, entry: d.avgCost ?? d.avgEntry,
+              stop: (r.levels || []).find(l => l.kind === "stop")?.at,
+              targets: (r.levels || []).filter(l => l.kind === "sell").map(l => l.at),
+            });
+            return g.ok ? null : <span title={g.reason}
+              style={{ background: C.rBg, color: C.red, border: "1px solid " + C.rBdr, borderRadius: 6, padding: "1px 7px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap", cursor: "help" }}>
+              ⚠ side/levels disagree</span>;
+          })()}
           {(() => {
             const q = quoteConvention(r.symbol);
             return q ? <span title={q.note}
@@ -431,12 +455,12 @@ const {
         {/* The actions that answer "how do I record what I did" — on the row, not hidden. */}
         <span className="dvcap-row-actions" style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", flexShrink: 0, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
           {mode === "setup" && (
-            <Btn onClick={() => { setExpanded(r.id); openFill(r, "buy"); }} color="#fff" bgColor={C.green} label="✓ I bought" />
+            <Btn onClick={() => { setExpanded(r.id); openFill(r, "buy"); }} color="#fff" bgColor={C.green} label={isShort(r.side) ? "✓ I shorted" : "✓ I bought"} />
           )}
           {mode === "open" && (
             <>
-              <Btn onClick={() => { setExpanded(r.id); openFill(r, "buy"); }} color="#fff" bgColor={C.green} label="＋ Bought" />
-              <Btn onClick={() => { setExpanded(r.id); openFill(r, "sell"); }} color="#fff" bgColor={C.blue} label="－ Sold" />
+              <Btn onClick={() => { setExpanded(r.id); openFill(r, "buy"); }} color="#fff" bgColor={C.green} label={isShort(r.side) ? "＋ Shorted more" : "＋ Bought"} />
+              <Btn onClick={() => { setExpanded(r.id); openFill(r, "sell"); }} color="#fff" bgColor={C.blue} label={isShort(r.side) ? "－ Covered" : "－ Sold"} />
               {stopLevel && <Btn onClick={() => { setExpanded(r.id); openFill(r, "stopped"); }} color={C.red} bgColor={C.surf} label="🛑 Stopped out" />}
             </>
           )}
@@ -454,13 +478,29 @@ const {
       {/* levels always visible — this is the daily read */}
       {active.length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "0 12px 9px" }}>
-          {active.map(l => <LevelPill key={l.id} lv={l} price={price} ctx={ctx} />)}
+          {active.map(l => <LevelPill key={l.id} lv={l} price={price} ctx={ctx} side={r.side} />)}
         </div>
       )}
 
       {open && (
         <div className="dvcap-expand" onClick={e => e.stopPropagation()} style={{ padding: 12, borderTop: "1px solid " + C.bdr, background: C.surf }}>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
+            {/* DIRECTION, EDITABLE — because a mislabelled row has to be FIXABLE. The geometry
+                check on the header only reports; this is the control that acts on it. Changing it
+                re-derives the whole row (open/close mapping, P&L sign, which way every level
+                breaches), so a row corrected here is corrected everywhere at once. */}
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Direction<br />
+              <select value={sideOf(r.side) ?? DEFAULT_SIDE} onChange={e => upd(r.id, { side: e.target.value })}
+                style={{ padding: "5px 8px", border: "1.5px solid " + ((r.fills || []).length && isShort(r.side) ? C.blBdr : C.bdr), borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text, fontWeight: 800 }}>
+                {SIDES.map(sd => <option key={sd} value={sd}>{SIDE_LABEL[sd]}</option>)}
+              </select>
+              {(r.fills || []).length > 0 && (
+                <div style={{ fontSize: 10.5, color: C.amber, fontWeight: 700, marginTop: 3, maxWidth: 220 }}>
+                  ⚠ {(r.fills || []).length} fill{(r.fills || []).length === 1 ? "" : "s"} recorded — flipping this
+                  re-reads every one of them as its opposite leg
+                </div>
+              )}
+            </label>
             {/* `ccySet` records that YOU chose this, which is what stops the exchange's answer
                 overwriting a deliberate choice on a row that has no fills yet. */}
             <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Currency<br />
@@ -536,7 +576,7 @@ const {
               </div>
             )}
             {(r.levels || []).map(l => {
-              const hit = levelHit(l, price);
+              const hit = levelHit(l, price, r.side);
               const dist = distancePct(l, price);
               return (
                 <div key={l.id} style={{ display: "flex", gap: 7, alignItems: "center", marginBottom: 5, flexWrap: "wrap" }}>
@@ -754,8 +794,8 @@ const {
               they actually apply to this row. Splitting is the important one: a symbol exited and
               re-entered is two TRADES, and no amount of averaging inside one row can express that. */}
           {(() => {
-            const trips = splitIntoTrades(r.fills || []);
-            const col = collapseFills(r.fills || [], { multiplier: r.multiplier });
+            const trips = splitIntoTrades(r.fills || [], { side: r.side });
+            const col = collapseFills(r.fills || [], { multiplier: r.multiplier, side: r.side });
             if (trips.length < 2 && col.to >= col.from) return null;
             return (
               <div style={{ marginTop: 9, padding: "9px 11px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 9 }}>
@@ -838,6 +878,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   const [kvOn, setKvOn]         = useState(null);
   const [expanded, setExpanded] = useState(null);
   const [addSym, setAddSym]     = useState("");
+  const [addSide, setAddSide]   = useState(DEFAULT_SIDE);
   const [fillFor, setFillFor]   = useState(null);   // open "record a fill" form
   const [sizeOpen, setSizeOpen] = useState({});     // per-row: is the size suggestion unfolded
   const [moved, setMoved]       = useState(null);   // a row that just changed section, for the toast
@@ -926,7 +967,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   // `rows` alone rather than from `derivedRows`, which depends on `prices` and would make the
   // fetch feed its own input.
   const symbols = useMemo(() => [...new Set(
-    rows.filter(r => derivePosition(r.fills || [], { multiplier: r.multiplier }).status !== "closed").map(quoteSym).filter(Boolean)
+    rows.filter(r => derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side }).status !== "closed").map(quoteSym).filter(Boolean)
   )], [rows]);
   const quoteSymFor = quoteSym;   // re-exported through ctx for the row header's day-change lookup
   const usedCcys = useMemo(() => [...new Set([baseCcy, ...rows.map(r => r.currency || "USD")])], [rows, baseCcy]);
@@ -959,7 +1000,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
     // neither — which is precisely a setup you have just added and are about to size. The stop
     // guard was therefore guaranteed to be blank on the one trade it exists to inform.
     const syms = [...new Set(rows
-      .filter(r => derivePosition(r.fills || [], { multiplier: r.multiplier }).status !== "closed")
+      .filter(r => derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side }).status !== "closed")
       .map(quoteSym).filter(Boolean))];
     if (!syms.length) { setAtrFetch({ status: "idle", asked: [] }); return; }
     let cancelled = false;
@@ -1028,7 +1069,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   // through the legs behind it, so a percentage computed first would describe the contract rather
   // than the trade.
   const derivedRows = useMemo(() => applyRolls(
-    rows.map(r => ({ ...r, derived: derivePosition(r.fills || [], { multiplier: r.multiplier }) })),
+    rows.map(r => ({ ...r, derived: derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side }) })),
   ).map(r => {
     const pnl = positionPnl(r.derived, priceOf(r));
     // ONE SUGGESTION, computed here rather than inside the row. The row renders it and the decision
@@ -1123,7 +1164,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   }, [hits, settings.alertsEnabled]);
 
   // ── mutations ──
-  const addRow = () => {
+  const addRow = (side = addSide) => {
     const sym = addSym.trim().toUpperCase();
     if (!sym) return;
     const id = `${sym}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1132,9 +1173,12 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
     // somebody noticed — MGC ran a month that way. A known root arrives already margined and
     // already sized; anything else is a share at x1, which is correct rather than assumed.
     const known = multiplierFor(sym, { margined: FUTURES_ROOTS.has(sym) });
-    setRows(p => [...p, { id, symbol: sym, currency: "USD", thesis: "", levels: [], fills: [], tags: [],
+    // DIRECTION IS SET AT SETUP, for the same reason the multiplier is: a row whose side is filled
+    // in afterwards is a row that computed every P&L, R and level breach the wrong way round until
+    // somebody noticed. It is one click here and unrecoverable later.
+    setRows(p => [...p, { id, symbol: sym, side: sideOf(side) ?? DEFAULT_SIDE, currency: "USD", thesis: "", levels: [], fills: [], tags: [],
       ...(known.source === "table" ? { multiplier: known.multiplier, margined: true } : {}) }]);
-    setAddSym(""); setExpanded(id); touch();
+    setAddSym(""); setAddSide(DEFAULT_SIDE); setExpanded(id); touch();
   };
   const upd = (id, patch) => { setRows(p => p.map(r => r.id === id ? { ...r, ...patch } : r)); touch(); };
 
@@ -1145,10 +1189,10 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   // open one is left alone if it would not, which collapseFills reports.
   const splitRow = (r, trips) => {
     const made = trips.map((fills, i) => {
-      const c = collapseFills(fills, { multiplier: r.multiplier });
+      const c = collapseFills(fills, { multiplier: r.multiplier, side: r.side });
       const use = c.exact ? c.fills : fills;
       const d0 = use[0]?.date || "", d1 = use[use.length - 1]?.date || "";
-      const closed = derivePosition(use, { multiplier: r.multiplier }).status === "closed";
+      const closed = derivePosition(use, { multiplier: r.multiplier, side: r.side }).status === "closed";
       return {
         ...r,
         id: `${r.symbol}-${(d0 || d1 || i).toString().replace(/-/g, "")}-${i}`,
@@ -1186,12 +1230,16 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   // One entry point for every "record what I did" action. "stopped" is a SELL of the whole
   // position prefilled at the stop price — it is the most common exit and had no obvious path.
   const openFill = (r, intent) => {
-    const d = derivePosition(r.fills || []);
+    const d = derivePosition(r.fills || [], { side: r.side });
     const stop = (r.levels || []).find(l => l.kind === "stop");
     const live = priceOf(r);
     setFillFor({
       rowId: r.id,
-      side: intent === "buy" ? "buy" : "sell",
+      // The three intents are OPEN, CLOSE and STOPPED — they were merely NAMED buy/sell, and then
+      // used as the fill side itself. On a short that records every fill as its own opposite: the
+      // opening sell stored as a buy, the cover as a sell. The row would then read as a long
+      // pointing the wrong way, from the one screen where the data actually enters the system.
+      side: intent === "buy" ? openSideFor(r.side) : closeSideFor(r.side),
       intent,
       qty: intent === "stopped" ? (d.qty || "") : "",
       price: intent === "stopped" ? (stop?.at ?? live ?? "") : (live ?? ""),
@@ -1213,8 +1261,8 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
     // positions and into a section that is collapsed by default, so with no announcement the row
     // simply disappeared — indistinguishable from having deleted it, on the one action in the tab
     // that is hardest to undo.
-    const before = derivePosition(r.fills || [], { multiplier: r.multiplier });
-    const after = derivePosition(fills, { multiplier: r.multiplier });
+    const before = derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side });
+    const after = derivePosition(fills, { multiplier: r.multiplier, side: r.side });
 
     // ── THE DECISION, CAPTURED WITH NO TYPING ────────────────────────────────
     // Everything it records is already on screen at this moment: the suggestion, the fill, the
@@ -1398,7 +1446,9 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       .filter(x => x.symbol === r.symbol && x.derived?.status === "closed" && x.derived?.lastDate)
       .sort((a, b) => String(a.derived.lastDate).localeCompare(String(b.derived.lastDate)));
     const lastRow = closes[closes.length - 1];
-    const lastSell = lastRow ? [...(lastRow.derived.fills || [])].reverse().find(f => f.side === "sell") : null;
+    // The CLOSING fill, which on a short is the buy-back. (avgExit was already right for both, so
+    // this only affected which single fill's price was used when several closed the trade.)
+    const lastSell = lastRow ? [...(lastRow.derived.fills || [])].reverse().find(f => f.side === closeSideFor(lastRow.side)) : null;
     const lastClose = lastRow ? {
       at: `${lastRow.derived.lastDate}T23:59:59Z`, price: lastSell?.price ?? lastRow.derived.avgExit ?? null,
       realized: lastRow.derived.realized ?? null,
@@ -1421,7 +1471,11 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       bookNotionalBase: coverage.gross.amount == null ? null : coverage.gross.amount + (addBase || 0),
       futuresNotionalBase: coverage.futures.amount, rows: coverage.futures.rows,
       width, lastClose, prevClosed,
-      add: addToLoser({ derived: dr.derived, pct: dr.pnl?.unrealizedPct, side: "buy", fillPrice: price }),
+      // The prospective fill is the one that ADDS to this position — a buy on a long, a sell on a
+      // short. Hardcoded "buy", the panel could never light for a short being added to, and would
+      // have lit for a cover, which reduces risk rather than compounding it.
+      add: addToLoser({ derived: dr.derived, pct: dr.pnl?.unrealizedPct,
+                        side: openSideFor(dr.derived?.side), fillPrice: price }),
     });
   }, [fillFor, rows, derivedRows, atrBySym, atrFetch, equityBase, fxRates, baseCcy, coverage, prices]);
 
@@ -1930,7 +1984,20 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
           <SLabel>Add a setup</SLabel>
           <input value={addSym} onChange={e => setAddSym(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addRow(); }} placeholder="Ticker"
             style={{ width: 180, padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 13, background: C.surf, color: C.text, textTransform: "uppercase" }} />
-          <Btn onClick={addRow} color="#fff" bgColor={C.blue} label="+ Add" />
+          {/* Direction, chosen before the row exists. Defaulting silently to long is what the
+              console did for its whole life, and it is fine as a DEFAULT — it is not fine as the
+              only option. */}
+          <div style={{ display: "inline-flex", border: "1.5px solid " + C.bdr, borderRadius: 8, overflow: "hidden" }}>
+            {SIDES.map(sd => (
+              <button key={sd} onClick={() => setAddSide(sd)}
+                style={{ cursor: "pointer", padding: "6px 12px", fontSize: 12, fontWeight: 800, border: "none",
+                         background: addSide === sd ? (sd === "short" ? C.blue : C.green) : C.surf,
+                         color: addSide === sd ? "#fff" : C.mid }}>
+                {SIDE_LABEL[sd]}
+              </button>
+            ))}
+          </div>
+          <Btn onClick={() => addRow()} color="#fff" bgColor={C.blue} label="+ Add" />
           <span style={{ fontSize: 11.5, color: C.muted }}>starts as a watched setup — add levels and a stop before it becomes a position</span>
         </div>
       </Card>

@@ -99,7 +99,7 @@ const hoursAgo = (h) => new Date(Date.now() - h * 3600000).toISOString();
 
 // ── 7b. adding to a loser ────────────────────────────────────────────────────
 {
-  const a = addToLoserGuard({ add: { addNumber: 3, priorBuys: 2, drawdownPct: -8.4, belowAverage: true,
+  const a = addToLoserGuard({ add: { addNumber: 3, priorBuys: 2, drawdownPct: -8.4, worseThanAverage: true, adverseSide: 'below',
     evidence: { line: '27 trades lost $18,377.' } } });
   eq('adding to a loser is red', a.state, 'red');
   ok('the add number is named', /add #3/.test(a.note));

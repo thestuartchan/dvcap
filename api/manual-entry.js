@@ -17,6 +17,7 @@ import { UNIVERSE } from '../data/universe.js';
 const PREREAD_LAST_KEY = 'dvcap:preread:last:v1';
 import { appendDecision, overrideStats, DECISIONS_KEY, ACTIONS } from '../lib/decisions.js';
 import { GUARD_STATES } from '../lib/guards.js';
+import { sideOf } from '../lib/side.js';
 
 const DATA_PATH = 'data/manual_entry.json';
 
@@ -121,6 +122,11 @@ function sanitizeRow(r) {
     thesis: cs(r.thesis, 600),
     // Short label that distinguishes two trades in the SAME symbol (one archived, one open).
     trade: cs(r.trade, 40),
+    // DIRECTION. Persisted rather than inferred: every P&L, R, and level-breach rule downstream
+    // needs it, and the one thing it must never be re-derived from is where the stop sits — a
+    // short's ordinary stop is above entry, which is exactly the geometry that reads as a
+    // locked-in gain on a long. Absent means long, so every row written before this is unchanged.
+    side: sideOf(r.side) ?? 'long',
     // Contract multiplier (1 for shares, 100 for a US option). Money figures scale by it; prices
     // stay quoted, so an option archives at its premium rather than a per-contract dollar amount.
     multiplier: (Number.isFinite(+r.multiplier) && +r.multiplier > 0 && +r.multiplier <= 100000) ? +r.multiplier : 1,
@@ -156,7 +162,7 @@ function sanitizeRow(r) {
 // Bounded like every other stored shape. A decision arrives from the browser and is kept for ever,
 // so nothing unbounded may enter it.
 function sanitizeDecision(d) {
-  const pick = ['at', 'id', 'symbol', 'side', 'sizeMode', 'intent', 'regimeId'];
+  const pick = ['at', 'id', 'symbol', 'side', 'positionSide', 'sizeMode', 'intent', 'regimeId'];
   const nums = ['takenQty', 'consideredQty', 'recommendedQty', 'overrideRatio', 'effPct', 'riskAtSize',
                 'multiplier', 'stopAt', 'fillPrice', 'addNumber', 'priorBuys', 'unrealisedPctBefore', 'regimeMult'];
   const out = {};
