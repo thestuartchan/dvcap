@@ -1,0 +1,32 @@
+# Does this pull request quietly undo operator data?
+#
+# data/*.json is written back to main continuously by the console — about ten commits a day, each
+# one a figure entered by hand that cannot be retyped from memory. A branch open for more than a
+# few minutes can carry an older copy and assert it as a deliberate change, which a merge is then
+# obliged to honour. It nearly happened on five of the last seven merges, and was caught each time
+# by somebody remembering to look.
+#
+# WARNS, never blocks — see the note at the foot of the script. Requires full history: the check
+# needs the merge base and the base branch's history for the files it examines.
+name: data-revert
+
+on:
+  pull_request:
+    paths: ['data/**', '.github/workflows/data-revert.yml', 'scripts/check-data-revert.mjs']
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0            # merge base + per-file history; a shallow clone skips the check
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Fetch the base branch
+        run: git fetch --no-tags origin "$GITHUB_BASE_REF"
+      - name: Check for reverted operator data
+        run: node scripts/check-data-revert.mjs

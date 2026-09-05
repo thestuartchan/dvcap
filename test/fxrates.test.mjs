@@ -41,6 +41,38 @@ eq('USD needs no fx symbol', fxSymbolsFor(['USD']), []);
 eq('symbols for book', fxSymbolsFor(['USD','HKD','AED']), ['HKD=X','AED=X']);
 eq('formats with sign', fmtCcy(1234.5,'HKD'), 'HK$1,235');
 
+// ── ONE MONEY FORMAT ─────────────────────────────────────────────────────────
+// The rule was `abs >= 1000 ? 0 : 2`, so "$847.20" and "$1,203" sat in the same column and a book
+// total silently changed its own precision as it crossed a thousand. Money is whole units now.
+eq('under a thousand loses its cents too', fmtCcy(847.2, 'USD'), '$847');
+eq('over a thousand is unchanged', fmtCcy(1203, 'USD'), '$1,203');
+eq('the old boundary no longer changes shape', [fmtCcy(999.5, 'USD'), fmtCcy(1000.5, 'USD')], ['$1,000', '$1,001']);
+eq('a round number carries no .00', fmtCcy(2000, 'USD'), '$2,000');
+eq('zero is zero', fmtCcy(0, 'USD'), '$0');
+
+// THE ONE EXCEPTION, and it is the repo's standing rule: a non-zero figure must never render as
+// zero. Per-unit risk is the case that bites — $0.42 a share is a real number and "$0" is not a
+// rounder version of it, it is a different claim.
+eq('a real sub-unit amount keeps its cents', fmtCcy(0.42, 'USD'), '$0.42');
+eq('and a smaller one goes further rather than vanishing', fmtCcy(0.004, 'USD'), '$0.0040');
+// ...but the ladder stops rather than claiming precision it does not have: "$0.0000" says we
+// measured to a hundredth of a cent and found nothing, where "$0" says it is nothing.
+eq('below that it says zero honestly', fmtCcy(0.00004, 'USD'), '$0');
+
+// THE SIGN GOES OUTSIDE. "$-1,235" reads as a currency called "$-" before it reads as a loss.
+eq('negatives lead with the minus', fmtCcy(-1234.56, 'USD'), '-$1,235');
+eq('and so do sub-unit negatives', fmtCcy(-0.42, 'USD'), '-$0.42');
+eq('a value that rounds to nothing is never "-$0"', fmtCcy(-0.00004, 'USD'), '$0');
+
+// Currencies with no minor unit never get one, even to avoid a zero — ¥0.42 is not a thing.
+eq('won has no sub-unit', [fmtCcy(1234.5, 'KRW'), fmtCcy(0.42, 'KRW')], ['₩1,235', '₩0']);
+eq('nor yen', fmtCcy(0.42, 'JPY'), '¥0');
+eq('but its negatives still lead', fmtCcy(-1234.5, 'KRW'), '-₩1,235');
+
+// An unknown code still formats rather than throwing.
+eq('unknown currency falls back to its code', fmtCcy(1234.5, 'ZZZ'), 'ZZZ 1,235');
+eq('and null is a dash', [fmtCcy(null, 'USD'), fmtCcy(NaN, 'USD')], ['—', '—']);
+
 
 // ─── resolveRowCurrency ──────────────────────────────────────────────────────
 // A row's currency belongs to the exchange, not to a preference, and every new row used to be

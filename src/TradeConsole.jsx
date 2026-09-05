@@ -19,7 +19,7 @@ import {
 import { C, SLabel, Card, Btn } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
 import { derivePosition, applyRolls, splitIntoTrades, collapseFills, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, realizedCurve } from "../lib/positions.js";
-import { sideOf, isShort, openSideFor, closeSideFor, geometryCheck, SIDES, SIDE_LABEL, DEFAULT_SIDE } from "../lib/side.js";
+import { sideOf, isShort, openSideFor, closeSideFor, geometryCheck, levelVocab, fillVerb, SIDES, SIDE_LABEL, DEFAULT_SIDE } from "../lib/side.js";
 import { CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy, resolveRowCurrency } from "../lib/fxrates.js";
 import { addToLoser } from "../lib/discipline.js";
 import { decisionEntry, lastClosedWasWin, overrideTrend, guardOutcomes } from "../lib/decisions.js";
@@ -121,8 +121,7 @@ const FillForm = ({ ctx, symbol, row }) => {
       <div style={{ marginTop: 10, padding: "11px 12px", borderRadius: 9, background: C.bg, border: "1.5px solid " + (fillFor.side === "buy" ? C.green : C.blue) }}>
         <SLabel>
           {fillFor.intent === "stopped" ? "Stopped out"
-            : fillFor.intent === "sell" ? (isShort(row?.side) ? "Record a cover" : "Record a sell")
-            : (isShort(row?.side) ? "Record a short sale" : "Record a buy")}
+            : `Record a ${fillFor.intent === "sell" ? fillVerb(row?.side).closeShort : fillVerb(row?.side).openShort}`}
           {" — "}{symbol}
         </SLabel>
         {adding && (
@@ -455,12 +454,12 @@ const {
         {/* The actions that answer "how do I record what I did" — on the row, not hidden. */}
         <span className="dvcap-row-actions" style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", flexShrink: 0, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
           {mode === "setup" && (
-            <Btn onClick={() => { setExpanded(r.id); openFill(r, "buy"); }} color="#fff" bgColor={C.green} label={isShort(r.side) ? "✓ I shorted" : "✓ I bought"} />
+            <Btn onClick={() => { setExpanded(r.id); openFill(r, "buy"); }} color="#fff" bgColor={C.green} label={`✓ I ${fillVerb(r.side).open.toLowerCase()}`} />
           )}
           {mode === "open" && (
             <>
-              <Btn onClick={() => { setExpanded(r.id); openFill(r, "buy"); }} color="#fff" bgColor={C.green} label={isShort(r.side) ? "＋ Shorted more" : "＋ Bought"} />
-              <Btn onClick={() => { setExpanded(r.id); openFill(r, "sell"); }} color="#fff" bgColor={C.blue} label={isShort(r.side) ? "－ Covered" : "－ Sold"} />
+              <Btn onClick={() => { setExpanded(r.id); openFill(r, "buy"); }} color="#fff" bgColor={C.green} label={`＋ ${fillVerb(r.side).open}`} />
+              <Btn onClick={() => { setExpanded(r.id); openFill(r, "sell"); }} color="#fff" bgColor={C.blue} label={`－ ${fillVerb(r.side).close}`} />
               {stopLevel && <Btn onClick={() => { setExpanded(r.id); openFill(r, "stopped"); }} color={C.red} bgColor={C.surf} label="🛑 Stopped out" />}
             </>
           )}
@@ -586,9 +585,13 @@ const {
                   <span style={{ width: 9, height: 9, borderRadius: 9, background: kindCol(l.kind), flexShrink: 0 }} />
                   <select value={l.kind} onChange={e => updLevel(r.id, l.id, { kind: e.target.value })}
                     style={{ width: 176, padding: "4px 7px", border: "1.5px solid " + kindCol(l.kind), borderRadius: 6, fontSize: 12, background: C.surf, color: kindCol(l.kind), fontWeight: 800 }}>
-                    <option value="buy">BUY ZONE · falls to</option>
-                    <option value="sell">SELL ZONE · rises to</option>
-                    <option value="stop">STOP · breaks below</option>
+                    {/* Wording comes from lib/side.js, beside the levelHit rule it describes.
+                        It used to live here, three files from the logic, so a short row offered
+                        "STOP · breaks below" over machinery that fires on the way up. */}
+                    {["buy", "sell", "stop"].map(k => {
+                      const v = levelVocab(r.side, k);
+                      return <option key={k} value={k}>{v.label} · {v.verb}</option>;
+                    })}
                   </select>
                   {/* Draft-backed, so a decimal point survives being typed. The old input coerced the
                       raw string to a number on every keystroke, so "16." became 16 and the next two
@@ -604,7 +607,7 @@ const {
                   {/* What this level will actually do, in words, including the tolerance band that a
                       single price silently carries. */}
                   <div style={{ flexBasis: "100%", fontSize: 11, color: hit ? kindCol(l.kind) : C.muted, fontWeight: hit ? 700 : 500, paddingLeft: 2 }}>
-                    {l.at == null ? `Type a price and this ${l.kind === "stop" ? "stop" : l.kind + " zone"} starts watching.`
+                    {l.at == null ? `Type a price and this ${levelVocab(r.side, l.kind).noun} starts watching.`
                       : hit ? `⚡ Live now — ${price} is ${l.to != null ? `inside ${Math.min(l.at, l.to)}–${Math.max(l.at, l.to)}` : `within ${POINT_TOLERANCE_PCT}% of ${l.at}`}.`
                       : l.to != null ? `Fires anywhere in ${Math.min(l.at, l.to)}–${Math.max(l.at, l.to)} · ${dist == null ? "" : `${Math.abs(dist)}% ${dist > 0 ? "above" : "below"} the last price`}`
                       : `Single price — fires within ±${POINT_TOLERANCE_PCT}% of ${l.at} · ${dist == null ? "" : `${Math.abs(dist)}% ${dist > 0 ? "above" : "below"} the last price`}`}
@@ -622,8 +625,8 @@ const {
               );
             })}
             <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
-              {[["buy", "＋ buy zone"], ["sell", "＋ sell zone"], ["stop", "＋ stop"]].map(([k, label]) => (
-                <button key={k} onClick={() => addLevel(r.id, k)} style={{ cursor: "pointer", background: C.surf, color: kindCol(k), border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{label}</button>
+              {["buy", "sell", "stop"].map(k => (
+                <button key={k} onClick={() => addLevel(r.id, k)} style={{ cursor: "pointer", background: C.surf, color: kindCol(k), border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>＋ {levelVocab(r.side, k).add}</button>
               ))}
               <span style={{ fontSize: 11, color: C.lbl }}>
                 One price fires within ±{POINT_TOLERANCE_PCT}% of it. Fill the second box to watch a whole zone instead.

@@ -5,7 +5,7 @@
 // are written as MIRRORS wherever possible — a short is asserted against the equivalent long, not
 // against a hand-computed constant, because a constant only proves the code agrees with whoever
 // typed the test and a mirror proves the two directions are the same idea.
-import { sideOf, dirSign, isShort, openSideFor, closeSideFor, geometryCheck, DEFAULT_SIDE } from '../lib/side.js';
+import { sideOf, dirSign, isShort, openSideFor, closeSideFor, geometryCheck, levelVocab, fillVerb, DEFAULT_SIDE } from '../lib/side.js';
 import { derivePosition, positionPnl, levelHit, levelHits, splitIntoTrades, collapseFills, summarize, realizedCurve } from '../lib/positions.js';
 import { rOf, lockedPct, publicView, fitLines, dirOf, PUBLIC_FIELDS } from '../lib/tradecard.js';
 import { addToLoser } from '../lib/discipline.js';
@@ -191,6 +191,33 @@ ok('an unreadable side is itself the error', !geometryCheck({ side: 'sideways', 
   eq('and it derives as 300 short at 500', [d.qty, d.avgCost, d.side], [300, 500, 'short']);
   ok('marked at 450 it is UP', positionPnl(d, 450).unrealizedPct > 0);
 }
+
+// ── THE WORDS MUST DESCRIBE WHAT THE CODE DOES ───────────────────────────────
+// The level tests were mirrored for shorts and the labels were not, so a short row offered
+// "STOP · breaks below" over machinery corrected to fire on the way UP. Every word wrong while
+// every number was right — worse than both being wrong, because it invites you to set a stop below
+// a short and watch it never trigger. The cause was distance: the rule in lib/positions.js, the
+// words in a <select> three files away, and nothing connecting them.
+//
+// So the verb is asserted against levelHit itself. Whichever way either is changed, this fails.
+for (const side of ['long', 'short']) {
+  for (const kind of ['buy', 'sell', 'stop']) {
+    const { label, verb } = levelVocab(side, kind);
+    const firesOnRise = levelHit({ kind, at: 100 }, 110, side);
+    const firesOnFall = levelHit({ kind, at: 100 }, 90, side);
+    const saysRise = /rises to|breaks above/.test(verb);
+    eq(`${side}/${kind}: "${label} · ${verb}" matches when it fires`,
+       [firesOnRise, firesOnFall], [saysRise, !saysRise]);
+  }
+}
+// And the mirror is complete: no verb is shared between the two directions for the same kind.
+for (const kind of ['buy', 'sell', 'stop'])
+  ok(`${kind} reads the opposite way on a short`, levelVocab('long', kind).verb !== levelVocab('short', kind).verb);
+// A short is neither bought nor sold; an unreadable side falls back to the long wording.
+eq('short fill verbs', [fillVerb('short').open, fillVerb('short').close], ['Shorted', 'Covered']);
+eq('long fill verbs', [fillVerb('long').open, fillVerb('long').close], ['Bought', 'Sold']);
+eq('an unreadable side still gets words', fillVerb('sideways').open, 'Bought');
+eq('and so do its levels', levelVocab('sideways', 'stop').verb, 'breaks below');
 
 // ── every existing long row is untouched ─────────────────────────────────────
 // The migration is silent: rows written before `side` existed have no such field, and must derive
