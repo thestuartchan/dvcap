@@ -118,7 +118,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
       // ?peek=1 returns the in-scope trades as parsed. Three times now a shape assumption has been
       // wrong in a way that only real data could show, and each cost a round trip to find.
       if (peek) result.trades.sample = parsed.filter(t => t.date >= from).slice(0, 25);
-      tradePlan = planTrades(withDerived, parsed, { from });
+      tradePlan = planTrades(withDerived, parsed, { from, positions: got.statement.positions });
       const after = applyPlan(rows, tradePlan);
       gate = verify(after, got.statement.positions, {
         derive: deriveRow,

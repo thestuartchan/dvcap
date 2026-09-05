@@ -11,7 +11,7 @@ let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const ok = (n, c) => eq(n, !!c, true);
 
-const derive = (r) => derivePosition(r.fills || [], { multiplier: r.multiplier });
+const derive = (r) => derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side });
 const withDerived = (rows) => rows.map(r => ({ ...r, derived: derive(r) }));
 const T = (a) => `<Trade ${Object.entries(a).map(([k, v]) => `${k}="${v}"`).join(' ')} />`;
 const POS = (attrs) => parseStatement(`<OpenPosition ${Object.entries(attrs).map(([k, v]) => `${k}="${v}"`).join(' ')} levelOfDetail="SUMMARY" />`).positions;
@@ -332,7 +332,7 @@ eq('a fill carries the id that stops it being recorded twice', fillFrom({ tradeI
 // verify() decides whether a whole batch is written. On 2026-09-02 it discarded one because ASTX
 // had been sold down by hand after the 09-01 statement was cut — both sides right, nothing written.
 {
-  const derive = (r) => derivePosition(r.fills || [], { multiplier: r.multiplier });
+  const derive = (r) => derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side });
   const pos = [{ root: 'ASTX', symbol: 'ASTX', qty: 500, costBasisPrice: 9.2, assetCategory: 'STK' }];
   const rowWith = (fills) => [{ id: 'astx', symbol: 'ASTX', fills }];
   const sold = rowWith([
@@ -405,7 +405,7 @@ eq('a fill carries the id that stops it being recorded twice', fillFrom({ tradeI
   const rows = [{ id: 'arm', symbol: 'ARM', fills: [
     { id: 'f1', side: 'buy', qty: 10, price: 246.73, date: '2026-06-01' },
     { id: 'f2', side: 'sell', qty: 4, price: 240.00, date: '2026-08-01' }] }];
-  const derive = (r) => derivePosition(r.fills || [], { multiplier: r.multiplier });
+  const derive = (r) => derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side });
   const before = derive(rows[0]);
   const after = derive(applyPlan(rows, { ...plan, apply: [], creates: [] }).find(r => r.id === 'arm'));
   eq('adoption moves no quantity', after.qty, before.qty);
@@ -424,6 +424,98 @@ eq('a fill carries the id that stops it being recorded twice', fillFrom({ tradeI
   // And a plan with nothing but adoptions has nothing to verify — which is correct, not a hole:
   // it changes nothing, so there is no new state to hold against the statement.
   eq('a pure-adoption plan verifies nothing', planTouches({ ...plan, apply: [], creates: [] }).length, 0);
+}
+
+// ── SHORTS FROM THE STATEMENT ────────────────────────────────────────────────
+// A sell in a symbol the console holds nothing open in was read as an error unconditionally, so the
+// sync could never open a short from the broker — the direction most likely to arrive this way,
+// since a short is the case least likely to have been typed in by hand first. It is still not
+// guessed at: the statement reports a short as a NEGATIVE quantity, and only that creates the row.
+{
+  const SELL = T({ tradeID: 's1', symbol: 'IWM', assetCategory: 'STK', currency: 'USD', multiplier: 1,
+                   buySell: 'SELL', quantity: 200, tradePrice: 240, ibCommission: 0, tradeDate: '20260901', levelOfDetail: 'ORDER' });
+  const shortPos = POS({ symbol: 'IWM', assetCategory: 'STK', currency: 'USD', multiplier: 1, position: -200, costBasisPrice: 240 });
+  const longPos  = POS({ symbol: 'IWM', assetCategory: 'STK', currency: 'USD', multiplier: 1, position: 200, costBasisPrice: 240 });
+
+  const made = planTrades([], parseTrades(SELL), { from: '2026-08-01', positions: shortPos });
+  eq('the statement says SHORT, so the row is created', made.creates.length, 1);
+  eq('and it is a short row', made.creates[0].side, 'short');
+  eq('with the sell applied to it', made.apply.length, 1);
+  eq('and nothing reported', made.report.length, 0);
+  const applied = applyPlan([], made);
+  const d0 = derive(applied[0]);
+  eq('it derives as 200 short at 240', [d0.qty, d0.avgCost, d0.side], [200, 240, 'short']);
+
+  const notShort = planTrades([], parseTrades(SELL), { from: '2026-08-01', positions: longPos });
+  eq('a LONG statement line does not create a short', notShort.creates.length, 0);
+  eq('it is reported', notShort.report[0].kind, 'sell-with-no-position');
+  ok('and says why it is not a short', /lists it LONG/.test(notShort.report[0].note));
+
+  const noPos = planTrades([], parseTrades(SELL), { from: '2026-08-01' });
+  eq('no statement evidence creates nothing', noPos.creates.length, 0);
+  eq('and still reports', noPos.report[0].kind, 'sell-with-no-position');
+
+  // A BUY against a root the statement holds SHORT is a COVER. Opening a long row for it would
+  // book the buy as an entry and invert the trade completely.
+  const BUY = T({ tradeID: 'b1', symbol: 'IWM', assetCategory: 'STK', currency: 'USD', multiplier: 1,
+                  buySell: 'BUY', quantity: 200, tradePrice: 230, ibCommission: 0, tradeDate: '20260902', levelOfDetail: 'ORDER' });
+  const cover = planTrades([], parseTrades(BUY), { from: '2026-08-01', positions: shortPos });
+  eq('a buy against a short statement line creates nothing', cover.creates.length, 0);
+  eq('it is reported as a cover', cover.report[0].kind, 'cover-with-no-position');
+  eq('a buy with no short line still opens a long',
+     planTrades([], parseTrades(BUY), { from: '2026-08-01' }).creates[0].side, 'long');
+}
+
+// ── MULTI-FILL: a short built and covered over several trades ────────────────
+{
+  const mk = (id, bs, q, px, date) => T({ tradeID: id, symbol: 'XLE', assetCategory: 'STK', currency: 'USD',
+    multiplier: 1, buySell: bs, quantity: q, tradePrice: px, ibCommission: 0, tradeDate: date, levelOfDetail: 'ORDER' });
+  const shortPos = POS({ symbol: 'XLE', assetCategory: 'STK', currency: 'USD', multiplier: 1, position: -150, costBasisPrice: 91 });
+  const trades = parseTrades(mk('x1','SELL',100,90,'20260901') + mk('x2','SELL',100,92,'20260902') + mk('x3','BUY',50,85,'20260903'));
+  const plan = planTrades([], trades, { from: '2026-08-01', positions: shortPos });
+  eq('three trades land on ONE created row', [plan.creates.length, plan.apply.length], [1, 3]);
+  eq('the row is short', plan.creates[0].side, 'short');
+  const rows = applyPlan([], plan);
+  const d1 = derive(rows[0]);
+  eq('150 short at the blended 91', [d1.qty, Math.round(d1.avgCost)], [150, 91]);
+  ok('the cover at 85 booked a gain', d1.realized > 0);
+  eq('and the batch verifies against the statement',
+     verify(rows.map(r => ({ ...r, derived: derive(r) })), shortPos, { derive, roots: planTouches(plan) }).problems, []);
+  // The cost-basis gate still bites on a short: this fixture originally claimed 90 against a true
+  // blended 91 and the batch was refused, which is the behaviour worth keeping a test on.
+  const wrongBasis = POS({ symbol: 'XLE', assetCategory: 'STK', currency: 'USD', multiplier: 1, position: -150, costBasisPrice: 90 });
+  eq('a short whose basis disagrees is still refused',
+     verify(rows.map(r => ({ ...r, derived: derive(r) })), wrongBasis, { derive, roots: planTouches(plan) }).ok, false);
+}
+
+// ── THE GATE MUST SEE DIRECTION ──────────────────────────────────────────────
+// The console keeps quantity as a magnitude with the side in its own field; the statement signs it.
+// Comparing Math.abs() to Math.abs() said a console LONG of 300 agreed with a broker SHORT of 300 —
+// the one disagreement this gate exists to catch and the only one it could not see.
+{
+  const longRow = { id: 'r1', symbol: 'SPY', side: 'long', multiplier: 1,
+    fills: [{ id: 'f1', side: 'buy', qty: 300, price: 500, date: '2026-09-01' }] };
+  const shortRow = { id: 'r2', symbol: 'SPY', side: 'short', multiplier: 1,
+    fills: [{ id: 'f1', side: 'sell', qty: 300, price: 500, date: '2026-09-01' }] };
+  const brokerShort = POS({ symbol: 'SPY', assetCategory: 'STK', currency: 'USD', multiplier: 1, position: -300, costBasisPrice: 500 });
+  const brokerLong  = POS({ symbol: 'SPY', assetCategory: 'STK', currency: 'USD', multiplier: 1, position: 300, costBasisPrice: 500 });
+  const bad = verify(withDerived([longRow]), brokerShort, { derive, roots: ['SPY'] });
+  eq('a long against a broker short is REFUSED', bad.ok, false);
+  ok('and says which way each side points', /console holds this LONG/.test(bad.problems[0].why) && /statement reports it SHORT/.test(bad.problems[0].why));
+  eq('the same quantities the right way round pass',
+     verify(withDerived([longRow]), brokerLong, { derive, roots: ['SPY'] }).problems, []);
+  eq('a short against a broker long is REFUSED too',
+     verify(withDerived([shortRow]), brokerLong, { derive, roots: ['SPY'] }).ok, false);
+  eq('and matched to a broker short it passes',
+     verify(withDerived([shortRow]), brokerShort, { derive, roots: ['SPY'] }).problems, []);
+}
+
+// A short round trip inside one day is still a day trade and still stays in the broker.
+{
+  const mk = (id, bs, q, px) => T({ tradeID: id, symbol: 'TSLA', assetCategory: 'STK', currency: 'USD',
+    multiplier: 1, buySell: bs, quantity: q, tradePrice: px, ibCommission: -1, tradeDate: '20260901', levelOfDetail: 'ORDER' });
+  const plan = planTrades([], parseTrades(mk('d1','SELL',50,400) + mk('d2','BUY',50,390)), { from: '2026-08-01' });
+  eq('a short scalp is skipped like a long one', [plan.creates.length, plan.skipped.dayTrades], [0, 2]);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
