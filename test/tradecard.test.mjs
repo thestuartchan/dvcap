@@ -5,7 +5,7 @@
 // building rows whose private values are distinctive digit strings and asserting those strings
 // appear nowhere in the serialised output. A future edit that adds "· 600 @ 18.06" to a line fails
 // here rather than on a Discord server.
-import { publicView, buildCard, buildClosedCard, closedLine, rOf, lockedPct, isOptionTrade, showsOnCard, CLOSED_WINDOW_DAYS, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, dirOf, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS } from '../lib/tradecard.js';
+import { publicView, buildCard, buildClosedCard, closedLine, rOf, lockedPct, isOptionTrade, showsOnCard, CLOSED_WINDOW_DAYS, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, dirOf, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS, DOT } from '../lib/tradecard.js';
 import { isWebhookUrl, alertTtlMin, mentionFromEnv, webhookFromEnv } from '../lib/discord.js';
 import fs from 'node:fs';
 let pass=0,fail=0;
@@ -400,6 +400,38 @@ eq('sorted by exit date', order[0].includes('CLOSED_LAST'), true);
     levels: [{ kind: 'stop', at: 99.998 }],
   }, { today: '2026-08-27' });
   ok('a truly negligible distance is allowed to read as zero', /\(-?0%\)/.test(tradeLine(tight)));
+}
+
+// ── WATCHING IS NOT A FLAT POSITION ──────────────────────────────────────────
+// Green and red are the P&L axis. A setup has no position and therefore no gain to be neutral
+// about, so it does not belong on that axis at all — yet it shared white with "there is nothing to
+// compare", which is a different statement and the one white should keep. A whole section of the
+// card read as flat positions rather than as things not yet entered.
+{
+  const row = (sym, status, pct) => ({
+    symbol: sym, trade: '', price: 10, levels: [],
+    derived: { status, avgCost: status === 'setup' ? null : 10, qty: status === 'setup' ? 0 : 1,
+               scaleOuts: [], firstDate: '2026-09-01' },
+    pnl: { unrealizedPct: pct },
+  });
+  const card = buildCard([row('TTD', 'setup', null), row('NVDA', 'open', 4.2),
+                          row('ARM', 'open', -3.1), row('BIL', 'open', 0)]);
+  const watching = (card.embeds[0].fields || []).find(f => /^Watching/.test(f.name));
+  const body = card.embeds[0].description;
+
+  ok('a setup is yellow', watching.value.startsWith(DOT.watching));
+  ok('and never white', !watching.value.includes(DOT.flat));
+  // The distinction that makes the change worth making: white still means something, and it is
+  // NOT "watching". A held position that has genuinely not moved keeps it.
+  ok('a flat OPEN position is still white', new RegExp(`${DOT.flat} \\*\\*BIL\\*\\*`).test(body));
+  ok('up is still green', new RegExp(`${DOT.up} \\*\\*NVDA\\*\\*`).test(body));
+  ok('down is still red', new RegExp(`${DOT.down} \\*\\*ARM\\*\\*`).test(body));
+  ok('watching never appears among the open positions', !body.includes(DOT.watching));
+  // Four meanings, four symbols — no two share one.
+  eq('every dot is distinct', new Set(Object.values(DOT)).size, Object.keys(DOT).length);
+  // Yellow, not orange: orange sits beside red in hue and reads as a warning, where watching is a
+  // neutral pending state.
+  eq('watching is yellow', DOT.watching, '🟡');
 }
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
