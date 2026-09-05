@@ -20,6 +20,7 @@ import { C, SLabel, Card, Btn } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
 import { derivePosition, applyRolls, splitIntoTrades, collapseFills, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, realizedCurve } from "../lib/positions.js";
 import { sideOf, isShort, openSideFor, closeSideFor, geometryCheck, levelVocab, fillVerb, SIDES, SIDE_LABEL, DEFAULT_SIDE } from "../lib/side.js";
+import { fmtPrice } from "../lib/price.js";
 import { CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy, resolveRowCurrency } from "../lib/fxrates.js";
 import { addToLoser } from "../lib/discipline.js";
 import { decisionEntry, lastClosedWasWin, overrideTrend, guardOutcomes } from "../lib/decisions.js";
@@ -418,7 +419,7 @@ const {
         <Div />
         {/* The tape. Muted, and labelled "today", so it can never be read as your return. */}
         <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }} title="Last price and today's move on the tape — not your return">
-          <span style={{ fontSize: 14, fontWeight: 700 }}>{price != null ? price.toFixed(2) : "—"}</span>
+          <span style={{ fontSize: 14, fontWeight: 700 }}>{fmtPrice(price)}</span>
           <span style={{ fontSize: 11.5, fontWeight: 700, color: q?.changePercent == null ? C.muted : q.changePercent >= 0 ? C.green : C.red, whiteSpace: "nowrap" }}>
             {q?.changePercent == null ? "" : `${q.changePercent >= 0 ? "▲" : "▼"}${Math.abs(q.changePercent).toFixed(2)}%`}
           </span>
@@ -823,7 +824,7 @@ const {
 
           {mode === "open" && (
             <div style={{ marginTop: 10, padding: "9px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 9, fontSize: 12.5, color: C.mid, lineHeight: 1.7 }}>
-              {d.qty} @ avg {d.avgCost?.toFixed(4)} · market {money(p.marketValue, r.currency)}
+              {d.qty} @ avg {fmtPrice(d.avgCost)} · market {money(p.marketValue, r.currency)}
               <br />Unrealised <b style={{ color: pnlCol(p.unrealized) }}>{p.unrealized == null ? "—" : money(p.unrealized, r.currency)}</b>
               {p.unrealizedPct != null && <span style={{ color: C.lbl }}> ({p.unrealizedPct > 0 ? "+" : ""}{p.unrealizedPct}%)</span>}
               {" · "}Realised <b style={{ color: pnlCol(d.realized) }}>{money(d.realized, r.currency)}</b>
@@ -2102,8 +2103,8 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
                       <td style={{ ...td, color: C.lbl, whiteSpace: "nowrap" }}>
                         {r.derived.firstDate || "?"} → {r.derived.lastDate || "?"}{days == null ? "" : ` · ${days}d`}</td>
                       <td style={td}>{r.derived.bought}</td>
-                      <td style={td}>{r.derived.avgEntry == null ? "—" : r.derived.avgEntry.toFixed(4)}</td>
-                      <td style={td}>{r.derived.avgExit == null ? "—" : r.derived.avgExit.toFixed(4)}</td>
+                      <td style={td}>{fmtPrice(r.derived.avgEntry)}</td>
+                      <td style={td}>{fmtPrice(r.derived.avgExit)}</td>
                       <td style={{ ...td, fontWeight: 700, color: pnlCol(r.derived.realized) }}>{money(r.derived.realized, r.currency)}</td>
                       <td style={{ ...td, color: pnlCol(r.derived.realizedPct) }}>{r.derived.realizedPct == null ? "—" : (r.derived.realizedPct > 0 ? "+" : "") + r.derived.realizedPct + "%"}</td>
                     </tr>
@@ -2145,7 +2146,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
                     </span>
                   </div>
                   <div style={{ fontSize: 11.5, color: C.lbl, marginTop: 3 }}>
-                    {d.firstDate || "?"} → {d.lastDate || "?"}{days == null ? "" : ` · ${days}d`} · {d.bought} @ {d.avgEntry == null ? "—" : d.avgEntry.toFixed(4)} → {d.avgExit == null ? "—" : d.avgExit.toFixed(4)}
+                    {d.firstDate || "?"} → {d.lastDate || "?"}{days == null ? "" : ` · ${days}d`} · {d.bought} @ {fmtPrice(d.avgEntry)} → {fmtPrice(d.avgExit)}
                   </div>
                 </div>
               );
