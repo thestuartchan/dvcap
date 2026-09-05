@@ -1,4 +1,5 @@
 import { yahooAuth } from "../lib/yahoo.js";
+import { roundQuote } from "../lib/price.js";
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
 // Yahoo's v7 quote endpoint carries trailingAnnualDividendYield but requires a
@@ -68,7 +69,10 @@ export default async function handler(req, res) {
         const ccy = typeof meta.currency === "string" && /^[A-Za-z]{3}$/.test(meta.currency)
           ? meta.currency.toUpperCase() : null;
         results[ticker] = {
-          price: parseFloat(price.toFixed(2)),
+          // ROUNDED BY SCALE, not to a fixed two places. `toFixed(2)` is right for a share and
+          // destroys anything quoted below a dollar — MJY at 0.00641 was stored as 0.01, and since
+          // this is the SOURCE, no consumer could recover it. See lib/price.js.
+          price: roundQuote(price),
           changePercent: parseFloat(changePercent.toFixed(2)),
           ...(ccy ? { currency: ccy } : {}),
         };
