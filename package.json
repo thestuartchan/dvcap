@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node scripts/write-version.mjs && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "prebuild": "npm test && node scripts/check-test-summaries.mjs && node scripts/check-function-count.mjs && node scripts/check-undefined-refs.mjs && node scripts/check-undefined-idents.mjs && node scripts/check-required-props.mjs && node scripts/check-dead-components.mjs && node scripts/check-css-imported.mjs && node scripts/check-status-tokens.mjs && node scripts/check-no-llm-feeds.mjs",
     "check:status": "node scripts/check-status-tokens.mjs",
-    "test": "for f in test/*.test.mjs; do node \"$f\" || exit 1; done"
+    "test": "for f in test/*.test.mjs; do node \"$f\" || exit 1; done",
+    "check:data": "node scripts/check-data-revert.mjs"
   },
   "dependencies": {
     "react": "^19.2.6",

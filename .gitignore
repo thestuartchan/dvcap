@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 .vercel
 .env*
+
+# Written at build time by scripts/write-version.mjs — the artifact stamp, not source.
+public/version.json
