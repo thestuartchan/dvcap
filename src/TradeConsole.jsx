@@ -11,7 +11,7 @@
 // price feed, and the regime history. Everything else is derived here or imported from lib/.
 
 import { useState, useEffect, useMemo } from "react";
-import { FUTURES_MULTIPLIER, multiplierFor, backfillMultipliers, quoteConvention, looksMisquoted } from '../lib/futures.js';
+import { FUTURES_MULTIPLIER, multiplierFor, backfillMultipliers, quoteConvention, looksMisquoted, isUnambiguousFuture } from '../lib/futures.js';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
@@ -269,12 +269,18 @@ const daysBetween = (a, b) => {
 // ONE LIST, NOT TWO. This was a hand-kept set that had drifted to fifteen of the contracts in
 // lib/futures.js and had no idea what any of them was worth — which is how MGC ended up quoted
 // correctly and valued at a tenth of the truth. Same table now answers both questions.
+// THE GUARD EXISTS; THIS IS WHERE IT WAS NOT USED. Membership of the multiplier table is not the
+// same question as "is this symbol a futures contract" — ten of those roots are also real equity
+// tickers and two are the names of spot crypto assets. Keyed off the table alone, typing MET for
+// MetLife created a ×0.1 Micro-Ether row quoting MET=F, and CL for Colgate a ×1000 crude one.
+// lib/futures.js says so in a comment above the very set that prevents it; it simply was not asked.
 const FUTURES_ROOTS = new Set(Object.keys(FUTURES_MULTIPLIER));
+const looksLikeFuture = (sym) => isUnambiguousFuture(String(sym || '').toUpperCase());
 const quoteSym = (r) => {
   const explicit = String(r?.quoteSymbol || '').trim();
   if (explicit) return explicit;
   const sym = String(r?.symbol || '').trim();
-  return (r?.margined || FUTURES_ROOTS.has(sym.toUpperCase())) && !sym.includes('=') && !sym.includes('.')
+  return (r?.margined || looksLikeFuture(sym)) && !sym.includes('=') && !sym.includes('.')
     ? `${sym.toUpperCase()}=F` : sym;
 };
 
@@ -1176,7 +1182,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
     // multiplier is filled in afterwards is a row that computed every money figure at x1 until
     // somebody noticed — MGC ran a month that way. A known root arrives already margined and
     // already sized; anything else is a share at x1, which is correct rather than assumed.
-    const known = multiplierFor(sym, { margined: FUTURES_ROOTS.has(sym) });
+    const known = multiplierFor(sym, { margined: looksLikeFuture(sym) });
     // DIRECTION IS SET AT SETUP, for the same reason the multiplier is: a row whose side is filled
     // in afterwards is a row that computed every P&L, R and level breach the wrong way round until
     // somebody noticed. It is one click here and unrecoverable later.
