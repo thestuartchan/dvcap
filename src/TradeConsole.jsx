@@ -12,6 +12,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { FUTURES_MULTIPLIER, multiplierFor, backfillMultipliers, quoteConvention, looksMisquoted, isUnambiguousFuture } from '../lib/futures.js';
+import { cryptoSymbolCheck, cryptoQuoteSymbol } from '../lib/crypto.js';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
@@ -280,8 +281,14 @@ const quoteSym = (r) => {
   const explicit = String(r?.quoteSymbol || '').trim();
   if (explicit) return explicit;
   const sym = String(r?.symbol || '').trim();
-  return (r?.margined || looksLikeFuture(sym)) && !sym.includes('=') && !sym.includes('.')
-    ? `${sym.toUpperCase()}=F` : sym;
+  if (r?.margined || looksLikeFuture(sym)) {
+    if (!sym.includes('=') && !sym.includes('.')) return `${sym.toUpperCase()}=F`;
+    return sym;
+  }
+  // BTCUSD and BTCUSDT name the coin unambiguously and price NOTHING as typed, so they are
+  // resolved to the pair the feed carries. A bare BTC is deliberately left alone — it is a real
+  // ticker for a real security, and turning it into BTC-USD would be a guess about intent.
+  return cryptoQuoteSymbol(sym);
 };
 
 const Div = () => <span className="dvcap-divider" style={{ width: 1, alignSelf: "stretch", background: C.bdr, margin: "0 2px", flexShrink: 0 }} />;
@@ -384,6 +391,20 @@ const {
               entered in the wrong one is wrong by that factor AND in the wrong direction. The row
               says which number it wants rather than leaving it to be inferred from the leading
               zeros. */}
+          {/* A SYMBOL THAT PRICES THE WRONG THING. Typed bare, BTC returns the Grayscale trust at
+              ~$35 against spot bitcoin near $80,000, and LINK returns an electronics manufacturer —
+              a real price, with a real daily move, for something never bought. This is louder than
+              the other chips because the failure does not look like a failure. */}
+          {(() => {
+            const c = cryptoSymbolCheck(r.symbol);
+            if (c.ok) return null;
+            const bare = c.kind === 'bare';
+            return <span title={c.note}
+              style={{ background: bare ? C.rBg : C.aBg, color: bare ? C.red : C.amber,
+                       border: "1px solid " + (bare ? C.rBdr : C.aBdr), borderRadius: 6,
+                       padding: "1px 7px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap", cursor: "help" }}>
+              {bare ? `⚠ not the coin — use ${c.suggestion}` : `quoting ${c.suggestion}`}</span>;
+          })()}
           {/* THE MISLABELLED SHORT. Direction is typed by hand and so are the levels, a moment
               apart — a row marked LONG whose stop is above entry and whose targets are below is a
               short that was never marked, and every figure on it will be inverted while looking

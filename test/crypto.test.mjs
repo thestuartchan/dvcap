@@ -16,6 +16,8 @@ import { exchangeFor, marketState, sessionPhase, sessionCloseMin, freshness, isH
          closedExchanges, isWeekendIn } from '../lib/sessions.js';
 import { multiplierFor, isUnambiguousFuture, ROOT_AMBIGUOUS, EQUITY_AMBIGUOUS, FUTURES_MULTIPLIER } from '../lib/futures.js';
 import { roundQuote, fmtPrice } from '../lib/price.js';
+import { cryptoSymbolCheck, cryptoQuoteSymbol, CRYPTO_BASES } from '../lib/crypto.js';
+import { atrSummary, ATR_PERIOD } from '../lib/atr.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `\n     got  ${JSON.stringify(g)}\n     want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -103,6 +105,73 @@ for (const [sym, v] of [['BTC', 111235.42], ['ETH', 4128.77], ['XRP', 2.4471],
   ok(`${sym} displays without loss`, Math.abs(+fmtPrice(v) - v) <= Math.abs(v) * 1e-7);
 }
 eq('a spot pair is sized as units, not a contract', multiplierFor('BTC-USD', {}).multiplier, 1);
+
+// ── WHICH SYMBOL ACTUALLY GETS YOU THE COIN ──────────────────────────────────
+// The dangerous answers do not fail, they succeed on something else. Measured against the live
+// feed on 2026-09-06: BTC → Grayscale Bitcoin Mini Trust ETF at $35.31 against spot at $79,707.77;
+// LINK → Interlink Electronics, an unrelated manufacturer. A real price, with a real daily move,
+// for a security that was never bought.
+{
+  const C = cryptoSymbolCheck;
+  eq('the hyphenated pair is the right answer', [C('BTC-USD').ok, C('BTC-USD').kind], [true, 'pair']);
+  eq('every fiat pair passes', ['SHIB-USD', 'ETH-EUR', 'DOGE-USD'].map(s => C(s).ok), [true, true, true]);
+
+  // Three ways of being wrong, which do not deserve the same response.
+  eq('BTCUSD is punctuation', [C('BTCUSD').kind, C('BTCUSD').suggestion], ['punctuation', 'BTC-USD']);
+  eq('BTCUSDT is a different quote currency', [C('BTCUSDT').kind, C('BTCUSDT').suggestion], ['stablecoin', 'BTC-USD']);
+  eq('and the hyphenated stablecoin form too', C('BTC-USDC').kind, 'stablecoin');
+  eq('a bare base is a different INSTRUMENT', [C('BTC').kind, C('BTC').suggestion], ['bare', 'BTC-USD']);
+  ok('and the note says so rather than just "invalid"', /listed security/.test(C('BTC').note));
+  ok('the stablecoin note keeps the de-peg caveat', /not the dollar/.test(C('BTCUSDT').note));
+
+  // Only the two that name the coin unambiguously are resolved. A bare base is NEVER resolved:
+  // it is a real ticker, and turning BTC into BTC-USD would be a guess about intent — the same
+  // class of inference that put a MetLife row on a Micro-Ether multiplier.
+  eq('punctuation resolves', cryptoQuoteSymbol('BTCUSD'), 'BTC-USD');
+  eq('stablecoin resolves', cryptoQuoteSymbol('BTCUSDT'), 'BTC-USD');
+  eq('a bare base is left exactly as typed', cryptoQuoteSymbol('BTC'), 'BTC');
+  eq('and so is anything not crypto-shaped', [cryptoQuoteSymbol('NVDA'), cryptoQuoteSymbol('MSTR')], ['NVDA', 'MSTR']);
+
+  // Ordinary equities must not be dragged in by a suffix that happens to look like a quote leg.
+  for (const s of ['NVDA', 'MSTR', 'COIN', 'BRK-B', 'IBIT'])
+    eq(`${s} raises nothing`, [C(s).ok, C(s).kind], [true, null]);
+  ok('LINK is flagged — it prices an electronics manufacturer', !C('LINK').ok);
+  ok('and it is in the base list for that reason', CRYPTO_BASES.has('LINK'));
+}
+
+// ── ATR: 14 BARS IS NOT 14 OF THE SAME THING ─────────────────────────────────
+// On an equity, 14 periods span 14 SESSIONS — about three calendar weeks. On a 24/7 series they
+// span 14 CALENDAR DAYS. Calendar days is what is wanted for crypto: a market trading through the
+// weekend has no session count to fall back on, and pretending it does would skip real price
+// action. The maths is unchanged; the window is now reported so the two are never read as equal.
+{
+  const mk = (n, skipWeekends) => {
+    const out = []; let t = Date.UTC(2026, 5, 1);
+    while (out.length < n) {
+      const dt = new Date(t), wd = dt.getUTCDay();
+      if (!skipWeekends || (wd !== 0 && wd !== 6)) {
+        const c = 100 + out.length * 0.3;
+        out.push({ date: dt.toISOString().slice(0, 10), high: c * 1.01, low: c * 0.99, close: c });
+      }
+      t += 864e5;
+    }
+    return out;
+  };
+  const equity = atrSummary(mk(40, true));
+  const crypto = atrSummary(mk(40, false));
+
+  eq('a 7-day series spans one calendar day per bar', crypto.spanDays, ATR_PERIOD);
+  ok('a 5-day series spans more calendar days than bars', equity.spanDays > ATR_PERIOD);
+  eq('and each says which it is', [crypto.windowLabel, equity.windowLabel],
+     ['14 days', '14 sessions (18 days)']);
+  eq('continuity is measured, not assumed from the symbol', [crypto.continuous, equity.continuous], [true, false]);
+  // The ATR value itself is untouched by any of this.
+  ok('both still produce an ATR', equity.atr > 0 && crypto.atr > 0);
+  eq('and the period is reported alongside it', crypto.period, ATR_PERIOD);
+  // A series too short to fill the window must not claim a window it does not have.
+  const thin = atrSummary(mk(3, false));
+  ok('a thin series does not overstate its span', thin.spanDays == null || thin.spanDays <= 3);
+}
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
