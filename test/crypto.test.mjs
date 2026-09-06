@@ -18,6 +18,9 @@ import { multiplierFor, isUnambiguousFuture, ROOT_AMBIGUOUS, EQUITY_AMBIGUOUS, F
 import { roundQuote, fmtPrice } from '../lib/price.js';
 import { cryptoSymbolCheck, cryptoQuoteSymbol, CRYPTO_BASES } from '../lib/crypto.js';
 import { atrSummary, ATR_PERIOD } from '../lib/atr.js';
+import { sizeSuggestion, roundQty } from '../lib/sizing.js';
+import { buildCard, buildClosedCard, splitByClass, classOfView } from '../lib/tradecard.js';
+import { isSpotCrypto } from '../lib/crypto.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `\n     got  ${JSON.stringify(g)}\n     want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -171,6 +174,82 @@ eq('a spot pair is sized as units, not a contract', multiplierFor('BTC-USD', {})
   // A series too short to fill the window must not claim a window it does not have.
   const thin = atrSummary(mk(3, false));
   ok('a thin series does not overstate its span', thin.spanDays == null || thin.spanDays <= 3);
+}
+
+// ── A COIN IS DIVISIBLE, AND THE SIZER COULD NOT SAY SO ──────────────────────
+// A 1% risk budget on a $200k book against BTC at 79,707 with a 75,000 stop is about a quarter of
+// a coin. Floored to a whole unit it came back 0, with "the suggested size rounds to zero" — a
+// sizer that cannot size the position, failing in the one way that reads as an answer.
+{
+  const arg = { mode: 'risk', equityInPos: 200000, price: 79707, stop: 75000, multiplier: 1 };
+  eq('as whole units it cannot size BTC at all', sizeSuggestion(arg).fullQty, 0);
+  const d = sizeSuggestion({ ...arg, divisible: true });
+  ok('divisible sizes a real fraction', d.fullQty > 0 && d.fullQty < 1);
+  ok('and the notional is a real position', d.notional > 1000);
+  eq('with no rounds-to-zero warning', d.warnings.filter(w => /rounds to zero/.test(w)).length, 0);
+
+  // The SAME fixed-decimal defect lib/price.js exists to prevent, one layer down: per-unit risk of
+  // 9.2e-7 was rounded to zero, the budget was divided by nothing, and `exact` came back Infinity.
+  const shib = sizeSuggestion({ mode: 'risk', equityInPos: 200000, price: 0.00000892, stop: 0.0000080, multiplier: 1, divisible: true });
+  ok('a sub-cent coin sizes at all', shib.fullQty > 0);
+  ok('its per-unit risk survives', shib.perUnitRisk > 0 && shib.perUnitRisk < 1e-5);
+  ok('and the notional is sane rather than infinite', Number.isFinite(shib.notional) && shib.notional > 0);
+
+  // Whole-unit instruments are untouched — the assertion that makes this safe to ship.
+  eq('an equity still sizes in whole shares', sizeSuggestion({ mode: 'risk', equityInPos: 200000, price: 150, stop: 140, multiplier: 1 }).fullQty, 120);
+  eq('and a contract in whole contracts', sizeSuggestion({ mode: 'risk', equityInPos: 200000, price: 4649, stop: 4600, multiplier: 10 }).fullQty, 2);
+  eq('roundQty still floors shares', [roundQty(0.5), roundQty(2.7), roundQty(137)], [0, 2, 130]);
+  ok('but keeps a fraction when told it is divisible', roundQty(0.254, 1, { divisible: true }) > 0.25);
+
+  // Only the pair forms are divisible. A bare BTC prices a listed security you buy whole, and a
+  // futures contract is indivisible by definition.
+  eq('which rows are divisible', ['BTC-USD', 'BTCUSD', 'BTCUSDT', 'BTC', 'BTC=F', 'NVDA', 'IBIT'].map(isSpotCrypto),
+     [true, true, true, false, false, false, false]);
+}
+
+// ── TRADFI AND CRYPTO ARE TWO BOOKS ──────────────────────────────────────────
+// They share no session, settlement, weekend or volatility regime, and reading a coin's overnight
+// move beside a share's close invites a comparison that means nothing.
+{
+  const row = (sym, status, pct, extra = {}) => ({
+    symbol: sym, trade: '', price: 100, levels: [],
+    derived: { status, avgCost: status === 'setup' ? null : 95, avgExit: extra.exit ?? null,
+               qty: status === 'setup' ? 0 : 1, scaleOuts: [], firstDate: '2026-08-01',
+               lastDate: extra.closedOn ?? null, realizedPct: extra.rp ?? null },
+    pnl: { unrealizedPct: pct },
+  });
+  eq('classification', [classOfView({ symbol: 'BTC-USD' }), classOfView({ symbol: 'NVDA' }), classOfView({ symbol: 'IBIT' })],
+     ['crypto', 'tradfi', 'tradfi']);
+  eq('an ETF wrapper is TradFi — it settles like a share', classOfView({ symbol: 'IBIT' }), 'tradfi');
+
+  // SPLIT ONLY WHEN BOTH ARE PRESENT. A heading over an all-equity book is a label that never
+  // varies, which is exactly why the direction column was removed from this card.
+  const tradfiOnly = buildCard([row('NVDA', 'open', 4.2), row('ARM', 'open', -3.1)]);
+  ok('an all-TradFi card carries no heading', !/TradFi|Crypto/.test(tradfiOnly.embeds[0].description));
+  const cryptoOnly = buildCard([row('BTC-USD', 'open', 4.2)]);
+  ok('an all-crypto card carries none either', !/TradFi|Crypto/.test(cryptoOnly.embeds[0].description));
+
+  const mixed = buildCard([row('NVDA', 'open', 4.2), row('BTC-USD', 'open', 8.4),
+                           row('TSLA', 'setup', null), row('SOL-USD', 'setup', null)]);
+  const desc = mixed.embeds[0].description;
+  ok('a mixed card heads both halves', /TradFi/.test(desc) && /Crypto/.test(desc));
+  ok('TradFi leads', desc.indexOf('TradFi') < desc.indexOf('Crypto'));
+  ok('every position still appears', ['NVDA', 'BTC-USD'].every(s => desc.includes(s)));
+  // Watching splits into two SIDE-BY-SIDE fields rather than one with a divider inside it.
+  const w = (mixed.embeds[0].fields || []).filter(f => /^Watching/.test(f.name));
+  eq('watching splits into two fields', w.length, 2);
+  ok('and they are laid out inline', w.every(f => f.inline === true));
+  ok('each names its class and count', /TradFi · 1/.test(w[0].name) && /Crypto · 1/.test(w[1].name));
+
+  // Closed splits the same way, and only when mixed.
+  const cl = (syms) => buildClosedCard(syms.map(x => row(x, 'closed', null, { exit: 110, closedOn: '2026-09-01', rp: 5 })),
+                                       { today: '2026-09-05' }).embeds[0].description;
+  ok('closed splits when mixed', /TradFi/.test(cl(['NVDA', 'BTC-USD'])) && /Crypto/.test(cl(['NVDA', 'BTC-USD'])));
+  ok('and does not when it is one book', !/TradFi/.test(cl(['NVDA', 'ARM'])));
+  ok('every closed trade still appears', ['NVDA', 'BTC-USD'].every(s => cl(['NVDA', 'BTC-USD']).includes(s)));
+
+  // The privacy boundary is unchanged by any of this.
+  ok('no size leaks into a split card', !/\bqty\b|notional/i.test(desc));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

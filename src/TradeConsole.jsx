@@ -12,7 +12,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { FUTURES_MULTIPLIER, multiplierFor, backfillMultipliers, quoteConvention, looksMisquoted, isUnambiguousFuture } from '../lib/futures.js';
-import { cryptoSymbolCheck, cryptoQuoteSymbol } from '../lib/crypto.js';
+import { cryptoSymbolCheck, cryptoQuoteSymbol, isSpotCrypto } from '../lib/crypto.js';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
@@ -1116,6 +1116,10 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       baseRiskPct: baseRisk, targetPct: numOrNull(r.targetPct) ?? targetPct,
       regime: regimeCtx, heldQty: r.derived.qty || 0, tranches: numOrNull(r.tranches) || 1,
       sizing: mergedSizing,
+      // Spot crypto is DIVISIBLE. Sized as whole units it returned 0 for BTC — a 1% budget on a
+      // $200k book buys 0.25 of a coin, and flooring that to an integer is a sizer that cannot
+      // size the position while looking like one that says the budget is too small.
+      divisible: isSpotCrypto(r.symbol),
     });
     return { ...r, pnl, sug, sizeMode: mode, stopLevel: stopLevel || null };
   }), [rows, prices, equityBase, baseRisk, targetPct, baseCcy, mergedSizing, liveRegime?.id, creditDanger, contested, regimeDiverged]);
