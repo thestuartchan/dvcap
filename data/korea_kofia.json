@@ -51,17 +51,17 @@
     "instNet": {
       "value": 1669,
       "unit": "십억원",
-      "asOf": "2026-09-04"
+      "asOf": "2026-09-07"
     },
     "foreignNet": {
       "value": 480,
       "unit": "십억원",
-      "asOf": "2026-09-04"
+      "asOf": "2026-09-07"
     },
     "retailNet": {
       "value": -3723,
       "unit": "십억원",
-      "asOf": "2026-09-04"
+      "asOf": "2026-09-07"
     }
   },
   "history": [
@@ -1603,6 +1603,45 @@
         "value": 923000000,
         "asOf": "2026-09-04"
       }
+    },
+    {
+      "savedAt": "2026-09-06T22:40:24.802Z",
+      "kospi": {
+        "value": 6687.21,
+        "asOf": "2026-09-04"
+      },
+      "deposits": {
+        "value": 97761496,
+        "asOf": "2026-09-03"
+      },
+      "marginLoans": {
+        "value": 33542016,
+        "asOf": "2026-09-03"
+      },
+      "cma": {
+        "value": 103522151,
+        "asOf": "2026-09-03"
+      },
+      "kr3yGovt": {
+        "value": 3.884,
+        "asOf": "2026-09-04"
+      },
+      "kr3yCorp": {
+        "value": 4.567,
+        "asOf": "2026-09-04"
+      },
+      "instNet": {
+        "value": 1669,
+        "asOf": "2026-09-07"
+      },
+      "foreignNet": {
+        "value": 480,
+        "asOf": "2026-09-07"
+      },
+      "retailNet": {
+        "value": -3723,
+        "asOf": "2026-09-07"
+      }
     }
   ],
   "series": {
@@ -2985,6 +3024,13 @@
         "unit": "십억원",
         "delta": null,
         "pct": null
+      },
+      {
+        "date": "2026-09-07",
+        "value": 480,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
       }
     ],
     "instNet": [
@@ -3169,6 +3215,13 @@
         "unit": "십억원",
         "delta": null,
         "pct": null
+      },
+      {
+        "date": "2026-09-07",
+        "value": 1669,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
       }
     ],
     "retailNet": [
@@ -3335,6 +3388,13 @@
       },
       {
         "date": "2026-09-04",
+        "value": -3723,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-09-07",
         "value": -3723,
         "unit": "십억원",
         "delta": null,
