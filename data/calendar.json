@@ -252,12 +252,28 @@
     "tz": "America/New_York"
   },
   {
+    "date": "2026-09-07",
+    "title": "US markets closed — Labor Day",
+    "region": "US",
+    "tier": 2,
+    "time": "00:00",
+    "tz": "America/New_York"
+  },
+  {
     "date": "2026-09-09",
     "title": "China CPI + PPI (Aug)",
     "region": "ASIA",
     "tier": 2,
     "time": "09:30",
     "tz": "Asia/Shanghai"
+  },
+  {
+    "date": "2026-09-09",
+    "title": "US 10Y note auction — the demand read the 30Y trades off",
+    "region": "US",
+    "tier": 2,
+    "time": "13:00",
+    "tz": "America/New_York"
   },
   {
     "date": "2026-09-10",
@@ -277,12 +293,28 @@
     "tz": "America/New_York"
   },
   {
+    "date": "2026-09-10",
+    "title": "US existing home sales (Aug)",
+    "region": "US",
+    "tier": 2,
+    "time": "10:00",
+    "tz": "America/New_York"
+  },
+  {
     "date": "2026-09-11",
     "title": "US CPI (Aug) — the print the Fed path trades off",
     "region": "US",
     "tier": 1,
     "scope": "global",
     "time": "08:30",
+    "tz": "America/New_York"
+  },
+  {
+    "date": "2026-09-11",
+    "title": "US UMich consumer sentiment + inflation expectations (Sep, prelim)",
+    "region": "US",
+    "tier": 2,
+    "time": "10:00",
     "tz": "America/New_York"
   },
   {

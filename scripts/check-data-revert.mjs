@@ -32,6 +32,13 @@ import { execFileSync } from 'node:child_process';
 const CI = !!process.env.GITHUB_ACTIONS;
 const git = (...a) => execFileSync('git', a, { encoding: 'utf8', maxBuffer: 64 << 20 }).trim();
 const tryGit = (...a) => { try { return git(...a); } catch { return null; } };
+// PORCELAIN OUTPUT MUST NOT BE TRIMMED. `git()` trims, which strips the leading space of the
+// two-character status field on the first line — so the column offset every parser of this format
+// relies on is off by one before any parsing starts. This is the actual cause of "ata/calendar.json".
+const gitRawLines = (...a) => {
+  try { return execFileSync('git', a, { encoding: 'utf8', maxBuffer: 64 << 20 }).split('\n').filter(Boolean); }
+  catch { return []; }
+};
 const lines = (s) => (s || '').split('\n').map(x => x.trim()).filter(Boolean);
 const plural = (n, s, p = s + 's') => `${n} ${n === 1 ? s : p}`;
 
@@ -69,7 +76,14 @@ for (const f of changed) {
 }
 
 // Uncommitted data changes are not a revert yet, but they are one `git add -A` from becoming one.
-const dirty = lines(tryGit('status', '--porcelain', '--', DIR) || '').map(l => l.slice(3).trim()).filter(Boolean);
+// `git status --porcelain` prefixes each path with a two-character status and one space. Slicing
+// three characters off a TRIMMED line ate the first character of the path — the guard's own first
+// real use reported "ata/calendar.json". Split on the status field instead of counting columns.
+const dirty = gitRawLines('status', '--porcelain', '--', DIR)
+  .map(l => l.slice(3))                       // untrimmed: the leading space IS part of the status
+  .map(l => l.includes(' -> ') ? l.split(' -> ')[1] : l)   // a rename reports "old -> new"
+  .map(l => l.replace(/^"|"$/g, '').trim())   // git quotes paths containing spaces
+  .filter(Boolean);
 
 const out = [];
 if (reverts.length) {
