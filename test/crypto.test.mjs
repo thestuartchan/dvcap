@@ -20,7 +20,7 @@ import { cryptoSymbolCheck, cryptoQuoteSymbol, CRYPTO_BASES } from '../lib/crypt
 import { atrSummary, ATR_PERIOD } from '../lib/atr.js';
 import { sizeSuggestion, roundQty } from '../lib/sizing.js';
 import { buildCard, buildClosedCard, splitByClass, classOfView } from '../lib/tradecard.js';
-import { isSpotCrypto } from '../lib/crypto.js';
+import { isSpotCrypto, assetClassGroups } from '../lib/crypto.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `\n     got  ${JSON.stringify(g)}\n     want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -250,6 +250,38 @@ eq('a spot pair is sized as units, not a contract', multiplierFor('BTC-USD', {})
 
   // The privacy boundary is unchanged by any of this.
   ok('no size leaks into a split card', !/\bqty\b|notional/i.test(desc));
+}
+
+// ── THE ARCHIVE IS TWO RECORDS TOO ───────────────────────────────────────────
+// The grouping lives in ONE place now. Four consumers need it — the Discord positions block, the
+// Watching field, the closed card, and the console archive in both its wide and narrow forms — and
+// any two of them disagreeing about what belongs where is a worse bug than not splitting at all.
+{
+  const row = (sym) => ({ symbol: sym, derived: { lastDate: '2026-09-0' + (sym.length % 9) } });
+  const mixed = [row('NVDA'), row('BTC-USD'), row('ARM'), row('ETH-USD')];
+
+  eq('one book yields one unlabelled group', assetClassGroups([row('NVDA'), row('ARM')]).map(g => g.label), [null]);
+  eq('and an all-crypto book likewise', assetClassGroups([row('BTC-USD')]).map(g => g.label), [null]);
+  eq('a mixed book yields two, TradFi first', assetClassGroups(mixed).map(g => g.label), ['TradFi', 'Crypto']);
+  eq('with everything accounted for', assetClassGroups(mixed).reduce((n, g) => n + g.rows.length, 0), mixed.length);
+  eq('and nothing duplicated across them',
+     new Set(assetClassGroups(mixed).flatMap(g => g.rows.map(r => r.symbol))).size, mixed.length);
+
+  // The sort is applied WITHIN each group, so a heading never has an out-of-order list under it.
+  const byName = (a, b) => a.symbol.localeCompare(b.symbol);
+  eq('sorted inside each group', assetClassGroups(mixed, { sort: byName }).map(g => g.rows.map(r => r.symbol)),
+     [['ARM', 'NVDA'], ['BTC-USD', 'ETH-USD']]);
+  eq('and inside the single group too', assetClassGroups([row('NVDA'), row('ARM')], { sort: byName }).map(g => g.rows.map(r => r.symbol)),
+     [['ARM', 'NVDA']]);
+
+  // An empty archive must not render a heading over nothing.
+  eq('empty stays empty', assetClassGroups([]), [{ label: null, rows: [] }]);
+  // The card and the archive read the SAME function, so they cannot drift.
+  eq('splitByClass agrees with the grouping',
+     [splitByClass(mixed).tradfi.length, splitByClass(mixed).crypto.length, splitByClass(mixed).mixed],
+     [2, 2, true]);
+  // A custom accessor, for callers whose rows are not shaped like a view.
+  eq('symbolOf is honoured', splitByClass([{ t: 'BTC-USD' }, { t: 'NVDA' }], x => x.t).crypto.length, 1);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

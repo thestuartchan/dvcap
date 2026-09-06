@@ -12,7 +12,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { FUTURES_MULTIPLIER, multiplierFor, backfillMultipliers, quoteConvention, looksMisquoted, isUnambiguousFuture } from '../lib/futures.js';
-import { cryptoSymbolCheck, cryptoQuoteSymbol, isSpotCrypto } from '../lib/crypto.js';
+import { cryptoSymbolCheck, cryptoQuoteSymbol, isSpotCrypto, assetClassGroups } from '../lib/crypto.js';
 import { fundingRead, basisRead } from '../lib/hyperliquid.js';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
@@ -1156,6 +1156,16 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   // A rolled-out contract is not a closed trade — it was replaced, and its P&L now sits inside the
   // position that replaced it. Listing it in the archive would count the same gain twice.
   const archived = derivedRows.filter(r => r.derived.status === "closed" && !r.derived.rolledInto);
+  // ── THE ARCHIVE IS TWO RECORDS ───────────────────────────────────────────────────────────────
+  // A crypto trade and an equity trade do not share a session, a settlement or a volatility
+  // regime, so a single list sorted by close date invites a comparison between them that means
+  // nothing. Grouped ONCE here and consumed by both the wide table and the narrow list, which
+  // otherwise had every chance to disagree about what belonged where.
+  //
+  // Split only when both are present — the same rule the Discord card follows. A heading over an
+  // all-equity archive is a label that never varies.
+  const byClose = (a, b) => String(b.derived.lastDate || "").localeCompare(String(a.derived.lastDate || ""));
+  const archiveGroups = useMemo(() => assetClassGroups(archived, { sort: byClose }), [archived]);
   const rolledOut = derivedRows.filter(r => r.derived.rolledInto);
   // What a row may declare it was rolled out of: a FINISHED contract in the same symbol that no
   // other row has already claimed. Restricting it to the same symbol is not pedantry — a roll is
@@ -2150,7 +2160,15 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
               <thead><tr>{["Trade", "Held", "Size", "Entry", "Exit", "Realised", "Return"].map(h => (
                 <th key={h} style={{ textAlign: "left", color: C.mid, padding: "6px 10px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700, fontSize: 11.5 }}>{h}</th>))}</tr></thead>
               <tbody>
-                {[...archived].sort((a, b) => String(b.derived.lastDate || "").localeCompare(String(a.derived.lastDate || ""))).map(r => {
+                {archiveGroups.flatMap(g => [
+                  ...(g.label ? [(
+                    <tr key={`h-${g.label}`}>
+                      <td colSpan={7} style={{ padding: "10px 10px 4px", fontSize: 11, fontWeight: 800,
+                                               letterSpacing: 0.5, textTransform: "uppercase", color: C.muted }}>
+                        {g.label} · {g.rows.length}
+                      </td>
+                    </tr>)] : []),
+                  ...g.rows.map(r => {
                   const td = { padding: "6px 10px", borderBottom: "1px solid " + C.bdr };
                   const days = daysBetween(r.derived.firstDate, r.derived.lastDate);
                   return (
@@ -2167,7 +2185,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
                       <td style={{ ...td, color: pnlCol(r.derived.realizedPct) }}>{r.derived.realizedPct == null ? "—" : (r.derived.realizedPct > 0 ? "+" : "") + r.derived.realizedPct + "%"}</td>
                     </tr>
                   );
-                })}
+                })])}
               </tbody>
               {/* Totals are in the BASE currency, so a row whose FX rate is missing is left out and
                   counted rather than added at face value in the wrong currency. */}
@@ -2188,7 +2206,13 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
             fell off the right were the ones carrying the result. */}
         {showArchive && archived.length > 0 && (
           <div className="dvcap-narrow-only" style={{ marginTop: 12 }}>
-            {[...archived].sort((a, b) => String(b.derived.lastDate || "").localeCompare(String(a.derived.lastDate || ""))).map(r => {
+            {archiveGroups.flatMap(g => [
+              ...(g.label ? [(
+                <div key={`h-${g.label}`} style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5,
+                     textTransform: "uppercase", color: C.muted, margin: "12px 0 6px" }}>
+                  {g.label} · {g.rows.length}
+                </div>)] : []),
+              ...g.rows.map(r => {
               const days = daysBetween(r.derived.firstDate, r.derived.lastDate);
               const d = r.derived;
               return (
@@ -2208,7 +2232,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
                   </div>
                 </div>
               );
-            })}
+            })])}
             <div style={{ fontSize: 12, fontWeight: 700, color: C.mid, marginTop: 8 }}>
               {archiveStats.counted} closed in {baseCcy} · {archiveStats.wins} up / {archiveStats.losses} down
               <b style={{ color: pnlCol(archiveStats.realized), marginLeft: 8 }}>{(archiveStats.realized > 0 ? "+" : "") + money(archiveStats.realized, baseCcy)}</b>
