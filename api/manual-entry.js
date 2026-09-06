@@ -18,6 +18,7 @@ const PREREAD_LAST_KEY = 'dvcap:preread:last:v1';
 import { appendDecision, overrideStats, DECISIONS_KEY, ACTIONS } from '../lib/decisions.js';
 import { GUARD_STATES } from '../lib/guards.js';
 import { sideOf } from '../lib/side.js';
+import { authorised, refuse } from '../lib/apiauth.js';
 
 const DATA_PATH = 'data/manual_entry.json';
 
@@ -215,6 +216,9 @@ function sanitizeConsoleSettings(s) {
 
 export default async function handler(req, res) {
   if (req.method === 'GET') {
+    // THE MIDDLEWARE DOES NOT COVER THIS. It matches `/` only, so this route served the whole
+    // trade console — fills, cost basis and settings.equity — to anyone who asked. See lib/apiauth.
+    if (!authorised(req)) return refuse(res);
     if (!process.env.GITHUB_TOKEN || !process.env.GITHUB_REPO) {
       return res.status(200).json({ fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, note: 'store not configured' });
     }
