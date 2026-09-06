@@ -1,6 +1,6 @@
 import { yahooAuth } from "../lib/yahoo.js";
 import { roundQuote } from "../lib/price.js";
-import { fetchHyperliquid, hlCoin } from "../lib/hyperliquid.js";
+import { fetchHyperliquid, hlCoin, hlPerpCoin, perpQuote } from "../lib/hyperliquid.js";
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
 // Yahoo's v7 quote endpoint carries trailingAnnualDividendYield but requires a
@@ -94,10 +94,21 @@ export default async function handler(req, res) {
   // mark and funding ARE. It deliberately does NOT replace `price`: a BTC-USD row may be a perp or
   // spot held anywhere, and deciding which from the symbol is the inference this codebase keeps
   // paying for. The spot quote stays the quote; the mark, the basis and the carry sit beside it.
-  const coins = [...new Set(tickerList.map(hlCoin).filter(Boolean))];
+  // Two kinds of caller. An HL: symbol is a PERP and is priced BY the venue — there is no Yahoo
+  // lookup for it, and attempting one is how HYPE gets priced at a millionth of its value. A spot
+  // pair is priced by Yahoo as before and merely annotated with the venue's numbers.
+  const coins = [...new Set(tickerList.map(t => hlPerpCoin(t) || hlCoin(t)).filter(Boolean))];
   if (coins.length) {
     const hl = await fetchHyperliquid();
     for (const t of tickerList) {
+      const perp = hlPerpCoin(t);
+      if (perp) {
+        const q = perpQuote(hl.markets[perp]);
+        // A perp with no venue quote is ABSENT, exactly as an unknown Yahoo ticker is — never
+        // present at a price of zero, which is the defect the `?? 0` above was removed for.
+        if (q) results[t] = { ...q, hl: { coin: perp, ...hl.markets[perp], asOf: new Date().toISOString() } };
+        continue;
+      }
       const coin = hlCoin(t);
       if (!coin || !results[t]) continue;
       const m = hl.markets[coin];

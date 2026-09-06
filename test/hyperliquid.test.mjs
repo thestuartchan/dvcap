@@ -8,7 +8,7 @@
 // Parsed from a FIXTURE, not the network: funding moves hourly, so a test that asserted today's
 // rate would fail tomorrow for the one reason that is not a defect.
 import { readFileSync } from 'node:fs';
-import { parseMetaAndCtxs, fundingRead, basisRead, hlCoin, FUNDING_PER_YEAR, FUNDING_LOUD_APR } from '../lib/hyperliquid.js';
+import { parseMetaAndCtxs, fundingRead, basisRead, hlCoin, hlPerpCoin, isHlPerp, perpQuote, HL_PREFIX, FUNDING_PER_YEAR, FUNDING_LOUD_APR } from '../lib/hyperliquid.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `\n     got  ${JSON.stringify(g)}\n     want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -89,5 +89,41 @@ eq('max leverage travels too', [M.BTC.maxLeverage, M.WIF.maxLeverage], [40, 10])
   ok('the only request it makes is metaAndAssetCtxs', /metaAndAssetCtxs/.test(src));
   eq('and it asks for exactly one thing', (src.match(/type:\s*'/g) || []).length, 1);
 }
+// ── A PERP IS NAMED BY ITS VENUE, NOT BY ITS TICKER ──────────────────────────
+// Pricing a Hyperliquid perp off a Yahoo <TICKER>-USD lookup is not an approximation, it is a
+// different asset. Crypto has no central ticker registry, so the same letters name different
+// things on different venues and the lookup succeeds either way. Measured 2026-09-06:
+//   HYPE  HL 87.264   Yahoo 0.0000054038  — a million times apart
+//   PURR  HL 0.11914  Yahoo 126.50161     — a thousand times, the other way
+//   JUP   HL 0.26668  Yahoo 0.000328901   — eight hundred times
+// HYPE is Hyperliquid's own token and one of its three largest markets.
+{
+  eq('a prefixed symbol names its coin', [hlPerpCoin('HL:BTC'), hlPerpCoin('hl:hype')], ['BTC', 'HYPE']);
+  eq('a spot pair is NOT a perp', [hlPerpCoin('BTC-USD'), hlPerpCoin('HYPE-USD')], [null, null]);
+  eq('nor is an equity', [hlPerpCoin('NVDA'), hlPerpCoin('BRK-B'), hlPerpCoin('')], [null, null, null]);
+  eq('a malformed prefix yields nothing', [hlPerpCoin('HL:'), hlPerpCoin('HL:BT-C')], [null, null]);
+  ok('and the predicate agrees', isHlPerp('HL:SOL') && !isHlPerp('SOL-USD'));
+  eq('the prefix is what it says', HL_PREFIX, 'HL:');
+
+  // The quote a perp row prices off is the MARK, with the venue's own day change and size step.
+  const rec = M.BTC;
+  const withPrev = parseMetaAndCtxs([FIXTURE[0], [{ ...FIXTURE[1][0], prevDayPx: '78000.0' }, FIXTURE[1][1], FIXTURE[1][2]]]).BTC;
+  const q = perpQuote(withPrev);
+  eq('priced at the mark, not a spot proxy', q.price, 79604);
+  eq('day change from the venue prev close', q.changePercent, +(((79604 - 78000) / 78000) * 100).toFixed(2));
+  eq('and it carries the venue size step', q.sizeStep, 0.00001);
+  eq('labelled with where it came from', q.venue, 'hyperliquid');
+  eq('no prev close means no change, not a fabricated zero', perpQuote(rec).changePercent, null);
+  // A perp the venue does not list is ABSENT, never present at zero — the defect a `?? 0` default
+  // caused for MNQ, which reported a position down 100%.
+  eq('an unlisted perp yields no quote at all', [perpQuote(null), perpQuote({ mark: null })], [null, null]);
+
+  // THE SIZE STEP IS PER MARKET. 133 of the venue's 233 markets are whole units, so "crypto is
+  // divisible" is wrong for most of them and a fractional suggestion is not a placeable order.
+  eq('whole-unit markets report a step of 1', perpQuote(M.WIF).sizeStep, 1);
+  ok('which is not divisible', !(perpQuote(M.WIF).sizeStep < 1));
+  ok('where BTC is', perpQuote(withPrev).sizeStep < 1);
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

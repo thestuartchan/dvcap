@@ -13,7 +13,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { FUTURES_MULTIPLIER, multiplierFor, backfillMultipliers, quoteConvention, looksMisquoted, isUnambiguousFuture } from '../lib/futures.js';
 import { cryptoSymbolCheck, cryptoQuoteSymbol, isSpotCrypto, assetClassGroups } from '../lib/crypto.js';
-import { fundingRead, basisRead } from '../lib/hyperliquid.js';
+import { fundingRead, basisRead, isHlPerp } from '../lib/hyperliquid.js';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
@@ -289,6 +289,7 @@ const quoteSym = (r) => {
   // BTCUSD and BTCUSDT name the coin unambiguously and price NOTHING as typed, so they are
   // resolved to the pair the feed carries. A bare BTC is deliberately left alone — it is a real
   // ticker for a real security, and turning it into BTC-USD would be a guess about intent.
+  if (isHlPerp(sym)) return sym.toUpperCase();
   return cryptoQuoteSymbol(sym);
 };
 
@@ -1134,6 +1135,8 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
     // log records it, and if each computed its own they could disagree — which would make the log
     // a record of a number that was never on screen.
     const price = priceOf(r);
+    // The row's quote, for the venue's published size step — see `divisible` below.
+    const q = prices?.[quoteSym(r)];
     const stopLevel = (r.levels || []).filter(l => l.at != null).find(l => l.kind === "stop");
     const mode = r.sizeMode || (stopLevel ? "risk" : "allocation");
     const equityInPos = equityBase == null ? null : convert(equityBase, baseCcy, r.currency || "USD", ratesFrom(prices).rates);
@@ -1146,7 +1149,11 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       // Spot crypto is DIVISIBLE. Sized as whole units it returned 0 for BTC — a 1% budget on a
       // $200k book buys 0.25 of a coin, and flooring that to an integer is a sizer that cannot
       // size the position while looking like one that says the budget is too small.
-      divisible: isSpotCrypto(r.symbol),
+      // The venue's own granularity when it has told us, a spot pair's fine step otherwise. 133 of
+      // Hyperliquid's 233 markets are whole units only, so "crypto is divisible" is wrong for most
+      // of them and a suggestion of 1,304.7 is not an order that can be placed.
+      divisible: q?.sizeStep != null ? q.sizeStep < 1 : isSpotCrypto(r.symbol),
+      ...(q?.sizeStep != null ? { step: q.sizeStep } : {}),
     });
     return { ...r, pnl, sug, sizeMode: mode, stopLevel: stopLevel || null };
   }), [rows, prices, equityBase, baseRisk, targetPct, baseCcy, mergedSizing, liveRegime?.id, creditDanger, contested, regimeDiverged]);
