@@ -13,6 +13,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { FUTURES_MULTIPLIER, multiplierFor, backfillMultipliers, quoteConvention, looksMisquoted, isUnambiguousFuture } from '../lib/futures.js';
 import { cryptoSymbolCheck, cryptoQuoteSymbol, isSpotCrypto } from '../lib/crypto.js';
+import { fundingRead, basisRead } from '../lib/hyperliquid.js';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
@@ -451,6 +452,32 @@ const {
             {q?.changePercent == null ? "" : `${q.changePercent >= 0 ? "▲" : "▼"}${Math.abs(q.changePercent).toFixed(2)}%`}
           </span>
           <span style={{ fontSize: 10.5, color: C.muted }}>{q?.changePercent == null ? "" : "today"}</span>
+          {/* ── WHAT A PERP COSTS TO HOLD ────────────────────────────────────────────────────
+              A perp has no expiry, so it is held to spot by an hourly payment between the sides.
+              At 11% annualised — measured, not hypothetical — a long showing +3% after a month is
+              really +2.1%, and over a quarter the carry stops being a correction and becomes the
+              trade. Realised and unrealised P&L cannot see it, so it is stated next to the price
+              rather than left to be remembered.
+              Public venue data. Nothing here says a position exists, and the row's own quote is
+              untouched — a BTC-USD row may be a perp or spot held anywhere, and choosing for the
+              reader is the inference this file keeps paying for. */}
+          {(() => {
+            const hl = q?.hl;
+            if (!hl || hl.unavailable) return null;
+            const f = fundingRead(hl, r.side);
+            const bas = basisRead(price, hl);
+            if (!f) return null;
+            const col = f.loud ? C.amber : C.muted;
+            return (
+              <span style={{ fontSize: 10.5, color: col, whiteSpace: "nowrap" }}
+                    title={`Hyperliquid perp — mark ${hl.mark}, funding ${f.apr}% annualised (positive means longs pay shorts).`
+                         + (bas ? ` Spot is ${bas.pct >= 0 ? "+" : ""}${bas.pct}% vs the mark.` : "")
+                         + ` This row is priced off its own quote; the venue's numbers sit beside it, they do not replace it.`}>
+                {" · "}perp {f.paying ? "costs" : "pays"} <b>{Math.abs(f.perMonthPct)}%/mo</b>
+                {bas && bas.wide ? <span style={{ color: C.amber }}> · basis {bas.pct >= 0 ? "+" : ""}{bas.pct}%</span> : null}
+              </span>
+            );
+          })()}
         </span>
 
         {mode === "open" && (

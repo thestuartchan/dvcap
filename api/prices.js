@@ -1,5 +1,6 @@
 import { yahooAuth } from "../lib/yahoo.js";
 import { roundQuote } from "../lib/price.js";
+import { fetchHyperliquid, hlCoin } from "../lib/hyperliquid.js";
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
 // Yahoo's v7 quote endpoint carries trailingAnnualDividendYield but requires a
@@ -84,6 +85,30 @@ export default async function handler(req, res) {
 
   // Merge in dividend yield/rate (best-effort; null when unavailable).
   await fetchDividends(tickerList, results);
+
+  // ── THE VENUE'S OWN NUMBERS FOR A PERP ──────────────────────────────────────────────────────
+  // Attached HERE rather than in a route of its own because the deployment is at its 12-function
+  // cap, and because a caller asking for prices is already asking the question this answers.
+  //
+  // PUBLIC MARKET DATA ONLY — no key, no wallet address, no account. It reports what the venue's
+  // mark and funding ARE. It deliberately does NOT replace `price`: a BTC-USD row may be a perp or
+  // spot held anywhere, and deciding which from the symbol is the inference this codebase keeps
+  // paying for. The spot quote stays the quote; the mark, the basis and the carry sit beside it.
+  const coins = [...new Set(tickerList.map(hlCoin).filter(Boolean))];
+  if (coins.length) {
+    const hl = await fetchHyperliquid();
+    for (const t of tickerList) {
+      const coin = hlCoin(t);
+      if (!coin || !results[t]) continue;
+      const m = hl.markets[coin];
+      // A venue that does not answer reads as UNKNOWN, never as zero funding — a carry of "none"
+      // is a claim, and 11% a year is what it would be hiding.
+      results[t].hl = m
+        ? { coin, mark: m.mark, oracle: m.oracle, funding: m.funding, fundingApr: m.fundingApr,
+            sizeStep: m.sizeStep, maxLeverage: m.maxLeverage, asOf: new Date().toISOString() }
+        : { coin, unavailable: true, reason: hl.error || 'not listed on the venue' };
+    }
+  }
 
   // Edge-cache: 2 min fresh, then serve last-good for up to 10 min while revalidating in
   // the background — so a serverless cold start / slow Yahoo upstream never blanks a panel.
