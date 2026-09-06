@@ -17,7 +17,7 @@ import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY } from '../lib/kv.js';
 import { derivePosition, positionPnl, levelHits, applyRolls } from '../lib/positions.js';
 import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard } from '../lib/tradecard.js';
 import { upsertCard, post, remove, webhookFromEnv, mentionFromEnv, alertTtlMin, CARD_KEY, ALERTS_KEY } from '../lib/discord.js';
-import { authorised as gate } from '../lib/apiauth.js';
+import { authorised as gate, refusalReason } from '../lib/apiauth.js';
 
 // A row's symbol is what you call it; the quote feed may call it something else. Mirrors the tab's
 // own resolution — Yahoo has no MNQ, and its MGC is an unrelated stock.
@@ -140,11 +140,11 @@ export async function refresh(origin, { now = Date.now() } = {}) {
 // and TRADECARD_SECRET was not set in production, so the endpoint was open to anyone. It does not
 // merely read: it rebuilds the Discord card and POSTS it. A dashboard session is accepted so the
 // browser path keeps working; the cron must present the key.
-const authorised = (req) => gate(req, { serviceEnv: 'TRADECARD_SECRET' });
+const authorised = (req) => gate(req);
 
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') { res.status(405).json({ error: 'method not allowed' }); return; }
-  if (!authorised(req)) { res.status(401).json({ error: 'unauthorised' }); return; }
+  if (!authorised(req)) { res.status(401).json({ error: 'unauthorised', why: refusalReason(req) }); return; }
   const proto = req.headers['x-forwarded-proto'] || 'https';
   const origin = `${proto}://${req.headers.host}`;
   try {

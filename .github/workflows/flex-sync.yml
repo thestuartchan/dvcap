@@ -53,4 +53,11 @@ jobs:
           echo "HTTP $code"; cat /tmp/flex.json; echo
           # The endpoint answers 200 with a reason rather than failing, so "not configured yet" is
           # visible in the log without turning the workflow red.
+          if [ "$code" = "401" ]; then
+            echo "::error::Refused. The server and this workflow must share one value:"
+            echo "::error::  Vercel  -> environment variable TRADECARD_KEY"
+            echo "::error::  GitHub  -> repository secret  TRADECARD_KEY"
+            echo "::error::The endpoint says why:"; cat /tmp/out.json; echo
+            exit 1
+          fi
           [ "$code" = "200" ] || exit 1

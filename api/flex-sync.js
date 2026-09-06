@@ -31,13 +31,13 @@ import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches,
 import { fetchStatement, reconcile, summarise, summariseActionable, actionable, signatureOf, planAck, flexEnv, flexConfigured, isoDate } from '../lib/flex.js';
 import { post, webhookFromEnv } from '../lib/discord.js';
 import { refresh } from './tradecard.js';
-import { authorised as gate } from '../lib/apiauth.js';
+import { authorised as gate, refusalReason } from '../lib/apiauth.js';
 
 // The same optional secret the card endpoint uses, so the scheduler carries one key rather than
 // two. Unset leaves both open, which is the state the project starts in.
 // Same fail-open shape as api/tradecard.js, and the same consequence: with TRADECARD_SECRET unset
 // this returned the IBKR account, its positions and their summary to anyone who asked. Closed.
-const authorised = (req) => gate(req, { serviceEnv: 'TRADECARD_SECRET' });
+const authorised = (req) => gate(req);
 
 async function tell(rec, asOf, tradePlan = null) {
   // A recorded trade is a real event and is announced whether or not anything else is wrong — but
@@ -194,7 +194,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
 
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') { res.status(405).json({ error: 'method not allowed' }); return; }
-  if (!authorised(req)) { res.status(401).json({ error: 'unauthorised' }); return; }
+  if (!authorised(req)) { res.status(401).json({ error: 'unauthorised', why: refusalReason(req) }); return; }
   const proto = req.headers['x-forwarded-proto'] || 'https';
   const origin = `${proto}://${req.headers.host}`;
   const apply = String(req.query?.apply ?? '') === '1';

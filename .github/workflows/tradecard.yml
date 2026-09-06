@@ -43,12 +43,19 @@ jobs:
     steps:
       - name: Refresh the card
         run: |
-          # TRADECARD_KEY is optional: set it as a repo secret only if TRADECARD_SECRET is also
-          # set in Vercel. With neither, the endpoint is open and this works unchanged.
+          # TRADECARD_KEY is REQUIRED. This endpoint used to be open when no secret was set,
+          # which meant anyone could call it — see docs/api-auth.md. Same value both sides.
           code=$(curl -sS -o /tmp/out.json -w '%{http_code}' --max-time 45 \
             -H "x-tradecard-key: ${{ secrets.TRADECARD_KEY }}" \
             "https://dvcap.vercel.app/api/tradecard") || true
           echo "HTTP $code"; cat /tmp/out.json; echo
           # The endpoint answers 200 with a reason rather than failing, so a skipped run (no webhook
           # configured yet, Redis down) is visible in the log without turning the workflow red.
+          if [ "$code" = "401" ]; then
+            echo "::error::Refused. The server and this workflow must share one value:"
+            echo "::error::  Vercel  -> environment variable TRADECARD_KEY"
+            echo "::error::  GitHub  -> repository secret  TRADECARD_KEY"
+            echo "::error::The endpoint says why:"; cat /tmp/out.json; echo
+            exit 1
+          fi
           [ "$code" = "200" ] || exit 1
