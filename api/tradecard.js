@@ -17,6 +17,7 @@ import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY } from '../lib/kv.js';
 import { derivePosition, positionPnl, levelHits, applyRolls } from '../lib/positions.js';
 import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard } from '../lib/tradecard.js';
 import { upsertCard, post, remove, webhookFromEnv, mentionFromEnv, alertTtlMin, CARD_KEY, ALERTS_KEY } from '../lib/discord.js';
+import { authorised as gate } from '../lib/apiauth.js';
 
 // A row's symbol is what you call it; the quote feed may call it something else. Mirrors the tab's
 // own resolution — Yahoo has no MNQ, and its MGC is an unrelated stock.
@@ -135,14 +136,11 @@ export async function refresh(origin, { now = Date.now() } = {}) {
 // while a repeated call posts nothing — alerts only fire on a diff, and the diff is stored — it can
 // still be used to make the card churn. Set TRADECARD_SECRET and the scheduler must present it.
 // Left unset it stays open, so the thing works before anyone has thought about hardening it.
-function authorised(req) {
-  const want = (process.env.TRADECARD_SECRET || '').trim();
-  if (!want) return true;
-  const got = String(req.query?.key ?? req.headers['x-tradecard-key'] ?? '').trim();
-  // Length-independent compare is overkill for a cron key, but a plain === leaks nothing either;
-  // the point is that the comparison happens at all.
-  return got.length === want.length && got === want;
-}
+// FAILS CLOSED. This read `if (!want) return true` — no secret configured, everyone welcome —
+// and TRADECARD_SECRET was not set in production, so the endpoint was open to anyone. It does not
+// merely read: it rebuilds the Discord card and POSTS it. A dashboard session is accepted so the
+// browser path keeps working; the cron must present the key.
+const authorised = (req) => gate(req, { serviceEnv: 'TRADECARD_SECRET' });
 
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') { res.status(405).json({ error: 'method not allowed' }); return; }

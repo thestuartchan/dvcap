@@ -31,15 +31,13 @@ import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches,
 import { fetchStatement, reconcile, summarise, summariseActionable, actionable, signatureOf, planAck, flexEnv, flexConfigured, isoDate } from '../lib/flex.js';
 import { post, webhookFromEnv } from '../lib/discord.js';
 import { refresh } from './tradecard.js';
+import { authorised as gate } from '../lib/apiauth.js';
 
 // The same optional secret the card endpoint uses, so the scheduler carries one key rather than
 // two. Unset leaves both open, which is the state the project starts in.
-function authorised(req) {
-  const want = (process.env.TRADECARD_SECRET || '').trim();
-  if (!want) return true;
-  const got = String(req.query?.key ?? req.headers['x-tradecard-key'] ?? '').trim();
-  return got.length === want.length && got === want;
-}
+// Same fail-open shape as api/tradecard.js, and the same consequence: with TRADECARD_SECRET unset
+// this returned the IBKR account, its positions and their summary to anyone who asked. Closed.
+const authorised = (req) => gate(req, { serviceEnv: 'TRADECARD_SECRET' });
 
 async function tell(rec, asOf, tradePlan = null) {
   // A recorded trade is a real event and is announced whether or not anything else is wrong — but
