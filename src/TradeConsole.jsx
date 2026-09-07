@@ -1148,7 +1148,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
         : null);
       // Spot balances are a different animal from perp positions and get their own section.
       setHlSpot(j?.hyperliquidSpot?.ok ? j.hyperliquidSpot : null);
-      setWallet(j?.wallet?.ok ? j.wallet : null);
+      setWallet(j?.wallet?.chains ? j.wallet : null);
       const c = j?.console;
       if (c && typeof c === "object") {
         // ONE-TIME BACKFILL of contract multipliers — see lib/futures.js. A margined row that never
@@ -2272,8 +2272,46 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           for the address; the wallet is what the address holds itself, on chain. */}
       <Holdings data={hlSpot} title="Hyperliquid — spot ledger" note="balances on the exchange · read-only"
                 open={showSpot} onToggle={() => setShowSpot(v => !v)} money={fmtCcy} />
-      <Holdings data={wallet} title="Wallet — on chain" note={`HyperEVM · what the address holds itself`}
-                open={showWallet} onToggle={() => setShowWallet(v => !v)} money={fmtCcy} />
+      {/* ── THE WALLET, ONE CARD PER CHAIN ─────────────────────────────────────────────────────
+          Deliberately not one merged list. The same address holds different things on six chains
+          and the balances are not fungible across them without a bridge, so a combined "you have
+          3.2 ETH" would describe a position you cannot take. The header carries the sum for the
+          one question that IS cross-chain — how much is out there — and every row underneath
+          stays attached to the chain it is actually on. */}
+      {wallet?.chains?.some(c => c.ok && c.rows.length > 0) && (
+        <>
+          <Card>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+              <SLabel>Wallet — on chain</SLabel>
+              <span style={{ fontSize: 11.5, color: C.muted }}>
+                {wallet.chains.filter(c => c.ok && c.rows.length).length} chains · read-only · priced by Hyperliquid
+              </span>
+              <div style={{ marginLeft: "auto", fontSize: 13 }}>
+                <span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>ACROSS ALL CHAINS </span>
+                <b>{fmtCcy(wallet.total, "USD")}</b>
+              </div>
+            </div>
+            {/* A chain that did not answer is NAMED. A total silently missing one is worse than a
+                smaller total with a reason beside it. */}
+            {wallet.unreachable?.length > 0 && (
+              <div style={{ marginTop: 6, fontSize: 11.5, color: C.amber, fontWeight: 700 }}>
+                ⚠ Not counted: {wallet.unreachable.map(u => `${u.chain} (${u.error})`).join(" · ")}
+              </div>
+            )}
+            {wallet.chains.filter(c => c.ok && c.tokensUnlisted).map(c => (
+              <div key={c.chain} style={{ marginTop: 6, fontSize: 11.5, color: C.muted }}>
+                {c.chain}: native balance only — its token contracts are not published anywhere this can read,
+                so anything else held there is not shown rather than counted as nothing.
+              </div>
+            ))}
+          </Card>
+          {wallet.chains.filter(c => c.ok && c.rows.length > 0).map(c => (
+            <Holdings key={c.key} data={c} title={`Wallet — ${c.chain}`}
+                      note={`chain ${c.chainId} · what the address holds here`}
+                      open={showWallet} onToggle={() => setShowWallet(v => !v)} money={fmtCcy} />
+          ))}
+        </>
+      )}
 
       {/* archive: brief, with the performance summary */}
       <Card>
