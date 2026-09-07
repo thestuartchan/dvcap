@@ -12,7 +12,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { FUTURES_MULTIPLIER, multiplierFor, backfillMultipliers, quoteConvention, looksMisquoted, isUnambiguousFuture } from '../lib/futures.js';
-import { cryptoSymbolCheck, cryptoQuoteSymbol, isSpotCrypto, assetClassGroups } from '../lib/crypto.js';
+import { cryptoSymbolCheck, cryptoQuoteSymbol, isSpotCrypto, assetClassGroups, priceMaxDp } from '../lib/crypto.js';
 import { fundingRead, basisRead, isHlPerp, estimateLiquidation, liquidationVsStop } from '../lib/hyperliquid.js';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
@@ -449,7 +449,7 @@ const {
         <Div />
         {/* The tape. Muted, and labelled "today", so it can never be read as your return. */}
         <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }} title="Last price and today's move on the tape — not your return">
-          <span style={{ fontSize: 14, fontWeight: 700 }}>{fmtPrice(price)}</span>
+          <span style={{ fontSize: 14, fontWeight: 700 }}>{fmtPrice(price, { maxDp: priceMaxDp(r.symbol) })}</span>
           <span style={{ fontSize: 11.5, fontWeight: 700, color: q?.changePercent == null ? C.muted : q.changePercent >= 0 ? C.green : C.red, whiteSpace: "nowrap" }}>
             {q?.changePercent == null ? "" : `${q.changePercent >= 0 ? "▲" : "▼"}${Math.abs(q.changePercent).toFixed(2)}%`}
           </span>
@@ -732,7 +732,7 @@ const {
                               background: bad ? C.rBg : C.bg, border: "1.5px solid " + (bad ? C.rBdr : C.bdr) }}>
                   <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap", fontSize: 12.5 }}>
                     <span style={{ fontWeight: 800, color: bad ? C.red : C.mid }}>
-                      Liquidation {fmtPrice(liq)}
+                      Liquidation {fmtPrice(liq, { maxDp: priceMaxDp(r.symbol) })}
                     </span>
                     {away != null && <span style={{ color: C.lbl }}>{away >= 0 ? "+" : ""}{away}% from here</span>}
                     <span style={{ fontSize: 11, color: C.muted }}>
@@ -953,7 +953,7 @@ const {
 
           {mode === "open" && (
             <div style={{ marginTop: 10, padding: "9px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 9, fontSize: 12.5, color: C.mid, lineHeight: 1.7 }}>
-              {d.qty} @ avg {fmtPrice(d.avgCost)} · market {money(p.marketValue, r.currency)}
+              {d.qty} @ avg {fmtPrice(d.avgCost, { maxDp: priceMaxDp(r.symbol) })} · market {money(p.marketValue, r.currency)}
               <br />Unrealised <b style={{ color: pnlCol(p.unrealized) }}>{p.unrealized == null ? "—" : money(p.unrealized, r.currency)}</b>
               {p.unrealizedPct != null && <span style={{ color: C.lbl }}> ({p.unrealizedPct > 0 ? "+" : ""}{p.unrealizedPct}%)</span>}
               {" · "}Realised <b style={{ color: pnlCol(d.realized) }}>{money(d.realized, r.currency)}</b>
@@ -2273,8 +2273,8 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
                       <td style={{ ...td, color: C.lbl, whiteSpace: "nowrap" }}>
                         {r.derived.firstDate || "?"} → {r.derived.lastDate || "?"}{days == null ? "" : ` · ${days}d`}</td>
                       <td style={td}>{r.derived.bought}</td>
-                      <td style={td}>{fmtPrice(r.derived.avgEntry)}</td>
-                      <td style={td}>{fmtPrice(r.derived.avgExit)}</td>
+                      <td style={td}>{fmtPrice(r.derived.avgEntry, { maxDp: priceMaxDp(r.symbol) })}</td>
+                      <td style={td}>{fmtPrice(r.derived.avgExit, { maxDp: priceMaxDp(r.symbol) })}</td>
                       <td style={{ ...td, fontWeight: 700, color: pnlCol(r.derived.realized) }}>{money(r.derived.realized, r.currency)}</td>
                       <td style={{ ...td, color: pnlCol(r.derived.realizedPct) }}>{r.derived.realizedPct == null ? "—" : (r.derived.realizedPct > 0 ? "+" : "") + r.derived.realizedPct + "%"}</td>
                     </tr>
@@ -2322,7 +2322,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
                     </span>
                   </div>
                   <div style={{ fontSize: 11.5, color: C.lbl, marginTop: 3 }}>
-                    {d.firstDate || "?"} → {d.lastDate || "?"}{days == null ? "" : ` · ${days}d`} · {d.bought} @ {fmtPrice(d.avgEntry)} → {fmtPrice(d.avgExit)}
+                    {d.firstDate || "?"} → {d.lastDate || "?"}{days == null ? "" : ` · ${days}d`} · {d.bought} @ {fmtPrice(d.avgEntry, { maxDp: priceMaxDp(r.symbol) })} → {fmtPrice(d.avgExit, { maxDp: priceMaxDp(r.symbol) })}
                   </div>
                 </div>
               );
