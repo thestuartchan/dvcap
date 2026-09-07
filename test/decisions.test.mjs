@@ -3,7 +3,7 @@
 // The log exists because the two patterns that cost this account money — adding to losers, and
 // sizing up after a win — are invisible in P&L until they are over. So the tests are mostly about
 // what is captured WITHOUT typing, and about not recording an inference as though it were a fact.
-import { decisionEntry, appendDecision, lastClosedWasWin, overrideStats, MAX_DECISIONS , overrideTrend, guardOutcomes, ACTIONS } from '../lib/decisions.js';
+import { decisionEntry, appendDecision, lastClosedWasWin, overrideStats, MAX_DECISIONS , overrideTrend, guardOutcomes } from '../lib/decisions.js';
 import { derivePosition, positionPnl } from '../lib/positions.js';
 import { sizeSuggestion } from '../lib/sizing.js';
 let pass = 0, fail = 0;

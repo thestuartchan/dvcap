@@ -5,8 +5,8 @@
 // are written as MIRRORS wherever possible — a short is asserted against the equivalent long, not
 // against a hand-computed constant, because a constant only proves the code agrees with whoever
 // typed the test and a mirror proves the two directions are the same idea.
-import { sideOf, dirSign, isShort, openSideFor, closeSideFor, geometryCheck, levelVocab, fillVerb, DEFAULT_SIDE } from '../lib/side.js';
-import { derivePosition, positionPnl, levelHit, levelHits, splitIntoTrades, collapseFills, summarize, realizedCurve } from '../lib/positions.js';
+import { sideOf, dirSign, openSideFor, closeSideFor, geometryCheck, levelVocab, fillVerb } from '../lib/side.js';
+import { derivePosition, positionPnl, levelHit, levelHits, splitIntoTrades, collapseFills, realizedCurve } from '../lib/positions.js';
 import { rOf, lockedPct, publicView, fitLines, dirOf, PUBLIC_FIELDS } from '../lib/tradecard.js';
 import { addToLoser } from '../lib/discipline.js';
 

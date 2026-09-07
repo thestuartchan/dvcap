@@ -18,12 +18,13 @@ import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
-import { C, SLabel, Card, Btn } from "./ui.jsx";
+import { C } from "./theme.js";
+import { SLabel, Card, Btn } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
 import { derivePosition, applyRolls, splitIntoTrades, collapseFills, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, realizedCurve } from "../lib/positions.js";
 import { sideOf, isShort, openSideFor, closeSideFor, geometryCheck, levelVocab, fillVerb, SIDES, SIDE_LABEL, DEFAULT_SIDE } from "../lib/side.js";
 import { fmtPrice } from "../lib/price.js";
-import { archivePeriods, hiddenSummary, periodLabel, GRAINS, OPEN_PERIODS } from "../lib/archive.js";
+import { archivePeriods, hiddenSummary, GRAINS } from "../lib/archive.js";
 import { CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy, resolveRowCurrency } from "../lib/fxrates.js";
 import { addToLoser } from "../lib/discipline.js";
 import { decisionEntry, lastClosedWasWin, overrideTrend, guardOutcomes } from "../lib/decisions.js";
@@ -109,7 +110,7 @@ const GuardRow = ({ g }) => {
 };
 
 const FillForm = ({ ctx, symbol, row }) => {
-  const { fillFor, setFillFor, saveFill, declineFill, nInput, priceOf, guardPanel } = ctx;
+  const { fillFor, setFillFor, saveFill, declineFill, nInput, guardPanel } = ctx;
   if (!fillFor) return null;
   // THE PRE-TRADE PANEL. Everything else on this screen measures a position; this names an act, at
   // the moment it is about to happen. It does not block and it does not disable the button — a
@@ -277,7 +278,6 @@ const daysBetween = (a, b) => {
 // tickers and two are the names of spot crypto assets. Keyed off the table alone, typing MET for
 // MetLife created a ×0.1 Micro-Ether row quoting MET=F, and CL for Colgate a ×1000 crude one.
 // lib/futures.js says so in a comment above the very set that prevents it; it simply was not asked.
-const FUTURES_ROOTS = new Set(Object.keys(FUTURES_MULTIPLIER));
 const looksLikeFuture = (sym) => isUnambiguousFuture(String(sym || '').toUpperCase());
 const quoteSym = (r) => {
   const explicit = String(r?.quoteSymbol || '').trim();
@@ -324,9 +324,9 @@ const echoesDate = (label, iso) => {
 const PositionRow = ({ r, mode, ctx }) => {
 const {
   prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel,
-  openFill, delFill, fillFor, sizeOpen, setSizeOpen, justMoved, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip,
+  openFill, delFill, fillFor, sizeOpen, setSizeOpen, justMoved, drafts, setDraft, clearDraft, chip, ccyChip, fitChip,
   kindCol, money, pnlCol,
-  equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
+  equityBase, baseCcy, fxRates, baseRisk, targetPct, numOrNull,
   livePositions,
 } = ctx;
   const price = priceOf(r);
@@ -998,7 +998,7 @@ const Section = ({ title, note, list, mode, ctx }) => (
 // Positions are FILLS, not a single entry price (lib/positions.js), because these trades scale in
 // and scale out: a position is regularly open AND realising P&L at the same time, which the old
 // single-entry model could not represent at all.
-export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, liveInd, creditDanger, contested, regimeDiverged, prices, fetchPrices, pricesLoading }) {
+export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, contested, regimeDiverged, prices, fetchPrices, pricesLoading }) {
   const LS = "dvcap_console_v2";
   // Dismissal is by TIMESTAMP, not a flag: the next run's news must reappear rather than being
   // permanently silenced by one click on the last one.
@@ -1144,7 +1144,6 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   const symbols = useMemo(() => [...new Set(
     rows.filter(r => derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side }).status !== "closed").map(quoteSym).filter(Boolean)
   )], [rows]);
-  const quoteSymFor = quoteSym;   // re-exported through ctx for the row header's day-change lookup
   const usedCcys = useMemo(() => [...new Set([baseCcy, ...rows.map(r => r.currency || "USD")])], [rows, baseCcy]);
   const fxSyms = useMemo(() => fxSymbolsFor(usedCcys), [usedCcys]);
   const fetchKey = [...symbols, ...fxSyms].join(",");
@@ -1304,7 +1303,6 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
     return (row) => (by.get(String(row.symbol || "").toUpperCase()) || [])
       .filter(c => c.id !== row.id && (!claimed.has(c.id) || row.rolledFrom === c.id));
   }, [derivedRows]);
-  const summary  = useMemo(() => summarize(derivedRows, toBase), [derivedRows, fxRates, baseCcy]);
   // The archive's OWN numbers. It previously borrowed the book-wide summary, which is how a list of
   // closed trades came to report an unrealised figure — that was the open positions' mark-to-market
   // leaking in. Its realised total was book-wide too, and only matched by luck: the moment an OPEN

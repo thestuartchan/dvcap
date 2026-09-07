@@ -1,5 +1,5 @@
 // Regression tests for lib/sizing.js — position-aware sizing for spot / swing / long holds.
-import { sizeSuggestion, regimeMultiplier, riskAtStop, roundQty, equityFreshness, EQUITY_STALE_DAYS, REGIME_SIZING, CREDIT_DANGER_CAP } from '../lib/sizing.js';
+import { sizeSuggestion, regimeMultiplier, riskAtStop, roundQty, equityFreshness, EQUITY_STALE_DAYS, CREDIT_DANGER_CAP } from '../lib/sizing.js';
 let pass=0,fail=0;
 const ok=(n,c)=>eq(n,!!c,true);
 const eq=(n,g,w)=>{const ok=JSON.stringify(g)===JSON.stringify(w);console.log(`${ok?'✅':'❌'} ${n}`+(ok?'':`  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`));ok?pass++:fail++;};
