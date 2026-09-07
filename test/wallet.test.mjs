@@ -177,7 +177,9 @@ const HOLDER = '0x000000000000000000000000000000000000dEaD';
   // Measured 2026-09-07: Yahoo and Hyperliquid agree within 0.1% on ETH, BTC and LINK, and differ
   // by 266x on ARB and 12x on POL. Those tickers are other instruments. Nothing here may resolve a
   // price by symbol lookup, so each entry names the VENUE symbol to price against.
-  eq('the venue symbols needed', pricedSymbols(), ['ARB', 'BTC', 'DAI', 'ETH', 'HYPE', 'LINK', 'POL', 'USDC', 'USDT']);
+  // USDT is quoted on the venue's SPOT book as USDT0, not as a perp — there is no perp on a
+  // dollar. DAI is quoted nowhere at all and is marked `par` instead of naming a symbol.
+  eq('the venue symbols needed', pricedSymbols(), ['ARB', 'BTC', 'ETH', 'HYPE', 'LINK', 'POL', 'USDC', 'USDT0']);
   const venue = venuePrices({ ETH: { mark: 2482.6 }, BTC: { mark: 79009 }, ARB: { mark: 0.16753 }, POL: { mark: 0.096535 } });
   eq('a mark becomes a price', venue.get('ETH').price, 2482.6);
   ok('a listed perp is never thin — it is a real market by construction', venue.get('ETH').volume === Infinity);
@@ -199,6 +201,48 @@ const HOLDER = '0x000000000000000000000000000000000000dEaD';
   ok('no other chain claims that', Object.entries(CHAINS).filter(([, c]) => c.tokensUnlisted).length === 1);
   // A chain with no tokens still reads its native balance.
   eq('its native asset is still named', CHAINS.robinhood.native.symbol, 'ETH');
+}
+
+// ── STABLECOINS HAVE NO PERP, AND UNPRICED MEANT UNCOUNTED ───────────────────
+// Found on screen: the wallet reported $65 across all chains while holding 101.81 USDC on
+// Arbitrum. Pricing wallet tokens off perp marks alone left every USDC, USDT and DAI balance with
+// no quote — and spotHoldings excludes an unpriced row from the total, correctly, because it
+// cannot value it. So the headline was missing its own largest position.
+{
+  const perpsOnly = venuePrices({ ETH: { mark: 2481.31 }, ARB: { mark: 0.16753 } });
+  ok('no venue lists a perp on a dollar', !perpsOnly.has('USDC') && !perpsOnly.has('USDT0'));
+  const before = chainPrices(CHAINS.arbitrum, perpsOnly);
+  ok('which is exactly how USDC went unpriced', !before.has('USDC'));
+
+  // The spot book quotes what the perp book cannot. Merged behind the perps, never over them.
+  const merged = new Map(perpsOnly);
+  for (const [k, v] of [['USDC', { price: 1, volume: Infinity }], ['USDT0', { price: 0.999755, volume: 980897 }]])
+    if (!merged.has(k)) merged.set(k, v);
+  const after = chainPrices(CHAINS.arbitrum, merged);
+  eq('USDC is priced once spot is merged in', after.get('USDC').price, 1);
+  eq('and USDT0 by its spot pair, not at an assumed par', after.get('USDT0').price, 0.999755);
+  ok('which is a measured price, so it is not flagged', !after.get('USDT0').assumedPar);
+  eq('a perp still wins where one exists', after.get('WETH').price, 2481.31);
+
+  // DAI is quoted by neither. Par is assumed so the balance is COUNTED, and flagged so the
+  // assumption is visible — a depeg is exactly when an assumed par stops being harmless.
+  const dai = after.get('DAI');
+  eq('DAI falls back to par', dai.price, 1);
+  ok('and says that it is assumed', dai.assumedPar === true);
+  ok('only stablecoins may do that', CHAINS.arbitrum.tokens.filter(t => t.par).every(t => /^(DAI|USD)/.test(t.symbol)));
+  ok('and nothing non-par is ever assumed', !after.get('WETH').assumedPar && !after.get('ARB').assumedPar);
+
+  // A token that is neither quoted nor par stays unpriced. Par must not become a catch-all — an
+  // unvalued holding is still reported, just not counted, which is the honest half of this.
+  eq('an unquoted non-stable is still unpriced', chainPrices({ tokens: [{ symbol: 'ZZZ', hl: 'ZZZ' }] }, merged).size, 0);
+
+  // Every chain's stables now resolve, which is the property that was broken.
+  for (const [k, c] of Object.entries(CHAINS)) {
+    if (c.tokensFrom) continue;                       // HyperEVM prices off its own spot book
+    const p = chainPrices(c, merged);
+    const stables = c.tokens.filter(t => /^(DAI|USD)/.test(t.symbol));
+    ok(`${k}: every stablecoin resolves to a price`, stables.every(t => p.has(t.symbol)));
+  }
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

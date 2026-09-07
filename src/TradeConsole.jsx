@@ -1035,7 +1035,14 @@ function Holdings({ data, title, note, open, onToggle, money }) {
               <b style={{ minWidth: 68 }}>{h.coin}</b>
               <span style={{ color: C.mid }}>{h.total}</span>
               {h.locked && <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }} title={`${h.hold} resting in open orders`}>{h.free} free</span>}
-              {h.priced && !h.thin && <span style={{ color: C.lbl, fontSize: 11.5 }}>@ {fmtPrice(h.price, { maxDp: 4 })}</span>}
+              {h.priced && !h.thin && (
+                <span style={{ color: C.lbl, fontSize: 11.5 }}>
+                  @ {fmtPrice(h.price, { maxDp: 4 })}
+                  {/* An assumed dollar par is not a measured price, and a depeg is exactly when
+                      that distinction matters. Said on the row rather than in a footnote. */}
+                  {h.assumedPar && <span style={{ color: C.amber, fontWeight: 700 }} title="No venue quotes this token — assumed at par, not measured"> assumed par</span>}
+                </span>
+              )}
               {h.thin && <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }} title={`24h volume ${money(h.volume ?? 0, "USD")} — too thin to value`}>no real market</span>}
               {!h.priced && <span style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>no USDC pair</span>}
               <span style={{ marginLeft: "auto", display: "inline-flex", gap: 9, alignItems: "baseline" }}>
@@ -1086,7 +1093,12 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   const SECTIONS_LS = "dvcap_sections_v1";
   const readSections = () => { try { return JSON.parse(localStorage.getItem(SECTIONS_LS) || "{}"); } catch { return {}; } };
   const useRemembered = (key, initial) => {
-    const [v, setV] = useState(() => { const s = readSections()[key]; return typeof s === "boolean" ? s : initial; });
+    const [v, setV] = useState(() => {
+      const s = readSections()[key];
+      // Booleans for a single section, an object for the per-chain map — anything else is a value
+      // written by an older build and is ignored rather than trusted.
+      return (typeof s === typeof initial && s !== null) ? s : initial;
+    });
     useEffect(() => {
       try { localStorage.setItem(SECTIONS_LS, JSON.stringify({ ...readSections(), [key]: v })); } catch { /* private window */ }
     }, [key, v]);
@@ -1104,7 +1116,13 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   const [hlSpot, setHlSpot] = useState(null);
   const [showSpot, setShowSpot] = useRemembered("hlspot", false);
   const [wallet, setWallet] = useState(null);
-  const [showWallet, setShowWallet] = useRemembered("wallet", false);
+  // ONE TOGGLE PER CHAIN, not one for all of them. Every per-chain card was handed the same
+  // open/onToggle pair, so hiding Ethereum hid Arbitrum and Robinhood with it — the state was
+  // shared because the component was reused, which is the reuse bug you get for free when a
+  // "which one" is missing from the key.
+  const [openChains, setOpenChains] = useRemembered("walletChains", {});
+  const chainOpen = (k) => openChains?.[k] ?? false;
+  const toggleChain = (k) => setOpenChains(o => ({ ...(o || {}), [k]: !(o?.[k] ?? false) }));
   const [periodOpen, setPeriodOpen] = useState({});
   // Served by api/manual-entry, which is authenticated and never cached. Positions do not belong
   // on the shared, edge-cached price route — see lib/apiauth.js.
@@ -2308,7 +2326,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           {wallet.chains.filter(c => c.ok && c.rows.length > 0).map(c => (
             <Holdings key={c.key} data={c} title={`Wallet — ${c.chain}`}
                       note={`chain ${c.chainId} · what the address holds here`}
-                      open={showWallet} onToggle={() => setShowWallet(v => !v)} money={fmtCcy} />
+                      open={chainOpen(c.key)} onToggle={() => toggleChain(c.key)} money={fmtCcy} />
           ))}
         </>
       )}
