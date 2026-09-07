@@ -8,7 +8,7 @@
 // Parsed from a FIXTURE, not the network: funding moves hourly, so a test that asserted today's
 // rate would fail tomorrow for the one reason that is not a defect.
 import { readFileSync } from 'node:fs';
-import { isAddress, fetchHlAccount, parsePositions, accountSummary, estimateLiquidation, leverageAt, maintenanceMarginFraction, liquidationVsStop } from '../lib/hyperliquid.js';
+import { isAddress, fetchHlAccount, HL_ADDRESS_ENV, parsePositions, accountSummary, estimateLiquidation, leverageAt, maintenanceMarginFraction, liquidationVsStop } from '../lib/hyperliquid.js';
 import { parseMetaAndCtxs, fundingRead, basisRead, hlCoin, hlPerpCoin, isHlPerp, perpQuote, HL_PREFIX, FUNDING_PER_YEAR, FUNDING_LOUD_APR } from '../lib/hyperliquid.js';
 
 let pass = 0, fail = 0;
@@ -117,8 +117,30 @@ eq('max leverage travels too', [M.BTC.maxLeverage, M.WIF.maxLeverage], [40, 10])
   // An address must look like one before it is sent anywhere.
   eq('addresses are validated', [isAddress('0x' + 'a'.repeat(40)), isAddress('0xnope'), isAddress(''), isAddress(null)],
      [true, false, false, false]);
-  eq('an unset address is reported, not guessed at',
-     (await fetchHlAccount({ address: undefined })).configured, false);
+  // HERMETIC, BECAUSE THE BUILD RUNS THIS FILE. `fetchHlAccount({ address: undefined })` looked
+  // like it was asking about an unset address and was in fact asking the ENVIRONMENT: passing
+  // `undefined` explicitly still triggers the default parameter, which reads process.env. Locally
+  // that variable is empty, so it passed for days.
+  //
+  // Vercel injects production environment variables into the BUILD, and the build runs npm test.
+  // So the hour HYPERLIQUID_ADDRESS was added, every PRODUCTION deployment began failing here in
+  // about seven seconds — while previews, which carry a different variable set, stayed green. Two
+  // merges sat in main, undeployed, with the site serving the build before them. Merging is not
+  // deploying, and a test that reads ambient configuration reads a different answer per
+  // environment — which is the one thing a test must never do.
+  {
+    const saved = process.env[HL_ADDRESS_ENV];
+    delete process.env[HL_ADDRESS_ENV];
+    eq('an unset address is reported, not guessed at', (await fetchHlAccount({})).configured, false);
+    // The complement, which is the case that broke the build and which nothing asserted: a
+    // configured address IS picked up from the environment. Deliberately malformed, so this proves
+    // the variable was read without making a network call from a build.
+    process.env[HL_ADDRESS_ENV] = 'not-an-address';
+    const set = await fetchHlAccount({});
+    eq('and a configured one is read from it', [set.configured, set.ok], [true, false]);
+    ok('with the reason named rather than guessed', /not a 0x address/.test(set.error));
+    if (saved === undefined) delete process.env[HL_ADDRESS_ENV]; else process.env[HL_ADDRESS_ENV] = saved;
+  }
 }
 
 // ── A PERP IS NAMED BY ITS VENUE, NOT BY ITS TICKER ──────────────────────────

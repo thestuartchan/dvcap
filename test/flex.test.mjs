@@ -33,10 +33,24 @@ ok('an expired token is not retryable', !bad.retryable);
 // 1019 is the one error that means "ask again in a moment".
 ok('but a statement in progress is', parseFlexResponse(`<FlexStatementResponse><Status>Warn</Status><ErrorCode>1019</ErrorCode><ErrorMessage>Statement generation in progress.</ErrorMessage></FlexStatementResponse>`).retryable);
 
-eq('the request URL is the documented one', sendRequestUrl('TK', 'Q1'),
-  'https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/SendRequest?t=TK&q=Q1&v=3');
-eq('the statement URL uses the one the response gave', statementUrl('https://x/GetStatement', '99', 'TK'), 'https://x/GetStatement?q=99&t=TK&v=3');
-ok('and falls back if it gave none', statementUrl(null, '99', 'TK').includes('/FlexWebService/GetStatement?q=99'));
+// IBKR_FLEX_BASE OVERRIDES THE HOST, so these two assertions were reading the environment rather
+// than the code. Harmless locally, where it is unset — and the build runs this file with the
+// DEPLOYMENT's variables, which is how the same class of mistake in test/hyperliquid.test.mjs
+// took production down for the better part of an hour. Cleared and restored here so the answer is
+// the same everywhere it runs.
+{
+  const saved = process.env.IBKR_FLEX_BASE;
+  delete process.env.IBKR_FLEX_BASE;
+  eq('the request URL is the documented one', sendRequestUrl('TK', 'Q1'),
+    'https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/SendRequest?t=TK&q=Q1&v=3');
+  eq('the statement URL uses the one the response gave', statementUrl('https://x/GetStatement', '99', 'TK'), 'https://x/GetStatement?q=99&t=TK&v=3');
+  ok('and falls back if it gave none', statementUrl(null, '99', 'TK').includes('/FlexWebService/GetStatement?q=99'));
+  // And the override still works when it IS set — the point of the variable, now asserted rather
+  // than assumed from its absence.
+  process.env.IBKR_FLEX_BASE = 'https://flex.example';
+  ok('a configured base overrides the host', sendRequestUrl('TK', 'Q1').startsWith('https://flex.example/'));
+  if (saved === undefined) delete process.env.IBKR_FLEX_BASE; else process.env.IBKR_FLEX_BASE = saved;
+}
 
 // ── the statement ──
 const STMT = `<?xml version="1.0" encoding="UTF-8"?>
