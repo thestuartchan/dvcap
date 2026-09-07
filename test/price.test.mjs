@@ -67,9 +67,17 @@ ok('the old rule collapsed them toward each other', (0.006452).toFixed(4) === '0
 
 // ── DISPLAY, AT EVERY SCALE ──────────────────────────────────────────────────
 eq('ordinary prices keep at least two decimals', [fmtPrice(4649.3), fmtPrice(1.5), fmtPrice(18.06)], ['4649.30', '1.50', '18.06']);
-// ...and MORE than two when the venue quoted more. SOL trades at 214.883 and a third decimal is a
-// real tenth of a cent, not noise.
-eq('and more when there are more', [fmtPrice(149.375), fmtPrice(214.883)], ['149.375', '214.883']);
+// ...and NOT more, which is where the first version of this rule was wrong. Eight significant
+// figures above a dollar printed an average cost as "63.921452" and "246.72567" on the card —
+// five and six decimals of division residue from a weighted mean of fills, read as precision.
+// Nobody holds a basis to a hundredth of a cent. Two decimals is what a share, an index, a future
+// and a coin at four figures are all quoted in.
+eq('and never more above a unit', [fmtPrice(149.375), fmtPrice(214.883)], ['149.38', '214.88']);
+eq('the values from the card that prompted this',
+   [fmtPrice(63.921452), fmtPrice(246.72567), fmtPrice(730.53504)], ['63.92', '246.73', '730.54']);
+// The precision is not LOST, only not shown — storage is untouched, so nothing computed off these
+// changes. That distinction is the whole reason the two functions are separate.
+eq('storage still keeps every digit', [roundQuote(63.921452), roundQuote(214.883)], [63.921452, 214.883]);
 eq('sub-dollar keeps at least two', [fmtPrice(0.5), fmtPrice(0.05)], ['0.50', '0.05']);
 eq('and never grows a trailing-zero tail', fmtPrice(0.1234), '0.1234');
 eq('zero is zero', fmtPrice(0), '0.00');
@@ -109,7 +117,11 @@ for (const v of [0.0064105, 0.006452, 0.00629, 149.375, 0.5])
   // Significant figures have no scale assumption, so every one survives both ways.
   for (const [sym, v] of CRYPTO) {
     eq(`${sym} stores exactly`, roundQuote(v), v);
-    ok(`${sym} displays without loss`, Math.abs(+fmtPrice(v) - v) <= Math.abs(v) * 1e-7);
+    // Below a dollar the display must be faithful — that is the case two decimals destroys.
+    // Above it, two decimals is the intended rounding and fidelity is not the property being
+    // asserted; that a coin at four figures reads like a price is.
+    if (Math.abs(v) < 1) ok(`${sym} displays without loss`, Math.abs(+fmtPrice(v) - v) <= Math.abs(v) * 1e-7);
+    else ok(`${sym} displays as an ordinary price`, /^\d+\.\d\d$/.test(fmtPrice(v)));
   }
   // And they stay distinguishable from each other, which is the property that matters for levels.
   ok('two nearby dust prices do not collapse', distinctlyShown(0.00000892, 0.00000893));
