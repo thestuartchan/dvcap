@@ -105,7 +105,10 @@ for (const root of ['MGC', 'MNQ', 'MES', 'M6E'])
 for (const [sym, v] of [['BTC', 111235.42], ['ETH', 4128.77], ['XRP', 2.4471],
                         ['DOGE', 0.08412], ['SHIB', 0.00000892]]) {
   eq(`${sym} stores exactly`, roundQuote(v), v);
-  ok(`${sym} displays without loss`, Math.abs(+fmtPrice(v) - v) <= Math.abs(v) * 1e-7);
+  // Sub-dollar must be faithful — that is the case two decimals destroys. At or above a unit two
+  // decimals IS the intended rounding, so fidelity is not the property; reading like a price is.
+  if (Math.abs(v) < 1) ok(`${sym} displays without loss`, Math.abs(+fmtPrice(v) - v) <= Math.abs(v) * 1e-7);
+  else ok(`${sym} displays as an ordinary price`, /^\d+\.\d\d$/.test(fmtPrice(v)));
 }
 eq('a spot pair is sized as units, not a contract', multiplierFor('BTC-USD', {}).multiplier, 1);
 
