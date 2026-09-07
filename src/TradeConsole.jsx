@@ -23,6 +23,7 @@ import { ASSETS } from "../lib/assets.js";
 import { derivePosition, applyRolls, splitIntoTrades, collapseFills, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, realizedCurve } from "../lib/positions.js";
 import { sideOf, isShort, openSideFor, closeSideFor, geometryCheck, levelVocab, fillVerb, SIDES, SIDE_LABEL, DEFAULT_SIDE } from "../lib/side.js";
 import { fmtPrice } from "../lib/price.js";
+import { archivePeriods, hiddenSummary, periodLabel, GRAINS, OPEN_PERIODS } from "../lib/archive.js";
 import { CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy, resolveRowCurrency } from "../lib/fxrates.js";
 import { addToLoser } from "../lib/discipline.js";
 import { decisionEntry, lastClosedWasWin, overrideTrend, guardOutcomes } from "../lib/decisions.js";
@@ -1015,7 +1016,37 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   const [fillFor, setFillFor]   = useState(null);   // open "record a fill" form
   const [sizeOpen, setSizeOpen] = useState({});     // per-row: is the size suggestion unfolded
   const [moved, setMoved]       = useState(null);   // a row that just changed section, for the toast
-  const [showArchive, setShowArchive] = useState(false);
+  // ── THE PAGE IS LONG AND GETTING LONGER ──────────────────────────────────────────────────────
+  // Every section added is one more screen between the top of the tab and the book, and the book
+  // is the thing you came for. The fix is not a jump nav — that is a workaround for a long page.
+  // It is that the page should not BE long: the reference and history blocks fold away, and each
+  // one remembers whether you left it open.
+  //
+  // Per browser rather than in the console object: this is a view preference, not a book. Syncing
+  // it would mean a phone and a desktop fighting over which sections are open, and a save conflict
+  // over something nobody would call a change. It also must survive a private window refusing to
+  // store anything at all, which is why every access is wrapped.
+  const SECTIONS_LS = "dvcap_sections_v1";
+  const readSections = () => { try { return JSON.parse(localStorage.getItem(SECTIONS_LS) || "{}"); } catch { return {}; } };
+  const useRemembered = (key, initial) => {
+    const [v, setV] = useState(() => { const s = readSections()[key]; return typeof s === "boolean" ? s : initial; });
+    useEffect(() => {
+      try { localStorage.setItem(SECTIONS_LS, JSON.stringify({ ...readSections(), [key]: v })); } catch { /* private window */ }
+    }, [key, v]);
+    return [v, setV];
+  };
+
+  const [showArchive, setShowArchive] = useRemembered("archive", false);
+  const [showPortfolio, setShowPortfolio] = useRemembered("portfolio", true);
+  const [showSizing, setShowSizing] = useRemembered("sizing", false);
+  // ── THE ARCHIVE GROWS FOREVER AND THE SCREEN DOES NOT ────────────────────────────────────────
+  // Grain, and which periods are expanded. `periodOpen` holds only what the reader has TOGGLED, so
+  // the default (the most recent few) keeps applying to periods that did not exist when the page
+  // loaded — a map seeded with every key would freeze the archive as it was at load.
+  const [grain, setGrain] = useState("month");
+  const [hlSpot, setHlSpot] = useState(null);
+  const [showSpot, setShowSpot] = useRemembered("wallet", false);
+  const [periodOpen, setPeriodOpen] = useState({});
   // Served by api/manual-entry, which is authenticated and never cached. Positions do not belong
   // on the shared, edge-cached price route — see lib/apiauth.js.
   const [livePositions, setLivePositions] = useState(null);
@@ -1056,6 +1087,8 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       setLivePositions(hl?.ok && Array.isArray(hl.positions)
         ? Object.fromEntries(hl.positions.map(p => [p.coin, p]))
         : null);
+      // Spot balances are a different animal from perp positions and get their own section.
+      setHlSpot(j?.hyperliquidSpot?.ok ? j.hyperliquidSpot : null);
       const c = j?.console;
       if (c && typeof c === "object") {
         // ONE-TIME BACKFILL of contract multipliers — see lib/futures.js. A margined row that never
@@ -1126,7 +1159,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   // The decision log, read back. Fetched once per mount — it is an audit view, not a live number,
   // and re-pulling a thousand entries on every price tick would be absurd.
   const [decisionLog, setDecisionLog] = useState(null);
-  const [logOpen, setLogOpen] = useState(false);
+  const [logOpen, setLogOpen] = useRemembered("decisions", false);
   useEffect(() => {
     if (!logOpen || decisionLog != null) return;
     fetch("/api/manual-entry?decisions=full", { credentials: "include" })
@@ -1255,7 +1288,6 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   // Split only when both are present — the same rule the Discord card follows. A heading over an
   // all-equity archive is a label that never varies.
   const byClose = (a, b) => String(b.derived.lastDate || "").localeCompare(String(a.derived.lastDate || ""));
-  const archiveGroups = useMemo(() => assetClassGroups(archived, { sort: byClose }), [archived]);
   const rolledOut = derivedRows.filter(r => r.derived.rolledInto);
   // What a row may declare it was rolled out of: a FINISHED contract in the same symbol that no
   // other row has already claimed. Restricting it to the same symbol is not pedantry — a roll is
@@ -1296,6 +1328,20 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       }),
     };
   }, [archived, fxRates, baseCcy]);
+  // ── PERIODS, EACH CARRYING ITS OWN SUBTOTAL ──────────────────────────────────────────────────
+  // Every period is listed whether or not its rows are shown, so five years reads as sixty header
+  // lines with a number on each rather than as a thousand rows. Subtotals go through toBase for the
+  // same reason the archive total does: a HKD figure summed into a USD total is a different number,
+  // so a row with no rate is counted apart rather than added at face value.
+  const periods = useMemo(
+    () => archivePeriods(archived, { grain, realisedOf: (r) => toBase(r.derived.realized, r) }),
+    [archived, grain, fxRates, baseCcy]);
+  const isOpen = (p) => periodOpen[p.key] ?? p.open;
+  const shownPeriods = useMemo(() => periods.map(p => ({ ...p, shown: isOpen(p) })), [periods, periodOpen]);
+  const hidden = useMemo(
+    () => hiddenSummary(shownPeriods.map(p => ({ ...p, open: p.shown })), (r) => toBase(r.derived.realized, r)),
+    [shownPeriods, fxRates, baseCcy]);
+
   const curve    = useMemo(() => realizedCurve(derivedRows, toBase), [derivedRows, fxRates, baseCcy]);
 
   // ── currency, taken from the exchange rather than assumed ──
@@ -1933,13 +1979,18 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
                 {cashPct != null && <span><span style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800 }}>CASH </span><b>{cashPct}%</b></span>}
                 <span><span style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800 }}>OPEN P&amp;L </span>
                   <b style={{ color: pnlCol(bars.reduce((a, b) => a + b.total, 0)) }}>{fmtCcy(bars.reduce((a, b) => a + b.total, 0), baseCcy)}</b></span>
+                {/* The three figures above stay whatever this is set to — folding a section must
+                    never fold away the number that says whether you need to look at it. */}
+                <button onClick={() => setShowPortfolio(v => !v)} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{showPortfolio ? "Hide" : "Show"}</button>
               </div>
             </div>
+            {/* A warning is not detail and is never folded away. */}
             {missing > 0 && (
               <div style={{ fontSize: 11.5, color: C.amber, fontWeight: 700, marginBottom: 6 }}>
                 ⚠ {missing} position{missing === 1 ? "" : "s"} not shown — no live price or no {baseCcy} rate yet. Refresh prices.
               </div>
             )}
+            {showPortfolio && (<>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               {/* weight */}
               <div style={{ flex: "1 1 280px", minWidth: 260 }}>
@@ -2002,6 +2053,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
             <div style={{ fontSize: 11, color: C.lbl, marginTop: 8, paddingTop: 8, borderTop: "1px solid " + C.bdr, lineHeight: 1.5 }}>
               Realised bars are profit already taken on scale-outs, so a position can show both at once. Cash % assumes your account equity above is the whole book.
             </div>
+            </>)}
           </Card>
         );
       })()}
@@ -2015,7 +2067,11 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
             <span style={{ color: C.lbl, fontWeight: 700 }}>regime ×</span> <b style={{ color: liveRegime?.color }}>{rm.mult.toFixed(2)}</b>
             <span style={{ color: C.muted, fontSize: 11.5 }}> ({rm.reasons[rm.reasons.length - 1]})</span>
           </span>
+          {/* The live multiplier stays on the header — it is the one number here you read without
+              intending to change anything, and it is the reason to open the rest. */}
+          <button onClick={() => setShowSizing(v => !v)} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{showSizing ? "Hide" : "Show"}</button>
         </div>
+        {showSizing && (<>
         <div style={{ marginTop: 9, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
           <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Account equity ({baseCcy})<br />
             <NumCommit dk="equity" drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={settings.equity} placeholder="e.g. 208597" width={124}
@@ -2061,8 +2117,340 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
           </div>
           <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>Credit-DANGER caps the multiplier at {CREDIT_DANGER_CAP_LABEL}; a contested or pinned≠live regime applies a further ×0.7.</div>
         </div>
+        </>)}
       </Card>
 
+      {/* ── ADD A SETUP ──
+          Sits here, not in the top toolbar, because this is where the decision is made: equity,
+          risk % and the regime multiplier are read directly above, and the list a new ticker joins
+          is directly below. The toolbar keeps the account-level chrome — base currency, alerts,
+          sync state and the save button — which is status you want pinned at the top of the tab
+          rather than buried under the book. */}
+      <Card>
+        <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
+          <SLabel>Add a setup</SLabel>
+          <input value={addSym} onChange={e => setAddSym(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addRow(); }} placeholder="Ticker"
+            style={{ width: 180, padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 13, background: C.surf, color: C.text, textTransform: "uppercase" }} />
+          {/* Direction, chosen before the row exists. Defaulting silently to long is what the
+              console did for its whole life, and it is fine as a DEFAULT — it is not fine as the
+              only option. */}
+          <div style={{ display: "inline-flex", border: "1.5px solid " + C.bdr, borderRadius: 8, overflow: "hidden" }}>
+            {SIDES.map(sd => (
+              <button key={sd} onClick={() => setAddSide(sd)}
+                style={{ cursor: "pointer", padding: "6px 12px", fontSize: 12, fontWeight: 800, border: "none",
+                         background: addSide === sd ? (sd === "short" ? C.blue : C.green) : C.surf,
+                         color: addSide === sd ? "#fff" : C.mid }}>
+                {SIDE_LABEL[sd]}
+              </button>
+            ))}
+          </div>
+          <Btn onClick={() => addRow()} color="#fff" bgColor={C.blue} label="+ Add" />
+          <span style={{ fontSize: 11.5, color: C.muted }}>starts as a watched setup — add levels and a stop before it becomes a position</span>
+        </div>
+      </Card>
+
+      <Section title="Setups — waiting" note="no position yet; levels are being watched" list={setups} mode="setup" ctx={ctx} />
+      {/* Biggest first. Import order is meaningless, and the position that most deserves a second
+          look each morning is the one carrying the most of the book. Rows whose market value cannot
+          be converted sort last rather than to the top as a zero. */}
+      <Section title="Open positions" note="spot / swing holds, scaled in and out"
+        list={[...openPos].sort((a, b) => (convert(b.pnl.marketValue, b.currency || "USD", baseCcy, fxRates) ?? -1) - (convert(a.pnl.marketValue, a.currency || "USD", baseCcy, fxRates) ?? -1))}
+        mode="open" ctx={ctx} />
+
+      {/* ── THE WALLET ─────────────────────────────────────────────────────────────────────────
+          Not part of the book above. Those rows are trades — an entry, a thesis, levels, a stop.
+          These are BALANCES sitting in a wallet, most of them never decided on: the venue drops
+          airdrops into it unbidden. Merging the two would put a token nobody chose next to a
+          position sized against account equity, and invite exactly the comparison this codebase
+          keeps splitting apart.
+
+          Read-only, from the address in the environment. It never reaches the Discord card — a
+          holdings list is size, and size is one of the four quantities lib/tradecard.js exists to
+          refuse. */}
+      {hlSpot && hlSpot.rows.length > 0 && (
+        <Card>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+            <SLabel>Wallet — Hyperliquid spot</SLabel>
+            <span style={{ fontSize: 11.5, color: C.muted }}>balances, not positions · read-only</span>
+            <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "baseline", fontSize: 13 }}>
+              <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>VALUE </span>
+                <b>{fmtCcy(hlSpot.total, "USD")}</b></span>
+              <button onClick={() => setShowSpot(v => !v)} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{showSpot ? "Hide" : "Show"}</button>
+            </div>
+          </div>
+          {/* WHAT THE TOTAL LEAVES OUT, said plainly. A mid price on a pair nobody trades is a
+              number, not a valuation — run against a burn address this read $6.2 TRILLION, on an
+              airdrop quoted at 62,227 with $40.90 of daily volume. Those rows are listed and
+              excluded, never quietly folded in. */}
+          {(hlSpot.thin?.count > 0 || hlSpot.unpriced > 0) && (
+            <div style={{ marginTop: 6, fontSize: 11.5, color: C.muted }}>
+              Excludes{hlSpot.thin?.count ? ` ${hlSpot.thin.count} token${hlSpot.thin.count === 1 ? "" : "s"} with too little volume to price` : ""}
+              {hlSpot.thin?.count && hlSpot.unpriced ? " and" : ""}
+              {hlSpot.unpriced ? ` ${hlSpot.unpriced} with no USDC market` : ""} — listed below, unvalued.
+            </div>
+          )}
+          {showSpot && (
+            <div style={{ marginTop: 10 }}>
+              {hlSpot.rows.map(h => (
+                <div key={h.coin} style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap",
+                     padding: "6px 0", borderBottom: "1px solid " + C.bdr, fontSize: 12.5, opacity: h.priced && !h.thin ? 1 : 0.62 }}>
+                  <b style={{ minWidth: 68 }}>{h.coin}</b>
+                  <span style={{ color: C.mid }}>{h.total}</span>
+                  {h.locked && <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }} title={`${h.hold} resting in open orders`}>{h.free} free</span>}
+                  {h.priced && !h.thin && <span style={{ color: C.lbl, fontSize: 11.5 }}>@ {fmtPrice(h.price, { maxDp: 4 })}</span>}
+                  {h.thin && <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }} title={`24h volume ${fmtCcy(h.volume ?? 0, "USD")} — too thin to value`}>no real market</span>}
+                  {!h.priced && <span style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>no USDC pair</span>}
+                  <span style={{ marginLeft: "auto", display: "inline-flex", gap: 9, alignItems: "baseline" }}>
+                    {h.priced && !h.thin && <b>{fmtCcy(h.value, "USD")}</b>}
+                    {h.pnlPct != null && !h.thin && <b style={{ fontSize: 12, color: pnlCol(h.pnl) }}>{(h.pnlPct > 0 ? "+" : "") + h.pnlPct}%</b>}
+                  </span>
+                </div>
+              ))}
+              {hlSpot.dust?.count > 0 && (
+                <div style={{ marginTop: 8, fontSize: 11.5, color: C.muted }}>
+                  {hlSpot.dust.count} dust balance{hlSpot.dust.count === 1 ? "" : "s"} under {fmtCcy(1, "USD")} · {fmtCcy(hlSpot.dust.value, "USD")} in total — counted, not listed.
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* archive: brief, with the performance summary */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+          <SLabel>Archive — closed</SLabel>
+          <span style={{ fontSize: 12, color: C.muted }}>{archived.length}</span>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 14, alignItems: "baseline", fontSize: 13 }}>
+            {/* Closed trades have no unrealised P&L by definition — every one of them is flat.
+                Average return replaces it: the figure that says whether the trades were any good,
+                which a total cannot, since it is dominated by whichever was largest. */}
+            <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>REALISED </span><b style={{ color: pnlCol(archiveStats.realized) }}>{fmtCcy(archiveStats.realized, baseCcy)}</b></span>
+            <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>AVG RETURN </span><b style={{ color: pnlCol(archiveStats.avgPct) }}>{archiveStats.avgPct == null ? "—" : (archiveStats.avgPct > 0 ? "+" : "") + archiveStats.avgPct + "%"}</b></span>
+            <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>WIN RATE </span><b style={{ color: C.text }}>{archiveStats.winRate == null ? "—" : archiveStats.winRate + "%"}</b></span>
+            <button onClick={() => setShowArchive(v => !v)} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{showArchive ? "Hide" : "Show"}</button>
+          </div>
+        </div>
+        {/* GRAIN AND WINDOW. Sixty monthly headers is itself a long list once the book is five
+            years old, so the grain coarsens on request. The window is counted in PERIODS rather
+            than trades: "the last 20" lands mid-month, and a header reading "August · 9 trades ·
+            +$1,240" above four rows is a subtotal contradicting what sits under it. */}
+        {showArchive && periods.length > 0 && (
+          <div style={{ marginTop: 9, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", fontSize: 11.5 }}>
+            <span style={{ color: C.lbl, fontWeight: 700, letterSpacing: 0.5 }}>GROUP BY</span>
+            {GRAINS.map(g => (
+              <button key={g} onClick={() => { setGrain(g); setPeriodOpen({}); }}
+                style={{ cursor: "pointer", textTransform: "capitalize", background: grain === g ? C.blBg : C.surf,
+                         color: grain === g ? C.blue : C.mid, border: "1.5px solid " + (grain === g ? C.blBdr : C.bdr),
+                         borderRadius: 7, padding: "3px 9px", fontSize: 11.5, fontWeight: 700 }}>{g}</button>
+            ))}
+            <span style={{ color: C.muted }}>{periods.length} period{periods.length === 1 ? "" : "s"}</span>
+            <button onClick={() => setPeriodOpen(Object.fromEntries(periods.map(pp => [pp.key, hidden.periods > 0])))}
+              style={{ marginLeft: "auto", cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr,
+                       borderRadius: 7, padding: "3px 10px", fontSize: 11.5, fontWeight: 700 }}>
+              {hidden.periods > 0 ? "Expand all" : "Collapse all"}
+            </button>
+          </div>
+        )}
+        {/* The collapsed remainder, described rather than silently absent — the totals at the top
+            of this card already count it, so a reader who cannot see it must at least be told
+            what it comes to. */}
+        {showArchive && hidden.periods > 0 && (
+          <div style={{ marginTop: 7, fontSize: 11.5, color: C.muted }}>
+            {hidden.periods} earlier period{hidden.periods === 1 ? "" : "s"} collapsed · {hidden.count} trade{hidden.count === 1 ? "" : "s"} ·{" "}
+            <b style={{ color: pnlCol(hidden.realised) }}>{(hidden.realised > 0 ? "+" : "") + money(hidden.realised, baseCcy)}</b>
+            {" — each one's subtotal is on its header; click to open it."}
+          </div>
+        )}
+        {/* Which rate produced these numbers. A total in USD built from HKD rows is only as good as
+            the rate behind it, and that rate was invisible. */}
+        {archiveStats.ccys.length > 0 && (
+          <div style={{ marginTop: 6, fontSize: 11, color: C.muted }}>
+            Converted into {baseCcy} at {archiveStats.ccys.map(c => (
+              <span key={c.code} style={{ color: c.pinned ? C.mid : C.muted, fontWeight: c.pinned ? 700 : 500 }}>
+                {c.code} {c.rate ? c.rate.toFixed(4) : "—"}{c.pinned ? " (pinned)" : ""}{" "}
+              </span>
+            ))}
+            · live rates come from the same quote refresh as prices; a row can pin its own in the editor.
+          </div>
+        )}
+        {archiveStats.unconverted > 0 && (
+          <div style={{ marginTop: 7, fontSize: 11.5, color: C.amber, fontWeight: 700 }}>
+            ⚠ {archiveStats.unconverted} closed trade{archiveStats.unconverted === 1 ? "" : "s"} excluded from these totals — no FX rate available to convert into {baseCcy}. Refresh prices.
+          </div>
+        )}
+        {/* ROLLED-FORWARD CONTRACTS. These are flat and would once have sat in the archive as
+            completed trades, which double-counted them: their P&L now lives inside the position
+            that replaced them. They are listed rather than hidden — a contract that vanished from
+            the console entirely would be indistinguishable from one that was never recorded. */}
+        {rolledOut.length > 0 && (
+          <div style={{ marginTop: 9, fontSize: 11.5, color: C.muted }}>
+            <b style={{ color: C.mid }}>Rolled forward · {rolledOut.length}</b> — not counted above, because each one's P&L is carried inside the position that replaced it:{" "}
+            {rolledOut.map((r, i) => (
+              <span key={r.id}>{i ? " · " : ""}<b style={{ color: C.mid }}>{r.symbol}</b> {r.trade || r.id} → {r.derived.rolledInto} ({fmtCcy(r.derived.realized, r.currency)})</span>
+            ))}
+          </div>
+        )}
+
+        {/* Realised curve — when profit was actually taken.
+            The chart box is fixed-height and the ResponsiveContainer fills 100% of it, so anything
+            else inside overflows it: the caption was landing on top of the table header underneath,
+            which is what the mobile screenshot showed. Caption is a sibling now, not a child. The
+            two portfolio charts had the same shape, with their headings eating into the plot. */}
+        {curve.length > 1 && (
+          <div style={{ marginTop: 12 }}>
+          <div style={{ height: 190 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={curve} margin={{ top: 5, right: 8, left: 0, bottom: 0 }}>
+                <defs><linearGradient id="rc" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={C.green} stopOpacity={0.35} /><stop offset="100%" stopColor={C.green} stopOpacity={0.03} />
+                </linearGradient></defs>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.bdr} vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: C.lbl }} tickLine={false} axisLine={{ stroke: C.bdr }} />
+                <YAxis tick={{ fontSize: 10, fill: C.lbl }} tickLine={false} axisLine={false} width={54} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid " + C.bdr }}
+                  formatter={(v, n) => [fmtCcy(v, baseCcy), n === "cumulative" ? "cumulative realised" : n]}
+                  labelFormatter={(l, pl) => `${l}${pl?.[0]?.payload?.symbol ? " · " + pl[0].payload.symbol : ""}`} />
+                <Area type="monotone" dataKey="cumulative" stroke={C.green} strokeWidth={2} fill="url(#rc)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+            <div style={{ fontSize: 11, color: C.lbl, textAlign: "center", marginTop: 6 }}>Cumulative realised P&amp;L in {baseCcy} — one step per sell fill, so the curve marks when profit was actually taken.</div>
+          </div>
+        )}
+
+        {showArchive && archived.length > 0 && (
+          <div className="dvcap-wide-only" style={{ marginTop: 12, overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 520 }}>
+              <thead><tr>{["Trade", "Held", "Size", "Entry", "Exit", "Realised", "Return"].map(h => (
+                <th key={h} style={{ textAlign: "left", color: C.mid, padding: "6px 10px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700, fontSize: 11.5 }}>{h}</th>))}</tr></thead>
+              <tbody>
+                {shownPeriods.flatMap(p => {
+                  const st = p.stats;
+                  /* THE HEADER IS THE POINT. Every period is listed whether or not its rows are
+                     rendered, so the shape of a whole history reads as one informative line each —
+                     "August 2026 · 9 trades · 6↑ 3↓ · 67% · +$1,240" — and five years is sixty
+                     lines rather than a thousand rows. Click to open one. */
+                  const head = (
+                    <tr key={`p-${p.key}`} onClick={() => setPeriodOpen(o => ({ ...o, [p.key]: !p.shown }))}
+                        style={{ cursor: "pointer" }} title={p.shown ? "Collapse" : "Expand"}>
+                      <td colSpan={4} style={{ padding: "11px 10px 5px", borderTop: "1.5px solid " + C.bdr, fontSize: 12, fontWeight: 800, color: C.mid }}>
+                        <span style={{ color: C.muted, marginRight: 6 }}>{p.shown ? "▾" : "▸"}</span>{p.label}
+                        <span style={{ fontWeight: 600, color: C.muted, marginLeft: 8 }}>{st.count} trade{st.count === 1 ? "" : "s"}</span>
+                        {st.winRate != null && <span style={{ fontWeight: 600, color: C.lbl, marginLeft: 8 }}>{st.wins}↑ {st.losses}↓ · {st.winRate}%</span>}
+                      </td>
+                      <td colSpan={3} style={{ padding: "11px 10px 5px", borderTop: "1.5px solid " + C.bdr, fontSize: 12.5, fontWeight: 800, textAlign: "right", color: pnlCol(st.realised) }}>
+                        {(st.realised > 0 ? "+" : "") + money(st.realised, baseCcy)}
+                        {st.unconverted ? <span style={{ fontWeight: 600, color: C.amber, marginLeft: 6 }}> · {st.unconverted} unconverted</span> : null}
+                      </td>
+                    </tr>
+                  );
+                  if (!p.shown) return [head];
+                  return [head, ...assetClassGroups(p.rows, { sort: byClose }).flatMap(g => [
+                  ...(g.label ? [(
+                    <tr key={`h-${p.key}-${g.label}`}>
+                      <td colSpan={7} style={{ padding: "10px 10px 4px", fontSize: 11, fontWeight: 800,
+                                               letterSpacing: 0.5, textTransform: "uppercase", color: C.muted }}>
+                        {g.label} · {g.rows.length}
+                      </td>
+                    </tr>)] : []),
+                  ...g.rows.map(r => {
+                  const td = { padding: "6px 10px", borderBottom: "1px solid " + C.bdr };
+                  const days = daysBetween(r.derived.firstDate, r.derived.lastDate);
+                  return (
+                    <tr key={r.id} title={r.thesis || ""}>
+                      <td style={{ ...td, fontWeight: 700 }}>{r.symbol} {ccyChip(r.currency)}
+                        {r.derived.multiplier > 1 ? <span style={{ fontWeight: 700, color: C.amber, fontSize: 11 }}> ×{r.derived.multiplier}</span> : null}
+                        {r.trade ? <span style={{ fontWeight: 600, color: C.lbl, fontSize: 11.5 }}> · {r.trade}</span> : null}</td>
+                      <td style={{ ...td, color: C.lbl, whiteSpace: "nowrap" }}>
+                        {r.derived.firstDate || "?"} → {r.derived.lastDate || "?"}{days == null ? "" : ` · ${days}d`}</td>
+                      <td style={td}>{r.derived.bought}</td>
+                      <td style={td}>{fmtPrice(r.derived.avgEntry, { maxDp: priceMaxDp(r.symbol) })}</td>
+                      <td style={td}>{fmtPrice(r.derived.avgExit, { maxDp: priceMaxDp(r.symbol) })}</td>
+                      <td style={{ ...td, fontWeight: 700, color: pnlCol(r.derived.realized) }}>{money(r.derived.realized, r.currency)}</td>
+                      <td style={{ ...td, color: pnlCol(r.derived.realizedPct) }}>{r.derived.realizedPct == null ? "—" : (r.derived.realizedPct > 0 ? "+" : "") + r.derived.realizedPct + "%"}</td>
+                    </tr>
+                  );
+                })])];
+                })}
+              </tbody>
+              {/* Totals are in the BASE currency, so a row whose FX rate is missing is left out and
+                  counted rather than added at face value in the wrong currency. */}
+              <tfoot><tr>
+                <td colSpan={5} style={{ padding: "8px 10px", borderTop: "1.5px solid " + C.bdr, color: C.mid, fontWeight: 700 }}>
+                  {archiveStats.counted} closed trade{archiveStats.counted === 1 ? "" : "s"} in {baseCcy} · {archiveStats.wins} up / {archiveStats.losses} down
+                  {archiveStats.unconverted ? ` · ${archiveStats.unconverted} excluded (no FX rate)` : ""}
+                </td>
+                <td colSpan={2} style={{ padding: "8px 10px", borderTop: "1.5px solid " + C.bdr, fontWeight: 800, color: pnlCol(archiveStats.realized) }}>
+                  {(archiveStats.realized > 0 ? "+" : "") + money(archiveStats.realized, baseCcy)}
+                </td>
+              </tr></tfoot>
+            </table>
+          </div>
+        )}
+
+        {/* The same rows, laid out for a phone. Seven columns do not fit on one, and the four that
+            fell off the right were the ones carrying the result. */}
+        {showArchive && archived.length > 0 && (
+          <div className="dvcap-narrow-only" style={{ marginTop: 12 }}>
+            {shownPeriods.flatMap(p => {
+              const st = p.stats;
+              const head = (
+                <div key={`p-${p.key}`} onClick={() => setPeriodOpen(o => ({ ...o, [p.key]: !p.shown }))}
+                     style={{ cursor: "pointer", display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap",
+                              borderTop: "1.5px solid " + C.bdr, margin: "14px 0 7px", paddingTop: 9 }}>
+                  <b style={{ fontSize: 12.5, color: C.mid }}>
+                    <span style={{ color: C.muted, marginRight: 5 }}>{p.shown ? "▾" : "▸"}</span>{p.label}
+                  </b>
+                  <span style={{ fontSize: 11.5, color: C.muted }}>{st.count}</span>
+                  {st.winRate != null && <span style={{ fontSize: 11.5, color: C.lbl }}>{st.wins}↑ {st.losses}↓</span>}
+                  <b style={{ marginLeft: "auto", fontSize: 12.5, color: pnlCol(st.realised) }}>
+                    {(st.realised > 0 ? "+" : "") + money(st.realised, baseCcy)}
+                  </b>
+                </div>
+              );
+              if (!p.shown) return [head];
+              return [head, ...assetClassGroups(p.rows, { sort: byClose }).flatMap(g => [
+              ...(g.label ? [(
+                <div key={`h-${p.key}-${g.label}`} style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5,
+                     textTransform: "uppercase", color: C.muted, margin: "12px 0 6px" }}>
+                  {g.label} · {g.rows.length}
+                </div>)] : []),
+              ...g.rows.map(r => {
+              const days = daysBetween(r.derived.firstDate, r.derived.lastDate);
+              const d = r.derived;
+              return (
+                <div key={r.id} style={{ border: "1px solid " + C.bdr, borderLeft: "4px solid " + (d.realized >= 0 ? C.green : C.red), borderRadius: 9, padding: "9px 11px", marginBottom: 7 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap" }}>
+                    <b style={{ fontSize: 13.5 }}>{r.symbol}</b>
+                    {ccyChip(r.currency)}
+                    {d.multiplier > 1 ? <span style={{ fontWeight: 700, color: C.amber, fontSize: 11 }}>×{d.multiplier}</span> : null}
+                    {r.trade ? <span style={{ fontSize: 11.5, color: C.lbl }}>{r.trade}</span> : null}
+                    <span style={{ marginLeft: "auto", display: "inline-flex", gap: 7, alignItems: "baseline" }}>
+                      <b style={{ fontSize: 13, color: pnlCol(d.realized) }}>{(d.realized > 0 ? "+" : "") + money(d.realized, r.currency)}</b>
+                      <b style={{ fontSize: 12.5, color: pnlCol(d.realizedPct) }}>{d.realizedPct == null ? "" : (d.realizedPct > 0 ? "+" : "") + d.realizedPct + "%"}</b>
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: C.lbl, marginTop: 3 }}>
+                    {d.firstDate || "?"} → {d.lastDate || "?"}{days == null ? "" : ` · ${days}d`} · {d.bought} @ {fmtPrice(d.avgEntry, { maxDp: priceMaxDp(r.symbol) })} → {fmtPrice(d.avgExit, { maxDp: priceMaxDp(r.symbol) })}
+                  </div>
+                </div>
+              );
+            })])];
+            })}
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.mid, marginTop: 8 }}>
+              {archiveStats.counted} closed in {baseCcy} · {archiveStats.wins} up / {archiveStats.losses} down
+              <b style={{ color: pnlCol(archiveStats.realized), marginLeft: 8 }}>{(archiveStats.realized > 0 ? "+" : "") + money(archiveStats.realized, baseCcy)}</b>
+            </div>
+          </div>
+        )}
+      </Card>
+
+
+      {/* ── UNDER THE ARCHIVE, NOT ABOVE THE BOOK ──
+          Both of these are the record of what already happened, and the log is read in the same
+          sitting as the closed trades it explains — it sat above "Add a setup", which put a history
+          panel between the sizing inputs and the list a new ticker joins. */}
       {/* ── P3 — DID THE GUARDS MEAN ANYTHING ──
           The log's whole purpose is to be read back, and it cannot answer its own question yet:
           an entry records a decision and the outcome arrives weeks later. So this shows what IS
@@ -2138,203 +2526,6 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
           );
         })())}
       </Card>
-
-      {/* ── ADD A SETUP ──
-          Sits here, not in the top toolbar, because this is where the decision is made: equity,
-          risk % and the regime multiplier are read directly above, and the list a new ticker joins
-          is directly below. The toolbar keeps the account-level chrome — base currency, alerts,
-          sync state and the save button — which is status you want pinned at the top of the tab
-          rather than buried under the book. */}
-      <Card>
-        <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
-          <SLabel>Add a setup</SLabel>
-          <input value={addSym} onChange={e => setAddSym(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addRow(); }} placeholder="Ticker"
-            style={{ width: 180, padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 13, background: C.surf, color: C.text, textTransform: "uppercase" }} />
-          {/* Direction, chosen before the row exists. Defaulting silently to long is what the
-              console did for its whole life, and it is fine as a DEFAULT — it is not fine as the
-              only option. */}
-          <div style={{ display: "inline-flex", border: "1.5px solid " + C.bdr, borderRadius: 8, overflow: "hidden" }}>
-            {SIDES.map(sd => (
-              <button key={sd} onClick={() => setAddSide(sd)}
-                style={{ cursor: "pointer", padding: "6px 12px", fontSize: 12, fontWeight: 800, border: "none",
-                         background: addSide === sd ? (sd === "short" ? C.blue : C.green) : C.surf,
-                         color: addSide === sd ? "#fff" : C.mid }}>
-                {SIDE_LABEL[sd]}
-              </button>
-            ))}
-          </div>
-          <Btn onClick={() => addRow()} color="#fff" bgColor={C.blue} label="+ Add" />
-          <span style={{ fontSize: 11.5, color: C.muted }}>starts as a watched setup — add levels and a stop before it becomes a position</span>
-        </div>
-      </Card>
-
-      <Section title="Setups — waiting" note="no position yet; levels are being watched" list={setups} mode="setup" ctx={ctx} />
-      {/* Biggest first. Import order is meaningless, and the position that most deserves a second
-          look each morning is the one carrying the most of the book. Rows whose market value cannot
-          be converted sort last rather than to the top as a zero. */}
-      <Section title="Open positions" note="spot / swing holds, scaled in and out"
-        list={[...openPos].sort((a, b) => (convert(b.pnl.marketValue, b.currency || "USD", baseCcy, fxRates) ?? -1) - (convert(a.pnl.marketValue, a.currency || "USD", baseCcy, fxRates) ?? -1))}
-        mode="open" ctx={ctx} />
-
-      {/* archive: brief, with the performance summary */}
-      <Card>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
-          <SLabel>Archive — closed</SLabel>
-          <span style={{ fontSize: 12, color: C.muted }}>{archived.length}</span>
-          <div style={{ marginLeft: "auto", display: "flex", gap: 14, alignItems: "baseline", fontSize: 13 }}>
-            {/* Closed trades have no unrealised P&L by definition — every one of them is flat.
-                Average return replaces it: the figure that says whether the trades were any good,
-                which a total cannot, since it is dominated by whichever was largest. */}
-            <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>REALISED </span><b style={{ color: pnlCol(archiveStats.realized) }}>{fmtCcy(archiveStats.realized, baseCcy)}</b></span>
-            <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>AVG RETURN </span><b style={{ color: pnlCol(archiveStats.avgPct) }}>{archiveStats.avgPct == null ? "—" : (archiveStats.avgPct > 0 ? "+" : "") + archiveStats.avgPct + "%"}</b></span>
-            <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>WIN RATE </span><b style={{ color: C.text }}>{archiveStats.winRate == null ? "—" : archiveStats.winRate + "%"}</b></span>
-            <button onClick={() => setShowArchive(v => !v)} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{showArchive ? "Hide" : "Show"}</button>
-          </div>
-        </div>
-        {/* Which rate produced these numbers. A total in USD built from HKD rows is only as good as
-            the rate behind it, and that rate was invisible. */}
-        {archiveStats.ccys.length > 0 && (
-          <div style={{ marginTop: 6, fontSize: 11, color: C.muted }}>
-            Converted into {baseCcy} at {archiveStats.ccys.map(c => (
-              <span key={c.code} style={{ color: c.pinned ? C.mid : C.muted, fontWeight: c.pinned ? 700 : 500 }}>
-                {c.code} {c.rate ? c.rate.toFixed(4) : "—"}{c.pinned ? " (pinned)" : ""}{" "}
-              </span>
-            ))}
-            · live rates come from the same quote refresh as prices; a row can pin its own in the editor.
-          </div>
-        )}
-        {archiveStats.unconverted > 0 && (
-          <div style={{ marginTop: 7, fontSize: 11.5, color: C.amber, fontWeight: 700 }}>
-            ⚠ {archiveStats.unconverted} closed trade{archiveStats.unconverted === 1 ? "" : "s"} excluded from these totals — no FX rate available to convert into {baseCcy}. Refresh prices.
-          </div>
-        )}
-        {/* ROLLED-FORWARD CONTRACTS. These are flat and would once have sat in the archive as
-            completed trades, which double-counted them: their P&L now lives inside the position
-            that replaced them. They are listed rather than hidden — a contract that vanished from
-            the console entirely would be indistinguishable from one that was never recorded. */}
-        {rolledOut.length > 0 && (
-          <div style={{ marginTop: 9, fontSize: 11.5, color: C.muted }}>
-            <b style={{ color: C.mid }}>Rolled forward · {rolledOut.length}</b> — not counted above, because each one's P&L is carried inside the position that replaced it:{" "}
-            {rolledOut.map((r, i) => (
-              <span key={r.id}>{i ? " · " : ""}<b style={{ color: C.mid }}>{r.symbol}</b> {r.trade || r.id} → {r.derived.rolledInto} ({fmtCcy(r.derived.realized, r.currency)})</span>
-            ))}
-          </div>
-        )}
-
-        {/* Realised curve — when profit was actually taken.
-            The chart box is fixed-height and the ResponsiveContainer fills 100% of it, so anything
-            else inside overflows it: the caption was landing on top of the table header underneath,
-            which is what the mobile screenshot showed. Caption is a sibling now, not a child. The
-            two portfolio charts had the same shape, with their headings eating into the plot. */}
-        {curve.length > 1 && (
-          <div style={{ marginTop: 12 }}>
-          <div style={{ height: 190 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={curve} margin={{ top: 5, right: 8, left: 0, bottom: 0 }}>
-                <defs><linearGradient id="rc" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={C.green} stopOpacity={0.35} /><stop offset="100%" stopColor={C.green} stopOpacity={0.03} />
-                </linearGradient></defs>
-                <CartesianGrid strokeDasharray="3 3" stroke={C.bdr} vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 10, fill: C.lbl }} tickLine={false} axisLine={{ stroke: C.bdr }} />
-                <YAxis tick={{ fontSize: 10, fill: C.lbl }} tickLine={false} axisLine={false} width={54} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid " + C.bdr }}
-                  formatter={(v, n) => [fmtCcy(v, baseCcy), n === "cumulative" ? "cumulative realised" : n]}
-                  labelFormatter={(l, pl) => `${l}${pl?.[0]?.payload?.symbol ? " · " + pl[0].payload.symbol : ""}`} />
-                <Area type="monotone" dataKey="cumulative" stroke={C.green} strokeWidth={2} fill="url(#rc)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-            <div style={{ fontSize: 11, color: C.lbl, textAlign: "center", marginTop: 6 }}>Cumulative realised P&amp;L in {baseCcy} — one step per sell fill, so the curve marks when profit was actually taken.</div>
-          </div>
-        )}
-
-        {showArchive && archived.length > 0 && (
-          <div className="dvcap-wide-only" style={{ marginTop: 12, overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 520 }}>
-              <thead><tr>{["Trade", "Held", "Size", "Entry", "Exit", "Realised", "Return"].map(h => (
-                <th key={h} style={{ textAlign: "left", color: C.mid, padding: "6px 10px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700, fontSize: 11.5 }}>{h}</th>))}</tr></thead>
-              <tbody>
-                {archiveGroups.flatMap(g => [
-                  ...(g.label ? [(
-                    <tr key={`h-${g.label}`}>
-                      <td colSpan={7} style={{ padding: "10px 10px 4px", fontSize: 11, fontWeight: 800,
-                                               letterSpacing: 0.5, textTransform: "uppercase", color: C.muted }}>
-                        {g.label} · {g.rows.length}
-                      </td>
-                    </tr>)] : []),
-                  ...g.rows.map(r => {
-                  const td = { padding: "6px 10px", borderBottom: "1px solid " + C.bdr };
-                  const days = daysBetween(r.derived.firstDate, r.derived.lastDate);
-                  return (
-                    <tr key={r.id} title={r.thesis || ""}>
-                      <td style={{ ...td, fontWeight: 700 }}>{r.symbol} {ccyChip(r.currency)}
-                        {r.derived.multiplier > 1 ? <span style={{ fontWeight: 700, color: C.amber, fontSize: 11 }}> ×{r.derived.multiplier}</span> : null}
-                        {r.trade ? <span style={{ fontWeight: 600, color: C.lbl, fontSize: 11.5 }}> · {r.trade}</span> : null}</td>
-                      <td style={{ ...td, color: C.lbl, whiteSpace: "nowrap" }}>
-                        {r.derived.firstDate || "?"} → {r.derived.lastDate || "?"}{days == null ? "" : ` · ${days}d`}</td>
-                      <td style={td}>{r.derived.bought}</td>
-                      <td style={td}>{fmtPrice(r.derived.avgEntry, { maxDp: priceMaxDp(r.symbol) })}</td>
-                      <td style={td}>{fmtPrice(r.derived.avgExit, { maxDp: priceMaxDp(r.symbol) })}</td>
-                      <td style={{ ...td, fontWeight: 700, color: pnlCol(r.derived.realized) }}>{money(r.derived.realized, r.currency)}</td>
-                      <td style={{ ...td, color: pnlCol(r.derived.realizedPct) }}>{r.derived.realizedPct == null ? "—" : (r.derived.realizedPct > 0 ? "+" : "") + r.derived.realizedPct + "%"}</td>
-                    </tr>
-                  );
-                })])}
-              </tbody>
-              {/* Totals are in the BASE currency, so a row whose FX rate is missing is left out and
-                  counted rather than added at face value in the wrong currency. */}
-              <tfoot><tr>
-                <td colSpan={5} style={{ padding: "8px 10px", borderTop: "1.5px solid " + C.bdr, color: C.mid, fontWeight: 700 }}>
-                  {archiveStats.counted} closed trade{archiveStats.counted === 1 ? "" : "s"} in {baseCcy} · {archiveStats.wins} up / {archiveStats.losses} down
-                  {archiveStats.unconverted ? ` · ${archiveStats.unconverted} excluded (no FX rate)` : ""}
-                </td>
-                <td colSpan={2} style={{ padding: "8px 10px", borderTop: "1.5px solid " + C.bdr, fontWeight: 800, color: pnlCol(archiveStats.realized) }}>
-                  {(archiveStats.realized > 0 ? "+" : "") + money(archiveStats.realized, baseCcy)}
-                </td>
-              </tr></tfoot>
-            </table>
-          </div>
-        )}
-
-        {/* The same rows, laid out for a phone. Seven columns do not fit on one, and the four that
-            fell off the right were the ones carrying the result. */}
-        {showArchive && archived.length > 0 && (
-          <div className="dvcap-narrow-only" style={{ marginTop: 12 }}>
-            {archiveGroups.flatMap(g => [
-              ...(g.label ? [(
-                <div key={`h-${g.label}`} style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5,
-                     textTransform: "uppercase", color: C.muted, margin: "12px 0 6px" }}>
-                  {g.label} · {g.rows.length}
-                </div>)] : []),
-              ...g.rows.map(r => {
-              const days = daysBetween(r.derived.firstDate, r.derived.lastDate);
-              const d = r.derived;
-              return (
-                <div key={r.id} style={{ border: "1px solid " + C.bdr, borderLeft: "4px solid " + (d.realized >= 0 ? C.green : C.red), borderRadius: 9, padding: "9px 11px", marginBottom: 7 }}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap" }}>
-                    <b style={{ fontSize: 13.5 }}>{r.symbol}</b>
-                    {ccyChip(r.currency)}
-                    {d.multiplier > 1 ? <span style={{ fontWeight: 700, color: C.amber, fontSize: 11 }}>×{d.multiplier}</span> : null}
-                    {r.trade ? <span style={{ fontSize: 11.5, color: C.lbl }}>{r.trade}</span> : null}
-                    <span style={{ marginLeft: "auto", display: "inline-flex", gap: 7, alignItems: "baseline" }}>
-                      <b style={{ fontSize: 13, color: pnlCol(d.realized) }}>{(d.realized > 0 ? "+" : "") + money(d.realized, r.currency)}</b>
-                      <b style={{ fontSize: 12.5, color: pnlCol(d.realizedPct) }}>{d.realizedPct == null ? "" : (d.realizedPct > 0 ? "+" : "") + d.realizedPct + "%"}</b>
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 11.5, color: C.lbl, marginTop: 3 }}>
-                    {d.firstDate || "?"} → {d.lastDate || "?"}{days == null ? "" : ` · ${days}d`} · {d.bought} @ {fmtPrice(d.avgEntry, { maxDp: priceMaxDp(r.symbol) })} → {fmtPrice(d.avgExit, { maxDp: priceMaxDp(r.symbol) })}
-                  </div>
-                </div>
-              );
-            })])}
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.mid, marginTop: 8 }}>
-              {archiveStats.counted} closed in {baseCcy} · {archiveStats.wins} up / {archiveStats.losses} down
-              <b style={{ color: pnlCol(archiveStats.realized), marginLeft: 8 }}>{(archiveStats.realized > 0 ? "+" : "") + money(archiveStats.realized, baseCcy)}</b>
-            </div>
-          </div>
-        )}
-      </Card>
-
 
       {/* import / export */}
       <Card>

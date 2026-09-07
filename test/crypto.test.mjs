@@ -20,6 +20,7 @@ import { cryptoSymbolCheck, cryptoQuoteSymbol, CRYPTO_BASES } from '../lib/crypt
 import { atrSummary, ATR_PERIOD } from '../lib/atr.js';
 import { sizeSuggestion, roundQty } from '../lib/sizing.js';
 import { buildCard, buildClosedCard, splitByClass, classOfView, publicView, PUBLIC_FIELDS } from '../lib/tradecard.js';
+import { readFileSync } from 'node:fs';
 import { isSpotCrypto, isCryptoAsset, assetClassGroups, priceMaxDp, CRYPTO_PRICE_DP, EQUITY_PRICE_DP } from '../lib/crypto.js';
 
 let pass = 0, fail = 0;
@@ -396,6 +397,36 @@ eq('a spot pair is sized as units, not a contract', multiplierFor('BTC-USD', {})
   // `avg 63.921452` was the complaint. Nothing priced at or above a dollar may carry a tail like
   // that now — MJY's 0.006452 is not one, it is the sub-dollar rule doing its job.
   ok('nothing above a dollar carries a five-decimal average', !/avg [1-9]\d*\.\d{5}/.test(desc));
+}
+
+// ── THE WALLET IS CONSOLE-ONLY, LIKE THE LIQUIDATION PRICE ───────────────────
+// A holdings list is SIZE, which is the first of the four quantities lib/tradecard.js exists to
+// refuse — and unlike a stop or a target, nobody ever decided to publish it. It reaches the
+// console through its own authenticated field and must not have a path to a card.
+{
+  const src = readFileSync(new URL('../lib/tradecard.js', import.meta.url), 'utf8');
+  ok('the card module knows nothing about spot balances',
+     !/hyperliquidSpot|spotHoldings|fetchHlSpot|entryNtl/.test(src));
+  ok('nor about wallet balances by any other name', !/\bbalances\b|\bwallet\b/i.test(src));
+
+  // And a row that somehow carried them still publishes none of it. The private figures are
+  // distinctive digit strings, asserted absent from the serialised payload — the same construction
+  // the rest of this file's privacy tests use, so a future edit fails here rather than on Discord.
+  const row = {
+    symbol: 'HL:BTC', trade: '', price: 100, levels: [{ kind: 'stop', at: 90 }],
+    derived: { status: 'open', avgCost: 95, qty: 1, scaleOuts: [], firstDate: '2026-08-01' },
+    pnl: { unrealizedPct: 5 },
+    // everything the wallet section shows
+    hlSpot: { total: 987654.32, rows: [{ coin: 'HYPE', total: 4444.11, hold: 1111.22, value: 333322.11 }] },
+    walletTotal: 987654.32, spotRows: [{ coin: 'HYPE', free: 3332.89 }],
+  };
+  const v = publicView(row);
+  for (const f of ['hlSpot', 'walletTotal', 'spotRows'])
+    ok(`publicView drops ${f}`, !(f in v));
+  const whole = JSON.stringify(buildCard([row, { ...row, symbol: 'NVDA' }]));
+  for (const leak of ['987654', '4444.11', '1111.22', '333322', '3332.89', 'HYPE'])
+    ok(`the card never contains "${leak}"`, !whole.includes(leak));
+  ok('while the position itself still appears', /HL:BTC/.test(whole));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
