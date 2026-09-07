@@ -20,7 +20,7 @@ import { cryptoSymbolCheck, cryptoQuoteSymbol, CRYPTO_BASES } from '../lib/crypt
 import { atrSummary, ATR_PERIOD } from '../lib/atr.js';
 import { sizeSuggestion, roundQty } from '../lib/sizing.js';
 import { buildCard, buildClosedCard, splitByClass, classOfView, publicView, PUBLIC_FIELDS } from '../lib/tradecard.js';
-import { isSpotCrypto, assetClassGroups } from '../lib/crypto.js';
+import { isSpotCrypto, isCryptoAsset, assetClassGroups, priceMaxDp, CRYPTO_PRICE_DP, EQUITY_PRICE_DP } from '../lib/crypto.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `\n     got  ${JSON.stringify(g)}\n     want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -316,6 +316,86 @@ eq('a spot pair is sized as units, not a contract', multiplierFor('BTC-USD', {})
   const closed = buildClosedCard([{ ...perp, derived: { ...perp.derived, status: 'closed', avgExit: 110, lastDate: '2026-09-01', realizedPct: 5 } }],
                                  { today: '2026-09-05' });
   ok('nor the closed card', !/liquidat|leverage/i.test(JSON.stringify(closed)));
+}
+
+// ── FOUR DECIMALS FOR A COIN, TWO FOR A SHARE ────────────────────────────────
+// The card showed `avg 63.921452` for a Hong Kong share and `2.45` for XRP: too many digits where
+// the instrument is quoted in cents, and too few where it is not. Both are the same mistake — a
+// fixed decimal count applied to a book that spans eleven orders of magnitude — and neither is
+// fixable inside lib/price.js, which sees a number and cannot know what it prices.
+//
+// So the SYMBOL decides. Above a dollar a coin may carry four decimals; everything else stays at
+// two. Below a dollar nothing changes: that branch is on significant figures because a fixed count
+// is what destroyed MJY, and four is still fixed — it zeroes SHIB and moves DOGE by 5%.
+{
+  eq('spot gets four', priceMaxDp('BTC-USD'), CRYPTO_PRICE_DP);
+  eq('a perp gets four', priceMaxDp('HL:BTC'), CRYPTO_PRICE_DP);
+  eq('a share gets two', priceMaxDp('NVDA'), EQUITY_PRICE_DP);
+  eq('a foreign listing gets two', priceMaxDp('0981.HK'), EQUITY_PRICE_DP);
+  eq('a spot ETF gets two — it settles like a share', priceMaxDp('IBIT'), EQUITY_PRICE_DP);
+  eq('and a missing symbol does not throw', priceMaxDp(undefined), EQUITY_PRICE_DP);
+
+  // What each of those actually prints, which is the claim the user can see.
+  const shown = (sym, v) => fmtPrice(v, { maxDp: priceMaxDp(sym) });
+  eq('XRP keeps its quote', shown('XRP-USD', 2.4471), '2.4471');
+  eq('SOL does not grow a tail', shown('SOL-USD', 106.05), '106.05');
+  eq('BTC still reads like a price', shown('BTC-USD', 79969), '79969.00');
+  eq('a perp mark keeps all four', shown('HL:BTC', 79969.1234), '79969.1234');
+  eq('NVDA is rounded to cents', shown('NVDA', 234.8195), '234.82');
+  eq('and the average cost that started this', shown('0981.HK', 63.921452), '63.92');
+  // MJY is below a dollar, so it takes the significant-figure branch whatever its class.
+  eq('MJY is untouched by either cap', shown('MJY', 0.0064105), '0.0064105');
+}
+
+// ── WHICH BOOK, AND WHETHER DIVISIBLE, ARE DIFFERENT QUESTIONS ───────────────
+// Found by rendering a mixed card rather than by anything failing: HL:BTC — the most crypto thing
+// in the book — appeared under TradFi. `classOfView` asked `isSpotCrypto`, which answers the
+// NARROWER question "can this be held in fractions of a unit", and a Hyperliquid perp cannot: 133
+// of the venue's 233 markets trade in whole units, which is why lib/sizing.js needs that answer.
+// Reusing it for classification meant every perp was filed by its size step.
+{
+  eq('a perp is crypto', classOfView({ symbol: 'HL:BTC' }), 'crypto');
+  eq('and so is spot', classOfView({ symbol: 'BTC-USD' }), 'crypto');
+  eq('isCryptoAsset covers both', ['HL:BTC', 'BTC-USD', 'BTCUSDT', 'NVDA', 'IBIT'].map(isCryptoAsset),
+     [true, true, true, false, false]);
+  // The narrow question keeps its own answer — a perp must not be fractionally sized.
+  eq('while divisibility still says no to a perp', isSpotCrypto('HL:BTC'), false);
+  eq('and yes to spot', isSpotCrypto('BTC-USD'), true);
+
+  const rows = [{ symbol: 'HL:BTC' }, { symbol: 'NVDA' }];
+  eq('the perp lands in the crypto half', splitByClass(rows).crypto.map(r => r.symbol), ['HL:BTC']);
+  eq('and the grouping agrees', assetClassGroups(rows).map(g => [g.label, g.rows.map(r => r.symbol)]),
+     [['TradFi', ['NVDA']], ['Crypto', ['HL:BTC']]]);
+}
+
+// ── THE RENDERED CARD, WHICH IS WHERE BOTH DEFECTS WERE VISIBLE ──────────────
+// Asserting on the formatter alone would have missed the classification bug entirely: the decimals
+// were right in isolation and wrong on the card, because the wrong symbol was reaching the rule.
+{
+  const row = (sym, price, avg) => ({
+    symbol: sym, trade: '', price, levels: [],
+    derived: { status: 'open', avgCost: avg, qty: 1, scaleOuts: [], firstDate: '2026-08-01' },
+    pnl: { unrealizedPct: 1.5 },
+  });
+  const desc = buildCard([row('NVDA', 258.5149, 234.8195), row('0981.HK', 68.2951, 63.921452),
+                          row('MJY', 0.0064105, 0.006452), row('XRP-USD', 2.4471, 2.1038),
+                          row('SOL-USD', 106.05, 99.4), row('HL:BTC', 79969.1234, 78500.5)]).embeds[0].description;
+
+  for (const [what, s] of [['NVDA', '**NVDA** 258.51 · avg 234.82'],
+                           ['the HK listing', '**0981.HK** 68.30 · avg 63.92'],
+                           ['XRP', '**XRP-USD** 2.4471 · avg 2.1038'],
+                           ['SOL', '**SOL-USD** 106.05 · avg 99.40'],
+                           ['the perp', '**HL:BTC** 79969.1234 · avg 78500.50']])
+    ok(`${what} reads correctly on the card`, desc.includes(s));
+  // MJY's sub-dollar rendering is the one this file's sibling exists to protect.
+  ok('MJY still carries its significant figures', /\*\*MJY\*\* 0\.0064105 · avg 0\.006452/.test(desc));
+  // And the perp is under the right heading, which is the bug the card surfaced.
+  ok('the perp sits below the Crypto heading', desc.indexOf('HL:BTC') > desc.indexOf('Crypto'));
+  ok('and not in the TradFi half', desc.indexOf('HL:BTC') > desc.indexOf('TradFi'));
+  ok('while NVDA is above the Crypto heading', desc.indexOf('NVDA') < desc.indexOf('Crypto'));
+  // `avg 63.921452` was the complaint. Nothing priced at or above a dollar may carry a tail like
+  // that now — MJY's 0.006452 is not one, it is the sub-dollar rule doing its job.
+  ok('nothing above a dollar carries a five-decimal average', !/avg [1-9]\d*\.\d{5}/.test(desc));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

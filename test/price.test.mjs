@@ -7,7 +7,7 @@
 // The case that surfaced it: MJY micro yen futures print 0.00641 and were stored as 0.01. The
 // console then reported two buy zones at 0.006452 and 0.00629 as 35.48% and 37.1% below the last
 // price. They are 0.7% and 1.9% away.
-import { roundQuote, fmtPrice, distinctlyShown, STORE_SIG, DISPLAY_SIG } from '../lib/price.js';
+import { roundQuote, fmtPrice, distinctlyShown, STORE_SIG, DISPLAY_SIG, MIN_DP, CRYPTO_MAX_DP } from '../lib/price.js';
 import { distancePct, levelHit } from '../lib/positions.js';
 import { sizeSuggestion } from '../lib/sizing.js';
 
@@ -133,6 +133,50 @@ for (const v of [0.0064105, 0.006452, 0.00629, 149.375, 0.5])
   eq('1e-12 still reads as itself', fmtPrice(1e-12), '0.000000000001');
   ok('and something smaller goes exponential rather than to zero', /e-/.test(fmtPrice(1e-15)));
   ok('never zero for a non-zero price', +fmtPrice(1e-15) !== 0);
+}
+
+// ── HOW FAR PAST TWO DECIMALS, ABOVE A DOLLAR ────────────────────────────────
+// Two decimals above a unit is right for a share — cents are the unit it trades in, and an average
+// cost carrying five is division residue rather than precision. It is wrong for a coin: XRP is
+// genuinely quoted at 2.4471, and storing the quote only to round it to 2.45 on the way out is the
+// same class of loss as MJY's 0.01, smaller and just as invented.
+//
+// The cap is an ARGUMENT rather than something inferred from the number, because no property of
+// 2.4471 says whether it is a coin or a share. Only the symbol does, and this file knows numbers,
+// not instruments — lib/crypto.js answers that and passes the answer in.
+{
+  eq('a share stays at two by default', fmtPrice(2.4471), '2.45');
+  eq('asked for four, the quote survives', fmtPrice(2.4471, { maxDp: CRYPTO_MAX_DP }), '2.4471');
+  eq('and the four-figure case reads like a price', fmtPrice(79969.1234, { maxDp: 4 }), '79969.1234');
+
+  // Trailing zeros trim back to the two-decimal floor, so raising the cap never pads a round price
+  // into looking finer than it is. This is the half that makes the rule invisible when unused.
+  eq('a round price does not grow a tail', fmtPrice(106.05, { maxDp: 4 }), '106.05');
+  eq('a whole number still reads as a price', fmtPrice(79969, { maxDp: 4 }), '79969.00');
+  eq('one digit past the floor keeps the floor', fmtPrice(2.4, { maxDp: 4 }), '2.40');
+  eq('a partial tail loses only the zeros', fmtPrice(1.234, { maxDp: 4 }), '1.234');
+  eq('and a negative behaves the same', fmtPrice(-2.4471, { maxDp: 4 }), '-2.4471');
+
+  // The floor and the ceiling both hold, so a caller cannot ask for something the format cannot
+  // mean: below two decimals a price stops reading as a price, above MAX_DP it is float noise.
+  eq('a cap under the floor is raised to it', fmtPrice(2.4471, { maxDp: 0 }), '2.45');
+  eq('a nonsense cap falls back to the floor', fmtPrice(2.4471, { maxDp: 'four' }), '2.45');
+  eq('a cap over the ceiling is clamped', fmtPrice(2.4471, { maxDp: 99 }), '2.4471');
+  eq('and MIN_DP is still what "default" means', fmtPrice(2.4471, { maxDp: MIN_DP }), fmtPrice(2.4471));
+
+  // BELOW a dollar the cap does not apply at all. That branch is on significant figures precisely
+  // because a fixed number of decimals is what destroyed MJY, and four is still fixed: it zeroes
+  // SHIB and moves DOGE by 5%. Handing the sub-dollar branch a cap would reintroduce the defect
+  // this file exists to document.
+  eq('MJY ignores the cap entirely', fmtPrice(0.0064105, { maxDp: 4 }), fmtPrice(0.0064105));
+  eq('and is not rounded to four', fmtPrice(0.0064105, { maxDp: 4 }), '0.0064105');
+  eq('SHIB survives a four-decimal cap', fmtPrice(0.00000892, { maxDp: 4 }), '0.00000892');
+  ok('nothing sub-dollar is annihilated by it',
+     [0.00000892, 0.00000112, 0.0000198, 0.08412].every(v => +fmtPrice(v, { maxDp: 4 }) !== 0));
+  // The boundary itself: 0.995 is below a unit, so it takes the significant-figure branch and keeps
+  // its third digit rather than being shaved to 0.99 by either cap.
+  eq('the boundary belongs to the branch below it', fmtPrice(0.995, { maxDp: 4 }), '0.995');
+  eq('and a unit exactly takes the branch above', fmtPrice(1, { maxDp: 4 }), '1.00');
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
