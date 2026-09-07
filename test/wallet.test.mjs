@@ -117,7 +117,22 @@ const HOLDER = '0x000000000000000000000000000000000000dEaD';
     const chains = readFileSync(new URL('../lib/chains.js', import.meta.url), 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     const urls = [...new Set([...chains.matchAll(/https?:\/\/[^'"`\s]+/g)].map(m => m[0]))].sort();
-    eq('and the registry names exactly the six verified ones', urls, [
+    // The registry now holds two KINDS of endpoint and they carry very different risk, so they are
+    // pinned separately rather than as one blurred list. An RPC endpoint is asked for balances and
+    // is trusted with the answer; a logo endpoint is only ever handed to Discord to render, and a
+    // wrong one shows the wrong picture. Splitting them keeps the RPC assertion exactly as strict
+    // as it was — a new RPC still cannot appear here unnoticed just because logos exist now.
+    const logos = urls.filter(u => /icons\.llamao\.fi/.test(u));
+    const rpcs  = urls.filter(u => !/icons\.llamao\.fi/.test(u));
+    eq('every chain logo comes from the one source, so they read as a set', logos, [
+      'https://icons.llamao.fi/icons/chains/rsz_arbitrum?w=48&h=48',
+      'https://icons.llamao.fi/icons/chains/rsz_base?w=48&h=48',
+      'https://icons.llamao.fi/icons/chains/rsz_ethereum?w=48&h=48',
+      'https://icons.llamao.fi/icons/chains/rsz_hyperliquid?w=48&h=48',
+      'https://icons.llamao.fi/icons/chains/rsz_polygon?w=48&h=48',
+      'https://icons.llamao.fi/icons/chains/rsz_robinhood?w=48&h=48',
+    ]);
+    eq('and the registry names exactly the six verified ones', rpcs, [
       'https://arb1.arbitrum.io/rpc',
       'https://ethereum-rpc.publicnode.com',
       'https://mainnet.base.org',
