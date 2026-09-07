@@ -10,7 +10,7 @@
 // The contract with App.jsx is the TradeConsole props below: live regime and its qualifiers, the
 // price feed, and the regime history. Everything else is derived here or imported from lib/.
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { FUTURES_MULTIPLIER, multiplierFor, backfillMultipliers, quoteConvention, looksMisquoted, isUnambiguousFuture } from '../lib/futures.js';
 import { cryptoSymbolCheck, cryptoQuoteSymbol, isSpotCrypto, assetClassGroups, priceMaxDp } from '../lib/crypto.js';
 import { fundingRead, basisRead, isHlPerp, hlPerpCoin, estimateLiquidation, liquidationVsStop } from '../lib/hyperliquid.js';
@@ -298,6 +298,22 @@ const Div = () => <span className="dvcap-divider" style={{ width: 1, alignSelf: 
 
 // "held 5 weeks" beats "since 2026-07-15" in a row whose whole job is telling a swing from a
 // scalp: the number you want is the DURATION, and the exact date is one click away in the editor.
+// ── AGE AT THE SCALE THAT MATTERS ────────────────────────────────────────────
+// heldFor answers in DAYS, which is right for a position and useless for a read: an on-chain
+// balance fetched six hours ago would report "today", and the entire point of the stamp is to say
+// whether it is worth pressing refresh. Minutes, then hours, then fall back to days.
+const readAgo = (iso) => {
+  const t = Date.parse(String(iso || ''));
+  if (!Number.isFinite(t)) return null;
+  const mins = Math.floor((Date.now() - t) / 60000);
+  if (mins < 0) return 'just now';
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+};
+
 const heldFor = (from) => {
   const d = daysBetween(from, new Date().toISOString().slice(0, 10));
   if (d == null || d < 0) return null;
@@ -1133,6 +1149,8 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   const [hlSpot, setHlSpot] = useState(null);
   const [showSpot, setShowSpot] = useRemembered("hlspot", false);
   const [wallet, setWallet] = useState(null);
+  // When the on-chain half was last read, so the page can say rather than imply it is current.
+  const [chainAt, setChainAt] = useState(null);
   // ONE TOGGLE PER CHAIN, not one for all of them. Every per-chain card was handed the same
   // open/onToggle pair, so hiding Ethereum hid Arbitrum and Robinhood with it — the state was
   // shared because the component was reused, which is the reuse bug you get for free when a
@@ -1169,6 +1187,28 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   const notifiedRef = useMemo(() => ({ current: new Set() }), []);
 
   // ── load / persist ──
+  // ── THE ON-CHAIN HALF, RE-READABLE ON DEMAND ─────────────────────────────────────────────────
+  // The perp book, the spot ledger and the wallet were fetched ONCE, on mount, and the 🔄 Prices
+  // button refreshes Yahoo quotes only — so every on-chain figure on this page was frozen at page
+  // load and the only way to move it was a reload. Nothing said so, which is the worse half.
+  //
+  // Deliberately NOT the whole payload. Re-reading the console rows on a refresh would overwrite
+  // unsaved edits with whatever was last synced, which is a data-loss bug wearing a refresh
+  // button. Only the read-only, server-owned fields are re-read here.
+  const refreshLive = useCallback(() => fetch("/api/manual-entry")
+    .then(r => r.json())
+    .then(j => {
+      const hl = j?.hyperliquid;
+      setLivePositions(hl?.ok && Array.isArray(hl.positions)
+        ? Object.fromEntries(hl.positions.map(p => [p.coin, p])) : null);
+      setHlSpot(j?.hyperliquidSpot?.ok ? j.hyperliquidSpot : null);
+      setWallet(j?.wallet?.chains ? j.wallet : null);
+      setPreread(Array.isArray(j?.preread) ? j.preread : null);
+      setFlexNote(j?.flexSync || null);
+      setChainAt(new Date().toISOString());
+    })
+    .catch(() => { /* leave the last good read on screen rather than blanking it */ }), []);
+
   useEffect(() => {
     try {
       const c = JSON.parse(localStorage.getItem(LS) || "null");
@@ -1201,6 +1241,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
       setKvOn(j?.kv?.configured ?? null);
       setFlexNote(j?.flexSync || null);
       setPreread(Array.isArray(j?.preread) ? j.preread : null);
+      setChainAt(new Date().toISOString());
       setLoaded(true);
     }).catch(() => setLoaded(true));
   }, []);
@@ -2036,7 +2077,9 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
               </span>
             )}
             {saveMsg && <span style={{ fontSize: 12, color: C.mid }}>{saveMsg}</span>}
-            <Btn onClick={() => fetchPrices([...symbols, ...fxSyms])} disabled={pricesLoading || !symbols.length} color={C.mid} bgColor={C.bg} label={pricesLoading ? "…" : "🔄 Prices"} />
+            {/* Both halves. Quotes come from Yahoo and the chain data from our own route; a
+                button labelled "refresh" that moved only one of them was the bug. */}
+            <Btn onClick={() => { fetchPrices([...symbols, ...fxSyms]); refreshLive(); }} disabled={pricesLoading || !symbols.length} color={C.mid} bgColor={C.bg} label={pricesLoading ? "…" : "🔄 Prices"} />
             <Btn onClick={saveCloud} disabled={saving} color="#fff" bgColor={dirty ? C.blue : C.bdrMd} label={saving ? "Saving…" : dirty ? "☁ Save to cloud" : "☁ Synced"} />
           </div>
         </div>
@@ -2321,9 +2364,12 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
               <span style={{ fontSize: 11.5, color: C.muted }}>
                 {wallet.chains.filter(c => c.ok && c.rows.length).length} chains · read-only · priced by Hyperliquid
               </span>
-              <div style={{ marginLeft: "auto", fontSize: 13 }}>
-                <span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>ACROSS ALL CHAINS </span>
-                <b>{fmtCcy(wallet.total, "USD")}</b>
+              <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "baseline", fontSize: 13 }}>
+                {/* On-chain reads do not follow the quote refresh unless asked, so the age is
+                    stated rather than implied. */}
+                {chainAt && <span style={{ fontSize: 11, color: C.muted }} title={`On-chain balances last read ${chainAt}`}>read {readAgo(chainAt)}</span>}
+                <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>ACROSS ALL CHAINS </span>
+                <b>{fmtCcy(wallet.total, "USD")}</b></span>
               </div>
             </div>
             {/* A chain that did not answer is NAMED. A total silently missing one is worse than a
