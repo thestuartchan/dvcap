@@ -42,22 +42,42 @@ for (const m of readFileSync('lib/apiauth.js', 'utf8').matchAll(/'([A-Z_]{4,})'/
 const env = { ...process.env };
 for (const n of names) env[n] = env[n] || 'check-env-independent-dummy';
 
-const failed = [];
+const failed = [], broken = [];
+const clean = { ...process.env };
+for (const n of names) delete clean[n];
+
 for (const f of readdirSync('test').filter(f => f.endsWith('.test.mjs'))) {
+  let out;
   try {
     execFileSync('node', [`test/${f}`], { env, stdio: 'pipe', encoding: 'utf8' });
-  } catch (e) {
-    const why = String(e.stdout || '').split('\n').filter(l => l.includes('❌')).slice(0, 3);
-    failed.push(`test/${f}\n${why.map(l => `        ${l.trim()}`).join('\n')}`);
+    continue;                                     // passes with the variables set: nothing to say
+  } catch (e) { out = String(e.stdout || ''); }
+  // IT FAILED WITH THEM SET. That is not yet a finding — the file might simply be broken, and
+  // saying "this passes clean and fails with variables set" without having run it clean is a
+  // diagnosis rather than an observation. The first version of this script did exactly that and
+  // was wrong the first time it fired, on a test that was failing both ways.
+  const why = out.split('\n').filter(l => l.includes('❌')).slice(0, 3)
+                 .map(l => `        ${l.trim()}`).join('\n');
+  try {
+    execFileSync('node', [`test/${f}`], { env: clean, stdio: 'pipe', encoding: 'utf8' });
+    failed.push(`test/${f}\n${why}`);            // passes clean, fails set — environment-dependent
+  } catch {
+    broken.push(`test/${f}`);                     // fails either way — an ordinary failure
   }
 }
 
+if (broken.length) {
+  console.error(`✖ env-independence check could not run — ${broken.length} test file${broken.length === 1 ? '' : 's'} fail with or without the variables:`);
+  for (const f of broken) console.error(`    ${f}`);
+  console.error('  These are ordinary failures, not environment dependence. `npm test` reports them.');
+  process.exit(1);
+}
 if (failed.length) {
   console.error(`✖ env-independence check FAILED — ${failed.length} test file${failed.length === 1 ? '' : 's'} read the environment:`);
   for (const f of failed) console.error(`    ${f}`);
-  console.error('  These pass with the variables unset and fail with them set, so they would pass');
-  console.error('  as a preview build and fail as a production one. Save, delete, assert, restore —');
-  console.error('  see the block in test/hyperliquid.test.mjs.');
+  console.error('  Each PASSES with the variables unset and FAILS with them set — verified both ways.');
+  console.error('  So it would pass as a preview build and fail as a production one. Save, delete,');
+  console.error('  assert, restore — see the block in test/hyperliquid.test.mjs.');
   process.exit(1);
 }
 console.log(`✔ env-independence check passed (suite re-run with ${names.size} deployment variables set)`);

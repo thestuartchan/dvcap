@@ -13,7 +13,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { FUTURES_MULTIPLIER, multiplierFor, backfillMultipliers, quoteConvention, looksMisquoted, isUnambiguousFuture } from '../lib/futures.js';
 import { cryptoSymbolCheck, cryptoQuoteSymbol, isSpotCrypto, assetClassGroups, priceMaxDp } from '../lib/crypto.js';
-import { fundingRead, basisRead, isHlPerp, estimateLiquidation, liquidationVsStop } from '../lib/hyperliquid.js';
+import { fundingRead, basisRead, isHlPerp, hlPerpCoin, estimateLiquidation, liquidationVsStop } from '../lib/hyperliquid.js';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
@@ -998,6 +998,63 @@ const Section = ({ title, note, list, mode, ctx }) => (
 // Positions are FILLS, not a single entry price (lib/positions.js), because these trades scale in
 // and scale out: a position is regularly open AND realising P&L at the same time, which the old
 // single-entry model could not represent at all.
+// ── THREE ANSWERS TO "HOW MUCH HYPE DO I HAVE" ───────────────────────────────────────────────
+// A perp position, a balance on Hyperliquid's own ledger, and coins in the wallet on chain. They
+// are not interchangeable — moving the third to the second is a bridge transaction, not a transfer
+// between accounts — so they are three sections and never one total.
+//
+// The two BALANCE sets have the same shape and the same hazards, so they share a renderer: value,
+// what is on hold, and the thin-market guard that keeps an unsellable airdrop out of the total.
+function Holdings({ data, title, note, open, onToggle, money }) {
+  if (!data || !data.rows?.length) return null;
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+        <SLabel>{title}</SLabel>
+        <span style={{ fontSize: 11.5, color: C.muted }}>{note}</span>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "baseline", fontSize: 13 }}>
+          <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>VALUE </span><b>{money(data.total, "USD")}</b></span>
+          <button onClick={onToggle} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{open ? "Hide" : "Show"}</button>
+        </div>
+      </div>
+      {/* WHAT THE TOTAL LEAVES OUT, said plainly. A mid price on a pair nobody trades is a number,
+          not a valuation — run against a burn address this read $6.2 TRILLION, on an airdrop quoted
+          at 62,227 with $40.90 of daily volume. Listed and excluded, never quietly folded in. */}
+      {(data.thin?.count > 0 || data.unpriced > 0) && (
+        <div style={{ marginTop: 6, fontSize: 11.5, color: C.muted }}>
+          Excludes{data.thin?.count ? ` ${data.thin.count} token${data.thin.count === 1 ? "" : "s"} with too little volume to price` : ""}
+          {data.thin?.count && data.unpriced ? " and" : ""}
+          {data.unpriced ? ` ${data.unpriced} with no USDC market` : ""} — listed below, unvalued.
+        </div>
+      )}
+      {open && (
+        <div style={{ marginTop: 10 }}>
+          {data.rows.map(h => (
+            <div key={h.coin} style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap",
+                 padding: "6px 0", borderBottom: "1px solid " + C.bdr, fontSize: 12.5, opacity: h.priced && !h.thin ? 1 : 0.62 }}>
+              <b style={{ minWidth: 68 }}>{h.coin}</b>
+              <span style={{ color: C.mid }}>{h.total}</span>
+              {h.locked && <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }} title={`${h.hold} resting in open orders`}>{h.free} free</span>}
+              {h.priced && !h.thin && <span style={{ color: C.lbl, fontSize: 11.5 }}>@ {fmtPrice(h.price, { maxDp: 4 })}</span>}
+              {h.thin && <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }} title={`24h volume ${money(h.volume ?? 0, "USD")} — too thin to value`}>no real market</span>}
+              {!h.priced && <span style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>no USDC pair</span>}
+              <span style={{ marginLeft: "auto", display: "inline-flex", gap: 9, alignItems: "baseline" }}>
+                {h.priced && !h.thin && <b>{money(h.value, "USD")}</b>}
+                {h.pnlPct != null && !h.thin && <b style={{ fontSize: 12, color: h.pnl >= 0 ? C.green : C.red }}>{(h.pnlPct > 0 ? "+" : "") + h.pnlPct}%</b>}
+              </span>
+            </div>
+          ))}
+          {data.dust?.count > 0 && (
+            <div style={{ marginTop: 8, fontSize: 11.5, color: C.muted }}>
+              {data.dust.count} dust balance{data.dust.count === 1 ? "" : "s"} under {money(1, "USD")} · {money(data.dust.value, "USD")} in total — counted, not listed.
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, contested, regimeDiverged, prices, fetchPrices, pricesLoading }) {
   const LS = "dvcap_console_v2";
   // Dismissal is by TIMESTAMP, not a flag: the next run's news must reappear rather than being
@@ -1045,7 +1102,9 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   // loaded — a map seeded with every key would freeze the archive as it was at load.
   const [grain, setGrain] = useState("month");
   const [hlSpot, setHlSpot] = useState(null);
-  const [showSpot, setShowSpot] = useRemembered("wallet", false);
+  const [showSpot, setShowSpot] = useRemembered("hlspot", false);
+  const [wallet, setWallet] = useState(null);
+  const [showWallet, setShowWallet] = useRemembered("wallet", false);
   const [periodOpen, setPeriodOpen] = useState({});
   // Served by api/manual-entry, which is authenticated and never cached. Positions do not belong
   // on the shared, edge-cached price route — see lib/apiauth.js.
@@ -1089,6 +1148,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
         : null);
       // Spot balances are a different animal from perp positions and get their own section.
       setHlSpot(j?.hyperliquidSpot?.ok ? j.hyperliquidSpot : null);
+      setWallet(j?.wallet?.ok ? j.wallet : null);
       const c = j?.console;
       if (c && typeof c === "object") {
         // ONE-TIME BACKFILL of contract multipliers — see lib/futures.js. A margined row that never
@@ -1334,6 +1394,15 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   const periods = useMemo(
     () => archivePeriods(archived, { grain, realisedOf: (r) => toBase(r.derived.realized, r) }),
     [archived, grain, fxRates, baseCcy]);
+  // ── THE PERPS THE VENUE SAYS ARE OPEN ────────────────────────────────────────────────────────
+  // livePositions is keyed by coin because every consumer looks one up; the section below wants
+  // the list. `trackedPerps` is which of them the BOOK knows about, so a position held on the
+  // exchange and absent from the console can say so rather than being invisible.
+  const livePerps = useMemo(() => Object.values(livePositions || {}), [livePositions]);
+  const trackedPerps = useMemo(
+    () => new Set(rows.map(r => hlPerpCoin(r.symbol)).filter(Boolean)),
+    [rows]);
+
   const isOpen = (p) => periodOpen[p.key] ?? p.open;
   const shownPeriods = useMemo(() => periods.map(p => ({ ...p, shown: isOpen(p) })), [periods, periodOpen]);
   const hidden = useMemo(
@@ -2155,64 +2224,56 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
         list={[...openPos].sort((a, b) => (convert(b.pnl.marketValue, b.currency || "USD", baseCcy, fxRates) ?? -1) - (convert(a.pnl.marketValue, a.currency || "USD", baseCcy, fxRates) ?? -1))}
         mode="open" ctx={ctx} />
 
-      {/* ── THE WALLET ─────────────────────────────────────────────────────────────────────────
-          Not part of the book above. Those rows are trades — an entry, a thesis, levels, a stop.
-          These are BALANCES sitting in a wallet, most of them never decided on: the venue drops
-          airdrops into it unbidden. Merging the two would put a token nobody chose next to a
-          position sized against account equity, and invite exactly the comparison this codebase
-          keeps splitting apart.
-
-          Read-only, from the address in the environment. It never reaches the Discord card — a
-          holdings list is size, and size is one of the four quantities lib/tradecard.js exists to
-          refuse. */}
-      {hlSpot && hlSpot.rows.length > 0 && (
+      {/* ── THE PERP BOOK, AS THE VENUE HAS IT ─────────────────────────────────────────────────
+          The address was configured and nothing appeared, because live positions only rendered
+          onto a row somebody had already typed `HL:BTC` into. The data was being fetched and
+          discarded. It shows here whether or not a row exists, and says which ones the book is
+          not tracking — that is the whole point of having handed over an address. */}
+      {livePerps.length > 0 && (
         <Card>
           <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
-            <SLabel>Wallet — Hyperliquid spot</SLabel>
-            <span style={{ fontSize: 11.5, color: C.muted }}>balances, not positions · read-only</span>
-            <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "baseline", fontSize: 13 }}>
-              <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>VALUE </span>
-                <b>{fmtCcy(hlSpot.total, "USD")}</b></span>
-              <button onClick={() => setShowSpot(v => !v)} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{showSpot ? "Hide" : "Show"}</button>
-            </div>
+            <SLabel>Hyperliquid — open perps</SLabel>
+            <span style={{ fontSize: 11.5, color: C.muted }}>live from the venue · read-only</span>
+            <span style={{ marginLeft: "auto", fontSize: 12.5, color: C.lbl }}>{livePerps.length} position{livePerps.length === 1 ? "" : "s"}</span>
           </div>
-          {/* WHAT THE TOTAL LEAVES OUT, said plainly. A mid price on a pair nobody trades is a
-              number, not a valuation — run against a burn address this read $6.2 TRILLION, on an
-              airdrop quoted at 62,227 with $40.90 of daily volume. Those rows are listed and
-              excluded, never quietly folded in. */}
-          {(hlSpot.thin?.count > 0 || hlSpot.unpriced > 0) && (
-            <div style={{ marginTop: 6, fontSize: 11.5, color: C.muted }}>
-              Excludes{hlSpot.thin?.count ? ` ${hlSpot.thin.count} token${hlSpot.thin.count === 1 ? "" : "s"} with too little volume to price` : ""}
-              {hlSpot.thin?.count && hlSpot.unpriced ? " and" : ""}
-              {hlSpot.unpriced ? ` ${hlSpot.unpriced} with no USDC market` : ""} — listed below, unvalued.
-            </div>
-          )}
-          {showSpot && (
-            <div style={{ marginTop: 10 }}>
-              {hlSpot.rows.map(h => (
-                <div key={h.coin} style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap",
-                     padding: "6px 0", borderBottom: "1px solid " + C.bdr, fontSize: 12.5, opacity: h.priced && !h.thin ? 1 : 0.62 }}>
-                  <b style={{ minWidth: 68 }}>{h.coin}</b>
-                  <span style={{ color: C.mid }}>{h.total}</span>
-                  {h.locked && <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }} title={`${h.hold} resting in open orders`}>{h.free} free</span>}
-                  {h.priced && !h.thin && <span style={{ color: C.lbl, fontSize: 11.5 }}>@ {fmtPrice(h.price, { maxDp: 4 })}</span>}
-                  {h.thin && <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }} title={`24h volume ${fmtCcy(h.volume ?? 0, "USD")} — too thin to value`}>no real market</span>}
-                  {!h.priced && <span style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>no USDC pair</span>}
-                  <span style={{ marginLeft: "auto", display: "inline-flex", gap: 9, alignItems: "baseline" }}>
-                    {h.priced && !h.thin && <b>{fmtCcy(h.value, "USD")}</b>}
-                    {h.pnlPct != null && !h.thin && <b style={{ fontSize: 12, color: pnlCol(h.pnl) }}>{(h.pnlPct > 0 ? "+" : "") + h.pnlPct}%</b>}
+          <div style={{ marginTop: 10 }}>
+            {livePerps.map(p => (
+              <div key={p.coin} style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap",
+                   padding: "7px 0", borderBottom: "1px solid " + C.bdr, fontSize: 12.5 }}>
+                <b style={{ minWidth: 64 }}>{p.coin}</b>
+                <span style={{ fontSize: 11, fontWeight: 800, color: p.side === "short" ? C.red : C.green }}>
+                  {p.side === "short" ? "SHORT" : "LONG"}
+                </span>
+                <span style={{ color: C.mid }}>{p.qty}</span>
+                {p.entry != null && <span style={{ color: C.lbl, fontSize: 11.5 }}>@ {fmtPrice(p.entry, { maxDp: 4 })}</span>}
+                {p.leverage != null && <span style={{ fontSize: 11, color: C.lbl }}>{p.leverage}× {p.leverageType || ""}</span>}
+                {/* THE VENUE'S OWN LIQUIDATION PRICE, never an estimate wearing its name. Console
+                    only — it is size and leverage restated, and never reaches the card. */}
+                {p.liquidationPx != null && (
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: C.amber }}>liq {fmtPrice(p.liquidationPx, { maxDp: 4 })}</span>
+                )}
+                {!trackedPerps.has(p.coin) && (
+                  <span style={{ fontSize: 11, color: C.blue, fontWeight: 700 }} title={`Add a setup with the ticker HL:${p.coin} to track this in the book`}>
+                    not in your book — add HL:{p.coin}
                   </span>
-                </div>
-              ))}
-              {hlSpot.dust?.count > 0 && (
-                <div style={{ marginTop: 8, fontSize: 11.5, color: C.muted }}>
-                  {hlSpot.dust.count} dust balance{hlSpot.dust.count === 1 ? "" : "s"} under {fmtCcy(1, "USD")} · {fmtCcy(hlSpot.dust.value, "USD")} in total — counted, not listed.
-                </div>
-              )}
-            </div>
-          )}
+                )}
+                <span style={{ marginLeft: "auto", display: "inline-flex", gap: 9, alignItems: "baseline" }}>
+                  {p.unrealizedPnl != null && (
+                    <b style={{ color: p.unrealizedPnl >= 0 ? C.green : C.red }}>{fmtCcy(p.unrealizedPnl, "USD")}</b>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
         </Card>
       )}
+
+      {/* Two BALANCE sets, deliberately not one. Hyperliquid's ledger is what the exchange holds
+          for the address; the wallet is what the address holds itself, on chain. */}
+      <Holdings data={hlSpot} title="Hyperliquid — spot ledger" note="balances on the exchange · read-only"
+                open={showSpot} onToggle={() => setShowSpot(v => !v)} money={fmtCcy} />
+      <Holdings data={wallet} title="Wallet — on chain" note={`HyperEVM · what the address holds itself`}
+                open={showWallet} onToggle={() => setShowWallet(v => !v)} money={fmtCcy} />
 
       {/* archive: brief, with the performance summary */}
       <Card>
