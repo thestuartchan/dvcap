@@ -8,9 +8,10 @@
 // test/fixtures-multicall3.json, and the response it produced. Hand-rolled encoders are exactly
 // the kind of thing that looks right and is off by one word.
 import { readFileSync } from 'node:fs';
+import { CHAINS, CHAIN_KEYS, pricedSymbols } from '../lib/chains.js';
 import { encodeAggregate3, decodeAggregate3, balanceOfCall, evmDecimals, erc20Targets,
          fromUnits, walletBalances, fetchWallet, MULTICALL3, HYPEREVM_RPC, HYPEREVM_CHAIN_ID,
-         NATIVE_SYMBOL, NATIVE_DECIMALS } from '../lib/wallet.js';
+         NATIVE_SYMBOL, NATIVE_DECIMALS, venuePrices, chainPrices } from '../lib/wallet.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `\n     got  ${JSON.stringify(g)}\n     want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -106,7 +107,25 @@ const HOLDER = '0x000000000000000000000000000000000000dEaD';
 {
   const raw = readFileSync(new URL('../lib/wallet.js', import.meta.url), 'utf8');
   const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-  eq('exactly one RPC endpoint', [...new Set([...src.matchAll(/https?:\/\/[^'"`\s]+/g)].map(m => m[0]))], [HYPEREVM_RPC]);
+  // The endpoints moved to lib/chains.js when the wallet stopped being HyperEVM-only, so the
+  // assertion moves with them rather than being dropped — a removed check is indistinguishable
+  // from one that was never made.
+  eq('the reader itself hardcodes no endpoint', [...new Set([...src.matchAll(/https?:\/\/[^'"`\s]+/g)].map(m => m[0]))], []);
+  {
+    const chains = readFileSync(new URL('../lib/chains.js', import.meta.url), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const urls = [...new Set([...chains.matchAll(/https?:\/\/[^'"`\s]+/g)].map(m => m[0]))].sort();
+    eq('and the registry names exactly the six verified ones', urls, [
+      'https://arb1.arbitrum.io/rpc',
+      'https://ethereum-rpc.publicnode.com',
+      'https://mainnet.base.org',
+      'https://polygon-bor-rpc.publicnode.com',
+      'https://rpc.hyperliquid.xyz/evm',
+      'https://rpc.mainnet.chain.robinhood.com',
+    ]);
+    ok('every one of them over TLS', urls.every(u => u.startsWith('https://')));
+    eq('HyperEVM is still where it was', HYPEREVM_RPC, 'https://rpc.hyperliquid.xyz/evm');
+  }
   // EVERY `method:` in the file, the HTTP verb included — enumerating all three says more than
   // filtering one out, and a fourth appearing is exactly what this should catch. eth_call and
   // eth_getBalance cannot change state; eth_sendRawTransaction can, and is not here.
@@ -125,6 +144,61 @@ const HOLDER = '0x000000000000000000000000000000000000dEaD';
     ok('and says so', /no address/.test(r.error));
     if (saved === undefined) delete process.env.HYPERLIQUID_ADDRESS; else process.env.HYPERLIQUID_ADDRESS = saved;
   }
+}
+
+// ── SIX CHAINS, ONE ENCODER ──────────────────────────────────────────────────
+// Multicall3 sits at the same canonical address on every one of them, verified deployed, so the
+// tested encoder above serves all six and there is no second implementation to drift.
+{
+  eq('the chains, in order', CHAIN_KEYS, ['hyperevm', 'ethereum', 'arbitrum', 'base', 'polygon', 'robinhood']);
+  eq('each names its id', Object.values(CHAINS).map(c => c.id), [999, 1, 42161, 8453, 137, 4663]);
+  ok('all six carry an RPC', Object.values(CHAINS).every(c => /^https:\/\//.test(c.rpc)));
+  ok('and a native asset with decimals', Object.values(CHAINS).every(c => c.native?.symbol && c.native.decimals > 0));
+  // Ids are what a mis-copied RPC would betray, so no two may share one.
+  eq('no id is repeated', new Set(Object.values(CHAINS).map(c => c.id)).size, CHAIN_KEYS.length);
+
+  // EVERY ADDRESS IS A 20-BYTE HEX ADDRESS, and unique within its chain. A duplicate would read
+  // one token's balance twice under two names and quietly double it in the total.
+  for (const [k, c] of Object.entries(CHAINS)) {
+    ok(`${k}: every address is well formed`, c.tokens.every(t => /^0x[0-9a-fA-F]{40}$/.test(t.address)));
+    eq(`${k}: no address appears twice`, new Set(c.tokens.map(t => t.address.toLowerCase())).size, c.tokens.length);
+    eq(`${k}: no symbol appears twice`, new Set(c.tokens.map(t => t.symbol)).size, c.tokens.length);
+    ok(`${k}: decimals are stated, never assumed`, c.tokens.every(t => Number.isInteger(t.decimals) && t.decimals >= 0 && t.decimals <= 36));
+  }
+  // Not everything is 18. Assuming so is the commonest way to be wrong by six orders of magnitude,
+  // and this registry contains the counterexamples: every stable here is 6, WBTC and cbBTC are 8.
+  ok('the registry contains non-18 decimals', Object.values(CHAINS).flatMap(c => c.tokens).some(t => t.decimals !== 18));
+  eq('every USDC is six', Object.values(CHAINS).flatMap(c => c.tokens).filter(t => t.symbol.startsWith('USDC')).map(t => t.decimals),
+     [6, 6, 6, 6, 6]);
+  eq('and the wrapped bitcoins are eight', Object.values(CHAINS).flatMap(c => c.tokens).filter(t => /BTC$/.test(t.symbol)).map(t => t.decimals),
+     [8, 8, 8, 8]);
+
+  // ── PRICED BY A VENUE, NOT BY A TICKER ─────────────────────────────────────
+  // Measured 2026-09-07: Yahoo and Hyperliquid agree within 0.1% on ETH, BTC and LINK, and differ
+  // by 266x on ARB and 12x on POL. Those tickers are other instruments. Nothing here may resolve a
+  // price by symbol lookup, so each entry names the VENUE symbol to price against.
+  eq('the venue symbols needed', pricedSymbols(), ['ARB', 'BTC', 'DAI', 'ETH', 'HYPE', 'LINK', 'POL', 'USDC', 'USDT']);
+  const venue = venuePrices({ ETH: { mark: 2482.6 }, BTC: { mark: 79009 }, ARB: { mark: 0.16753 }, POL: { mark: 0.096535 } });
+  eq('a mark becomes a price', venue.get('ETH').price, 2482.6);
+  ok('a listed perp is never thin — it is a real market by construction', venue.get('ETH').volume === Infinity);
+  eq('a market with no mark is not priced', venuePrices({ X: {} }).size, 0);
+
+  // The translation is the point: a row says WETH, the venue quotes ETH.
+  const p = chainPrices(CHAINS.arbitrum, venue);
+  eq('WETH is priced off ETH', p.get('WETH').price, 2482.6);
+  eq('WBTC off BTC', p.get('WBTC').price, 79009);
+  eq('ARB off ARB', p.get('ARB').price, 0.16753);
+  ok('and a token the venue does not quote is simply absent', !p.has('USDT0'));
+  eq('the native asset is priced too', chainPrices(CHAINS.polygon, venue).get('POL').price, 0.096535);
+
+  // ── ROBINHOOD CHAIN SAYS WHAT IT CANNOT SEE ────────────────────────────────
+  // Its tokenised assets are not addresses to guess at, and its explorer sits behind Cloudflare so
+  // a serverless function cannot enumerate them. Native only — declared, not implied.
+  eq('robinhood carries no token list', CHAINS.robinhood.tokens, []);
+  ok('and says the list is missing rather than empty', CHAINS.robinhood.tokensUnlisted === true);
+  ok('no other chain claims that', Object.entries(CHAINS).filter(([, c]) => c.tokensUnlisted).length === 1);
+  // A chain with no tokens still reads its native balance.
+  eq('its native asset is still named', CHAINS.robinhood.native.symbol, 'ETH');
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

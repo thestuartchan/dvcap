@@ -19,8 +19,8 @@ import { appendDecision, overrideStats, DECISIONS_KEY, ACTIONS } from '../lib/de
 import { GUARD_STATES } from '../lib/guards.js';
 import { sideOf } from '../lib/side.js';
 import { authorised, hasSessionCookie, refuse } from '../lib/apiauth.js';
-import { fetchHlAccount, fetchHlSpot, fetchSpotContext } from '../lib/hyperliquid.js';
-import { fetchWallet } from '../lib/wallet.js';
+import { fetchHlAccount, fetchHlSpot, fetchSpotContext, fetchHyperliquid } from '../lib/hyperliquid.js';
+import { fetchWallets } from '../lib/wallet.js';
 
 const DATA_PATH = 'data/manual_entry.json';
 
@@ -235,10 +235,15 @@ export default async function handler(req, res) {
       // on-chain wallet are three different things about one address; the last two both need the
       // spot universe and its prices, which is a 270KB payload. Fetched once here and handed to
       // both, rather than each pulling its own.
-      const [hlAccount, spotCtx] = await Promise.all([fetchHlAccount(), fetchSpotContext()]);
+      const [hlAccount, spotCtx, hlMarkets] = await Promise.all([
+        fetchHlAccount(), fetchSpotContext(), fetchHyperliquid(),
+      ]);
       const [hlSpot, wallet] = await Promise.all([
         fetchHlSpot({ context: spotCtx }),
-        fetchWallet({ spotMeta: spotCtx.meta, prices: spotCtx.prices }),
+        // Six chains, each one multicall, all in parallel. The perp marks price them: a ticker
+        // lookup put ARB at 0.000629 against the venue's 0.16753, which is the same collision this
+        // codebase already refuses for perps.
+        fetchWallets({ spotMeta: spotCtx.meta, spotPrices: spotCtx.prices, markets: hlMarkets.markets }),
       ]);
       const fullLog = full && kvConfigured() ? (await kvGetJson(DECISIONS_KEY)) || [] : null;
       // NOT edge-cached. This response now carries the trade console — real positions and cost
@@ -272,9 +277,10 @@ export default async function handler(req, res) {
         // to keep off anything public.
         hyperliquidSpot: hlSpot,
         // ── AND WHAT THE WALLET HOLDS ON CHAIN ────────────────────────────────────────────────
-        // A third thing again: coins at the address itself, which the exchange knows nothing
-        // about. Moving them onto Hyperliquid is a bridge transaction, not a transfer between
-        // accounts, so a merged number would answer a question nobody asks.
+        // A third thing again: coins at the address itself, across every chain it exists on —
+        // which the exchange knows nothing about. Moving them onto Hyperliquid is a bridge
+        // transaction, not a transfer between accounts, so a merged number would answer a
+        // question nobody asks.
         wallet,
         // WHETHER THE BRIEFS ACTUALLY ARRIVED. Carried on the console's own payload so a missed
         // pre-read is visible where the reader already is, instead of being discovered days later
