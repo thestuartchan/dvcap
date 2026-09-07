@@ -13,11 +13,14 @@
 // lib/tradecard.js from a whitelisted projection of a row, so a size or a dollar figure cannot
 // reach Discord even by accident. See the header of that file.
 
-import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY } from '../lib/kv.js';
+import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, WALLET_SNAPSHOT_KEY } from '../lib/kv.js';
 import { derivePosition, positionPnl, levelHits, applyRolls } from '../lib/positions.js';
 import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard } from '../lib/tradecard.js';
-import { upsertCard, post, remove, webhookFromEnv, mentionFromEnv, alertTtlMin, CARD_KEY } from '../lib/discord.js';
+import { upsertCard, post, remove, webhookFromEnv, walletWebhookFromEnv, mentionFromEnv, alertTtlMin, CARD_KEY } from '../lib/discord.js';
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
+import { fetchWallets } from '../lib/wallet.js';
+import { fetchSpotContext, fetchHyperliquid } from '../lib/hyperliquid.js';
+import { diffHoldings, walletPublicView, buildWalletCard } from '../lib/walletcard.js';
 
 // A row's symbol is what you call it; the quote feed may call it something else. Mirrors the tab's
 // own resolution — Yahoo has no MNQ, and its MGC is an unrelated stock.
@@ -142,9 +145,63 @@ export async function refresh(origin, { now = Date.now() } = {}) {
 // browser path keeps working; the cron must present the key.
 const authorised = (req) => gate(req);   // async — the caller must await it
 
+// ── THE WALLET CARD, IN A DIFFERENT CHANNEL ──────────────────────────────────
+// Lives in this route rather than its own because the deployment is at 12 of 12 serverless
+// functions; scripts/check-function-count.mjs says so in those words, and merging beats deleting
+// something else. Reached as ?card=wallet.
+//
+// RE-SENT, NEVER EDITED. The trades card edits one message in place because a swing book that
+// re-posts all day is noise. This one fires only when the composition actually changed, so a fresh
+// message is both simpler and the better behaviour — it surfaces in the channel exactly when
+// something happened and never otherwise.
+//
+// The channel is PUBLIC. lib/walletcard.js publishes prices and composition and no size of any
+// kind; the snapshot below keeps quantities, which is why it lives in Redis and not in a card.
+export async function refreshWallet() {
+  const hook = walletWebhookFromEnv();
+  if (!hook) return { ok: false, skipped: 'DISCORD_WALLET_WEBHOOK is not set' };
+  if (!kvConfigured()) return { ok: false, skipped: 'no Redis — nothing to compare against' };
+
+  const [spotCtx, hlMarkets] = await Promise.all([fetchSpotContext(), fetchHyperliquid()]);
+  const w = await fetchWallets({ spotMeta: spotCtx.meta, spotPrices: spotCtx.prices, markets: hlMarkets.markets });
+  if (!w.ok) return { ok: false, skipped: 'no chain answered' };
+
+  // Flattened across chains, because the same token on two chains is two holdings.
+  const now = w.chains.filter(c => c.ok).flatMap(c =>
+    c.rows.map(r => ({ coin: r.coin, chain: c.chain, total: r.total, price: r.price })));
+
+  const prevSnap = (await kvGetJson(WALLET_SNAPSHOT_KEY)) || null;
+  // FIRST RUN POSTS NOTHING. With nothing to compare against, every holding looks newly bought and
+  // the first card would be a fabricated buying spree. Record and stay quiet.
+  if (!prevSnap?.rows) {
+    await kvSetJson(WALLET_SNAPSHOT_KEY, { rows: now, at: new Date().toISOString() });
+    return { ok: true, posted: false, seeded: now.length };
+  }
+
+  const events = diffHoldings(prevSnap.rows, now);
+  if (!events.length) return { ok: true, posted: false, events: 0 };
+
+  const holdings = now.filter(r => r.price != null).map(r => walletPublicView(r, r.chain));
+  const card = buildWalletCard(events, holdings);
+  const r = await fetch(hook, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(card), signal: AbortSignal.timeout(10000),
+  });
+  // The snapshot advances ONLY on a confirmed post. A failed webhook that still moved the
+  // watermark would swallow the change permanently — the next run would see nothing to report.
+  if (!r.ok) return { ok: false, posted: false, error: `discord HTTP ${r.status}` };
+  await kvSetJson(WALLET_SNAPSHOT_KEY, { rows: now, at: new Date().toISOString() });
+  return { ok: true, posted: true, events: events.length };
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') { res.status(405).json({ error: 'method not allowed' }); return; }
   if (!(await authorised(req))) { res.status(401).json({ error: 'unauthorised', why: refusalReason(req) }); return; }
+  if (String(req.query?.card || '') === 'wallet') {
+    try { res.status(200).json(await refreshWallet()); }
+    catch (e) { console.error('walletcard', e); res.status(200).json({ error: String(e?.message || e) }); }
+    return;
+  }
   const proto = req.headers['x-forwarded-proto'] || 'https';
   const origin = `${proto}://${req.headers.host}`;
   try {
