@@ -5,6 +5,7 @@
 // prices, never size and never an ENTRY price. Same four forbidden quantities as lib/tradecard.js — SIZE, ABSOLUTE P&L, MARKET
 // VALUE, SHARE OF BOOK — for the same reason, and tested the same way: rows whose private values
 // are distinctive digit strings, asserted to appear nowhere in the serialised output.
+import { chainMark } from '../lib/chains.js';
 import { walletPublicView, diffHoldings, buildWalletCard, eventLine, holdingLine, mergePending,
          WALLET_PUBLIC_FIELDS, EVENT_PUBLIC_FIELDS, MIN_NOTIONAL_USD } from '../lib/walletcard.js';
 
@@ -41,17 +42,16 @@ const row = (o = {}) => ({
     ok(`the card never contains the ${name} (${n})`, !whole.includes(String(n)) && !whole.includes(String(n).split('.')[0]));
   for (const leak of ['4321.99', '3210.55'])
     ok(`nor "${leak}"`, !whole.includes(leak));
-  // Size WORDS are checked against the rendered content, not the whole payload — the footer says
-  // "no sizes, balances or totals are published", and a test that trips on its own disclaimer is
-  // a test that gets deleted rather than fixed.
-  const shown = card.embeds[0].description;
+  // The footer used to recite what was withheld, which meant this check had to be scoped to the
+  // description or it tripped on the disclaimer's own words. The footer is now four words, so the
+  // size words can be banned from the ENTIRE payload — a strictly stronger assertion.
   for (const word of ['balance', 'qty', 'quantity', 'holding count', 'total'])
-    ok(`the content never says "${word}"`, !new RegExp(word, 'i').test(shown));
+    ok(`the payload never says "${word}"`, !new RegExp(word, 'i').test(whole));
   // Prices and percentages ARE published — they are the idea, not the size.
   ok('but the price is there', whole.includes('0.7121'));
   ok('and the symbol', whole.includes('PONS'));
-  // And it says so on the card, so a reader knows what they are not being told.
-  ok('the footer states the boundary', /no entry prices, sizes, balances or totals/i.test(whole));
+  ok('the footer dates the prices without reciting a disclaimer',
+     card.embeds[0].footer.text === 'Market prices at time of post');
 }
 
 // ── MATERIALITY, ON NOTIONAL RATHER THAN QUANTITY ────────────────────────────
@@ -108,15 +108,15 @@ const row = (o = {}) => ({
      !/0\.01742|@/.test(eventLine({ kind: 'bought', symbol: 'NUDES', price: 0.01742, chain: 'Robinhood Chain' })));
   ok('a chainless event still reads', /Sold \*\*X\*\*$/.test(eventLine({ kind: 'sold', symbol: 'X', chain: null })));
   // Crypto keeps four decimals above a dollar, equities two — the rule lib/crypto.js owns.
-  ok('a holding line carries price and day move',
+  ok('a holding line is led by its chain mark and carries price and day move',
      holdingLine({ symbol: 'PONS', price: 0.7121, changePercent: -17.68, chain: 'Robinhood Chain' })
-     === '**PONS** 0.7121 (-17.68%) · Robinhood Chain');
+     === '🪶 **PONS** 0.7121 (-17.68%) · Robinhood Chain');
   ok('and omits a missing day move rather than printing zero',
      !/%/.test(holdingLine({ symbol: 'X', price: 1, changePercent: null, chain: null })));
 
   const empty = buildWalletCard([], []);
   eq('a quiet day says so rather than rendering blank', empty.embeds[0].description, '_No changes today._');
-  ok('and still carries the boundary note', /no entry prices/i.test(JSON.stringify(empty)));
+  ok('and still dates its prices', /at time of post/i.test(JSON.stringify(empty)));
   // A malformed event is dropped rather than rendered as "undefined".
   eq('unknown event kinds are dropped', buildWalletCard([{ kind: 'wat', symbol: 'X' }], []).embeds[0].description, '_No changes today._');
 }
@@ -171,6 +171,40 @@ const row = (o = {}) => ({
   // Nothing that reaches the buffer may carry a price, or the buffer becomes the leak.
   const merged = mergePending([], [{ kind: 'bought', symbol: 'A', chain: 'Base', price: 0.0174299 }]);
   ok('a price handed to the buffer is stripped', !JSON.stringify(merged).includes('0174299'));
+}
+
+// ── CHAIN MARKS ──────────────────────────────────────────────────────────────
+// Unicode has no chain logos; real ones are custom Discord emoji, which are per-server and set
+// through DISCORD_CHAIN_EMOJI. The built-ins must work with nothing configured, and a malformed
+// override must never take the card down.
+{
+  const E = {};   // nothing configured
+  eq('each chain has its own mark', chainMark('Robinhood Chain', E), '🪶');
+  eq('and another does not borrow it', chainMark('Ethereum', E), '⟠');
+  ok('every configured chain has a distinct mark', (() => {
+    const marks = ['Ethereum', 'Arbitrum', 'Base', 'Polygon', 'Robinhood Chain'].map(c => chainMark(c, E));
+    return new Set(marks).size === marks.length;
+  })());
+  eq('an unknown chain still gets a mark rather than "undefined"', chainMark('Solana', E), '⬦');
+  eq('and so does a missing one', chainMark(null, E), '⬦');
+
+  // A custom emoji wins, and only for the chain it names.
+  const custom = { DISCORD_CHAIN_EMOJI: '{"Ethereum":"<:eth:12345>"}' };
+  eq('a custom emoji overrides the built-in', chainMark('Ethereum', custom), '<:eth:12345>');
+  eq('a chain the override omits keeps its built-in', chainMark('Base', custom), '🔵');
+
+  // Every failure path must fall back rather than throw — a typo in an env var must not stop the
+  // daily card from posting.
+  for (const [name, raw] of Object.entries({
+    'malformed JSON': '{not json',
+    'an array': '["a","b"]',
+    'a bare string': '"nope"',
+    'a null': 'null',
+  })) eq(`${name} falls back to the built-in`, chainMark('Ethereum', { DISCORD_CHAIN_EMOJI: raw }), '⟠');
+
+  eq('a non-string value is rejected', chainMark('Ethereum', { DISCORD_CHAIN_EMOJI: '{"Ethereum":42}' }), '⟠');
+  eq('and one carrying a newline is too, since it would break the layout',
+     chainMark('Ethereum', { DISCORD_CHAIN_EMOJI: '{"Ethereum":"a\\nb"}' }), '⟠');
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
