@@ -8,7 +8,8 @@
 // Parsed from a FIXTURE, not the network: funding moves hourly, so a test that asserted today's
 // rate would fail tomorrow for the one reason that is not a defect.
 import { readFileSync } from 'node:fs';
-import { isAddress, fetchHlAccount, HL_ADDRESS_ENV, parsePositions, accountSummary, estimateLiquidation, leverageAt, maintenanceMarginFraction, liquidationVsStop } from '../lib/hyperliquid.js';
+import { parseSpotBalances, spotPrices, spotHoldings, fetchHlSpot, HL_SPOT_QUOTE, SPOT_DUST_USD, SPOT_THIN_VOLUME_USD,
+         isAddress, fetchHlAccount, HL_ADDRESS_ENV, parsePositions, accountSummary, estimateLiquidation, leverageAt, maintenanceMarginFraction, liquidationVsStop } from '../lib/hyperliquid.js';
 import { parseMetaAndCtxs, fundingRead, basisRead, hlCoin, hlPerpCoin, isHlPerp, perpQuote, HL_PREFIX, FUNDING_PER_YEAR, FUNDING_LOUD_APR } from '../lib/hyperliquid.js';
 
 let pass = 0, fail = 0;
@@ -106,9 +107,17 @@ eq('max leverage travels too', [M.BTC.maxLeverage, M.WIF.maxLeverage], [40, 10])
   ok('nothing addresses the write path', !src.includes('/exchange'));
   ok('and no order action is named', !/\b(placeOrder|cancelByCloid|usdSend|withdraw3)\b/.test(src));
 
-  // Exactly two request types, both reads.
+  // EVERY request type this module can send, enumerated. It caught the spot read being added,
+  // which is exactly the job: widening what a deployment holding an address can ask for is a
+  // decision to make on purpose, in a diff, rather than a thing that accretes.
   const types = [...src.matchAll(/type:\s*'([a-zA-Z]+)'/g)].map(m => m[1]).sort();
-  eq('two read requests and no others', types, ['clearinghouseState', 'metaAndAssetCtxs']);
+  eq('four read requests and no others', types,
+     ['clearinghouseState', 'metaAndAssetCtxs', 'spotClearinghouseState', 'spotMetaAndAssetCtxs']);
+  // Structural rather than a restatement of the list above: every read this venue offers is named
+  // for the thing it returns — a ...State or a set of ...Ctxs. Its write verbs are actions —
+  // order, cancel, usdSend, withdraw3 — and none of them ends that way. A fifth read added later
+  // passes; a write added later does not.
+  ok('and every one of them is named for a thing, not an action', types.every(t => /(State|Ctxs)$/.test(t)));
 
   // THE ADDRESS COMES FROM THE ENVIRONMENT, never from a caller. A route that took it as a
   // parameter would be a way to read anyone's account through this deployment.
@@ -245,6 +254,141 @@ eq('max leverage travels too', [M.BTC.maxLeverage, M.WIF.maxLeverage], [40, 10])
   // place, because a computed figure in a field labelled "liquidation" would be read as the venue's.
   eq('no exchange figure means null, not an estimate',
      parsePositions({ assetPositions: [{ position: { coin: 'X', szi: '1', entryPx: '10' } }] })[0].liquidationPx, null);
+}
+
+// ── SPOT: WHAT THE WALLET HOLDS, NOT WHAT IT IS POSITIONED IN ────────────────
+// A perp is a position — leverage, funding, a liquidation price. Spot is a balance, some of it
+// locked in resting orders. Reading them in one list invites the comparison this codebase keeps
+// splitting apart, so they are separate reads producing separate sections.
+{
+  const bal = parseSpotBalances({ balances: [
+    { coin: 'USDC', token: 0, total: '1250.5', hold: '0.0', entryNtl: '0.0' },
+    { coin: 'HYPE', token: 150, total: '40.0', hold: '12.5', entryNtl: '2800.0' },
+    { coin: 'JUNK', token: 999, total: '1000', hold: '0.0', entryNtl: '0.0' },
+    { coin: '', total: '5' },                       // no coin — not a balance
+    { coin: 'BAD', total: 'not-a-number' },         // no amount — not a balance
+  ]});
+  eq('malformed balances are dropped, not defaulted', bal.map(b => b.coin), ['USDC', 'HYPE', 'JUNK']);
+  // `free` is not in the payload and is the number you want before deciding you HAVE any of
+  // something: 40 HYPE with 12.5 resting in orders is 27.5 you can actually move.
+  eq('free is total less what is on hold', bal.find(b => b.coin === 'HYPE').free, 27.5);
+  eq('and equals total when nothing is resting', bal.find(b => b.coin === 'USDC').free, 1250.5);
+}
+
+// ── THE INDEX TRAP, WHICH IS THE WHOLE REASON THIS IS TESTED ─────────────────
+// `spotMetaAndAssetCtxs` answers [meta, ctxs] and they are NOT positionally aligned. Measured live
+// on 2026-09-07: universe had 326 entries, ctxs had 720, and a universe entry's own `index` is not
+// its array position either — universe[105] carried index 107 and was named "@107".
+//
+// Joining by position priced HYPE at 0.0827 against a true 87.7975. Three orders of magnitude, on
+// a number that looks entirely reasonable. This fixture reproduces exactly that shape.
+{
+  const meta = {
+    tokens: [
+      { name: 'USDC', index: 0 },
+      { name: 'HYPE', index: 150 },
+      { name: 'ORPHAN', index: 300 },      // holds no USDC pair at all
+    ],
+    universe: [
+      { tokens: [1, 0],   name: 'PURR/USDC', index: 0 },
+      { tokens: [150, 0], name: '@107',      index: 107 },   // array position 1, index 107
+    ],
+  };
+  // ctxs are in a DIFFERENT order and longer than universe — the live shape.
+  const ctxs = [
+    { coin: 'PURR/USDC', midPx: '0.120575', prevDayPx: '0.12132', dayNtlVlm: '1770384.81' },
+    { coin: '@1',        midPx: '0.082745', prevDayPx: '0.08303', dayNtlVlm: '10.81' },   // the decoy
+    { coin: '@107',      midPx: '87.7975',  prevDayPx: '85.0',    dayNtlVlm: '81295463' },
+  ];
+  const px = spotPrices([meta, ctxs]);
+
+  eq('HYPE is priced by NAME, not by array position', px.get('HYPE').price, 87.7975);
+  ok('and is nowhere near what the positional join gave', Math.abs(px.get('HYPE').price - 0.082745) > 80);
+  eq('through the pair it actually names', px.get('HYPE').pair, '@107');
+  eq('the day move comes with it', px.get('HYPE').changePercent, 3.29);
+  // The quote asset prices itself. There is no USDC/USDC pair and there should not be one.
+  eq('the quote asset is worth one of itself', px.get(HL_SPOT_QUOTE).price, 1);
+  eq('and names no pair', px.get(HL_SPOT_QUOTE).pair, null);
+  // 191 of the venue's 500 tokens have no USDC pair. Calling those worthless is a claim the data
+  // does not support, so they are unpriced rather than zero.
+  eq('a token with no USDC pair is unpriced, not zero', px.get('ORPHAN').price, null);
+}
+
+// ── A MID PRICE ON A DEAD PAIR IS NOT A PRICE ────────────────────────────────
+// Run against a burn address, this reported the wallet as worth SIX POINT TWO TRILLION DOLLARS: an
+// airdropped token quoted at 62,227 on a pair that had traded $40.90 in a day. The quote is not
+// malformed — it is a real mid on a real pair nobody trades. Volume is what separates them.
+{
+  const prices = new Map([
+    ['USDC', { price: 1, volume: Infinity }],
+    ['HYPE', { price: 87.80, volume: 81_295_463 }],
+    ['RUB',  { price: 62_227, volume: 40.90 }],          // the trillion-dollar airdrop
+    ['CRUMB', { price: 0.0001, volume: 5_000_000 }],     // real market, tiny holding
+    ['NOPAIR', { price: null, volume: null }],
+  ]);
+  const bal = [
+    { coin: 'USDC', total: 1250.5, hold: 0, free: 1250.5, entryNtl: 0 },
+    { coin: 'HYPE', total: 40, hold: 12.5, free: 27.5, entryNtl: 2800 },
+    { coin: 'RUB', total: 99_999_999, hold: 0, free: 99_999_999, entryNtl: 0.01 },
+    { coin: 'CRUMB', total: 1000, hold: 0, free: 1000, entryNtl: 0 },
+    { coin: 'NOPAIR', total: 5, hold: 0, free: 5, entryNtl: 0 },
+  ];
+  const h = spotHoldings(bal, prices);
+
+  // THE ASSERTION THAT MATTERS. USDC 1250.50 + HYPE 3512.00 + CRUMB 0.10 = 4762.60.
+  eq('the headline total excludes the fictional one', h.total, 4762.60);
+  ok('and is not the six-trillion answer', h.total < 1e6);
+  eq('the thin holding is reported separately, with its nominal value', h.thin.count, 1);
+  ok('which is the absurd number, kept out of the total', h.thin.value > 6e12);
+  // LISTED, not dropped. A holding you cannot value is still a holding.
+  ok('but it is still listed', h.rows.some(r => r.coin === 'RUB'));
+  ok('and marked so the value is not read as one', h.rows.find(r => r.coin === 'RUB').thin === true);
+
+  // Order: what you own, then what cannot be valued. Sorting on value alone put the junk on top.
+  eq('real holdings lead', h.rows.map(r => r.coin).slice(0, 2), ['HYPE', 'USDC']);
+  eq('thin and unpriced sink', h.rows.map(r => r.coin).slice(-2), ['RUB', 'NOPAIR']);
+
+  // Dust is judged only among values that can be trusted — CRUMB is real and small.
+  eq('a small real holding is dust', h.dust.coins, ['CRUMB']);
+  ok('and dust still counts toward the total', h.total > 4762);
+  eq('an unpriced row is counted as such', h.unpriced, 1);
+
+  // P&L only against a real cost. entryNtl of zero means it was never bought — an airdrop, or the
+  // quote asset — and a return against a cost of nothing is not a return, it is the value.
+  const hype = h.rows.find(r => r.coin === 'HYPE');
+  eq('P&L against what was actually paid', [hype.cost, hype.pnl, hype.pnlPct], [2800, 712, 25.43]);
+  eq('and none at all where nothing was paid', h.rows.find(r => r.coin === 'USDC').pnl, null);
+  eq('locked says some of it is resting in orders', [hype.locked, hype.free], [true, 27.5]);
+
+  // The thresholds are named constants, not numbers buried in a comparison.
+  ok('thresholds are declared', SPOT_DUST_USD === 1 && SPOT_THIN_VOLUME_USD === 10_000);
+  // An empty wallet is zero and no error, which is different from an unconfigured one.
+  eq('an empty wallet totals nothing', spotHoldings([], prices).total, 0);
+}
+
+// ── THE BOUNDARY IS UNCHANGED ────────────────────────────────────────────────
+// Reading spot must not widen what this deployment can do: address from the environment only, one
+// URL, and nothing signed.
+{
+  const src = readFileSync(new URL('../lib/hyperliquid.js', import.meta.url), 'utf8');
+  eq('still exactly one endpoint', [...src.matchAll(/https:\/\/api\.hyperliquid\.xyz\/[a-z]+/g)].map(m => m[0]),
+     ['https://api.hyperliquid.xyz/info']);
+  ok('and never the trading one', !/\/exchange/.test(src));
+  ok('nothing signs anything', !/privateKey|signTypedData|wallet\.sign|secretKey/i.test(src));
+  ok('the spot read takes its address from the environment too',
+     /fetchHlSpot\(\{ address = process\.env\[HL_ADDRESS_ENV\]/.test(src));
+  // Hermetic: the build runs this file with the deployment's variables set. See
+  // scripts/check-env-independent.mjs, and the outage that produced it.
+  {
+    const saved = process.env[HL_ADDRESS_ENV];
+    delete process.env[HL_ADDRESS_ENV];
+    eq('an unset address is reported rather than guessed', (await fetchHlSpot({})).configured, false);
+    process.env[HL_ADDRESS_ENV] = 'not-an-address';
+    const bad = await fetchHlSpot({});
+    eq('and a malformed one is refused before any request', [bad.configured, bad.ok], [true, false]);
+    ok('naming the variable to fix', /not a 0x address/.test(bad.error));
+    if (saved === undefined) delete process.env[HL_ADDRESS_ENV]; else process.env[HL_ADDRESS_ENV] = saved;
+  }
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

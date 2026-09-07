@@ -19,7 +19,7 @@ import { appendDecision, overrideStats, DECISIONS_KEY, ACTIONS } from '../lib/de
 import { GUARD_STATES } from '../lib/guards.js';
 import { sideOf } from '../lib/side.js';
 import { authorised, hasSessionCookie, refuse } from '../lib/apiauth.js';
-import { fetchHlAccount } from '../lib/hyperliquid.js';
+import { fetchHlAccount, fetchHlSpot } from '../lib/hyperliquid.js';
 
 const DATA_PATH = 'data/manual_entry.json';
 
@@ -230,6 +230,9 @@ export default async function handler(req, res) {
     try {
       const { store } = await readStore();
       const full = String(req.query?.decisions || '') === 'full';
+      // Both Hyperliquid reads at once. Sequentially they are two round trips to Tokyo on a route
+      // that already makes several; they share nothing, so there is no reason to wait twice.
+      const [hlAccount, hlSpot] = await Promise.all([fetchHlAccount(), fetchHlSpot()]);
       const fullLog = full && kvConfigured() ? (await kvGetJson(DECISIONS_KEY)) || [] : null;
       // NOT edge-cached. This response now carries the trade console — real positions and cost
       // basis — and a shared s-maxage cache would both hold private state at the edge and serve a
@@ -253,7 +256,14 @@ export default async function handler(req, res) {
         // until this morning.
         // Absent configuration this reports { configured: false } rather than an empty list — a
         // book of nothing and a book nobody asked for are different answers.
-        hyperliquid: await fetchHlAccount(),
+        hyperliquid: hlAccount,
+        // ── AND WHAT THE WALLET HOLDS OUTRIGHT ────────────────────────────────────────────────
+        // A perp is a position; spot is a balance, some of it locked in resting orders. Two
+        // different animals, so two sections rather than one merged list. Served from this
+        // authenticated, `private, no-store` route for the same reason the perp book is: a
+        // holdings list is size, and size is one of the four quantities lib/tradecard.js exists
+        // to keep off anything public.
+        hyperliquidSpot: hlSpot,
         // WHETHER THE BRIEFS ACTUALLY ARRIVED. Carried on the console's own payload so a missed
         // pre-read is visible where the reader already is, instead of being discovered days later
         // as an absence in a chat channel.

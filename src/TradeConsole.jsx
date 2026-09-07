@@ -1022,6 +1022,8 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   // the default (the most recent few) keeps applying to periods that did not exist when the page
   // loaded — a map seeded with every key would freeze the archive as it was at load.
   const [grain, setGrain] = useState("month");
+  const [hlSpot, setHlSpot] = useState(null);
+  const [showSpot, setShowSpot] = useState(false);
   const [periodOpen, setPeriodOpen] = useState({});
   // Served by api/manual-entry, which is authenticated and never cached. Positions do not belong
   // on the shared, edge-cached price route — see lib/apiauth.js.
@@ -1063,6 +1065,8 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       setLivePositions(hl?.ok && Array.isArray(hl.positions)
         ? Object.fromEntries(hl.positions.map(p => [p.coin, p]))
         : null);
+      // Spot balances are a different animal from perp positions and get their own section.
+      setHlSpot(j?.hyperliquidSpot?.ok ? j.hyperliquidSpot : null);
       const c = j?.console;
       if (c && typeof c === "object") {
         // ONE-TIME BACKFILL of contract multipliers — see lib/futures.js. A margined row that never
@@ -2119,6 +2123,65 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       <Section title="Open positions" note="spot / swing holds, scaled in and out"
         list={[...openPos].sort((a, b) => (convert(b.pnl.marketValue, b.currency || "USD", baseCcy, fxRates) ?? -1) - (convert(a.pnl.marketValue, a.currency || "USD", baseCcy, fxRates) ?? -1))}
         mode="open" ctx={ctx} />
+
+      {/* ── THE WALLET ─────────────────────────────────────────────────────────────────────────
+          Not part of the book above. Those rows are trades — an entry, a thesis, levels, a stop.
+          These are BALANCES sitting in a wallet, most of them never decided on: the venue drops
+          airdrops into it unbidden. Merging the two would put a token nobody chose next to a
+          position sized against account equity, and invite exactly the comparison this codebase
+          keeps splitting apart.
+
+          Read-only, from the address in the environment. It never reaches the Discord card — a
+          holdings list is size, and size is one of the four quantities lib/tradecard.js exists to
+          refuse. */}
+      {hlSpot && hlSpot.rows.length > 0 && (
+        <Card>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+            <SLabel>Wallet — Hyperliquid spot</SLabel>
+            <span style={{ fontSize: 11.5, color: C.muted }}>balances, not positions · read-only</span>
+            <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "baseline", fontSize: 13 }}>
+              <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>VALUE </span>
+                <b>{fmtCcy(hlSpot.total, "USD")}</b></span>
+              <button onClick={() => setShowSpot(v => !v)} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{showSpot ? "Hide" : "Show"}</button>
+            </div>
+          </div>
+          {/* WHAT THE TOTAL LEAVES OUT, said plainly. A mid price on a pair nobody trades is a
+              number, not a valuation — run against a burn address this read $6.2 TRILLION, on an
+              airdrop quoted at 62,227 with $40.90 of daily volume. Those rows are listed and
+              excluded, never quietly folded in. */}
+          {(hlSpot.thin?.count > 0 || hlSpot.unpriced > 0) && (
+            <div style={{ marginTop: 6, fontSize: 11.5, color: C.muted }}>
+              Excludes{hlSpot.thin?.count ? ` ${hlSpot.thin.count} token${hlSpot.thin.count === 1 ? "" : "s"} with too little volume to price` : ""}
+              {hlSpot.thin?.count && hlSpot.unpriced ? " and" : ""}
+              {hlSpot.unpriced ? ` ${hlSpot.unpriced} with no USDC market` : ""} — listed below, unvalued.
+            </div>
+          )}
+          {showSpot && (
+            <div style={{ marginTop: 10 }}>
+              {hlSpot.rows.map(h => (
+                <div key={h.coin} style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap",
+                     padding: "6px 0", borderBottom: "1px solid " + C.bdr, fontSize: 12.5, opacity: h.priced && !h.thin ? 1 : 0.62 }}>
+                  <b style={{ minWidth: 68 }}>{h.coin}</b>
+                  <span style={{ color: C.mid }}>{h.total}</span>
+                  {h.locked && <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }} title={`${h.hold} resting in open orders`}>{h.free} free</span>}
+                  {h.priced && !h.thin && <span style={{ color: C.lbl, fontSize: 11.5 }}>@ {fmtPrice(h.price, { maxDp: 4 })}</span>}
+                  {h.thin && <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }} title={`24h volume ${fmtCcy(h.volume ?? 0, "USD")} — too thin to value`}>no real market</span>}
+                  {!h.priced && <span style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>no USDC pair</span>}
+                  <span style={{ marginLeft: "auto", display: "inline-flex", gap: 9, alignItems: "baseline" }}>
+                    {h.priced && !h.thin && <b>{fmtCcy(h.value, "USD")}</b>}
+                    {h.pnlPct != null && !h.thin && <b style={{ fontSize: 12, color: pnlCol(h.pnl) }}>{(h.pnlPct > 0 ? "+" : "") + h.pnlPct}%</b>}
+                  </span>
+                </div>
+              ))}
+              {hlSpot.dust?.count > 0 && (
+                <div style={{ marginTop: 8, fontSize: 11.5, color: C.muted }}>
+                  {hlSpot.dust.count} dust balance{hlSpot.dust.count === 1 ? "" : "s"} under {fmtCcy(1, "USD")} · {fmtCcy(hlSpot.dust.value, "USD")} in total — counted, not listed.
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* archive: brief, with the performance summary */}
       <Card>
