@@ -279,13 +279,11 @@ const row = (o = {}) => ({
   ]);
   eq('a one-holding chain gets no section of its own', card.embeds.length, 2);
   eq('and the chain that earned one still has it', card.embeds[1].author.name, 'Robinhood Chain');
-  ok('the folded chains are named rather than dropped',
-     /Ethereum, Arbitrum — a single holding each, not shown\./.test(card.embeds[0].description));
-  ok('but never what they hold', !/ETH/.test(card.embeds[0].description));
-
-  const one = buildWalletCard([], [h('ETH', 'Ethereum'), h('A', 'Base'), h('B', 'Base')]);
-  ok('one folded chain reads as singular',
-     /Ethereum — a single holding, not shown\./.test(one.embeds[0].description));
+  // Dropped silently, by decision — the note that used to name them was more noise than the rows
+  // it replaced. Nothing about a thin chain reaches the card at all.
+  eq('a quiet day with thin chains says only that', card.embeds[0].description, '_No changes today._');
+  ok('the dropped chains are not named', !/Ethereum|Arbitrum/.test(card.embeds[0].description));
+  ok('nor is anything they hold', !/ETH/.test(card.embeds[0].description));
 
   // The whole point of the fold is that it hides NOISE, not activity. A trade on a folded chain is
   // still a decision and must still be announced.
@@ -297,13 +295,14 @@ const row = (o = {}) => ({
   // A second token arriving is what promotes a chain — the behaviour asked for.
   const grown = buildWalletCard([], [h('ETH', 'Ethereum'), h('LINK', 'Ethereum'), h('A', 'Base'), h('B', 'Base')]);
   eq('a second holding promotes the chain to its own section', grown.embeds.length, 3);
-  ok('and nothing is folded any more', !/not shown/.test(grown.embeds[0].description));
+  ok('and the lead embed is untouched by any of it', !/not shown/.test(grown.embeds[0].description));
 
   // Everything thin: the card is still a card, and still says what it left out.
   const allThin = buildWalletCard([], [h('ETH', 'Ethereum'), h('ETH', 'Arbitrum')]);
   eq('a wallet of nothing but thin chains is one embed', allThin.embeds.length, 1);
   ok('which still carries the footer', !!allThin.embeds[0].footer);
-  ok('and still names them', /Ethereum, Arbitrum/.test(allThin.embeds[0].description));
+  eq('and reads as a quiet day rather than a broken card',
+     allThin.embeds[0].description, '_No changes today._');
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
