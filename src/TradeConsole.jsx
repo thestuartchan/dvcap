@@ -1041,6 +1041,9 @@ function Holdings({ data, title, note, open, onToggle, money }) {
                   {/* An assumed dollar par is not a measured price, and a depeg is exactly when
                       that distinction matters. Said on the row rather than in a footnote. */}
                   {h.assumedPar && <span style={{ color: C.amber, fontWeight: 700 }} title="No venue quotes this token — assumed at par, not measured"> assumed par</span>}
+                  {/* A pool ratio that cleared the depth and volume floors is a price. It is not a
+                      venue mid, and the row says which one it is looking at. */}
+                  {h.viaPool && <span style={{ color: C.lbl }} title={`From a liquidity pool quoted against ${h.viaPool} — depth and volume floors passed, but this is a pool ratio, not a venue mid`}> · pool vs {h.viaPool}</span>}
                 </span>
               )}
               {h.thin && <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }} title={`24h volume ${money(h.volume ?? 0, "USD")} — too thin to value`}>no real market</span>}
