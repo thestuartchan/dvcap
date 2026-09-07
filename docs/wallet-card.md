@@ -177,3 +177,60 @@ Unicode has no chain logos, so the marks above are stand-ins. Real logos are pos
 Any chain the object omits keeps its built-in mark, so a partial map is fine. A malformed value —
 bad JSON, a non-string, anything with a newline — is ignored and the built-ins stand, because a typo
 in an env var must not stop the daily card from posting.
+
+## Hyperliquid
+
+Three different things, wired separately because they are different animals.
+
+| | where it comes from | how it appears |
+|---|---|---|
+| **HyperEVM** balances | on-chain, one of the six chains | a chain section, `HyperEVM` |
+| **HL spot** ledger | `spotClearinghouseState` | a chain section, `Hyperliquid` — diffed like any other balance, so a spot buy there is announced like a spot buy anywhere |
+| **Perps** | `clearinghouseState` + `frontendOpenOrders` | their own section, `Hyperliquid · perps` |
+
+### Perps are reported, not diffed
+
+A perp is not a balance that went up or down. It has a direction, an invalidation level and an
+objective, so it is shown as it stands.
+
+```
+🟢 HYPE Long 84.97 (+1.2R) · SL 70.00 · TP 110.00 (+4.7R)
+🔴 BTC Short 96500.00 (+0.3R) · SL 104000.00 · TP 86000.00 (+2R)
+⚪ SOL Long 175.00 · no stop
+```
+
+**Published:** symbol, direction, mark, the stop and target levels, and R. Levels and R are what a
+trade-idea channel is for — `lib/tradecard.js` has published exactly these for the swing book since
+it was written, and R comes from that same `rOf` rather than a second implementation.
+
+**Never:** size, notional, margin used, unrealised P&L, leverage — and not the **liquidation price**,
+which is excluded by instruction and would leak size anyway, being a function of margin.
+
+Entry is not printed, but that is presentation rather than protection: entry is recoverable from the
+mark, the stop and R by algebra. It is left off because it was not asked for and the line reads
+better short.
+
+Direction is spelled out in words on every line. The swing card hides the marker for an all-long
+book, which is right there and wrong here — a short read as a long is the worst error this card can
+make.
+
+`_no stop_` is said out loud rather than left as an absence. R is null without a stop (there is
+nothing for it to be a multiple of), and a missing R that means nothing looks the same as a missing R
+that means something.
+
+### Telling a stop from a target
+
+Getting this backwards would not fail loudly — it would file a stop as a target and R would come out
+inverted and plausible. So the classifier does not depend on the venue's label alone:
+
+1. If `orderType` names a take profit or a stop, that decides it.
+2. Otherwise **geometry** decides — below entry on a long is a stop, above it is a target, and the
+   reverse for a short.
+
+The label is consulted first because it alone describes a **stop moved past entry** to lock a gain
+in, which sits on the target's side and which geometry would misfile. Geometry is the fallback
+because the exact label strings are unconfirmed: ten of the largest HYPE position holders were
+carrying no trigger orders at all, so there was nothing live to check the strings against.
+
+When several stops or targets rest at once, the **operative** one is whichever would fire first —
+nearest the mark on its own side.

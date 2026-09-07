@@ -6,7 +6,9 @@
 // VALUE, SHARE OF BOOK — for the same reason, and tested the same way: rows whose private values
 // are distinctive digit strings, asserted to appear nowhere in the serialised output.
 import { chainMark, chainLogo } from '../lib/chains.js';
+import { classifyTrigger, parseTriggerOrders } from '../lib/hyperliquid.js';
 import { walletPublicView, diffHoldings, buildWalletCard, eventLine, holdingLine, groupedHoldingLine, mergePending, MIN_CHAIN_HOLDINGS,
+         perpPublicView, perpLine, PERP_PUBLIC_FIELDS,
          WALLET_PUBLIC_FIELDS, EVENT_PUBLIC_FIELDS, MIN_NOTIONAL_USD } from '../lib/walletcard.js';
 
 let pass = 0, fail = 0;
@@ -303,6 +305,104 @@ const row = (o = {}) => ({
   ok('which still carries the footer', !!allThin.embeds[0].footer);
   eq('and reads as a quiet day rather than a broken card',
      allThin.embeds[0].description, '_No changes today._');
+}
+
+// ── PERPS ────────────────────────────────────────────────────────────────────
+// A perp is a position, not a balance. What may be published is the idea — direction, levels, R —
+// and never the size or anything that stands in for it.
+{
+  // Every private figure a distinctive digit string, so a leak shows up as itself.
+  const POS = {
+    coin: 'HYPE', side: 'long', entry: 76.9573,
+    qty: 267672.19, notional: 22743562.99, unrealizedPnl: 2144219.48,
+    marginUsed: 4548712.59, liquidationPx: 40.5283732382, leverage: 5, leverageType: 'cross',
+  };
+  const v = perpPublicView(POS, { stops: [70, 64], targets: [110, 130] }, 84.966);
+
+  eq('the view is exactly the allow-list', Object.keys(v).sort(), PERP_PUBLIC_FIELDS.slice().sort());
+  eq('the operative stop is the one nearest the mark', v.stop, 70);
+  eq('and so is the operative target', v.target, 110);
+
+  // R against the swing card's own definition: entry 76.9573, stop 70 risks 6.9573; at 84.966 the
+  // trade is up 8.0087, which is 1.2R. The target at 110 is worth 4.7R.
+  eq('R is where the trade is now, in units of the risk taken', v.r, 1.2);
+  eq('and the target carries its own R', v.targetR, 4.7);
+
+  const whole = JSON.stringify(buildWalletCard([], [], { perps: [v] }));
+  for (const [name, n] of Object.entries({
+    size: 267672.19, notional: 22743562.99, pnl: 2144219.48, margin: 4548712.59,
+  })) ok(`the card never carries the ${name}`, !whole.includes(String(n)) && !whole.includes(String(n).split('.')[0]));
+  // Excluded by instruction, and it leaks size anyway — it is a function of margin.
+  ok('nor the liquidation price', !whole.includes('40.52') && !whole.includes('40.5283732382'));
+  ok('nor the leverage', !/"leverage"/.test(whole));
+  ok('nor the entry price', !whole.includes('76.9573'));
+
+  // A SHORT MUST NEVER READ AS A LONG. Entry 98000, stop 104000 risks 6000; at 96500 it is +0.3R,
+  // and the target at 86000 is +2R. rOf keyed off (e - s) alone would return null for every short.
+  const sh = perpPublicView({ coin: 'BTC', side: 'short', entry: 98000 },
+                            { stops: [104000], targets: [86000] }, 96500);
+  eq('a short in profit is positive R, not null', sh.r, 0.3);
+  eq('and its target too', sh.targetR, 2);
+  ok('the line says Short in words', /\bShort\b/.test(perpLine(sh)));
+  ok('and a long says Long', /\bLong\b/.test(perpLine(v)));
+
+  // R exists only if a stop does — tradecard's rule, inherited rather than restated.
+  const bare = perpPublicView({ coin: 'SOL', side: 'long', entry: 180 }, null, 175);
+  eq('no stop means no R rather than a zero', bare.r, null);
+  ok('and the line says so out loud', /_no stop_/.test(perpLine(bare)));
+  ok('rather than silently omitting it', !/SL/.test(perpLine(bare)));
+
+  // A stop the safe side of entry is not a risk unit.
+  const locked = perpPublicView({ coin: 'ETH', side: 'long', entry: 3000 }, { stops: [3200], targets: [] }, 3400);
+  eq('a stop above entry on a long is not a risk unit', locked.r, null);
+
+  // The perps section is exempt from the two-holdings rule — one open position is the case worth
+  // showing, and that rule exists to hide leftover gas.
+  const card = buildWalletCard([], [{ symbol: 'ETH', chain: 'Base', price: 1, changePercent: null }], { perps: [v] });
+  eq('one perp and one thin chain leaves the perp standing', card.embeds.length, 2);
+  eq('and it is headed as perps', card.embeds[1].author.name, 'Hyperliquid · perps');
+  ok('with the Hyperliquid logo', /^https:\/\//.test(card.embeds[1].author.icon_url));
+  ok('perps lead the holdings', buildWalletCard([], [
+    { symbol: 'A', chain: 'Base', price: 1, changePercent: null },
+    { symbol: 'B', chain: 'Base', price: 1, changePercent: null },
+  ], { perps: [v] }).embeds[1].author.name === 'Hyperliquid · perps');
+}
+
+// ── TELLING A STOP FROM A TARGET ─────────────────────────────────────────────
+// Getting this backwards would not fail loudly — it would invert R and look plausible. The label is
+// consulted first because it alone describes a stop moved past entry; geometry decides when the
+// label is not recognised, which is the case that matters since the exact strings are unconfirmed.
+{
+  const long = { side: 'long', entry: 100 }, short = { side: 'short', entry: 100 };
+  const o = (orderType, triggerPx) => ({ isTrigger: true, coin: 'X', orderType, triggerPx: String(triggerPx) });
+
+  eq('a labelled stop is a stop', classifyTrigger(o('Stop Market', 90), long), 'stop');
+  eq('a labelled take profit is a target', classifyTrigger(o('Take Profit Limit', 120), long), 'target');
+  eq('the label is read case-insensitively', classifyTrigger(o('take profit market', 120), long), 'target');
+
+  // The case only the label can see: a stop moved past entry to lock a gain in sits on the
+  // target's side of entry, so geometry alone would file it as a target.
+  eq('a stop moved past entry is still a stop', classifyTrigger(o('Stop Market', 110), long), 'stop');
+
+  // Unrecognised label → geometry, which must be right for both directions.
+  eq('below entry on a long is a stop', classifyTrigger(o('Wat', 90), long), 'stop');
+  eq('above entry on a long is a target', classifyTrigger(o('Wat', 120), long), 'target');
+  eq('above entry on a SHORT is a stop', classifyTrigger(o('Wat', 120), short), 'stop');
+  eq('below entry on a SHORT is a target', classifyTrigger(o('Wat', 90), short), 'target');
+  eq('with no position to compare against it is unknown', classifyTrigger(o('Wat', 90), null), null);
+  eq('and a trigger exactly at entry is not a level', classifyTrigger(o('Wat', 100), long), null);
+
+  const orders = [
+    o('Stop Market', 90), o('Take Profit Market', 120),
+    { isTrigger: false, coin: 'X', orderType: 'Limit', triggerPx: '0.0' },   // an ordinary order
+    { isTrigger: true, coin: 'X', orderType: 'Stop Market', triggerPx: '0.0' }, // no real level
+    { isTrigger: true, coin: '', orderType: 'Stop Market', triggerPx: '80' },   // no coin
+  ];
+  const lv = parseTriggerOrders(orders, [{ coin: 'X', side: 'long', entry: 100 }]);
+  eq('only real trigger levels are kept', lv.get('X'), { stops: [90], targets: [120] });
+  ok('an ordinary limit order is not a level', lv.get('X').stops.length === 1);
+  eq('a coin with no orders has no entry at all', lv.get('Y'), undefined);
+  eq('and a non-array payload is empty rather than a throw', parseTriggerOrders(null, []).size, 0);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
