@@ -8,7 +8,7 @@
 // On Robinhood Chain the quote leg is worse than thin, it is ADVERSARIAL — deliberate fake USDG
 // and WETH clones have been seeded into pools since July 2026 so they look tradeable. Hence the
 // address pinning below, which is the assertion that matters most in this file.
-import { gradePair, bestPair, fetchDexPrices, allowQuotes, NATIVE_QUOTE,
+import { gradePair, bestPair, fetchDexPrices, allowQuotes, NATIVE_QUOTE, PAIRS_BASE, MAX_FOLLOWUPS,
          MIN_CORROBORATING_LEGS, AGREE_TOLERANCE,
          MIN_LIQUIDITY_USD, MIN_VOLUME_H24_USD, MAX_ADDRESSES, DEX_CHAIN } from '../lib/dexscreener.js';
 
@@ -183,6 +183,64 @@ eq('one slug per chain', Object.keys(DEX_CHAIN).sort(), ['arbitrum', 'base', 'et
   // liquidity" is true of some dead pool and misleading about the token.
   const why = bestPair([leg(SNAP, 0.0166, 6), leg(NVDA, 0.0167, 13_523)], { quoteAllow: allowQuotes(VERIFIED) }).why;
   ok('the reported shortfall is the best candidate’s', /13,523/.test(why));
+}
+
+// ── THE BATCH ENDPOINT ANSWERS WITH ONE PAIR, WHICH DISABLED CORROBORATION ───
+// Shipped, deployed, and wrong on screen: AU, NUDES and ORBIO all read "no market found" while the
+// holder's own wallet priced them. /tokens/v1 returns a token's DEEPEST pair and nothing else —
+// AU's is quoted against TSM, a tokenised stock nobody verified — so bestPair saw one unvouched
+// leg and refused. The token has nine pools, including a $38k USDG one three percent away.
+//
+// Corroboration cannot corroborate from a single row. So the refused get asked again, through the
+// endpoint that answers with all of them.
+{
+  const VERIFIED = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
+  const TSM = '0x3333333333333333333333333333333333333333';
+  const p = (quote, price, liq) => ({
+    baseToken: { address: '0xau', symbol: 'AU' },
+    quoteToken: { address: quote, symbol: quote === VERIFIED ? 'USDG' : 'TSM' },
+    priceUsd: String(price), liquidity: { usd: liq }, volume: { h24: 400_000 },
+  });
+  const urls = [];
+  const stub = async (url) => {
+    urls.push(url);
+    // The batch shows one pool, against an unverified leg. The per-token call shows the rest.
+    const body = url.startsWith(PAIRS_BASE) ? [p(TSM, 0.001495, 397_813), p(VERIFIED, 0.001449, 38_008)]
+                                            : [p(TSM, 0.001495, 397_813)];
+    return { ok: true, json: async () => body };
+  };
+  const r = await fetchDexPrices({ chainSlug: 'robinhood', addresses: ['0xau'],
+                                   quoteAllow: allowQuotes(VERIFIED), fetchImpl: stub });
+  eq('the follow-up rescues it', r.prices.get('0xau').price, 0.001449);
+  eq('through the leg that was verified', r.prices.get('0xau').quote, 'USDG');
+  eq('and it took exactly one extra call', urls.length, 2);
+  ok('the second is the per-token endpoint', urls[1].startsWith(PAIRS_BASE));
+
+  // A token the BATCH already settled costs no second call — the common case stays one request.
+  urls.length = 0;
+  const easy = async (url) => { urls.push(url); return { ok: true, json: async () => [p(VERIFIED, 0.0015, 400_000)] }; };
+  await fetchDexPrices({ chainSlug: 'robinhood', addresses: ['0xau'], quoteAllow: allowQuotes(VERIFIED), fetchImpl: easy });
+  eq('a settled token is not asked twice', urls.length, 1);
+
+  // Still refused after the follow-up is still refused — the second look is not a lower bar.
+  const dead = async (url) => ({ ok: true, json: async () => [p(TSM, 0.0015, 900)] });
+  const no = await fetchDexPrices({ chainSlug: 'robinhood', addresses: ['0xau'], quoteAllow: allowQuotes(VERIFIED), fetchImpl: dead });
+  ok('a genuinely unpriceable token stays unpriced', no.prices.get('0xau').price == null);
+  ok('with a reason', /liquidity/.test(no.prices.get('0xau').refused));
+
+  // Bounded: a wallet full of junk must not turn into a call per token.
+  const many = Array.from({ length: 40 }, (_, i) => '0x' + String(i).padStart(3, '0'));
+  urls.length = 0;
+  await fetchDexPrices({ chainSlug: 'robinhood', addresses: many, quoteAllow: allowQuotes(VERIFIED),
+    fetchImpl: async (url) => { urls.push(url); return { ok: true, json: async () => [] }; } });
+  const followups = urls.filter(u => u.startsWith(PAIRS_BASE)).length;
+  ok('follow-ups are capped', followups <= MAX_FOLLOWUPS);
+
+  // A failing follow-up leaves the batch verdict alone rather than erasing it.
+  const flaky = async (url) => url.startsWith(PAIRS_BASE)
+    ? { ok: false, status: 429 } : { ok: true, json: async () => [p(TSM, 0.0015, 400_000)] };
+  const kept = await fetchDexPrices({ chainSlug: 'robinhood', addresses: ['0xau'], quoteAllow: allowQuotes(VERIFIED), fetchImpl: flaky });
+  ok('a failed second look does not lose the first verdict', kept.prices.has('0xau'));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
