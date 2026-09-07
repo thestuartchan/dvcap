@@ -959,6 +959,32 @@
         "twoY": 4.34
       },
       "loggedAt": "2026-09-06T22:39:58.266Z"
+    },
+    {
+      "date": "2026-09-07",
+      "stagflation_p": 55,
+      "reflationary_p": 20,
+      "deflationary_p": 20,
+      "inflationary_p": 5,
+      "hawkish_repricing": null,
+      "live_regime": "stag",
+      "view_regime": "stag",
+      "pinned": false,
+      "hyg_chg": null,
+      "hyg_qqq_divergence": null,
+      "inputs": {
+        "weightedRecessionProb": 15,
+        "cpi": null,
+        "kalshi2027": 41,
+        "tape": null,
+        "ladderSpread": null,
+        "u3": null,
+        "empPop": null,
+        "oas": null,
+        "tenY": null,
+        "twoY": null
+      },
+      "loggedAt": "2026-09-07T10:13:58.067Z"
     }
   ]
 }
