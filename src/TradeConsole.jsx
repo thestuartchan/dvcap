@@ -2316,10 +2316,32 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
                 ⚠ Not counted: {wallet.unreachable.map(u => `${u.chain} (${u.error})`).join(" · ")}
               </div>
             )}
-            {wallet.chains.filter(c => c.ok && c.tokensUnlisted).map(c => (
+            {/* WHICH QUESTION WAS ACTUALLY ANSWERED. "You hold nothing else" and "I cannot see
+                anything else" are different claims and must not render the same. Without an
+                indexer key the wallet can only check a fixed list of contracts — because an ERC-20
+                balance lives inside each token's own contract and no chain indexes the reverse. */}
+            {(() => {
+              const live = wallet.chains.filter(c => c.ok);
+              const discovered = live.filter(c => c.discovery?.used);
+              const cut = live.filter(c => c.discovery?.truncated);
+              if (!wallet.discoveryConfigured) return (
+                <div style={{ marginTop: 6, fontSize: 11.5, color: C.amber }}>
+                  Listed balances only — {live.reduce((a, c) => a + (c.discovery?.seen || 0), 0)} known token contracts are
+                  checked per load. Anything else you hold is <b>not visible</b>, rather than absent: no chain indexes
+                  which tokens an address owns. Set {"ALCHEMY_API_KEY"} to read the full set.
+                </div>
+              );
+              return (
+                <div style={{ marginTop: 6, fontSize: 11.5, color: C.muted }}>
+                  Full discovery on {discovered.length} of {live.length} chains — every token held, not a fixed list.
+                  {cut.length > 0 && <b style={{ color: C.amber }}> {cut.length} chain{cut.length === 1 ? "" : "s"} had more tokens than one read returns; the rest are not counted.</b>}
+                </div>
+              );
+            })()}
+            {wallet.chains.filter(c => c.ok && c.tokensUnlisted && !c.discovery?.used).map(c => (
               <div key={c.chain} style={{ marginTop: 6, fontSize: 11.5, color: C.muted }}>
-                {c.chain}: native balance only — its token contracts are not published anywhere this can read,
-                so anything else held there is not shown rather than counted as nothing.
+                {c.chain}: native balance only — its token contracts are not published anywhere this can read
+                without an indexer key, so anything else held there is not shown rather than counted as nothing.
               </div>
             ))}
           </Card>

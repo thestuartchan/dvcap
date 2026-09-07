@@ -11,7 +11,8 @@ import { readFileSync } from 'node:fs';
 import { CHAINS, CHAIN_KEYS, pricedSymbols } from '../lib/chains.js';
 import { encodeAggregate3, decodeAggregate3, balanceOfCall, evmDecimals, erc20Targets,
          fromUnits, walletBalances, fetchWallet, MULTICALL3, HYPEREVM_RPC, HYPEREVM_CHAIN_ID,
-         NATIVE_SYMBOL, NATIVE_DECIMALS, venuePrices, chainPrices } from '../lib/wallet.js';
+         NATIVE_SYMBOL, NATIVE_DECIMALS, venuePrices, chainPrices,
+         decodeString, decodeMetadata, SYMBOL_SIG, DECIMALS_SIG } from '../lib/wallet.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `\n     got  ${JSON.stringify(g)}\n     want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -243,6 +244,52 @@ const HOLDER = '0x000000000000000000000000000000000000dEaD';
     const stables = c.tokens.filter(t => /^(DAI|USD)/.test(t.symbol));
     ok(`${k}: every stablecoin resolves to a price`, stables.every(t => p.has(t.symbol)));
   }
+}
+
+// ── A DISCOVERED CONTRACT IS AN ADDRESS AND NOTHING ELSE ─────────────────────
+// The indexer says WHICH contracts an address holds. It does not get to say what they are: symbol
+// and decimals are read from the contracts themselves, over the chain's own RPC, to the same
+// standard every hand-written entry in lib/chains.js had to meet.
+{
+  // Built the way the ABI actually lays a dynamic string out: offset, length, right-padded bytes.
+  const dynString = (t) => {
+    const b = Buffer.from(t, 'utf8').toString('hex');
+    const len = (b.length / 2).toString(16).padStart(64, '0');
+    return '0x' + (32).toString(16).padStart(64, '0') + len + b.padEnd(Math.ceil(b.length / 64) * 64, '0');
+  };
+  const bytes32 = (t) => '0x' + Buffer.from(t, 'utf8').toString('hex').padEnd(64, '0');
+  const word = (n) => '0x' + BigInt(n).toString(16).padStart(64, '0');
+
+  eq('a dynamic string symbol decodes', decodeString(dynString('USDC')), 'USDC');
+  // MKR and other early tokens return bytes32, not a string. Verified live against MKR's own
+  // contract on 2026-09-07 alongside three string-symbol tokens.
+  eq('a bytes32 symbol decodes too', decodeString(bytes32('MKR')), 'MKR');
+  eq('and padding is stripped rather than shown', decodeString(bytes32('DAI')), 'DAI');
+  eq('nothing decodes to nothing', [decodeString(''), decodeString(null), decodeString('0x')], [null, null, null]);
+  // Binary junk in a bytes32 slot is not a name.
+  eq('non-printable bytes are refused', decodeString('0x' + 'ff'.repeat(32)), null);
+
+  const results = (pairs) => pairs.flatMap(([sym, dec]) => ([
+    { success: sym != null, data: sym ?? '0x' },
+    { success: dec != null, data: dec ?? '0x' },
+  ]));
+  const addrs = ['0x1', '0x2', '0x3', '0x4'];
+  const meta = decodeMetadata(results([
+    [dynString('USDC'), word(6)],
+    [bytes32('MKR'), word(18)],
+    [null, word(18)],                    // symbol() reverted — not a token we can name
+    [dynString('WAT'), null],            // decimals() reverted
+  ]), addrs);
+  eq('only fully-identified contracts get a row', meta.map(m => m.name), ['USDC', 'MKR']);
+  eq('with the decimals the contract stated', meta.map(m => m.decimals), [6, 18]);
+  // GUESSING 18 IS HOW A DUST TOKEN BECOMES A FORTUNE. A contract that will not say what it is
+  // does not get a row at all — a balance under a bare address is not information.
+  ok('a contract that will not name itself is dropped, not defaulted', !meta.some(m => m.address === '0x3'));
+  ok('and so is one that will not state its decimals', !meta.some(m => m.address === '0x4'));
+  eq('absurd decimals are refused too', decodeMetadata(results([[dynString('X'), word(99)]]), ['0x9']), []);
+
+  // The selectors are the standard ERC-20 ones, asserted rather than assumed.
+  eq('symbol() and decimals() selectors', [SYMBOL_SIG, DECIMALS_SIG], ['0x95d89b41', '0x313ce567']);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
