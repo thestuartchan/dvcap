@@ -6,7 +6,7 @@
 // VALUE, SHARE OF BOOK — for the same reason, and tested the same way: rows whose private values
 // are distinctive digit strings, asserted to appear nowhere in the serialised output.
 import { chainMark, chainLogo } from '../lib/chains.js';
-import { walletPublicView, diffHoldings, buildWalletCard, eventLine, holdingLine, groupedHoldingLine, mergePending,
+import { walletPublicView, diffHoldings, buildWalletCard, eventLine, holdingLine, groupedHoldingLine, mergePending, MIN_CHAIN_HOLDINGS,
          WALLET_PUBLIC_FIELDS, EVENT_PUBLIC_FIELDS, MIN_NOTIONAL_USD } from '../lib/walletcard.js';
 
 let pass = 0, fail = 0;
@@ -139,7 +139,12 @@ const row = (o = {}) => ({
   eq('the buy is detected', evs.length, 1);
   eq('and the event object has no price field', Object.keys(evs[0]).sort(), ['chain', 'kind', 'symbol']);
 
-  const card = buildWalletCard(evs, [{ symbol: 'NUDES', chain: 'Robinhood Chain', price: ENTRY, changePercent: 8.4 }]);
+  // Two holdings so the chain earns its own section — a lone one is folded away, which would make
+  // this assert nothing at all.
+  const card = buildWalletCard(evs, [
+    { symbol: 'NUDES', chain: 'Robinhood Chain', price: ENTRY, changePercent: 8.4 },
+    { symbol: 'PONS', chain: 'Robinhood Chain', price: 0.7121, changePercent: -1 },
+  ]);
   const desc = card.embeds[0].description;
   ok('the event line does not carry the entry price', !desc.includes('0174299'));
   ok('no @ pricing syntax survives on any event line', !desc.includes('@'));
@@ -217,7 +222,8 @@ const row = (o = {}) => ({
 {
   const h = (symbol, chain) => ({ symbol, chain, price: 1, changePercent: null });
   const card = buildWalletCard([], [
-    h('ETH', 'Ethereum'), h('ETH', 'Arbitrum'),
+    h('ETH', 'Ethereum'), h('USDC', 'Ethereum'),
+    h('ETH', 'Arbitrum'), h('ARB', 'Arbitrum'),
     h('PONS', 'Robinhood Chain'), h('NUDES', 'Robinhood Chain'),
   ]);
 
@@ -238,23 +244,66 @@ const row = (o = {}) => ({
   eq('only one carries a timestamp', card.embeds.filter(e => e.timestamp).length, 1);
 
   // Colour means "something happened" rather than decorating every block.
-  const busy = buildWalletCard([{ kind: 'bought', symbol: 'X', chain: 'Base' }], [h('X', 'Base')]);
+  const busy = buildWalletCard([{ kind: 'bought', symbol: 'X', chain: 'Base' }],
+                               [h('X', 'Base'), h('Y', 'Base')]);
   eq('the lead embed takes the accent when something was bought', busy.embeds[0].color, 0x16A34A);
   eq('the inventory stays neutral', busy.embeds[1].color, 0x64748B);
 
   // A chain with no logo must still render — name only, never a broken image.
-  const unknown = buildWalletCard([], [h('FOO', 'Someswap Chain')]);
+  const unknown = buildWalletCard([], [h('FOO', 'Someswap Chain'), h('BAR', 'Someswap Chain')]);
   eq('an unknown chain still gets its own embed and name', unknown.embeds[1].author.name, 'Someswap Chain');
   ok('but no icon_url at all rather than a dead link', !('icon_url' in unknown.embeds[1].author));
   eq('and chainLogo says so plainly', chainLogo('Someswap Chain'), null);
   ok('a known chain has one', /^https:\/\//.test(chainLogo('Ethereum')));
 
   // Ten embeds is Discord's cap. Beyond nine chains the card must degrade, not truncate.
-  const many = buildWalletCard([], Array.from({ length: 12 }, (_, i) => h('T' + i, 'Chain' + i)));
+  const many = buildWalletCard([], Array.from({ length: 12 }, (_, i) => i).flatMap(
+    i => [h('T' + i, 'Chain' + i), h('U' + i, 'Chain' + i)]));
   ok('past the embed cap it falls back to one flat list', many.embeds.length === 1);
   ok('and that list still names every holding',
      Array.from({ length: 12 }, (_, i) => 'T' + i).every(t => many.embeds[0].description.includes(t)));
   ok('and marks each row with its chain, since nothing else does', many.embeds[0].description.includes('⬦'));
+}
+
+// ── A CHAIN EARNS ITS SECTION ────────────────────────────────────────────────
+// A chain holding only its gas token is not a position, and a logo-headed section announcing "ETH"
+// is a lot of card for a fact nobody acts on. But a holdings overview that quietly omits a holding
+// cannot be trusted as a list, so the folded chains are named in one muted line.
+{
+  const h = (symbol, chain) => ({ symbol, chain, price: 1, changePercent: null });
+  eq('the bar is two', MIN_CHAIN_HOLDINGS, 2);
+
+  const card = buildWalletCard([], [
+    h('ETH', 'Ethereum'), h('ETH', 'Arbitrum'),
+    h('PONS', 'Robinhood Chain'), h('NUDES', 'Robinhood Chain'),
+  ]);
+  eq('a one-holding chain gets no section of its own', card.embeds.length, 2);
+  eq('and the chain that earned one still has it', card.embeds[1].author.name, 'Robinhood Chain');
+  ok('the folded chains are named rather than dropped',
+     /Ethereum, Arbitrum — a single holding each, not shown\./.test(card.embeds[0].description));
+  ok('but never what they hold', !/ETH/.test(card.embeds[0].description));
+
+  const one = buildWalletCard([], [h('ETH', 'Ethereum'), h('A', 'Base'), h('B', 'Base')]);
+  ok('one folded chain reads as singular',
+     /Ethereum — a single holding, not shown\./.test(one.embeds[0].description));
+
+  // The whole point of the fold is that it hides NOISE, not activity. A trade on a folded chain is
+  // still a decision and must still be announced.
+  const traded = buildWalletCard([{ kind: 'bought', symbol: 'ETH', chain: 'Ethereum' }],
+                                 [h('ETH', 'Ethereum'), h('A', 'Base'), h('B', 'Base')]);
+  ok('a trade on a folded chain is still announced',
+     traded.embeds[0].description.includes('🟢 Bought **ETH** · Ethereum'));
+
+  // A second token arriving is what promotes a chain — the behaviour asked for.
+  const grown = buildWalletCard([], [h('ETH', 'Ethereum'), h('LINK', 'Ethereum'), h('A', 'Base'), h('B', 'Base')]);
+  eq('a second holding promotes the chain to its own section', grown.embeds.length, 3);
+  ok('and nothing is folded any more', !/not shown/.test(grown.embeds[0].description));
+
+  // Everything thin: the card is still a card, and still says what it left out.
+  const allThin = buildWalletCard([], [h('ETH', 'Ethereum'), h('ETH', 'Arbitrum')]);
+  eq('a wallet of nothing but thin chains is one embed', allThin.embeds.length, 1);
+  ok('which still carries the footer', !!allThin.embeds[0].footer);
+  ok('and still names them', /Ethereum, Arbitrum/.test(allThin.embeds[0].description));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
