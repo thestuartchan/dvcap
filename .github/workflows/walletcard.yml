@@ -1,38 +1,52 @@
-# Posts the wallet card when the wallet's COMPOSITION changes.
+# The wallet card: DETECT often, PUBLISH once.
+#
+# WHY THE TWO ARE SPLIT. Posting within half an hour of a trade puts that trade in a half-hour
+# window, and on a quiet chain the swaps of one obscure token in half an hour may number in the
+# single digits — the post time is itself the filter that finds the wallet. Publishing once a day
+# widens that window to a day.
+#
+# Detection still runs every half hour, because a position opened and closed between two daily posts
+# would otherwise never have existed: the snapshot either side of it is identical. The detect runs
+# buffer into Redis and post nothing; the daily run detects, publishes the day, and drains it.
 #
 # WHY GITHUB AND NOT A VERCEL CRON. vercel.json holds two cron entries and the Hobby plan allows
 # two — both are spent on the pre-read briefs, which are time-critical in a way this is not.
-# GitHub's scheduler is free and already runs four other jobs here.
 #
-# WHY THIS CADENCE. The card fires only on a change, so a run that finds nothing costs one request
-# and posts nothing. Every 30 minutes during waking hours is frequent enough that a swap shows up
-# while it is still interesting, and infrequent enough that a day of no trading is ~30 silent runs
-# rather than 1,440. GitHub bills a one-minute minimum per job, so this is roughly 30 minutes of CI
-# a day against 2,000 free for a private repo, and unmetered for a public one.
-#
-# The endpoint is idempotent by construction: it advances its snapshot ONLY after Discord confirms
-# the post, so a duplicate run posts nothing and a failed one retries on the next tick.
+# The endpoints are idempotent by construction: detection folds a repeated event into one entry, and
+# the daily run drains the buffer ONLY after Discord confirms the post.
 name: wallet card
 
 on:
   schedule:
-    - cron: '*/30 6-23 * * *'
+    - cron: '*/30 6-23 * * *'   # detect and buffer — posts nothing
+    - cron: '0 22 * * *'        # the one post of the day
   workflow_dispatch:
+    inputs:
+      post:
+        description: 'Publish the card now instead of only detecting'
+        type: boolean
+        default: false
 
 concurrency:
   group: walletcard
-  cancel-in-progress: false      # a slow run finishes rather than leaving the snapshot half-moved
+  cancel-in-progress: false      # a slow run finishes rather than leaving the buffer half-drained
 
 jobs:
-  post:
+  run:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Post the wallet card if anything changed
+      - name: Detect changes, and publish on the daily run
+        env:
+          # Both crons fire at 22:00. Whichever lands first, the daily run detects before it posts,
+          # so nothing waits a day for having been found a minute late.
+          IS_POST: ${{ github.event.schedule == '0 22 * * *' || inputs.post == true }}
         run: |
+          url="https://dvcap.vercel.app/api/tradecard?card=wallet"
+          if [ "$IS_POST" = "true" ]; then url="$url&post=1"; fi
+          echo "mode: $([ "$IS_POST" = "true" ] && echo PUBLISH || echo detect)"
           code=$(curl -sS -o /tmp/out.json -w '%{http_code}' --max-time 90 \
-            -H "x-tradecard-key: ${{ secrets.TRADECARD_KEY }}" \
-            "https://dvcap.vercel.app/api/tradecard?card=wallet") || true
+            -H "x-tradecard-key: ${{ secrets.TRADECARD_KEY }}" "$url") || true
           echo "HTTP $code"; cat /tmp/out.json; echo
           if [ "$code" = "401" ]; then
             echo "::error::Refused. Vercel needs TRADECARD_KEY and this repo needs the same value as a secret."
@@ -41,3 +55,8 @@ jobs:
           # The route answers 200 with a reason rather than failing, so a skipped run (no webhook
           # configured, Redis down, nothing changed) is visible in the log without turning it red.
           [ "$code" = "200" ] || exit 1
+          # A publish run that did not publish is a real failure — it is the only run that must post.
+          if [ "$IS_POST" = "true" ] && ! grep -q '"posted":true' /tmp/out.json; then
+            echo "::error::The daily run did not post. See the reason above."
+            exit 1
+          fi

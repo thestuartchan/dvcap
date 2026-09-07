@@ -11,26 +11,63 @@ quantities never leave — **size, absolute P&L, market value, share of book**.
 | published | never published |
 |---|---|
 | symbol | quantity or balance |
-| price | dollar value of anything |
-| day change % | wallet total, per-chain or across chains |
-| which chain | free vs. resting split |
-| bought / sold / added / trimmed | how much was bought or sold |
+| **market** price of the token | the **entry** price you paid |
+| day change % | dollar value of anything |
+| which chain | wallet total, per-chain or across chains |
+| bought / sold / added / trimmed | free vs. resting split |
+| | how much was bought or sold |
+
+### Two things are called "price" and only one of them is about you
+
+A **holdings** price is the current market price of a token. It is identical for every holder on
+earth and is already on Dexscreener — it identifies nobody, and it is the entire point of a holdings
+overview. It is published.
+
+An **entry** price is what this wallet paid, and it belongs to one transaction. Next to a token and
+a time window it pins a single swap out of the few in that window, and a swap names an address. It
+is not published, and it is not carried on the event object at all: `EVENT_PUBLIC_FIELDS` is
+`kind, symbol, chain`, so it cannot reach a payload by accident.
 
 `lib/walletcard.js` builds the payload from an **allow-list** (`WALLET_PUBLIC_FIELDS`), so a field
 added upstream is invisible here until somebody decides otherwise. There are tests that build rows
 whose private figures are distinctive digit strings and assert those strings appear nowhere in the
 serialised output.
 
-### One thing it still discloses
+### The thing no field-level rule fixes
 
-A public list of holdings plus buy and sell prices is enough for someone to **find the wallet on
-chain** by matching the trades — and the address then reveals everything above. The size is not in
-the card; the card is a fingerprint that leads to it. That is a judgement for the account owner and
-it has been made deliberately. It is written down so the next reader does not have to rediscover it.
+The **holdings set is itself a fingerprint**, and it survives every price and timing rule above.
+ERC-20 holder lists are public and indexed, so intersecting the holders of two or three obscure
+tokens very likely yields one address — with no timing, no prices, and no event feed needed. It
+works against a screenshot of the holdings list alone.
+
+This is accepted knowingly rather than mitigated: the wallet is a bounded project account, not a
+net-worth account, and the obscure tokens are simultaneously the content worth posting and the whole
+fingerprint — they are the same thing. Removing them would delete the reason the card exists.
+
+Written down so the next reader does not mistake the price and timing rules for a solution to it.
 
 ## When it fires
 
-Only when the composition actually changed. It compares against a snapshot in Redis and reports
+**Detection every 30 minutes, publication once a day at 22:00 UTC.** The two are split on purpose:
+
+- Posting within half an hour of a trade puts that trade in a half-hour window, and on a quiet chain
+  the swaps of one obscure token in half an hour may number in the single digits. The post time is
+  itself the filter. Batching widens the window to a day.
+- Detection still runs every half hour because **a position opened and closed between two daily posts
+  would otherwise never have existed** — the snapshot either side of it is identical. Detect runs
+  buffer into `WALLET_PENDING_KEY` and post nothing; the daily run detects, publishes, then drains.
+- **It posts even on a quiet day.** A card that appears only when something happened makes its own
+  presence the signal. A card every day at the same hour says nothing by existing.
+
+Folding a repeated detection is idempotent: identity is `(kind, symbol, chain)`, which since the
+entry price left is the whole event, so a run that buffered but failed to advance its snapshot
+re-detects the same events and they collapse back into one entry. Buying and later trimming the same
+token are different kinds, so both survive — that is a real pair of decisions.
+
+Two ordering rules are load-bearing: the buffer is written **before** the snapshot moves, and the
+buffer is drained **only** on a confirmed Discord post.
+
+Events are reported only when the composition actually changed. It compares against a snapshot in Redis and reports
 four events: **bought**, **sold**, **added to**, **trimmed**.
 
 Materiality is judged on **notional, not quantity** — a thousand of something worthless and a
