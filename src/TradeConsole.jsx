@@ -13,7 +13,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { FUTURES_MULTIPLIER, multiplierFor, backfillMultipliers, quoteConvention, looksMisquoted, isUnambiguousFuture } from '../lib/futures.js';
 import { cryptoSymbolCheck, cryptoQuoteSymbol, isSpotCrypto, assetClassGroups } from '../lib/crypto.js';
-import { fundingRead, basisRead, isHlPerp } from '../lib/hyperliquid.js';
+import { fundingRead, basisRead, isHlPerp, estimateLiquidation, liquidationVsStop } from '../lib/hyperliquid.js';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
@@ -326,6 +326,7 @@ const {
   openFill, delFill, fillFor, sizeOpen, setSizeOpen, justMoved, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip,
   kindCol, money, pnlCol,
   equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
+  livePositions,
 } = ctx;
   const price = priceOf(r);
   const q = prices?.[quoteSym(r)];
@@ -556,6 +557,22 @@ const {
                 </div>
               )}
             </label>
+            {/* LEVERAGE, and only where it means something. On a perp the exchange closes the
+                position before any stop does, so the liquidation price is the real invalidation
+                level and the stop is only the one you chose. Shown for HL: rows because that is
+                where the venue publishes the cap and the tiers to check it against. */}
+            {isHlPerp(r.symbol) && (
+              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Leverage<br />
+                <NumCommit dk={`lev:${r.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft}
+                  value={r.leverage} placeholder={q?.hl?.maxLeverage ? `1–${q.hl.maxLeverage}` : "1–40"} width={84}
+                  onCommit={v => upd(r.id, { leverage: v })} />
+                {q?.hl?.maxLeverage != null && (
+                  <div style={{ fontSize: 10.5, color: C.muted, marginTop: 3 }}>
+                    venue caps this market at {q.hl.maxLeverage}×
+                  </div>
+                )}
+              </label>
+            )}
             {/* `ccySet` records that YOU chose this, which is what stops the exchange's answer
                 overwriting a deliberate choice on a row that has no fills yet. */}
             <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Currency<br />
@@ -680,6 +697,63 @@ const {
                 </div>
               );
             })}
+            {/* ── THE STOP THE VENUE ENFORCES ─────────────────────────────────────────────────
+                At up to 40x the exchange closes the position before any stop of yours is reached.
+                The risk model above assumes the stop is the binding constraint, so when the
+                liquidation price sits INSIDE it the stop cannot protect anything and the R on this
+                row is overstated. That is the one comparison worth making, so it is made here,
+                next to the levels rather than in a panel of its own.
+                NEVER ON THE CARD — see lib/tradecard.js. A liquidation price is size and leverage
+                restated, which is two of the four quantities that may not be published. */}
+            {isHlPerp(r.symbol) && (() => {
+              const entry = d.avgCost ?? d.avgEntry ?? price;
+              const lev = numOrNull(r.leverage);
+              if (entry == null || lev == null || !q?.hl) return null;
+              // A REAL position uses the exchange's own number; the estimate is for one that does
+              // not exist yet. They are never blended, and which is which is stated.
+              const est = estimateLiquidation({
+                entry, leverage: lev, side: r.side, maxLeverage: q.hl.maxLeverage,
+                tiers: q.hl.marginTiers ?? null, notional: (d.qty || 0) * entry,
+              });
+              const exch = livePositions?.[q.hl.coin]?.liquidationPx ?? null;
+              const liq = exch ?? est?.liq ?? null;
+              if (est?.over) return (
+                <div style={{ marginTop: 8, padding: "7px 10px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 7, fontSize: 11.5, color: C.amber, fontWeight: 700 }}>
+                  {est.note}
+                </div>
+              );
+              if (liq == null) return null;
+              const stopAt = (r.levels || []).find(l => l.kind === "stop" && l.at != null)?.at ?? null;
+              const cmp = stopAt != null ? liquidationVsStop({ liq, stop: stopAt, side: r.side }) : null;
+              const away = price ? +(((liq - price) / price) * 100).toFixed(1) : null;
+              const bad = !!cmp?.liqFirst;
+              return (
+                <div style={{ marginTop: 8, padding: "8px 11px", borderRadius: 8,
+                              background: bad ? C.rBg : C.bg, border: "1.5px solid " + (bad ? C.rBdr : C.bdr) }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap", fontSize: 12.5 }}>
+                    <span style={{ fontWeight: 800, color: bad ? C.red : C.mid }}>
+                      Liquidation {fmtPrice(liq)}
+                    </span>
+                    {away != null && <span style={{ color: C.lbl }}>{away >= 0 ? "+" : ""}{away}% from here</span>}
+                    <span style={{ fontSize: 11, color: C.muted }}>
+                      {exch != null ? "the exchange's own figure" : `estimated · ${lev}× isolated`}
+                    </span>
+                  </div>
+                  {cmp && (
+                    <div style={{ fontSize: 11.5, marginTop: 4, lineHeight: 1.5, fontWeight: bad ? 700 : 400,
+                                  color: bad ? C.red : C.mid }}>
+                      {bad ? "⚠ " : ""}{cmp.note}
+                    </div>
+                  )}
+                  {exch == null && est && (
+                    <div style={{ fontSize: 10.5, color: C.muted, marginTop: 3 }}>
+                      maintenance margin {est.maintenanceMarginPct}% at the venue's {est.tierMaxLeverage}× cap. {est.note}.
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
               {["buy", "sell", "stop"].map(k => (
                 <button key={k} onClick={() => addLevel(r.id, k)} style={{ cursor: "pointer", background: C.surf, color: kindCol(k), border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>＋ {levelVocab(r.side, k).add}</button>
@@ -942,6 +1016,9 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   const [sizeOpen, setSizeOpen] = useState({});     // per-row: is the size suggestion unfolded
   const [moved, setMoved]       = useState(null);   // a row that just changed section, for the toast
   const [showArchive, setShowArchive] = useState(false);
+  // Served by api/manual-entry, which is authenticated and never cached. Positions do not belong
+  // on the shared, edge-cached price route — see lib/apiauth.js.
+  const [livePositions, setLivePositions] = useState(null);
   // What the scheduled IBKR reconciliation last did. Server-owned: it arrives beside the console
   // rather than inside it, because a save replaces the console object wholesale.
   const [flexNote, setFlexNote] = useState(null);
@@ -973,6 +1050,12 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
       if (c) { setRows(backfillMultipliers(c.rows || []).rows); setSettings(s => ({ ...s, ...(c.settings || {}) })); }
     } catch { /* no cache */ }
     fetch("/api/manual-entry").then(r => r.json()).then(j => {
+      // Real perp positions, keyed by coin, when HYPERLIQUID_ADDRESS is configured. Keyed rather
+      // than listed because every consumer looks one up by coin and none of them iterates.
+      const hl = j?.hyperliquid;
+      setLivePositions(hl?.ok && Array.isArray(hl.positions)
+        ? Object.fromEntries(hl.positions.map(p => [p.coin, p]))
+        : null);
       const c = j?.console;
       if (c && typeof c === "object") {
         // ONE-TIME BACKFILL of contract multipliers — see lib/futures.js. A margined row that never
@@ -1563,6 +1646,10 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
     openFill, delFill, fillFor, setFillFor, saveFill, declineFill, sizeOpen, setSizeOpen, justMoved: moved?.id ?? null, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip, kindCol, money, pnlCol,
     equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
     rollCandidates, rolledOut, guardPanel, coverage,
+    // Real Hyperliquid positions, keyed by coin, when HYPERLIQUID_ADDRESS is configured. Null
+    // otherwise, which is the ordinary case — the liquidation read falls back to its estimate and
+    // says which it is showing.
+    livePositions,
   };
 
   return (

@@ -19,7 +19,7 @@ import { roundQuote, fmtPrice } from '../lib/price.js';
 import { cryptoSymbolCheck, cryptoQuoteSymbol, CRYPTO_BASES } from '../lib/crypto.js';
 import { atrSummary, ATR_PERIOD } from '../lib/atr.js';
 import { sizeSuggestion, roundQty } from '../lib/sizing.js';
-import { buildCard, buildClosedCard, splitByClass, classOfView } from '../lib/tradecard.js';
+import { buildCard, buildClosedCard, splitByClass, classOfView, publicView, PUBLIC_FIELDS } from '../lib/tradecard.js';
 import { isSpotCrypto, assetClassGroups } from '../lib/crypto.js';
 
 let pass = 0, fail = 0;
@@ -282,6 +282,37 @@ eq('a spot pair is sized as units, not a contract', multiplierFor('BTC-USD', {})
      [2, 2, true]);
   // A custom accessor, for callers whose rows are not shaped like a view.
   eq('symbolOf is honoured', splitByClass([{ t: 'BTC-USD' }, { t: 'NVDA' }], x => x.t).crypto.length, 1);
+}
+
+// ── LIQUIDATION IS CONSOLE-ONLY ──────────────────────────────────────────────
+// Asked for explicitly: it helps plan positioning and must not reach Discord. It is also the right
+// call on the card's own terms — a liquidation price is entry, leverage and size restated, and
+// two of those are among the four quantities lib/tradecard.js exists to refuse.
+{
+  const row = (sym, extra = {}) => ({
+    symbol: sym, trade: '', price: 100, levels: [{ kind: 'stop', at: 90 }],
+    derived: { status: 'open', avgCost: 95, qty: 1, scaleOuts: [], firstDate: '2026-08-01' },
+    pnl: { unrealizedPct: 5 }, ...extra,
+  });
+  // A row carrying every perp field the console shows.
+  const perp = row('HL:BTC', { leverage: 10, liquidationPx: 72911, hl: { coin: 'BTC', maxLeverage: 40, mark: 79604, fundingApr: 10.95 } });
+  const v = publicView(perp);
+
+  for (const f of ['leverage', 'liquidationPx', 'liq', 'hl', 'maxLeverage', 'marginUsed', 'notional'])
+    ok(`publicView drops ${f}`, !(f in v));
+  ok('and PUBLIC_FIELDS never names one', !PUBLIC_FIELDS.some(f => /liquid|leverage|margin|notional/i.test(f)));
+
+  const card = buildCard([perp, row('NVDA')]);
+  const whole = JSON.stringify(card);
+  for (const leak of ['liquidat', 'leverage', '72911', 'marginUsed'])
+    ok(`the card never contains "${leak}"`, !new RegExp(leak, 'i').test(whole));
+  // The row itself still appears — suppressing the field must not suppress the position.
+  ok('the position is still on the card', /HL:BTC/.test(whole));
+
+  // Nor on the closed card.
+  const closed = buildClosedCard([{ ...perp, derived: { ...perp.derived, status: 'closed', avgExit: 110, lastDate: '2026-09-01', realizedPct: 5 } }],
+                                 { today: '2026-09-05' });
+  ok('nor the closed card', !/liquidat|leverage/i.test(JSON.stringify(closed)));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

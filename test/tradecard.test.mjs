@@ -284,7 +284,13 @@ ok('and no R at all without a stop', !/R\b/.test(tradeLine(publicView({ symbol: 
 const closedRow = (symbol, entry, exit, stop, date) => ({ symbol, levels: stop ? [{ kind: 'stop', at: stop }] : [],
   derived: { status: 'closed', avgEntry: entry, avgExit: exit, avgCost: entry, realizedPct: +(((exit - entry) / entry) * 100).toFixed(2),
              firstDate: date, lastDate: date, scaleOuts: [] }, pnl: {} });
-const cc = buildClosedCard([closedRow('TQQQ', 69.4, 69.44, 67.5, '2026-08-20'), closedRow('SPY', 2.74, 0.52, null, '2026-06-08')]);
+// TIME MUST BE AN ARGUMENT, NOT THE WEATHER. This called buildClosedCard with no `today`, so it
+// used the real date — and the SPY fixture closed 2026-06-08 sat exactly 90 days inside the window
+// on 2026-09-06 and 91 days outside it on 2026-09-07. The test passed one day and failed the next
+// with nothing changed, which is the worst kind of red: it says the code broke and it did not.
+const CC_TODAY = '2026-09-01';
+const cc = buildClosedCard([closedRow('TQQQ', 69.4, 69.44, 67.5, '2026-08-20'), closedRow('SPY', 2.74, 0.52, null, '2026-06-08')],
+  { today: CC_TODAY });
 ok('titled by count', cc.embeds[0].title.includes('2 trades'));
 ok('a stopped trade reports R', /R/.test(cc.embeds[0].description.split('\n')[0]));
 // R OR NOTHING. A percentage in R's slot is a different measurement wearing its clothes, and a
