@@ -2,9 +2,14 @@ export const config = {
   matcher: "/",
 };
 
-export default function middleware(request) {
-  const cookies = request.headers.get("cookie") || "";
-  const isAuthed = cookies.includes("mwd_auth=true");
+import { verifySession, readCookie, SESSION_ENV } from "./lib/session.js";
+
+export default async function middleware(request) {
+  // `cookies.includes("mwd_auth=true")` was the entire check, and the string is in this file. It
+  // is also NOT the security boundary — this matcher covers `/` and nothing under /api — but a
+  // shell that lets anyone in is still a shell that lets anyone in. Same signed session the API
+  // routes verify, one implementation, in lib/session.js.
+  const isAuthed = await verifySession(readCookie(request.headers.get("cookie")), process.env[SESSION_ENV]);
 
   // Authenticated — return undefined to pass through to the Vite app
   if (isAuthed) return;

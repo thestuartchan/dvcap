@@ -10,6 +10,7 @@
 // Uses the same GitHub commit-back store as the Korea entry — no new infrastructure.
 
 import { upsertByDate } from '../lib/series.js';
+import { hasSessionCookie, refuse } from '../lib/apiauth.js';
 
 const DATA_PATH = 'data/regime_history.json';
 
@@ -57,9 +58,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'GET or POST only' });
-  if (!/(^|;\s*)mwd_auth=true(;|$)/.test(req.headers.cookie || '')) {
-    return res.status(401).json({ error: 'not authenticated' });
-  }
+  if (!(await hasSessionCookie(req))) return refuse(res);
   if (!process.env.GITHUB_TOKEN || !process.env.GITHUB_REPO) {
     return res.status(500).json({ error: 'GITHUB_TOKEN / GITHUB_REPO not configured' });
   }
