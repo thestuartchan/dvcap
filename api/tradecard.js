@@ -13,14 +13,14 @@
 // lib/tradecard.js from a whitelisted projection of a row, so a size or a dollar figure cannot
 // reach Discord even by accident. See the header of that file.
 
-import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, WALLET_SNAPSHOT_KEY } from '../lib/kv.js';
+import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, WALLET_SNAPSHOT_KEY, WALLET_PENDING_KEY } from '../lib/kv.js';
 import { derivePosition, positionPnl, levelHits, applyRolls } from '../lib/positions.js';
 import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard } from '../lib/tradecard.js';
 import { upsertCard, post, remove, webhookFromEnv, walletWebhookFromEnv, mentionFromEnv, alertTtlMin, CARD_KEY } from '../lib/discord.js';
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
 import { fetchWallets } from '../lib/wallet.js';
 import { fetchSpotContext, fetchHyperliquid } from '../lib/hyperliquid.js';
-import { diffHoldings, walletPublicView, buildWalletCard } from '../lib/walletcard.js';
+import { diffHoldings, walletPublicView, buildWalletCard, mergePending } from '../lib/walletcard.js';
 
 // A row's symbol is what you call it; the quote feed may call it something else. Mirrors the tab's
 // own resolution — Yahoo has no MNQ, and its MGC is an unrelated stock.
@@ -157,7 +157,19 @@ const authorised = (req) => gate(req);   // async — the caller must await it
 //
 // The channel is PUBLIC. lib/walletcard.js publishes prices and composition and no size of any
 // kind; the snapshot below keeps quantities, which is why it lives in Redis and not in a card.
-export async function refreshWallet() {
+// `post` false  — the half-hourly DETECTION run. Diffs, buffers whatever changed, stays silent.
+// `post` true   — the once-a-day run. Detects first (so a swap minutes before the hour is not held
+//                 over), then publishes the day and drains the buffer.
+//
+// WHY DETECTION AND PUBLICATION ARE SPLIT. Posting within half an hour of a trade puts the trade in
+// a half-hour window, and on a quiet chain the swaps of one obscure token in half an hour may number
+// in the single digits — the post time is itself the filter. Batching to a fixed hour widens that
+// window to a day. Detection still runs every half hour because a position opened and closed between
+// two daily posts would otherwise never have existed: the snapshot either side of it is identical.
+//
+// AND WHY IT POSTS EVEN ON A QUIET DAY. A card that appears only when something happened makes its
+// own presence the signal. A card every day at the same hour says nothing by existing.
+export async function refreshWallet({ post = false } = {}) {
   const hook = walletWebhookFromEnv();
   if (!hook) return { ok: false, skipped: 'DISCORD_WALLET_WEBHOOK is not set' };
   if (!kvConfigured()) return { ok: false, skipped: 'no Redis — nothing to compare against' };
@@ -178,27 +190,41 @@ export async function refreshWallet() {
     return { ok: true, posted: false, seeded: now.length };
   }
 
-  const events = diffHoldings(prevSnap.rows, now);
-  if (!events.length) return { ok: true, posted: false, events: 0 };
+  const fresh = diffHoldings(prevSnap.rows, now);
+  const buffered = (await kvGetJson(WALLET_PENDING_KEY))?.events || [];
+  const pending = mergePending(buffered, fresh);
+
+  // ORDER IS LOAD-BEARING. The buffer is written BEFORE the snapshot moves, so a failure between the
+  // two re-detects the same events next run and mergePending folds them back into one entry. The
+  // reverse order would advance the watermark past events that were never recorded anywhere.
+  if (fresh.length) {
+    if (!(await kvSetJson(WALLET_PENDING_KEY, { events: pending, at: new Date().toISOString() }))) {
+      return { ok: false, posted: false, error: 'could not buffer events — snapshot left where it was' };
+    }
+  }
+  await kvSetJson(WALLET_SNAPSHOT_KEY, { rows: now, at: new Date().toISOString() });
+
+  if (!post) return { ok: true, posted: false, detected: fresh.length, pending: pending.length };
 
   const holdings = now.filter(r => r.price != null).map(r => walletPublicView(r, r.chain));
-  const card = buildWalletCard(events, holdings);
+  const card = buildWalletCard(pending, holdings);
   const r = await fetch(hook, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(card), signal: AbortSignal.timeout(10000),
   });
-  // The snapshot advances ONLY on a confirmed post. A failed webhook that still moved the
-  // watermark would swallow the change permanently — the next run would see nothing to report.
-  if (!r.ok) return { ok: false, posted: false, error: `discord HTTP ${r.status}` };
-  await kvSetJson(WALLET_SNAPSHOT_KEY, { rows: now, at: new Date().toISOString() });
-  return { ok: true, posted: true, events: events.length };
+  // The buffer is drained ONLY on a confirmed post. A failed webhook that cleared it anyway would
+  // swallow the day permanently — tomorrow's card would show a wallet that changed by itself.
+  if (!r.ok) return { ok: false, posted: false, pending: pending.length, error: `discord HTTP ${r.status}` };
+  await kvSetJson(WALLET_PENDING_KEY, { events: [], at: new Date().toISOString() });
+  return { ok: true, posted: true, events: pending.length };
 }
 
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') { res.status(405).json({ error: 'method not allowed' }); return; }
   if (!(await authorised(req))) { res.status(401).json({ error: 'unauthorised', why: refusalReason(req) }); return; }
   if (String(req.query?.card || '') === 'wallet') {
-    try { res.status(200).json(await refreshWallet()); }
+    const post = /^(1|true|yes)$/i.test(String(req.query?.post || ''));
+    try { res.status(200).json(await refreshWallet({ post })); }
     catch (e) { console.error('walletcard', e); res.status(200).json({ error: String(e?.message || e) }); }
     return;
   }
