@@ -1046,12 +1046,20 @@ function Holdings({ data, title, note, open, onToggle, money }) {
                   {h.viaPool && <span style={{ color: C.lbl }} title={`From a liquidity pool quoted against ${h.viaPool} — depth and volume floors passed, but this is a pool ratio, not a venue mid`}> · pool vs {h.viaPool}</span>}
                 </span>
               )}
+              {h.viaPool && !h.verified && <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }} title="Priced from a pool, but nothing vouches for this token — shown, and kept out of the total">not counted</span>}
               {h.thin && <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }} title={`24h volume ${money(h.volume ?? 0, "USD")} — too thin to value`}>no real market</span>}
               {!h.priced && <span style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>no USDC pair</span>}
               <span style={{ marginLeft: "auto", display: "inline-flex", gap: 9, alignItems: "baseline" }}>
                 {h.priced && !h.thin && <b>{money(h.value, "USD")}</b>}
                 {h.pnlPct != null && !h.thin && <b style={{ fontSize: 12, color: h.pnl >= 0 ? C.green : C.red }}>{(h.pnlPct > 0 ? "+" : "") + h.pnlPct}%</b>}
               </span>
+              {/* WHY it is not counted, in the token's own terms. Absence of flags is never shown
+                  as a clean bill — only findings appear. */}
+              {h.safety?.reasons?.length > 0 && (
+                <div style={{ flexBasis: "100%", fontSize: 11, color: C.amber, marginTop: 2 }}>
+                  ⚠ {h.safety.reasons.join(" · ")}
+                </div>
+              )}
             </div>
           ))}
           {data.dust?.count > 0 && (
@@ -2346,6 +2354,20 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
                     Full discovery on {discovered.length} of {live.length} chains — every token held, not a fixed list.
                     {cut.length > 0 && <b style={{ color: C.amber }}> {cut.length} chain{cut.length === 1 ? "" : "s"} had more tokens than one read returns; the rest are not counted.</b>}
                   </div>
+                  {(() => {
+                    // Priced from a pool that nothing vouches for: shown on their rows, held out of
+                    // the total. A pool's depth says a pool exists, not that you can sell into it,
+                    // and an airdrop is built to look valuable.
+                    const un = live.reduce((a, c) => a + (c.unverified?.count || 0), 0);
+                    const val = live.reduce((a, c) => a + (c.unverified?.value || 0), 0);
+                    if (!un) return null;
+                    return (
+                      <div style={{ marginTop: 5, fontSize: 11.5, color: C.amber }}>
+                        {un} unvouched token{un === 1 ? "" : "s"} worth a nominal {fmtCcy(val, "USD")} shown but <b>not counted</b>
+                        <span style={{ color: C.muted, fontWeight: 400 }}> — priced from a pool nobody vouches for.</span>
+                      </div>
+                    );
+                  })()}
                   {fellBack.length > 0 && (
                     <div style={{ marginTop: 5, fontSize: 11.5, color: C.amber }}>
                       Fell back to the fixed list on {fellBack.map(c => `${c.chain} (${c.discovery.error})`).join(" · ")}
