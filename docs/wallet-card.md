@@ -124,6 +124,25 @@ URL ever 404s, Discord omits the icon and the chain name still shows — a dead 
 rather than breaking it. A chain with no logo mapped gets no `icon_url` at all, because Discord
 renders a *broken* image for a dead link and nothing for a missing one.
 
+### A chain earns its section
+
+A chain gets its own logo-headed section only when it holds **two or more** things
+(`MIN_CHAIN_HOLDINGS`). A chain carrying only its gas token is not a position — it is the fee left
+over from making one somewhere else — and a whole section announcing "ETH" is a lot of card for a
+fact nobody acts on. Two is the bar because on a chain where gas is held, one real position already
+reads as two holdings, so a chain promotes itself the moment something is actually bought there.
+
+Folded chains are **named** in one muted line rather than dropped:
+
+> *Ethereum, Arbitrum — a single holding each, not shown.*
+
+A holdings overview that quietly omits a holding cannot be trusted as a list. The line says which
+chains, never what or how much, so it discloses strictly less than the section it replaces.
+
+Folding happens **before** the embed cap is measured, so thin chains cannot push a real one out. And
+a trade on a folded chain is still announced in the events at the top — the fold hides noise, not
+activity.
+
 A message takes at most ten embeds. One is spent on the day's events, so **beyond nine chains** the
 card falls back to a single flat list marked with the Unicode marks below — fewer decorations rather
 than a truncated wallet.
