@@ -108,3 +108,37 @@ Polling means the card says *"this changed since I last looked"*, not *"you just
 swaps inside one 30-minute window collapse into a single card. Per-trade cards would mean watching
 transfers rather than diffing balances — more machinery, and worth doing only if the diff turns out
 not to be enough.
+
+## Chain marks
+
+Each holdings line is led by a mark for its chain, so the eye can group by chain without reading to
+the end of the line. The chain is still named there — the mark is a cue, not a key you have to learn.
+
+| chain | mark |
+|---|---|
+| Ethereum | ⟠ |
+| Arbitrum | 🔷 |
+| Base | 🔵 |
+| Polygon | 🟣 |
+| HyperEVM / Hyperliquid | 🌊 |
+| Robinhood Chain | 🪶 |
+| anything else | ⬦ |
+
+### Using the real chain logos
+
+Unicode has no chain logos, so the marks above are stand-ins. Real logos are possible, but they are
+**custom Discord emoji** — they live on one server and are referenced by id, not by name.
+
+1. Upload each logo to the server: **Server Settings → Emoji → Upload Emoji**.
+2. In any channel, type `\:name:` (with the backslash) and send it. Discord prints the raw form,
+   e.g. `<:ethereum:1234567890123456>`. That string is what the card needs.
+3. Set `DISCORD_CHAIN_EMOJI` in Vercel to a JSON object keyed by the chain label exactly as it
+   appears on the card, then redeploy:
+
+   ```json
+   {"Ethereum":"<:ethereum:123>","Robinhood Chain":"<:robinhood:456>"}
+   ```
+
+Any chain the object omits keeps its built-in mark, so a partial map is fine. A malformed value —
+bad JSON, a non-string, anything with a newline — is ignored and the built-ins stand, because a typo
+in an env var must not stop the daily card from posting.
