@@ -132,16 +132,14 @@ over from making one somewhere else — and a whole section announcing "ETH" is 
 fact nobody acts on. Two is the bar because on a chain where gas is held, one real position already
 reads as two holdings, so a chain promotes itself the moment something is actually bought there.
 
-Folded chains are **named** in one muted line rather than dropped:
+Thin chains are dropped **silently**. An earlier version named them in a muted line and that line
+turned out to be more noise than the rows it replaced.
 
-> *Ethereum, Arbitrum — a single holding each, not shown.*
+Nothing the card exists for is lost: a **trade** on a dropped chain is still announced in the events
+at the top, so activity always surfaces even when a standing balance does not. The console remains
+the place that shows everything.
 
-A holdings overview that quietly omits a holding cannot be trusted as a list. The line says which
-chains, never what or how much, so it discloses strictly less than the section it replaces.
-
-Folding happens **before** the embed cap is measured, so thin chains cannot push a real one out. And
-a trade on a folded chain is still announced in the events at the top — the fold hides noise, not
-activity.
+Dropping happens **before** the embed cap is measured, so thin chains cannot push a real one out.
 
 A message takes at most ten embeds. One is spent on the day's events, so **beyond nine chains** the
 card falls back to a single flat list marked with the Unicode marks below — fewer decorations rather
