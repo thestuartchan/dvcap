@@ -197,8 +197,16 @@ const HOLDER = '0x000000000000000000000000000000000000dEaD';
   // ── ROBINHOOD CHAIN SAYS WHAT IT CANNOT SEE ────────────────────────────────
   // Its tokenised assets are not addresses to guess at, and its explorer sits behind Cloudflare so
   // a serverless function cannot enumerate them. Native only — declared, not implied.
-  eq('robinhood carries no token list', CHAINS.robinhood.tokens, []);
-  ok('and says the list is missing rather than empty', CHAINS.robinhood.tokensUnlisted === true);
+  // It carries exactly two, both taken from Robinhood's own contract docs and then confirmed
+  // against the chain — WETH at 18 decimals, USDG at 6. PINNED BY ADDRESS on purpose: since July
+  // 2026 this chain has carried deliberate fake USDG and WETH clones, deployed elsewhere and
+  // seeded into pools to look tradeable. Matching on symbol here would be the attack working.
+  eq('robinhood pins the two anchors it can verify', CHAINS.robinhood.tokens.map(t => t.symbol), ['WETH', 'USDG']);
+  eq('by address, at the decimals the chain reported', CHAINS.robinhood.tokens.map(t => t.decimals), [18, 6]);
+  ok('WETH prices off the venue', CHAINS.robinhood.tokens[0].hl === 'ETH');
+  ok('and USDG at par, since nothing quotes it', CHAINS.robinhood.tokens[1].par === true);
+  // Everything ELSE on the chain still has no quote, which is what the flag says.
+  ok('and says the rest of the list is missing rather than empty', CHAINS.robinhood.tokensUnlisted === true);
   ok('no other chain claims that', Object.entries(CHAINS).filter(([, c]) => c.tokensUnlisted).length === 1);
   // A chain with no tokens still reads its native balance.
   eq('its native asset is still named', CHAINS.robinhood.native.symbol, 'ETH');
