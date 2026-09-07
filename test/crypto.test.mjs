@@ -407,6 +407,7 @@ eq('a spot pair is sized as units, not a contract', multiplierFor('BTC-USD', {})
   const src = readFileSync(new URL('../lib/tradecard.js', import.meta.url), 'utf8');
   ok('the card module knows nothing about spot balances',
      !/hyperliquidSpot|spotHoldings|fetchHlSpot|entryNtl/.test(src));
+  ok('nor about the on-chain wallet', !/fetchWallet|walletBalances|balanceOf|aggregate3|hyperevm/i.test(src));
   ok('nor about wallet balances by any other name', !/\bbalances\b|\bwallet\b/i.test(src));
 
   // And a row that somehow carried them still publishes none of it. The private figures are

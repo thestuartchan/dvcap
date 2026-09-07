@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, Component, Fragment } from "react";
-import { C, SLabel, Card, Btn } from "./ui.jsx";
+import { C } from "./theme.js";
+import { SLabel, Card, Btn } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
 import { REGIMES, REGIME_PALETTE } from "../lib/regimes.js";
 import { TradeConsole } from "./TradeConsole.jsx";
@@ -14,15 +15,15 @@ import { freshnessText, humanizeAge } from "../lib/sessions.js";
 import { interventionAnnotation } from "../lib/fx.js";
 import { unInversionPhase, yieldCurveStatus, NORMAL_SPREAD } from "../lib/yieldcurve.js";
 import { pendingReconciliations, reconStats } from "../lib/recon.js";
-import { deriveRegimeProbabilities, CONTESTED_GAP } from "../lib/regimeProb.js";
+import { deriveRegimeProbabilities } from "../lib/regimeProb.js";
 import { minersPairImplication } from "../lib/regimeState.js";
 import { southboundTrend, southboundLevelTrend, southboundRead, ahPremiumRead, sbStale } from "../lib/southbound.js";
-import { STATUS, creditStatus, deriveAction, headerSignal, STAGES } from "../lib/status.js";
+import { STATUS, creditStatus, deriveAction, headerSignal } from "../lib/status.js";
 import { HORIZON, HORIZON_LABEL, consensusFor, calendarWindow, dispersionRead, NO_CONVERSION_NOTE, consensusVintage } from "../lib/recession.js";
 import { buildViews, evaluateViews, regimeCluster, divergenceRead } from "../lib/analystViews.js";
-import { CURRENCIES, CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, toUsd, fxRisk, fmtCcy } from "../lib/fxrates.js";
-import { derivePosition, positionPnl, levelHit, levelHits, distancePct, summarize, realizedCurve } from "../lib/positions.js";
-import { REGIME_SIZING, SIZING_MODES, regimeMultiplier, sizeSuggestion, riskAtStop, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT } from "../lib/sizing.js";
+import { fmtCcy } from "../lib/fxrates.js";
+import { realizedCurve } from "../lib/positions.js";
+import { DEFAULT_TARGET_PCT } from "../lib/sizing.js";
 import { observationAge } from "../lib/gates.js";
 import { trend as trendOf } from "../lib/series.js";
 
@@ -36,7 +37,7 @@ import { laborStress, sahmAnnotation, laborVerdict, laborSummary, laborDeteriora
 import { handoffChain } from "../lib/handoff.js";
 import { coreSpread } from "../lib/inflation.js";
 import HOLIDAYS from "../data/holidays.json";
-import { SEC_YIELDS, PROXY, secYieldProxy, proxyDivergence, apyFromSec, afterWht, billFromDiscount, BILL_DAYS, compareCash } from "../lib/cashyield.js";
+import { SEC_YIELDS, PROXY, secYieldProxy, proxyDivergence, apyFromSec, billFromDiscount, BILL_DAYS, compareCash } from "../lib/cashyield.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
 const SC = ["#1E40AF","#166534","#D97706","#6D28D9","#B45309","#BE185D","#0F766E","#F59E0B"];
@@ -2396,7 +2397,7 @@ function cacheLoad(key, fallback) {
   catch (_) { return fallback; }
 }
 function cacheSave(key, value) {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) {}
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ }
 }
 function cacheLoadDate(key) {
   try { const s = localStorage.getItem(key); return s ? new Date(s) : null; }
@@ -2421,7 +2422,7 @@ function useLivePrices() {
         });
         const now = new Date();
         setUpdated(now);
-        try { localStorage.setItem("cache_prices_updated_v1", now.toISOString()); } catch (_) {}
+        try { localStorage.setItem("cache_prices_updated_v1", now.toISOString()); } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ }
       }
     } catch (e) { console.error("Price fetch error:", e); }
     setLoading(false);
@@ -2450,7 +2451,7 @@ function useLiveIndicators() {
         setUpdated(now);
         setError(null);
         cacheSave("cache_indicators_v1", result);
-        try { localStorage.setItem("cache_indicators_updated_v1", now.toISOString()); } catch (_) {}
+        try { localStorage.setItem("cache_indicators_updated_v1", now.toISOString()); } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ }
       } else if (result) {
         // Got a response but values are all zero — API key likely not configured
         setError("API returned zero values — check FRED_API_KEY is set in Vercel environment variables.");
@@ -2500,7 +2501,7 @@ function useLivePlaybook() {
         });
         const now = new Date();
         setUpdated(now);
-        try { localStorage.setItem("cache_playbook_updated_v1", now.toISOString()); } catch (_) {}
+        try { localStorage.setItem("cache_playbook_updated_v1", now.toISOString()); } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ }
       } else {
         setError("Playbook returned no data.");
       }
@@ -2521,12 +2522,12 @@ async function loadFunds() {
       const p = JSON.parse(r.value);
       if (Array.isArray(p) && p.length) return p;
     }
-  } catch (_) {}
+  } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ }
   return null;
 }
 
 async function persistFunds(funds) {
-  try { await window.storage.set("funds_v4", JSON.stringify(funds)); } catch (_) {}
+  try { await window.storage.set("funds_v4", JSON.stringify(funds)); } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ }
 }
 
 // ─── TICKER → COMPANY NAME MAP ───────────────────────────────────────────────
@@ -2640,7 +2641,7 @@ function ManualPrice({ ticker }) {
     try {
       localStorage.setItem("manual_price_" + ticker, clean);
       localStorage.setItem("manual_price_date_" + ticker, isoNow);
-    } catch (_) {}
+    } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ }
     setVal(clean); setDate(isoNow);
   }
   const linkIcon = link && (
@@ -3123,7 +3124,7 @@ class TabErrorBoundary extends Component {
           data shape — clearing the cache and refetching normally fixes it.
         </div>
         <Btn onClick={() => {
-          try { Object.keys(localStorage).filter(k => k.startsWith("cache_")).forEach(k => localStorage.removeItem(k)); } catch (_) {}
+          try { Object.keys(localStorage).filter(k => k.startsWith("cache_")).forEach(k => localStorage.removeItem(k)); } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ }
           window.location.reload();
         }} color={C.red} bgColor={C.rBg} label="🧹 Clear cache & reload" />
       </Card>
@@ -5452,18 +5453,18 @@ export default function App() {
       setStage5(localStorage.getItem("posture_stage5_active") === "true");
       const pv = localStorage.getItem("portfolio_total_value");
       if (pv) setPortfolioValue(pv.replace(/[^0-9]/g, ""));
-    } catch (_) {}
+    } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ }
   }, []);
   function updatePortfolioValue(raw) {
     const digits = String(raw).replace(/[^0-9]/g, "");
     setPortfolioValue(digits);
-    try { localStorage.setItem("portfolio_total_value", digits); } catch (_) {}
+    try { localStorage.setItem("portfolio_total_value", digits); } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ }
   }
   function toggleStage4() {
-    setStage4(function(v) { const n = !v; try { localStorage.setItem("posture_stage4_active", String(n)); } catch (_) {} return n; });
+    setStage4(function(v) { const n = !v; try { localStorage.setItem("posture_stage4_active", String(n)); } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ } return n; });
   }
   function toggleStage5() {
-    setStage5(function(v) { const n = !v; try { localStorage.setItem("posture_stage5_active", String(n)); } catch (_) {} return n; });
+    setStage5(function(v) { const n = !v; try { localStorage.setItem("posture_stage5_active", String(n)); } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ } return n; });
   }
 
   // "Updated 14:32" on a payload cached three weeks ago reads exactly like one fetched two

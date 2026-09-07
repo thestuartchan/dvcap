@@ -32,7 +32,7 @@ const isFn=t=>t==='FunctionDeclaration'||t==='FunctionExpression'||t==='ArrowFun
 // Collect declarations belonging directly to a scope node (not nested functions).
 function declsOf(node){
   const out=new Set();
-  const visit=(n,parent)=>{
+  const visit=(n,_parent)=>{
     if(!n||typeof n.type!=='string')return;
     if(n!==node&&isFn(n.type)){ if(n.id)out.add(n.id.name); return; }   // don't descend
     if(n.type==='VariableDeclarator')bindPat(n.id,out);
@@ -57,7 +57,7 @@ function analyze(node,chain){
   const scope=declsOf(node);
   const nextChain=[...chain,scope];
   const resolve=n=>nextChain.some(s=>s.has(n))||GLOBALS.has(n);
-  const visit=(n,parent)=>{
+  const visit=(n,_parent)=>{
     if(!n||typeof n.type!=='string')return;
     if(n!==node&&isFn(n.type)){ analyze(n,nextChain); return; }
     // reference positions

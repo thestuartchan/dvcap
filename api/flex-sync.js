@@ -28,7 +28,7 @@ import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY } from '
 const SEEN_KEY = 'dvcap:flex:seen:v1';
 import { derivePosition } from '../lib/positions.js';
 import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades } from '../lib/flexTrades.js';
-import { fetchStatement, reconcile, summarise, summariseActionable, actionable, signatureOf, planAck, flexEnv, flexConfigured, isoDate } from '../lib/flex.js';
+import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf, planAck, flexEnv, flexConfigured, isoDate } from '../lib/flex.js';
 import { post, webhookFromEnv } from '../lib/discord.js';
 import { refresh } from './tradecard.js';
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';

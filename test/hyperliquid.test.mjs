@@ -110,7 +110,10 @@ eq('max leverage travels too', [M.BTC.maxLeverage, M.WIF.maxLeverage], [40, 10])
   // EVERY request type this module can send, enumerated. It caught the spot read being added,
   // which is exactly the job: widening what a deployment holding an address can ask for is a
   // decision to make on purpose, in a diff, rather than a thing that accretes.
-  const types = [...src.matchAll(/type:\s*'([a-zA-Z]+)'/g)].map(m => m[1]).sort();
+  const types = [...new Set([...src.matchAll(/type:\s*'([a-zA-Z]+)'/g)].map(m => m[1]))].sort();
+  // DISTINCT types: spotMetaAndAssetCtxs is now sent from two places — fetchHlSpot when it has no
+  // shared context, and fetchSpotContext, which exists so the wallet and the ledger pull the 270KB
+  // payload once between them. Two call sites of one read is not a wider surface.
   eq('four read requests and no others', types,
      ['clearinghouseState', 'metaAndAssetCtxs', 'spotClearinghouseState', 'spotMetaAndAssetCtxs']);
   // Structural rather than a restatement of the list above: every read this venue offers is named

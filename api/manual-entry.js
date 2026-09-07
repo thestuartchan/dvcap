@@ -19,7 +19,8 @@ import { appendDecision, overrideStats, DECISIONS_KEY, ACTIONS } from '../lib/de
 import { GUARD_STATES } from '../lib/guards.js';
 import { sideOf } from '../lib/side.js';
 import { authorised, hasSessionCookie, refuse } from '../lib/apiauth.js';
-import { fetchHlAccount, fetchHlSpot } from '../lib/hyperliquid.js';
+import { fetchHlAccount, fetchHlSpot, fetchSpotContext } from '../lib/hyperliquid.js';
+import { fetchWallet } from '../lib/wallet.js';
 
 const DATA_PATH = 'data/manual_entry.json';
 
@@ -230,9 +231,15 @@ export default async function handler(req, res) {
     try {
       const { store } = await readStore();
       const full = String(req.query?.decisions || '') === 'full';
-      // Both Hyperliquid reads at once. Sequentially they are two round trips to Tokyo on a route
-      // that already makes several; they share nothing, so there is no reason to wait twice.
-      const [hlAccount, hlSpot] = await Promise.all([fetchHlAccount(), fetchHlSpot()]);
+      // THREE READS, ONE COPY OF THE METADATA. The perp book, the exchange's spot ledger and the
+      // on-chain wallet are three different things about one address; the last two both need the
+      // spot universe and its prices, which is a 270KB payload. Fetched once here and handed to
+      // both, rather than each pulling its own.
+      const [hlAccount, spotCtx] = await Promise.all([fetchHlAccount(), fetchSpotContext()]);
+      const [hlSpot, wallet] = await Promise.all([
+        fetchHlSpot({ context: spotCtx }),
+        fetchWallet({ spotMeta: spotCtx.meta, prices: spotCtx.prices }),
+      ]);
       const fullLog = full && kvConfigured() ? (await kvGetJson(DECISIONS_KEY)) || [] : null;
       // NOT edge-cached. This response now carries the trade console — real positions and cost
       // basis — and a shared s-maxage cache would both hold private state at the edge and serve a
@@ -264,6 +271,11 @@ export default async function handler(req, res) {
         // holdings list is size, and size is one of the four quantities lib/tradecard.js exists
         // to keep off anything public.
         hyperliquidSpot: hlSpot,
+        // ── AND WHAT THE WALLET HOLDS ON CHAIN ────────────────────────────────────────────────
+        // A third thing again: coins at the address itself, which the exchange knows nothing
+        // about. Moving them onto Hyperliquid is a bridge transaction, not a transfer between
+        // accounts, so a merged number would answer a question nobody asks.
+        wallet,
         // WHETHER THE BRIEFS ACTUALLY ARRIVED. Carried on the console's own payload so a missed
         // pre-read is visible where the reader already is, instead of being discovered days later
         // as an absence in a chat channel.

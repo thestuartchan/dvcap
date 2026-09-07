@@ -10,7 +10,8 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ReferenceLine, ReferenceArea, ResponsiveContainer, Cell,
 } from "recharts";
-import { C, Card, SLabel, Btn } from "./ui.jsx";
+import { C } from "./theme.js";
+import { Card, SLabel } from "./ui.jsx";
 import { gexRead, ageOf } from "../lib/gexRead.js";
 import { heatCells, heatAlpha } from "../lib/gex.js";
 
