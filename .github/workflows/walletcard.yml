@@ -56,7 +56,17 @@ jobs:
           # configured, Redis down, nothing changed) is visible in the log without turning it red.
           [ "$code" = "200" ] || exit 1
           # A publish run that did not publish is a real failure — it is the only run that must post.
-          if [ "$IS_POST" = "true" ] && ! grep -q '"posted":true' /tmp/out.json; then
+          # EXCEPT a SEEDING run. With no snapshot to compare against, the route records the wallet
+          # and deliberately posts nothing, because every holding would otherwise read as newly
+          # bought and the first card would be a fabricated buying spree. That happens on the first
+          # ever run and again whenever the snapshot key is versioned, and it is the design working
+          # rather than failing. Treating it as red cried wolf the first time it fired.
+          if [ "$IS_POST" = "true" ] \
+             && ! grep -q '"posted":true' /tmp/out.json \
+             && ! grep -q '"seeded":' /tmp/out.json; then
             echo "::error::The daily run did not post. See the reason above."
             exit 1
+          fi
+          if grep -q '"seeded":' /tmp/out.json; then
+            echo "::notice::Seeded the snapshot and posted nothing, by design. The next run publishes."
           fi
