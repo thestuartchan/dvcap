@@ -33,6 +33,18 @@ for (const f of files) {
   if (!gated) open.push(f);
   // Fail-open is not a gate. `if (!want) return true` turns a missing variable into an open door.
   if (/if\s*\(\s*!\s*want\s*\)\s*return\s+true/.test(src)) open.push(`${f} (fails OPEN when its secret is unset)`);
+  // A FORGOTTEN AWAIT IS THE SAME DOOR. Verifying a signature is async, so `authorised(req)` is a
+  // Promise — and a Promise is truthy, so `if (!authorised(req)) refuse()` refuses nobody, ever,
+  // while reading exactly like a gate. This is the one mistake the new scheme makes easy, so it is
+  // the one the build checks. Every call must be awaited; the arrow wrappers that just forward to
+  // the shared gate are not call sites and are skipped.
+  for (const m of src.matchAll(/(.{0,12})\b(authorised|hasSessionCookie)\s*\(/g)) {
+    const before = m[1];
+    if (/=>\s*$/.test(before)) continue;                       // `const authorised = (req) => gate(req)`
+    if (/\bimport\b|\bfunction\s*$/.test(before)) continue;   // the import line, a definition
+    if (!/await\s*$|await\s*\(\s*$|await\s*\(\s*!\s*$/.test(before) && !/\bawait\s+\S{0,10}$/.test(before))
+      open.push(`${f} (${m[2]}() called without await — a Promise is truthy, so it never refuses)`);
+  }
 }
 
 if (open.length) {

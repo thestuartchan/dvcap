@@ -5,6 +5,7 @@
 
 import { parseKofia, toWonTrillions, unitSanity, KOFIA_CURRENCY } from '../lib/kofia.js';
 import { upsertObservation, seriesFromHistory, normalizeSeries } from '../lib/series.js';
+import { hasSessionCookie, refuse } from '../lib/apiauth.js';
 
 const DATA_PATH = 'data/korea_kofia.json';
 const KEYS = ['marginLoans', 'deposits', 'cma', 'kospi', 'kr3yGovt', 'kr3yCorp'];
@@ -54,10 +55,10 @@ async function writeStore(store, sha, message) {
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
-  // Gate the write behind the dashboard's own auth cookie (set by api/login.js).
-  if (!/(^|;\s*)mwd_auth=true(;|$)/.test(req.headers.cookie || '')) {
-    return res.status(401).json({ error: 'not authenticated — log in to the dashboard first' });
-  }
+  // Gate the write behind the dashboard's own session (minted by api/login.js, signed by
+  // lib/session.js). This used to test for the literal string `mwd_auth=true`, which anyone could
+  // send — the gate named the cookie without ever checking it came from us.
+  if (!(await hasSessionCookie(req))) return refuse(res);
   if (!process.env.GITHUB_TOKEN || !process.env.GITHUB_REPO) {
     return res.status(500).json({ error: 'GITHUB_TOKEN / GITHUB_REPO not configured in Vercel' });
   }

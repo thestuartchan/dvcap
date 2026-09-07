@@ -18,7 +18,7 @@ const PREREAD_LAST_KEY = 'dvcap:preread:last:v1';
 import { appendDecision, overrideStats, DECISIONS_KEY, ACTIONS } from '../lib/decisions.js';
 import { GUARD_STATES } from '../lib/guards.js';
 import { sideOf } from '../lib/side.js';
-import { authorised, refuse } from '../lib/apiauth.js';
+import { authorised, hasSessionCookie, refuse } from '../lib/apiauth.js';
 import { fetchHlAccount } from '../lib/hyperliquid.js';
 
 const DATA_PATH = 'data/manual_entry.json';
@@ -223,7 +223,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     // THE MIDDLEWARE DOES NOT COVER THIS. It matches `/` only, so this route served the whole
     // trade console — fills, cost basis and settings.equity — to anyone who asked. See lib/apiauth.
-    if (!authorised(req)) return refuse(res);
+    if (!(await authorised(req))) return refuse(res);
     if (!process.env.GITHUB_TOKEN || !process.env.GITHUB_REPO) {
       return res.status(200).json({ fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, note: 'store not configured' });
     }
@@ -275,9 +275,9 @@ export default async function handler(req, res) {
   }
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'GET or POST only' });
-  if (!/(^|;\s*)mwd_auth=true(;|$)/.test(req.headers.cookie || '')) {
-    return res.status(401).json({ error: 'not authenticated — log in to the dashboard first' });
-  }
+  // The same signed session the GET requires. This was its own copy of the literal-cookie regex,
+  // which is how a constant ends up in five files and gets fixed in one.
+  if (!(await hasSessionCookie(req))) return refuse(res);
   if (!process.env.GITHUB_TOKEN || !process.env.GITHUB_REPO) {
     return res.status(500).json({ error: 'GITHUB_TOKEN / GITHUB_REPO not configured' });
   }
