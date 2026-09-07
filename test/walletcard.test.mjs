@@ -5,8 +5,8 @@
 // prices, never size and never an ENTRY price. Same four forbidden quantities as lib/tradecard.js — SIZE, ABSOLUTE P&L, MARKET
 // VALUE, SHARE OF BOOK — for the same reason, and tested the same way: rows whose private values
 // are distinctive digit strings, asserted to appear nowhere in the serialised output.
-import { chainMark } from '../lib/chains.js';
-import { walletPublicView, diffHoldings, buildWalletCard, eventLine, holdingLine, mergePending,
+import { chainMark, chainLogo } from '../lib/chains.js';
+import { walletPublicView, diffHoldings, buildWalletCard, eventLine, holdingLine, groupedHoldingLine, mergePending,
          WALLET_PUBLIC_FIELDS, EVENT_PUBLIC_FIELDS, MIN_NOTIONAL_USD } from '../lib/walletcard.js';
 
 let pass = 0, fail = 0;
@@ -51,7 +51,7 @@ const row = (o = {}) => ({
   ok('but the price is there', whole.includes('0.7121'));
   ok('and the symbol', whole.includes('PONS'));
   ok('the footer dates the prices without reciting a disclaimer',
-     card.embeds[0].footer.text === 'Market prices at time of post');
+     card.embeds[card.embeds.length - 1].footer.text === 'Market prices at time of post');
 }
 
 // ── MATERIALITY, ON NOTIONAL RATHER THAN QUANTITY ────────────────────────────
@@ -114,6 +114,10 @@ const row = (o = {}) => ({
   ok('and omits a missing day move rather than printing zero',
      !/%/.test(holdingLine({ symbol: 'X', price: 1, changePercent: null, chain: null })));
 
+  eq('a grouped line drops the mark and the chain, which its embed already carries',
+     groupedHoldingLine({ symbol: 'PONS', price: 0.7121, changePercent: -17.68, chain: 'Robinhood Chain' }),
+     '**PONS** 0.7121 (-17.68%)');
+
   const empty = buildWalletCard([], []);
   eq('a quiet day says so rather than rendering blank', empty.embeds[0].description, '_No changes today._');
   ok('and still dates its prices', /at time of post/i.test(JSON.stringify(empty)));
@@ -137,10 +141,10 @@ const row = (o = {}) => ({
 
   const card = buildWalletCard(evs, [{ symbol: 'NUDES', chain: 'Robinhood Chain', price: ENTRY, changePercent: 8.4 }]);
   const desc = card.embeds[0].description;
-  ok('the event line does not carry the entry price', !desc.split('__**Holdings**__')[0].includes('0174299'));
-  ok('the holdings line still does carry the market price', /Holdings/.test(desc) && desc.includes('0.0174'));
-  ok('no @ pricing syntax survives on any event line',
-     !desc.split('__**Holdings**__')[0].includes('@'));
+  ok('the event line does not carry the entry price', !desc.includes('0174299'));
+  ok('no @ pricing syntax survives on any event line', !desc.includes('@'));
+  const holdText = card.embeds.slice(1).map(e => e.description).join('\n');
+  ok('the holdings line still does carry the market price', holdText.includes('0.0174'));
 }
 
 // ── ACCUMULATING A DAY ───────────────────────────────────────────────────────
@@ -205,6 +209,52 @@ const row = (o = {}) => ({
   eq('a non-string value is rejected', chainMark('Ethereum', { DISCORD_CHAIN_EMOJI: '{"Ethereum":42}' }), '⟠');
   eq('and one carrying a newline is too, since it would break the layout',
      chainMark('Ethereum', { DISCORD_CHAIN_EMOJI: '{"Ethereum":"a\\nb"}' }), '⟠');
+}
+
+// ── GROUPED BY CHAIN, WITH REAL LOGOS ────────────────────────────────────────
+// Discord will not draw an image inside an embed description, so the only way to show a real chain
+// logo is one embed per chain with the logo as its author icon. That is the shape being tested.
+{
+  const h = (symbol, chain) => ({ symbol, chain, price: 1, changePercent: null });
+  const card = buildWalletCard([], [
+    h('ETH', 'Ethereum'), h('ETH', 'Arbitrum'),
+    h('PONS', 'Robinhood Chain'), h('NUDES', 'Robinhood Chain'),
+  ]);
+
+  eq('one embed leads, then one per chain', card.embeds.length, 4);
+  eq('the lead embed holds the day, not the holdings', card.embeds[0].description, '_No changes today._');
+  eq('each chain embed is headed by its chain',
+     card.embeds.slice(1).map(e => e.author.name), ['Ethereum', 'Arbitrum', 'Robinhood Chain']);
+  ok('and by that chain\'s logo',
+     card.embeds.slice(1).every(e => /^https:\/\//.test(e.author.icon_url)));
+  eq('a chain with two holdings keeps them in one embed',
+     card.embeds[3].description, '**PONS** 1.00\n**NUDES** 1.00');
+  ok('a grouped line does not repeat the chain name',
+     !card.embeds[3].description.includes('Robinhood'));
+
+  // Footer and timestamp belong to the last embed only, or the card says the same thing four times.
+  eq('only one embed carries the footer', card.embeds.filter(e => e.footer).length, 1);
+  ok('and it is the last', !!card.embeds[card.embeds.length - 1].footer);
+  eq('only one carries a timestamp', card.embeds.filter(e => e.timestamp).length, 1);
+
+  // Colour means "something happened" rather than decorating every block.
+  const busy = buildWalletCard([{ kind: 'bought', symbol: 'X', chain: 'Base' }], [h('X', 'Base')]);
+  eq('the lead embed takes the accent when something was bought', busy.embeds[0].color, 0x16A34A);
+  eq('the inventory stays neutral', busy.embeds[1].color, 0x64748B);
+
+  // A chain with no logo must still render — name only, never a broken image.
+  const unknown = buildWalletCard([], [h('FOO', 'Someswap Chain')]);
+  eq('an unknown chain still gets its own embed and name', unknown.embeds[1].author.name, 'Someswap Chain');
+  ok('but no icon_url at all rather than a dead link', !('icon_url' in unknown.embeds[1].author));
+  eq('and chainLogo says so plainly', chainLogo('Someswap Chain'), null);
+  ok('a known chain has one', /^https:\/\//.test(chainLogo('Ethereum')));
+
+  // Ten embeds is Discord's cap. Beyond nine chains the card must degrade, not truncate.
+  const many = buildWalletCard([], Array.from({ length: 12 }, (_, i) => h('T' + i, 'Chain' + i)));
+  ok('past the embed cap it falls back to one flat list', many.embeds.length === 1);
+  ok('and that list still names every holding',
+     Array.from({ length: 12 }, (_, i) => 'T' + i).every(t => many.embeds[0].description.includes(t)));
+  ok('and marks each row with its chain, since nothing else does', many.embeds[0].description.includes('⬦'));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

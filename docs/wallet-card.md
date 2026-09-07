@@ -109,10 +109,28 @@ swaps inside one 30-minute window collapse into a single card. Per-trade cards w
 transfers rather than diffing balances — more machinery, and worth doing only if the diff turns out
 not to be enough.
 
-## Chain marks
+## Chain logos
 
-Each holdings line is led by a mark for its chain, so the eye can group by chain without reading to
-the end of the line. The chain is still named there — the mark is a cue, not a key you have to learn.
+Holdings are **grouped into one embed per chain**, each headed by that chain's real logo, fetched by
+Discord from the web when it renders the card. Nothing to upload and nothing to configure.
+
+That shape is forced by Discord rather than chosen for looks: an embed description cannot carry
+inline images and markdown image syntax does not render inside one, so an embed's **author icon** is
+the only place an arbitrary image can sit next to text. Grouping also shortens every line, because
+the chain no longer has to be repeated on each one.
+
+Logos all come from `icons.llamao.fi` so the set reads as one family rather than six croppings. If a
+URL ever 404s, Discord omits the icon and the chain name still shows — a dead link degrades the card
+rather than breaking it. A chain with no logo mapped gets no `icon_url` at all, because Discord
+renders a *broken* image for a dead link and nothing for a missing one.
+
+A message takes at most ten embeds. One is spent on the day's events, so **beyond nine chains** the
+card falls back to a single flat list marked with the Unicode marks below — fewer decorations rather
+than a truncated wallet.
+
+## Chain marks (the fallback layout)
+
+Used only in that flat layout, where nothing else says which chain a row belongs to.
 
 | chain | mark |
 |---|---|
