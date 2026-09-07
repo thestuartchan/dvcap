@@ -2331,11 +2331,25 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
                   which tokens an address owns. Set {"ALCHEMY_API_KEY"} to read the full set.
                 </div>
               );
+              // A LOWER COUNT WITHOUT A REASON IS NOT A DIAGNOSIS. The likeliest cause is a
+              // network not enabled on the Alchemy app — the key is per-account but each network
+              // is switched on per app — and that failure is silent by design: discovery falls
+              // back to the fixed list and the chain still reports a total. So the chain names
+              // itself and quotes what the indexer actually said.
+              const fellBack = live.filter(c => c.discovery?.configured && !c.discovery.used && c.discovery.error);
               return (
-                <div style={{ marginTop: 6, fontSize: 11.5, color: C.muted }}>
-                  Full discovery on {discovered.length} of {live.length} chains — every token held, not a fixed list.
-                  {cut.length > 0 && <b style={{ color: C.amber }}> {cut.length} chain{cut.length === 1 ? "" : "s"} had more tokens than one read returns; the rest are not counted.</b>}
-                </div>
+                <>
+                  <div style={{ marginTop: 6, fontSize: 11.5, color: C.muted }}>
+                    Full discovery on {discovered.length} of {live.length} chains — every token held, not a fixed list.
+                    {cut.length > 0 && <b style={{ color: C.amber }}> {cut.length} chain{cut.length === 1 ? "" : "s"} had more tokens than one read returns; the rest are not counted.</b>}
+                  </div>
+                  {fellBack.length > 0 && (
+                    <div style={{ marginTop: 5, fontSize: 11.5, color: C.amber }}>
+                      Fell back to the fixed list on {fellBack.map(c => `${c.chain} (${c.discovery.error})`).join(" · ")}
+                      <span style={{ color: C.muted, fontWeight: 400 }}> — usually that network is not enabled on the Alchemy app.</span>
+                    </div>
+                  )}
+                </>
               );
             })()}
             {wallet.chains.filter(c => c.ok && c.tokensUnlisted && !c.discovery?.used).map(c => (
