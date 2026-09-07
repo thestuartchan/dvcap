@@ -17,8 +17,8 @@ export function SLabel({ children, color }) {
   return <div style={{ fontSize: 12, letterSpacing: 2.5, color: color || C.lbl, textTransform: "uppercase", fontWeight: 700, marginBottom: 10 }}>{children}</div>;
 }
 
-export function Card({ children, style, onClick }) {
-  return <div onClick={onClick} style={{ background: C.surf, border: "1.5px solid " + C.bdr, borderRadius: 14, padding: "16px 18px", boxShadow: "0 1px 5px rgba(0,0,0,.05)", ...style }}>{children}</div>;
+export function Card({ children, style, onClick, id }) {
+  return <div id={id} onClick={onClick} style={{ background: C.surf, border: "1.5px solid " + C.bdr, borderRadius: 14, padding: "16px 18px", boxShadow: "0 1px 5px rgba(0,0,0,.05)", ...style }}>{children}</div>;
 }
 
 export function Btn({ onClick, disabled, color, bgColor, label }) {

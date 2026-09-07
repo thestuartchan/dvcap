@@ -1016,14 +1016,36 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   const [fillFor, setFillFor]   = useState(null);   // open "record a fill" form
   const [sizeOpen, setSizeOpen] = useState({});     // per-row: is the size suggestion unfolded
   const [moved, setMoved]       = useState(null);   // a row that just changed section, for the toast
-  const [showArchive, setShowArchive] = useState(false);
+  // ── THE PAGE IS LONG AND GETTING LONGER ──────────────────────────────────────────────────────
+  // Every section added is one more screen between the top of the tab and the book, and the book
+  // is the thing you came for. The fix is not a jump nav — that is a workaround for a long page.
+  // It is that the page should not BE long: the reference and history blocks fold away, and each
+  // one remembers whether you left it open.
+  //
+  // Per browser rather than in the console object: this is a view preference, not a book. Syncing
+  // it would mean a phone and a desktop fighting over which sections are open, and a save conflict
+  // over something nobody would call a change. It also must survive a private window refusing to
+  // store anything at all, which is why every access is wrapped.
+  const SECTIONS_LS = "dvcap_sections_v1";
+  const readSections = () => { try { return JSON.parse(localStorage.getItem(SECTIONS_LS) || "{}"); } catch { return {}; } };
+  const useRemembered = (key, initial) => {
+    const [v, setV] = useState(() => { const s = readSections()[key]; return typeof s === "boolean" ? s : initial; });
+    useEffect(() => {
+      try { localStorage.setItem(SECTIONS_LS, JSON.stringify({ ...readSections(), [key]: v })); } catch { /* private window */ }
+    }, [key, v]);
+    return [v, setV];
+  };
+
+  const [showArchive, setShowArchive] = useRemembered("archive", false);
+  const [showPortfolio, setShowPortfolio] = useRemembered("portfolio", true);
+  const [showSizing, setShowSizing] = useRemembered("sizing", false);
   // ── THE ARCHIVE GROWS FOREVER AND THE SCREEN DOES NOT ────────────────────────────────────────
   // Grain, and which periods are expanded. `periodOpen` holds only what the reader has TOGGLED, so
   // the default (the most recent few) keeps applying to periods that did not exist when the page
   // loaded — a map seeded with every key would freeze the archive as it was at load.
   const [grain, setGrain] = useState("month");
   const [hlSpot, setHlSpot] = useState(null);
-  const [showSpot, setShowSpot] = useState(false);
+  const [showSpot, setShowSpot] = useRemembered("wallet", false);
   const [periodOpen, setPeriodOpen] = useState({});
   // Served by api/manual-entry, which is authenticated and never cached. Positions do not belong
   // on the shared, edge-cached price route — see lib/apiauth.js.
@@ -1137,7 +1159,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
   // The decision log, read back. Fetched once per mount — it is an audit view, not a live number,
   // and re-pulling a thousand entries on every price tick would be absurd.
   const [decisionLog, setDecisionLog] = useState(null);
-  const [logOpen, setLogOpen] = useState(false);
+  const [logOpen, setLogOpen] = useRemembered("decisions", false);
   useEffect(() => {
     if (!logOpen || decisionLog != null) return;
     fetch("/api/manual-entry?decisions=full", { credentials: "include" })
@@ -1957,13 +1979,18 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
                 {cashPct != null && <span><span style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800 }}>CASH </span><b>{cashPct}%</b></span>}
                 <span><span style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800 }}>OPEN P&amp;L </span>
                   <b style={{ color: pnlCol(bars.reduce((a, b) => a + b.total, 0)) }}>{fmtCcy(bars.reduce((a, b) => a + b.total, 0), baseCcy)}</b></span>
+                {/* The three figures above stay whatever this is set to — folding a section must
+                    never fold away the number that says whether you need to look at it. */}
+                <button onClick={() => setShowPortfolio(v => !v)} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{showPortfolio ? "Hide" : "Show"}</button>
               </div>
             </div>
+            {/* A warning is not detail and is never folded away. */}
             {missing > 0 && (
               <div style={{ fontSize: 11.5, color: C.amber, fontWeight: 700, marginBottom: 6 }}>
                 ⚠ {missing} position{missing === 1 ? "" : "s"} not shown — no live price or no {baseCcy} rate yet. Refresh prices.
               </div>
             )}
+            {showPortfolio && (<>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               {/* weight */}
               <div style={{ flex: "1 1 280px", minWidth: 260 }}>
@@ -2026,6 +2053,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
             <div style={{ fontSize: 11, color: C.lbl, marginTop: 8, paddingTop: 8, borderTop: "1px solid " + C.bdr, lineHeight: 1.5 }}>
               Realised bars are profit already taken on scale-outs, so a position can show both at once. Cash % assumes your account equity above is the whole book.
             </div>
+            </>)}
           </Card>
         );
       })()}
@@ -2039,7 +2067,11 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
             <span style={{ color: C.lbl, fontWeight: 700 }}>regime ×</span> <b style={{ color: liveRegime?.color }}>{rm.mult.toFixed(2)}</b>
             <span style={{ color: C.muted, fontSize: 11.5 }}> ({rm.reasons[rm.reasons.length - 1]})</span>
           </span>
+          {/* The live multiplier stays on the header — it is the one number here you read without
+              intending to change anything, and it is the reason to open the rest. */}
+          <button onClick={() => setShowSizing(v => !v)} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{showSizing ? "Hide" : "Show"}</button>
         </div>
+        {showSizing && (<>
         <div style={{ marginTop: 9, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
           <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Account equity ({baseCcy})<br />
             <NumCommit dk="equity" drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={settings.equity} placeholder="e.g. 208597" width={124}
@@ -2085,6 +2117,7 @@ export function TradeConsole({ regimeHistory = [], liveRegime, regimeProbFor, li
           </div>
           <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>Credit-DANGER caps the multiplier at {CREDIT_DANGER_CAP_LABEL}; a contested or pinned≠live regime applies a further ×0.7.</div>
         </div>
+        </>)}
       </Card>
 
       {/* ── ADD A SETUP ──
