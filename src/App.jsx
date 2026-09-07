@@ -2034,10 +2034,6 @@ const CONSENSUS_VINTAGE = consensusVintage(CONSENSUS_VINTAGE_BASE);
 const RECESSION_SOURCES = [
   { name: "Goldman Sachs",             probability: "15%",    timeframe: "12-month", year: 2026, notes: "CONFIRMED CURRENT 2026-09-07: still 15%, no newer print. The path was 25% (pre-Iran war) → 30% (March peak Hormuz) → 15% (June 26, post peace deal), and 15% is also the unconditional long-run average. The row is the latest print, not an overdue one. Cites lower oil, higher real income, AI wealth effect, solid capex; GDP H2 2026 +2.0%. Flags Fed rate-hike risk as the new variable.", asOf: "2026-06-26", color: "green" },
   { name: "NY Fed Yield Curve Model",  probability: "~15%",   timeframe: "12-month", year: 2026, notes: "Fallback only — the board derives this live from the current 10Y-3M spread via the Estrella-Mishkin probit. As of 2026-09-04 the spread is 0.83ppt and the model reads 15%, still far below the 30% historical alarm threshold and further from inversion than the +62bps this row used to quote.", asOf: "2026-09-04", color: "green" },
-  { name: "NY Fed DSGE Model",         probability: "35.8%",  timeframe: "12-month", year: 2026, notes: "March 2026. Recession = 4Q output growth below -1%. Down from 37.5% in December. CHECKED 2026-09-07: the NY Fed DID publish a June 2026 DSGE forecast (Liberty Street Economics, 22 June) — this row previously assumed the next print was due in Q3 and had not looked. That post carries GDP and inflation forecasts with 68% bands but states no recession probability, so 35.8% remains the last figure the model actually put a number on. Stays archived on age, not on absence of a publication.", asOf: "2026-03-01", color: "amber", archived: true, archiveReason: "March vintage. The June 2026 DSGE forecast published no recession probability, so there is no newer number to promote — not merely an unpublished one." },
-  { name: "JPMorgan",                  probability: "35%",    timeframe: "12-month", year: 2026, notes: "March 2026. Warned markets complacent over a sustained oil shock. That shock resolved (Brent ~$91.57 vs the $105–115 the peak estimates assumed) and no post-deal Research figure was published. CHECKED 2026-09-07: JPMorgan ASSET MANAGEMENT\u0027s 3Q 2026 Global Fixed Income Views assign roughly 10% to recession and 10% to crisis — but that is a different house, a different horizon and a scenario weight rather than a 12-month probability, so it is recorded here and deliberately not substituted for this number. Blending horizons is the exact defect lib/recession.js exists to prevent.", asOf: "2026-03-01", color: "amber", archived: true, archiveReason: "March vintage, conditional on an oil shock that has since resolved. JPM Research has published no post-deal 12-month figure; the 3Q Asset Management scenario weights are a different construct and cannot replace it." },
-  { name: "EY-Parthenon (Daco)",       probability: "40%",    timeframe: "12-month", year: 2026, notes: "March 2026. Risks framed as rising IF geopolitical tensions persist — they did not. CHECKED 2026-09-07: no post-peace-deal revision found from a primary source. UNVERIFIED, stays archived.", asOf: "2026-03-01", color: "amber", archived: true, archiveReason: "March vintage. Conditional on persisting geopolitical/oil tensions that have since resolved — no post-deal revision published or traceable." },
-  { name: "Moody's Analytics (Zandi)", probability: "~49%",   timeframe: "12-month", year: 2026, notes: "March 2026 peak — 'on the precipice.' Zandi's own condition: 'if oil prices remain elevated for much longer — weeks not months.' They did not. CHECKED 2026-09-07: secondary write-ups quote several later figures for Zandi that conflict with each other and carry no primary citation, so none was taken. A number here has to come from a source actually read, not from a search summary — that rule is why api/indicators refuses an LLM as a feed, and it applies to hand-entered rows too. UNVERIFIED, stays archived.", asOf: "2026-03-01", color: "red", archived: true, archiveReason: "March vintage, conditional on oil staying elevated — the condition was not met. Later figures circulate but none could be traced to a primary source, so none was entered." },
   { name: "Kalshi prediction market",  probability: "5%",     timeframe: "End-2026", year: 2026, notes: "Fallback only — the live feed (KXRECSSNBER-26) drives the displayed value. Refreshed 2026-09-07 from that feed: 5%, down from the 22% June print this row used to carry. Real-money market, CFTC-regulated.", asOf: "2026-09-07", color: "green" },
   { name: "Kalshi prediction market",  probability: "25%",    timeframe: "End-2027", year: 2027, notes: "Fallback only — live feed KXRECSSNBER-27 drives the display. Refreshed 2026-09-07: 25%, down from the 41% this row carried. Still well above the 2026 contract, which is the point of showing both: the market prices a later reckoning, not none.", asOf: "2026-09-07", color: "amber" },
   { name: "Polymarket",                probability: "7%",     timeframe: "End-2026", year: 2026, notes: "Fallback only — live feed (us-recession-by-end-of-2026) drives the display. Refreshed 2026-09-07: 7%, down from the ~12.5% June print. Correlated with Kalshi and weighted as one block with it, not as two independent views.", asOf: "2026-09-07", color: "green" },
@@ -7080,7 +7076,7 @@ export default function App() {
               </div>
               {derivedRegimes ? (
                 <div style={{ marginTop: 10 }}>
-                  <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5 }}>Weighted Wall Street recession probability: <b style={{ color: C.muted }}>{derivedRegimes.weightedAvg}%</b> | Derived from analyst consensus + live CPI</div>
+                  <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5 }}>Weighted tracked-panel recession probability: <b style={{ color: C.muted }}>{derivedRegimes.weightedAvg}%</b> | Derived from analyst consensus + live CPI</div>
                   <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5, marginTop: 2 }}>{derivedRegimes.derivedFrom}</div>
                   {recDecayed && recDecayed.length > 0 && (
                     <div style={{ color: C.amber, fontSize: 11, lineHeight: 1.5, marginTop: 2 }}>
@@ -7613,7 +7609,7 @@ export default function App() {
             <div id="macro-recession" style={{ scrollMarginTop: 96 }} />
             <Card>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                <SLabel>Wall Street Recession Probability</SLabel>
+                <SLabel>Recession Probability — tracked panel</SLabel>
                 {/* F.6 — the slowest input on the page, marked as such. */}
                 <span style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>slowest input · {CONSENSUS_VINTAGE.label}, {CONSENSUS_VINTAGE.staleNote}</span>
               </div>
@@ -7624,9 +7620,14 @@ export default function App() {
                 return (
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10, fontSize: 12 }}>
                     <span style={{ color: C.lbl }}>Last updated: <b style={{ color: C.muted }}>June 29, 2026</b> · Updated post Iran peace deal + June FOMC</span>
+                    {/* WHAT THIS IS, so the label is not read as a survey. A handful of named houses and
+                        models, updated BY HAND four times a year — see docs/recession-board.md. */}
+                    <span style={{ color: C.lbl, flexBasis: "100%", fontSize: 11, lineHeight: 1.5 }}>
+                      A hand-kept panel of named houses and models — not a survey. Refreshed quarterly, a week or two after each FOMC projection round (late Mar · late Jun · late Sep · mid Dec), which is when the houses revise.
+                    </span>
                     {isStale && (
                       <span style={{ background: C.aBg, color: C.amber, border: "1px solid " + C.aBdr, borderRadius: 6, padding: "2px 8px", fontWeight: 700 }}>
-                        ⚠️ {daysStale} days stale — refresh due (&gt;90-day cadence)
+                        ⚠️ {daysStale} days stale — refresh due (quarterly cadence)
                       </span>
                     )}
                     <span style={{ color: C.lbl, fontStyle: "italic" }}>Updating this table recalculates regime probabilities automatically.</span>
@@ -7805,8 +7806,7 @@ export default function App() {
                       🗄️ Historical vintage — condition invalidated ({arch.length}) · excluded from the weighted average
                     </summary>
                     <div style={{ fontSize: 11.5, color: C.lbl, margin: "6px 0 8px", lineHeight: 1.5 }}>
-                      All four were March-2026 estimates explicitly conditional on a sustained oil shock (Brent forecast $105–115). That condition resolved — Brent ~$91.57 — and none received a published post-deal revision. Goldman's own round-trip (15% → 30% → 15%) is the control. Decayed weight would still let them leak in; archiving removes them.
-                    </div>
+                      A view archived here was explicitly conditional on something that did not happen. Its number is kept for the record and excluded from the weighted average; the reason is stated on each row.</div>
                     {arch.map((r, i) => (
                       <div key={i} style={{ padding: "6px 0", borderTop: i ? "1px solid " + C.bdr : "none", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
                         <span style={{ fontSize: 12.5, fontWeight: 700, color: C.muted, textDecoration: "line-through" }}>{r.name}</span>
