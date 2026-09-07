@@ -9,6 +9,7 @@
 // the kind of thing that looks right and is off by one word.
 import { readFileSync } from 'node:fs';
 import { CHAINS, CHAIN_KEYS, pricedSymbols } from '../lib/chains.js';
+import { spotHoldings } from '../lib/hyperliquid.js';
 import { encodeAggregate3, decodeAggregate3, balanceOfCall, evmDecimals, erc20Targets,
          fromUnits, walletBalances, fetchWallet, MULTICALL3, HYPEREVM_RPC, HYPEREVM_CHAIN_ID,
          NATIVE_SYMBOL, NATIVE_DECIMALS, venuePrices, chainPrices,
@@ -298,6 +299,56 @@ const HOLDER = '0x000000000000000000000000000000000000dEaD';
 
   // The selectors are the standard ERC-20 ones, asserted rather than assumed.
   eq('symbol() and decimals() selectors', [SYMBOL_SIG, DECIMALS_SIG], ['0x95d89b41', '0x313ce567']);
+}
+
+// ── A MODULE NOTHING CALLS IS NOT A FEATURE ──────────────────────────────────
+// lib/tokensafety.js shipped with 35 passing assertions, a UI that renders its findings, and
+// NOTHING WIRING THE TWO TOGETHER — an edit was lost when a later assertion in the same script
+// aborted before the write, and the tests all still passed because they test the module, not its
+// use. The screenshot is what caught it.
+//
+// Source-scanned rather than executed, deliberately: the failure was absence, and absence is what
+// this checks. It is the same shape as scripts/check-api-auth.mjs, for the same reason.
+{
+  const src = readFileSync(new URL('../lib/wallet.js', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  ok('the wallet imports the safety check', /from '\.\/tokensafety\.js'/.test(src));
+  ok('and actually calls it', /fetchTokenSafety\s*\(/.test(src));
+  ok('and puts the result on a row', /\.safety\s*=/.test(src));
+  // Asked only about what is held AND unvouched — a verified token needs no verdict and a zero
+  // balance needs no explanation, so neither may cost a request.
+  ok('scoped to held, unvouched, non-native rows', /viaPool\s*&&\s*!r\.verified/.test(src));
+  // The same guard for every other module the wallet leans on, so a lost edit is caught once.
+  for (const [mod, fn] of [['dexscreener', 'fetchDexPrices'], ['alchemy', 'discoverTokens'], ['chains', 'CHAINS']])
+    ok(`${mod} is imported and used`, new RegExp(`from '\\./${mod}\\.js'`).test(src) && new RegExp(`\\b${fn}\\b`).test(src));
+}
+
+// ── A NOMINAL VALUE IS NOT A RANK ────────────────────────────────────────────
+// Sorting on value alone put the junk on top, twice. First a fictional $6.2tn airdrop led the list
+// above the real holdings. Then five unvouched airdrops — a nominal $753, $422, $109, $102, $81 —
+// sorted above the $11 of ETH that was the only thing in that wallet anyone had chosen to own.
+{
+  const prices = new Map([
+    ['REAL', { price: 10, volume: Infinity }],
+    ['SMALL', { price: 1, volume: Infinity }],
+    ['JUNK', { price: 0.7, volume: 5e5, viaPool: 'WETH', verified: false }],
+    ['DEAD', { price: 1e9, volume: 1 }],
+  ]);
+  const bal = (coin, total) => ({ coin, total, hold: 0, free: total, entryNtl: 0 });
+  const h = spotHoldings([bal('REAL', 1.1), bal('JUNK', 1070), bal('SMALL', 5), bal('DEAD', 1), bal('NOPE', 3)], prices);
+
+  eq('owned and valued first, then unvouched, then unvaluable',
+     h.rows.map(r => r.coin), ['REAL', 'SMALL', 'JUNK', 'DEAD', 'NOPE']);
+  ok('the biggest nominal number is NOT at the top', h.rows[0].coin !== 'DEAD' && h.rows[0].coin !== 'JUNK');
+  // And the total counts only what is vouched for.
+  eq('the total excludes the unvouched', h.total, 16);
+  eq('which is reported rather than silently dropped', [h.unverified.count, h.unverified.value], [1, 749]);
+  ok('the unvouched row is still listed', h.rows.some(r => r.coin === 'JUNK'));
+  ok('and carries the marker the card reads', h.rows.find(r => r.coin === 'JUNK').viaPool === 'WETH');
+  // A verified token priced from a pool is NOT held back — provenance, not price source.
+  const v = spotHoldings([bal('WETH', 1)], new Map([['WETH', { price: 2493, volume: Infinity, viaPool: 'USDG', verified: true }]]));
+  eq('a verified token priced by pool still counts', v.total, 2493);
+  eq('and is not in the held-out bucket', v.unverified.count, 0);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

@@ -1024,7 +1024,7 @@ function Holdings({ data, title, note, open, onToggle, money }) {
         <div style={{ marginTop: 6, fontSize: 11.5, color: C.muted }}>
           Excludes{data.thin?.count ? ` ${data.thin.count} token${data.thin.count === 1 ? "" : "s"} with too little volume to price` : ""}
           {data.thin?.count && data.unpriced ? " and" : ""}
-          {data.unpriced ? ` ${data.unpriced} with no USDC market` : ""} — listed below, unvalued.
+          {data.unpriced ? ` ${data.unpriced} no market could be found for` : ""} — listed below, unvalued.
         </div>
       )}
       {open && (
@@ -1048,7 +1048,9 @@ function Holdings({ data, title, note, open, onToggle, money }) {
               )}
               {h.viaPool && !h.verified && <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }} title="Priced from a pool, but nothing vouches for this token — shown, and kept out of the total">not counted</span>}
               {h.thin && <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }} title={`24h volume ${money(h.volume ?? 0, "USD")} — too thin to value`}>no real market</span>}
-              {!h.priced && <span style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>no USDC pair</span>}
+              {/* "no USDC pair" was Hyperliquid's phrasing and it is wrong on the five chains that
+                  have no USDC pairs to speak of. What is true everywhere: nothing quotes it. */}
+              {!h.priced && <span style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>no market found</span>}
               <span style={{ marginLeft: "auto", display: "inline-flex", gap: 9, alignItems: "baseline" }}>
                 {h.priced && !h.thin && <b>{money(h.value, "USD")}</b>}
                 {h.pnlPct != null && !h.thin && <b style={{ fontSize: 12, color: h.pnl >= 0 ? C.green : C.red }}>{(h.pnlPct > 0 ? "+" : "") + h.pnlPct}%</b>}
