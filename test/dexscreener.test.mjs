@@ -9,6 +9,7 @@
 // and WETH clones have been seeded into pools since July 2026 so they look tradeable. Hence the
 // address pinning below, which is the assertion that matters most in this file.
 import { gradePair, bestPair, fetchDexPrices, allowQuotes, NATIVE_QUOTE,
+         MIN_CORROBORATING_LEGS, AGREE_TOLERANCE,
          MIN_LIQUIDITY_USD, MIN_VOLUME_H24_USD, MAX_ADDRESSES, DEX_CHAIN } from '../lib/dexscreener.js';
 
 let pass = 0, fail = 0;
@@ -118,6 +119,71 @@ const pair = (o = {}) => ({
 // Verified 2026-09-07 by asking each slug for a known token and reading what came back — including
 // that its WETH agrees with Hyperliquid's mark to within a few basis points on two chains.
 eq('one slug per chain', Object.keys(DEX_CHAIN).sort(), ['arbitrum', 'base', 'ethereum', 'hyperevm', 'polygon', 'robinhood']);
+
+// ── CORROBORATION, BECAUSE THE ALLOW-LIST WAS THE WRONG INSTRUMENT ───────────
+// Pinning the quote leg to a few verified addresses is the right instinct and too blunt: on
+// Robinhood Chain the natural quote assets include TOKENISED STOCKS, so NUDES quoted against SNAP,
+// ORBIO against NVDA and AU against TSM were all refused — $526k of liquidity and $1.6m of daily
+// volume dismissed as "no market found" while the holder's own wallet priced them fine.
+//
+// What separates a real price from a seeded one is not which token is opposite. It is whether
+// INDEPENDENT pools agree.
+{
+  const leg = (addr, price, liq = 200_000) => ({
+    baseToken: { address: '0xabc', symbol: 'NUDES' },
+    quoteToken: { address: addr, symbol: addr.slice(0, 6) },
+    priceUsd: String(price), liquidity: { usd: liq }, volume: { h24: 500_000 },
+  });
+  const SNAP = '0x1111111111111111111111111111111111111111';
+  const NVDA = '0x2222222222222222222222222222222222222222';
+  const TSM  = '0x3333333333333333333333333333333333333333';
+  const VERIFIED = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
+
+  // A LONE POOL against something nobody verified is exactly the seeded-clone shape.
+  const alone = bestPair([leg(SNAP, 0.0165)], { quoteAllow: allowQuotes(VERIFIED) });
+  ok('one pool and no verified leg is refused', !alone.ok);
+  ok('and says why in those terms', /only one pool/.test(alone.why));
+
+  // Two distinct legs agreeing is evidence. This is the case that was being thrown away.
+  const two = bestPair([leg(SNAP, 0.0172), leg(NVDA, 0.0166)], { quoteAllow: allowQuotes(VERIFIED) });
+  ok('two independent legs that agree is enough', two.ok);
+  eq('and it says what the basis was', two.basis, '2 independent pools');
+  eq('the threshold is declared', MIN_CORROBORATING_LEGS, 2);
+
+  // TWO POOLS ON THE SAME LEG IS ONE OPINION. Independence is about the quote token, not the count.
+  const same = bestPair([leg(SNAP, 0.0172), leg(SNAP, 0.0166)], { quoteAllow: allowQuotes(VERIFIED) });
+  ok('two pools against the SAME leg is still one leg', !same.ok);
+
+  // A verified leg needs no corroboration — that is the clone-proof path, kept.
+  const vouched = bestPair([leg(VERIFIED, 0.0165)], { quoteAllow: allowQuotes(VERIFIED) });
+  ok('a verified quote leg stands alone', vouched.ok);
+  eq('and says so', vouched.basis, 'verified quote');
+
+  // THE OUTLIER. A real pool on NUDES quoted 0.0000002795 against a true 0.0165 — 60,000x off, on
+  // $10 of daily volume. Thrown out by the volume floor AND by disagreement, and it must not drag
+  // the reference price with it.
+  const withJunk = bestPair([leg(SNAP, 0.0172), leg(NVDA, 0.0166), leg(TSM, 0.0000002795)],
+                            { quoteAllow: allowQuotes(VERIFIED) });
+  ok('a 60,000x outlier does not win', withJunk.ok && withJunk.price > 0.01);
+  eq('nor does it count as a corroborating leg', withJunk.legs, 2);
+  eq('the tolerance is declared', AGREE_TOLERANCE, 0.25);
+
+  // Legs that all disagree corroborate nothing, however many there are.
+  const chaos = bestPair([leg(SNAP, 1), leg(NVDA, 100), leg(TSM, 10_000)], { quoteAllow: allowQuotes(VERIFIED) });
+  ok('mutual disagreement is not corroboration', !chaos.ok);
+  ok('and says the pools disagree', /disagree/.test(chaos.why));
+
+  // Depth still decides among survivors, and the floors still come first.
+  const deep = bestPair([leg(SNAP, 0.0166, 100_000), leg(NVDA, 0.0167, 900_000)], { quoteAllow: allowQuotes(VERIFIED) });
+  eq('the deepest agreeing pool sets the price', deep.price, 0.0167);
+  const thin = bestPair([leg(SNAP, 0.0166, 900), leg(NVDA, 0.0167, 800)], { quoteAllow: allowQuotes(VERIFIED) });
+  ok('agreement cannot rescue two dead pools', !thin.ok);
+
+  // The refusal names the DEEPEST failing pool, not whichever was looked at last — "only 6 of
+  // liquidity" is true of some dead pool and misleading about the token.
+  const why = bestPair([leg(SNAP, 0.0166, 6), leg(NVDA, 0.0167, 13_523)], { quoteAllow: allowQuotes(VERIFIED) }).why;
+  ok('the reported shortfall is the best candidate’s', /13,523/.test(why));
+}
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

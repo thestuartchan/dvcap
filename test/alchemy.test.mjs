@@ -7,7 +7,8 @@
 //
 // Stubbed transport throughout: this path cannot be exercised without a key, and untested code
 // behind an environment variable is code that runs for the first time in production.
-import { discoverTokens, redact, alchemyUrl, NETWORKS, MAX_PAGES, PAGE_SIZE, ALCHEMY_KEY_ENV } from '../lib/alchemy.js';
+import { discoverTokens, redact, alchemyUrl, NETWORKS, MAX_PAGES, PAGE_SIZE, ALCHEMY_KEY_ENV,
+         fetchAcquisition, ACQUIRED, UNSOLICITED, MAX_TRANSFER_PAGES } from '../lib/alchemy.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `\n     got  ${JSON.stringify(g)}\n     want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -116,6 +117,63 @@ const ADDR = '0x000000000000000000000000000000000000dEaD';
   eq('one per chain', Object.keys(NETWORKS).sort(), ['arbitrum', 'base', 'ethereum', 'hyperevm', 'polygon', 'robinhood']);
   ok('all lowercase mainnet slugs', Object.values(NETWORKS).every(v => /^[a-z0-9-]+-mainnet$/.test(v)));
   eq('no slug is reused', new Set(Object.values(NETWORKS)).size, Object.keys(NETWORKS).length);
+}
+
+// ── A SWAP IS NOT AN AIRDROP, AND THE CHAIN SAYS WHICH ───────────────────────
+// Tokens were being held out of a wallet total because nothing vouched for the CONTRACT — which
+// punished ones the holder had deliberately swapped for. Wrong question, wrong party. What
+// separates "I chose this" from "this was dropped on me" is whether the wallet gave anything up to
+// get it, and a swap is one transaction in which the address both sends and receives.
+//
+// It deliberately says nothing about whether the token is any good: a scam someone bought is still
+// a position they took, and a fine token dropped unbidden is still not a decision.
+{
+  const rx = (hash, contract) => ({ hash, rawContract: { address: contract } });
+  const wallet = '0xaaa';
+  const stub = (inbound, outbound) => async (_u, o) => {
+    const p = JSON.parse(o.body).params[0];
+    return { ok: true, json: async () => ({ result: { transfers: p.toAddress ? inbound : outbound } }) };
+  };
+
+  const r = await fetchAcquisition({ network: 'robinhood-mainnet', address: wallet, key: 'k',
+    fetchImpl: stub(
+      [rx('0x1', '0xSWAPPED'), rx('0x2', '0xDROPPED'), rx('0x3', '0xBOUGHT')],
+      // The wallet parted with something in 0x1 and 0x3, and nothing in 0x2.
+      [rx('0x1', '0xUSDC'), rx('0x3', '0xETH')]) });
+  eq('a token received in a transaction the wallet also paid in was swapped for',
+     r.acquisition.get('0xswapped'), ACQUIRED);
+  eq('and one that simply arrived was not', r.acquisition.get('0xdropped'), UNSOLICITED);
+  eq('paying in native ETH counts as paying', r.acquisition.get('0xbought'), ACQUIRED);
+  ok('contracts are keyed lower-case', [...r.acquisition.keys()].every(k => k === k.toLowerCase()));
+
+  // ONCE ACQUIRED, ALWAYS ACQUIRED. A token bought and LATER also airdropped is still one the
+  // holder chose; a later gift must not downgrade an earlier purchase. The reverse does upgrade.
+  const both = await fetchAcquisition({ network: 'n', address: wallet, key: 'k',
+    fetchImpl: stub([rx('0x1', '0xX'), rx('0x9', '0xX')], [rx('0x1', '0xUSDC')]) });
+  eq('a purchase is not undone by a later drop', both.acquisition.get('0xx'), ACQUIRED);
+  const other = await fetchAcquisition({ network: 'n', address: wallet, key: 'k',
+    fetchImpl: stub([rx('0x9', '0xX'), rx('0x1', '0xX')], [rx('0x1', '0xUSDC')]) });
+  eq('and order does not decide it', other.acquisition.get('0xx'), ACQUIRED);
+
+  // A native receipt names no contract and is not a token holding.
+  const native = await fetchAcquisition({ network: 'n', address: wallet, key: 'k',
+    fetchImpl: stub([{ hash: '0x1', rawContract: { address: null } }], []) });
+  eq('a contractless transfer is skipped', native.acquisition.size, 0);
+
+  // Bounded: a wallet with tens of thousands of dust transfers must not become an unbounded read.
+  let pages = 0;
+  const endless = async (_u, o) => { pages += 1;
+    return { ok: true, json: async () => ({ result: { transfers: [rx('0x' + pages, '0xY')], pageKey: 'more' } }) }; };
+  await fetchAcquisition({ network: 'n', address: wallet, key: 'k', fetchImpl: endless });
+  eq('capped, both directions', pages, MAX_TRANSFER_PAGES * 2);
+
+  // No key, no claim — and a failure must not read as "nothing was solicited".
+  const none = await fetchAcquisition({ network: 'n', address: wallet, key: null });
+  eq('unconfigured returns nothing rather than a verdict', [none.ok, none.acquisition.size], [false, 0]);
+  const boom = await fetchAcquisition({ network: 'n', address: wallet, key: 'SUPERSECRET',
+    fetchImpl: async () => { throw new Error('failed https://n.g.alchemy.com/v2/SUPERSECRET'); } });
+  ok('and a throw is redacted like every other', !boom.error.includes('SUPERSECRET'));
+  eq('with no acquisitions inferred from it', boom.acquisition.size, 0);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

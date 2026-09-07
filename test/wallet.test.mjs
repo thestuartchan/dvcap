@@ -318,6 +318,9 @@ const HOLDER = '0x000000000000000000000000000000000000dEaD';
   // Asked only about what is held AND unvouched — a verified token needs no verdict and a zero
   // balance needs no explanation, so neither may cost a request.
   ok('scoped to held, unvouched, non-native rows', /viaPool\s*&&\s*!r\.verified/.test(src));
+  // The acquisition read is the same class of wiring and fails the same silent way.
+  ok('the wallet asks how each token arrived', /fetchAcquisition\s*\(/.test(src));
+  ok('and marks the ones that were paid for', /\.acquired\s*=\s*true/.test(src));
   // The same guard for every other module the wallet leans on, so a lost edit is caught once.
   for (const [mod, fn] of [['dexscreener', 'fetchDexPrices'], ['alchemy', 'discoverTokens'], ['chains', 'CHAINS']])
     ok(`${mod} is imported and used`, new RegExp(`from '\\./${mod}\\.js'`).test(src) && new RegExp(`\\b${fn}\\b`).test(src));
@@ -349,6 +352,33 @@ const HOLDER = '0x000000000000000000000000000000000000dEaD';
   const v = spotHoldings([bal('WETH', 1)], new Map([['WETH', { price: 2493, volume: Infinity, viaPool: 'USDG', verified: true }]]));
   eq('a verified token priced by pool still counts', v.total, 2493);
   eq('and is not in the held-out bucket', v.unverified.count, 0);
+}
+
+// ── A SWAP IS A DECISION; AN AIRDROP IS NOT ──────────────────────────────────
+// Holding tokens out of the total because nothing vouched for the CONTRACT punished ones the
+// holder had deliberately swapped for — the dashboard second-guessing a decision already made.
+// What counts is whether the wallet gave something up, which lib/alchemy.js reads off the chain.
+{
+  const prices = new Map([
+    ['REAL', { price: 10, volume: Infinity }],
+    ['BOUGHT', { price: 0.7, volume: 5e5, viaPool: 'USDG', verified: false }],
+    ['DROPPED', { price: 0.7, volume: 5e5, viaPool: 'USDG', verified: false }],
+  ]);
+  const bal = (coin, total, acquired) => ({ coin, total, hold: 0, free: total, entryNtl: 0, ...(acquired ? { acquired: true } : {}) });
+  const h = spotHoldings([bal('REAL', 1.1), bal('BOUGHT', 1070, true), bal('DROPPED', 1070)], prices);
+
+  eq('a swapped token counts, however its contract looks', h.total, 760);
+  eq('and only the unsolicited one is held out', h.unverified.coins, ['DROPPED']);
+  // It also stops being second-class in the ordering: a position taken ranks with the rest.
+  eq('the swapped token sorts as an ordinary holding', h.rows.map(r => r.coin), ['BOUGHT', 'REAL', 'DROPPED']);
+  ok('and carries the flag the card reads', h.rows.find(r => r.coin === 'BOUGHT').acquired === true);
+  ok('while the dropped one does not', h.rows.find(r => r.coin === 'DROPPED').acquired === false);
+
+  // The verdict is about PROVENANCE, not quality. This must not become a goodness test.
+  const scam = spotHoldings([bal('SCAM', 100, true)],
+    new Map([['SCAM', { price: 1, volume: 5e5, viaPool: 'USDG', verified: false }]]));
+  eq('a token someone bought counts even if it is junk', scam.total, 100);
+  eq('and nothing is held out', scam.unverified.count, 0);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

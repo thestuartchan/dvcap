@@ -1046,7 +1046,11 @@ function Holdings({ data, title, note, open, onToggle, money }) {
                   {h.viaPool && <span style={{ color: C.lbl }} title={`From a liquidity pool quoted against ${h.viaPool} — depth and volume floors passed, but this is a pool ratio, not a venue mid`}> · pool vs {h.viaPool}</span>}
                 </span>
               )}
-              {h.viaPool && !h.verified && <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }} title="Priced from a pool, but nothing vouches for this token — shown, and kept out of the total">not counted</span>}
+              {/* Only the UNSOLICITED are held back. A token the wallet swapped for is a position
+                  its owner took, whatever the contract looks like, and excluding it would be the
+                  dashboard second-guessing a decision already made. */}
+              {h.viaPool && !h.verified && !h.acquired && <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }} title="Arrived unsolicited and priced only by a pool nobody vouches for — shown, and kept out of the total">arrived unsolicited · not counted</span>}
+              {h.acquired && <span style={{ fontSize: 11, color: C.muted }} title="The chain shows this wallet gave something up in the same transaction that received it — a swap, not an airdrop">swapped for</span>}
               {h.thin && <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }} title={`24h volume ${money(h.volume ?? 0, "USD")} — too thin to value`}>no real market</span>}
               {/* "no USDC pair" was Hyperliquid's phrasing and it is wrong on the five chains that
                   have no USDC pairs to speak of. What is true everywhere: nothing quotes it. */}
@@ -2365,8 +2369,8 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
                     if (!un) return null;
                     return (
                       <div style={{ marginTop: 5, fontSize: 11.5, color: C.amber }}>
-                        {un} unvouched token{un === 1 ? "" : "s"} worth a nominal {fmtCcy(val, "USD")} shown but <b>not counted</b>
-                        <span style={{ color: C.muted, fontWeight: 400 }}> — priced from a pool nobody vouches for.</span>
+                        {un} unsolicited token{un === 1 ? "" : "s"} worth a nominal {fmtCcy(val, "USD")} shown but <b>not counted</b>
+                        <span style={{ color: C.muted, fontWeight: 400 }}> — arrived without anything going out of the wallet, and priced only by a pool nobody vouches for. Anything swapped for counts.</span>
                       </div>
                     );
                   })()}
