@@ -114,13 +114,21 @@ eq('max leverage travels too', [M.BTC.maxLeverage, M.WIF.maxLeverage], [40, 10])
   // DISTINCT types: spotMetaAndAssetCtxs is now sent from two places — fetchHlSpot when it has no
   // shared context, and fetchSpotContext, which exists so the wallet and the ledger pull the 270KB
   // payload once between them. Two call sites of one read is not a wider surface.
-  eq('four read requests and no others', types,
-     ['clearinghouseState', 'metaAndAssetCtxs', 'spotClearinghouseState', 'spotMetaAndAssetCtxs']);
+  eq('five read requests and no others', types,
+     ['clearinghouseState', 'frontendOpenOrders', 'metaAndAssetCtxs', 'spotClearinghouseState',
+      'spotMetaAndAssetCtxs']);
   // Structural rather than a restatement of the list above: every read this venue offers is named
-  // for the thing it returns — a ...State or a set of ...Ctxs. Its write verbs are actions —
-  // order, cancel, usdSend, withdraw3 — and none of them ends that way. A fifth read added later
-  // passes; a write added later does not.
-  ok('and every one of them is named for a thing, not an action', types.every(t => /(State|Ctxs)$/.test(t)));
+  // for the thing it RETURNS — a ...State, a set of ...Ctxs, or a list of ...Orders. Its write verbs
+  // are actions — order, cancel, usdSend, withdraw3 — and none of them ends that way.
+  //
+  // `Orders` was added for frontendOpenOrders, which reads resting trigger orders so the card can
+  // show a stop and a target. It is worth being explicit that this does NOT open a door: the write
+  // is `order`, singular and lowercase, so it fails this pattern on the capital and the plural
+  // both — and it is sent to /exchange, which the assertion two lines above forbids outright. The
+  // endpoint check is the real lock; this one is the tripwire that makes a new read deliberate.
+  ok('and every one of them is named for a thing, not an action',
+     types.every(t => /(State|Ctxs|Orders)$/.test(t)));
+  ok('the write verb would still fail this pattern', !/(State|Ctxs|Orders)$/.test('order'));
 
   // THE ADDRESS COMES FROM THE ENVIRONMENT, never from a caller. A route that took it as a
   // parameter would be a way to read anyone's account through this deployment.

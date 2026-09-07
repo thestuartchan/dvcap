@@ -19,8 +19,8 @@ import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard } from '.
 import { upsertCard, post, remove, webhookFromEnv, walletWebhookFromEnv, mentionFromEnv, alertTtlMin, CARD_KEY } from '../lib/discord.js';
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
 import { fetchWallets } from '../lib/wallet.js';
-import { fetchSpotContext, fetchHyperliquid } from '../lib/hyperliquid.js';
-import { diffHoldings, walletPublicView, buildWalletCard, mergePending } from '../lib/walletcard.js';
+import { fetchSpotContext, fetchHyperliquid, fetchHlAccount, fetchHlSpot, fetchHlOrders } from '../lib/hyperliquid.js';
+import { diffHoldings, walletPublicView, buildWalletCard, mergePending, perpPublicView } from '../lib/walletcard.js';
 
 // A row's symbol is what you call it; the quote feed may call it something else. Mirrors the tab's
 // own resolution — Yahoo has no MNQ, and its MGC is an unrelated stock.
@@ -175,12 +175,34 @@ export async function refreshWallet({ post = false } = {}) {
   if (!kvConfigured()) return { ok: false, skipped: 'no Redis — nothing to compare against' };
 
   const [spotCtx, hlMarkets] = await Promise.all([fetchSpotContext(), fetchHyperliquid()]);
-  const w = await fetchWallets({ spotMeta: spotCtx.meta, spotPrices: spotCtx.prices, markets: hlMarkets.markets });
+  const [w, hlSpot, hlAcct] = await Promise.all([
+    fetchWallets({ spotMeta: spotCtx.meta, spotPrices: spotCtx.prices, markets: hlMarkets.markets }),
+    fetchHlSpot({ context: spotCtx }),
+    fetchHlAccount(),
+  ]);
   if (!w.ok) return { ok: false, skipped: 'no chain answered' };
 
-  // Flattened across chains, because the same token on two chains is two holdings.
+  // Flattened across chains, because the same token on two chains is two holdings. Hyperliquid's
+  // SPOT ledger joins as one more chain: it is a balance like any other, and diffing it the same
+  // way means a spot buy there is announced like a spot buy anywhere else. The EVM side is already
+  // covered separately as HyperEVM — different venue, different balances, so both belong.
   const now = w.chains.filter(c => c.ok).flatMap(c =>
     c.rows.map(r => ({ coin: r.coin, chain: c.chain, total: r.total, price: r.price })));
+  if (hlSpot.ok) {
+    for (const r of hlSpot.rows) now.push({ coin: r.coin, chain: 'Hyperliquid', total: r.total, price: r.price });
+  }
+
+  // PERPS ARE NOT DIFFED. A position is not a balance that went up or down — it has a direction, an
+  // invalidation level and an objective, and it is reported as it stands rather than as a change.
+  // Levels come from resting trigger orders, and they are read AFTER the positions because the
+  // classifier needs each position's entry to tell a stop from a target.
+  let perps = [];
+  if (hlAcct.ok && hlAcct.positions.length) {
+    const orders = await fetchHlOrders({ positions: hlAcct.positions });
+    perps = hlAcct.positions
+      .map(p => perpPublicView(p, orders.levels.get(p.coin) || null, hlMarkets.markets?.[p.coin]?.mark ?? null))
+      .filter(Boolean);
+  }
 
   const prevSnap = (await kvGetJson(WALLET_SNAPSHOT_KEY)) || null;
   // FIRST RUN POSTS NOTHING. With nothing to compare against, every holding looks newly bought and
@@ -207,7 +229,7 @@ export async function refreshWallet({ post = false } = {}) {
   if (!post) return { ok: true, posted: false, detected: fresh.length, pending: pending.length };
 
   const holdings = now.filter(r => r.price != null).map(r => walletPublicView(r, r.chain));
-  const card = buildWalletCard(pending, holdings);
+  const card = buildWalletCard(pending, holdings, { perps });
   const r = await fetch(hook, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(card), signal: AbortSignal.timeout(10000),
