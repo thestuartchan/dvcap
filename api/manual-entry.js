@@ -19,6 +19,7 @@ import { appendDecision, overrideStats, DECISIONS_KEY, ACTIONS } from '../lib/de
 import { GUARD_STATES } from '../lib/guards.js';
 import { sideOf } from '../lib/side.js';
 import { authorised, refuse } from '../lib/apiauth.js';
+import { fetchHlAccount } from '../lib/hyperliquid.js';
 
 const DATA_PATH = 'data/manual_entry.json';
 
@@ -128,6 +129,10 @@ function sanitizeRow(r) {
     // short's ordinary stop is above entry, which is exactly the geometry that reads as a
     // locked-in gain on a long. Absent means long, so every row written before this is unchanged.
     side: sideOf(r.side) ?? 'long',
+    // Leverage, for a perp. Only meaningful on a margined venue, and only used to ESTIMATE a
+    // liquidation price for a position that does not exist yet — a real one uses the exchange's
+    // own figure. Bounded to what any venue offers so a typo cannot produce a plausible number.
+    leverage: (Number.isFinite(+r.leverage) && +r.leverage >= 1 && +r.leverage <= 125) ? +r.leverage : null,
     // Contract multiplier (1 for shares, 100 for a US option). Money figures scale by it; prices
     // stay quoted, so an option archives at its premium rather than a per-contract dollar amount.
     multiplier: (Number.isFinite(+r.multiplier) && +r.multiplier > 0 && +r.multiplier <= 100000) ? +r.multiplier : 1,
@@ -241,6 +246,14 @@ export default async function handler(req, res) {
         // Served alongside the console rather than inside them: the POST replaces the console
         // object wholesale, so a note kept in there would be wiped by the next browser save.
         flexSync: kvConfigured() ? await kvGetJson(FLEX_NOTE_KEY) : null,
+        // ── REAL PERP POSITIONS, IF AN ADDRESS IS CONFIGURED ──────────────────────────────────
+        // Served HERE and not from api/prices: this route is authenticated and `private,
+        // no-store`, and a liquidation price is size and leverage restated. The price route is
+        // edge-cached and shared, which is where the console's own positions were leaking from
+        // until this morning.
+        // Absent configuration this reports { configured: false } rather than an empty list — a
+        // book of nothing and a book nobody asked for are different answers.
+        hyperliquid: await fetchHlAccount(),
         // WHETHER THE BRIEFS ACTUALLY ARRIVED. Carried on the console's own payload so a missed
         // pre-read is visible where the reader already is, instead of being discovered days later
         // as an absence in a chat channel.
