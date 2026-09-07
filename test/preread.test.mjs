@@ -6,7 +6,8 @@ import { localDateIn, localMinutesOfDay, localWeekday, isWeekendIn, closedExchan
 // skipped on 2026-08-28; the endpoint was healthy and the schedule correct, and the only structural
 // fragility in the path was that every region's cron fired at sinceOpen = 0 — the first accepted
 // value, with no tolerance at all on the early side.
-import { prereadStatus, prereadMissed } from '../lib/preread.js';
+import { prereadStatus, prereadMissed, SCHEDULED_REGIONS } from '../lib/preread.js';
+import { UNIVERSE } from '../data/universe.js';
 import { prereadWindow } from '../api/preread.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -299,6 +300,63 @@ ok('an hour late does not', !at(7, 40, 7).accept);
      !closedExchanges(['CL=F', 'GC=F'], new Date('2026-09-07T12:42:00Z')).exchanges.includes('CME'));
   // Unknown is never a reason to silence the brief.
   eq('no cash exchanges -> not all-closed', closedExchanges([], new Date()).allClosed, false);
+}
+
+// ── A WARNING THAT IS ALWAYS ON IS NOT A WARNING ─────────────────────────────
+// The panel monitored every region in the universe and reported EU as a missed delivery every
+// single day — for a brief that has no cron and cannot have one. Vercel Hobby allows two, and Asia
+// and US hold both. It is the same failure mode as the linter that reported `process` undefined in
+// every server file: noise that is always present teaches the reader to skip the place a real
+// problem would appear.
+{
+  const deps = { regions: UNIVERSE, localDateIn, localMinutesOfDay };
+  const at = (iso) => new Date(iso);
+
+  // THE DRIFT GUARD. SCHEDULED_REGIONS is named in lib/preread.js because a serverless function
+  // should not depend on vercel.json being bundled beside it — so this asserts the two agree. Add
+  // an EU cron and this fails until the list is updated, which is the point of writing it down.
+  const crons = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8')).crons || [];
+  const scheduled = [...new Set(crons.map(c => (String(c.path).match(/region=(\w+)/) || [])[1]).filter(Boolean))].sort();
+  eq('the declared regions are the ones vercel.json actually schedules', [...SCHEDULED_REGIONS].sort(), scheduled);
+  eq('and there are two of them, which is the Hobby cap', crons.length, 2);
+
+  // EU is in the universe and monitored by nothing.
+  ok('EU is a real region', !!UNIVERSE.eu);
+  ok('but it is not scheduled', !SCHEDULED_REGIONS.includes('eu'));
+  const rows = prereadStatus({}, { ...deps, now: at('2026-09-08T14:00:00Z') });
+  eq('so it is not monitored at all', rows.map(r => r.region).sort(), ['asia', 'us']);
+  ok('and can never be reported missed', !prereadMissed(rows).some(r => r.region === 'eu'));
+  // Opting back in stays possible, for a caller that wants the whole universe.
+  eq('passing scheduled: null watches everything',
+     prereadStatus({}, { ...deps, scheduled: null, now: at('2026-09-08T14:00:00Z') }).map(r => r.region).sort(),
+     ['asia', 'eu', 'us']);
+
+  // ── AND THE PANEL MUST AGREE WITH THE DELIVERY GUARD ───────────────────────
+  // 2026-09-07 was Labor Day. The guard correctly refused the US brief — verified in Discord, no
+  // US brief arrived — and this panel would have reported that refusal as a missed delivery. The
+  // two have to ask the same question or the panel is wrong exactly when the guard is right.
+  const labor = prereadStatus({}, { ...deps, now: at('2026-09-07T14:00:00Z') });
+  eq('a US holiday is no session, not a missed delivery',
+     labor.find(r => r.region === 'us').state, 'no-session');
+  ok('so nothing is flagged for it', !prereadMissed(labor).some(r => r.region === 'us'));
+  ok('and the row says why', labor.find(r => r.region === 'us').noSession === true);
+
+  // A weekend, both regions, in their own local dates.
+  const sat = prereadStatus({}, { ...deps, now: at('2026-09-05T14:00:00Z') });
+  eq('a weekend is no session either', sat.map(r => r.state), ['no-session', 'no-session']);
+  eq('and flags nothing', prereadMissed(sat).length, 0);
+
+  // THE GUARD MUST NOT OVER-SUPPRESS. An ordinary trading day with nothing delivered past the
+  // deadline is still a missed brief — a panel that never fires is as useless as one always firing.
+  const tue = prereadStatus({}, { ...deps, now: at('2026-09-08T14:00:00Z') });
+  eq('an ordinary day past the deadline still reports missed',
+     tue.find(r => r.region === 'us').state, 'missed');
+  ok('and is flagged', prereadMissed(tue).some(r => r.region === 'us'));
+
+  // A brief that DID arrive reads as delivered, holiday logic notwithstanding.
+  const got = prereadStatus({ us: { localDate: '2026-09-08', at: '2026-09-08T13:00:00Z' } },
+                            { ...deps, now: at('2026-09-08T14:00:00Z') });
+  eq('a delivered brief is delivered', got.find(r => r.region === 'us').state, 'delivered');
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
