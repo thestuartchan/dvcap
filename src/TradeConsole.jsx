@@ -1860,6 +1860,33 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   const money = (v, ccy) => v == null ? "—" : fmtCcy(v, ccy);
   const pnlCol = (v) => v == null ? C.muted : v > 0 ? C.green : v < 0 ? C.red : C.mid;
 
+  // A period's record as a SHAPE. "6↑ 1↓ · 86%" is three things to read and compare across months;
+  // the bar is one, and the eye picks a bad month out of a stack of good ones without reading any
+  // of them. The numbers stay beside it — the bar is a cue, not a replacement, and 86% of seven is
+  // not 86% of seventy.
+  const winBar = (wins, losses, w = 44) => {
+    const n = (wins || 0) + (losses || 0);
+    if (!n) return null;
+    return (
+      <span title={`${wins} up, ${losses} down`} aria-hidden="true"
+            style={{ display: "inline-flex", width: w, height: 5, borderRadius: 3, overflow: "hidden",
+                     background: C.bdr, verticalAlign: "middle", flex: "0 0 auto" }}>
+        <span style={{ width: `${(wins / n) * 100}%`, background: C.green }} />
+        <span style={{ width: `${(losses / n) * 100}%`, background: C.red }} />
+      </span>
+    );
+  };
+
+  // The caret, as something that looks pressable. It was a bare glyph in the text flow, which is
+  // the only thing on the row that DOES anything and did not look like it.
+  const caret = (open) => (
+    <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center",
+                   width: 16, height: 16, borderRadius: 5, background: C.surf,
+                   border: "1px solid " + C.bdr, color: C.muted, fontSize: 9, flex: "0 0 auto" }}>
+      {open ? "▾" : "▸"}
+    </span>
+  );
+
   // A level's live state: how far away, and whether it is currently hit.  // Everything the hoisted row components need from this closure, in one object. Recreated each
   // render, which is fine: the COMPONENT identities are stable, so React re-renders rather than
   // remounting, and focus is preserved.
@@ -2661,14 +2688,31 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
                   const head = (
                     <tr key={`p-${p.key}`} onClick={() => setPeriodOpen(o => ({ ...o, [p.key]: !p.shown }))}
                         style={{ cursor: "pointer" }} title={p.shown ? "Collapse" : "Expand"}>
-                      <td colSpan={4} style={{ padding: "11px 10px 5px", borderTop: "1.5px solid " + C.bdr, fontSize: 12, fontWeight: 800, color: C.mid }}>
-                        <span style={{ color: C.muted, marginRight: 6 }}>{p.shown ? "▾" : "▸"}</span>{p.label}
-                        <span style={{ fontWeight: 600, color: C.muted, marginLeft: 8 }}>{st.count} trade{st.count === 1 ? "" : "s"}</span>
-                        {st.winRate != null && <span style={{ fontWeight: 600, color: C.lbl, marginLeft: 8 }}>{st.wins}↑ {st.losses}↓ · {st.winRate}%</span>}
+                      {/* A BAND, NOT A ROW. Every line in this table looked the same weight, so the
+                          month headers had to be read to be found. Tinted ground, a heavier rule
+                          above, and a left stripe carrying the month's sign — the same stripe the
+                          narrow cards already use on each trade, so a green month and a green trade
+                          mean the same thing at two zoom levels. */}
+                      <td colSpan={4} style={{ padding: "13px 12px 11px", background: C.bg,
+                            borderTop: "1.5px solid " + C.bdrMd, borderBottom: "1px solid " + C.bdr,
+                            borderLeft: "4px solid " + (st.realised >= 0 ? C.green : C.red) }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+                          {caret(p.shown)}
+                          <b style={{ fontSize: 13.5, color: C.text, letterSpacing: -0.1 }}>{p.label}</b>
+                          <span style={{ fontSize: 11.5, color: C.muted }}>{st.count} trade{st.count === 1 ? "" : "s"}</span>
+                          {st.winRate != null && <>
+                            {winBar(st.wins, st.losses)}
+                            <span style={{ fontSize: 11.5, color: C.lbl, fontVariantNumeric: "tabular-nums" }}>
+                              {st.wins}↑ {st.losses}↓ · {st.winRate}%</span>
+                          </>}
+                        </span>
                       </td>
-                      <td colSpan={3} style={{ padding: "11px 10px 5px", borderTop: "1.5px solid " + C.bdr, fontSize: 12.5, fontWeight: 800, textAlign: "right", color: pnlCol(st.realised) }}>
+                      <td colSpan={3} style={{ padding: "13px 12px 11px", background: C.bg,
+                            borderTop: "1.5px solid " + C.bdrMd, borderBottom: "1px solid " + C.bdr,
+                            fontSize: 14, fontWeight: 800, textAlign: "right",
+                            fontVariantNumeric: "tabular-nums", color: pnlCol(st.realised) }}>
                         {(st.realised > 0 ? "+" : "") + money(st.realised, baseCcy)}
-                        {st.unconverted ? <span style={{ fontWeight: 600, color: C.amber, marginLeft: 6 }}> · {st.unconverted} unconverted</span> : null}
+                        {st.unconverted ? <span style={{ fontWeight: 600, fontSize: 11.5, color: C.amber, marginLeft: 6 }}> · {st.unconverted} unconverted</span> : null}
                       </td>
                     </tr>
                   );
@@ -2724,14 +2768,18 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
               const st = p.stats;
               const head = (
                 <div key={`p-${p.key}`} onClick={() => setPeriodOpen(o => ({ ...o, [p.key]: !p.shown }))}
-                     style={{ cursor: "pointer", display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap",
-                              borderTop: "1.5px solid " + C.bdr, margin: "14px 0 7px", paddingTop: 9 }}>
-                  <b style={{ fontSize: 12.5, color: C.mid }}>
-                    <span style={{ color: C.muted, marginRight: 5 }}>{p.shown ? "▾" : "▸"}</span>{p.label}
-                  </b>
+                     style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+                              background: C.bg, border: "1px solid " + C.bdr,
+                              borderLeft: "4px solid " + (st.realised >= 0 ? C.green : C.red),
+                              borderRadius: 9, padding: "9px 11px", margin: "16px 0 8px" }}>
+                  {caret(p.shown)}
+                  <b style={{ fontSize: 13, color: C.text }}>{p.label}</b>
                   <span style={{ fontSize: 11.5, color: C.muted }}>{st.count}</span>
-                  {st.winRate != null && <span style={{ fontSize: 11.5, color: C.lbl }}>{st.wins}↑ {st.losses}↓</span>}
-                  <b style={{ marginLeft: "auto", fontSize: 12.5, color: pnlCol(st.realised) }}>
+                  {st.winRate != null && <>
+                    {winBar(st.wins, st.losses, 34)}
+                    <span style={{ fontSize: 11.5, color: C.lbl, fontVariantNumeric: "tabular-nums" }}>{st.wins}↑ {st.losses}↓</span>
+                  </>}
+                  <b style={{ marginLeft: "auto", fontSize: 13.5, fontVariantNumeric: "tabular-nums", color: pnlCol(st.realised) }}>
                     {(st.realised > 0 ? "+" : "") + money(st.realised, baseCcy)}
                   </b>
                 </div>
