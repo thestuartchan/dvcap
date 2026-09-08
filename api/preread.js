@@ -16,6 +16,7 @@ import { coreSpread } from '../lib/inflation.js';
 const PREREAD_LAST_KEY = 'dvcap:preread:last:v1';
 import { kofiaStoredLine, koreaFlowRead, koreaFlowImplication, withCommas } from '../lib/kofia.js';
 import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
+import { renderReadLines } from '../lib/read.js';
 
 
 function fmtPct(p) { return p == null ? '—' : `${p > 0 ? '+' : ''}${p.toFixed(1)}%`; }
@@ -431,7 +432,11 @@ async function runRegion(region, req) {
   // The READ is the COMPOSED, deterministic one (lib/read.js) — same text the dashboard
   // shows. No model call in the read path: every figure is traceable to a parsed field, so
   // the Pre-Read cannot hallucinate a number or drift into positioning language.
-  const read = composed?.text || '(no gate inputs available)';
+  // LINES, NOT A PARAGRAPH. The composed READ carries structured rows and always has; only the
+  // dashboard rendered them, so Discord got the 700-character prose version — the largest and least
+  // scannable block in the brief. Same data, same composer, one line per gauge.
+  const readLines = renderReadLines(composed);
+  const read = readLines.length ? readLines.join('\n') : (composed?.text || '(no gate inputs available)');
   const message = assembleDiscord(region, R.label, blocks, read);
 
   // Optional: post to Discord if a webhook is set and ?post=1.
