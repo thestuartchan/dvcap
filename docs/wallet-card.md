@@ -159,6 +159,18 @@ Used only in that flat layout, where nothing else says which chain a row belongs
 | Robinhood Chain | 🪶 |
 | anything else | ⬦ |
 
+### The header mark
+
+The card carries two headers doing different jobs. The embed **title** says what the message is —
+`Daily Summary` — and is plain text. The first **description** line says whose wallet, and that is
+where the mark goes, under the reserved key `Wallet` in the same map. It is not a chain, so it is not in the built-in table; unset, the
+header simply reads without one.
+
+**The header is the description's first line, not the embed title.** Discord renders a custom emoji
+inside an embed description and **not** inside its title — a title carrying `<:name:id>` prints that
+text literally. Since the header is where a wallet mark belongs, the header moved. A bold first line
+reads as a title anyway, and it puts the whole card in one rendering context.
+
 ### Using the real chain logos
 
 Unicode has no chain logos, so the marks above are stand-ins. Real logos are possible, but they are
@@ -171,7 +183,13 @@ Unicode has no chain logos, so the marks above are stand-ins. Real logos are pos
    appears on the card, then redeploy:
 
    ```json
-   {"Ethereum":"<:ethereum:123>","Robinhood Chain":"<:robinhood:456>"}
+   {
+     "Wallet":          "<:1385metamask:000000000000000000>",
+     "Ethereum":        "<:18119ethereum:000000000000000000>",
+     "Robinhood Chain": "<:666045robinhoodlogo:000000000000000000>",
+     "Hyperliquid":     "<:Hyperliquid_Blob_Green:000000000000000000>",
+     "HyperEVM":        "<:Hyperliquid_Blob_Green:000000000000000000>"
+   }
    ```
 
 Any chain the object omits keeps its built-in mark, so a partial map is fine. A malformed value —
