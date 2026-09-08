@@ -209,9 +209,11 @@ export async function refreshWallet({ post = false, clock = new Date() } = {}) {
   // way means a spot buy there is announced like a spot buy anywhere else. The EVM side is already
   // covered separately as HyperEVM — different venue, different balances, so both belong.
   const now = w.chains.filter(c => c.ok).flatMap(c =>
-    c.rows.map(r => ({ coin: r.coin, chain: c.chain, total: r.total, price: r.price })));
+    // `thin` rides along: a price from a market with no volume in it is not the same fact as a
+    // price from a real one, and the card was publishing both with identical authority.
+    c.rows.map(r => ({ coin: r.coin, chain: c.chain, total: r.total, price: r.price, thin: !!r.thin })));
   if (hlSpot.ok) {
-    for (const r of hlSpot.rows) now.push({ coin: r.coin, chain: 'Hyperliquid', total: r.total, price: r.price });
+    for (const r of hlSpot.rows) now.push({ coin: r.coin, chain: 'Hyperliquid', total: r.total, price: r.price, thin: !!r.thin });
   }
 
   // PERPS ARE NOT DIFFED. A position is not a balance that went up or down — it has a direction, an
