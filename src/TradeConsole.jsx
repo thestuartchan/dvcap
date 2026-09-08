@@ -1273,7 +1273,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   // Deliberately NOT the whole payload. Re-reading the console rows on a refresh would overwrite
   // unsaved edits with whatever was last synced, which is a data-loss bug wearing a refresh
   // button. Only the read-only, server-owned fields are re-read here.
-  const refreshLive = useCallback(() => fetch("/api/manual-entry")
+  const refreshLive = useCallback(() => fetch("/api/manual-entry?live=1")
     .then(r => r.json())
     .then(j => {
       const hl = j?.hyperliquid;
@@ -1292,7 +1292,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
       const c = JSON.parse(localStorage.getItem(LS) || "null");
       if (c) { setRows(backfillMultipliers(c.rows || []).rows); setSettings(s => ({ ...s, ...(c.settings || {}) })); }
     } catch { /* no cache */ }
-    fetch("/api/manual-entry").then(r => r.json()).then(j => {
+    fetch("/api/manual-entry?live=1").then(r => r.json()).then(j => {
       // Real perp positions, keyed by coin, when HYPERLIQUID_ADDRESS is configured. Keyed rather
       // than listed because every consumer looks one up by coin and none of them iterates.
       const hl = j?.hyperliquid;

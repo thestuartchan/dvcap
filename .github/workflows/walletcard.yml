@@ -18,8 +18,12 @@ name: wallet card
 
 on:
   schedule:
-    - cron: '*/30 6-23 * * *'   # detect and buffer — posts nothing
-    - cron: '0 22 * * *'        # the one post of the day
+    # WAKE-UPS, NOT A DECISION. GitHub drops most of these: on 2026-09-08 this workflow was
+    # scheduled for ~36 detect runs and one publish and got five, all detect — the 22:00 entry
+    # never fired at all. So the route decides now, from the clock and a recorded date: any run at
+    # or after 22:00 UTC publishes if the day's card has not gone out. These entries only need to
+    # land SOMETIMES in the evening, and there are four chances between 22:00 and midnight.
+    - cron: '*/30 6-23 * * *'
   workflow_dispatch:
     inputs:
       post:
@@ -38,13 +42,14 @@ jobs:
     steps:
       - name: Detect changes, and publish on the daily run
         env:
-          # Both crons fire at 22:00. Whichever lands first, the daily run detects before it posts,
-          # so nothing waits a day for having been found a minute late.
-          IS_POST: ${{ github.event.schedule == '0 22 * * *' || inputs.post == true }}
+          # Only a MANUAL dispatch forces a post now. A scheduled run just asks, and the route
+          # publishes if the hour has come and today's card has not gone out — so a dropped cron
+          # costs nothing as long as some later run lands.
+          IS_POST: ${{ inputs.post == true }}
         run: |
           url="https://dvcap.vercel.app/api/tradecard?card=wallet"
           if [ "$IS_POST" = "true" ]; then url="$url&post=1"; fi
-          echo "mode: $([ "$IS_POST" = "true" ] && echo PUBLISH || echo detect)"
+          echo "mode: $([ "$IS_POST" = "true" ] && echo FORCED-PUBLISH || echo scheduled)"
           code=$(curl -sS -o /tmp/out.json -w '%{http_code}' --max-time 90 \
             -H "x-tradecard-key: ${{ secrets.TRADECARD_KEY }}" "$url") || true
           echo "HTTP $code"; cat /tmp/out.json; echo

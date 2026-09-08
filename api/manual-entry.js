@@ -235,16 +235,32 @@ export default async function handler(req, res) {
       // on-chain wallet are three different things about one address; the last two both need the
       // spot universe and its prices, which is a 270KB payload. Fetched once here and handed to
       // both, rather than each pulling its own.
-      const [hlAccount, spotCtx, hlMarkets] = await Promise.all([
-        fetchHlAccount(), fetchSpotContext(), fetchHyperliquid(),
-      ]);
-      const [hlSpot, wallet] = await Promise.all([
-        fetchHlSpot({ context: spotCtx }),
-        // Six chains, each one multicall, all in parallel. The perp marks price them: a ticker
-        // lookup put ARB at 0.000629 against the venue's 0.16753, which is the same collision this
-        // codebase already refuses for perps.
-        fetchWallets({ spotMeta: spotCtx.meta, spotPrices: spotCtx.prices, markets: hlMarkets.markets }),
-      ]);
+      // ── THE HEAVY HALF IS OPT-IN ────────────────────────────────────────────
+      // This block reads the perp book, the spot ledger and six chains of wallet, and it ran on
+      // EVERY GET. The dashboard has eleven call sites on this endpoint and only the trade console
+      // looks at any of it — the others want `intervention`, `fedPath`, `southbound`, `recession`
+      // or `oasRecon`, and each of them was paying twelve Alchemy requests for a field it never
+      // read. One page load could fire that several times over, from separate panels, in separate
+      // serverless invocations.
+      //
+      // That is what exhausted the Alchemy allowance, and it is why the concurrency gate added
+      // earlier did not save it: the gate bounds one invocation, and these were many.
+      //
+      // Absent the flag the response simply omits those fields. Every consumer already guards them
+      // (`j?.wallet?.chains ? … : null`), because they were always allowed to fail.
+      const wantLive = String(req.query?.live || '') === '1';
+      const [hlAccount, spotCtx, hlMarkets] = wantLive
+        ? await Promise.all([fetchHlAccount(), fetchSpotContext(), fetchHyperliquid()])
+        : [null, null, null];
+      const [hlSpot, wallet] = wantLive
+        ? await Promise.all([
+            fetchHlSpot({ context: spotCtx }),
+            // Six chains, each one multicall, all in parallel. The perp marks price them: a ticker
+            // lookup put ARB at 0.000629 against the venue's 0.16753, which is the same collision
+            // this codebase already refuses for perps.
+            fetchWallets({ spotMeta: spotCtx.meta, spotPrices: spotCtx.prices, markets: hlMarkets.markets }),
+          ])
+        : [null, null];
       const fullLog = full && kvConfigured() ? (await kvGetJson(DECISIONS_KEY)) || [] : null;
       // NOT edge-cached. This response now carries the trade console — real positions and cost
       // basis — and a shared s-maxage cache would both hold private state at the edge and serve a

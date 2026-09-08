@@ -169,7 +169,29 @@ const authorised = (req) => gate(req);   // async — the caller must await it
 //
 // AND WHY IT POSTS EVEN ON A QUIET DAY. A card that appears only when something happened makes its
 // own presence the signal. A card every day at the same hour says nothing by existing.
-export async function refreshWallet({ post = false } = {}) {
+// PUBLISHING IS OPPORTUNISTIC, NOT BOUND TO ONE CRON FIRING.
+//
+// It used to publish only when GitHub reported the schedule as '0 22 * * *'. GitHub's scheduler
+// does not honour that reliably: on 2026-09-08 the workflow was scheduled for ~36 detect runs and
+// one publish, and got five runs — 00:37, 11:00, 15:15, 18:55, 21:45 — all of them detect. The 22:00
+// entry was dropped outright, and the card has never published on its own schedule. Every post so
+// far was a manual dispatch.
+//
+// So the hour decides, not which cron woke us: at or after PUBLISH_HOUR_UTC, if today's card has
+// not gone out, this run sends it. Any surviving run in the evening carries the day, and the
+// once-a-day guarantee comes from a recorded date rather than from a timer nobody controls.
+export const PUBLISH_HOUR_UTC = 22;
+export const utcDate = (d = new Date()) => d.toISOString().slice(0, 10);
+
+// Exported so the rule is testable without a network or a Redis. Forced posts always go; otherwise
+// the hour must have come and today's card must not already have gone out.
+export function shouldPublish({ forced = false, clock = new Date(), lastPosted = null,
+                                hour = PUBLISH_HOUR_UTC } = {}) {
+  if (forced) return true;
+  return clock.getUTCHours() >= hour && lastPosted !== utcDate(clock);
+}
+
+export async function refreshWallet({ post = false, clock = new Date() } = {}) {
   const hook = walletWebhookFromEnv();
   if (!hook) return { ok: false, skipped: 'DISCORD_WALLET_WEBHOOK is not set' };
   if (!kvConfigured()) return { ok: false, skipped: 'no Redis — nothing to compare against' };
@@ -213,20 +235,30 @@ export async function refreshWallet({ post = false } = {}) {
   }
 
   const fresh = diffHoldings(prevSnap.rows, now);
-  const buffered = (await kvGetJson(WALLET_PENDING_KEY))?.events || [];
+  const pendingRec = await kvGetJson(WALLET_PENDING_KEY);
+  const buffered = pendingRec?.events || [];
+  // Carried through every buffer write, or a detect run would erase the record of today's post
+  // and the next run would send a second one.
+  const lastPostedStamp = pendingRec?.postedOn ?? null;
   const pending = mergePending(buffered, fresh);
 
   // ORDER IS LOAD-BEARING. The buffer is written BEFORE the snapshot moves, so a failure between the
   // two re-detects the same events next run and mergePending folds them back into one entry. The
   // reverse order would advance the watermark past events that were never recorded anywhere.
   if (fresh.length) {
-    if (!(await kvSetJson(WALLET_PENDING_KEY, { events: pending, at: new Date().toISOString() }))) {
+    if (!(await kvSetJson(WALLET_PENDING_KEY, { events: pending, at: new Date().toISOString(), postedOn: lastPostedStamp }))) {
       return { ok: false, posted: false, error: 'could not buffer events — snapshot left where it was' };
     }
   }
   await kvSetJson(WALLET_SNAPSHOT_KEY, { rows: now, at: new Date().toISOString() });
 
-  if (!post) return { ok: true, posted: false, detected: fresh.length, pending: pending.length };
+  // `post` forces it (the manual dispatch); otherwise the clock and the record decide.
+  const today = utcDate(clock);
+  const lastPosted = lastPostedStamp;
+  if (!shouldPublish({ forced: post, clock, lastPosted })) {
+    return { ok: true, posted: false, detected: fresh.length, pending: pending.length,
+             due: `${PUBLISH_HOUR_UTC}:00Z`, lastPosted };
+  }
 
   const holdings = now.filter(r => r.price != null).map(r => walletPublicView(r, r.chain));
   const card = buildWalletCard(pending, holdings, { perps });
@@ -237,7 +269,8 @@ export async function refreshWallet({ post = false } = {}) {
   // The buffer is drained ONLY on a confirmed post. A failed webhook that cleared it anyway would
   // swallow the day permanently — tomorrow's card would show a wallet that changed by itself.
   if (!r.ok) return { ok: false, posted: false, pending: pending.length, error: `discord HTTP ${r.status}` };
-  await kvSetJson(WALLET_PENDING_KEY, { events: [], at: new Date().toISOString() });
+  // The date is what makes it once-a-day; the buffer clearing is what makes it not repeat itself.
+  await kvSetJson(WALLET_PENDING_KEY, { events: [], at: clock.toISOString(), postedOn: today });
   return { ok: true, posted: true, events: pending.length };
 }
 

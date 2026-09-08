@@ -189,8 +189,13 @@ function buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox) {
   let regimeLines = regime.staleWhileOpen
     ? `• ⚠️ **Equity axes stale** — market open but prints are prior-close; split/AI reads suppressed\n`
     : '';
+  // A SPLIT THAT COULD NOT BE COMPUTED IS NOT A LINE. Europe's names carry no memory tag, so this
+  // rendered "Split: n/a (foundry — vs memory —)" on every EU brief — a bullet whose whole content
+  // is two em-dashes and an abbreviation. Omitted instead: a reader learns nothing from being told
+  // a cut does not apply to a market it was never about.
   regimeLines +=
-    `• **Split:** ${regime.split.stale ? 'stale — mkt open, awaiting live' : `${regime.split.label} (foundry ${fmtPct(regime.split.fnd)} vs memory ${fmtPct(regime.split.mem)})`}\n`
+    (regime.split.label === 'n/a' && !regime.split.stale ? ''
+      : `• **Split:** ${regime.split.stale ? 'stale — mkt open, awaiting live' : `${regime.split.label} (foundry ${fmtPct(regime.split.fnd)} vs memory ${fmtPct(regime.split.mem)})`}\n`)
     + `• **AI vs non-AI:** ${regime.aiAxis.stale ? 'stale — mkt open, awaiting live' : `${regime.aiAxis.label} (AI ${fmtPct(regime.aiAxis.ai)} vs non-AI ${fmtPct(regime.aiAxis.non)})`}\n`
     + `• **Credit** (global/OAS gate): ${regime.credit.compound || regime.credit.state} — ${regime.credit.note}\n`
     + `• **Oil:** ${regime.oil.label}`;
