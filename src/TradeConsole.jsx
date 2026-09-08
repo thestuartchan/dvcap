@@ -1501,7 +1501,6 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   // Split only when both are present — the same rule the Discord card follows. A heading over an
   // all-equity archive is a label that never varies.
   const byClose = (a, b) => String(b.derived.lastDate || "").localeCompare(String(a.derived.lastDate || ""));
-  const rolledOut = derivedRows.filter(r => r.derived.rolledInto);
   // What a row may declare it was rolled out of: a FINISHED contract in the same symbol that no
   // other row has already claimed. Restricting it to the same symbol is not pedantry — a roll is
   // the same instrument in a later month, and offering the whole archive would make the commonest
@@ -1957,7 +1956,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
     prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel,
     openFill, delFill, fillFor, setFillFor, saveFill, declineFill, sizeOpen, setSizeOpen, justMoved: moved?.id ?? null, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip, kindCol, money, pnlCol,
     equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
-    rollCandidates, rolledOut, guardPanel, coverage,
+    rollCandidates, guardPanel, coverage,
     // Real Hyperliquid positions, keyed by coin, when HYPERLIQUID_ADDRESS is configured. Null
     // otherwise, which is the ordinary case — the liquidation read falls back to its estimate and
     // says which it is showing.
@@ -2606,16 +2605,6 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
             </button>
           </div>
         )}
-        {/* The collapsed remainder, described rather than silently absent — the totals at the top
-            of this card already count it, so a reader who cannot see it must at least be told
-            what it comes to. */}
-        {showArchive && hidden.periods > 0 && (
-          <div style={{ marginTop: 7, fontSize: 11.5, color: C.muted }}>
-            {hidden.periods} earlier period{hidden.periods === 1 ? "" : "s"} collapsed · {hidden.count} trade{hidden.count === 1 ? "" : "s"} ·{" "}
-            <b style={{ color: pnlCol(hidden.realised) }}>{(hidden.realised > 0 ? "+" : "") + money(hidden.realised, baseCcy)}</b>
-            {" — each one's subtotal is on its header; click to open it."}
-          </div>
-        )}
         {/* Which rate produced these numbers. A total in USD built from HKD rows is only as good as
             the rate behind it, and that rate was invisible. */}
         {archiveStats.ccys.length > 0 && (
@@ -2633,19 +2622,6 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
             ⚠ {archiveStats.unconverted} closed trade{archiveStats.unconverted === 1 ? "" : "s"} excluded from these totals — no FX rate available to convert into {baseCcy}. Refresh prices.
           </div>
         )}
-        {/* ROLLED-FORWARD CONTRACTS. These are flat and would once have sat in the archive as
-            completed trades, which double-counted them: their P&L now lives inside the position
-            that replaced them. They are listed rather than hidden — a contract that vanished from
-            the console entirely would be indistinguishable from one that was never recorded. */}
-        {rolledOut.length > 0 && (
-          <div style={{ marginTop: 9, fontSize: 11.5, color: C.muted }}>
-            <b style={{ color: C.mid }}>Rolled forward · {rolledOut.length}</b> — not counted above, because each one's P&L is carried inside the position that replaced it:{" "}
-            {rolledOut.map((r, i) => (
-              <span key={r.id}>{i ? " · " : ""}<b style={{ color: C.mid }}>{r.symbol}</b> {r.trade || r.id} → {r.derived.rolledInto} ({fmtCcy(r.derived.realized, r.currency)})</span>
-            ))}
-          </div>
-        )}
-
         {/* Realised curve — when profit was actually taken.
             The chart box is fixed-height and the ResponsiveContainer fills 100% of it, so anything
             else inside overflows it: the caption was landing on top of the table header underneath,
