@@ -9,7 +9,7 @@
 // the US itself 08:42 — so it was true on every scheduled run of every region. Confidence is graded
 // by COUNTING caveats (0 clean, 1 qualified, 2+ low), so that one permanent entry made "clean"
 // unreachable and put every brief one caveat away from "low".
-import { composeRead } from '../lib/read.js';
+import { composeRead, scopeToRegion, renderReadLines } from '../lib/read.js';
 import { previousSessionDate } from '../lib/sessions.js';
 
 let pass = 0, fail = 0;
@@ -17,8 +17,11 @@ const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); co
 const ok = (n, c) => eq(n, !!c, true);
 
 // Enough state for creditSentence to produce something, which is what arms the prior-close branch.
-const credit = { oas: 2.68, level: 'CALM', trend: 'FLAT', d1: 0.0, d5: 0.02 };
-const hyg = { pct1d: -0.05 };
+// The REAL shapes. d1/d5 are objects ({ to, delta, basis }), not numbers — the first draft of this
+// fixture used bare numbers and the assertions that did not touch them still passed, which is
+// exactly how a fixture drifts away from the thing it stands in for.
+const credit = { oas: 2.68, level: 'CALM', word: 'FLAT', d1: { to: 2.68, delta: 0, basis: '1d' }, d5: { delta: 0.02, dir: 'flat' } };
+const hyg = { available: true, changePct: -0.05, pct1d: -0.05 };
 const base = { credit, hyg };
 
 // ── THE ORDINARY CASE: SHUT, AND YESTERDAY ───────────────────────────────────
@@ -78,6 +81,71 @@ const base = { credit, hyg };
   const banned = /\b(buy|sell|go long|go short|add to|trim|overweight|underweight)\b/i;
   ok('the provenance sentence tells nobody what to do', !banned.test(r.provenance.join(' ')));
   ok('nor does the caveat', !banned.test(r.caveats.join(' ')));
+}
+
+// ── THE READ IS SCOPED TO ITS REGION ─────────────────────────────────────────
+// It was not. Every brief got the same paragraph, so a European reader at 09:00 London was told
+// "Flips if retail stops absorbing foreign selling" — the Korea thesis, as the headline conditional
+// of their own brief — and carried a KRW gauge among their tripwires. On 2026-09-08, 42% of the EU
+// brief was byte-identical to the US one and this was the largest shared block.
+{
+  const full = {
+    ...base,
+    korea: { won: { level: 1340.5, flip: 1491, aboveFlip: false }, vol: { level: 50.55, band: 'EXTREME', dir: 'rising' } },
+    kofiaLatest: { foreignNet: { value: 632 }, retailNet: { value: -3033 } },
+    leaning: { tripped: 1, usable: 3, unavailable: ['KRW > flip'], items: [
+      { name: 'OAS widening', tripped: false, scenario: 'Hawkish / Disorderly' },
+      { name: 'KRW > 1491',   tripped: null,  scenario: 'Korea flight' },
+      { name: 'VIX rising',   tripped: false, scenario: 'Vol / Disorderly' },
+      { name: 'NQ lower low', tripped: true,  scenario: 'Vol / Disorderly' },
+    ] },
+  };
+  const labels = (r) => composeRead(full, { region: r }).structured.rows.map(x => x.label);
+
+  eq('Asia keeps its own block', labels('asia').includes('KOREA'), true);
+  eq('Europe does not', labels('eu').includes('KOREA'), false);
+  eq('nor does the US', labels('us').includes('KOREA'), false);
+
+  // The words, not just the row — the flip conditional and the retail thesis were prose.
+  for (const r of ['eu', 'us']) {
+    const out = composeRead(full, { region: r });
+    ok(`no Korea language reaches the ${r} brief`, !/korea|KRW|retail|won\b/i.test(out.text));
+    ok(`nor its flip conditional (${r})`, !out.structured.flipsIf);
+  }
+  ok('Asia still has the flip conditional', !!composeRead(full, { region: 'asia' }).structured.flipsIf);
+
+  // THE COUNT MUST FOLLOW THE LIST. Leaving "1/4" beside three listed gauges would be a worse bug
+  // than the one being fixed.
+  const eu = composeRead(full, { region: 'eu' }).structured.rows.find(x => x.label === 'TRIPWIRES');
+  eq('the tripwire count is recomputed from what is left', eu.state, '1/3');
+  ok('and the KRW gauge is not among them', !/KRW/i.test(JSON.stringify(composeRead(full, { region: 'eu' }).structured)));
+
+  // Second-order, and the reason it is worth doing properly: the unavailable KOREAN gauge was
+  // counting as a caveat against a European brief.
+  eq('Europe is no longer downgraded by a gauge that never applied to it',
+     composeRead(full, { region: 'eu' }).confidence, 'clean');
+  ok('while Asia, which the gauge does apply to, still carries it',
+     composeRead(full, { region: 'asia' }).caveats.some(c => /gauge/.test(c)));
+
+  // No region named means no filtering — the dashboard path is unchanged.
+  eq('an unscoped call is untouched', scopeToRegion(full, null), full);
+  eq('and asia is a pass-through', scopeToRegion(full, 'asia'), full);
+}
+
+// ── AND IT RENDERS AS LINES ──────────────────────────────────────────────────
+// One 700-character paragraph was the largest and least scannable block in the brief.
+{
+  const out = composeRead({ ...base, usRthOpen: false, usPrevSession: { date: '2026-09-04', daysBack: 4 } });
+  const lines = renderReadLines(out);
+  ok('there is more than one line', lines.length > 1);
+  ok('each gauge is its own bullet', lines.some(l => l.startsWith('• Credit')));
+  ok('carrying the state as the implication', /• Credit · \*\*CALM/.test(lines.join('\n')));
+  ok('and the detail as the data', /OAS 2\.68/.test(lines.join('\n')));
+  ok('the qualifiers are one muted line at the end', /^_.*confidence/.test(lines[lines.length - 1]));
+  ok('and no line is a paragraph', lines.every(l => l.length < 320));
+
+  eq('nothing composed means nothing rendered', renderReadLines(null), []);
+  eq('and neither does a read with no structure', renderReadLines({ structured: null }), []);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
