@@ -27,7 +27,7 @@ const row = (o = {}) => ({
 // ── NOTHING THAT SIZES THE ACCOUNT ───────────────────────────────────────────
 {
   const v = walletPublicView(row(), 'Robinhood Chain');
-  eq('the view is exactly the allow-list', Object.keys(v).sort(), ['chain', 'changePercent', 'price', 'symbol']);
+  eq('the view is exactly the allow-list', Object.keys(v).sort(), ['chain', 'changePercent', 'price', 'symbol', 'thin']);
   for (const f of ['total', 'free', 'hold', 'value', 'pnl', 'entryNtl', 'acquired', 'verified', 'viaPool'])
     ok(`the view drops ${f}`, !(f in v));
   // The allow-list is the contract; a deny-list would let a new upstream field ride along.
@@ -148,10 +148,13 @@ const row = (o = {}) => ({
     { symbol: 'PONS', chain: 'Robinhood Chain', price: 0.7121, changePercent: -1 },
   ]);
   const desc = card.embeds[0].description;
-  ok('the event line does not carry the entry price', !desc.includes('0174299'));
-  ok('no @ pricing syntax survives on any event line', !desc.includes('@'));
-  const holdText = card.embeds.slice(1).map(e => e.description).join('\n');
-  ok('the holdings line still does carry the market price', holdText.includes('0.0174'));
+  // One embed now, so events and holdings share a description. The events are the first block —
+  // the entry price must be absent from THERE, while the holdings block legitimately carries the
+  // market price, which in this fixture happens to be the same figure.
+  const eventPart = desc.split('\n\n')[0];
+  ok('the event line does not carry the entry price', !eventPart.includes('0174299'));
+  ok('no @ pricing syntax survives on any event line', !eventPart.includes('@'));
+  ok('the holdings block still does carry the market price', desc.includes('0.0174'));
 }
 
 // ── ACCUMULATING A DAY ───────────────────────────────────────────────────────
@@ -218,9 +221,13 @@ const row = (o = {}) => ({
      chainMark('Ethereum', { DISCORD_CHAIN_EMOJI: '{"Ethereum":"a\\nb"}' }), '⟠');
 }
 
-// ── GROUPED BY CHAIN, WITH REAL LOGOS ────────────────────────────────────────
-// Discord will not draw an image inside an embed description, so the only way to show a real chain
-// logo is one embed per chain with the logo as its author icon. That is the shape being tested.
+// ── ONE CARD, GROUPED BY CHAIN ───────────────────────────────────────────────
+// It was one embed PER CHAIN, because an embed's author icon is the only place Discord will draw a
+// real logo next to text. Four stacked boxes for one wallet read as four separate messages rather
+// than one card, which is worse than the thing the logos bought. So: headings inside a single
+// description, with chainMark() beside each — which prefers a CUSTOM DISCORD EMOJI when one is
+// configured, and a custom emoji is the only image Discord renders inline. Same layout carries the
+// real logos the moment DISCORD_CHAIN_EMOJI names them.
 {
   const h = (symbol, chain) => ({ symbol, chain, price: 1, changePercent: null });
   const card = buildWalletCard([], [
@@ -228,43 +235,38 @@ const row = (o = {}) => ({
     h('ETH', 'Arbitrum'), h('ARB', 'Arbitrum'),
     h('PONS', 'Robinhood Chain'), h('NUDES', 'Robinhood Chain'),
   ]);
+  const d = card.embeds[0].description;
 
-  eq('one embed leads, then one per chain', card.embeds.length, 4);
-  eq('the lead embed holds the day, not the holdings', card.embeds[0].description, '_No changes today._');
-  eq('each chain embed is headed by its chain',
-     card.embeds.slice(1).map(e => e.author.name), ['Ethereum', 'Arbitrum', 'Robinhood Chain']);
-  ok('and by that chain\'s logo',
-     card.embeds.slice(1).every(e => /^https:\/\//.test(e.author.icon_url)));
-  eq('a chain with two holdings keeps them in one embed',
-     card.embeds[3].description, '**PONS** 1.00\n**NUDES** 1.00');
-  ok('a grouped line does not repeat the chain name',
-     !card.embeds[3].description.includes('Robinhood'));
+  eq('there is exactly one embed', card.embeds.length, 1);
+  ok('the day leads it', d.startsWith('_No changes today._'));
+  for (const c of ['Ethereum', 'Arbitrum', 'Robinhood Chain'])
+    ok(`${c} is a heading inside it`, d.includes(`**${chainMark(c)} ${c}**`));
+  ok('each chain carries its mark', d.includes('⟠ Ethereum') && d.includes('🪶 Robinhood Chain'));
+  ok('holdings sit under their chain', /Robinhood Chain\*\*\n\*\*PONS\*\*/.test(d));
+  ok('and a grouped line does not repeat the chain name',
+     !/\*\*PONS\*\* 1\.00 · Robinhood/.test(d));
 
-  // Footer and timestamp belong to the last embed only, or the card says the same thing four times.
-  eq('only one embed carries the footer', card.embeds.filter(e => e.footer).length, 1);
-  ok('and it is the last', !!card.embeds[card.embeds.length - 1].footer);
-  eq('only one carries a timestamp', card.embeds.filter(e => e.timestamp).length, 1);
+  // The mark is where a custom emoji lands, which is the whole route to real logos on one card.
+  eq('a configured emoji is what the heading would carry',
+     chainMark('Ethereum', { DISCORD_CHAIN_EMOJI: '{"Ethereum":"<:eth:1>"}' }), '<:eth:1>');
 
-  // Colour means "something happened" rather than decorating every block.
+  eq('one footer, on the only embed', card.embeds.filter(e => e.footer).length, 1);
+  eq('and one timestamp', card.embeds.filter(e => e.timestamp).length, 1);
+
   const busy = buildWalletCard([{ kind: 'bought', symbol: 'X', chain: 'Base' }],
                                [h('X', 'Base'), h('Y', 'Base')]);
-  eq('the lead embed takes the accent when something was bought', busy.embeds[0].color, 0x16A34A);
-  eq('the inventory stays neutral', busy.embeds[1].color, 0x64748B);
+  eq('the card takes the accent when something was bought', busy.embeds[0].color, 0x16A34A);
+  eq('and stays neutral otherwise', card.embeds[0].color, 0x64748B);
 
-  // A chain with no logo must still render — name only, never a broken image.
+  // A chain with no mark still gets a heading rather than a broken one.
   const unknown = buildWalletCard([], [h('FOO', 'Someswap Chain'), h('BAR', 'Someswap Chain')]);
-  eq('an unknown chain still gets its own embed and name', unknown.embeds[1].author.name, 'Someswap Chain');
-  ok('but no icon_url at all rather than a dead link', !('icon_url' in unknown.embeds[1].author));
-  eq('and chainLogo says so plainly', chainLogo('Someswap Chain'), null);
-  ok('a known chain has one', /^https:\/\//.test(chainLogo('Ethereum')));
+  ok('an unmapped chain still reads', unknown.embeds[0].description.includes('Someswap Chain'));
 
-  // Ten embeds is Discord's cap. Beyond nine chains the card must degrade, not truncate.
-  const many = buildWalletCard([], Array.from({ length: 12 }, (_, i) => i).flatMap(
-    i => [h('T' + i, 'Chain' + i), h('U' + i, 'Chain' + i)]));
-  ok('past the embed cap it falls back to one flat list', many.embeds.length === 1);
-  ok('and that list still names every holding',
-     Array.from({ length: 12 }, (_, i) => 'T' + i).every(t => many.embeds[0].description.includes(t)));
-  ok('and marks each row with its chain, since nothing else does', many.embeds[0].description.includes('⬦'));
+  // A wallet too big for one description loses the tail and says so, rather than the message.
+  const many = buildWalletCard([], Array.from({ length: 400 }, (_, i) => i)
+    .flatMap(i => [h('TOKEN' + i, 'Chain' + (i % 3)), h('OTHER' + i, 'Chain' + (i % 3))]));
+  ok('an oversized wallet is truncated, not dropped', many.embeds[0].description.length <= 4096);
+  ok('and it says it was truncated', /truncated/.test(many.embeds[0].description));
 }
 
 // ── A CHAIN EARNS ITS SECTION ────────────────────────────────────────────────
@@ -279,13 +281,15 @@ const row = (o = {}) => ({
     h('ETH', 'Ethereum'), h('ETH', 'Arbitrum'),
     h('PONS', 'Robinhood Chain'), h('NUDES', 'Robinhood Chain'),
   ]);
-  eq('a one-holding chain gets no section of its own', card.embeds.length, 2);
-  eq('and the chain that earned one still has it', card.embeds[1].author.name, 'Robinhood Chain');
+  const d0 = card.embeds[0].description;
+  ok('a one-holding chain gets no section of its own', !d0.includes('Ethereum') && !d0.includes('Arbitrum'));
+  ok('and the chain that earned one still has it', d0.includes('Robinhood Chain'));
   // Dropped silently, by decision — the note that used to name them was more noise than the rows
   // it replaced. Nothing about a thin chain reaches the card at all.
-  eq('a quiet day with thin chains says only that', card.embeds[0].description, '_No changes today._');
+  eq('a quiet day with thin chains leads with just that',
+     card.embeds[0].description.split('\n\n')[0], '_No changes today._');
   ok('the dropped chains are not named', !/Ethereum|Arbitrum/.test(card.embeds[0].description));
-  ok('nor is anything they hold', !/ETH/.test(card.embeds[0].description));
+  ok('nor is anything they hold', !/\bETH\b/.test(card.embeds[0].description));
 
   // The whole point of the fold is that it hides NOISE, not activity. A trade on a folded chain is
   // still a decision and must still be announced.
@@ -296,12 +300,13 @@ const row = (o = {}) => ({
 
   // A second token arriving is what promotes a chain — the behaviour asked for.
   const grown = buildWalletCard([], [h('ETH', 'Ethereum'), h('LINK', 'Ethereum'), h('A', 'Base'), h('B', 'Base')]);
-  eq('a second holding promotes the chain to its own section', grown.embeds.length, 3);
+  ok('a second holding promotes the chain to its own section',
+     grown.embeds[0].description.includes('Ethereum'));
   ok('and the lead embed is untouched by any of it', !/not shown/.test(grown.embeds[0].description));
 
   // Everything thin: the card is still a card, and still says what it left out.
   const allThin = buildWalletCard([], [h('ETH', 'Ethereum'), h('ETH', 'Arbitrum')]);
-  eq('a wallet of nothing but thin chains is one embed', allThin.embeds.length, 1);
+  eq('a wallet of nothing but thin chains is still one embed', allThin.embeds.length, 1);
   ok('which still carries the footer', !!allThin.embeds[0].footer);
   eq('and reads as a quiet day rather than a broken card',
      allThin.embeds[0].description, '_No changes today._');
@@ -359,13 +364,16 @@ const row = (o = {}) => ({
   // The perps section is exempt from the two-holdings rule — one open position is the case worth
   // showing, and that rule exists to hide leftover gas.
   const card = buildWalletCard([], [{ symbol: 'ETH', chain: 'Base', price: 1, changePercent: null }], { perps: [v] });
-  eq('one perp and one thin chain leaves the perp standing', card.embeds.length, 2);
-  eq('and it is headed as perps', card.embeds[1].author.name, 'Hyperliquid · perps');
-  ok('with the Hyperliquid logo', /^https:\/\//.test(card.embeds[1].author.icon_url));
-  ok('perps lead the holdings', buildWalletCard([], [
-    { symbol: 'A', chain: 'Base', price: 1, changePercent: null },
-    { symbol: 'B', chain: 'Base', price: 1, changePercent: null },
-  ], { perps: [v] }).embeds[1].author.name === 'Hyperliquid · perps');
+  const cd = card.embeds[0].description;
+  ok('one perp and one thin chain leaves the perp standing', /Hyperliquid · perps/.test(cd));
+  ok('and the thin chain is still dropped', !/Base/.test(cd));
+  ok('perps lead the holdings', (() => {
+    const d2 = buildWalletCard([], [
+      { symbol: 'A', chain: 'Base', price: 1, changePercent: null },
+      { symbol: 'B', chain: 'Base', price: 1, changePercent: null },
+    ], { perps: [v] }).embeds[0].description;
+    return d2.indexOf('Hyperliquid · perps') < d2.indexOf('Base');
+  })());
 }
 
 // ── TELLING A STOP FROM A TARGET ─────────────────────────────────────────────
