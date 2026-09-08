@@ -1,5 +1,6 @@
 import { LABOR_SERIES } from "../lib/labor.js";
 import { fetchSmicAHPremium } from "../lib/smicah.js";
+import { limiter, backoffMs, sleep } from '../lib/throttle.js';
 
 export default async function handler(req, res) {
   const FRED_KEY = process.env.FRED_API_KEY;
@@ -19,18 +20,29 @@ export default async function handler(req, res) {
   // blip on one of thirty-three is not a rare event. Failures are now RECORDED, and one transient
   // failure is retried before being believed.
   const feedErrors = [];
-  async function fredFetch(url, label, tries = 2) {
+
+  // NOT MORE AT ONCE THAN FRED WILL ANSWER. The call sites above fire together and FRED allows 120
+  // requests a minute per key, so a cold load asked for its whole day in one burst and the tail came
+  // back 429 — five series blank on a good day, reading as "nothing published" rather than "we
+  // asked too fast". Eight at a time is well inside the limit and costs a cold load very little,
+  // because the requests were never the slow part.
+  const fredGate = limiter(8);
+
+  // Three tries, backing OFF rather than re-colliding. The old fixed 400ms was the burst again in
+  // miniature: everything throttled together waited the same interval and retried together. Full
+  // jitter spreads them across the window instead.
+  async function fredFetch(url, label, tries = 3) {
     let last = null;
     for (let i = 0; i < tries; i++) {
       try {
-        const r = await fetch(url);
+        const r = await fredGate(() => fetch(url));
         if (r.ok) return await r.json();
         last = `HTTP ${r.status}`;
-        // 429 and 5xx are worth a second ask; a 400 means the request itself is wrong and a retry
+        // 429 and 5xx are worth another ask; a 400 means the request itself is wrong and a retry
         // will fail identically.
         if (r.status !== 429 && r.status < 500) break;
       } catch (e) { last = String(e?.message || e); }
-      if (i + 1 < tries) await new Promise(res => setTimeout(res, 400));
+      if (i + 1 < tries) await sleep(backoffMs(i));
     }
     feedErrors.push({ series: label, error: last });
     console.error("FRED fetch failed (" + label + "):", last);
@@ -171,24 +183,32 @@ export default async function handler(req, res) {
   async function fredLabor(id, expectTitle) {
     const base = `api_key=${FRED_KEY}&file_type=json`;
     try {
-      const [metaR, obsR] = await Promise.all([
-        fetch(`https://api.stlouisfed.org/fred/series?series_id=${id}&${base}`),
-        fetch(`https://api.stlouisfed.org/fred/series/observations?series_id=${id}&sort_order=desc&limit=16&${base}`),
+      // BOTH REQUESTS NOW GO THROUGH fredFetch, which retries and is gated. They did not before:
+      // this function called fetch directly, so the panel's "retried once before being reported"
+      // was false for exactly the series it was reporting — the ones that produced HTTP 200/429.
+      const [meta, obsJson] = await Promise.all([
+        fredFetch(`https://api.stlouisfed.org/fred/series?series_id=${id}&${base}`, `${id} (title check)`),
+        fredFetch(`https://api.stlouisfed.org/fred/series/observations?series_id=${id}&sort_order=desc&limit=16&${base}`, id),
       ]);
-      if (!metaR.ok || !obsR.ok) {
-        const err = `HTTP ${metaR.status}/${obsR.status}`;
-        feedErrors.push({ series: id, error: err });
-        return { id, ok: false, error: err };
-      }
-      const title = (await metaR.json())?.seriess?.[0]?.title ?? null;
-      const obs = ((await obsR.json())?.observations || [])
+      // THE DATA IS WHAT MATTERS. Previously either request failing blanked the tile, so a
+      // rate-limited TITLE CHECK threw away observations that had arrived perfectly well — that is
+      // what "EMRATIO — HTTP 429/200" was: good data, discarded because its verification was
+      // throttled. Now only the observations failing is a failure; an unreachable title is simply
+      // unverified, which the row already knows how to say.
+      if (!obsJson) return { id, ok: false, error: 'observations unavailable' };
+      const title = meta?.seriess?.[0]?.title ?? null;
+      const obs = (obsJson?.observations || [])
         .filter(o => o.value !== '.' && o.value != null && o.value !== '')
         .map(o => ({ date: o.date, value: parseFloat(o.value) }))
         .filter(o => Number.isFinite(o.value));
       const verified = !!(title && expectTitle && title.toLowerCase().includes(expectTitle.toLowerCase()));
       return {
         id, ok: obs.length > 0, title, verified,
-        mismatch: verified ? null : `expected title containing "${expectTitle}", FRED returned "${title}"`,
+        // A title that could not be FETCHED is a different thing from one that came back wrong, and
+        // saying "FRED returned null" would read as the latter.
+        mismatch: verified ? null
+          : title == null ? 'could not reach FRED to verify this series id — the figure itself is the series FRED returned'
+          : `expected title containing "${expectTitle}", FRED returned "${title}"`,
         value: obs[0]?.value ?? null, date: obs[0]?.date ?? null,
         prev: obs[1]?.value ?? null, prevDate: obs[1]?.date ?? null,
         delta: (obs[0] && obs[1]) ? +(obs[0].value - obs[1].value).toFixed(2) : null,
