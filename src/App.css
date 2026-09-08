@@ -18,6 +18,24 @@
   .dvcap-row-out { opacity: 0; }
 }
 
+/* ── Dragging a row to reorder ────────────────────────────────────────────────
+   The reorder worked before this and did not FEEL like it did: you picked a row up, the browser
+   drew its own faint ghost, and nothing on the page acknowledged either the row you were holding
+   or where it was going to land. So there are two states here and they answer those two questions.
+
+   The COLOURS are set inline in TradeConsole.jsx because the palette lives in JS; this file owns
+   only the motion, so the two cannot disagree about the accent.
+
+   Under reduced motion the transitions go and the STATES STAY. The drop indicator is information —
+   it is the only thing saying where the row will land — and a preference about animation is not a
+   request to be told less. */
+.dvcap-drag-target { transition: box-shadow 120ms ease-out, opacity 120ms ease-out, transform 120ms ease-out; }
+.dvcap-dragging    { opacity: 0.4; transform: scale(0.985); }
+@media (prefers-reduced-motion: reduce) {
+  .dvcap-drag-target { transition: none; }
+  .dvcap-dragging    { transform: none; }
+}
+
 /* An expanded card body grows into place rather than appearing. Short enough to read as feedback
    for the click, not as an effect. max-height is a ceiling, not a measurement — it only has to
    exceed the tallest card for the reveal to look continuous. */
