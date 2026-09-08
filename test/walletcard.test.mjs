@@ -5,7 +5,7 @@
 // prices, never size and never an ENTRY price. Same four forbidden quantities as lib/tradecard.js — SIZE, ABSOLUTE P&L, MARKET
 // VALUE, SHARE OF BOOK — for the same reason, and tested the same way: rows whose private values
 // are distinctive digit strings, asserted to appear nowhere in the serialised output.
-import { chainMark, chainLogo } from '../lib/chains.js';
+import { chainMark, headerMark } from '../lib/chains.js';
 import { classifyTrigger, parseTriggerOrders } from '../lib/hyperliquid.js';
 import { walletPublicView, diffHoldings, buildWalletCard, eventLine, holdingLine, groupedHoldingLine, mergePending, MIN_CHAIN_HOLDINGS,
          perpPublicView, perpLine, PERP_PUBLIC_FIELDS,
@@ -121,10 +121,12 @@ const row = (o = {}) => ({
      '**PONS** 0.7121 (-17.68%)');
 
   const empty = buildWalletCard([], []);
-  eq('a quiet day says so rather than rendering blank', empty.embeds[0].description, '_No changes today._');
+  eq('a quiet day says so rather than rendering blank',
+     empty.embeds[0].description.split('\n\n')[1], '_No changes today._');
   ok('and still dates its prices', /at time of post/i.test(JSON.stringify(empty)));
   // A malformed event is dropped rather than rendered as "undefined".
-  eq('unknown event kinds are dropped', buildWalletCard([{ kind: 'wat', symbol: 'X' }], []).embeds[0].description, '_No changes today._');
+  eq('unknown event kinds are dropped',
+     buildWalletCard([{ kind: 'wat', symbol: 'X' }], []).embeds[0].description.split('\n\n')[1], '_No changes today._');
 }
 
 // ── THE ENTRY PRICE IS GONE, AND CANNOT COME BACK BY ACCIDENT ────────────────
@@ -151,7 +153,7 @@ const row = (o = {}) => ({
   // One embed now, so events and holdings share a description. The events are the first block —
   // the entry price must be absent from THERE, while the holdings block legitimately carries the
   // market price, which in this fixture happens to be the same figure.
-  const eventPart = desc.split('\n\n')[0];
+  const eventPart = desc.split('\n\n')[1];   // [0] is the header line
   ok('the event line does not carry the entry price', !eventPart.includes('0174299'));
   ok('no @ pricing syntax survives on any event line', !eventPart.includes('@'));
   ok('the holdings block still does carry the market price', desc.includes('0.0174'));
@@ -238,7 +240,8 @@ const row = (o = {}) => ({
   const d = card.embeds[0].description;
 
   eq('there is exactly one embed', card.embeds.length, 1);
-  ok('the day leads it', d.startsWith('_No changes today._'));
+  ok('the header leads it', d.startsWith('**Wallet · today**'));
+  ok('then the day', d.split('\n\n')[1] === '_No changes today._');
   for (const c of ['Ethereum', 'Arbitrum', 'Robinhood Chain'])
     ok(`${c} is a heading inside it`, d.includes(`**${chainMark(c)} ${c}**`));
   ok('each chain carries its mark', d.includes('⟠ Ethereum') && d.includes('🪶 Robinhood Chain'));
@@ -286,8 +289,8 @@ const row = (o = {}) => ({
   ok('and the chain that earned one still has it', d0.includes('Robinhood Chain'));
   // Dropped silently, by decision — the note that used to name them was more noise than the rows
   // it replaced. Nothing about a thin chain reaches the card at all.
-  eq('a quiet day with thin chains leads with just that',
-     card.embeds[0].description.split('\n\n')[0], '_No changes today._');
+  eq('a quiet day with thin chains says just that',
+     card.embeds[0].description.split('\n\n')[1], '_No changes today._');
   ok('the dropped chains are not named', !/Ethereum|Arbitrum/.test(card.embeds[0].description));
   ok('nor is anything they hold', !/\bETH\b/.test(card.embeds[0].description));
 
@@ -309,7 +312,7 @@ const row = (o = {}) => ({
   eq('a wallet of nothing but thin chains is still one embed', allThin.embeds.length, 1);
   ok('which still carries the footer', !!allThin.embeds[0].footer);
   eq('and reads as a quiet day rather than a broken card',
-     allThin.embeds[0].description, '_No changes today._');
+     allThin.embeds[0].description.split('\n\n')[1], '_No changes today._');
 }
 
 // ── PERPS ────────────────────────────────────────────────────────────────────
@@ -411,6 +414,31 @@ const row = (o = {}) => ({
   ok('an ordinary limit order is not a level', lv.get('X').stops.length === 1);
   eq('a coin with no orders has no entry at all', lv.get('Y'), undefined);
   eq('and a non-array payload is empty rather than a throw', parseTriggerOrders(null, []).size, 0);
+}
+
+// ── THE HEADER, AND WHY IT IS NOT THE TITLE ──────────────────────────────────
+// Discord renders a custom emoji inside an embed DESCRIPTION and not inside its TITLE — a title
+// carrying <:name:id> prints that text literally. The header is the one place a wallet mark
+// belongs, so the header moved into the description and the title field is gone.
+{
+  const h = (symbol, chain) => ({ symbol, chain, price: 1, changePercent: null });
+  const rows = [h('PONS', 'Robinhood Chain'), h('NUDES', 'Robinhood Chain')];
+
+  const bare = buildWalletCard([], rows).embeds[0];
+  ok('there is no title field to swallow an emoji', !('title' in bare));
+  ok('the header is the first line instead', bare.description.startsWith('**Wallet · today**'));
+  eq('and with nothing configured it carries no mark', headerMark({}), '');
+
+  // Configured, it lands in the description where Discord will actually draw it.
+  const env = { DISCORD_CHAIN_EMOJI: '{"Wallet":"<:mm:42>","Robinhood Chain":"<:rh:43>"}' };
+  eq('a configured header mark is read from the same map', headerMark(env), '<:mm:42>');
+  eq('and a chain mark still is too', chainMark('Robinhood Chain', env), '<:rh:43>');
+
+  // Same parser, so the same malformed input degrades the same way in both.
+  eq('a malformed map leaves the header bare', headerMark({ DISCORD_CHAIN_EMOJI: '{oops' }), '');
+  eq('and leaves the chains on their built-ins',
+     chainMark('Robinhood Chain', { DISCORD_CHAIN_EMOJI: '{oops' }), '🪶');
+  eq('a non-string header value is rejected', headerMark({ DISCORD_CHAIN_EMOJI: '{"Wallet":7}' }), '');
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
