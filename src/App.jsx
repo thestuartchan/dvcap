@@ -6959,7 +6959,7 @@ export default function App() {
                 <b>⚠ {liveInd.feedErrors.length} data feed{liveInd.feedErrors.length > 1 ? "s" : ""} failed to load.</b>{" "}
                 <span style={{ color: C.mid }}>
                   Any tile below fed by {liveInd.feedErrors.length > 1 ? "these series" : "this series"} is blank because the request failed, not because
-                  no figure has been published. Retried once before being reported.
+                  no figure has been published. Each was retried with a backoff before being reported.
                 </span>
                 <div style={{ marginTop: 5, fontFamily: "ui-monospace, monospace", fontSize: 11, color: C.mid }}>
                   {liveInd.feedErrors.map((e, i) => (

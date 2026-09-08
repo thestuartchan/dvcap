@@ -339,7 +339,7 @@ const echoesDate = (label, iso) => {
   return hasDay && (t.includes(mon) || new RegExp(`\\b0?${+mm}\\b`).test(t));
 };
 
-const PositionRow = ({ r, mode, ctx, reorder = false, prevId = null, nextId = null }) => {
+const PositionRow = ({ r, mode, ctx, reorder = false, prevId = null, nextId = null, idx = 0, dragIdx = -1 }) => {
 const {
   prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel,
   openFill, delFill, fillFor, sizeOpen, setSizeOpen, justMoved, drafts, setDraft, clearDraft, chip, ccyChip, fitChip,
@@ -387,12 +387,22 @@ const {
   // it up would toggle the row open underneath the drag.
   const reorderable = reorder && !!ctx.dropRow;
   const dragging = ctx.dragId === r.id;
+  // WHICH EDGE THE BAR SITS ON, matching what moveOnto will actually do. The dragged row takes the
+  // target's index, so coming from ABOVE it lands after the target and the bar belongs on the
+  // bottom edge; coming from below it lands before, and the bar goes on top. Getting this backwards
+  // would be worse than showing nothing — a confident indicator pointing at the wrong gap.
+  const isTarget = reorderable && ctx.dragId && ctx.overId === r.id && !dragging;
+  const dropBelow = dragIdx > -1 && dragIdx < idx;
+  const dropEdge = !isTarget ? null
+    : `inset 0 ${dropBelow ? "-3px" : "3px"} 0 0 ${C.blue}`;
+  const cls = [justMoved === r.id ? "dvcap-row-in dvcap-flash" : "dvcap-row-in", "dvcap-drag-target",
+               dragging ? "dvcap-dragging" : ""].filter(Boolean).join(" ");
   return (
-    <div className={justMoved === r.id ? "dvcap-row-in dvcap-flash" : "dvcap-row-in"}
-      onDragOver={reorderable && ctx.dragId ? (e => e.preventDefault()) : undefined}
-      onDrop={reorderable && ctx.dragId ? (e => { e.preventDefault(); ctx.dropRow(ctx.dragId, r.id); ctx.setDragId(null); }) : undefined}
+    <div className={cls}
+      onDragOver={reorderable && ctx.dragId ? (e => { e.preventDefault(); if (ctx.overId !== r.id) ctx.setOverId(r.id); }) : undefined}
+      onDrop={reorderable && ctx.dragId ? (e => { e.preventDefault(); ctx.dropRow(ctx.dragId, r.id); ctx.endDrag(); }) : undefined}
       style={{ border: "1.5px solid " + (anyHit ? C.amber : C.bdr), borderLeft: "4px solid " + (anyHit ? C.amber : mode === "open" ? C.blue : C.bdr), borderRadius: 10, overflow: "hidden",
-               opacity: dragging ? 0.45 : 1 }}>
+               ...(dropEdge ? { boxShadow: dropEdge } : null) }}>
       {/* The row is TWO blocks, not one wrapping run: an info block that flexes and wraps inside
           itself, and an action block that never leaves the top line. Letting the whole row wrap put
           0981.HK's buttons on a second line purely because its label was two words long. */}
@@ -411,11 +421,17 @@ const {
         {reorderable && (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 1, flex: "0 0 auto" }}
                 onClick={e => e.stopPropagation()}>
+            {/* The grip darkens and the cursor becomes a fist while you hold it, so "am I actually
+                dragging this" is answerable without looking anywhere else on the page. dragEnd
+                fires on a cancelled drag too, which is what clears the state when you let go over
+                nothing. */}
             <span draggable
                   onDragStart={e => { ctx.setDragId(r.id); e.dataTransfer.effectAllowed = "move"; }}
-                  onDragEnd={() => ctx.setDragId(null)}
+                  onDragEnd={ctx.endDrag}
                   title="Drag to reorder"
-                  style={{ cursor: "grab", color: C.muted, fontSize: 13, padding: "0 3px", userSelect: "none" }}>⠿</span>
+                  className="dvcap-drag-target"
+                  style={{ cursor: dragging ? "grabbing" : "grab", color: dragging ? C.blue : C.muted,
+                           fontSize: 13, padding: "0 3px", userSelect: "none" }}>⠿</span>
             {/* MOVED PAST THE VISIBLE NEIGHBOUR, not by one index in `rows`. The stored array
                 interleaves setups and open positions, so "down one" there could swap a position
                 with a setup that this section does not render — the click would land, the state
@@ -1059,7 +1075,8 @@ const Section = ({ title, note, list, mode, ctx, reorder = false, sort = null })
     {list.length === 0
       ? <div style={{ fontSize: 12.5, color: C.muted, fontStyle: "italic", marginTop: 8 }}>Nothing here yet.</div>
       : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{list.map((r, i) => <PositionRow key={r.id} r={r} mode={mode} ctx={ctx} reorder={reorder}
-          prevId={i > 0 ? list[i - 1].id : null} nextId={i < list.length - 1 ? list[i + 1].id : null} />)}</div>}
+          prevId={i > 0 ? list[i - 1].id : null} nextId={i < list.length - 1 ? list[i + 1].id : null}
+          idx={i} dragIdx={reorder && ctx.dragId ? list.findIndex(x => x.id === ctx.dragId) : -1} />)}</div>}
   </Card>
 );
 
@@ -1600,6 +1617,10 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   // holds the arithmetic; these only decide when to save.
   const dropRow = (dragId, overId) => setRows(p => { const n = moveOnto(p, dragId, overId); if (n !== p) touch(); return n; });
   const [dragId, setDragId] = useState(null);
+  // Which row the pointer is currently over, so the card can show WHERE the drop lands
+  // rather than only that something is being dragged.
+  const [overId, setOverId] = useState(null);
+  const endDrag = () => { setDragId(null); setOverId(null); };
 
   // Open positions sort biggest-first by default and that rule earns its keep — the position
   // carrying most of the book is the one that most deserves a second look. So manual order is an
@@ -1914,7 +1935,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
     // otherwise, which is the ordinary case — the liquidation read falls back to its estimate and
     // says which it is showing.
     livePositions,
-    dropRow, dragId, setDragId,
+    dropRow, dragId, setDragId, overId, setOverId, endDrag,
   };
 
   return (
