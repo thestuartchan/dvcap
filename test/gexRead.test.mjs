@@ -2,7 +2,7 @@
 // The behaviour that matters most is ABSTENTION: spot inside the flip zone is the common case on a
 // real chain and genuinely is not a regime read. A panel that always has an opinion is one nobody
 // should size off, so "no usable read" is tested harder than the readable cases.
-import { gexRead, regimeOf, skewOf, ageOf } from '../lib/gexRead.js';
+import { gexRead, regimeOf, skewOf, ageOf, FLIP_MARGIN_PCT } from '../lib/gexRead.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const ok = (n, c) => eq(n, !!c, true);
@@ -141,6 +141,54 @@ const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600000).toISOString();
   // would be vacuous.
   const one = gexRead({ row, grid: { dominated: false, frontShare: 100, expiries: [{ expiry: '2026-09-02' }] }, now: NOW });
   eq('one expiry makes no cross-expiry claim', one.lines.some(l => l.includes('hold across')), false);
+}
+
+// ── CLEARING THE ZONE BY A HAIR IS NOT A REGIME ──────────────────────────────
+// Not a hypothetical. On 2026-09-08 this board and an independent GEX source read the same QQQ
+// chain at effectively the same spot and solved the flip 1.14 apart — 0.16% — with spot between
+// the two, so one called positive gamma and the other negative. The board's arithmetic was right
+// and its confidence was not: it had cleared the zone by 0.10% of spot.
+{
+  // The board's own numbers from that morning.
+  const board = regimeOf({ spot: 718.96, flipLevel: 718.27, flipZoneLo: 699.5794, flipZoneHi: 718.2726 });
+  eq('a 0.10% clearance is an edge, not a regime', board.state, 'edge');
+  eq('but which side it leans is still a fact worth printing', board.lean, 'above');
+  eq('and the clearance is reported exactly, not rounded away', board.clearancePct, 0.096);
+  ok('the reason says why it is being withheld', /inside the margin/.test(board.reason));
+
+  // The other source, same chain, same moment — its flip put spot INSIDE the zone entirely.
+  const other = regimeOf({ spot: 719.06, flipLevel: 719.41, flipZoneLo: 699.58, flipZoneHi: 719.41 });
+  eq('the other source read the same chain as inside the zone', other.state, 'inside');
+  ok('so neither read supports a confident regime', ['edge', 'inside'].includes(board.state) && ['edge', 'inside'].includes(other.state));
+
+  // The margin must not swallow a real regime.
+  eq('a clear distance is still a regime',
+     regimeOf({ spot: 730, flipLevel: 718.27, flipZoneLo: 699.58, flipZoneHi: 718.27 }).state, 'above');
+  eq('and below is still below',
+     regimeOf({ spot: 690, flipLevel: 718.27, flipZoneLo: 699.58, flipZoneHi: 718.27 }).state, 'below');
+
+  // Exactly at the boundary, from both directions, since this is a threshold.
+  const at = (clearPct) => {
+    const spot = 700, hi = 700 - (spot * clearPct / 100);
+    return regimeOf({ spot, flipLevel: hi, flipZoneLo: hi - 10, flipZoneHi: hi });
+  };
+  eq('just inside the margin is an edge', at(FLIP_MARGIN_PCT - 0.01).state, 'edge');
+  eq('just outside it is a regime', at(FLIP_MARGIN_PCT + 0.01).state, 'above');
+  eq('the margin is a quarter of a percent', FLIP_MARGIN_PCT, 0.25);
+  // Wider than the 0.16% the two sources actually disagreed by, which is where it came from.
+  ok('and it covers the disagreement it was derived from', FLIP_MARGIN_PCT > (1.14 / 719) * 100);
+
+  // The margin is a parameter, so a caller can reason about a different one.
+  eq('a caller can widen it', regimeOf({ spot: 730, flipLevel: 718.27, flipZoneLo: 699.58, flipZoneHi: 718.27 },
+                                       { marginPct: 5 }).state, 'edge');
+
+  // ── AND THE READ REFUSES THE STANCE ──
+  const read = gexRead({ row: { spot: 718.96, flipLevel: 718.27, flipZoneLo: 699.5794, flipZoneHi: 718.2726,
+                                gexUsd: 186000000, asOf: new Date().toISOString() }, now: new Date() });
+  eq('the headline does not pick a side', read.headline, 'At the flip — no regime edge');
+  eq('and the state is unclear rather than damp', read.state, 'unclear');
+  ok('the stance says not to size off it', /Do not size off the flip/.test(read.stance));
+  ok('and it does not tell you moves damp', !/damp|amplif/i.test(read.stance));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
