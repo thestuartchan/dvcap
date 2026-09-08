@@ -5,6 +5,7 @@ import {
   gexSummary, netGammaAt, flipLevel, flipFragility, walls, toDollarGex,
   contractGamma, gammaGrid, GEX_CONVENTIONS, CONTRACT_MULTIPLIER, heatCells, heatAlpha, HEAT_ROWS, HEAT_PCTL, HEAT_ALPHA_FLOOR } from '../lib/gex.js';
 import { gamma } from '../lib/blackscholes.js';
+import { wallAgreement } from '../lib/gexRead.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const ok = (n, c) => eq(n, !!c, true);
@@ -214,8 +215,15 @@ const PE = (k, oi, e, T, iv = 0.22) => ({ type: 'put', strike: k, oi, iv, T, exp
     PE(700, 5000, '2026-09-11', 0.03), PE(700, 5000, '2026-09-18', 0.05), PE(700, 4500, '2026-10-16', 0.12),
   ], { S: 707, r: 0.037, q: 0.005 });
   eq('a spread book is not flagged as dominated', g.dominated, false);
-  ok('the note calls it a multi-expiry level', /multi-expiry/.test(g.note));
-  ok('and every expiry agrees on the peak', new Set(g.expiries.map(e => e.peakCallStrike)).size === 1);
+  // The note now says what it MEASURES — gamma concentration — and no longer asserts that the walls
+  // are a multi-expiry level, which is a different claim it was never in a position to make. It
+  // happens to be true for this fixture, and that is checked directly below rather than read off a
+  // sentence.
+  ok('the note describes the concentration it measured', /no single expiry dominates/.test(g.note));
+  ok('and claims nothing about the walls', !/multi-expiry level/.test(g.note));
+  ok('every expiry agrees on the peak', new Set(g.expiries.map(e => e.peakCallStrike)).size === 1);
+  const agree = wallAgreement(g, g.expiries[0].peakCallStrike, g.expiries[0].peakPutStrike);
+  eq('so the walls do hold across all of them', [agree.agree, agree.total, agree.majority], [3, 3, true]);
 }
 {
   const g = gammaGrid([CE(710, 1000, '2026-09-11', 0.03), PE(700, 800, '2026-09-11', 0.03)], { S: 707 });

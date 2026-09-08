@@ -2,7 +2,7 @@
 // The behaviour that matters most is ABSTENTION: spot inside the flip zone is the common case on a
 // real chain and genuinely is not a regime read. A panel that always has an opinion is one nobody
 // should size off, so "no usable read" is tested harder than the readable cases.
-import { gexRead, regimeOf, skewOf, ageOf, FLIP_MARGIN_PCT } from '../lib/gexRead.js';
+import { gexRead, regimeOf, skewOf, ageOf, FLIP_MARGIN_PCT, wallAgreement } from '../lib/gexRead.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const ok = (n, c) => eq(n, !!c, true);
@@ -189,6 +189,64 @@ const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600000).toISOString();
   eq('and the state is unclear rather than damp', read.state, 'unclear');
   ok('the stance says not to size off it', /Do not size off the flip/.test(read.stance));
   ok('and it does not tell you moves damp', !/damp|amplif/i.test(read.stance));
+}
+
+// ── DO THE WALLS ACTUALLY HOLD? ──────────────────────────────────────────────
+// The old test was gamma CONCENTRATION: front expiry under half the gross gamma meant "the walls
+// hold across N expiries — a level rather than one day's positioning". Different claim, and it does
+// not follow. QQQ on 2026-09-08 is the counterexample, taken from the panel's own table.
+{
+  const E = (expiry, shareOfAbs, peakPutStrike, peakCallStrike) => ({ expiry, shareOfAbs, peakPutStrike, peakCallStrike });
+  const real = { frontShare: 24.9, frontExpiry: '2026-09-08', dominated: false, expiries: [
+    E('2026-09-08', 24.9, 717, 720), E('2026-09-09', 12.3, 714, 722), E('2026-09-10', 0.9, 715, 725),
+    E('2026-09-18', 22.3, 700, 730), E('2026-10-16', 16.8, 700, 750), E('2026-12-18', 22.9, 660, 780),
+  ] };
+
+  const wa = wallAgreement(real, 720, 717);
+  eq('only the front expiry peaks at the headline walls', wa.agree, 1);
+  eq('out of six', wa.total, 6);
+  eq('and it is named', wa.matched, ['2026-09-08']);
+  ok('which is not a majority', !wa.majority);
+  // The old rule would have passed this: the front carries well under half the gross gamma.
+  ok('even though no single expiry dominates the gamma', real.frontShare < 50);
+
+  const read = gexRead({
+    row: { spot: 717.34, flipLevel: 718.54, flipZoneLo: 710.2605, flipZoneHi: 718.5382,
+           callWall: 720, putWall: 717, gexUsd: -1960000000, asOf: '2026-09-08T13:40:00Z' },
+    grid: real, now: new Date('2026-09-08T13:45:00Z'), live: true });
+  const said = read.lines.join(' ');
+  ok('the read says only one expiry peaks there', /Only 1 of 6 expiries peaks at these strikes/.test(said));
+  ok('and that it expires today', /2026-09-08, which expires today/.test(said));
+  ok('and it no longer claims the walls hold across six', !/walls hold across 6/.test(said));
+  ok('nor that they are a multi-expiry level', !/are a multi-expiry level/.test(said));
+
+  // NOT ONE-DIRECTIONAL. Walls that genuinely repeat must still be reported as holding, or the fix
+  // has simply replaced one wrong answer with another.
+  const agreeing = { frontShare: 24.9, frontExpiry: '2026-09-08', dominated: false, expiries: [
+    E('2026-09-08', 24.9, 700, 730), E('2026-09-09', 12.3, 700, 730),
+    E('2026-09-18', 22.3, 700, 730), E('2026-12-18', 22.9, 660, 780),
+  ] };
+  const wb = wallAgreement(agreeing, 730, 700);
+  eq('three of four expiries agreeing is a majority', [wb.agree, wb.total, wb.majority], [3, 4, true]);
+  const good = gexRead({ row: { spot: 717, flipLevel: 700, flipZoneLo: 690, flipZoneHi: 695,
+                                callWall: 730, putWall: 700, gexUsd: 1e9, asOf: '2026-09-08T13:40:00Z' },
+                         grid: agreeing, now: new Date('2026-09-08T13:45:00Z'), live: true });
+  ok('and is reported as holding', /walls hold across 3 of 4 expiries/.test(good.lines.join(' ')));
+
+  // Exactly half counts as holding — the tie has to fall somewhere and "half the book agrees" is
+  // support rather than absence of it.
+  eq('a tie is a majority', wallAgreement({ expiries: [E('a', 1, 700, 730), E('b', 1, 660, 780)] }, 730, 700).majority, true);
+
+  // Degenerate inputs must not throw or assert anything.
+  eq('no walls, no claim', wallAgreement(real, null, null), null);
+  eq('no grid, no claim', wallAgreement(null, 720, 717), null);
+  eq('an empty expiry list makes no claim', wallAgreement({ expiries: [] }, 720, 717), null);
+  // A single expiry cannot support a multi-expiry claim either way, so the line is not printed.
+  const one = gexRead({ row: { spot: 717, flipLevel: 700, flipZoneLo: 690, flipZoneHi: 695,
+                               callWall: 730, putWall: 700, gexUsd: 1e9, asOf: '2026-09-08T13:40:00Z' },
+                        grid: { frontShare: 100, frontExpiry: 'x', dominated: false, expiries: [E('x', 100, 700, 730)] },
+                        now: new Date('2026-09-08T13:45:00Z'), live: true });
+  ok('one expiry says nothing about holding across expiries', !/expiries peaks|walls hold across/.test(one.lines.join(' ')));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
