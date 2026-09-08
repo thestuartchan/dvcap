@@ -240,7 +240,7 @@ const row = (o = {}) => ({
   const d = card.embeds[0].description;
 
   eq('there is exactly one embed', card.embeds.length, 1);
-  ok('the header leads it', d.startsWith('**Wallet · today**'));
+  ok('the header leads it', d.startsWith('**Wallet**'));
   ok('then the day', d.split('\n\n')[1] === '_No changes today._');
   for (const c of ['Ethereum', 'Arbitrum', 'Robinhood Chain'])
     ok(`${c} is a heading inside it`, d.includes(`**${chainMark(c)} ${c}**`));
@@ -425,8 +425,9 @@ const row = (o = {}) => ({
   const rows = [h('PONS', 'Robinhood Chain'), h('NUDES', 'Robinhood Chain')];
 
   const bare = buildWalletCard([], rows).embeds[0];
-  ok('there is no title field to swallow an emoji', !('title' in bare));
-  ok('the header is the first line instead', bare.description.startsWith('**Wallet · today**'));
+  eq('the title says what the message is, in plain text', bare.title, 'Daily Summary');
+  ok('and carries no emoji, because a title cannot render one', !/<:/.test(bare.title));
+  ok('the mark belongs on the first description line', bare.description.startsWith('**Wallet**'));
   eq('and with nothing configured it carries no mark', headerMark({}), '');
 
   // Configured, it lands in the description where Discord will actually draw it.

@@ -161,8 +161,9 @@ Used only in that flat layout, where nothing else says which chain a row belongs
 
 ### The header mark
 
-The card's own header takes a mark too, under the reserved key `Wallet` in the same map — a wallet
-icon in front of "Wallet · today". It is not a chain, so it is not in the built-in table; unset, the
+The card carries two headers doing different jobs. The embed **title** says what the message is —
+`Daily Summary` — and is plain text. The first **description** line says whose wallet, and that is
+where the mark goes, under the reserved key `Wallet` in the same map. It is not a chain, so it is not in the built-in table; unset, the
 header simply reads without one.
 
 **The header is the description's first line, not the embed title.** Discord renders a custom emoji
