@@ -38,6 +38,7 @@ import { handoffChain } from "../lib/handoff.js";
 import { coreSpread } from "../lib/inflation.js";
 import HOLIDAYS from "../data/holidays.json";
 import { SEC_YIELDS, PROXY, secYieldProxy, proxyDivergence, apyFromSec, billFromDiscount, BILL_DAYS, compareCash } from "../lib/cashyield.js";
+import { COMPANY_NAMES } from '../lib/companyNames.js';  // one map, shared with the trade console
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
 const SC = ["#1E40AF","#166534","#D97706","#6D28D9","#B45309","#BE185D","#0F766E","#F59E0B"];
@@ -2541,44 +2542,6 @@ async function persistFunds(funds) {
 }
 
 // ─── TICKER → COMPANY NAME MAP ───────────────────────────────────────────────
-const COMPANY_NAMES = {
-  AAPL:"Apple", AXP:"American Express", KO:"Coca-Cola", BAC:"Bank of America",
-  CVX:"Chevron", OXY:"Occidental Petroleum", GOOGL:"Alphabet (Google)",
-  CB:"Chubb", MCO:"Moody's", DAL:"Delta Air Lines", BN:"Brookfield Asset Mgmt",
-  AMZN:"Amazon", UBER:"Uber", MSFT:"Microsoft", QSR:"Restaurant Brands",
-  HHH:"Howard Hughes", FNMA:"Fannie Mae", SPY:"S&P 500 ETF", IVV:"iShares S&P 500",
-  NVDA:"Nvidia", AVGO:"Broadcom", MU:"Micron Technology", ORCL:"Oracle",
-  TSM:"Taiwan Semiconductor", NTRA:"Natera", ETHB:"Ethereum ETF",
-  INSM:"Insmed", EWZ:"Brazil ETF", ARGT:"Argentina ETF", SNDK:"SanDisk",
-  HUM:"Humana", "JD.com":"JD.com", INTC:"Intel", HOOD:"Robinhood",
-  BABA:"Alibaba", META:"Meta Platforms", CRWD:"CrowdStrike", W:"Wayfair",
-  GDX:"Gold Miners ETF", GDXJ:"Junior Gold Miners ETF", RING:"Global Gold Miners ETF",
-  AEM:"Agnico Eagle", NEM:"Newmont", ABX:"Barrick Mining", WPM:"Wheaton Precious Metals",
-  XLP:"Consumer Staples ETF", PG:"Procter & Gamble", PEP:"PepsiCo",
-  WMT:"Walmart", COST:"Costco", MDLZ:"Mondelez",
-  TLT:"20+ Year Treasury ETF", IEF:"7-10 Year Treasury ETF",
-  ZROZ:"25+ Zero Coupon ETF", BIL:"1-3 Month T-Bill ETF",
-  LAND:"Gladstone Land", FPI:"Farmland Partners",
-  EPD:"Enterprise Products", ET:"Energy Transfer", MPLX:"MPLX LP",
-  KMI:"Kinder Morgan", AMLP:"Alerian MLP ETF",
-  O:"Realty Income", NNN:"NNN REIT", WPC:"W.P. Carey", STAG:"STAG Industrial",
-  JNJ:"Johnson & Johnson", SCHD:"Schwab Dividend ETF", VIG:"Vanguard Div. Appreciation",
-  JEPI:"JPMorgan Equity Premium", JEPQ:"JPMorgan Nasdaq Premium",
-  XYLD:"Global X S&P 500 Covered Call", PFF:"iShares Preferred Securities",
-  PFFD:"Global X Preferred ETF", SGOV:"0-3 Month T-Bill ETF",
-  USFR:"WisdomTree Floating Rate Treasury", ARM:"ARM Holdings",
-  SE:"Sea Ltd", GEV:"GE Vernova", LRCX:"Lam Research", SPOT:"Spotify",
-  CPNG:"Coupang", AMAT:"Applied Materials", CPAY:"Corpay", GOOG:"Alphabet (Google)",
-  VST:"Vistra", EWY:"South Korea ETF", NRG:"NRG Energy", GLW:"Corning", WHR:"Whirlpool",
-  CRM:"Salesforce", ADBE:"Adobe", BKNG:"Booking Holdings", AMD:"Adv. Micro Devices",
-  RSP:"S&P 500 Equal-Weight ETF", YPF:"YPF SA", WWD:"Woodward", TEVA:"Teva Pharma",
-  CAI:"Caris Life Sciences", STX:"Seagate Technology",
-  "EUROB.AT":"Eurobank Ergasias (Greece)", FFXDF:"Fairfax India Holdings",
-  KW:"Kennedy-Wilson", BB:"BlackBerry", ORLA:"Orla Mining",
-  FRFHF:"Fairfax Financial (buybacks)", CIBEY:"Commercial Int'l Bank (Egypt)",
-  "DXT.TO":"Dexterra Group",
-  Other:"Various",
-};
 function Pill({ label, color, bg, bdr }) {
   return (
     <span style={{ background: bg || color + "18", color, border: "1.5px solid " + (bdr || color + "44"), borderRadius: 6, padding: "3px 9px", fontSize: 12, fontWeight: 800 }}>

@@ -32,6 +32,8 @@ import { stopWidth, ATR_STATUS } from "../lib/atr.js";
 import { preTradeGuards, guardStates } from "../lib/guards.js";
 import { riskCoverage, rowExposure, stopOf } from "../lib/exposure.js";
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
+import { companyName } from "../lib/companyNames.js";
+import { moveOnto } from "../lib/reorder.js";
 
 // Shown in the sizing note; kept a constant so the copy and the cap cannot drift apart.
 const CREDIT_DANGER_CAP_LABEL = `×${CREDIT_DANGER_CAP.toFixed(2)}`;
@@ -337,7 +339,7 @@ const echoesDate = (label, iso) => {
   return hasDay && (t.includes(mon) || new RegExp(`\\b0?${+mm}\\b`).test(t));
 };
 
-const PositionRow = ({ r, mode, ctx }) => {
+const PositionRow = ({ r, mode, ctx, reorder = false, prevId = null, nextId = null }) => {
 const {
   prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel,
   openFill, delFill, fillFor, sizeOpen, setSizeOpen, justMoved, drafts, setDraft, clearDraft, chip, ccyChip, fitChip,
@@ -379,9 +381,18 @@ const {
     : sizeMode === "risk" && !stopLevel ? "add a stop and this will size the trade for you"
     : "set your account equity to size this";
   const anyHit = active.some(l => levelHit(l, price, r.side));
+  // DRAG FROM THE GRIP, NOT THE ROW. The row body opens and closes on click, and making the whole
+  // thing draggable turns every mis-timed click into a drag — so `draggable` sits on the grip alone
+  // and the row only listens for the drop. The grip also stops the click from bubbling, or picking
+  // it up would toggle the row open underneath the drag.
+  const reorderable = reorder && !!ctx.dropRow;
+  const dragging = ctx.dragId === r.id;
   return (
     <div className={justMoved === r.id ? "dvcap-row-in dvcap-flash" : "dvcap-row-in"}
-      style={{ border: "1.5px solid " + (anyHit ? C.amber : C.bdr), borderLeft: "4px solid " + (anyHit ? C.amber : mode === "open" ? C.blue : C.bdr), borderRadius: 10, overflow: "hidden" }}>
+      onDragOver={reorderable && ctx.dragId ? (e => e.preventDefault()) : undefined}
+      onDrop={reorderable && ctx.dragId ? (e => { e.preventDefault(); ctx.dropRow(ctx.dragId, r.id); ctx.setDragId(null); }) : undefined}
+      style={{ border: "1.5px solid " + (anyHit ? C.amber : C.bdr), borderLeft: "4px solid " + (anyHit ? C.amber : mode === "open" ? C.blue : C.bdr), borderRadius: 10, overflow: "hidden",
+               opacity: dragging ? 0.45 : 1 }}>
       {/* The row is TWO blocks, not one wrapping run: an info block that flexes and wraps inside
           itself, and an action block that never leaves the top line. Letting the whole row wrap put
           0981.HK's buttons on a second line purely because its label was two words long. */}
@@ -394,11 +405,45 @@ const {
             right of the second. Previously the entry date sat between the symbol and the price,
             splitting the identity from the quote and putting position data on the wrong side of
             the row. */}
+        {/* MOVE BY BUTTON AS WELL AS BY DRAG. Drag is the fast way and the only way that is no way
+            at all on a touch screen or a keyboard, so the same reorder is always reachable as two
+            buttons. They are the accessible path, not a fallback nobody tested. */}
+        {reorderable && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 1, flex: "0 0 auto" }}
+                onClick={e => e.stopPropagation()}>
+            <span draggable
+                  onDragStart={e => { ctx.setDragId(r.id); e.dataTransfer.effectAllowed = "move"; }}
+                  onDragEnd={() => ctx.setDragId(null)}
+                  title="Drag to reorder"
+                  style={{ cursor: "grab", color: C.muted, fontSize: 13, padding: "0 3px", userSelect: "none" }}>⠿</span>
+            {/* MOVED PAST THE VISIBLE NEIGHBOUR, not by one index in `rows`. The stored array
+                interleaves setups and open positions, so "down one" there could swap a position
+                with a setup that this section does not render — the click would land, the state
+                would change, and nothing on screen would move. Targeting the neighbour the reader
+                can actually see makes the button mean what it looks like it means. */}
+            <button onClick={() => prevId && ctx.dropRow(r.id, prevId)} disabled={!prevId} title="Move up"
+                    style={{ cursor: prevId ? "pointer" : "default", background: "none", border: "none",
+                             color: prevId ? C.muted : C.bdr, fontSize: 10, lineHeight: 1, padding: "1px 2px" }}>▲</button>
+            <button onClick={() => nextId && ctx.dropRow(r.id, nextId)} disabled={!nextId} title="Move down"
+                    style={{ cursor: nextId ? "pointer" : "default", background: "none", border: "none",
+                             color: nextId ? C.muted : C.bdr, fontSize: 10, lineHeight: 1, padding: "1px 2px" }}>▼</button>
+          </span>
+        )}
         <span style={{ display: "inline-flex", alignItems: "baseline", gap: 7, minWidth: 0 }}>
           <b style={{ fontSize: 15 }}>{r.symbol}</b>
           {/* A label that just restates the ticker ("AMD" on AMD) is noise, so it is dropped. */}
           {r.trade && r.trade.trim().toUpperCase() !== r.symbol.toUpperCase()
             ? <span style={{ fontSize: 11.5, color: C.mid, fontWeight: 700, background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6, padding: "1px 7px", whiteSpace: "nowrap" }}>{r.trade}</span> : null}
+          {/* THE NAME, when nothing else already says it. A ticker is an identifier, not a memory
+              aid — six months on, FRFHF and CIBEY are lookups. It comes from lib/companyNames.js,
+              the same map the dashboard uses, and it is skipped when `r.trade` is already carrying
+              a label so the row never says the same thing twice. No entry means no name and a bare
+              ticker, exactly as before: a guessed name would be worse than none. Muted and last in
+              the identity group, because the ticker is still what you scan for. */}
+          {!r.trade && companyName(r.symbol)
+            ? <span style={{ fontSize: 11.5, color: C.muted, fontWeight: 500, whiteSpace: "nowrap",
+                             overflow: "hidden", textOverflow: "ellipsis", maxWidth: 190 }}
+                    title={companyName(r.symbol)}>{companyName(r.symbol)}</span> : null}
           {d.multiplier > 1 ? chip(`×${d.multiplier}`, C.amber, C.aBg, C.aBdr) : null}
           {/* SHORT IS MARKED, LONG IS NOT. Every number on a short row is the mirror of the one a
               reader expects — the stop is above, the target below, and a falling price is a gain —
@@ -989,16 +1034,32 @@ const {
   );
 };
 
-const Section = ({ title, note, list, mode, ctx }) => (
+const Section = ({ title, note, list, mode, ctx, reorder = false, sort = null }) => (
   <Card>
     <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: list.length ? 10 : 0 }}>
       <SLabel>{title}</SLabel>
       <span style={{ fontSize: 12, color: C.muted }}>{list.length}</span>
       {note && <span style={{ fontSize: 11.5, color: C.lbl }}>{note}</span>}
+      {/* The sort is a CHOICE, shown where the order it controls is. Size stays the default because
+          the biggest position is the one most worth a second look; Custom hands the order over and
+          turns the drag handles on. */}
+      {sort && list.length > 1 && (
+        <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <span style={{ fontSize: 11, color: C.muted }}>order</span>
+          {[["size", "Size"], ["manual", "Custom"]].map(([v, lbl]) => (
+            <button key={v} onClick={() => sort.set(v)}
+              style={{ cursor: "pointer", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
+                       background: sort.value === v ? C.blBg : "transparent",
+                       color: sort.value === v ? C.blue : C.muted,
+                       border: "1px solid " + (sort.value === v ? C.blBdr : C.bdr) }}>{lbl}</button>
+          ))}
+        </span>
+      )}
     </div>
     {list.length === 0
       ? <div style={{ fontSize: 12.5, color: C.muted, fontStyle: "italic", marginTop: 8 }}>Nothing here yet.</div>
-      : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{list.map(r => <PositionRow key={r.id} r={r} mode={mode} ctx={ctx} />)}</div>}
+      : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{list.map((r, i) => <PositionRow key={r.id} r={r} mode={mode} ctx={ctx} reorder={reorder}
+          prevId={i > 0 ? list[i - 1].id : null} nextId={i < list.length - 1 ? list[i + 1].id : null} />)}</div>}
   </Card>
 );
 
@@ -1533,6 +1594,20 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   };
   const upd = (id, patch) => { setRows(p => p.map(r => r.id === id ? { ...r, ...patch } : r)); touch(); };
 
+  // ── REORDERING ────────────────────────────────────────────────────────────
+  // The order lives in `rows` itself rather than in a separate list of ids, so it persists with
+  // everything else and cannot drift out of step with the positions it describes. lib/reorder.js
+  // holds the arithmetic; these only decide when to save.
+  const dropRow = (dragId, overId) => setRows(p => { const n = moveOnto(p, dragId, overId); if (n !== p) touch(); return n; });
+  const [dragId, setDragId] = useState(null);
+
+  // Open positions sort biggest-first by default and that rule earns its keep — the position
+  // carrying most of the book is the one that most deserves a second look. So manual order is an
+  // opt-in per section rather than a replacement: switching to Custom stops the sort and hands the
+  // order over. Setups have no such rule and are always in your order.
+  const openSort = settings.openSort === 'manual' ? 'manual' : 'size';
+  const setOpenSort = (v) => { setSettings(s => ({ ...s, openSort: v })); touch(); };
+
   // Replace one row with one row PER TRADE, in place so the order of the book is preserved. Each
   // new row inherits the thesis and levels but gets its own id and a date-range label, because from
   // here on they have separate lifecycles — one may be closed and archived while another runs. The
@@ -1839,6 +1914,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
     // otherwise, which is the ordinary case — the liquidation read falls back to its estimate and
     // says which it is showing.
     livePositions,
+    dropRow, dragId, setDragId,
   };
 
   return (
@@ -2294,13 +2370,15 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
         </div>
       </Card>
 
-      <Section title="Setups — waiting" note="no position yet; levels are being watched" list={setups} mode="setup" ctx={ctx} />
+      {/* Setups have no size to sort by and no rule worth keeping, so they are simply in your
+          order, always. */}
+      <Section title="Setups — waiting" note="no position yet; levels are being watched" list={setups} mode="setup" ctx={ctx} reorder />
       {/* Biggest first. Import order is meaningless, and the position that most deserves a second
           look each morning is the one carrying the most of the book. Rows whose market value cannot
           be converted sort last rather than to the top as a zero. */}
       <Section title="Open positions" note="spot / swing holds, scaled in and out"
-        list={[...openPos].sort((a, b) => (convert(b.pnl.marketValue, b.currency || "USD", baseCcy, fxRates) ?? -1) - (convert(a.pnl.marketValue, a.currency || "USD", baseCcy, fxRates) ?? -1))}
-        mode="open" ctx={ctx} />
+        list={openSort === "manual" ? openPos : [...openPos].sort((a, b) => (convert(b.pnl.marketValue, b.currency || "USD", baseCcy, fxRates) ?? -1) - (convert(a.pnl.marketValue, a.currency || "USD", baseCcy, fxRates) ?? -1))}
+        mode="open" ctx={ctx} reorder={openSort === "manual"} sort={{ value: openSort, set: setOpenSort }} />
 
       {/* ── THE PERP BOOK, AS THE VENUE HAS IT ─────────────────────────────────────────────────
           The address was configured and nothing appeared, because live positions only rendered
