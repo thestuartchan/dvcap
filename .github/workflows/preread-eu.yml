@@ -1,0 +1,42 @@
+# The EU pre-read, which had no schedule at all until now.
+#
+# WHY IT WAS MISSING. vercel.json holds two cron entries because the Hobby plan allows two, and Asia
+# and US held both. The endpoint has always supported ?region=eu — it was reachable by hand and by
+# nothing else, so it simply never fired.
+#
+# WHY ONE ENTRY COVERS THE YEAR. The brief targets 09:00 London with a 15-minute lead, and the
+# endpoint gates on the region's REAL local time (DST-aware via Intl) rather than on the cron's UTC
+# hour. 08:42 UTC lands inside the accept window on both a BST day and a GMT day — checked against
+# prereadWindow for 2026-09-03 and 2026-12-03 — so unlike a naive UTC schedule this needs no second
+# candidate hour and cannot post twice.
+#
+# The endpoint is deliberately public (scripts/check-api-auth.mjs records why: a run must be
+# triggerable by hand), so this carries no secret. Its own gates do the work — no session, already
+# posted, and outside the window each refuse on their own.
+name: preread eu
+
+on:
+  schedule:
+    - cron: '42 8 * * 1-5'
+  workflow_dispatch:
+
+concurrency:
+  group: preread-eu
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Post the EU pre-read
+        run: |
+          code=$(curl -sS -o /tmp/out.json -w '%{http_code}' --max-time 120 \
+            "https://dvcap.vercel.app/api/preread?region=eu&post=1&cron=1") || true
+          echo "HTTP $code"; head -c 2000 /tmp/out.json; echo
+          [ "$code" = "200" ] || exit 1
+          # A refusal is a 200 with a reason — a holiday, a weekend, already posted, or outside the
+          # window. Those are the gates working, not a failed run, so they are surfaced and not red.
+          if grep -q '"skipped":true' /tmp/out.json; then
+            echo "::notice::Skipped, by one of the delivery gates. See the reason above."
+          fi

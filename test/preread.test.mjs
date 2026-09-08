@@ -1,5 +1,5 @@
 // test/preread.test.mjs — the delivery window.
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { localDateIn, localMinutesOfDay, localWeekday, isWeekendIn, closedExchanges, localDateStr } from '../lib/sessions.js';
 //
 // The whole daily brief hangs on this arithmetic and it had never been pinned. The Asia brief was
@@ -313,19 +313,38 @@ ok('an hour late does not', !at(7, 40, 7).accept);
   const at = (iso) => new Date(iso);
 
   // THE DRIFT GUARD. SCHEDULED_REGIONS is named in lib/preread.js because a serverless function
-  // should not depend on vercel.json being bundled beside it — so this asserts the two agree. Add
-  // an EU cron and this fails until the list is updated, which is the point of writing it down.
+  // should not depend on a config file being bundled beside it — so this asserts the name agrees
+  // with what is ACTUALLY scheduled. It now reads BOTH schedulers, because scheduling moved: Vercel
+  // Hobby allows two crons, Asia and US hold them, and EU runs from a GitHub workflow instead.
+  //
+  // Reading both is what keeps the guard honest. Checking vercel.json alone would have called EU
+  // unscheduled while a workflow fired it every weekday — the same drift this test exists to catch,
+  // just pointing the other way.
   const crons = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8')).crons || [];
-  const scheduled = [...new Set(crons.map(c => (String(c.path).match(/region=(\w+)/) || [])[1]).filter(Boolean))].sort();
-  eq('the declared regions are the ones vercel.json actually schedules', [...SCHEDULED_REGIONS].sort(), scheduled);
-  eq('and there are two of them, which is the Hobby cap', crons.length, 2);
+  const wfDir = new URL('../.github/workflows/', import.meta.url);
+  const wfRegions = readdirSync(wfDir)
+    .filter(f => f.endsWith('.yml') || f.endsWith('.yaml'))
+    .flatMap(f => {
+      const src = readFileSync(new URL(f, wfDir), 'utf8');
+      // Only a file that actually carries a `schedule:` block is scheduling anything — a
+      // workflow_dispatch-only helper that happens to mention the endpoint is not a cron.
+      if (!/^\s*schedule:/m.test(src)) return [];
+      return [...src.matchAll(/api\/preread\?region=(\w+)/g)].map(m => m[1]);
+    });
+  const scheduled = [...new Set([
+    ...crons.map(c => (String(c.path).match(/region=(\w+)/) || [])[1]).filter(Boolean),
+    ...wfRegions,
+  ])].sort();
+  eq('the declared regions are the ones actually scheduled, wherever the timer lives',
+     [...SCHEDULED_REGIONS].sort(), scheduled);
+  eq('vercel still holds two, which is the Hobby cap', crons.length, 2);
+  ok('and EU is the one that had to move off it', wfRegions.includes('eu'));
 
-  // EU is in the universe and monitored by nothing.
+  // EU is a real region and is now watched like the others.
   ok('EU is a real region', !!UNIVERSE.eu);
-  ok('but it is not scheduled', !SCHEDULED_REGIONS.includes('eu'));
+  ok('and it is scheduled', SCHEDULED_REGIONS.includes('eu'));
   const rows = prereadStatus({}, { ...deps, now: at('2026-09-08T14:00:00Z') });
-  eq('so it is not monitored at all', rows.map(r => r.region).sort(), ['asia', 'us']);
-  ok('and can never be reported missed', !prereadMissed(rows).some(r => r.region === 'eu'));
+  eq('so it is monitored', rows.map(r => r.region).sort(), ['asia', 'eu', 'us']);
   // Opting back in stays possible, for a caller that wants the whole universe.
   eq('passing scheduled: null watches everything',
      prereadStatus({}, { ...deps, scheduled: null, now: at('2026-09-08T14:00:00Z') }).map(r => r.region).sort(),
@@ -341,9 +360,10 @@ ok('an hour late does not', !at(7, 40, 7).accept);
   ok('so nothing is flagged for it', !prereadMissed(labor).some(r => r.region === 'us'));
   ok('and the row says why', labor.find(r => r.region === 'us').noSession === true);
 
-  // A weekend, both regions, in their own local dates.
+  // A weekend, every region, in its own local date — three of them now that EU is scheduled.
   const sat = prereadStatus({}, { ...deps, now: at('2026-09-05T14:00:00Z') });
-  eq('a weekend is no session either', sat.map(r => r.state), ['no-session', 'no-session']);
+  eq('a weekend is no session either', sat.map(r => r.state), ['no-session', 'no-session', 'no-session']);
+  eq('and that covers all three regions', sat.length, SCHEDULED_REGIONS.length);
   eq('and flags nothing', prereadMissed(sat).length, 0);
 
   // THE GUARD MUST NOT OVER-SUPPRESS. An ordinary trading day with nothing delivered past the
