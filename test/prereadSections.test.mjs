@@ -75,6 +75,26 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
   ok('the rung is labelled', /one settlement behind/.test(out));
   ok('with the date it came from', /2026-09-08/.test(out));
 
+  // ── TENSE ──────────────────────────────────────────────────────────────────
+  // The Asia brief fires at 23:13 UTC against a US close of 20:00 and printed "35% of QQQ's book
+  // expires today ... which holds it there until the last hour" — present tense, under a heading
+  // saying "today", about options that had expired three hours earlier.
+  const closed = renderGexSection(rows, { rung: 'stored', from: '2026-09-09', tense: 'closed' });
+  ok('a finished session makes no claim about a pin', !/expires today/.test(closed));
+  ok('nor about holding anything', !/holds it there|free to trend/.test(closed));
+  ok('it reports where price finished instead', /closed below its pivot/.test(closed));
+  ok('and says the expiry is gone', /expiry is gone/.test(closed));
+  ok('and that settlement will move it', /overnight settlement/.test(closed));
+  // The map itself still renders — where the US finished IS the handoff the next session opens on.
+  ok('the map survives the tense change', closed.includes('```'));
+
+  eq('an expired pin is never pinned', pinOf(
+    { expiries: [{ expiry: '2026-09-09', shareOfAbs: 35, peakPutStrike: 716, peakCallStrike: 717 }] },
+    { spot: 716.27, today: '2026-09-09', expired: true }).pinned, false);
+  ok('though the same book pins before the close', pinOf(
+    { expiries: [{ expiry: '2026-09-09', shareOfAbs: 35, peakPutStrike: 716, peakCallStrike: 717 }] },
+    { spot: 716.27, today: '2026-09-09', expired: false }).pinned);
+
   const asTaken = renderGexSection(rows, { rung: 'stored', from: '2026-09-08' });
   ok('an unrepriced read says the pivot is not now\'s', /not repriced/.test(asTaken));
   eq('nothing stored renders nothing', renderGexSection(rows, { rung: 'none' }), null);
@@ -151,6 +171,63 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
     eq(`no "${w}" anywhere in the watchlist`, new RegExp(w, 'i').test(bare), false);
   }
   eq('it takes exactly names and a quote fn', /export function watchlist\(names = \[\], quote = /.test(bare), true);
+}
+
+// ── THE ADJACENT INSTRUMENT ──────────────────────────────────────────────────
+// DIRECTIONAL, because one ticker per name only works if you are always long. A falling name wants
+// the inverse. Pointing a reader at an instrument that moves AGAINST the observation it is attached
+// to is worse than showing nothing, and the risk is measured rather than theoretical: RGTZ reads
+// like a 2x long RGTI and is a 2x SHORT. It was in the map as `up` until its owner corrected it.
+{
+  const { ADJACENT, adjacentFor, renderAdjacent } = await import('../data/adjacent.js');
+  const { WATCH_UNIVERSE, IN_WATCH_UNIVERSE } = await import('../data/watchUniverse.js');
+
+  eq('a rising name gets the leveraged long', renderAdjacent('META', 2.1), ' [METU 2x]');
+  eq('a falling one gets the inverse', renderAdjacent('META', -2.1), ' [METD -1x]');
+  // THE ONE THAT WAS WRONG.
+  eq('RGTZ is the SHORT side, not the long', ADJACENT.RGTI.down, 'RGTZ');
+  eq('and RGTX is the long', ADJACENT.RGTI.up, 'RGTX');
+  eq('so a falling RGTI points at RGTZ', renderAdjacent('RGTI', -5), ' [RGTZ -2x]');
+  eq('and a rising one at RGTX', renderAdjacent('RGTI', 5), ' [RGTX 2x]');
+
+  // Venue marked only when it is not US, because the core ticker decides the brief and a reader
+  // must not reach for a Hong Kong product in a US session.
+  ok('a non-US product carries its venue', /HKEX/.test(renderAdjacent('000660.KS', 3.5)));
+  ok('a US one does not', !/US|NASDAQ|NYSE/.test(renderAdjacent('META', 2.1)));
+  // CSOP moved to a flexible factor on 2026-08-03: up to 2x, varying daily. Stated as a maximum.
+  ok('a flexible factor is not stated as a constant', /up to 2x/.test(renderAdjacent('000660.KS', 3.5)));
+
+  // MISSING SIDES RENDER AS NOTHING. SK Hynix has a 2x long and no inverse; inventing one is the
+  // most expensive kind of helpful.
+  eq('no inverse means no bracket', renderAdjacent('000660.KS', -3.5), '');
+  eq('nor for a name with no products at all', renderAdjacent('ZETA', 3), '');
+  eq('a flat move gets nothing either way', renderAdjacent('META', 0), '');
+  eq('and an unreadable move likewise', renderAdjacent('META', null), '');
+  eq('adjacentFor returns null rather than a blank', adjacentFor('ZETA', 3), null);
+
+  // ── THE UNIVERSE ───────────────────────────────────────────────────────────
+  // By CORE ticker: nothing Hong Kong-listed reaches the US brief even though CSOP lists leveraged
+  // products on US stocks there, and nothing US-listed is filed under Asia.
+  ok('the US list holds no HK, KR, TW or SG symbols',
+    WATCH_UNIVERSE.us.every(t => !/\.(HK|KS|TW|SI)$/.test(t)));
+  ok('the Asia list is entirely Asian venues',
+    WATCH_UNIVERSE.asia.every(t => /\.(HK|KS|TW|SI|T)$/.test(t)));
+  ok('and the EU list entirely European',
+    WATCH_UNIVERSE.eu.every(t => /\.(L|AS|PA|DE)$/.test(t)));
+
+  // LEVERAGED PRODUCTS ARE BRACKETS, NOT ENTRIES. All five were in the source list and were moved
+  // rather than dropped — a leveraged product is a way to express a view on something else.
+  for (const t of ['AMDL', 'IRE', 'RGTZ', 'TSLL', 'UNHG']) {
+    eq(`${t} is not a watchlist entry`, IN_WATCH_UNIVERSE.has(t), false);
+  }
+  ok('but each still appears as a bracket',
+    ['AMD', 'IREN', 'RGTI', 'TSLA', 'UNH'].every(c => ADJACENT[c]));
+  // And their underlyings ARE entries, which is the whole point of the swap.
+  ok('while their underlyings are', ['AMD', 'IREN', 'RGTI', 'TSLA', 'UNH'].every(c => IN_WATCH_UNIVERSE.has(c)));
+
+  ok('the universe is not trivially small', IN_WATCH_UNIVERSE.size > 100);
+  eq('no symbol is filed under two regions',
+    IN_WATCH_UNIVERSE.size, Object.values(WATCH_UNIVERSE).flat().length);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
