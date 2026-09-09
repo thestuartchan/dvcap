@@ -20,6 +20,7 @@ import { renderReadLines } from '../lib/read.js';
 import { readGex, repriceStored, GEX_SYMBOLS } from '../lib/gexStore.js';
 import { renderGexSection, pinOf } from '../lib/gexBrief.js';
 import { watchlist, renderWatchlist } from '../lib/watchlist.js';
+import { WATCH_UNIVERSE } from '../data/watchUniverse.js';
 
 
 function fmtPct(p) { return p == null ? '—' : `${p > 0 ? '+' : ''}${p.toFixed(1)}%`; }
@@ -500,11 +501,30 @@ async function runRegion(region, req) {
   // PUBLIC CHANNEL. Candidates are the region's configured universe and nothing else — lib/
   // watchlist.js takes no argument through which a holding could reach it.
   try {
+    // The WATCH universe, not the semis `names` block. The old scan could only see 10 US names —
+    // of the 24 roots actually traded in the last quarter it could see two — so it was answering
+    // "what is moving in semiconductors" under a heading that promised something else.
     const byS = new Map(quotes.map(q => [q.sym, q]));
-    blocks.watchLines = renderWatchlist(watchlist(R.names, sym => {
-      const q = byS.get(sym); if (!q) return null;
-      const d = displayQuote(q, region);
-      return { price: d.price, changePercent: d.changePct };
+    const wu = (WATCH_UNIVERSE[region] || []).map(sym => ({ name: sym, sym, role: null }));
+    const extra = wu.filter(n => !byS.has(n.sym)).map(n => n.sym);
+    // One batched quote for whatever the region's own fetch did not already cover.
+    let more = {};
+    if (extra.length) {
+      try {
+        // Same deployment, so the origin comes off the request rather than being configured —
+        // a hardcoded host is one preview deployment away from quoting production's prices.
+        const proto = req.headers?.['x-forwarded-proto'] || 'https';
+        const base = `${proto}://${req.headers?.host}`;
+        const r = await fetch(`${base}/api/prices?tickers=${encodeURIComponent(extra.join(','))}`,
+          { headers: { cookie: req.headers?.cookie || '' } });
+        if (r.ok) more = await r.json();
+      } catch { /* the watchlist thins rather than the brief failing */ }
+    }
+    blocks.watchLines = renderWatchlist(watchlist(wu, sym => {
+      const q = byS.get(sym);
+      if (q) { const d = displayQuote(q, region); return { price: d.price, changePercent: d.changePct }; }
+      const m = more[sym];
+      return m?.price != null ? { price: m.price, changePercent: m.changePercent } : null;
     }));
   } catch { blocks.watchLines = null; }
   // The READ is the COMPOSED, deterministic one (lib/read.js) — same text the dashboard
