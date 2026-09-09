@@ -70,6 +70,78 @@ function Stat({ label, value, sub, color }) {
   );
 }
 
+// ── THE SECOND OPINION ───────────────────────────────────────────────────────
+// Every defect found in this panel so far was found by someone comparing it to an outside source
+// and noticing a disagreement. This does that on every capture, against CBOE's own open interest,
+// implied vols and per-contract gamma — so the walls on the right of each row came from their data
+// through their model, with none of this project's Black-Scholes in the path.
+//
+// The independence is claimed exactly as far as it goes. The flip is absent on purpose: solving one
+// means repricing gamma at hypothetical spots, and CBOE publishes gamma only at the current spot,
+// so any flip computed here would be their inputs through our model — a weaker claim wearing the
+// same badge. Spot appears greyed and unscored, because two chains fetched a minute apart cannot
+// have the same spot and scoring it would make the check fire daily for the one reason that is not
+// a defect.
+const XSTATE = {
+  match:   { mark: "✓", color: "green" },
+  near:    { mark: "≈", color: "amber" },
+  differ:  { mark: "✗", color: "purple" },
+  unknown: { mark: "·", color: "muted" },
+  context: { mark: "·", color: "muted" },
+};
+function CrossCheck({ x }) {
+  if (!x) return null;
+  if (!x.ok) {
+    return (
+      <div style={{ marginTop: 9, fontSize: 11.5, color: C.muted, paddingTop: 8, borderTop: "1px solid " + C.bdr }}>
+        <b style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase" }}>Cross-check </b>
+        unavailable — {x.reason}. The figures above are unverified against a second source.
+      </div>
+    );
+  }
+  const tone = x.clean ? C.green : C.purple;
+  return (
+    <div style={{ marginTop: 9, paddingTop: 8, borderTop: "1px solid " + C.bdr }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <b style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase" }}>Cross-check</b>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: tone }}>
+          {x.clean ? "✓" : "✗"} {x.verdict}
+        </span>
+        <span style={{ fontSize: 10.5, color: C.muted }}>
+          CBOE · their open interest, their vols, their gamma
+        </span>
+      </div>
+      <div style={{ marginTop: 6, display: "grid", gap: 3,
+                    gridTemplateColumns: "minmax(96px,auto) minmax(72px,auto) minmax(72px,auto) 1fr" }}>
+        {(x.checks || []).map(c => {
+          const st = XSTATE[c.state] || XSTATE.unknown;
+          const col = { green: C.green, amber: C.amber, purple: C.purple, muted: C.muted }[st.color];
+          return (
+            <Fragment key={c.name}>
+              <span style={{ fontSize: 11, color: c.score ? C.mid : C.muted }}>{st.mark} {c.name}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: c.score ? C.text : C.muted, fontVariantNumeric: "tabular-nums" }}>
+                {c.ours == null ? "—" : (+c.ours).toLocaleString()}
+              </span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: col, fontVariantNumeric: "tabular-nums" }}>
+                {c.theirs == null ? "—" : (+c.theirs).toLocaleString()}
+              </span>
+              <span style={{ fontSize: 10.5, color: C.muted, lineHeight: 1.45 }}>{c.detail}</span>
+            </Fragment>
+          );
+        })}
+      </div>
+      {/* The flip's absence is stated rather than left to be noticed, so nobody reads a clean
+          five-of-five as having verified the number the panel leads with. */}
+      <div style={{ marginTop: 5, fontSize: 10.5, color: C.muted, lineHeight: 1.5 }}>
+        The flip is not cross-checked: CBOE publishes gamma at the current spot only, and solving a
+        flip needs it repriced across a range — that would be their data through our model, which is
+        a different claim. Walls, open interest and vol are theirs end to end.
+        {x.asOf && ` Their snapshot ${new Date(x.asOf).toISOString().slice(11, 16)} UTC.`}
+      </div>
+    </div>
+  );
+}
+
 export function GexPanel() {
   const [symbol, setSymbol] = useState("QQQ");
   const [data, setData] = useState(null);
@@ -105,7 +177,8 @@ export function GexPanel() {
       // overlay. A live read that silently dropped the walls would be a downgrade, not a refresh.
       if (hit) setLive({ row: { ...(data?.latest || {}), ...hit.row, asOf: new Date().toISOString() },
                          byStrike: hit.byStrike || null, grid: hit.grid || null,
-                         mode: hit.mode || "fresh", note: hit.mode === "repriced" ? hit : null });
+                         mode: hit.mode || "fresh", note: hit.mode === "repriced" ? hit : null,
+                         crossCheck: hit.crossCheck ?? null });
       else setLive(null);
     } catch (e) {
       setLive(null);
@@ -282,6 +355,8 @@ export function GexPanel() {
             {latest.flipFragile ? "⚠ " : ""}{latest.flipNote}
           </div>
         )}
+        <CrossCheck x={live?.crossCheck ?? data?.latest?.crossCheck ?? null} />
+
         {/* The open-to-close change, which the overwrite used to destroy. It is a read on positioning
             decaying through the session, and on 2026-09-01 it was large enough to flip the flip
             from usable to unusable. */}
