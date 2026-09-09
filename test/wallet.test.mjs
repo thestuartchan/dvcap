@@ -122,16 +122,13 @@ const HOLDER = '0x000000000000000000000000000000000000dEaD';
     // is trusted with the answer; a logo endpoint is only ever handed to Discord to render, and a
     // wrong one shows the wrong picture. Splitting them keeps the RPC assertion exactly as strict
     // as it was — a new RPC still cannot appear here unnoticed just because logos exist now.
-    const logos = urls.filter(u => /icons\.llamao\.fi/.test(u));
+    const icons = urls.filter(u => /icons\.llamao\.fi/.test(u));
     const rpcs  = urls.filter(u => !/icons\.llamao\.fi/.test(u));
-    eq('every chain logo comes from the one source, so they read as a set', logos, [
-      'https://icons.llamao.fi/icons/chains/rsz_arbitrum?w=48&h=48',
-      'https://icons.llamao.fi/icons/chains/rsz_base?w=48&h=48',
-      'https://icons.llamao.fi/icons/chains/rsz_ethereum?w=48&h=48',
-      'https://icons.llamao.fi/icons/chains/rsz_hyperliquid?w=48&h=48',
-      'https://icons.llamao.fi/icons/chains/rsz_polygon?w=48&h=48',
-      'https://icons.llamao.fi/icons/chains/rsz_robinhood?w=48&h=48',
-    ]);
+    // ONE ICON NOW. The per-chain logo map went with the multi-embed layout that used it — a card
+    // is one embed and an embed has one author slot, which the wallet's own mark takes. What is
+    // left is that mark, and it is pinned so a second image cannot appear here unnoticed.
+    eq('the only image is the wallet mark', icons,
+       ['https://icons.llamao.fi/icons/protocols/metamask?w=48&h=48']);
     eq('and the registry names exactly the six verified ones', rpcs, [
       'https://arb1.arbitrum.io/rpc',
       'https://ethereum-rpc.publicnode.com',
