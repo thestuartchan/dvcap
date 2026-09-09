@@ -316,7 +316,7 @@ function buildKorea(k) {
 // `spot` comes from the live quote where the region has one — for the US that is the pre-market
 // print, which is the whole reason repricing is worth doing. Where no live spot is available the
 // stored row stands as captured and says so.
-async function gexBlock(liveSpot) {
+async function gexBlock(liveSpot, tense = 'preview') {
   const rows = [], vint = { rung: 'none', from: null, asOf: null };
   for (const sym of GEX_SYMBOLS) {
     try {
@@ -324,17 +324,18 @@ async function gexBlock(liveSpot) {
       const latest = stored?.latest;
       if (!latest?.spot) continue;
       const today = new Date().toISOString().slice(0, 10);
+      const expired = tense === 'closed';
       const spot = liveSpot?.(sym) ?? null;
 
       let row = null, rung = 'stored';
       if (spot > 0 && Math.abs(spot / latest.spot - 1) > 1e-9) {
         const rp = await repriceStored(sym, { spot });
         if (rp?.row) {
-          row = { ...rp.row, pin: pinOf(rp.grid, { spot, today }) };
+          row = { ...rp.row, pin: pinOf(rp.grid, { spot, today, expired }) };
           rung = 'repriced';
         }
       }
-      if (!row) row = { ...latest, pin: pinOf(stored.grid, { spot: latest.spot, today }) };
+      if (!row) row = { ...latest, pin: pinOf(stored.grid, { spot: latest.spot, today, expired }) };
 
       rows.push({ name: sym, spot: row.spot, putWall: row.putWall, callWall: row.callWall,
                   flipLevel: row.flipLevel, pin: row.pin });
@@ -345,7 +346,7 @@ async function gexBlock(liveSpot) {
     } catch { /* one symbol short is a smaller loss than no section */ }
   }
   if (!rows.length) return null;
-  return renderGexSection(rows, vint);
+  return renderGexSection(rows, { ...vint, tense });
 }
 
 function assembleDiscord(region, label, blocks, read) {
@@ -360,7 +361,7 @@ function assembleDiscord(region, label, blocks, read) {
     // FIRST, and deliberately. This is the layer a day trade is placed against, and the brief that
     // buried it under fifteen quoted names was answering a different question from the one the
     // reader opens it with.
-    ...(blocks.gexLines ? [`⚡ **TODAY'S MAP**\n${blocks.gexLines}`] : []),
+    ...(blocks.gexLines ? [`⚡ **${blocks.gexTense === 'closed' ? 'US HANDOFF' : "TODAY'S MAP"}**\n${blocks.gexLines}`] : []),
     ...(blocks.watchLines ? [`👀 **TODAY'S WATCHLIST**\n${blocks.watchLines}`] : []),
     // The handoff comes FIRST for a brief that fires after the US close and before this region
     // opens: it is the thing every line below reacts to.
@@ -487,7 +488,15 @@ async function runRegion(region, req) {
     const px = hit ? displayQuote(hit, region).price : null;
     return Number.isFinite(+px) && +px > 0 ? +px : null;
   };
-  try { blocks.gexLines = await gexBlock(liveSpot); } catch { blocks.gexLines = null; }
+  // ── WHOSE SESSION IS THIS MAP ABOUT? ───────────────────────────────────────
+  // Asia fires at 23:13 UTC against a US close of 20:00 — the book it would draw belongs to a
+  // session that is OVER, and its front expiry has expired. So Asia gets the handoff form: where
+  // the US finished against its book, one line per index, no pin and no map. EU (08:42) and the US
+  // (12:42) both fire before the open and get the full map, which for them is a preview of what
+  // the session runs into.
+  const usClosedNow = new Date().getUTCHours() * 60 + new Date().getUTCMinutes() >= 20 * 60;
+  const tense = (region === 'asia' || usClosedNow) ? 'closed' : 'preview';
+  try { blocks.gexLines = await gexBlock(liveSpot, tense); blocks.gexTense = tense; } catch { blocks.gexLines = null; }
   // PUBLIC CHANNEL. Candidates are the region's configured universe and nothing else — lib/
   // watchlist.js takes no argument through which a holding could reach it.
   try {

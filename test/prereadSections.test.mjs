@@ -75,6 +75,26 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
   ok('the rung is labelled', /one settlement behind/.test(out));
   ok('with the date it came from', /2026-09-08/.test(out));
 
+  // ── TENSE ──────────────────────────────────────────────────────────────────
+  // The Asia brief fires at 23:13 UTC against a US close of 20:00 and printed "35% of QQQ's book
+  // expires today ... which holds it there until the last hour" — present tense, under a heading
+  // saying "today", about options that had expired three hours earlier.
+  const closed = renderGexSection(rows, { rung: 'stored', from: '2026-09-09', tense: 'closed' });
+  ok('a finished session makes no claim about a pin', !/expires today/.test(closed));
+  ok('nor about holding anything', !/holds it there|free to trend/.test(closed));
+  ok('it reports where price finished instead', /closed below its pivot/.test(closed));
+  ok('and says the expiry is gone', /expiry is gone/.test(closed));
+  ok('and that settlement will move it', /overnight settlement/.test(closed));
+  // The map itself still renders — where the US finished IS the handoff the next session opens on.
+  ok('the map survives the tense change', closed.includes('```'));
+
+  eq('an expired pin is never pinned', pinOf(
+    { expiries: [{ expiry: '2026-09-09', shareOfAbs: 35, peakPutStrike: 716, peakCallStrike: 717 }] },
+    { spot: 716.27, today: '2026-09-09', expired: true }).pinned, false);
+  ok('though the same book pins before the close', pinOf(
+    { expiries: [{ expiry: '2026-09-09', shareOfAbs: 35, peakPutStrike: 716, peakCallStrike: 717 }] },
+    { spot: 716.27, today: '2026-09-09', expired: false }).pinned);
+
   const asTaken = renderGexSection(rows, { rung: 'stored', from: '2026-09-08' });
   ok('an unrepriced read says the pivot is not now\'s', /not repriced/.test(asTaken));
   eq('nothing stored renders nothing', renderGexSection(rows, { rung: 'none' }), null);
