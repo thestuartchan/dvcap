@@ -172,7 +172,19 @@ Used only in that flat layout, where nothing else says which chain a row belongs
 | Robinhood Chain | 🪶 |
 | anything else | ⬦ |
 
-### The header mark
+### The header mark — an image, no setup
+
+The card's header is the embed's **author**: the name (`Wallet`) and a real image beside it. An
+author icon takes an ordinary URL, so this needs nothing uploaded and no emoji id.
+
+That replaced a custom-emoji slot. The emoji worked in principle and the id turned out to be the
+hard part — and it was unnecessary: a card is one embed, an embed has exactly one author slot, and
+the header is exactly one thing.
+
+Custom emoji remain the only way to draw a logo **inline next to text**, which is what the chain
+headings inside the description need. Two different problems, two mechanisms.
+
+### The old header mark
 
 The card carries two headers doing different jobs. The embed **title** says what the message is —
 `Daily Summary` — and is plain text. The first **description** line says whose wallet, and that is
