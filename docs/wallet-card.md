@@ -109,6 +109,19 @@ swaps inside one 30-minute window collapse into a single card. Per-trade cards w
 transfers rather than diffing balances — more machinery, and worth doing only if the diff turns out
 not to be enough.
 
+## What the card does not carry
+
+`HIDDEN_SYMBOLS` — currently `USDH`. Its pair turns over about $4,800 a day, so the price beside it
+was never one anyone could act on; marking it ⚠️ said so, and a line that always carries a warning is
+a line that should not be there.
+
+**Card only.** The console still lists it: "what do I hold" and "what is worth publishing" are
+different questions, and the wallet has not changed. Set `WALLET_HIDE` to a comma-separated list to
+replace the default without a deploy.
+
+Removing the last-but-one holding on a chain takes the whole section with it, via the two-holdings
+rule below — dropping USDH leaves Hyperliquid spot holding only USDC, so that section goes too.
+
 ## Chain logos
 
 Holdings are **grouped into one embed per chain**, each headed by that chain's real logo, fetched by
