@@ -26,8 +26,8 @@ import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY } from '
 // What the channel was last told. Only the SIGNATURE, so this can never become a second copy of
 // the book.
 const SEEN_KEY = 'dvcap:flex:seen:v1';
-import { derivePosition } from '../lib/positions.js';
-import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades } from '../lib/flexTrades.js';
+import { derivePosition, splitIntoTrades } from '../lib/positions.js';
+import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, unrecordedTrades } from '../lib/flexTrades.js';
 import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf, planAck, flexEnv, flexConfigured, isoDate } from '../lib/flex.js';
 import { post, webhookFromEnv } from '../lib/discord.js';
 import { refresh } from './tradecard.js';
@@ -55,7 +55,7 @@ async function tell(rec, asOf, tradePlan = null) {
   return { posted: true };
 }
 
-export async function sync(origin, { apply = false, ack = [], trades = false, from: from0 = null, peek = false } = {}) {
+export async function sync(origin, { apply = false, ack = [], trades = false, from: from0 = null, peek = false, unrecorded = false, since = null } = {}) {
   if (!flexConfigured()) return { ok: false, error: 'IBKR_FLEX_TOKEN / IBKR_FLEX_QUERY_ID not set in the environment' };
   if (!kvConfigured()) return { ok: false, error: 'Redis not configured — there is nowhere to read the console from' };
 
@@ -75,6 +75,17 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   // The deriver goes in so reconcile can ask what a row looked like on the statement's own day —
   // the same function that produced `derived` above, so the two can never drift apart.
   const deriveRow = (r) => derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side });
+  // ── THE READ-ONLY BRANCH ──────────────────────────────────────────────────
+  // Returns before any of the reconciliation, planning or writing below. The console is a swing
+  // book by design and everything else — scalps, options, cash legs — is filtered out on the way
+  // in and counted rather than kept. This answers what all of it did, and changes nothing.
+  if (unrecorded) {
+    const parsed = parseTrades(got.xml);
+    const out = unrecordedTrades(withDerived, parsed, { since, splitIntoTrades, derivePosition });
+    return { ok: true, mode: 'unrecorded', readOnly: true, account: got.statement.accountId, asOf,
+      sections: parsed.length ? undefined : tradeSections(got.xml), ...out };
+  }
+
   const rec = reconcile(withDerived, got.statement.positions, { asOf, derive: deriveRow });
   const result = {
     ok: true,
@@ -205,10 +216,16 @@ export default async function handler(req, res) {
   // shows the whole plan and the verification result without writing anything.
   const trades = String(req.query?.trades ?? '') === '1';
   const peek = String(req.query?.peek ?? '') === '1';
+  // ?unrecorded=1[&since=YYYY-MM-DD] — READ ONLY, and separate from ?from= on purpose: `from`
+  // writes the trade watermark into the console's settings, and a diagnostic must not change what
+  // the next scheduled run will do.
+  const unrecorded = String(req.query?.unrecorded ?? '') === '1';
+  const sinceQ = String(req.query?.since ?? '').trim();
+  const since = /^\d{4}-\d{2}-\d{2}$/.test(sinceQ) ? sinceQ : null;
   const fromQ = String(req.query?.from ?? '').trim();
   const from = /^\d{4}-\d{2}-\d{2}$/.test(fromQ) ? fromQ : null;
   try {
-    res.status(200).json(await sync(origin, { apply, ack, trades, from, peek }));
+    res.status(200).json(await sync(origin, { apply, ack, trades, from, peek, unrecorded, since }));
   } catch (e) {
     console.error('flex-sync', e);
     res.status(200).json({ ok: false, error: String(e?.message || e) });   // never fail the cron

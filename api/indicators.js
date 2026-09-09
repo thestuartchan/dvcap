@@ -1,6 +1,7 @@
 import { LABOR_SERIES } from "../lib/labor.js";
 import { fetchSmicAHPremium } from "../lib/smicah.js";
-import { limiter, backoffMs, sleep } from '../lib/throttle.js';
+import { backoffMs, sleep } from '../lib/throttle.js';
+import { fredGate } from '../lib/fred.js';
 
 export default async function handler(req, res) {
   const FRED_KEY = process.env.FRED_API_KEY;
@@ -21,12 +22,18 @@ export default async function handler(req, res) {
   // failure is retried before being believed.
   const feedErrors = [];
 
-  // NOT MORE AT ONCE THAN FRED WILL ANSWER. The call sites above fire together and FRED allows 120
-  // requests a minute per key, so a cold load asked for its whole day in one burst and the tail came
-  // back 429 — five series blank on a good day, reading as "nothing published" rather than "we
-  // asked too fast". Eight at a time is well inside the limit and costs a cold load very little,
-  // because the requests were never the slow part.
-  const fredGate = limiter(8);
+  // NOT MORE AT ONCE THAN FRED WILL ANSWER, and not more than THIS ROUTE'S SHARE either.
+  //
+  // This used to be `limiter(8)`, created here, spending a budget it believed it had to itself. It
+  // did not: lib/fred.js drives thirteen more call sites for lib/quotes.js with no gate at all, and
+  // a Macro tab load fires both files at once — so the route that throttled queued politely behind
+  // thirteen requests that did not, and the tail still came back 429. Observed 2026-09-09, five
+  // feeds blank, two of them (PCEPILFE, CPILFESL) requested by both files in the same load.
+  //
+  // The gate now lives in lib/fred.js next to the fetch, and both sides draw on the one instance.
+  // A limiter still only bounds a single serverless invocation — nothing in-process can throttle
+  // across concurrent ones — but the collision this fixes is inside one page load, which is exactly
+  // what it reaches.
 
   // Three tries, backing OFF rather than re-colliding. The old fixed 400ms was the burst again in
   // miniature: everything throttled together waited the same interval and retried together. Full
