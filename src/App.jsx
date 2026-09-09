@@ -3546,6 +3546,11 @@ function ScenarioBoard({ scenarios }) {
                   )}
                 </div>
               )}
+              {s.qualifier && (
+                <div style={{ marginTop: 4, fontSize: 10.5, color: C.amber, lineHeight: 1.5 }}>
+                  ⚠ {s.qualifier}
+                </div>
+              )}
               {s.unverified && s.vintage?.reason && (
                 <div style={{ marginTop: 3, fontSize: 10, color: C.amber, lineHeight: 1.45 }}>
                   ⚠ {s.vintage.reason}
@@ -4293,7 +4298,7 @@ function SouthboundPanel() {
 
 // Korea manual-entry: paste the KOFIA panel → preview (with the recompute-pct guard) →
 // Save (commits data/korea_kofia.json via /api/korea-save so Pre-Reads pick it up too).
-function KoreaManualEntry({ kofia, onSaved }) {
+function KoreaManualEntry({ kofia, gate2 = null, onSaved }) {
   const [blob, setBlob] = useState("");
   const [u7709, setU7709] = useState("");
   const [u7709date, setU7709date] = useState(kofia?.latest?.units7709?.asOf || "");
@@ -4394,11 +4399,23 @@ function KoreaManualEntry({ kofia, onSaved }) {
           <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.55 }}>
             <b style={{ color: C.muted, fontWeight: 800 }}>READ · </b>{koreaFlowRead(latest)}
           </div>
-          {koreaFlowImplication(latest) && (
-            <div style={{ fontSize: 12.5, color: C.text, lineHeight: 1.55, marginTop: 5, paddingTop: 5, borderTop: "1px dashed " + C.bdr }}>
-              <b style={{ color: C.blue, fontWeight: 800 }}>IMPLICATION · </b>{koreaFlowImplication(latest)}
-            </div>
-          )}
+          {(() => {
+            // The implication now depends on the FX gate as well as the flow table. Computed once
+            // rather than called twice: the two calls used to be able to disagree if anything in
+            // between changed, and one of them decided whether the other rendered at all.
+            const impl = koreaFlowImplication(latest, { gate2 });
+            if (!impl) return null;
+            const nonOrganic = /NOT ORGANIC/.test(impl);
+            return (
+              <div style={{ fontSize: 12.5, lineHeight: 1.55, marginTop: 5, paddingTop: 5,
+                            borderTop: "1px dashed " + C.bdr,
+                            color: nonOrganic ? C.amber : C.text }}>
+                <b style={{ color: nonOrganic ? C.amber : C.blue, fontWeight: 800 }}>
+                  {nonOrganic ? "⚠ IMPLICATION · " : "IMPLICATION · "}
+                </b>{impl}
+              </div>
+            );
+          })()}
         </div>
       )}
       {mlHist.length > 0 && (
@@ -4828,7 +4845,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
 
           {/* Korea manual entry (KOFIA paste + 7709 units) — shown when Asia is active */}
           {regions.includes("asia") && byRegion.asia?.kofia &&
-            <KoreaManualEntry kofia={byRegion.asia.kofia} onSaved={onRefresh} />}
+            <KoreaManualEntry kofia={byRegion.asia.kofia} gate2={byRegion.asia.won?.gate2 ?? null} onSaved={onRefresh} />}
 
           {/* Southbound Stock Connect (SMIC mainland flow) — same class as the Korea flow panel,
               shown alongside it when Asia is active. Self-fetches its own manual store. */}
