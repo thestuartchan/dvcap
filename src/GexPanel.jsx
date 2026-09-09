@@ -307,7 +307,7 @@ export function GexPanel() {
                         background: read.state === "amplify" ? C.rBg : read.state === "damp" ? C.gBg : C.surf,
                         border: "1.5px solid " + (read.state === "amplify" ? C.rBdr : read.state === "damp" ? C.gBdr : C.bdr) }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
-              <b style={{ fontSize: 15, color: read.state === "amplify" ? C.red : read.state === "damp" ? C.green : C.mid }}>
+              <b style={{ fontSize: 15, color: read.state === "amplify" ? C.purple : read.state === "damp" ? C.green : C.mid }}>
                 {read.headline}
               </b>
               <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase",
@@ -331,14 +331,14 @@ export function GexPanel() {
         <div style={{ marginTop: 10, display: "flex", gap: 20, flexWrap: "wrap" }}>
           <Stat label="Spot" value={fmtNum(latest.spot)} sub={latest.date} />
           <Stat label="Net GEX" value={fmtUsd(latest.gexUsd)} sub="per 1% move"
-            color={latest.gexUsd == null ? C.muted : latest.gexUsd >= 0 ? C.green : C.red} />
+            color={latest.gexUsd == null ? C.muted : latest.gexUsd >= 0 ? C.green : C.purple} />
           <Stat label="Flip" value={fmtNum(latest.flipLevel)}
             color={latest.flipFragile ? C.amber : C.text}
             sub={latest.flipLevel == null ? latest.flipReason
               : latest.spot ? `${latest.flipLevel > latest.spot ? "+" : ""}${fmtNum(latest.flipLevel - latest.spot)} from spot` : null} />
           <Stat label="Call wall" value={fmtNum(latest.callWall)} color={C.green}
             sub={latest.callWall && latest.spot ? `${fmtNum(((latest.callWall / latest.spot) - 1) * 100, 1)}%` : null} />
-          <Stat label="Put wall" value={fmtNum(latest.putWall)} color={C.red}
+          <Stat label="Put wall" value={fmtNum(latest.putWall)} color={C.purple}
             sub={latest.putWall && latest.spot ? `${fmtNum(((latest.putWall / latest.spot) - 1) * 100, 1)}%` : null} />
           <Stat label="OI-wtd IV" value={latest.oiWeightedIv == null ? "—" : `${fmtNum(latest.oiWeightedIv * 100, 1)}%`}
             sub={`${(latest.callOi ?? 0).toLocaleString()}c / ${(latest.putOi ?? 0).toLocaleString()}p`} />
@@ -429,7 +429,7 @@ export function GexPanel() {
                                  color: (e.shareOfAbs ?? 0) >= 50 ? C.amber : C.lbl }}>{e.shareOfAbs}%</span>
                   <span style={{ flex: "0 0 120px", height: 8, background: C.bg, borderRadius: 4, overflow: "hidden" }}>
                     <span style={{ display: "block", width: `${w}%`, height: "100%",
-                                   background: (e.netGexUsd ?? 0) >= 0 ? C.green : C.red }} />
+                                   background: (e.netGexUsd ?? 0) >= 0 ? C.green : C.purple }} />
                   </span>
                   <span style={{ color: C.mid, minWidth: 74 }}>{fmtUsd(e.netGexUsd)}</span>
                   <span style={{ color: C.muted }}>
@@ -551,7 +551,7 @@ export function GexPanel() {
                 {latest.spot != null && <ReferenceLine y={latest.spot} stroke={C.blue} strokeWidth={1.5}
                   label={{ value: `spot ${fmtNum(latest.spot)}`, fontSize: 10, fill: C.blue, position: "insideBottomRight" }} />}
                 <Bar dataKey="net" name="Net GEX" isAnimationActive={false}>
-                  {strikeRows.map((r, i) => <Cell key={i} fill={(r.net ?? 0) >= 0 ? C.green : C.red} />)}
+                  {strikeRows.map((r, i) => <Cell key={i} fill={(r.net ?? 0) >= 0 ? C.green : C.purple} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -581,7 +581,7 @@ export function GexPanel() {
                 {seriesRows.map(r => (
                   <div key={r.date} style={{ display: "flex", gap: 12, fontSize: 11.5, flexWrap: "wrap" }}>
                     <span style={{ fontWeight: 800, color: C.mid, minWidth: 86 }}>{r.date}</span>
-                    <span style={{ color: (r.gex ?? 0) >= 0 ? C.green : C.red, minWidth: 74 }}>{fmtUsd(r.gex)}</span>
+                    <span style={{ color: (r.gex ?? 0) >= 0 ? C.green : C.purple, minWidth: 74 }}>{fmtUsd(r.gex)}</span>
                     <span style={{ color: C.muted }}>flip {fmtNum(r.flip)} · spot {fmtNum(r.spot)}</span>
                   </div>
                 ))}

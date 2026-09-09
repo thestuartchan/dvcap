@@ -3225,10 +3225,19 @@ function CrossRow({ r }) {
   return (
     <MetricCard
       label={r.name}
-      title={r.note || (r.sym + " · 1D vs prior close" + (age ? ` · last tick ${age.text}` : ""))}
+      title={r.note || [r.sym + " · 1D vs prior close",
+                        r.series ? `series: ${r.series}` : null,
+                        r.seriesNote || null,
+                        age ? `last tick ${age.text}` : null].filter(Boolean).join(" · ")}
       value={r.price != null ? withCommas(+(+r.price).toFixed(2)) : "—"}
       labelRight={age ? <StateChip label={age.text} color={age.stale ? C.amber : C.lbl} /> : null}
     >
+      {/* ANY TILE FEEDING A REGIME CLASSIFIER NAMES ITS SERIES. The gold tile read "Gold 4,450.2"
+          against OANDA spot at 4,411.755 on 2026-09-09 — a 38-point gap that is basis rather than
+          error, but the tile said only "Gold" while the debasement discriminator keys off it. */}
+      {r.series && (
+        <div style={{ fontSize: 9.5, color: C.lbl, fontWeight: 700, marginTop: 1 }}>{r.series}</div>
+      )}
       {r.dir ? (
         <div style={{ fontSize: 11, fontWeight: 700, color: dcol, marginTop: 2 }}>
           {/* Format defensively: never render a raw provider float, whatever the source did */}
@@ -3430,14 +3439,29 @@ function ScenarioBoard({ scenarios }) {
           const toneCol = TONE[s.tone] || C.muted;
           const TBG  = { red: C.rBg, amber: C.aBg, green: C.gBg };
           const TBDR = { red: C.rBdr, amber: C.aBdr, green: C.gBdr };
-          const bg  = s.confirmed ? (TBG[s.tone] || C.bg) : C.bg;
-          const bdr = s.unverified ? C.amber : s.confirmed ? (TBDR[s.tone] || C.bdrMd) : C.bdrMd;
-          const countCol = s.confirmed ? toneCol : (s.total > 0 && s.met === s.total - 1 ? C.amber : C.muted);
+          // A BROKEN scenario is greyed out entirely, tone included. Keeping "KOREA MECHANICAL
+          // UNWIND" in its amber alert colour while the card says the scenario is over asks the
+          // reader to hold two opposite things at once, and the colour wins that argument.
+          const bg  = s.broken ? C.bg : s.confirmed ? (TBG[s.tone] || C.bg) : C.bg;
+          const bdr = s.broken ? C.bdrMd : s.unverified ? C.amber : s.confirmed ? (TBDR[s.tone] || C.bdrMd) : C.bdrMd;
+          const countCol = s.broken ? C.muted : s.confirmed ? toneCol : (s.total > 0 && s.met === s.total - 1 ? C.amber : C.muted);
+          const headCol = s.broken ? C.muted : toneCol;
           return (
             <div key={s.id} style={{ padding: "8px 10px", borderRadius: 8, background: bg,
               border: "1px solid " + bdr }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 12.5, fontWeight: 900, color: toneCol }}>{s.id} · {s.name}</span>
+                <span style={{ fontSize: 12.5, fontWeight: 900, color: headCol,
+                               textDecoration: s.broken ? "line-through" : "none" }}>{s.id} · {s.name}</span>
+                {/* THE BADGE THAT HAD TO EXIST. On 2026-09-09 KM rendered "2/3" while both halves
+                    of its own falsifier were true on the same screen, which reads as one leg away
+                    from firing when the correct read is that it is finished. */}
+                {s.broken && (
+                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: "#fff",
+                                 background: C.mid, borderRadius: 4, padding: "1px 5px" }}
+                    title={s.brokenBy?.join(" · ") || "the break predicate is satisfied"}>
+                    ✕ BROKEN
+                  </span>
+                )}
                 {changed[s.id] && (
                   <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: "#fff", background: toneCol, borderRadius: 4, padding: "1px 5px" }}
                     title={`moved ${changed[s.id]} → ${s.met}/${s.total} since the last change`}>
@@ -3463,7 +3487,10 @@ function ScenarioBoard({ scenarios }) {
                   </span>
                 )}
                 <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 900, color: countCol }}>
-                  {s.unverified ? "—" : s.total > 0 ? `${s.met}/${s.total}` : "n/a"} {s.unverified ? "" : s.confirmed ? "✓" : "✗"}
+                  {/* The entry count is DEMOTED, not deleted. "2/3" is still true and still worth
+                      seeing; it just must not be the headline of a scenario that is over. */}
+                  {s.broken ? <span style={{ fontSize: 11, fontWeight: 800 }}>OVER<span style={{ color: C.lbl, fontWeight: 600, fontSize: 10 }}> · entry was {s.met}/{s.total}</span></span>
+                    : <>{s.unverified ? "—" : s.total > 0 ? `${s.met}/${s.total}` : "n/a"} {s.unverified ? "" : s.confirmed ? "✓" : "✗"}</>}
                   {s.unavailable > 0 && <span style={{ color: C.lbl, fontWeight: 600, fontSize: 10 }}> · {s.unavailable} n/a</span>}
                   {s.neutral > 0 && <span style={{ color: C.lbl, fontWeight: 600, fontSize: 10 }} title="inputs that moved less than half their own ATR — too small to confirm or deny"> · {s.neutral} below noise</span>}
                 </span>
@@ -3491,7 +3518,7 @@ function ScenarioBoard({ scenarios }) {
                   Unconfirmed cards carry `implication` instead, which states what it WOULD mean
                   without claiming it does. lib/posture.js already filtered on confirmed, so its
                   DO list was never affected. */}
-              {s.consequence && s.confirmed && (
+              {s.consequence && s.confirmed && !s.broken && (
                 <div style={{ marginTop: 4, fontSize: 11, fontWeight: 800, color: toneCol, lineHeight: 1.45 }}>
                   → {s.consequence}
                 </div>
@@ -3501,8 +3528,36 @@ function ScenarioBoard({ scenarios }) {
                   which is why the falsifier is the more useful of the two. */}
               {(s.implication || s.falsifier) && (
                 <div style={{ marginTop: 3, fontSize: 10.5, color: C.lbl, lineHeight: 1.5 }}>
-                  {s.implication && <div>means · {s.implication}</div>}
-                  {s.falsifier && <div>breaks if · {s.falsifier}</div>}
+                  {s.implication && !s.broken && <div>means · {s.implication}</div>}
+                  {s.falsifier && <div>{s.broken ? "broke on" : "breaks if"} · {s.falsifier}</div>}
+                </div>
+              )}
+              {/* The falsifier's legs, scored with the same marks and the same ATR gate the entry
+                  criteria use — so a break is held to the standard a confirmation is, and a reader
+                  can audit it rather than taking the badge on trust. */}
+              {s.breakConditions?.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 14px", marginTop: 3 }}>
+                  {s.breakConditions.map((c, i) => (
+                    <span key={i} title={c.reason || undefined}
+                      style={{ fontSize: 10.5, fontWeight: 600, fontVariantNumeric: "tabular-nums",
+                               color: c.met === null ? C.lbl : c.met ? C.mid : C.lbl }}>
+                      {c.met === null ? "·" : c.met ? "✕" : "○"} {c.label}
+                      <span style={{ color: C.lbl, fontWeight: 700 }}> {c.display}</span>
+                    </span>
+                  ))}
+                  {s.breakMode === "any" && s.breakTotal > 1 && (
+                    <span style={{ fontSize: 10, color: C.lbl, fontStyle: "italic" }}>either leg ends it</span>
+                  )}
+                  {s.breakUnverified && (
+                    <span style={{ fontSize: 10, color: C.amber }} title={s.breakVintage?.reason || ""}>
+                      ⚠ break inputs span different dates — not scored
+                    </span>
+                  )}
+                </div>
+              )}
+              {s.qualifier && (
+                <div style={{ marginTop: 4, fontSize: 10.5, color: C.amber, lineHeight: 1.5 }}>
+                  ⚠ {s.qualifier}
                 </div>
               )}
               {s.unverified && s.vintage?.reason && (
@@ -3532,7 +3587,7 @@ function EventPositioning({ e }) {
     return (
       <Card>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-          <SLabel>📅 Event positioning</SLabel>
+          <SLabel>📅 Event positioning — earnings</SLabel>
           <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>what's already priced in · run-up into the catalyst</span>
         </div>
         <div style={{ fontSize: 11.5, color: e.past === e.configured && e.configured ? C.amber : C.mid, fontWeight: e.past === e.configured && e.configured ? 700 : 500, marginTop: 6 }}>
@@ -3544,7 +3599,7 @@ function EventPositioning({ e }) {
   return (
     <Card>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-        <SLabel>📅 Event positioning</SLabel>
+        <SLabel>📅 Event positioning — earnings</SLabel>
         <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>what's already priced in · run-up into the catalyst</span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
@@ -4252,7 +4307,7 @@ function SouthboundPanel() {
 
 // Korea manual-entry: paste the KOFIA panel → preview (with the recompute-pct guard) →
 // Save (commits data/korea_kofia.json via /api/korea-save so Pre-Reads pick it up too).
-function KoreaManualEntry({ kofia, onSaved }) {
+function KoreaManualEntry({ kofia, gate2 = null, onSaved }) {
   const [blob, setBlob] = useState("");
   const [u7709, setU7709] = useState("");
   const [u7709date, setU7709date] = useState(kofia?.latest?.units7709?.asOf || "");
@@ -4353,11 +4408,23 @@ function KoreaManualEntry({ kofia, onSaved }) {
           <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.55 }}>
             <b style={{ color: C.muted, fontWeight: 800 }}>READ · </b>{koreaFlowRead(latest)}
           </div>
-          {koreaFlowImplication(latest) && (
-            <div style={{ fontSize: 12.5, color: C.text, lineHeight: 1.55, marginTop: 5, paddingTop: 5, borderTop: "1px dashed " + C.bdr }}>
-              <b style={{ color: C.blue, fontWeight: 800 }}>IMPLICATION · </b>{koreaFlowImplication(latest)}
-            </div>
-          )}
+          {(() => {
+            // The implication now depends on the FX gate as well as the flow table. Computed once
+            // rather than called twice: the two calls used to be able to disagree if anything in
+            // between changed, and one of them decided whether the other rendered at all.
+            const impl = koreaFlowImplication(latest, { gate2 });
+            if (!impl) return null;
+            const nonOrganic = /NOT ORGANIC/.test(impl);
+            return (
+              <div style={{ fontSize: 12.5, lineHeight: 1.55, marginTop: 5, paddingTop: 5,
+                            borderTop: "1px dashed " + C.bdr,
+                            color: nonOrganic ? C.amber : C.text }}>
+                <b style={{ color: nonOrganic ? C.amber : C.blue, fontWeight: 800 }}>
+                  {nonOrganic ? "⚠ IMPLICATION · " : "IMPLICATION · "}
+                </b>{impl}
+              </div>
+            );
+          })()}
         </div>
       )}
       {mlHist.length > 0 && (
@@ -4506,7 +4573,11 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
             return (
               <span style={{ fontSize: 12, color: old ? C.amber : C.muted, fontWeight: old ? 700 : 400 }}
                 title={u ? u.toString() : "never fetched"}>
-                {old ? "⚠ cached " : "Updated "}
+                {/* FETCHED, not "as of". The tiles beneath refresh on different cadences — FRED
+                    dailies, intraday quotes, manual pastes — so this timestamp is when the payload
+                    was pulled and is an upper bound on freshness, never a statement that everything
+                    on screen is current to it. The per-tile "last print" dates are the authority. */}
+                {old ? "⚠ cached " : "Fetched "}
                 {u ? (today ? fmtTime(u) : u.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + fmtTime(u)) : "—"}
               </span>
             );
@@ -4754,7 +4825,8 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                     {o.offHi != null ? <span style={{ color: C.muted }}> · {o.offHi > 0 ? "+" : ""}{o.offHi}% off hi</span> : null}
                   </>
                 );
-                const unconfirmed = /UNCONFIRMED|AMBIGUOUS|not debasement/i.test(rs.label || "");
+                const unconfirmed = /UNCONFIRMED|AMBIGUOUS|DIVERGENT|MIXED|not debasement|PASS-THROUGH/i.test(rs.label || "");
+                const be = rs.breakevens || {};
                 const mismatch = rs.mismatch;
                 return (
                   <div style={{ marginTop: 10, padding: "10px 12px", background: C.bg, border: "1.5px solid " + (mismatch ? C.rBdr : unconfirmed ? C.aBdr : C.bdrMd), borderRadius: 8 }}>
@@ -4770,6 +4842,29 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                       </>
                     ) : (
                       <div style={{ fontSize: 15, fontWeight: 900, color: unconfirmed ? C.amber : C.text }}>{rs.label}</div>
+                    )}
+                    {/* WHAT DECIDED IT. The discriminator used to take one undifferentiated
+                        "breakevens" input and had no view of the term structure — which is the only
+                        thing separating an oil pass-through from a monetary repricing. Both the
+                        verdict and the two numbers behind it are printed, so the label can be
+                        checked rather than trusted. */}
+                    {rs.discriminator && (
+                      <div style={{ fontSize: 11.5, lineHeight: 1.5, marginTop: 4,
+                                    color: /⚠/.test(rs.discriminator) ? C.amber : C.mid }}>
+                        {rs.discriminator}
+                      </div>
+                    )}
+                    {(be.tenYrBps != null || be.fwd5y5yBps != null) && (
+                      <div style={{ fontSize: 11, color: C.muted, marginTop: 3, fontVariantNumeric: "tabular-nums" }}>
+                        inflation expectations · 10Y BE {be.tenYrBps == null ? "—" : `${be.tenYrBps >= 0 ? "+" : ""}${be.tenYrBps}bp`}
+                        {" · "}5y5y fwd {be.fwd5y5yBps == null ? "—" : `${be.fwd5y5yBps >= 0 ? "+" : ""}${be.fwd5y5yBps}bp`}
+                        {be.spreadBps != null && (
+                          <span style={{ color: be.spreadBps > 0 ? C.amber : C.muted, fontWeight: 700 }}>
+                            {" · "}10Y sits {Math.abs(be.spreadBps)}bp {be.spreadBps > 0 ? "above" : be.spreadBps < 0 ? "below" : "level with"} the forward
+                            {be.spreadBps > 0 ? " (front-of-curve — supply shape)" : ""}
+                          </span>
+                        )}
+                      </div>
                     )}
                     {!mismatch && rs.windowSplit && (
                       <div style={{ fontSize: 10.5, color: C.amber, fontWeight: 700, marginTop: 2 }}>⚖ {rs.windowSplit}</div>
@@ -4787,7 +4882,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
 
           {/* Korea manual entry (KOFIA paste + 7709 units) — shown when Asia is active */}
           {regions.includes("asia") && byRegion.asia?.kofia &&
-            <KoreaManualEntry kofia={byRegion.asia.kofia} onSaved={onRefresh} />}
+            <KoreaManualEntry kofia={byRegion.asia.kofia} gate2={byRegion.asia.won?.gate2 ?? null} onSaved={onRefresh} />}
 
           {/* Southbound Stock Connect (SMIC mainland flow) — same class as the Korea flow panel,
               shown alongside it when Asia is active. Self-fetches its own manual store. */}
@@ -5447,7 +5542,12 @@ export default function App() {
   // the macro board. Anything not from today therefore carries its DATE and says how old it is.
   const fmtTime = d => {
     if (!d) return "—";
-    const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    // WITH THE ZONE. "Updated 15:53" sat above region panels reading "ASIA CLOSED 21:14 local",
+    // "EUROPE OPEN 14:14 local" and "US PRE-OPEN 09:14 local" — three explicit local times and one
+    // bare number, which cannot be reconciled against any of them without knowing which zone it is
+    // in. The implied gap was over an hour and there was no way to tell from the screen whether
+    // that was real.
+    const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
     const iso = x => new Date(x.getTime() - x.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
     if (iso(d) === iso(new Date())) return t;
     const days = Math.floor((Date.now() - d.getTime()) / 86400000);

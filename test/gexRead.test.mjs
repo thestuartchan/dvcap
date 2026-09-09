@@ -325,6 +325,20 @@ const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600000).toISOString();
   ok('the old green literal is gone', !src.includes('22,101,52'));
   ok('the old red literal is gone', !src.includes('153,27,27'));
   ok('the cell text follows the same pair', /v > 0 \? C\.green : C\.purple/.test(src));
+  // The WHOLE panel, not only the grid. A heatmap saying purple beside a bar chart saying red for
+  // the same quantity is worse than either alone — the reader has to work out whether the two
+  // colours mean two different things. Every place the SIGN OF GAMMA is drawn now uses the pair.
+  const gammaSignSites = src.match(/>= 0 \? C\.green : C\.(red|purple)/g) || [];
+  ok('every sign-of-gamma site exists', gammaSignSites.length >= 4);
+  ok('and none of them is still red', gammaSignSites.every(m => m.endsWith('C.purple')));
+  ok('the amplify headline is purple too — it is the same claim in words', /"amplify" \? C\.purple/.test(src));
+  ok('and the put wall stat matches its column', /label="Put wall"[^]*?color=\{C\.purple\}/.test(src));
+  // C.red survives ONLY where it means status: a stale capture, and a failed load. Those are
+  // genuinely errors and should keep the alarm colour.
+  const reds = (src.match(/C\.red/g) || []).length;
+  eq('red is left only on the two status sites', reds, 2);
+  ok('one of which is the previous-session staleness tone', /"previous-session": C\.red/.test(src));
+  ok('and the other the load failure', /Could not load/.test(src));
   ok('and the legend says what the reader is looking at', /green = positive gamma, purple = negative/.test(src));
   ok('the legend no longer claims red', !/green = positive gamma, red/.test(src));
 
