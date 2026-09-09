@@ -108,13 +108,47 @@ function harness() {
   eq('and every Alchemy request goes through it',
      (a.match(/await gated\(/g) || []).length, (a.match(/method: 'alchemy_/g) || []).length);
 
+  // ── ONE FRED BUDGET, NOT ONE PER ROUTE ────────────────────────────────────
+  // indicators.js built its own limiter(8) and spent a budget it believed it had to itself. It did
+  // not: FRED's 120/min is per KEY, lib/fred.js drives thirteen more call sites for lib/quotes.js,
+  // and a Macro tab load fires both files at once — so the route that throttled queued politely
+  // behind requests that did not, and five feeds still came back 429 on 2026-09-09.
+  //
+  // The gate lives next to the fetch now and both sides draw on the ONE instance. These assert the
+  // arrangement rather than the old shape: a second limiter appearing anywhere in the FRED path is
+  // the regression, and it would look exactly like a fix.
   const ind = bare(readFileSync(new URL('../api/indicators.js', import.meta.url), 'utf8'));
-  ok('indicators imports the limiter', /import \{[^}]*limiter[^}]*\} from '\.\.\/lib\/throttle\.js'/.test(ind));
-  ok('and gates its FRED requests', /fredGate\(\(\) => fetch\(/.test(ind));
+  const fredSrc = bare(readFileSync(new URL('../lib/fred.js', import.meta.url), 'utf8'));
+
+  ok('the FRED gate is built in lib/fred.js', /export const fredGate = limiter\(/.test(fredSrc));
+  ok('from the shared limiter', /import \{[^}]*limiter[^}]*\} from '\.\/throttle\.js'/.test(fredSrc));
+  ok('and indicators shares that one instead of building a second',
+     /import \{[^}]*fredGate[^}]*\} from '\.\.\/lib\/fred\.js'/.test(ind));
+  eq('indicators builds no limiter of its own', (ind.match(/limiter\(/g) || []).length, 0);
+
+  ok('indicators still gates its FRED requests', /fredGate\(\(\) => fetch\(/.test(ind));
   ok('and backs off between tries', /sleep\(backoffMs\(/.test(ind));
+  ok('so does lib/fred.js', /sleep\(backoffMs\(/.test(fredSrc));
+  ok('and it retries rather than treating one 429 as fatal', /tries = 3/.test(fredSrc));
+  // A 400 means the request is wrong and a retry fails identically; only 429/5xx are worth another.
+  ok('but does not retry a bad request', /status !== 429 && r\.status < 500/.test(fredSrc));
+
   // fredLabor called fetch directly and so never retried, while the panel said it had.
   eq('no FRED request is made outside fredFetch',
      (ind.match(/await fetch\(`https:\/\/api\.stlouisfed/g) || []).length, 0);
+  // The same rule on the library side. ONE fetch call in the whole file, and it is the one inside
+  // fredJson — so a new reader cannot quietly reintroduce an ungated request, which is exactly how
+  // this file came to have four of them.
+  eq('lib/fred.js calls fetch exactly once', (fredSrc.match(/fetch\(/g) || []).length, 1);
+  ok('and that one call is gated', /fredGate\(\(\) => fetch\(/.test(fredSrc));
+  // Every exported reader routes through fredJson. Counted against the readers rather than every
+  // export, since fredJson is itself exported and is the thing being routed to.
+  {
+    const readers = (fredSrc.match(/^export async function fred\w+/gm) || [])
+      .filter(x => !/fredJson/.test(x));
+    eq('four readers, all through the gate', readers.length, 4);
+    eq('each with a fredJson call', (fredSrc.match(/await fredJson\(/g) || []).length, readers.length);
+  }
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

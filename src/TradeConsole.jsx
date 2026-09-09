@@ -1139,22 +1139,58 @@ const Section = ({ title, note, list, mode, ctx, reorder = false, sort = null })
 // matters and is kept: balances stay per chain, because they are not fungible across them without
 // a bridge and a merged "you have 3.2 ETH" would describe a position you cannot take. One card,
 // still one section per chain.
-function Holdings({ data, title, note, open, onToggle, money, bare = false }) {
+// ── CHAIN IDENTITY ───────────────────────────────────────────────────────────
+// Logos live HERE and not in lib/chains.js, deliberately. That file is trusted with balance
+// queries and test/wallet.test.mjs pins it to exactly six RPC endpoints and zero images, so an
+// image creeping into it has to be an edit to that assertion. A picture is a UI concern.
+//
+// Each chain carries a tint as well as a mark. Six identical grey section headers made the reader
+// count down the list to find one; a colour and a glyph make it findable at a glance, which is the
+// same argument the Archive's month bands answer with a tinted ground and a signed left stripe.
+//
+// The glyphs are the SAME ones the Discord card uses (lib/chains.js CHAIN_MARK), so a chain reads
+// identically in both places. Unicode, so nothing has to load and nothing can fail to.
+const CHAIN_LOOK = {
+  "HyperEVM":        { mark: "\u{1F30A}", tint: "#0891B2" },
+  "Hyperliquid":     { mark: "\u{1F30A}", tint: "#0891B2" },
+  "Ethereum":        { mark: "\u27E0",    tint: "#4F46E5" },
+  "Arbitrum":        { mark: "\u{1F537}", tint: "#2563EB" },
+  "Base":            { mark: "\u{1F535}", tint: "#1D4ED8" },
+  "Polygon":         { mark: "\u{1F7E3}", tint: "#7C3AED" },
+  "Robinhood Chain": { mark: "\u{1FAB6}", tint: "#15803D" },
+};
+const CHAIN_FALLBACK = { mark: "\u25E6", tint: C.bdrMd };
+const chainLook = (label) => CHAIN_LOOK[label] || CHAIN_FALLBACK;
+
+function Holdings({ data, title, note, open, onToggle, money, bare = false, look = null }) {
   if (!data || !data.rows?.length) return null;
   const Shell = bare ? "div" : Card;
-  const shellProps = bare
-    ? { style: { marginTop: 10, paddingTop: 9, borderTop: "1px solid " + C.bdr } }
+  // A BAND, NOT A ROW — the Archive's month headers, at a smaller scale. Tinted ground, a left
+  // stripe in the chain's own colour, and the whole strip clickable rather than just the button:
+  // six identical grey headers had to be read to be told apart, and a header you can only open by
+  // hitting a 40-pixel target is a header you open by accident somewhere else.
+  const shellProps = bare ? { style: { marginTop: 8 } } : {};
+  const head = bare
+    ? { padding: "8px 11px", background: open ? C.bg : C.surf, borderRadius: 8,
+        border: "1px solid " + C.bdr, borderLeft: "4px solid " + (look?.tint || C.bdrMd),
+        cursor: "pointer" }
     : {};
   return (
     <Shell {...shellProps}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap", ...head }}
+           onClick={bare ? onToggle : undefined}
+           title={bare ? (open ? "Collapse" : "Expand") : undefined}>
         {bare
-          ? <b style={{ fontSize: 12, fontWeight: 800, color: C.mid, letterSpacing: 0.2 }}>{title}</b>
+          ? <>
+              <span style={{ fontSize: 10, color: C.lbl, width: 9 }}>{open ? "\u25BE" : "\u25B8"}</span>
+              {look && <span style={{ fontSize: 13, lineHeight: 1 }} aria-hidden>{look.mark}</span>}
+              <b style={{ fontSize: 12.5, fontWeight: 800, color: C.text, letterSpacing: -0.1 }}>{title}</b>
+            </>
           : <SLabel>{title}</SLabel>}
-        <span style={{ fontSize: 11.5, color: C.muted }}>{note}</span>
+        <span style={{ fontSize: 11, color: C.muted }}>{note}</span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "baseline", fontSize: 13 }}>
           <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>VALUE </span><b>{money(data.total, "USD")}</b></span>
-          <button onClick={onToggle} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: bare ? "2px 8px" : "4px 10px", fontSize: bare ? 11 : 12, fontWeight: 700 }}>{open ? "Hide" : "Show"}</button>
+          {!bare && <button onClick={onToggle} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{open ? "Hide" : "Show"}</button>}
         </div>
       </div>
       {/* WHAT THE TOTAL LEAVES OUT, said plainly. A mid price on a pair nobody trades is a number,
@@ -2502,7 +2538,8 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           a sum that would describe a position you cannot take. */}
       {(livePerps.length > 0 || hlSpot?.rows?.length > 0 || wallet?.chains?.some(c => c.ok && c.rows.length > 0)) && (
       <Card>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap",
+                      paddingBottom: 9, borderBottom: "1.5px solid " + C.bdrMd }}>
           <SLabel>🪙 Crypto</SLabel>
           <span style={{ fontSize: 11.5, color: C.muted }}>one address · read-only</span>
           <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "baseline", fontSize: 13 }}>
@@ -2513,11 +2550,14 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
         </div>
 
       {livePerps.length > 0 && (
-        <div style={{ marginTop: 10, paddingTop: 9, borderTop: "1px solid " + C.bdr }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
-            <b style={{ fontSize: 12, fontWeight: 800, color: C.mid, letterSpacing: 0.2 }}>Hyperliquid — open perps</b>
-            <span style={{ fontSize: 11.5, color: C.muted }}>live from the venue</span>
-            <span style={{ marginLeft: "auto", fontSize: 12, color: C.lbl }}>{livePerps.length} position{livePerps.length === 1 ? "" : "s"}</span>
+        <div style={{ marginTop: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap",
+                        padding: "8px 11px", background: C.surf, borderRadius: 8,
+                        border: "1px solid " + C.bdr, borderLeft: "4px solid " + chainLook("Hyperliquid").tint }}>
+            <span style={{ fontSize: 13, lineHeight: 1 }} aria-hidden>{chainLook("Hyperliquid").mark}</span>
+            <b style={{ fontSize: 12.5, fontWeight: 800, color: C.text, letterSpacing: -0.1 }}>Hyperliquid — open perps</b>
+            <span style={{ fontSize: 11, color: C.muted }}>live from the venue</span>
+            <span style={{ marginLeft: "auto", fontSize: 11.5, color: C.lbl }}>{livePerps.length} position{livePerps.length === 1 ? "" : "s"}</span>
           </div>
           <div style={{ marginTop: 10 }}>
             {livePerps.map(p => (
@@ -2554,7 +2594,8 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
       {/* Two BALANCE sets, deliberately not one. Hyperliquid's ledger is what the exchange holds
           for the address; the wallet is what the address holds itself, on chain. */}
       <Holdings data={hlSpot} title="Hyperliquid — spot ledger" note="balances on the exchange"
-                open={showSpot} onToggle={() => setShowSpot(v => !v)} money={fmtCcy} bare />
+                open={showSpot} onToggle={() => setShowSpot(v => !v)} money={fmtCcy} bare
+                look={chainLook("Hyperliquid")} />
       {/* ── THE WALLET, ONE CARD PER CHAIN ─────────────────────────────────────────────────────
           Deliberately not one merged list. The same address holds different things on six chains
           and the balances are not fungible across them without a bridge, so a combined "you have
@@ -2563,10 +2604,12 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           stays attached to the chain it is actually on. */}
       {wallet?.chains?.some(c => c.ok && c.rows.length > 0) && (
         <>
-          <div style={{ marginTop: 10, paddingTop: 9, borderTop: "1px solid " + C.bdr }}>
+          <div style={{ marginTop: 13, paddingTop: 10, borderTop: "1px solid " + C.bdr }}>
+            {/* The diagnostics belong ABOVE the chains and outside any one of them — what discovery
+                could and could not see is a statement about the read, not about a chain. */}
             <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
-              <b style={{ fontSize: 12, fontWeight: 800, color: C.mid, letterSpacing: 0.2 }}>Wallet — on chain</b>
-              <span style={{ fontSize: 11.5, color: C.muted }}>
+              <b style={{ fontSize: 11, fontWeight: 800, color: C.lbl, letterSpacing: 0.5, textTransform: "uppercase" }}>Wallet — on chain</b>
+              <span style={{ fontSize: 11, color: C.muted }}>
                 {wallet.chains.filter(c => c.ok && c.rows.length).length} chains · priced by Hyperliquid
               </span>
             </div>
@@ -2637,7 +2680,8 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           {wallet.chains.filter(c => c.ok && c.rows.length > 0).map(c => (
             <Holdings key={c.key} data={c} title={c.chain}
                       note={`chain ${c.chainId}`}
-                      open={chainOpen(c.key)} onToggle={() => toggleChain(c.key)} money={fmtCcy} bare />
+                      open={chainOpen(c.key)} onToggle={() => toggleChain(c.key)} money={fmtCcy} bare
+                      look={chainLook(c.chain)} />
           ))}
         </>
       )}
