@@ -1132,16 +1132,29 @@ const Section = ({ title, note, list, mode, ctx, reorder = false, sort = null })
 //
 // The two BALANCE sets have the same shape and the same hazards, so they share a renderer: value,
 // what is on hold, and the thin-market guard that keeps an unsellable airdrop out of the total.
-function Holdings({ data, title, note, open, onToggle, money }) {
+// `bare` drops the Card shell and shrinks the heading, so the same renderer serves a standalone
+// card and a section nested inside one. Eight separate cards for one address — a perp book, an
+// exchange ledger, a wallet header and five chains — was eight card borders, eight headers and a
+// screen of scrolling for what is one question: what is in the wallet. The SEPARATION still
+// matters and is kept: balances stay per chain, because they are not fungible across them without
+// a bridge and a merged "you have 3.2 ETH" would describe a position you cannot take. One card,
+// still one section per chain.
+function Holdings({ data, title, note, open, onToggle, money, bare = false }) {
   if (!data || !data.rows?.length) return null;
+  const Shell = bare ? "div" : Card;
+  const shellProps = bare
+    ? { style: { marginTop: 10, paddingTop: 9, borderTop: "1px solid " + C.bdr } }
+    : {};
   return (
-    <Card>
+    <Shell {...shellProps}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
-        <SLabel>{title}</SLabel>
+        {bare
+          ? <b style={{ fontSize: 12, fontWeight: 800, color: C.mid, letterSpacing: 0.2 }}>{title}</b>
+          : <SLabel>{title}</SLabel>}
         <span style={{ fontSize: 11.5, color: C.muted }}>{note}</span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "baseline", fontSize: 13 }}>
           <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>VALUE </span><b>{money(data.total, "USD")}</b></span>
-          <button onClick={onToggle} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{open ? "Hide" : "Show"}</button>
+          <button onClick={onToggle} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: bare ? "2px 8px" : "4px 10px", fontSize: bare ? 11 : 12, fontWeight: 700 }}>{open ? "Hide" : "Show"}</button>
         </div>
       </div>
       {/* WHAT THE TOTAL LEAVES OUT, said plainly. A mid price on a pair nobody trades is a number,
@@ -1202,7 +1215,7 @@ function Holdings({ data, title, note, open, onToggle, money }) {
           )}
         </div>
       )}
-    </Card>
+    </Shell>
   );
 }
 
@@ -1252,6 +1265,13 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   const [showArchive, setShowArchive] = useRemembered("archive", false);
   const [showPortfolio, setShowPortfolio] = useRemembered("portfolio", true);
   const [showSizing, setShowSizing] = useRemembered("sizing", false);
+  // ── AN EXPLAINER IS FOR THE FIRST WEEK, NOT THE HUNDREDTH ─────────────────────────
+  // Two paragraphs of "how it works" sat above every load, permanently, pushing the live
+  // regime and the level hits — the two things the tab exists to show — further down the
+  // screen every single time. It is worth keeping, because the fill model genuinely needs
+  // explaining once, and worth folding away, because nobody needs it explained daily.
+  // Collapsed by default and remembered, so it is one click away and never in the way.
+  const [showHowItWorks, setShowHowItWorks] = useRemembered("howitworks", false);
   // ── THE ARCHIVE GROWS FOREVER AND THE SCREEN DOES NOT ────────────────────────────────────────
   // Grain, and which periods are expanded. `periodOpen` holds only what the reader has TOGGLED, so
   // the default (the most recent few) keeps applying to periods that did not exist when the page
@@ -2043,25 +2063,32 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
 
       {/* purpose + regime */}
       <div style={{ background: liveRegime?.bg || C.surf, border: "1.5px solid " + (liveRegime?.bdr || C.bdr), borderTop: "4px solid " + (liveRegime?.color || C.blue), borderRadius: 12, padding: "12px 16px" }}>
-        <div style={{ fontSize: 13.5, color: C.mid, lineHeight: 1.55 }}>
-          <b style={{ color: C.text }}>Setups and levels.</b> What you are waiting for, and whether it has arrived —
-          checked against live prices each time this loads.
-          <span style={{ color: C.muted }}> Spot, swing and long holds only; day trades and scalps stay in the broker. Poll-cadence, not streaming; nothing here places orders.</span>
+        <div style={{ display: "flex", gap: "5px 14px", flexWrap: "wrap", alignItems: "baseline", fontSize: 13 }}>
+          <span style={{ color: C.lbl, fontWeight: 700 }}>Live regime:</span>
+          <b style={{ color: liveRegime?.color }}>{liveRegime?.label} {regimeProbFor(liveRegime?.id)}%</b>
+          {contested && chip("⚖ CONTESTED", C.amber, C.aBg, C.aBdr)}
+          {regimeDiverged && chip("📌 PINNED≠LIVE", C.amber, C.aBg, C.aBdr)}
+          <button onClick={() => setShowHowItWorks(v => !v)}
+            style={{ marginLeft: "auto", cursor: "pointer", background: "transparent", border: "none",
+                     color: C.lbl, fontWeight: 700, fontSize: 11.5, padding: 0 }}>
+            {showHowItWorks ? "▲ hide" : "▼ how it works"}
+          </button>
         </div>
+        {showHowItWorks && (
         <div style={{ marginTop: 8, fontSize: 12.5, color: C.mid, lineHeight: 1.6, background: "rgba(255,255,255,0.55)", border: "1px solid " + C.bdr, borderRadius: 8, padding: "8px 11px" }}>
+          <b style={{ color: C.text }}>Setups and levels.</b> What you are waiting for, and whether it has arrived —
+          checked against live prices each time this loads. Spot, swing and long holds only; day trades and scalps
+          stay in the broker. Poll-cadence, not streaming; nothing here places orders.
+          <div style={{ marginTop: 7 }}>
           <b style={{ color: C.text }}>How it works:</b> add a ticker, give it <b>levels</b> (buy / sell / stop — a single price or a zone).
           It sits in <b>Setups</b> and every load checks the live price against those levels, flagging any that are hit.
           When you actually trade it, press <b style={{ color: C.green }}>✓ I bought</b> — that records a <b>fill</b> (quantity + price)
           and moves it to <b>Open positions</b>. Buying more or selling part adds another fill, so scaling in and out is just more fills:
           your average cost, realised and unrealised P&amp;L are all worked out from them. Sell everything (or press <b style={{ color: C.red }}>🛑 Stopped out</b>) and it moves to <b>Archive</b>.
           <span style={{ color: C.muted }}> Position size is the quantity you enter on a fill.</span>
+          </div>
         </div>
-        <div style={{ marginTop: 7, display: "flex", gap: "5px 14px", flexWrap: "wrap", alignItems: "baseline", fontSize: 13 }}>
-          <span style={{ color: C.lbl, fontWeight: 700 }}>Live regime:</span>
-          <b style={{ color: liveRegime?.color }}>{liveRegime?.label} {regimeProbFor(liveRegime?.id)}%</b>
-          {contested && chip("⚖ CONTESTED", C.amber, C.aBg, C.aBdr)}
-          {regimeDiverged && chip("📌 PINNED≠LIVE", C.amber, C.aBg, C.aBdr)}
-        </div>
+        )}
       </div>
 
       {/* level hits — the reason this tab exists */}
@@ -2210,37 +2237,6 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
         </Card>
       )}
 
-      {/* toolbar */}
-      <Card>
-        <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
-          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700, display: "flex", gap: 6, alignItems: "center" }}>
-            Base
-            <select value={baseCcy} onChange={e => { setSettings(s => ({ ...s, baseCurrency: e.target.value })); touch(); }} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
-              {CURRENCY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </label>
-          <button onClick={async () => { if (typeof Notification !== "undefined" && Notification.permission !== "granted") { try { await Notification.requestPermission(); } catch { /* ignore */ } } setSettings(s => ({ ...s, alertsEnabled: !s.alertsEnabled })); touch(); }}
-            style={{ cursor: "pointer", background: settings.alertsEnabled ? C.green : C.surf, color: settings.alertsEnabled ? "#fff" : C.mid, border: "1.5px solid " + (settings.alertsEnabled ? C.green : C.bdr), borderRadius: 8, padding: "6px 11px", fontSize: 12.5, fontWeight: 800 }}>
-            {settings.alertsEnabled ? "🔔 Alerts on" : "🔕 Alerts off"}
-          </button>
-          <div style={{ marginLeft: "auto", display: "flex", gap: 9, alignItems: "center" }}>
-            {kvOn === false && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>⚠ this browser only</span>}
-            {kvOn === true && <span style={{ fontSize: 11.5, color: C.green, fontWeight: 700 }}>☁ syncing</span>}
-            {/* Nothing to say, so say only that it looked. An absence of news is worth one line. */}
-            {flexNote && !flexNote.needsYou?.length && !flexNote.applied && !flexNote.discarded && (
-              <span title={`IBKR statement of ${flexNote.asOf} — ${flexNote.summary}`} style={{ fontSize: 11.5, color: C.muted }}>
-                IBKR ✓ {String(flexNote.at).slice(0, 10)}
-              </span>
-            )}
-            {saveMsg && <span style={{ fontSize: 12, color: C.mid }}>{saveMsg}</span>}
-            {/* Both halves. Quotes come from Yahoo and the chain data from our own route; a
-                button labelled "refresh" that moved only one of them was the bug. */}
-            <Btn onClick={() => { fetchPrices([...symbols, ...fxSyms]); refreshLive(); }} disabled={pricesLoading || !symbols.length} color={C.mid} bgColor={C.bg} label={pricesLoading ? "…" : "🔄 Prices"} />
-            <Btn onClick={saveCloud} disabled={saving} color="#fff" bgColor={dirty ? C.blue : C.bdrMd} label={saving ? "Saving…" : dirty ? "☁ Save to cloud" : "☁ Synced"} />
-          </div>
-        </div>
-      </Card>
-
       {/* ── CURRENT PORTFOLIO ──
           Same visual idiom as the Smart Money tab (donut for weight, horizontal bars for the
           per-name read) so the two tabs are read the same way. Everything is converted into the
@@ -2359,6 +2355,37 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
         );
       })()}
 
+      {/* toolbar */}
+      <Card>
+        <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
+          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700, display: "flex", gap: 6, alignItems: "center" }}>
+            Base
+            <select value={baseCcy} onChange={e => { setSettings(s => ({ ...s, baseCurrency: e.target.value })); touch(); }} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
+              {CURRENCY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+          <button onClick={async () => { if (typeof Notification !== "undefined" && Notification.permission !== "granted") { try { await Notification.requestPermission(); } catch { /* ignore */ } } setSettings(s => ({ ...s, alertsEnabled: !s.alertsEnabled })); touch(); }}
+            style={{ cursor: "pointer", background: settings.alertsEnabled ? C.green : C.surf, color: settings.alertsEnabled ? "#fff" : C.mid, border: "1.5px solid " + (settings.alertsEnabled ? C.green : C.bdr), borderRadius: 8, padding: "6px 11px", fontSize: 12.5, fontWeight: 800 }}>
+            {settings.alertsEnabled ? "🔔 Alerts on" : "🔕 Alerts off"}
+          </button>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 9, alignItems: "center" }}>
+            {kvOn === false && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>⚠ this browser only</span>}
+            {kvOn === true && <span style={{ fontSize: 11.5, color: C.green, fontWeight: 700 }}>☁ syncing</span>}
+            {/* Nothing to say, so say only that it looked. An absence of news is worth one line. */}
+            {flexNote && !flexNote.needsYou?.length && !flexNote.applied && !flexNote.discarded && (
+              <span title={`IBKR statement of ${flexNote.asOf} — ${flexNote.summary}`} style={{ fontSize: 11.5, color: C.muted }}>
+                IBKR ✓ {String(flexNote.at).slice(0, 10)}
+              </span>
+            )}
+            {saveMsg && <span style={{ fontSize: 12, color: C.mid }}>{saveMsg}</span>}
+            {/* Both halves. Quotes come from Yahoo and the chain data from our own route; a
+                button labelled "refresh" that moved only one of them was the bug. */}
+            <Btn onClick={() => { fetchPrices([...symbols, ...fxSyms]); refreshLive(); }} disabled={pricesLoading || !symbols.length} color={C.mid} bgColor={C.bg} label={pricesLoading ? "…" : "🔄 Prices"} />
+            <Btn onClick={saveCloud} disabled={saving} color="#fff" bgColor={dirty ? C.blue : C.bdrMd} label={saving ? "Saving…" : dirty ? "☁ Save to cloud" : "☁ Synced"} />
+          </div>
+        </div>
+      </Card>
+
       {/* sizing settings */}
       <Card>
         <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
@@ -2465,12 +2492,32 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           onto a row somebody had already typed `HL:BTC` into. The data was being fetched and
           discarded. It shows here whether or not a row exists, and says which ones the book is
           not tracking — that is the whole point of having handed over an address. */}
+      {/* ── ONE CARD ────────────────────────────────────────────────────────────────────────
+          Perps, the exchange ledger, the wallet header and one card per chain came to eight card
+          borders and eight headers for a single address, and the answer to "what is in the wallet"
+          was a screen of scrolling. They are one card now.
+          What is NOT merged is the balances. Chains are not fungible without a bridge and the
+          exchange ledger is not the wallet, so there is still no grand total and still one section
+          per chain — the header carries the two figures that are separately meaningful rather than
+          a sum that would describe a position you cannot take. */}
+      {(livePerps.length > 0 || hlSpot?.rows?.length > 0 || wallet?.chains?.some(c => c.ok && c.rows.length > 0)) && (
+      <Card>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+          <SLabel>🪙 Crypto</SLabel>
+          <span style={{ fontSize: 11.5, color: C.muted }}>one address · read-only</span>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "baseline", fontSize: 13 }}>
+            {chainAt && <span style={{ fontSize: 11, color: C.muted }} title={`On-chain balances last read ${chainAt}`}>read {readAgo(chainAt)}</span>}
+            {hlSpot?.total != null && <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>EXCHANGE </span><b>{fmtCcy(hlSpot.total, "USD")}</b></span>}
+            {wallet?.total != null && <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>ON CHAIN </span><b>{fmtCcy(wallet.total, "USD")}</b></span>}
+          </div>
+        </div>
+
       {livePerps.length > 0 && (
-        <Card>
+        <div style={{ marginTop: 10, paddingTop: 9, borderTop: "1px solid " + C.bdr }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
-            <SLabel>Hyperliquid — open perps</SLabel>
-            <span style={{ fontSize: 11.5, color: C.muted }}>live from the venue · read-only</span>
-            <span style={{ marginLeft: "auto", fontSize: 12.5, color: C.lbl }}>{livePerps.length} position{livePerps.length === 1 ? "" : "s"}</span>
+            <b style={{ fontSize: 12, fontWeight: 800, color: C.mid, letterSpacing: 0.2 }}>Hyperliquid — open perps</b>
+            <span style={{ fontSize: 11.5, color: C.muted }}>live from the venue</span>
+            <span style={{ marginLeft: "auto", fontSize: 12, color: C.lbl }}>{livePerps.length} position{livePerps.length === 1 ? "" : "s"}</span>
           </div>
           <div style={{ marginTop: 10 }}>
             {livePerps.map(p => (
@@ -2501,13 +2548,13 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
               </div>
             ))}
           </div>
-        </Card>
+        </div>
       )}
 
       {/* Two BALANCE sets, deliberately not one. Hyperliquid's ledger is what the exchange holds
           for the address; the wallet is what the address holds itself, on chain. */}
-      <Holdings data={hlSpot} title="Hyperliquid — spot ledger" note="balances on the exchange · read-only"
-                open={showSpot} onToggle={() => setShowSpot(v => !v)} money={fmtCcy} />
+      <Holdings data={hlSpot} title="Hyperliquid — spot ledger" note="balances on the exchange"
+                open={showSpot} onToggle={() => setShowSpot(v => !v)} money={fmtCcy} bare />
       {/* ── THE WALLET, ONE CARD PER CHAIN ─────────────────────────────────────────────────────
           Deliberately not one merged list. The same address holds different things on six chains
           and the balances are not fungible across them without a bridge, so a combined "you have
@@ -2516,19 +2563,12 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           stays attached to the chain it is actually on. */}
       {wallet?.chains?.some(c => c.ok && c.rows.length > 0) && (
         <>
-          <Card>
+          <div style={{ marginTop: 10, paddingTop: 9, borderTop: "1px solid " + C.bdr }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
-              <SLabel>Wallet — on chain</SLabel>
+              <b style={{ fontSize: 12, fontWeight: 800, color: C.mid, letterSpacing: 0.2 }}>Wallet — on chain</b>
               <span style={{ fontSize: 11.5, color: C.muted }}>
-                {wallet.chains.filter(c => c.ok && c.rows.length).length} chains · read-only · priced by Hyperliquid
+                {wallet.chains.filter(c => c.ok && c.rows.length).length} chains · priced by Hyperliquid
               </span>
-              <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "baseline", fontSize: 13 }}>
-                {/* On-chain reads do not follow the quote refresh unless asked, so the age is
-                    stated rather than implied. */}
-                {chainAt && <span style={{ fontSize: 11, color: C.muted }} title={`On-chain balances last read ${chainAt}`}>read {readAgo(chainAt)}</span>}
-                <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>ACROSS ALL CHAINS </span>
-                <b>{fmtCcy(wallet.total, "USD")}</b></span>
-              </div>
             </div>
             {/* A chain that did not answer is NAMED. A total silently missing one is worse than a
                 smaller total with a reason beside it. */}
@@ -2593,13 +2633,15 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
                 without an indexer key, so anything else held there is not shown rather than counted as nothing.
               </div>
             ))}
-          </Card>
+          </div>
           {wallet.chains.filter(c => c.ok && c.rows.length > 0).map(c => (
-            <Holdings key={c.key} data={c} title={`Wallet — ${c.chain}`}
-                      note={`chain ${c.chainId} · what the address holds here`}
-                      open={chainOpen(c.key)} onToggle={() => toggleChain(c.key)} money={fmtCcy} />
+            <Holdings key={c.key} data={c} title={c.chain}
+                      note={`chain ${c.chainId}`}
+                      open={chainOpen(c.key)} onToggle={() => toggleChain(c.key)} money={fmtCcy} bare />
           ))}
         </>
+      )}
+      </Card>
       )}
 
       {/* archive: brief, with the performance summary */}
