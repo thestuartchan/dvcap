@@ -124,11 +124,11 @@ const HOLDER = '0x000000000000000000000000000000000000dEaD';
     // as it was — a new RPC still cannot appear here unnoticed just because logos exist now.
     const icons = urls.filter(u => /icons\.llamao\.fi/.test(u));
     const rpcs  = urls.filter(u => !/icons\.llamao\.fi/.test(u));
-    // ONE ICON NOW. The per-chain logo map went with the multi-embed layout that used it — a card
-    // is one embed and an embed has one author slot, which the wallet's own mark takes. What is
-    // left is that mark, and it is pinned so a second image cannot appear here unnoticed.
-    eq('the only image is the wallet mark', icons,
-       ['https://icons.llamao.fi/icons/protocols/metamask?w=48&h=48']);
+    // NO IMAGES HERE AT ALL, now. The per-chain logo map went with the multi-embed layout, and the
+    // wallet's own icon went when the embed's author slot turned out to render ABOVE the title. What
+    // marks the card is emoji, which are text. Asserted as empty rather than deleted, so an image
+    // creeping back into a file about RPC endpoints has to be a deliberate edit to this line.
+    eq('the chain registry carries no image URLs', icons, []);
     eq('and the registry names exactly the six verified ones', rpcs, [
       'https://arb1.arbitrum.io/rpc',
       'https://ethereum-rpc.publicnode.com',

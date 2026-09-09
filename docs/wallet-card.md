@@ -172,19 +172,20 @@ Used only in that flat layout, where nothing else says which chain a row belongs
 | Robinhood Chain | 🪶 |
 | anything else | ⬦ |
 
-### The header mark — an image, no setup
+### The header mark
 
-The card's header is the embed's **author**: the name (`Wallet`) and a real image beside it. An
-author icon takes an ordinary URL, so this needs nothing uploaded and no emoji id.
+The header is the description's **first line** — `🦊 Wallet` — under `WALLET_MARK`.
 
-That replaced a custom-emoji slot. The emoji worked in principle and the id turned out to be the
-hard part — and it was unnecessary: a card is one embed, an embed has exactly one author slot, and
-the header is exactly one thing.
+It was briefly the embed's **author**, which takes an ordinary image URL and so rendered the real
+MetaMask logo with no setup at all. That slot is unusable here for a reason no configuration fixes:
+Discord renders `author` **above** `title`, always, so the wallet line landed on top of "Daily
+Summary" and the card read back to front.
 
-Custom emoji remain the only way to draw a logo **inline next to text**, which is what the chain
-headings inside the description need. Two different problems, two mechanisms.
+Order beats fidelity. A unicode fox is not the MetaMask mark but it is the same animal, it renders
+in any slot, and it needs nothing. Naming `Wallet` in `DISCORD_CHAIN_EMOJI` swaps the real logo in on
+that same line, in the same order — so the id is an upgrade, never a prerequisite.
 
-### The old header mark
+### The header mark, with a custom emoji
 
 The card carries two headers doing different jobs. The embed **title** says what the message is —
 `Daily Summary` — and is plain text. The first **description** line says whose wallet, and that is

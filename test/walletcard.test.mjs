@@ -5,7 +5,7 @@
 // prices, never size and never an ENTRY price. Same four forbidden quantities as lib/tradecard.js — SIZE, ABSOLUTE P&L, MARKET
 // VALUE, SHARE OF BOOK — for the same reason, and tested the same way: rows whose private values
 // are distinctive digit strings, asserted to appear nowhere in the serialised output.
-import { chainMark, WALLET_ICON } from '../lib/chains.js';
+import { chainMark, headerMark, WALLET_MARK } from '../lib/chains.js';
 import { classifyTrigger, parseTriggerOrders } from '../lib/hyperliquid.js';
 import { walletPublicView, diffHoldings, buildWalletCard, eventLine, holdingLine, groupedHoldingLine, mergePending, MIN_CHAIN_HOLDINGS,
          HIDDEN_SYMBOLS, hiddenSymbols,
@@ -122,11 +122,12 @@ const row = (o = {}) => ({
      '**PONS** 0.7121 (-17.68%)');
 
   const empty = buildWalletCard([], []);
-  eq('a quiet day says so rather than rendering blank', empty.embeds[0].description, '_No changes today._');
+  eq('a quiet day says so rather than rendering blank',
+     empty.embeds[0].description.split('\n\n')[1], '_No changes today._');
   ok('and still dates its prices', /at time of post/i.test(JSON.stringify(empty)));
   // A malformed event is dropped rather than rendered as "undefined".
   eq('unknown event kinds are dropped',
-     buildWalletCard([{ kind: 'wat', symbol: 'X' }], []).embeds[0].description, '_No changes today._');
+     buildWalletCard([{ kind: 'wat', symbol: 'X' }], []).embeds[0].description.split('\n\n')[1], '_No changes today._');
 }
 
 // ── THE ENTRY PRICE IS GONE, AND CANNOT COME BACK BY ACCIDENT ────────────────
@@ -153,7 +154,7 @@ const row = (o = {}) => ({
   // One embed now, so events and holdings share a description. The events are the first block —
   // the entry price must be absent from THERE, while the holdings block legitimately carries the
   // market price, which in this fixture happens to be the same figure.
-  const eventPart = desc.split('\n\n')[0];
+  const eventPart = desc.split('\n\n')[1];   // [0] is the header line
   ok('the event line does not carry the entry price', !eventPart.includes('0174299'));
   ok('no @ pricing syntax survives on any event line', !eventPart.includes('@'));
   ok('the holdings block still does carry the market price', desc.includes('0.0174'));
@@ -240,7 +241,7 @@ const row = (o = {}) => ({
   const d = card.embeds[0].description;
 
   eq('there is exactly one embed', card.embeds.length, 1);
-  ok('the day leads the description', d.startsWith('_No changes today._'));
+  ok('the header leads the description', d.startsWith('🦊 **Wallet**'));
   for (const c of ['Ethereum', 'Arbitrum', 'Robinhood Chain'])
     ok(`${c} is a heading inside it`, d.includes(`**${chainMark(c)} ${c}**`));
   ok('each chain carries its mark', d.includes('⟠ Ethereum') && d.includes('🪶 Robinhood Chain'));
@@ -289,7 +290,7 @@ const row = (o = {}) => ({
   // Dropped silently, by decision — the note that used to name them was more noise than the rows
   // it replaced. Nothing about a thin chain reaches the card at all.
   eq('a quiet day with thin chains says just that',
-     card.embeds[0].description.split('\n\n')[0], '_No changes today._');
+     card.embeds[0].description.split('\n\n')[1], '_No changes today._');
   ok('the dropped chains are not named', !/Ethereum|Arbitrum/.test(card.embeds[0].description));
   ok('nor is anything they hold', !/\bETH\b/.test(card.embeds[0].description));
 
@@ -311,7 +312,7 @@ const row = (o = {}) => ({
   eq('a wallet of nothing but thin chains is still one embed', allThin.embeds.length, 1);
   ok('which still carries the footer', !!allThin.embeds[0].footer);
   eq('and reads as a quiet day rather than a broken card',
-     allThin.embeds[0].description, '_No changes today._');
+     allThin.embeds[0].description.split('\n\n')[1], '_No changes today._');
 }
 
 // ── PERPS ────────────────────────────────────────────────────────────────────
@@ -415,26 +416,38 @@ const row = (o = {}) => ({
   eq('and a non-array payload is empty rather than a throw', parseTriggerOrders(null, []).size, 0);
 }
 
-// ── THE HEADER IS AN IMAGE, NOT AN EMOJI ────────────────────────────────────
-// It was a custom-emoji slot, which needed a logo uploaded and then its snowflake id found — and
-// finding the id turned out to be the hard part. Unnecessary: the card is one embed, an embed has
-// exactly one AUTHOR slot, an author icon takes an ordinary URL, and the header is exactly one
-// thing. No setup at all.
+// ── ORDER BEATS FIDELITY ─────────────────────────────────────────────────────
+// The header went through the embed's AUTHOR slot first, which takes an image URL and so rendered
+// the real MetaMask logo with no setup at all. Unusable, for a reason no configuration fixes:
+// Discord renders `author` ABOVE `title`, always, so the wallet line landed on top of "Daily
+// Summary" and the card read back to front.
+//
+// So the header is the description's first line, where the order is ours, and the mark is a unicode
+// fox — not the MetaMask logo, but the same animal, and it renders in any slot with nothing set up.
 {
   const h = (symbol, chain) => ({ symbol, chain, price: 1, changePercent: null });
   const c = buildWalletCard([], [h('PONS', 'Robinhood Chain'), h('NUDES', 'Robinhood Chain')], { env: {} }).embeds[0];
 
-  eq('the author says whose wallet', c.author.name, 'Wallet');
-  eq('and carries a real image', c.author.icon_url, WALLET_ICON);
-  ok('which is an https URL, not an emoji', /^https:\/\//.test(c.author.icon_url));
-  ok('so nothing has to be configured for it to render', !/<:/.test(JSON.stringify(c.author)));
+  ok('there is no author slot to jump the title', !('author' in c));
+  eq('the title comes first', c.title, '📊 Daily Summary');
+  ok('and the wallet line is inside the description, after it',
+     c.description.startsWith(`${WALLET_MARK} **Wallet**`));
+  ok('the day follows the header', c.description.split('\n\n')[1] === '_No changes today._');
 
-  eq('the header is a parameter', buildWalletCard([], [], { header: 'Project wallet', env: {} }).embeds[0].author.name, 'Project wallet');
-  ok('the description no longer repeats it', !c.description.startsWith('**Wallet**'));
+  eq('the mark needs nothing configured', headerMark({}), '🦊');
+  eq('the header is a parameter', buildWalletCard([], [], { header: 'Project wallet', env: {} })
+     .embeds[0].description.startsWith('🦊 **Project wallet**'), true);
 
-  // Custom emoji remain the only way to get a logo inline NEXT TO TEXT, which is what the chain
-  // headings need — a different problem from the header, and still solved differently.
-  eq('a chain heading still takes a custom emoji when one is configured',
+  // The upgrade path stays open: an id, if one ever turns up, swaps the real logo in HERE with no
+  // other change — same line, same order.
+  const withId = { DISCORD_CHAIN_EMOJI: '{"Wallet":"<:Metamask:123>"}' };
+  eq('a configured id replaces the fox in place', headerMark(withId), '<:Metamask:123>');
+  ok('on the same line, in the same order',
+     buildWalletCard([], [], { env: withId }).embeds[0].description.startsWith('<:Metamask:123> **Wallet**'));
+  eq('and a malformed map falls back to the fox', headerMark({ DISCORD_CHAIN_EMOJI: '{oops' }), '🦊');
+
+  // Chain headings are the same mechanism, one line down.
+  eq('a chain heading still takes a custom emoji when configured',
      chainMark('Robinhood Chain', { DISCORD_CHAIN_EMOJI: '{"Robinhood Chain":"<:rh:43>"}' }), '<:rh:43>');
   ok('and falls back to its built-in mark otherwise', /🪶/.test(c.description));
 }
