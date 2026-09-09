@@ -3225,10 +3225,19 @@ function CrossRow({ r }) {
   return (
     <MetricCard
       label={r.name}
-      title={r.note || (r.sym + " · 1D vs prior close" + (age ? ` · last tick ${age.text}` : ""))}
+      title={r.note || [r.sym + " · 1D vs prior close",
+                        r.series ? `series: ${r.series}` : null,
+                        r.seriesNote || null,
+                        age ? `last tick ${age.text}` : null].filter(Boolean).join(" · ")}
       value={r.price != null ? withCommas(+(+r.price).toFixed(2)) : "—"}
       labelRight={age ? <StateChip label={age.text} color={age.stale ? C.amber : C.lbl} /> : null}
     >
+      {/* ANY TILE FEEDING A REGIME CLASSIFIER NAMES ITS SERIES. The gold tile read "Gold 4,450.2"
+          against OANDA spot at 4,411.755 on 2026-09-09 — a 38-point gap that is basis rather than
+          error, but the tile said only "Gold" while the debasement discriminator keys off it. */}
+      {r.series && (
+        <div style={{ fontSize: 9.5, color: C.lbl, fontWeight: 700, marginTop: 1 }}>{r.series}</div>
+      )}
       {r.dir ? (
         <div style={{ fontSize: 11, fontWeight: 700, color: dcol, marginTop: 2 }}>
           {/* Format defensively: never render a raw provider float, whatever the source did */}
@@ -3578,7 +3587,7 @@ function EventPositioning({ e }) {
     return (
       <Card>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-          <SLabel>📅 Event positioning</SLabel>
+          <SLabel>📅 Event positioning — earnings</SLabel>
           <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>what's already priced in · run-up into the catalyst</span>
         </div>
         <div style={{ fontSize: 11.5, color: e.past === e.configured && e.configured ? C.amber : C.mid, fontWeight: e.past === e.configured && e.configured ? 700 : 500, marginTop: 6 }}>
@@ -3590,7 +3599,7 @@ function EventPositioning({ e }) {
   return (
     <Card>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-        <SLabel>📅 Event positioning</SLabel>
+        <SLabel>📅 Event positioning — earnings</SLabel>
         <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>what's already priced in · run-up into the catalyst</span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
@@ -4564,7 +4573,11 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
             return (
               <span style={{ fontSize: 12, color: old ? C.amber : C.muted, fontWeight: old ? 700 : 400 }}
                 title={u ? u.toString() : "never fetched"}>
-                {old ? "⚠ cached " : "Updated "}
+                {/* FETCHED, not "as of". The tiles beneath refresh on different cadences — FRED
+                    dailies, intraday quotes, manual pastes — so this timestamp is when the payload
+                    was pulled and is an upper bound on freshness, never a statement that everything
+                    on screen is current to it. The per-tile "last print" dates are the authority. */}
+                {old ? "⚠ cached " : "Fetched "}
                 {u ? (today ? fmtTime(u) : u.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + fmtTime(u)) : "—"}
               </span>
             );
@@ -5529,7 +5542,12 @@ export default function App() {
   // the macro board. Anything not from today therefore carries its DATE and says how old it is.
   const fmtTime = d => {
     if (!d) return "—";
-    const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    // WITH THE ZONE. "Updated 15:53" sat above region panels reading "ASIA CLOSED 21:14 local",
+    // "EUROPE OPEN 14:14 local" and "US PRE-OPEN 09:14 local" — three explicit local times and one
+    // bare number, which cannot be reconciled against any of them without knowing which zone it is
+    // in. The implied gap was over an hour and there was no way to tell from the screen whether
+    // that was real.
+    const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
     const iso = x => new Date(x.getTime() - x.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
     if (iso(d) === iso(new Date())) return t;
     const days = Math.floor((Date.now() - d.getTime()) / 86400000);
