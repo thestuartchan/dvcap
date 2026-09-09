@@ -1041,6 +1041,39 @@ const {
               {p.totalPct != null && <b style={{ color: pnlCol(p.totalPct) }}> {p.totalPct > 0 ? "+" : ""}{p.totalPct}%</b>}
               <span style={{ color: C.lbl }}> on {money(d.spent, r.currency)} deployed{q?.changePercent != null ? ` · the quote itself is ${q.changePercent >= 0 ? "up" : "down"} ${Math.abs(q.changePercent).toFixed(2)}% today` : ""}</span>
               {d.partiallyRealised && <div style={{ color: C.green, fontSize: 11.5, marginTop: 3 }}>Scaled out {d.sold} of {d.bought} — still open on {d.qty}. The unrealised percentage is the move from your average cost; the total is measured against everything you put in.</div>}
+              {/* ── THE BROKER'S BASIS, ON SCREEN ────────────────────────────────────────
+                  A partially exited position has two correct cost bases and only one of them was
+                  visible. This engine is average-cost — a sell never moves it, which is what keeps
+                  R multiples and scale-out percentages comparable across the position's life. The
+                  broker matches the sale to specific lots (FIFO unless the account says otherwise)
+                  and reports what the REMAINING lots cost, which is the number on the 1099.
+                  Neither is wrong and they cannot be equal, so the reconciliation carries a
+                  costBasisAck for the case — but that figure was stored and rendered nowhere, so
+                  after acknowledging it the broker's number vanished into a mechanism nobody
+                  opens. Both are shown now, each labelled with what it is for. */}
+              {d.fifoBasis != null && (
+                <div style={{ fontSize: 11.5, marginTop: 4, paddingTop: 4, borderTop: "1px dashed " + C.bdr, lineHeight: 1.6 }}>
+                  <span style={{ color: C.lbl }}>Lot basis (FIFO) </span>
+                  <b style={{ color: C.mid }}>{fmtPrice(d.fifoBasis, { maxDp: priceMaxDp(r.symbol) })}</b>
+                  <span style={{ color: C.lbl }}> — what the broker reports on the {d.qty} still open{d.fifoLots?.length ? `: ${d.fifoLots.map(l => `${l.qty} @ ${fmtPrice(l.price, { maxDp: priceMaxDp(r.symbol) })}`).join(" + ")}` : ""}. Your average cost of {fmtPrice(d.avgCost, { maxDp: priceMaxDp(r.symbol) })} is the whole position's; this one is the tax basis on what remains.</span>
+                  {/* The acknowledged broker figure, when there is one. A residual gap against FIFO
+                      is almost always commission the console's fill price does not carry — said out
+                      loud with the amount, because "close but not equal" is the shape that sends
+                      someone hunting for a bug that is not there. */}
+                  {Number.isFinite(Number(r.costBasisAck)) && (() => {
+                    const ack = Number(r.costBasisAck);
+                    const gap = +(ack - d.fifoBasis).toFixed(6);
+                    const total = +(gap * d.qty).toFixed(2);
+                    return (
+                      <div style={{ marginTop: 2, color: C.lbl }}>
+                        Broker reports <b style={{ color: C.mid }}>{fmtPrice(ack, { maxDp: priceMaxDp(r.symbol) })}</b>
+                        {Math.abs(total) < 0.005 ? " — matches FIFO exactly."
+                          : ` — ${money(Math.abs(total), r.currency)} ${gap > 0 ? "above" : "below"} FIFO across ${d.qty}, which is normally commission carried in their basis and not in the fill price here.`}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
           )}
           {fit.where && <div style={{ marginTop: 8, fontSize: 12, color: C.mid }}><b style={{ color: fit.fit === "tailwind" ? C.green : C.red }}>{fit.fit === "tailwind" ? "Regime tailwind" : "Fights the regime"}:</b> {liveRegime?.label} {fit.fit === "tailwind" ? "favours" : "disfavours"} “{fit.where}”.</div>}
