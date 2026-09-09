@@ -8,6 +8,7 @@
 import { chainMark, headerMark } from '../lib/chains.js';
 import { classifyTrigger, parseTriggerOrders } from '../lib/hyperliquid.js';
 import { walletPublicView, diffHoldings, buildWalletCard, eventLine, holdingLine, groupedHoldingLine, mergePending, MIN_CHAIN_HOLDINGS,
+         HIDDEN_SYMBOLS, hiddenSymbols,
          perpPublicView, perpLine, PERP_PUBLIC_FIELDS,
          WALLET_PUBLIC_FIELDS, EVENT_PUBLIC_FIELDS, MIN_NOTIONAL_USD } from '../lib/walletcard.js';
 
@@ -425,8 +426,9 @@ const row = (o = {}) => ({
   const rows = [h('PONS', 'Robinhood Chain'), h('NUDES', 'Robinhood Chain')];
 
   const bare = buildWalletCard([], rows).embeds[0];
-  eq('the title says what the message is, in plain text', bare.title, 'Daily Summary');
-  ok('and carries no emoji, because a title cannot render one', !/<:/.test(bare.title));
+  eq('the title says what the message is', bare.title, '📊 Daily Summary');
+  // Unicode is fine there; it is only a CUSTOM emoji that would print as literal text.
+  ok('and carries no custom emoji, which a title cannot render', !/<:/.test(bare.title));
   ok('the mark belongs on the first description line', bare.description.startsWith('**Wallet**'));
   eq('and with nothing configured it carries no mark', headerMark({}), '');
 
@@ -440,6 +442,49 @@ const row = (o = {}) => ({
   eq('and leaves the chains on their built-ins',
      chainMark('Robinhood Chain', { DISCORD_CHAIN_EMOJI: '{oops' }), '🪶');
   eq('a non-string header value is rejected', headerMark({ DISCORD_CHAIN_EMOJI: '{"Wallet":7}' }), '');
+}
+
+// ── WHAT THE CARD DOES NOT CARRY ─────────────────────────────────────────────
+// USDH's pair turns over about $4,800 a day, so the price beside it was never one anyone could act
+// on. Marking it ⚠️ said so; a line that always carries a warning is a line that should not be
+// there. Card only — the console still lists it, because "what do I hold" and "what is worth
+// publishing" are different questions.
+{
+  const h = (symbol, chain) => ({ symbol, chain, price: 1, changePercent: null });
+  const rows = [h('USDC', 'Hyperliquid'), h('USDH', 'Hyperliquid'),
+                h('PONS', 'Robinhood Chain'), h('NUDES', 'Robinhood Chain')];
+
+  const d = buildWalletCard([], rows, { env: {} }).embeds[0].description;
+  ok('USDH is not on the card', !/USDH/.test(d));
+  // And the knock-on the wallet's owner predicted: USDC alone is one holding, which is under the
+  // bar, so the whole section goes with it.
+  ok('nor is the section it left with one holding in it', !/Hyperliquid/.test(d));
+  ok('while the chain that still has two is untouched', /Robinhood Chain/.test(d) && /PONS/.test(d));
+
+  // A hidden symbol must not be announced as a buy on a card that will never list it.
+  const ev = buildWalletCard([{ kind: 'bought', symbol: 'USDH', chain: 'Hyperliquid' },
+                              { kind: 'bought', symbol: 'PONS', chain: 'Robinhood Chain' }],
+                             rows, { env: {} }).embeds[0].description;
+  ok('a hidden symbol is not announced either', !/USDH/.test(ev));
+  ok('but a listed one still is', /Bought \*\*PONS\*\*/.test(ev));
+
+  eq('the default list is USDH', [...HIDDEN_SYMBOLS], ['USDH']);
+  eq('an env override replaces it', [...hiddenSymbols({ WALLET_HIDE: 'FOO, bar' })].sort(), ['BAR', 'FOO']);
+  eq('matching is case-insensitive', [...hiddenSymbols({ WALLET_HIDE: 'usdh' })], ['USDH']);
+  eq('an empty override falls back to the default', [...hiddenSymbols({ WALLET_HIDE: '  ' })], ['USDH']);
+  ok('and an override can hide nothing at all by naming something else',
+     !hiddenSymbols({ WALLET_HIDE: 'NOTHING' }).has('USDH'));
+}
+
+// ── A UNICODE MARK DOES WORK IN A TITLE ──────────────────────────────────────
+// It is only CUSTOM emoji that print literally there. So the title carries one and the wallet's own
+// custom mark stays on the first description line, where Discord will draw it.
+{
+  const c = buildWalletCard([], [], { env: {} }).embeds[0];
+  eq('the title carries a unicode mark', c.title, '📊 Daily Summary');
+  ok('and still no custom emoji, which would print as text', !/<:/.test(c.title));
+  eq('the mark is a parameter', buildWalletCard([], [], { titleMark: '🧾', env: {} }).embeds[0].title, '🧾 Daily Summary');
+  eq('and can be turned off', buildWalletCard([], [], { titleMark: '', env: {} }).embeds[0].title, 'Daily Summary');
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
