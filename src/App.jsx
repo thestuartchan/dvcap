@@ -3430,14 +3430,29 @@ function ScenarioBoard({ scenarios }) {
           const toneCol = TONE[s.tone] || C.muted;
           const TBG  = { red: C.rBg, amber: C.aBg, green: C.gBg };
           const TBDR = { red: C.rBdr, amber: C.aBdr, green: C.gBdr };
-          const bg  = s.confirmed ? (TBG[s.tone] || C.bg) : C.bg;
-          const bdr = s.unverified ? C.amber : s.confirmed ? (TBDR[s.tone] || C.bdrMd) : C.bdrMd;
-          const countCol = s.confirmed ? toneCol : (s.total > 0 && s.met === s.total - 1 ? C.amber : C.muted);
+          // A BROKEN scenario is greyed out entirely, tone included. Keeping "KOREA MECHANICAL
+          // UNWIND" in its amber alert colour while the card says the scenario is over asks the
+          // reader to hold two opposite things at once, and the colour wins that argument.
+          const bg  = s.broken ? C.bg : s.confirmed ? (TBG[s.tone] || C.bg) : C.bg;
+          const bdr = s.broken ? C.bdrMd : s.unverified ? C.amber : s.confirmed ? (TBDR[s.tone] || C.bdrMd) : C.bdrMd;
+          const countCol = s.broken ? C.muted : s.confirmed ? toneCol : (s.total > 0 && s.met === s.total - 1 ? C.amber : C.muted);
+          const headCol = s.broken ? C.muted : toneCol;
           return (
             <div key={s.id} style={{ padding: "8px 10px", borderRadius: 8, background: bg,
               border: "1px solid " + bdr }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 12.5, fontWeight: 900, color: toneCol }}>{s.id} · {s.name}</span>
+                <span style={{ fontSize: 12.5, fontWeight: 900, color: headCol,
+                               textDecoration: s.broken ? "line-through" : "none" }}>{s.id} · {s.name}</span>
+                {/* THE BADGE THAT HAD TO EXIST. On 2026-09-09 KM rendered "2/3" while both halves
+                    of its own falsifier were true on the same screen, which reads as one leg away
+                    from firing when the correct read is that it is finished. */}
+                {s.broken && (
+                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: "#fff",
+                                 background: C.mid, borderRadius: 4, padding: "1px 5px" }}
+                    title={s.brokenBy?.join(" · ") || "the break predicate is satisfied"}>
+                    ✕ BROKEN
+                  </span>
+                )}
                 {changed[s.id] && (
                   <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: "#fff", background: toneCol, borderRadius: 4, padding: "1px 5px" }}
                     title={`moved ${changed[s.id]} → ${s.met}/${s.total} since the last change`}>
@@ -3463,7 +3478,10 @@ function ScenarioBoard({ scenarios }) {
                   </span>
                 )}
                 <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 900, color: countCol }}>
-                  {s.unverified ? "—" : s.total > 0 ? `${s.met}/${s.total}` : "n/a"} {s.unverified ? "" : s.confirmed ? "✓" : "✗"}
+                  {/* The entry count is DEMOTED, not deleted. "2/3" is still true and still worth
+                      seeing; it just must not be the headline of a scenario that is over. */}
+                  {s.broken ? <span style={{ fontSize: 11, fontWeight: 800 }}>OVER<span style={{ color: C.lbl, fontWeight: 600, fontSize: 10 }}> · entry was {s.met}/{s.total}</span></span>
+                    : <>{s.unverified ? "—" : s.total > 0 ? `${s.met}/${s.total}` : "n/a"} {s.unverified ? "" : s.confirmed ? "✓" : "✗"}</>}
                   {s.unavailable > 0 && <span style={{ color: C.lbl, fontWeight: 600, fontSize: 10 }}> · {s.unavailable} n/a</span>}
                   {s.neutral > 0 && <span style={{ color: C.lbl, fontWeight: 600, fontSize: 10 }} title="inputs that moved less than half their own ATR — too small to confirm or deny"> · {s.neutral} below noise</span>}
                 </span>
@@ -3491,7 +3509,7 @@ function ScenarioBoard({ scenarios }) {
                   Unconfirmed cards carry `implication` instead, which states what it WOULD mean
                   without claiming it does. lib/posture.js already filtered on confirmed, so its
                   DO list was never affected. */}
-              {s.consequence && s.confirmed && (
+              {s.consequence && s.confirmed && !s.broken && (
                 <div style={{ marginTop: 4, fontSize: 11, fontWeight: 800, color: toneCol, lineHeight: 1.45 }}>
                   → {s.consequence}
                 </div>
@@ -3501,8 +3519,31 @@ function ScenarioBoard({ scenarios }) {
                   which is why the falsifier is the more useful of the two. */}
               {(s.implication || s.falsifier) && (
                 <div style={{ marginTop: 3, fontSize: 10.5, color: C.lbl, lineHeight: 1.5 }}>
-                  {s.implication && <div>means · {s.implication}</div>}
-                  {s.falsifier && <div>breaks if · {s.falsifier}</div>}
+                  {s.implication && !s.broken && <div>means · {s.implication}</div>}
+                  {s.falsifier && <div>{s.broken ? "broke on" : "breaks if"} · {s.falsifier}</div>}
+                </div>
+              )}
+              {/* The falsifier's legs, scored with the same marks and the same ATR gate the entry
+                  criteria use — so a break is held to the standard a confirmation is, and a reader
+                  can audit it rather than taking the badge on trust. */}
+              {s.breakConditions?.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 14px", marginTop: 3 }}>
+                  {s.breakConditions.map((c, i) => (
+                    <span key={i} title={c.reason || undefined}
+                      style={{ fontSize: 10.5, fontWeight: 600, fontVariantNumeric: "tabular-nums",
+                               color: c.met === null ? C.lbl : c.met ? C.mid : C.lbl }}>
+                      {c.met === null ? "·" : c.met ? "✕" : "○"} {c.label}
+                      <span style={{ color: C.lbl, fontWeight: 700 }}> {c.display}</span>
+                    </span>
+                  ))}
+                  {s.breakMode === "any" && s.breakTotal > 1 && (
+                    <span style={{ fontSize: 10, color: C.lbl, fontStyle: "italic" }}>either leg ends it</span>
+                  )}
+                  {s.breakUnverified && (
+                    <span style={{ fontSize: 10, color: C.amber }} title={s.breakVintage?.reason || ""}>
+                      ⚠ break inputs span different dates — not scored
+                    </span>
+                  )}
                 </div>
               )}
               {s.unverified && s.vintage?.reason && (

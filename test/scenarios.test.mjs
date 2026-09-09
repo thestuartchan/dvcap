@@ -209,5 +209,115 @@ const NOW = '2026-09-03T08:00:00Z';
   eq('with everything readable', mixed.allReadable, true);
 }
 
+// ── THE FALSIFIER IS SCORED, NOT NARRATED ────────────────────────────────────
+// Observed on the live board 2026-09-09: KM rendered "2/3 · one leg away" while both halves of its
+// own falsifier were true ON THE SAME SCREEN — CSOP 7709 units −7.2% (still falling) and VKOSPI
+// −3.36%, which the Korea panel itself labelled "rolling over" and independently called
+// EXHAUSTING. The break condition was grey prose; nothing evaluated it.
+{
+  const KM = (live) => evaluateScenarios(live).find(s => s.id === 'KM');
+
+  // The board exactly as it was.
+  const observed = KM({
+    korea: { volBand: 'EXTREME', volRolling: true, date: '2026-09-09' },
+    units7709: { value: -7.2, atr: 2.0, date: '2026-09-09' },
+  });
+  eq('the observed KM board is BROKEN', observed.status, 'BROKEN');
+  eq('and flagged on the object', observed.broken, true);
+  // The count that was misleading is still computed and still true — it is demoted, not deleted.
+  eq('the entry count is unchanged', [observed.met, observed.total], [2, 3]);
+  eq('both break legs fired', [observed.breakMet, observed.breakTotal], [2, 2]);
+  ok('and each is named', observed.brokenBy.length === 2);
+  ok('the vol leg by name', observed.brokenBy.some(b => /VKOSPI rolling over/.test(b)));
+  ok('the units leg by name', observed.brokenBy.some(b => /units still falling/.test(b)));
+  // THE POINT OF THE WHOLE CHANGE: it must not sort or read as "close to firing".
+  eq('a broken scenario is not close to firing', observed.proximity, -1);
+  ok('and cannot be confirmed', !observed.confirmed);
+
+  // Still live: the seller is going but the vol has not rolled. Same units, one flag flipped.
+  const running = KM({
+    korea: { volBand: 'EXTREME', volRolling: false, date: '2026-09-09' },
+    units7709: { value: -7.2, atr: 2.0, date: '2026-09-09' },
+  });
+  eq('with VKOSPI not yet rolled it is CONFIRMED, not broken', running.status, 'CONFIRMED');
+  eq('nothing broke', running.broken, false);
+  eq('and the entry count went UP, not down', running.met, 3);
+
+  // Vol rolled but the selling stopped: the conjunction is half true and must NOT break it.
+  const halfway = KM({
+    korea: { volBand: 'EXTREME', volRolling: true, date: '2026-09-09' },
+    units7709: { value: +3.1, atr: 2.0, date: '2026-09-09' },
+  });
+  eq('one leg of an "all" falsifier is not a break', halfway.broken, false);
+  eq('though it is counted', halfway.breakMet, 1);
+
+  // A conjunction with an unreadable leg is UNKNOWN, not satisfied. Letting a dark input count as
+  // met would retire scenarios for having no data, which is the opposite of the intent.
+  const blind = KM({ korea: { volBand: 'EXTREME', volRolling: true, date: '2026-09-09' } });
+  eq('an "all" break with a missing leg does not fire', blind.broken, false);
+  ok('and the scenario keeps its normal status', blind.status !== 'BROKEN');
+}
+
+// The ATR gate applies to breaks exactly as it does to entries — a break called off a move too
+// small to read is the same error a confirmation would be, and more expensive, because it retires
+// a scenario rather than raising one.
+{
+  const tiny = evaluateScenarios({
+    korea: { volBand: 'EXTREME', volRolling: true, date: '2026-09-09' },
+    units7709: { value: -0.1, atr: 2.0, date: '2026-09-09' },
+  }).find(s => s.id === 'KM');
+  eq('a sub-ATR fall does not break it', tiny.broken, false);
+  eq('the leg is neutral, not false', tiny.breakConditions.find(c => /still falling/.test(c.label)).met, null);
+}
+
+// Break vintage is checked over the BREAK's own inputs. Entry legs disagreeing on their dates says
+// nothing about whether the disproof is composable, and letting that veto would leave a dead
+// scenario reading "one leg away" for a reason that has nothing to do with it.
+{
+  const mixed = evaluateScenarios({
+    korea: { volBand: 'EXTREME', volRolling: true, date: '2026-09-01' },
+    units7709: { value: -7.2, atr: 2.0, date: '2026-09-09' },
+  }).find(s => s.id === 'KM');
+  eq('break inputs from different days do not break it', mixed.broken, false);
+  eq('and that is stated', mixed.breakUnverified, true);
+  // `dates` is keyed BY CONDITION LABEL, not a list — so the reader can see which input is stale
+  // rather than only that something is. Both legs must appear, with their own dates.
+  eq('both break inputs are named with their dates', mixed.breakVintage.dates,
+    { 'VKOSPI rolling over': '2026-09-01', '7709 units still falling': '2026-09-09' });
+  ok('and the reason spells it out', /observation dates disagree/.test(mixed.breakVintage.reason));
+}
+
+// "either horizon" is a DISJUNCTION and must not be collapsed into the conjunction rule.
+{
+  const cp = (ah) => evaluateScenarios({ ah }).find(s => s.id === 'CP');
+  eq('CP breaks on either horizon', cp({ d5: +1.8, d20: -0.1, atr: 0.5 }).breakMode, 'any');
+  eq('one widening horizon is enough', cp({ d5: +1.8, d20: -2.4, atr: 0.5 }).broken, true);
+  eq('the other horizon alone likewise', cp({ d5: -2.4, d20: +1.8, atr: 0.5 }).broken, true);
+  eq('both compressing does not break it', cp({ d5: -1.8, d20: -2.4, atr: 0.5 }).broken, false);
+  // An "any" break tolerates a dark leg, unlike "all" — one met leg is the whole claim.
+  eq('an "any" break fires with the other leg missing', cp({ d5: +1.8, atr: 0.5 }).broken, true);
+}
+
+// C's falsifier is also a disjunction, and its second leg is categorical.
+{
+  const c = (live) => evaluateScenarios(live).find(s => s.id === 'C');
+  const basketMixed = [{ name: 'TLT', dir: 'rising', date: '2026-09-09' }, { name: 'GLD', dir: 'falling', date: '2026-09-09' }, { name: 'IWM', dir: 'falling', date: '2026-09-09' }];
+  eq('the basket breaking up ends C', c({ basket: basketMixed }).broken, true);
+  const basketAll = basketMixed.map(b => ({ ...b, dir: 'falling' }));
+  eq('a basket still selling together does not', c({ basket: basketAll }).broken, false);
+}
+
+// Every scenario has one. A board where half the cards can be disproved and half cannot is a board
+// that quietly stops checking the ones that cannot.
+{
+  const all = evaluateScenarios({});
+  eq('all six scenarios are present', all.length, 6);
+  ok('and every one carries a scored break block', all.every(s => Array.isArray(s.breakConditions) && s.breakConditions.length > 0));
+  ok('each with a declared mode', all.every(s => s.breakMode === 'all' || s.breakMode === 'any'));
+  ok('and the prose falsifier is kept alongside it', all.every(s => typeof s.falsifier === 'string' && s.falsifier.length > 0));
+  // With no inputs at all nothing can break — silence is not a disproof.
+  ok('an empty board breaks nothing', all.every(s => s.broken === false));
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
