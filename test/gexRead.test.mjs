@@ -126,7 +126,10 @@ const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600000).toISOString();
   ok('the walls are stated first, then qualified', wallAt >= 0 && concAt === wallAt + 1);
 
   const sp = gexRead({ row, grid: spread, now: NOW });
-  ok('a spread book says so too', sp.lines.some(l => l.includes('3 expiries')));
+  // These fixtures carry no peak strikes at all, so neither wall can be any expiry's peak and the
+  // line reports the count per wall. It still has to SPEAK — a spread book that says nothing about
+  // its walls is the silent-agreement failure this block exists to prevent.
+  ok('a spread book says so too', sp.lines.some(l => /call wall 740: 0 of 3; put wall 690: 0 of 3/.test(l)));
   eq('and is not flagged', sp.concentrated, false);
   ok('silence is not the same as agreement — both cases speak', sp.lines.length === d.lines.length);
 
@@ -215,10 +218,59 @@ const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600000).toISOString();
            callWall: 720, putWall: 717, gexUsd: -1960000000, asOf: '2026-09-08T13:40:00Z' },
     grid: real, now: new Date('2026-09-08T13:45:00Z'), live: true });
   const said = read.lines.join(' ');
-  ok('the read says only one expiry peaks there', /Only 1 of 6 expiries peaks at these strikes/.test(said));
-  ok('and that it expires today', /2026-09-08, which expires today/.test(said));
+  ok('the read says only one expiry peaks at both walls', /Only 1 of 6 expiries peaks at both walls/.test(said));
+  ok('and that it expires today', /2026-09-08, expiring today/.test(said));
+  // Both walls ARE that expiry's own peaks here, so the closing clause must not claim otherwise.
+  ok('and it does not call either wall an aggregate', !/is a sum rather than a level/.test(said));
+  ok('it says instead that no ONE expiry claims both', /no single expiry claims both/.test(said));
+  // The per-wall split, which the combined count hid.
+  eq('the call wall is one expiry\'s peak', [wa.call.agree, wa.call.matched], [1, ['2026-09-08']]);
+  eq('and so is the put wall', [wa.put.agree, wa.put.matched], [1, ['2026-09-08']]);
   ok('and it no longer claims the walls hold across six', !/walls hold across 6/.test(said));
   ok('nor that they are a multi-expiry level', !/are a multi-expiry level/.test(said));
+
+  // ── THE CASE THAT EXPOSED THE SPLIT: QQQ, 2026-09-09 ───────────────────────
+  // Peaks taken from the live grid that morning. The put wall at 700 is 2026-09-18's own heaviest
+  // put strike; nothing peaks at the 720 call wall — every expiry's heaviest call sits above it
+  // (719 / 722 / 725 / 730 / 750 / 780). The combined count is therefore 0, and reporting only
+  // that said "0 of 6 expiries peaks at these strikes" while the panel's per-row badge — which
+  // tested EITHER wall — marked 2026-09-18 as matching. One card, two answers.
+  {
+    const g0909 = { frontShare: 23.7, frontExpiry: '2026-09-09', dominated: false, expiries: [
+      E('2026-09-09', 23.7, 717, 719), E('2026-09-10', 16.6, 710, 722), E('2026-09-11', 17, 705, 725),
+      E('2026-09-18', 15.4, 700, 730), E('2026-10-16', 7.8, 670, 750), E('2026-12-18', 19.5, 660, 780),
+    ] };
+    const w = wallAgreement(g0909, 720, 700);
+    eq('no expiry peaks at both walls', w.agree, 0);
+    eq('nothing peaks at the 720 call wall', w.call.agree, 0);
+    eq('but one expiry peaks at the 700 put wall', [w.put.agree, w.put.matched], [1, ['2026-09-18']]);
+
+    const said0909 = gexRead({
+      row: { spot: 718.36, flipLevel: 718.83, flipZoneLo: 709.75, flipZoneHi: 718.83,
+             callWall: 720, putWall: 700, gexUsd: -443800000, asOf: '2026-09-09T13:55:00Z' },
+      grid: g0909, now: new Date('2026-09-09T13:56:00Z'), live: true }).lines.join(' ');
+    ok('the read reports each wall separately', /call wall 720: 0 of 6; put wall 700: 1 of 6 \(2026-09-18\)/.test(said0909));
+    ok('it says no expiry peaks at BOTH', /No expiry peaks at both walls/.test(said0909));
+    // The old line claimed a remainder that a zero count does not have.
+    ok('and it no longer says "the rest peak wider"', !/The rest peak wider/.test(said0909));
+    // Only the call wall is unsupported. Saying "neither" would be as wrong as saying "both hold".
+    ok('only the call wall is called a sum', /No expiry peaks at the call wall/.test(said0909));
+    ok('and the put wall is not lumped in with it', !/Neither is any single expiry/.test(said0909));
+  }
+
+  // Both walls unsupported: the "neither" branch, which must not fire above.
+  {
+    const none = { frontShare: 20, frontExpiry: 'a', dominated: false, expiries: [
+      E('a', 20, 705, 725), E('b', 20, 710, 730), E('c', 20, 715, 735), E('d', 20, 690, 745),
+    ] };
+    const w = wallAgreement(none, 720, 700);
+    eq('neither wall is any expiry\'s peak', [w.agree, w.call.agree, w.put.agree], [0, 0, 0]);
+    const said = gexRead({ row: { spot: 718, flipLevel: 718, flipZoneLo: 710, flipZoneHi: 718,
+                                  callWall: 720, putWall: 700, gexUsd: -1e8, asOf: '2026-09-09T13:55:00Z' },
+                           grid: none, now: new Date('2026-09-09T13:56:00Z'), live: true }).lines.join(' ');
+    ok('both are called sums', /Neither is any single expiry's peak/.test(said));
+    ok('and neither is singled out', !/No expiry peaks at the call wall/.test(said));
+  }
 
   // NOT ONE-DIRECTIONAL. Walls that genuinely repeat must still be reported as holding, or the fix
   // has simply replaced one wrong answer with another.
