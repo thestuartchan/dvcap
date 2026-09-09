@@ -22,7 +22,11 @@ export default async function handler(req, res) {
     // `session` lets the workflow be explicit rather than relying on the clock; `dry=1` computes
     // and returns without writing, which is what the panel's live-refresh button uses.
     const session = ['open', 'close'].includes(String(req.query?.session || '')) ? String(req.query.session) : null;
-    const out = await captureGex({ symbols, dry: req.query?.dry === '1', session });
+    // The CBOE cross-check runs by default and can be turned off for a fast read — it is a 4-5MB
+    // CDN fetch, which is cheap but not free, and a caller that only wants the flip should not pay
+    // for a second opinion it is going to ignore.
+    const compare = String(req.query?.compare ?? '') !== '0';
+    const out = await captureGex({ symbols, dry: req.query?.dry === '1', session, compare });
     return res.status(200).json(out);
   }
 
