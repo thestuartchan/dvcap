@@ -155,5 +155,117 @@ const run = (rows, trades, opts = {}) => unrecordedTrades(rows, trades, { ...DEP
   eq('null arguments are handled', run(null, null).totals.closedTrades, 0);
 }
 
+// ── ONE CONTRACT, NOT ONE TICKER ─────────────────────────────────────────────
+// Grouped by ROOT, this was wrong in the most expensive way available: it reported a number.
+//
+// Taken from the real statement of 2026-09-08. Every QQQ option strike, every expiry, and QQQ the
+// ETF share line collapsed into one "position" keyed "QQQ", so a 15-lot put bought at 6.82 was
+// closed against a 12-lot sale at 730.55 — the ETF price. One "+$7,250 trade at +7090%", an
+// oversell the average-cost engine silently clamped, and 89% of the reported total.
+{
+  const OBSERVED = [
+    { tradeId: '72296876:908901568', root: 'QQQ', symbol: 'QQQ 260810P00719000', assetCategory: 'OPT', multiplier: 100, side: 'buy', qty: 15, price: 6.816903, date: '2026-08-12', commission: 5 },
+    { tradeId: '72372238:908901568', root: 'QQQ', symbol: 'QQQ 260810P00719000', assetCategory: 'OPT', multiplier: 100, side: 'sell', qty: 5, price: 9.372801, date: '2026-08-13', commission: 5 },
+    { tradeId: '72524399:320227571', root: 'QQQ', symbol: 'QQQ', assetCategory: 'STK', multiplier: 1, side: 'sell', qty: 12, price: 730.551417, date: '2026-08-14', commission: 5 },
+  ];
+  const r = run([], OBSERVED);
+  eq('the option and the ETF are two contracts', r.trips.length + r.leftovers.length, 2);
+  const keys = [...r.trips, ...r.leftovers].map(x => x.key).sort();
+  eq('keyed by contract id, not by ticker', keys, ['320227571', '908901568']);
+  // THE NUMBER THAT MUST NEVER COME BACK.
+  ok('no seven-thousand-dollar phantom', ![...r.trips, ...r.leftovers].some(x => x.pnl > 7000));
+  ok('and nothing claims a 7090% return', ![...r.trips, ...r.leftovers].some(x => (x.pnlPct ?? 0) > 1000));
+  // The put is still open on ten — it was never closed, and pairing it with a share sale is what
+  // made it look closed.
+  const opt = [...r.trips, ...r.leftovers].find(x => x.key === '908901568');
+  eq('the option is open, not closed', opt.status, 'open');
+  eq('and carries its own multiplier', opt.multiplier, 100);
+  const shares = [...r.trips, ...r.leftovers].find(x => x.key === '320227571');
+  eq('the share line is its own row', shares.kind, 'shares');
+  eq('at x1', shares.multiplier, 1);
+  eq('and read short, since it opened on a sell', shares.side, 'short');
+}
+
+// ── THE CONTRACT MULTIPLIER ──────────────────────────────────────────────────
+// Not passed at all. An option controls 100 shares and a micro gold future ten ounces, so every
+// P&L on the list was reported at x1 and looked exactly as confident as a correct figure. The MGC
+// round trip on the real statement read $170.91 against a true $1,709.08.
+{
+  const mgc = run([], [
+    { tradeId: '72650051:744880158', root: 'MGC', symbol: 'MGCV6', assetCategory: 'FUT', multiplier: 10, side: 'buy', qty: 1, price: 4442.796, date: '2026-08-17', commission: 1 },
+    { tradeId: '73569665:744880158', root: 'MGC', symbol: 'MGCV6', assetCategory: 'FUT', multiplier: 10, side: 'sell', qty: 1, price: 4613.704, date: '2026-08-26', commission: 1 },
+  ]);
+  eq('a futures P&L is scaled by its multiplier', mgc.trips[0].pnl, 1709.08);
+  eq('and the multiplier is reported', mgc.trips[0].multiplier, 10);
+  ok('not the x1 figure it used to give', mgc.trips[0].pnl !== 170.91);
+
+  const opt = run([], [
+    { tradeId: 'A:111', root: 'BNO', symbol: 'BNO 261016C00058000', assetCategory: 'OPT', multiplier: 100, side: 'buy', qty: 8, price: 2.799403, date: '2026-09-01', commission: 5 },
+    { tradeId: 'B:111', root: 'BNO', symbol: 'BNO 261016C00058000', assetCategory: 'OPT', multiplier: 100, side: 'sell', qty: 8, price: 2.503013, date: '2026-09-04', commission: 5 },
+  ]);
+  eq('an option likewise', opt.trips[0].pnl, -237.11);
+  // Shares are x1 and must not change.
+  const sh = run([], [
+    { tradeId: 'A:222', root: 'TQQQ', symbol: 'TQQQ', assetCategory: 'STK', multiplier: 1, side: 'buy', qty: 300, price: 74.293003, date: '2026-08-10', commission: 2 },
+    { tradeId: 'B:222', root: 'TQQQ', symbol: 'TQQQ', assetCategory: 'STK', multiplier: 1, side: 'sell', qty: 300, price: 73.958278, date: '2026-08-10', commission: 2 },
+  ]);
+  eq('shares are unchanged at x1', sh.trips[0].pnl, -100.42);
+  // A missing multiplier falls back to 1 rather than to NaN, which would poison every total.
+  const bare = run([], [
+    { tradeId: 'A:333', root: 'X', symbol: 'X', side: 'buy', qty: 10, price: 100, date: '2026-06-01' },
+    { tradeId: 'B:333', root: 'X', symbol: 'X', side: 'sell', qty: 10, price: 110, date: '2026-06-02' },
+  ]);
+  eq('a missing multiplier is 1, not NaN', bare.trips[0].pnl, 100);
+}
+
+// ── A CLAMPED OVERSELL IS NOT A RESULT ───────────────────────────────────────
+// The average-cost engine clamps a close larger than the open position and warns. That warning
+// lived inside the deriver where nobody saw it, while the clamped segment produced the largest
+// "profit" on the list.
+{
+  const r = run([], [
+    { tradeId: 'A:1', root: 'X', symbol: 'X', multiplier: 1, side: 'buy', qty: 10, price: 100, date: '2026-06-01' },
+    { tradeId: 'B:1', root: 'X', symbol: 'X', multiplier: 1, side: 'sell', qty: 25, price: 110, date: '2026-06-02' },
+  ]);
+  const row = [...r.trips, ...r.leftovers][0];
+  ok('the clamp is reported on the row', Array.isArray(row.warnings) && row.warnings.length > 0);
+  ok('and says what it was', /clos|sell|more/i.test(row.warnings.join(' ')));
+  // A clean segment carries no warnings field at all, so its presence is the signal.
+  const clean = run([], [
+    { tradeId: 'A:2', root: 'Y', symbol: 'Y', multiplier: 1, side: 'buy', qty: 10, price: 100, date: '2026-06-01' },
+    { tradeId: 'B:2', root: 'Y', symbol: 'Y', multiplier: 1, side: 'sell', qty: 10, price: 110, date: '2026-06-02' },
+  ]);
+  eq('a clean trip has none', clean.trips[0].warnings, undefined);
+}
+
+// Two contracts under one root that never interleave must still be two rows — the old grouping
+// happened to get MGC and AVGO right by luck, because their segments did not overlap in time.
+// Luck is not a rule.
+{
+  const r = run([], [
+    { tradeId: 'A:100', root: 'AVGO', symbol: 'AVGO 260828C00360000', multiplier: 100, side: 'buy', qty: 10, price: 2.554173, date: '2026-08-26' },
+    { tradeId: 'B:200', root: 'AVGO', symbol: 'AVGO 261016C00400000', multiplier: 100, side: 'buy', qty: 10, price: 16.006833, date: '2026-08-26' },
+    { tradeId: 'C:100', root: 'AVGO', symbol: 'AVGO 260828C00360000', multiplier: 100, side: 'sell', qty: 10, price: 4.583004, date: '2026-08-27' },
+    { tradeId: 'D:200', root: 'AVGO', symbol: 'AVGO 261016C00400000', multiplier: 100, side: 'sell', qty: 10, price: 12.0, date: '2026-08-28' },
+  ]);
+  eq('interleaved contracts stay separate', r.trips.length, 2);
+  eq('each with its own key', r.trips.map(t => t.key).sort(), ['100', '200']);
+  // Merged, these would net to a single number and hide that one won and one lost.
+  ok('one won', r.trips.some(t => t.pnl > 0));
+  ok('and one lost', r.trips.some(t => t.pnl < 0));
+  eq('so the win rate is 50', r.totals.winRate, 50);
+}
+
+// No conid on the id: the full contract SYMBOL is the fallback, which still separates strikes.
+{
+  const r = run([], [
+    { tradeId: 'A', root: 'SPY', symbol: 'SPY 260918C00700000', multiplier: 100, side: 'buy', qty: 1, price: 5, date: '2026-06-01' },
+    { tradeId: 'B', root: 'SPY', symbol: 'SPY 260918C00750000', multiplier: 100, side: 'buy', qty: 1, price: 2, date: '2026-06-01' },
+  ]);
+  eq('strikes separate without a conid', r.leftovers.length, 2);
+  eq('keyed by the contract symbol', r.leftovers.map(x => x.key).sort(),
+    ['SPY 260918C00700000', 'SPY 260918C00750000']);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

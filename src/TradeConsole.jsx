@@ -1150,17 +1150,36 @@ const Section = ({ title, note, list, mode, ctx, reorder = false, sort = null })
 //
 // The glyphs are the SAME ones the Discord card uses (lib/chains.js CHAIN_MARK), so a chain reads
 // identically in both places. Unicode, so nothing has to load and nothing can fail to.
+const CHAIN_ICON = (slug) => `https://icons.llamao.fi/icons/chains/rsz_${slug}.jpg`;
 const CHAIN_LOOK = {
-  "HyperEVM":        { mark: "\u{1F30A}", tint: "#0891B2" },
-  "Hyperliquid":     { mark: "\u{1F30A}", tint: "#0891B2" },
-  "Ethereum":        { mark: "\u27E0",    tint: "#4F46E5" },
-  "Arbitrum":        { mark: "\u{1F537}", tint: "#2563EB" },
-  "Base":            { mark: "\u{1F535}", tint: "#1D4ED8" },
-  "Polygon":         { mark: "\u{1F7E3}", tint: "#7C3AED" },
-  "Robinhood Chain": { mark: "\u{1FAB6}", tint: "#15803D" },
+  "HyperEVM":        { mark: "\u{1F30A}", tint: "#0891B2", slug: "hyperevm" },
+  "Hyperliquid":     { mark: "\u{1F30A}", tint: "#0891B2", slug: "hyperliquid" },
+  "Ethereum":        { mark: "\u27E0",    tint: "#4F46E5", slug: "ethereum" },
+  "Arbitrum":        { mark: "\u{1F537}", tint: "#2563EB", slug: "arbitrum" },
+  "Base":            { mark: "\u{1F535}", tint: "#1D4ED8", slug: "base" },
+  "Polygon":         { mark: "\u{1F7E3}", tint: "#7C3AED", slug: "polygon" },
+  "Robinhood Chain": { mark: "\u{1FAB6}", tint: "#15803D", slug: "robinhood" },
 };
-const CHAIN_FALLBACK = { mark: "\u25E6", tint: C.bdrMd };
+const CHAIN_FALLBACK = { mark: "\u25E6", tint: C.bdrMd, slug: null };
 const chainLook = (label) => CHAIN_LOOK[label] || CHAIN_FALLBACK;
+
+// THE GLYPH IS NOT A PLACEHOLDER, IT IS THE FALLBACK. A remote image can 404, be blocked, or fail
+// on a flaky connection, and a header that silently loses its identity is worse than one that never
+// had a picture. onError swaps the img out for the Unicode mark — the same mark the Discord card
+// uses — so the chain is always identifiable and the console degrades to exactly what the card
+// shows. No layout shift either: both occupy the same 15px box.
+function ChainIcon({ look, size = 15 }) {
+  const [failed, setFailed] = useState(false);
+  const box = { width: size, height: size, display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" };
+  if (!look?.slug || failed) {
+    return <span style={{ ...box, fontSize: size - 2, lineHeight: 1 }} aria-hidden>{look?.mark || CHAIN_FALLBACK.mark}</span>;
+  }
+  return (
+    <img src={CHAIN_ICON(look.slug)} alt="" aria-hidden loading="lazy" onError={() => setFailed(true)}
+         style={{ ...box, borderRadius: "50%", objectFit: "cover",
+                  background: C.bg, border: "1px solid " + C.bdr }} />
+  );
+}
 
 function Holdings({ data, title, note, open, onToggle, money, bare = false, look = null }) {
   if (!data || !data.rows?.length) return null;
@@ -1183,7 +1202,7 @@ function Holdings({ data, title, note, open, onToggle, money, bare = false, look
         {bare
           ? <>
               <span style={{ fontSize: 10, color: C.lbl, width: 9 }}>{open ? "\u25BE" : "\u25B8"}</span>
-              {look && <span style={{ fontSize: 13, lineHeight: 1 }} aria-hidden>{look.mark}</span>}
+              {look && <ChainIcon look={look} />}
               <b style={{ fontSize: 12.5, fontWeight: 800, color: C.text, letterSpacing: -0.1 }}>{title}</b>
             </>
           : <SLabel>{title}</SLabel>}
@@ -2554,7 +2573,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap",
                         padding: "8px 11px", background: C.surf, borderRadius: 8,
                         border: "1px solid " + C.bdr, borderLeft: "4px solid " + chainLook("Hyperliquid").tint }}>
-            <span style={{ fontSize: 13, lineHeight: 1 }} aria-hidden>{chainLook("Hyperliquid").mark}</span>
+            <ChainIcon look={chainLook("Hyperliquid")} />
             <b style={{ fontSize: 12.5, fontWeight: 800, color: C.text, letterSpacing: -0.1 }}>Hyperliquid — open perps</b>
             <span style={{ fontSize: 11, color: C.muted }}>live from the venue</span>
             <span style={{ marginLeft: "auto", fontSize: 11.5, color: C.lbl }}>{livePerps.length} position{livePerps.length === 1 ? "" : "s"}</span>
