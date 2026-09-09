@@ -324,7 +324,11 @@ export function GexPanel() {
           <div style={{ marginTop: 9, display: "flex", flexDirection: "column", gap: 4 }}>
             {grid.expiries.map((e, i) => {
               const w = Math.max(2, Math.min(100, e.shareOfAbs ?? 0));
-              const agrees = e.peakCallStrike === latest.callWall || e.peakPutStrike === latest.putWall;
+              // WHICH wall, not merely that one matched. This said "✓ matches headline" on the
+              // strength of either wall while the summary line above counted only expiries
+              // matching BOTH — so on 2026-09-09 the same card read "0 of 6" and badged a row.
+              const mC = e.peakCallStrike === latest.callWall, mP = e.peakPutStrike === latest.putWall;
+              const agrees = mC && mP ? "both walls" : mC ? "call wall" : mP ? "put wall" : null;
               return (
                 // A rule between rows, because on a phone these wrap onto two or three lines each
                 // and a continuation line then sits directly above the NEXT expiry's date. Without
@@ -344,7 +348,7 @@ export function GexPanel() {
                     peak {fmtNum(e.peakPutStrike)} / {fmtNum(e.peakCallStrike)}
                     {/* Agreement with the headline wall is the signal: several expiries pointing at
                         the same strike is what makes it a level rather than an artefact. */}
-                    {agrees && <b style={{ color: C.green }}> ✓ matches headline</b>}
+                    {agrees && <b style={{ color: C.green }}> ✓ {agrees}</b>}
                   </span>
                 </div>
               );
