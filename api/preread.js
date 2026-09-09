@@ -17,6 +17,9 @@ const PREREAD_LAST_KEY = 'dvcap:preread:last:v1';
 import { kofiaStoredLine, koreaFlowRead, koreaFlowImplication, withCommas } from '../lib/kofia.js';
 import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
 import { renderReadLines } from '../lib/read.js';
+import { readGex, repriceStored, GEX_SYMBOLS } from '../lib/gexStore.js';
+import { renderGexSection, pinOf } from '../lib/gexBrief.js';
+import { watchlist, renderWatchlist } from '../lib/watchlist.js';
 
 
 function fmtPct(p) { return p == null ? '—' : `${p > 0 ? '+' : ''}${p.toFixed(1)}%`; }
@@ -306,6 +309,45 @@ function buildKorea(k) {
 // a hallucinated figure on a trading surface. Git history has the old implementation if a
 // prose variant is ever wanted alongside (not instead of) the composed read.
 
+// ── THE DAY-TRADE LAYER ──────────────────────────────────────────────────────
+// Walks the cascade in lib/gexBrief.js and returns the best rung available, never throwing: a
+// missing option book must cost the brief one section, not the brief.
+//
+// `spot` comes from the live quote where the region has one — for the US that is the pre-market
+// print, which is the whole reason repricing is worth doing. Where no live spot is available the
+// stored row stands as captured and says so.
+async function gexBlock(liveSpot) {
+  const rows = [], vint = { rung: 'none', from: null, asOf: null };
+  for (const sym of GEX_SYMBOLS) {
+    try {
+      const stored = await readGex(sym);
+      const latest = stored?.latest;
+      if (!latest?.spot) continue;
+      const today = new Date().toISOString().slice(0, 10);
+      const spot = liveSpot?.(sym) ?? null;
+
+      let row = null, rung = 'stored';
+      if (spot > 0 && Math.abs(spot / latest.spot - 1) > 1e-9) {
+        const rp = await repriceStored(sym, { spot });
+        if (rp?.row) {
+          row = { ...rp.row, pin: pinOf(rp.grid, { spot, today }) };
+          rung = 'repriced';
+        }
+      }
+      if (!row) row = { ...latest, pin: pinOf(stored.grid, { spot: latest.spot, today }) };
+
+      rows.push({ name: sym, spot: row.spot, putWall: row.putWall, callWall: row.callWall,
+                  flipLevel: row.flipLevel, pin: row.pin });
+      // The WORST rung across the symbols wins the label — a footer claiming the spot is live is
+      // false the moment one of the two could not be repriced.
+      if (vint.rung === 'none' || (vint.rung === 'repriced' && rung === 'stored')) vint.rung = rung;
+      vint.from = latest.date; vint.asOf = latest.asOf;
+    } catch { /* one symbol short is a smaller loss than no section */ }
+  }
+  if (!rows.length) return null;
+  return renderGexSection(rows, vint);
+}
+
 function assembleDiscord(region, label, blocks, read) {
   const emoji = { asia: '🌏', eu: '🇪🇺', us: '🇺🇸' }[region] || '📊';
   const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
@@ -315,6 +357,11 @@ function assembleDiscord(region, label, blocks, read) {
   // explicit divider rather than relying on extra \n's).
   const RULE = '───────────────';
   const sections = [
+    // FIRST, and deliberately. This is the layer a day trade is placed against, and the brief that
+    // buried it under fifteen quoted names was answering a different question from the one the
+    // reader opens it with.
+    ...(blocks.gexLines ? [`⚡ **TODAY'S MAP**\n${blocks.gexLines}`] : []),
+    ...(blocks.watchLines ? [`👀 **TODAY'S WATCHLIST**\n${blocks.watchLines}`] : []),
     // The handoff comes FIRST for a brief that fires after the US close and before this region
     // opens: it is the thing every line below reacts to.
     ...(blocks.overnightLines ? [`🌙 **OVERNIGHT US** _(prior close)_\n${blocks.overnightLines}`] : []),
@@ -429,6 +476,28 @@ async function runRegion(region, req) {
   const indices = idxRaw.map((q, i) => ({ ...q, _name: R.indices[i].name }));
   const cal = weekHighlights(new Date(), region, R.tz);
   const blocks = buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox);
+
+  // ── THE TWO NEW SECTIONS ───────────────────────────────────────────────────
+  // Both are best-effort and both are omitted rather than faked. The option book is the same in
+  // every region — it is the US book, and a day trade placed from Hong Kong is placed against the
+  // same levels — so all three briefs carry it. The freshness differs a lot and the footer says so:
+  // Asia fires 42 minutes after the close capture, the US brief 14h42m after it.
+  const liveSpot = (sym) => {
+    const hit = indices.find(q => q.sym === sym) || quotes.find(q => q.sym === sym);
+    const px = hit ? displayQuote(hit, region).price : null;
+    return Number.isFinite(+px) && +px > 0 ? +px : null;
+  };
+  try { blocks.gexLines = await gexBlock(liveSpot); } catch { blocks.gexLines = null; }
+  // PUBLIC CHANNEL. Candidates are the region's configured universe and nothing else — lib/
+  // watchlist.js takes no argument through which a holding could reach it.
+  try {
+    const byS = new Map(quotes.map(q => [q.sym, q]));
+    blocks.watchLines = renderWatchlist(watchlist(R.names, sym => {
+      const q = byS.get(sym); if (!q) return null;
+      const d = displayQuote(q, region);
+      return { price: d.price, changePercent: d.changePct };
+    }));
+  } catch { blocks.watchLines = null; }
   // The READ is the COMPOSED, deterministic one (lib/read.js) — same text the dashboard
   // shows. No model call in the read path: every figure is traceable to a parsed field, so
   // the Pre-Read cannot hallucinate a number or drift into positioning language.
