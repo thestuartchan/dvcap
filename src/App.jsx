@@ -4812,7 +4812,8 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                     {o.offHi != null ? <span style={{ color: C.muted }}> · {o.offHi > 0 ? "+" : ""}{o.offHi}% off hi</span> : null}
                   </>
                 );
-                const unconfirmed = /UNCONFIRMED|AMBIGUOUS|not debasement/i.test(rs.label || "");
+                const unconfirmed = /UNCONFIRMED|AMBIGUOUS|DIVERGENT|MIXED|not debasement|PASS-THROUGH/i.test(rs.label || "");
+                const be = rs.breakevens || {};
                 const mismatch = rs.mismatch;
                 return (
                   <div style={{ marginTop: 10, padding: "10px 12px", background: C.bg, border: "1.5px solid " + (mismatch ? C.rBdr : unconfirmed ? C.aBdr : C.bdrMd), borderRadius: 8 }}>
@@ -4828,6 +4829,29 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                       </>
                     ) : (
                       <div style={{ fontSize: 15, fontWeight: 900, color: unconfirmed ? C.amber : C.text }}>{rs.label}</div>
+                    )}
+                    {/* WHAT DECIDED IT. The discriminator used to take one undifferentiated
+                        "breakevens" input and had no view of the term structure — which is the only
+                        thing separating an oil pass-through from a monetary repricing. Both the
+                        verdict and the two numbers behind it are printed, so the label can be
+                        checked rather than trusted. */}
+                    {rs.discriminator && (
+                      <div style={{ fontSize: 11.5, lineHeight: 1.5, marginTop: 4,
+                                    color: /⚠/.test(rs.discriminator) ? C.amber : C.mid }}>
+                        {rs.discriminator}
+                      </div>
+                    )}
+                    {(be.tenYrBps != null || be.fwd5y5yBps != null) && (
+                      <div style={{ fontSize: 11, color: C.muted, marginTop: 3, fontVariantNumeric: "tabular-nums" }}>
+                        inflation expectations · 10Y BE {be.tenYrBps == null ? "—" : `${be.tenYrBps >= 0 ? "+" : ""}${be.tenYrBps}bp`}
+                        {" · "}5y5y fwd {be.fwd5y5yBps == null ? "—" : `${be.fwd5y5yBps >= 0 ? "+" : ""}${be.fwd5y5yBps}bp`}
+                        {be.spreadBps != null && (
+                          <span style={{ color: be.spreadBps > 0 ? C.amber : C.muted, fontWeight: 700 }}>
+                            {" · "}10Y sits {Math.abs(be.spreadBps)}bp {be.spreadBps > 0 ? "above" : be.spreadBps < 0 ? "below" : "level with"} the forward
+                            {be.spreadBps > 0 ? " (front-of-curve — supply shape)" : ""}
+                          </span>
+                        )}
+                      </div>
                     )}
                     {!mismatch && rs.windowSplit && (
                       <div style={{ fontSize: 10.5, color: C.amber, fontWeight: 700, marginTop: 2 }}>⚖ {rs.windowSplit}</div>
