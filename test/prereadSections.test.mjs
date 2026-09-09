@@ -103,12 +103,23 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
   eq('and the split is counted', rows.find(r => r.name === 'MU').split, { up: 2, down: 2 });
   // ONE PEER IS ENOUGH. The US universe has exactly two megacaps, so requiring two peers left the
   // entries most in need of context with no tag at all.
-  eq('two-name groups still get a tag', rows.find(r => r.name === 'GOOGL').tag, 'with the group');
-  eq('as does the other one', rows.find(r => r.name === 'AMZN').tag, 'with the group');
+  //
+  // NAMED WHILE THEY FIT. The live Asia brief tagged BYD −2.44% and Xiaomi −2.01% as "moving
+  // alone" — they moved together, but Tencent and Alibaba sat flat and dragged the megacap median
+  // to −0.3%. Corroboration is counted now, not averaged, and the peer is named: "with AMZN
+  // (−1.8%)" is a fact the reader can check, where "with the group" is a summary they cannot.
+  eq('two-name groups name their peer', rows.find(r => r.name === 'GOOGL').tag, 'with AMZN (-1.8%)');
+  eq('and it works both ways round', rows.find(r => r.name === 'AMZN').tag, 'with GOOGL (-2.3%)');
 
   // Corroboration on its own.
   eq('moving the other way to a moving group', corroborate(2.0, [-1.5, -1.4, -1.6]).tag, 'against the group');
-  eq('moving with it', corroborate(-1.5, [-1.4, -1.6, -1.5]).tag, 'with the group');
+  // Past two peers the names stop fitting and the count is the point.
+  eq('three agreeing peers are counted, not listed', corroborate(-1.5, [-1.4, -1.6, -1.5]).tag, 'with 3 of the group');
+  eq('one agreeing peer is named', corroborate(-1.5, [{ name: 'AMZN', changePct: -1.4 }]).tag, 'with AMZN (-1.4%)');
+  // A peer that barely moved does not corroborate anything.
+  eq('a flat peer leaves it alone', corroborate(-2.4, [{ name: 'X', changePct: -0.1 }]).tag, 'moving alone');
+  // And an unnamed peer falls back to the count rather than printing "with null".
+  eq('an unnamed peer is counted', corroborate(-1.5, [-1.4]).tag, 'with 1 of the group');
   eq('moving alone against a flat group', corroborate(3.0, [0.1, 0.0, -0.1]).tag, 'moving alone');
   eq('no peers at all, no claim', corroborate(3.0, []).tag, null);
 
