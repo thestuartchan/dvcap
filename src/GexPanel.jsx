@@ -41,6 +41,19 @@ const fmtCell = (v) => {
 };
 const fmtNum = (v, d = 2) => (v == null || !Number.isFinite(+v)) ? "—" : (+v).toFixed(d);
 
+// The heat cells need their tone as an rgb triple to vary alpha per cell. That used to be two
+// hand-copied literals sitting a hundred lines away from the tokens they were transcriptions of,
+// with nothing keeping them in step — change a token and the grid quietly stays on the old hue.
+// Derived from the token instead, and a test in gexRead fails if a literal comes back.
+const rgbOf = (hex) => {
+  const h = String(hex).replace("#", "");
+  return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)).join(",");
+};
+// POSITIVE AND NEGATIVE GAMMA, NOT UP AND DOWN. Green/red is the wrong vocabulary here: negative
+// gamma means moves amplify, which fits a rally exactly as well as a selloff, and a red grid says
+// "bearish" to every reader before they have read a word of the caption.
+const HEAT_POS = rgbOf(C.green), HEAT_NEG = rgbOf(C.purple);
+
 // Staleness is measured in HOURS, from the capture timestamp — not in days from the date.
 // The flip moved four points and its zone tripled inside ninety minutes on 2026-09-01. A row
 // labelled "captured today" at 14:00 off an 09:00 capture is not wrong, it is stale, and stale
@@ -365,7 +378,7 @@ export function GexPanel() {
               <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
                 <SLabel>Strike × expiry</SLabel>
                 <span style={{ fontSize: 11.5, color: C.muted }}>
-                  the {heat.shown} heaviest of {heat.total} strikes · green = positive gamma, red = negative
+                  the {heat.shown} heaviest of {heat.total} strikes · green = positive gamma, purple = negative
                 </span>
               </div>
               {/* Scrolls on its own rather than widening the page — the strike column is pinned so a
@@ -401,7 +414,7 @@ export function GexPanel() {
                             <div key={e} title={`${e} · ${fmtNum(k, 0)} · ${fmtUsd(v ?? 0)}`}
                               style={{ height: 20, borderRadius: 3,
                                        background: a === 0 ? C.bg
-                                         : `rgba(${v > 0 ? "22,101,52" : "153,27,27"},${a})`,
+                                         : `rgba(${v > 0 ? HEAT_POS : HEAT_NEG},${a})`,
                                        border: "1px solid " + (isSpot ? C.blBdr : "transparent"),
                                        display: "flex", alignItems: "center", justifyContent: "center",
                                        overflow: "hidden" }}>
@@ -412,7 +425,7 @@ export function GexPanel() {
                                   a blank cell stays blank, because there is nothing to print. */}
                               <span style={{ fontSize: 8.5, fontWeight: 800, lineHeight: 1,
                                              fontVariantNumeric: "tabular-nums", letterSpacing: -0.2,
-                                             color: a >= 0.55 ? "#fff" : (v > 0 ? C.green : C.red) }}>
+                                             color: a >= 0.55 ? "#fff" : (v > 0 ? C.green : C.purple) }}>
                                 {fmtCell(v)}
                               </span>
                             </div>

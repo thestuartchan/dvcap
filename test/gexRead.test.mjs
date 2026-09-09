@@ -2,6 +2,7 @@
 // The behaviour that matters most is ABSTENTION: spot inside the flip zone is the common case on a
 // real chain and genuinely is not a regime read. A panel that always has an opinion is one nobody
 // should size off, so "no usable read" is tested harder than the readable cases.
+import { readFileSync } from 'node:fs';
 import { gexRead, regimeOf, skewOf, ageOf, FLIP_MARGIN_PCT, wallAgreement } from '../lib/gexRead.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -299,6 +300,40 @@ const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600000).toISOString();
                         grid: { frontShare: 100, frontExpiry: 'x', dominated: false, expiries: [E('x', 100, 700, 730)] },
                         now: new Date('2026-09-08T13:45:00Z'), live: true });
   ok('one expiry says nothing about holding across expiries', !/expiries peaks|walls hold across/.test(one.lines.join(' ')));
+}
+
+// ── THE HEATMAP'S TONES COME FROM THE TOKENS ─────────────────────────────────
+// Not a style opinion — a drift guard. The heat cells need their colour as an "r,g,b" string to
+// vary alpha per cell, and that used to be two literals ("22,101,52", "153,27,27") sitting a
+// hundred lines from the C.green / C.red they were hand-copies of. Nothing tied them together, so
+// changing a token would have silently left the grid on the old hue. They are derived now, and
+// this fails if anyone puts a literal back.
+//
+// The hue itself is load-bearing too. Negative gamma means moves AMPLIFY — it fits a rally exactly
+// as well as a selloff — and the panel says so in words. A red grid says "bearish" before the
+// reader gets to those words, so the sign of gamma is carried in purple.
+{
+  const src = readFileSync(new URL('../src/GexPanel.jsx', import.meta.url), 'utf8');
+  const theme = readFileSync(new URL('../src/theme.js', import.meta.url), 'utf8');
+
+  ok('the palette defines a purple', /purple:\s*"#[0-9A-Fa-f]{6}"/.test(theme));
+  ok('the heat cells derive their tones from the tokens', /HEAT_POS\s*=\s*rgbOf\(C\.green\)/.test(src));
+  ok('and the negative tone is the purple token', /HEAT_NEG\s*=\s*rgbOf\(C\.purple\)/.test(src));
+  ok('the cell background uses those, not a literal', /rgba\(\$\{v > 0 \? HEAT_POS : HEAT_NEG\}/.test(src));
+  // The two literals this replaced, named exactly so a revert is caught rather than merely a
+  // generic "some rgb triple appeared somewhere".
+  ok('the old green literal is gone', !src.includes('22,101,52'));
+  ok('the old red literal is gone', !src.includes('153,27,27'));
+  ok('the cell text follows the same pair', /v > 0 \? C\.green : C\.purple/.test(src));
+  ok('and the legend says what the reader is looking at', /green = positive gamma, purple = negative/.test(src));
+  ok('the legend no longer claims red', !/green = positive gamma, red/.test(src));
+
+  // rgbOf itself, on the two tokens it is actually called with. A helper that silently produced
+  // "NaN,NaN,NaN" would render every cell transparent and look like an empty grid, not an error.
+  const rgbOf = (hex) => { const h = String(hex).replace('#', ''); return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)).join(','); };
+  eq('green-800 resolves', rgbOf('#166534'), '22,101,52');
+  eq('purple-800 resolves', rgbOf('#6B21A8'), '107,33,168');
+  ok('every channel is a number', rgbOf('#6B21A8').split(',').every(v => Number.isFinite(+v)));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

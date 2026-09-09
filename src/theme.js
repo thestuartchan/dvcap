@@ -13,5 +13,11 @@ export const C = {
   green:"#166534", gBg:"#F0FDF4", gBdr:"#86EFAC",
   amber:"#92400E", aBg:"#FFFBEB", aBdr:"#FCD34D",
   red:"#991B1B",   rBg:"#FEF2F2", rBdr:"#FCA5A5",
+  // NOT A STATUS COLOUR. Purple carries the SIGN OF GAMMA on the GEX panel, where red would be
+  // actively misleading: negative gamma is not bearish, it is amplifying, and a red cell in a
+  // financial grid reads as "down" to anyone who has ever looked at one. The panel's own copy
+  // insists the reading says nothing about direction, so the palette had better not contradict it.
+  // purple-800 to match green-800 and red-800 in weight, so the alpha ramps stay comparable.
+  purple:"#6B21A8", pBg:"#FAF5FF", pBdr:"#D8B4FE",
   blue:"#1E40AF",  blBg:"#EFF6FF", blBdr:"#BFDBFE",
 };
