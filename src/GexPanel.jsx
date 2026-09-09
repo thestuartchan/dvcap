@@ -90,7 +90,9 @@ export function GexPanel() {
       }
       // The snapshot result carries headline figures; re-read the stored row for the rest and
       // overlay. A live read that silently dropped the walls would be a downgrade, not a refresh.
-      if (hit) setLive({ row: { ...(data?.latest || {}), ...hit.row, asOf: new Date().toISOString() }, byStrike: hit.byStrike || null, grid: hit.grid || null });
+      if (hit) setLive({ row: { ...(data?.latest || {}), ...hit.row, asOf: new Date().toISOString() },
+                         byStrike: hit.byStrike || null, grid: hit.grid || null,
+                         mode: hit.mode || "fresh", note: hit.mode === "repriced" ? hit : null });
       else setLive(null);
     } catch (e) {
       setLive(null);
@@ -143,8 +145,9 @@ export function GexPanel() {
         ))}
       </div>
       {latest && (
-        <span style={{ fontSize: 11.5, fontWeight: 800, color: live ? C.green : (TONE_FOR_AGE[fresh.level] || C.muted) }}>
-          {live ? "● live" : `${fresh.stale ? "⚠ " : ""}${fresh.label}`}
+        <span style={{ fontSize: 11.5, fontWeight: 800,
+                       color: live ? (live.mode === "repriced" ? C.amber : C.green) : (TONE_FOR_AGE[fresh.level] || C.muted) }}>
+          {live ? (live.mode === "repriced" ? "◐ repriced" : "● live") : `${fresh.stale ? "⚠ " : ""}${fresh.label}`}
         </span>
       )}
       <button onClick={refreshLive} disabled={liveBusy}
@@ -168,11 +171,29 @@ export function GexPanel() {
     </div>
   ) : null;
 
+  // WHAT IS LIVE HERE AND WHAT IS NOT. A repriced read is the settled chain at today's spot — the
+  // open interest and the implied vols are the ones captured on `from`, and a vol move since then
+  // is invisible to it. Saying "● live" over that would be the same mistake the IV guard exists to
+  // prevent, one step further along.
+  const repricedCard = live?.note ? (
+    <div style={{ marginTop: 8, padding: "7px 10px", borderRadius: 7, background: C.aBg,
+                  border: "1px solid " + C.aBdr, fontSize: 11.5, color: C.amber, lineHeight: 1.55 }}>
+      <b>Repriced from the {live.note.repricedFrom} chain</b> — today's quotes are unusable
+      {live.note.liveIv != null ? ` (the live chain's open-interest-weighted implied vol reads ${(live.note.liveIv * 100).toFixed(1)}%, against ~20% on a real one)` : ""},
+      so this is that day's settled open interest and implied vols at the current spot and time decay.
+      <div style={{ color: C.mid, marginTop: 3 }}>
+        Live: the spot and the time to every expiry. Not live: the open interest, and the vol surface —
+        a vol move since {live.note.capturedAt ? new Date(live.note.capturedAt).toISOString().slice(0, 16).replace("T", " ") + " UTC" : "the capture"} does not show up here.
+        {live.note.expiredSinceCapture > 0 && ` ${live.note.expiredSinceCapture} contract${live.note.expiredSinceCapture === 1 ? " has" : "s have"} expired since, and dropped out — the walls move for that reason alone.`}
+      </div>
+    </div>
+  ) : null;
+
   if (err) return <Card>{header}<div style={{ fontSize: 12.5, color: C.red, marginTop: 8 }}>Could not load: {err}</div></Card>;
   if (!data) return <Card>{header}<div style={{ fontSize: 12.5, color: C.muted, marginTop: 8 }}>Loading…</div></Card>;
   if (!data.available) {
     return (
-      <Card>{header}{liveErrCard}
+      <Card>{header}{liveErrCard}{repricedCard}
         <div style={{ fontSize: 12.5, color: C.mid, marginTop: 8, lineHeight: 1.6 }}>
           Nothing captured yet. The snapshot runs mid-session each weekday and writes one row per symbol;
           the by-strike chart appears after the first run and the time series becomes meaningful after
@@ -194,6 +215,7 @@ export function GexPanel() {
       <Card>
         {header}
         {liveErrCard}
+        {repricedCard}
         {read.ok && (
           <div style={{ marginTop: 10, padding: "11px 13px", borderRadius: 9,
                         background: read.state === "amplify" ? C.rBg : read.state === "damp" ? C.gBg : C.surf,
