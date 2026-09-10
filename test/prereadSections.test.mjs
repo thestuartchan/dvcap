@@ -191,8 +191,17 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
     const asian = watchlist([{ name: '373220.KS', sym: '373220.KS' }, { name: '051910.KS', sym: '051910.KS' },
                              { name: '005930.KS', sym: '005930.KS' }],
       s => ({ price: 100, changePercent: ({ '373220.KS': 6.46, '051910.KS': 5.56, '005930.KS': -2.1 })[s] }));
-    eq('a local listing renders under its company name', asian[0].name, 'LG Energy');
-    ok('and the raw ticker does not reach the reader', !/373220/.test(renderWatchlist(asian)));
+    // ── BOTH, NOT EITHER ─────────────────────────────────────────────────────
+    // The first version shipped bare tickers and told a reader nothing about what they were.
+    // Replacing them with names shipped the opposite failure: "Largan · 6,870 · +5.69%" is
+    // recognisable and cannot be typed into an order ticket.
+    eq('a local listing carries its company name', asian[0].name, 'LG Energy');
+    const txt = renderWatchlist(asian);
+    ok('and the ticker beside it, so the row can be acted on', /\*\*LG Energy\*\* `373220\.KS`/.test(txt));
+    // A US ticker IS its own name and must not be printed twice.
+    const us = renderWatchlist(watchlist([{ name: 'NVDA', sym: 'NVDA' }, { name: 'MU', sym: 'MU' }],
+      () => ({ price: 100, changePercent: 2.1 })));
+    ok('a name that is its own ticker is not doubled', !/NVDA\*\* `NVDA`/.test(us));
   }
 
   // ── SILENCE, NOT BOOKKEEPING ───────────────────────────────────────────────
