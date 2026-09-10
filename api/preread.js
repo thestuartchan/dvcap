@@ -15,8 +15,8 @@ import { coreSpread } from '../lib/inflation.js';
 const PREREAD_LAST_KEY = 'dvcap:preread:last:v1';
 import { kofiaStoredLine, koreaFlowRead, koreaFlowImplication } from '../lib/kofia.js';
 import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
-import { readGex, repriceStored, GEX_SYMBOLS } from '../lib/gexStore.js';
-import { renderGexSection, pinOf } from '../lib/gexBrief.js';
+import { readGex, repriceStored, settledGex, GEX_SYMBOLS } from '../lib/gexStore.js';
+import { renderGexSection, pinOf, RUNGS } from '../lib/gexBrief.js';
 import { watchlist, renderWatchlist } from '../lib/watchlist.js';
 import { WATCH_UNIVERSE } from '../data/watchUniverse.js';
 import {
@@ -514,7 +514,7 @@ function buildKorea(k) {
 // print, which is the whole reason repricing is worth doing. Where no live spot is available the
 // stored row stands as captured and says so.
 async function gexBlock(liveSpot, tense = 'preview') {
-  const rows = [], vint = { rung: 'none', from: null, asOf: null };
+  const rows = [], vint = { rung: 'none', from: null, asOf: null, spotSource: null };
   for (const sym of GEX_SYMBOLS) {
     try {
       const stored = await readGex(sym);
@@ -525,7 +525,23 @@ async function gexBlock(liveSpot, tense = 'preview') {
       const spot = liveSpot?.(sym) ?? null;
 
       let row = null, rung = 'stored';
-      if (spot > 0 && Math.abs(spot / latest.spot - 1) > 1e-9) {
+      // ── TODAY'S SETTLED BOOK FIRST ───────────────────────────────────────
+      // Everything below this is one settlement old by construction: `repriced` moves yesterday's
+      // open interest to today's spot, and `stored` moves neither. OCC publishes what it actually
+      // settled, overnight and hours before any brief fires — measured 2026-09-10, the file was
+      // final by 01:10 UTC and had not moved one series by 08:48. The expiries are matched to the
+      // stored capture's so the two rungs describe the same book and the fall-through stays
+      // comparable.
+      try {
+        const st = await settledGex(sym, { spot: spot > 0 ? spot : null, expiries: latest.expiries || null });
+        if (st?.ok && st.row) {
+          row = { ...st.row, pin: pinOf(st.grid, { spot: st.spotUsed, today, expired }) };
+          rung = 'occ';
+          // The weaker of the two symbols' spot sources wins, same rule as the rung itself.
+          if (st.spotSource === 'CBOE') vint.spotSource = 'CBOE';
+        }
+      } catch { /* the top rung is best-effort; the cascade exists for exactly this */ }
+      if (!row && spot > 0 && Math.abs(spot / latest.spot - 1) > 1e-9) {
         const rp = await repriceStored(sym, { spot });
         if (rp?.row) {
           row = { ...rp.row, pin: pinOf(rp.grid, { spot, today, expired }) };
@@ -539,9 +555,10 @@ async function gexBlock(liveSpot, tense = 'preview') {
                   // The book's own open-interest-weighted vol, for the expected-range line. It
                   // survives repricing unchanged — repriceStored moves the spot, not the surface.
                   iv: row.oiWeightedIv ?? latest.oiWeightedIv ?? null });
-      // The WORST rung across the symbols wins the label — a footer claiming the spot is live is
-      // false the moment one of the two could not be repriced.
-      if (vint.rung === 'none' || (vint.rung === 'repriced' && rung === 'stored')) vint.rung = rung;
+      // The WORST rung across the symbols wins the label — a footer claiming today's settled book
+      // is false the moment one of the two fell through to yesterday's. Ordered by RUNGS rather
+      // than by a pair of comparisons, which is what let a third rung be added without another.
+      if (vint.rung === 'none' || RUNGS.indexOf(rung) > RUNGS.indexOf(vint.rung)) vint.rung = rung;
       vint.from = latest.date; vint.asOf = latest.asOf;
     } catch { /* one symbol short is a smaller loss than no section */ }
   }
