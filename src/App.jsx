@@ -4495,6 +4495,18 @@ function MacroCell({ field, value, delta, deltaSuffix, extra = null }) {
         {/* A CHECK THAT STOPPED MUST SAY SO. A derived card that quietly renders "—" looks like a
             feed outage; this one names the vintage mismatch that prevented it, so the blank is
             legible rather than alarming. */}
+        {/* P4-A — LATE FOR ITS OWN SCHEDULE, said on the tile that carries the number. `macroFresh`
+            already grades staleness by cadence; this is the sharper question the credit gate has
+            always asked and no other tile did: the series publishes daily and today's print is
+            missing. A live field says so instead — it has nothing to age. */}
+        {field?.live === true && field?.liveAsOf && (
+          <span style={{ color: C.green, fontWeight: 700 }} title={`live quote · ${field.liveSrc || ""}`}>live {String(field.liveAsOf).slice(11)}</span>
+        )}
+        {field?.vintage?.late && (
+          <span style={{ color: C.amber, fontWeight: 700 }} title={field.vintage.note || ""}>
+            ⚠ no print since {field.vintage.obsDate} ({field.vintage.bizDays}d)
+          </span>
+        )}
         {field?.align && field.align.checked === false && (
           <span style={{ color: C.amber, fontWeight: 700 }} title={field.align.reason || ""}>⚠ not computed — inputs disagree on date</span>
         )}
@@ -5217,6 +5229,15 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                 return (
                   <div style={{ marginTop: 10, padding: "10px 12px", background: C.bg, border: "1.5px solid " + (mismatch ? C.rBdr : unconfirmed ? C.aBdr : C.bdrMd), borderRadius: 8 }}>
                     <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>Debasement / stagflation read (gold+BTC)</div>
+                    {/* P4-A — WHAT THIS READ IS COMPOSED FROM. Gold and BTC tick all day; the real
+                        yield and the breakeven are end-of-day FRED prints. The classifier is
+                        comparing this hour against a settled session, which is structural rather
+                        than a fault — so it is disclosed here rather than silently averaged. */}
+                    {rs.vintageNote && (
+                      <div style={{ fontSize: 10.5, color: C.amber, fontWeight: 600, marginTop: 2, lineHeight: 1.45 }}>
+                        ⚠ {rs.vintageNote}
+                      </div>
+                    )}
                     {/* P0.1 — scope label. */}
                     <div style={{ fontSize: 11, fontWeight: 800, color: C.blue, letterSpacing: 0.3, marginTop: 1 }}>cross-asset · 5d smoothed</div>
                     {/* A label that contradicts the deltas shown beneath it is suppressed — the

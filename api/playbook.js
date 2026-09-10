@@ -28,7 +28,7 @@ export default async function handler(req, res) {
   const assembled = await assembleRegion(region);
   if (!assembled) return res.status(400).json({ error: 'bad region' });
 
-  const { R, quotes, idxRaw, macro, regime, cross, hyg, leaning, csop7709, volTerm, handoff, scenarios, posture, smhSoxx, fxPnl, correlation, events, read, marketRegime, ladder, fx, won, intervention, auctions } = assembled;
+  const { R, quotes, idxRaw, macro, regime, cross, hyg, leaning, csop7709, volTerm, handoff, scenarios, posture, smhSoxx, fxPnl, correlation, events, read, marketRegime, ladder, fx, won, intervention, auctions, vintages } = assembled;
 
   // Attach display metadata + structure tag to each name, and names to indices.
   // `session` = explicit phase of that symbol's OWN exchange (live/pre/post/lunch/holiday/
@@ -80,6 +80,7 @@ export default async function handler(req, res) {
     won,                  // F4  — USD/KRW attribution: macro move vs Korea-specific (Gate 2)
     intervention,         // F3  — manual intervention flag + DXY yen-leg attribution
     auctions,             // P7  — Treasury auction calendar + how the last long-end one went
+    vintages,             // P4-A — every gate's observation date, and whether it is late for its own schedule
     // Announced auctions ride in the hand-maintained calendar's own shape, so every consumer of
     // this field gets them without knowing they came from a feed.
     calendar: (() => { const hand = weekHighlights();
