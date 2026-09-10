@@ -10,6 +10,8 @@
 //   GET /api/gex?snapshot=1[&dry=1]  capture today's chain — the cron target
 import { kvConfigured } from '../lib/kv.js';
 import { captureGex, readGex, settledGex, GEX_SYMBOLS } from '../lib/gexStore.js';
+import { getQuotes } from '../lib/quotes.js';
+import { marketState } from '../lib/sessions.js';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'private, no-store');
@@ -47,14 +49,37 @@ export default async function handler(req, res) {
       : GEX_SYMBOLS;
     const bad = syms.filter(x => !GEX_SYMBOLS.includes(x));
     if (bad.length) return res.status(400).json({ error: `unknown symbol ${bad.join(', ')}` });
+    // ── THE SERVER DECIDES WHAT "THE CURRENT PRICE" MEANS ────────────────────
+    // The panel was fetching /api/prices and passing the result. That route returns the REGULAR
+    // print and never an extended-hours one, so pre-open it handed back the PRIOR CLOSE — 716.31
+    // against a live pre-market 707.94 on 2026-09-10, a 1.2% error, labelled `spotSource: caller`
+    // and therefore reported in the footer as the live spot. Exactly the defect just fixed in the
+    // pre-read, one layer over: the map's own symbols were being priced off a quote that has no
+    // pre/post overlay.
+    //
+    // So the spot is resolved HERE, with the same getQuotes({ prepost }) call the pre-read uses,
+    // and there is one definition of the current price rather than one per caller. An explicit
+    // ?spot= still wins — it is how a caller asks "what would the book look like at X" — but
+    // nothing has to pass one to get the right answer.
     const spotIn = Number(req.query?.spot);
+    const resolveSpot = async (sym) => {
+      if (Number.isFinite(spotIn) && spotIn > 0 && syms.length === 1) return spotIn;
+      try {
+        const [q] = await getQuotes([sym], { prepost: true });
+        // Outside regular hours the extended print is the live one and the regular is yesterday's.
+        // Inside them it is the other way round, and a stale ext must never override a live regular.
+        const shut = marketState(sym) !== 'open';
+        const px = (shut && q?.ext && !q.ext.stale && q.ext.price > 0) ? q.ext.price : q?.price;
+        return Number.isFinite(+px) && +px > 0 ? +px : null;
+      } catch { return null; }   // settledGex falls back to CBOE's, and the footer names it
+    };
     const results = [];
     for (const sym of syms) {
       // The stored row's expiries, so the settled map covers the same book as the series it sits
       // beside — otherwise the two disagree about the flip for reasons that are about coverage.
       const stored = await readGex(sym).catch(() => null);
       const out = await settledGex(sym, {
-        spot: Number.isFinite(spotIn) && spotIn > 0 && syms.length === 1 ? spotIn : null,
+        spot: await resolveSpot(sym),
         expiries: stored?.latest?.expiries || null,
       });
       results.push({ symbol: sym, ...out });
