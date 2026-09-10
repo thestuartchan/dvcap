@@ -356,7 +356,12 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
   // the abbreviation, and one who does loses nothing from the words.
   ok('the credit gauge is described, not abbreviated',
      /risky companies pay \*\*2.67pp\*\* over government debt/.test(B.creditLine({ oas: 2.67, state: 'CALM' })));
-  ok('and no ticker or acronym reaches the reader', !/\bOAS\b|\bHY\b/.test(B.creditLine({ oas: 2.67, state: 'CALM' })));
+  // AND IT IS ALSO NAMED. This asserted the opposite — that no acronym reached the reader — on the
+  // reasoning that "HY OAS" teaches nobody anything. True, and it left a reader who wanted to look
+  // the gauge up, argue with it, or find it on another screen with no way to do any of that. The
+  // description carries the meaning and the name carries the identity; the line needs both, which
+  // is the same lesson as the watchlist row needing a company name AND its ticker.
+  ok('and the gauge is identified too', /HY OAS/.test(B.creditLine({ oas: 2.67, state: 'CALM' })));
   // A SPREAD THAT DID NOT PUBLISH AND ONE THAT DID NOT MOVE ARE DIFFERENT FACTS, and they rendered
   // identically for months.
   ok('a stale print says so rather than implying flatness',
@@ -561,6 +566,86 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
   // And the live threshold survives into the plain-English name rather than being hardcoded there.
   eq('the gloss carries the live level', plainTripwire({ name: '30Y > 5.35%', tripped: false }).name,
      'The 30-year yield clears 5.35%');
+}
+
+
+// ── TWO CREDIT NUMBERS, NEITHER LABELLED ─────────────────────────────────────
+// OVERNIGHT carried "junk bonds -0.2%" and BACKDROP carried "risky companies pay 2.67pp". Those
+// are two different instruments — the ETF's daily price change and the option-adjusted spread's
+// level — measuring the same worry at different speeds, four sections apart, with nothing saying
+// which was which. The first reads like the second and gives no level.
+{
+  const { creditLine } = await import('../lib/briefSections.js');
+  const line = creditLine({ oas: 2.67, date: '2026-09-08', state: 'CALM', hygPct: -0.2 });
+  ok('the spread gauge is named', /Credit \(HY OAS\)/.test(line));
+  ok('and it carries a LEVEL, in points', /\*\*2.67pp\*\*/.test(line));
+  ok('the ETF is named as an ETF', /junk-bond ETF \(HYG\)/.test(line));
+  ok('and carries a daily CHANGE, not a level', /is \*\*-0.2%\*\* today/.test(line));
+  ok('a normal-lag print reads as an observation date, not a warning', /_\(as of 2026-09-08\)_/.test(line));
+  ok('and only a genuinely late one is called out',
+     /no new print/.test(creditLine({ oas: 2.67, date: '2026-09-02', state: 'CALM', stale: true })));
+}
+
+// ── LATE, NOT MERELY LAGGED — AND THAT DEPENDS ON THE HOUR ───────────────────
+// noNewPrint fired at bizDays > 1. test/staleprint.test.mjs justified that with "a daily FRED
+// series publishes with a one-business-day lag as a matter of course"; lib/gates.js said the lag
+// is "TWO days and VARIABLE". Both are right, at different hours, and neither is the whole rule:
+// FRED publishes the prior business day's OAS during the US MORNING.
+//
+// The US brief fires at 09:00 ET, after that. Asia fires at 07:00 HKT and Europe at 09:00 London,
+// both before — so a fixed threshold of 1 fired on the ORDINARY state for two regions of three,
+// every day. Measured 2026-09-10 at 01:30Z: the OAS's latest observation was 2026-09-08, two
+// business days back and exactly on schedule, and the live Asia brief called it "no new print".
+{
+  const { noNewPrint, expectedLagBizDays, FRED_PUBLISH_HOUR_UTC } = await import('../lib/read.js');
+  const { observationAge } = await import('../lib/gates.js');
+  const AFTER  = new Date('2026-09-10T14:00:00Z');
+  const BEFORE = new Date('2026-09-10T01:30:00Z');
+
+  ok('the publish hour is stated', FRED_PUBLISH_HOUR_UTC > 0);
+  eq('two business days are expected before the update lands', expectedLagBizDays(BEFORE), 2);
+  eq('and one after it', expectedLagBizDays(AFTER), 1);
+
+  // The exact reading that shipped as a false warning.
+  eq('the Asia brief hour treats a two-day-old print as on schedule',
+     noNewPrint({ available: true, bizDays: 2 }, BEFORE), false);
+  // AND THE ORIGINAL DEFECT IS UNTOUCHED — the same reading after the update is a real miss.
+  eq('the same reading after the update is a miss',
+     noNewPrint({ available: true, bizDays: 2 }, AFTER), true);
+  eq('three business days is late at either hour', noNewPrint({ available: true, bizDays: 3 }, BEFORE), true);
+  eq('and nothing available claims nothing', noNewPrint(null, AFTER), false);
+
+  // observationAge drew the same line through its own chip and the two disagreed. They agree now.
+  const two = observationAge('2026-09-08', BEFORE);
+  eq('the live case really is two business days', two.bizDays, 2);
+  eq('which its own chip calls amber, not red', two.chip, 'amber');
+  eq('and which is no longer called a missing print', noNewPrint(two, BEFORE), false);
+}
+
+// ── THE 'delayed' STATE WAS DOCUMENTED AND NEVER IMPLEMENTED ─────────────────
+// lib/sessions.js has always said 'delayed' is "what stops the blanket ⚠️ stale badge from firing
+// on live-but-delayed feeds". freshness() returned 'stale' instead and the state did not exist,
+// while the budget was a flat thirty minutes written for a real-time feed — against a keyless feed
+// that runs twenty minutes behind Seoul. MEASURED: at 00:56Z the Korean quotes were 20 minutes old
+// and correctly read live; nine minutes later the live brief said "Equity prints are stale — the
+// market is open but these are prior closes". They were not prior closes.
+{
+  const { freshness, freshnessText, feedDelayFor, CADENCE_MIN } = await import('../lib/sessions.js');
+  const NOW = new Date('2026-09-10T01:05:00Z').getTime();     // Seoul and Tokyo trading
+  const old = (min) => ({ price: 1, ts: Math.floor(NOW / 1000) - min * 60 });
+
+  eq('Seoul’s feed delay is known', feedDelayFor('005930.KS'), 20);
+  eq('and a US quote has none to allow for', feedDelayFor('QQQ'), 0);
+  // The exact reading that produced the false alarm.
+  eq('a 20-minute-old Seoul print is not stale', freshness('005930.KS', old(20), NOW).state, 'delayed');
+  eq('nor is it claimed to be live', freshness('005930.KS', old(20), NOW).state !== 'live', true);
+  eq('28 minutes, the flicker point, is still not stale', freshness('005930.KS', old(28), NOW).state, 'delayed');
+  // The budget is the venue's delay PLUS the cadence, so late means late FOR THAT FEED.
+  eq('past the venue’s own budget it is stale', freshness('005930.KS', old(55), NOW).state, 'stale');
+  ok('and the budget is the delay plus the cadence', feedDelayFor('005930.KS') + CADENCE_MIN.intraday === 50);
+  // A fresh print is still just live — the label is not applied to everything from a delayed venue.
+  eq('a genuinely fresh print reads live', freshness('005930.KS', old(5), NOW).state, 'live');
+  ok('the state has words', /delayed feed/.test(freshnessText({ state: 'delayed', ageMin: 20 })));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

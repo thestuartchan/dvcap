@@ -105,8 +105,13 @@ export function zonedToUtc(dateStr, hh, mm, tz) {
 //   market open + feed lagging       → "⏱Nm delayed"     (keyless Yahoo runs ~15m behind)
 //   market open + fresh              → ""                 (live)
 //   no price                         → "⚠️no print"
-function freshLabel(sym, q) {
-  const t = freshnessText(freshness(sym, q));
+// `now` is threaded rather than defaulted. freshness() falls back to Date.now(), which made the
+// golden brief only PARTLY deterministic: CLOCK's countdowns were pinned and the per-quote
+// freshness labels were not, so a fixture rendered an hour later produced different tails and the
+// golden drifted on its own. A golden that changes without a code change is worse than no golden —
+// it teaches a reader to bless the diff without reading it.
+function freshLabel(sym, q, now = Date.now()) {
+  const t = freshnessText(freshness(sym, q, now));
   return t ? ` · ${t}` : '';   // live → no suffix
 }
 
@@ -114,12 +119,12 @@ function freshLabel(sym, q) {
 // market is SHUT but a FRESH extended-hours print exists, show it (labeled · pre-mkt /
 // · post) instead of the stale prior regular close — that's the live gap at the 09:00
 // ET fire. Everywhere else, the regular print + market-state freshness label.
-function displayQuote(q, region) {
-  if (region === 'us' && marketState(q.sym) === 'closed' && q.ext && !q.ext.stale) {
-    const sess = localHour('America/New_York') < 12 ? 'pre-mkt' : 'post';
+function displayQuote(q, region, now = new Date()) {
+  if (region === 'us' && marketState(q.sym, now) === 'closed' && q.ext && !q.ext.stale) {
+    const sess = localHour('America/New_York', now) < 12 ? 'pre-mkt' : 'post';
     return { price: q.ext.price, changePct: q.ext.changePct, tail: ` · ${sess}` };
   }
-  return { price: q.price, changePct: q.changePct, tail: freshLabel(q.sym, q) };
+  return { price: q.price, changePct: q.changePct, tail: freshLabel(q.sym, q, now.getTime()) };
 }
 
 export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox, opts = {}) {
@@ -134,8 +139,8 @@ export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, 
   // is a fact about the hour rather than about any name. When every quoted line agrees, the tail is
   // lifted into the header; the moment they diverge (one exchange open, another shut, a delayed
   // feed) it drops back onto the lines, because then it IS per-name information.
-  const nameQ = quotes.map((q, i) => ({ q, m: names[i], d: displayQuote(q, region) }));
-  const idxQ  = indices.map(q => ({ q, d: displayQuote(q, region) }));
+  const nameQ = quotes.map((q, i) => ({ q, m: names[i], d: displayQuote(q, region, now) }));
+  const idxQ  = indices.map(q => ({ q, d: displayQuote(q, region, now) }));
   const tails = [...nameQ, ...idxQ].map(x => x.d.tail);
   const sharedTail = (tails.length && tails.every(t => t === tails[0]) && tails[0]) ? tails[0] : null;
 
@@ -333,7 +338,11 @@ export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, 
     const vix = crossRow('volCredit', 'VIX'), hyg = crossRow('volCredit', 'HYG');
     const risk = [
       vix?.price != null ? `😰 **VIX** ${vix.price}${vix.changePct != null ? ` ${pctWord(vix.changePct)}` : ''}` : null,
-      hyg?.changePct != null ? `**junk bonds** ${pctWord(hyg.changePct)}` : null,
+      // NAMED FOR THE INSTRUMENT. "junk bonds -0.2%" is the ETF's PRICE and reads like the credit
+      // spread, which is the other credit number in this brief and is quoted in percentage POINTS
+      // at a level rather than as a daily change. Two different instruments, neither labelled, four
+      // sections apart.
+      hyg?.changePct != null ? `**junk-bond ETF (HYG)** ${pctWord(hyg.changePct)}` : null,
     ].filter(Boolean);
     if (!legs.length && !risk.length) return null;
     const note = breadthNote(soxPct, spy?.changePct ?? null, { narrow: 'chips', broad: 'the broad market' });
@@ -746,7 +755,7 @@ async function runRegion(region, req) {
   // Asia fires 42 minutes after the close capture, the US brief 14h42m after it.
   const liveSpot = (sym) => {
     const hit = indices.find(q => q.sym === sym) || quotes.find(q => q.sym === sym);
-    const px = hit ? displayQuote(hit, region).price : null;
+    const px = hit ? displayQuote(hit, region).price : null;   // live path — real clock is right here
     return Number.isFinite(+px) && +px > 0 ? +px : null;
   };
   // ── WHOSE SESSION IS THIS MAP ABOUT? ───────────────────────────────────────

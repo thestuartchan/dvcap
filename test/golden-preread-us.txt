@@ -3,7 +3,7 @@
 ───────────────
 
 🕐 **CLOCK**
-• 🔔 **New York** opens in **12h 52m** _(next session)_
+• 🔔 **New York** opens in **12h 33m** _(next session)_
 • 📌 **Today:** US 10Y note auction _(17:00Z)_
 • 📆 **Ahead:** **Thu** ECB rate decision (Berlin away meeting) · **Thu** US Initial Jobless Claims (weekly) · **Thu** US PPI (Aug)
 
@@ -15,7 +15,7 @@
 • 🔬 **Inside chips:** foundry +0.4% vs memory +2.8% — memory ahead of foundry
 • 🤖 **AI vs the rest:** +0.8% vs +0.4% — moving together
 • 💵 **Money:** **2yr 4.39%** · **10yr 4.8%** · **30yr 5.25%** — the normal way round
-• 🩹 **Credit:** risky companies pay **2.67pp** over government debt — **no new print** since 2026-09-08 — lenders are relaxed about risky borrowers · junk-bond ETF **-0.2%** today
+• 🩹 **Credit (HY OAS):** risky companies pay **2.67pp** over government debt _(as of 2026-09-08)_ — lenders are relaxed about risky borrowers · the junk-bond ETF (HYG) is **-0.2%** today
 • 🛢️ **Oil:** WTI **$96.61** · Brent **$101.36** — above its recent trend, so it adds to costs rather than easing them
 • 😰 **Fear:** VIX **16.46** +4.7% — priced for an ordinary session
 • 🌡️ **Inflation:** the headline-style measure reads **2.47%**, but the gauge the Fed actually targets is **higher at 3.34%** — the cooler of the two is not the one policy is set against

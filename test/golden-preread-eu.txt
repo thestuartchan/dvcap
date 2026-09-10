@@ -3,8 +3,8 @@
 ───────────────
 
 🕐 **CLOCK**
-• 🔔 **Amsterdam/Paris, Frankfurt and London** open in **6h 22m**
-• 🇺🇸 **US opens in 12h 52m** — 14:30 your time
+• 🔔 **Amsterdam/Paris, Frankfurt and London** open in **6h 3m**
+• 🇺🇸 **US opens in 12h 33m** — 14:30 your time
 • 📌 **Today:** ECB rate decision (Berlin away meeting) _(12:15Z)_
 • 📆 **Ahead:** **Fri** US CPI (Aug) · **Tue** Germany ZEW economic sentiment (Sep) · **Wed** FOMC decision + dot plot (SEP)
 
@@ -12,7 +12,7 @@
 
 🌙 **OVERNIGHT**
 • 📉 **Chips** SOX +0.4% · **SMH** +0.1% · **QQQ** -0.3% · **SPY** -0.5%
-• 😰 **VIX** 16.46 +4.7% · **junk bonds** -0.2%
+• 😰 **VIX** 16.46 +4.7% · **junk-bond ETF (HYG)** -0.2%
 • 👉 Chips and the broad market moved opposite ways — the move belongs to chips, not to risk appetite generally.
 
 ───────────────
@@ -22,7 +22,7 @@
 • 📋 **Names:** **BE Semi** -3.2% · **Siemens** -3.0% · **ASML** -1.3% · **STMicro** -0.8% · **SAP** +0.6% · **ASM Intl** -0.4%
 • 🤖 **AI vs the rest:** -1.6% vs -0.8% — moving together
 • 💵 **Money:** **2yr 4.39%** · **10yr 4.8%** · **30yr 5.25%** — the normal way round
-• 🩹 **Credit:** risky companies pay **2.67pp** over government debt — **no new print** since 2026-09-08 — lenders are relaxed about risky borrowers · junk-bond ETF **-0.2%** today
+• 🩹 **Credit (HY OAS):** risky companies pay **2.67pp** over government debt _(as of 2026-09-08)_ — lenders are relaxed about risky borrowers · the junk-bond ETF (HYG) is **-0.2%** today
 • 🛢️ **Oil:** WTI **$96.61** · Brent **$101.33** — above its recent trend, so it adds to costs rather than easing them
 • 🌡️ **Inflation:** the headline-style measure reads **2.47%**, but the gauge the Fed actually targets is **higher at 3.34%** — the cooler of the two is not the one policy is set against
 

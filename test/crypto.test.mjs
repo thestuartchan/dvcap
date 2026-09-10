@@ -63,8 +63,13 @@ eq('CME keeps its globex week', [marketState('CL=F', SAT), marketState('CL=F', n
   // The fix must not make crypto immune to staleness — an always-open venue is the case where a
   // stale feed is HARDEST to notice, because nothing else explains a price that will not move.
   eq('45 minutes old is still stale', freshness('BTC-USD', at(45), SAT.getTime()).state, 'stale');
-  eq('and no timestamp at all is stale, never live',
-     freshness('BTC-USD', { price: 1 }, SAT.getTime()).state, 'stale');
+  // AN UNDATED PRINT IS NOT ACCUSED AND NOT EXCUSED. It used to be folded into 'stale', which
+  // asserts the print is old — the absence of a timestamp is not evidence of that, it is the
+  // absence of evidence. It has its own state now. The rule this test exists for is unchanged and
+  // is what is asserted: it must never read as live.
+  eq('no timestamp at all is its own state',
+     freshness('BTC-USD', { price: 1 }, SAT.getTime()).state, 'undated');
+  ok('and is never live', freshness('BTC-USD', { price: 1 }, SAT.getTime()).state !== 'live');
 }
 
 // A 24/7 venue must never make a REGION look permanently open, which would disable the pre-read's

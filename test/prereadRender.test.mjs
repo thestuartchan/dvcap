@@ -24,8 +24,13 @@
 // so any difference in the rendered output is a change in the CODE, and it is visible in the diff
 // of the pull request that caused it.
 //
-// `now` is pinned for the same reason — CLOCK counts down to the next open, and an unpinned clock
-// would make the golden unstable in a way that has nothing to do with the brief.
+// `now` is pinned for the same reason — CLOCK counts down to the next open, and freshness ages
+// every quote, so an unpinned clock would make the golden unstable in a way that has nothing to do
+// with the brief.
+//
+// EACH FIXTURE IS RENDERED AT ITS OWN CAPTURE INSTANT, not at one shared constant. A shared one was
+// eighteen minutes before the captures, and eighteen minutes is enough to move a quote across the
+// live/delayed boundary — so the golden would have described a freshness that never existed.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { buildBlocks, assembleDiscord } from '../api/preread.js';
 import { UNIVERSE } from '../data/universe.js';
@@ -38,15 +43,13 @@ const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); co
 const ok = (n, c) => eq(n, !!c, true);
 
 const REGIONS = ['asia', 'eu', 'us'];
-// The capture instant. Pinned so CLOCK's countdowns are deterministic; it is the moment the
-// fixtures were taken, so the calendar in them still describes the day this renders.
-const NOW = new Date('2026-09-10T00:38:40Z');
 const UPDATE = process.env.UPDATE_GOLDEN === '1';
 
 const rendered = {};
 for (const region of REGIONS) {
   const fx = JSON.parse(readFileSync(new URL(`./fixtures-preread-${region}.json`, import.meta.url), 'utf8'));
   const s = fx.state;
+  const NOW = new Date(fx.capturedAt);
   // ── REBUILT, NOT REPLAYED ──────────────────────────────────────────────────
   // `leaning` and `composed` are OUTPUTS of lib/gates.js and lib/read.js, and the capture contains
   // both. Rendering the frozen copies would mean a change to either — a new gauge, a reworded row,
@@ -120,6 +123,7 @@ for (const region of REGIONS) {
 {
   const fx = JSON.parse(readFileSync(new URL('./fixtures-preread-asia.json', import.meta.url), 'utf8'));
   const s = fx.state;
+  const NOW = new Date(fx.capturedAt);
   const stale = buildBlocks('asia', s.quotes, s.indices, s.macro,
     { ...s.regime, staleWhileOpen: true }, s.cal, s.cross, s.sox,
     { leaning: s.leaning, composed: s.composed, foreign: {}, now: NOW });
