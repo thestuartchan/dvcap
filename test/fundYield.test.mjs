@@ -133,17 +133,46 @@ const page = (ticker, title, yieldPct, asOf) =>
   eq('and so is month thirteen', parseIssuerDate('2026-13-01'), null);
   eq('nonsense is not a date', parseIssuerDate('as of'), null);
 
-  // A whole pasted line, in either order.
-  eq('value and date from one paste', parseSecYieldPaste('30 Day SEC Yield as of 09/08/2026  3.68%'),
-     { value: 3.68, asOf: '2026-09-08', ambiguous: null });
-  // TWO PERCENTAGES IS AMBIGUOUS. "SEC 30-Day Yield" sits beside "12m Trailing Yield" on both
-  // pages, and the trailing figure is the backward-looking one this card exists to stop using.
-  // It still fills — and it reports what it found, so the reader can check which was taken.
+  // ── ANCHORED ON THE LABEL, NOT ON POSITION ─────────────────────────────────
+  // The first version took the FIRST percentage in the paste, and that is wrong on the page it was
+  // written for. WisdomTree's USFR header prints the DISTRIBUTION yield first:
+  //
+  //     3.82%                3.68%                0.15%
+  //     Distribution yield   30-day SEC yield     Net expense ratio
+  //     As of 9/8/2026       As of 9/8/2026       As of 9/9/2026
+  //
+  // so pasting that block yielded 3.82% — the trailing figure this whole card exists to stop using,
+  // and plausible-looking because it is only 14bp away.
   {
-    const both = parseSecYieldPaste('SEC 30-Day Yield 3.68% 12m Trailing 3.69% as of Sep 08, 2026');
-    eq('the first percentage is taken', both.value, 3.68);
-    eq('and the ambiguity is reported, not hidden', both.ambiguous, [3.68, 3.69]);
+    const wt = parseSecYieldPaste('3.82% Distribution yield As of 9/8/2026 3.68% 30-day SEC yield As of 9/8/2026 0.15% Net expense ratio As of 9/9/2026');
+    eq('the SEC yield is taken, not the first percentage', wt.value, 3.68);
+    eq('nor the distribution yield that precedes it', wt.value !== 3.82, true);
+    eq('and its own as-of comes with it', wt.asOf, '2026-09-08');
+    ok('the label did the work', wt.anchored);
+    // The count is still reported — it is no longer what decides, but a reader can see the paste
+    // held three figures and check which was taken.
+    eq('all the figures found are still reported', wt.ambiguous, [3.82, 3.68, 0.15]);
   }
+  // THE NUMBER SITS ABOVE THE LABEL ON ONE PAGE AND AFTER IT ON THE OTHER, so nearest-in-either-
+  // direction is the rule. iShares emits it as structured data with the label first.
+  {
+    const ish = parseSecYieldPaste('"name":"30 Day SEC Yield as of","value":"3.62%","valueReference":{"value":"Sep 08, 2026"}');
+    eq('the iShares order works too', ish.value, 3.62);
+    eq('with its date', ish.asOf, '2026-09-08');
+  }
+  // The real-world shape: three lines copied off the page.
+  eq('a multiline copy', parseSecYieldPaste('3.68%\n30-day SEC yield\nAs of 9/8/2026'),
+     { value: 3.68, asOf: '2026-09-08', anchored: true, ambiguous: null });
+  // M/D/YYYY WITHOUT LEADING ZEROS is what WisdomTree actually prints.
+  eq('a single-digit month and day', parseIssuerDate('9/8/2026'), '2026-09-08');
+  // With no label there is nothing to anchor to, and the first figure is the only defensible guess
+  // — reported as unanchored so a caller can say so.
+  {
+    const bare = parseSecYieldPaste('3.82% and 3.68%');
+    eq('an unlabelled paste falls back to the first', bare.value, 3.82);
+    eq('and admits it was not anchored', bare.anchored, false);
+  }
+
   // A partial paste fills what it can rather than refusing everything.
   eq('a date with no yield still yields a date', parseSecYieldPaste('as of 2026-09-08').asOf, '2026-09-08');
   eq('and an empty paste claims nothing', parseSecYieldPaste(''), { value: null, asOf: null });

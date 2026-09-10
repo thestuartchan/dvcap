@@ -1396,7 +1396,15 @@ function CashComparisonCard({ liveInd }) {
               // TWO PERCENTAGES IN ONE PASTE IS AMBIGUOUS. "SEC 30-Day Yield" sits beside "12m
               // Trailing Yield" on both pages, and taking the first silently is how the wrong one
               // gets saved. It still fills — and it says which it took.
-              setSaveMsg(p.ambiguous ? { ok: false, text: `That paste had ${p.ambiguous.length} percentages (${p.ambiguous.join("%, ")}%) — took ${p.value}%. Check it is the SEC yield, not the trailing one.` } : null);
+              // Anchored on the "30-day SEC yield" label, so a paste of the whole header block
+              // takes the right figure rather than the first one — WisdomTree prints the
+              // DISTRIBUTION yield first, 14bp away and entirely plausible. Only an UNANCHORED
+              // paste with several figures needs a warning; an anchored one already knows.
+              setSaveMsg(!p.anchored && p.ambiguous
+                ? { ok: false, text: `That paste had ${p.ambiguous.length} percentages (${p.ambiguous.join("%, ")}%) and no "30-day SEC yield" label to anchor on — took ${p.value}%. Check it is the SEC yield, not the distribution or trailing one.` }
+                : p.anchored && p.ambiguous
+                ? { ok: true, text: `Took ${p.value}% from beside the "30-day SEC yield" label (the paste held ${p.ambiguous.length} figures).` }
+                : null);
             }}
             placeholder="paste the line from the issuer page, or fill the fields below"
             style={{ width: "100%", boxSizing: "border-box", fontSize: 12, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, marginBottom: 5 }} />
