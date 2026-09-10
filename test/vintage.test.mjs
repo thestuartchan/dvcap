@@ -1,6 +1,6 @@
 // test/vintage.test.mjs — one rule for "is this input late", applied to every gate.
 import { fieldVintage, gateVintages, staleGateCaveat, mixedVintageNote,
-         GATE_ROLE, CAVEAT_CAP } from '../lib/vintage.js';
+         GATE_ROLE, CAVEAT_CAP, GATE_LAG_BIZ_DAYS } from '../lib/vintage.js';
 import { expectedLagBizDays } from '../lib/read.js';
 
 let pass = 0, fail = 0;
@@ -123,6 +123,26 @@ const AFTER  = new Date('2026-09-10T13:30:00Z');
   eq('and no live leg means no mismatch to name', mixedVintageNote([], vs, AFTER), null);
   eq('a same-day print is not a mismatch',
      mixedVintageNote(['gold'], [{ key: 'realYield', live: false, obsDate: '2026-09-10', bizDays: 0 }], AFTER), null);
+}
+
+// ── NOT EVERY SERIES IS A DAILY SERIES ──────────────────────────────────────
+// Caught on the live board an hour after this shipped: the ACM term premium read "late" at four
+// business days and pushed the confidence grade to `low` on a completely ordinary morning. It is
+// a model estimate on its own release cadence, and judging it by FRED's daily schedule flags it
+// most days — a warning that is always on is not a warning.
+{
+  const tp = { value: 0.71, date: '2026-09-04', name: 'ACM 10Y term premium' };
+  const v = fieldVintage(tp, 'termPremium', AFTER);
+  eq('an ordinary term-premium lag is not late', v.late, false);
+  eq('and the tolerance it was judged against is stated', v.tolerance, GATE_LAG_BIZ_DAYS.termPremium);
+  ok('while a daily series at the same age is', fieldVintage({ ...tp, name: 'US 2Y' }, 'us2y', AFTER).late);
+  // Past its own tolerance it still fires — the exemption is a cadence, not an excuse.
+  eq('past its own cadence it is late',
+     fieldVintage({ ...tp, date: '2026-08-20' }, 'termPremium', AFTER).late, true);
+  // A gate with no entry takes the daily rule, and the tolerance says which rule ran.
+  eq('an unlisted gate takes the daily rule',
+     fieldVintage({ value: 2.4, date: '2026-09-08', name: '10Y BE' }, 'breakeven', AFTER).tolerance,
+     expectedLagBizDays(AFTER));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
