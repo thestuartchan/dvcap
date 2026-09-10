@@ -523,11 +523,21 @@ async function gexBlock(liveSpot, tense = 'preview') {
   // refused, or never tried. Recorded per symbol and returned on the API response, which the
   // Discord message never carries.
   const why = {}, rungOf = {};
-  for (const sym of GEX_SYMBOLS) {
+  // ── BOTH SYMBOLS AT ONCE ───────────────────────────────────────────────────
+  // The loop awaited each symbol in turn, so the two option books were fetched back to back — and
+  // each is a 4.5MB CBOE payload. At the US open on 2026-09-10 that took the pre-read to 54s and
+  // the cron's own 13:00Z run fell all the way back to `repriced`, printing "positioning is the
+  // 2026-09-09 close" on a morning when today's settled book was sitting there, eleven hours old
+  // and stable. They do not depend on each other and never did.
+  //
+  // `rows` is filled by INDEX rather than pushed, because the map's row order is QQQ then SPY and
+  // a race would otherwise decide it — see the note on GEX_SYMBOLS.
+  const slots = new Array(GEX_SYMBOLS.length).fill(null);
+  await Promise.all(GEX_SYMBOLS.map(async (sym, slot) => {
     try {
       const stored = await readGex(sym);
       const latest = stored?.latest;
-      if (!latest?.spot) continue;
+      if (!latest?.spot) return;
       const today = new Date().toISOString().slice(0, 10);
       const expired = tense === 'closed';
       const spot = liveSpot?.(sym) ?? null;
@@ -565,7 +575,7 @@ async function gexBlock(liveSpot, tense = 'preview') {
       }
       if (!row) row = { ...latest, pin: pinOf(stored.grid, { spot: latest.spot, today, expired }) };
 
-      rows.push({ name: sym, spot: row.spot, putWall: row.putWall, callWall: row.callWall,
+      slots[slot] = ({ name: sym, spot: row.spot, putWall: row.putWall, callWall: row.callWall,
                   flipLevel: row.flipLevel, pin: row.pin,
                   // The book's own open-interest-weighted vol, for the expected-range line. It
                   // survives repricing unchanged — repriceStored moves the spot, not the surface.
@@ -585,7 +595,8 @@ async function gexBlock(liveSpot, tense = 'preview') {
       }
       rungOf[sym] = rung;
     } catch (e) { why[sym] = `${why[sym] ? why[sym] + '; ' : ''}symbol failed — ${String(e?.message || e)}`; }
-  }
+  }));
+  rows.push(...slots.filter(Boolean));
   if (!rows.length) return null;
   return {
     text: renderGexSection(rows, { ...vint, tense }),
