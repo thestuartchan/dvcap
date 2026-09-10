@@ -5,22 +5,24 @@
 
 import { UNIVERSE } from '../data/universe.js';
 import { assembleRegion } from '../lib/assemble.js';
-import { structure } from '../lib/regime.js';
 import { weekHighlights } from '../lib/calendar.js';
-import { marketState, localHour, localMinutesOfDay, localDateIn, isWeekendIn, localWeekday, closedExchanges, halfDayLabels, freshness, freshnessText, sessionCloseMin } from '../lib/sessions.js';
+import { marketState, localHour, localMinutesOfDay, localDateIn, isWeekendIn, localWeekday, closedExchanges, halfDayLabels, freshness, freshnessText, sessionCloseMin, sessionCountdown } from '../lib/sessions.js';
 import { kvGetJson, kvSetJson, kvConfigured } from '../lib/kv.js';
 import { coreSpread } from '../lib/inflation.js';
 
 // One key, one small object per region. A skipped brief left NO trace anywhere — the only detector
 // was a human noticing an absence in a Discord channel, which is how this morning's was found.
 const PREREAD_LAST_KEY = 'dvcap:preread:last:v1';
-import { kofiaStoredLine, koreaFlowRead, koreaFlowImplication, withCommas } from '../lib/kofia.js';
+import { kofiaStoredLine, koreaFlowRead, koreaFlowImplication } from '../lib/kofia.js';
 import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
-import { renderReadLines } from '../lib/read.js';
 import { readGex, repriceStored, GEX_SYMBOLS } from '../lib/gexStore.js';
 import { renderGexSection, pinOf } from '../lib/gexBrief.js';
 import { watchlist, renderWatchlist } from '../lib/watchlist.js';
 import { WATCH_UNIVERSE } from '../data/watchUniverse.js';
+import {
+  clockSection, overnightSection, breadthNote, backdropSection, changeSection,
+  compressLine, creditLine, ratesLine, oilLine, volLine, plainTripwire, pctWord, clockIn,
+} from '../lib/briefSections.js';
 
 
 function fmtPct(p) { return p == null ? '—' : `${p > 0 ? '+' : ''}${p.toFixed(1)}%`; }
@@ -74,6 +76,15 @@ export function prereadWindow(nowMin, targetHour, { lead = PREREAD_LEAD_MIN, win
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+// A countdown is a fact about a VENUE, not about whichever index this brief happens to quote, so
+// the clock rows are named for the city. Keyed by the exchange's own timezone because that is
+// what sessionCountdown returns and what makes two indices on one exchange collapse to one row.
+const CITY = {
+  'Asia/Hong_Kong': 'Hong Kong', 'Asia/Seoul': 'Seoul', 'Asia/Tokyo': 'Tokyo', 'Asia/Taipei': 'Taipei',
+  'Europe/London': 'London', 'Europe/Paris': 'Amsterdam/Paris', 'Europe/Berlin': 'Frankfurt',
+  'America/New_York': 'New York',
+};
+
 // A wall-clock time in a named zone → the UTC instant, DST included. Done by probing rather than
 // by an offset table: format a candidate instant back into the zone and correct by the difference,
 // which is exact for every offset the IANA database defines and needs no dependency.
@@ -111,7 +122,8 @@ function displayQuote(q, region) {
   return { price: q.price, changePct: q.changePct, tail: freshLabel(q.sym, q) };
 }
 
-function buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox) {
+function buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox, opts = {}) {
+  const { leaning = null, composed = null, foreign = {}, now = new Date() } = opts;
   const R = UNIVERSE[region];
   const names = R.names;
 
@@ -126,20 +138,11 @@ function buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox) {
   const idxQ  = indices.map(q => ({ q, d: displayQuote(q, region) }));
   const tails = [...nameQ, ...idxQ].map(x => x.d.tail);
   const sharedTail = (tails.length && tails.every(t => t === tails[0]) && tails[0]) ? tails[0] : null;
-  const tailOf = (d) => sharedTail ? '' : d.tail;
 
-  const nameLines = nameQ.map(({ m, q, d }) => {
-    const st = structure(q);
-    const bits = [`**${m.name}**`, `${d.price != null ? withCommas(d.price) : '—'}`, fmtPct(d.changePct)];
-    if (st) bits.push(st);
-    let line = `• ${bits.join(' · ')}`;
-    if (m.leader) line += ' ⭐';
-    return line + tailOf(d);
-  }).join('\n');
-
-  const idxLines = idxQ.map(({ q, d }) =>
-    `• **${q._name}** · ${d.price != null ? withCommas(d.price) : '—'} · ${fmtPct(d.changePct)}${tailOf(d)}`
-  ).join('\n');
+  // nameLines / idxLines used to render one quote per line here — fifteen lines for the names
+  // and four for the indices. BACKDROP compresses both (lib/briefSections.js, compressLine), so
+  // only the nameQ/idxQ rows and the shared freshness label survive; the per-line rendering does
+  // not. `tailOf` goes with them: with the quotes compressed there is no per-line tail to hang.
 
   // ── OVERNIGHT US ───────────────────────────────────────────────────────────
   // The Asia brief fires at 06:45 HKT — 18:45 ET, nearly three hours after the US close — and the
@@ -149,67 +152,23 @@ function buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox) {
   // numbers are the session about to start rather than a handoff into it.
   // A move smaller than half a tenth is not a direction, and "-0.0%" is a worse way of saying so
   // than the word is.
-  const pct = (v) => v == null ? '—' : Math.abs(v) < 0.05 ? 'flat' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`;
   // Cross-asset rows carry `price`, not `value` — reading the wrong one dropped VIX from the block
   // silently, which is the same shape of bug as every other field-name miss this week.
   const crossRow = (group, name) => (cross?.[group]?.rows || []).find(r => r.name === name) || null;
-  const overnightLines = (() => {
-    if (region === 'us' || !cross) return null;
-    const legs = [
-      sox?.changePct != null ? `**SOX** ${pct(sox.changePct)}` : null,
-      ...['SMH', 'QQQ', 'SPY'].map(n => { const r = crossRow('breadth', n); return r?.changePct != null ? `**${n}** ${pct(r.changePct)}` : null; }),
-    ].filter(Boolean);
-    const vix = crossRow('volCredit', 'VIX'), hyg = crossRow('volCredit', 'HYG');
-    const risk = [
-      vix?.price != null ? `**VIX** ${vix.price}${vix.changePct != null ? ` ${pct(vix.changePct)}` : ''}${vix.benchmark?.band ? ` [${vix.benchmark.band}]` : ''}` : null,
-      hyg?.changePct != null ? `**HYG** ${pct(hyg.changePct)}` : null,
-    ].filter(Boolean);
-    if (!legs.length && !risk.length) return null;
-    return [legs.length ? `• ${legs.join(' · ')}` : null, risk.length ? `• ${risk.join(' · ')}` : null].filter(Boolean).join('\n');
-  })();
+  // The old OVERNIGHT builder stood here and was suppressed for the US brief entirely. Its
+  // replacement is region-aware and lives with the other five sections at the foot of this
+  // function, so the US reader stops being the only one with no answer to "what already happened".
 
-  const oil = macro.wti?.price != null
-    ? `• **WTI** $${macro.wti.price} ${regime.oil.above ? '▲' : '▼'}${macro.wti.stale ? ' ⚠️' : ''}\n• **Brent** $${macro.brent?.price ?? '—'}`
-    : '• oil: no live print';
-
-  const macroLines =
-    `${oil}\n`
-    + `• **US 2Y** ${macro.us2y?.value ?? '—'}% · **10Y** ${macro.us10y?.value ?? '—'}%\n`
-    + `• **HY OAS** ${macro.oas?.value ?? '—'} (${macro.oas?.date ?? 'n/a'}, last hard print) · ${regime.credit.state}`
-    // THE GAP, NOT THE LEVEL. Core CPI and core PCE measure the same idea and disagree
-    // structurally — PCE normally runs below on a much lighter shelter weight — so the sign is
-    // the information. Only rendered when it is saying something: an inversion while the Fed's
-    // own gauge is still elevated.
-    + (() => {
-        const sp = coreSpread(macro.corePce?.value, macro.coreCpi?.value);
-        if (!sp) return '';
-        const tail = sp.divergent
-          ? ` — **inverted**, and PCE is what the Fed targets`
-          : sp.inverted ? ' — inverted, though both sit near target' : '';
-        return `\n• **Core PCE** ${sp.pce}% vs **core CPI** ${sp.cpi}% · ${sp.pp >= 0 ? '+' : '−'}${Math.abs(sp.pp).toFixed(2)}pp${tail}`;
-      })();
+  // macroLines carried oil, the two yields, the credit spread and the inflation gap as one
+  // four-line block of labels and numbers. Each is now its own named line in BACKDROP with the
+  // gauge described rather than abbreviated — see ratesLine / creditLine / oilLine / volLine.
 
   const koreaLines = buildKorea(regime.korea);
 
-  let regimeLines = regime.staleWhileOpen
-    ? `• ⚠️ **Equity axes stale** — market open but prints are prior-close; split/AI reads suppressed\n`
-    : '';
-  // A SPLIT THAT COULD NOT BE COMPUTED IS NOT A LINE. Europe's names carry no memory tag, so this
-  // rendered "Split: n/a (foundry — vs memory —)" on every EU brief — a bullet whose whole content
-  // is two em-dashes and an abbreviation. Omitted instead: a reader learns nothing from being told
-  // a cut does not apply to a market it was never about.
-  regimeLines +=
-    (regime.split.label === 'n/a' && !regime.split.stale ? ''
-      : `• **Split:** ${regime.split.stale ? 'stale — mkt open, awaiting live' : `${regime.split.label} (foundry ${fmtPct(regime.split.fnd)} vs memory ${fmtPct(regime.split.mem)})`}\n`)
-    + `• **AI vs non-AI:** ${regime.aiAxis.stale ? 'stale — mkt open, awaiting live' : `${regime.aiAxis.label} (AI ${fmtPct(regime.aiAxis.ai)} vs non-AI ${fmtPct(regime.aiAxis.non)})`}\n`
-    + `• **Credit** (global/OAS gate): ${regime.credit.compound || regime.credit.state} — ${regime.credit.note}\n`
-    + `• **Oil:** ${regime.oil.label}`;
-  // The Korea cluster used to be repeated here verbatim — the same string, including the same
-  // parenthesised 1d figures, already printed under KOREA STRESS a few lines above. The gate is
-  // named so the regime list stays complete; the reading itself is not restated.
-  if (regime.korea) {
-    regimeLines += `\n• **Korea** (local gate): ${regime.korea.cluster} — see Korea Stress above`;
-  }
+  // regimeLines restated the credit state, the oil label and the Korea cluster that MACRO and
+  // KOREA STRESS had already printed a few lines above. The two classifications that were NOT
+  // restatements — the foundry/memory split and the AI axis — moved into BACKDROP; the rest was
+  // the third telling of the same fact and is gone.
 
   // WHEN, not just WHAT — AND ALWAYS IN GMT. "Fri 08-28 · US July PCE" does not say whether it
   // lands inside your session or hours after it closes, and that is most of what the line is for.
@@ -247,13 +206,10 @@ function buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox) {
     const after = (lh * 60 + lm) > primary.closeMin;
     return ` _(${z}Z${after ? ', after your close' : ''})_`;
   };
-  const calLines = cal.length
-    ? cal.map(e => {
-        const dow = DOW[new Date(e.date + 'T00:00:00Z').getUTCDay()];
-        if (e.reported) return `• ~~**${dow} ${e.date.slice(5)}** · ${e.title}~~ _(reported)_`;
-        return `• **${dow} ${e.date.slice(5)}** · ${e.title}${e.scope === 'global' ? ' 🌐' : ''}${whenTag(e)}`;
-      }).join('\n')
-    : '• (nothing flagged in the next 10 days)';
+  // calLines rendered ten days of events in one undifferentiated list ordered by date, so a
+  // release landing inside the session about to start sat wherever the calendar happened to put
+  // it. CLOCK splits them: what lands today, then what is ahead. `whenTag` is still the source of
+  // the time and the after-your-close test, and is read from there.
 
   // Half-day heads-up: a region can span several exchanges, so flag whichever are on an
   // early-close session today (the Pre-Read fires pre-open, so this is a forward warning).
@@ -262,7 +218,207 @@ function buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox) {
     ? `🕐 **HALF DAY** — ${halfEx.join(', ')} ${halfEx.length === 1 ? 'closes' : 'close'} early today`
     : null;
 
-  return { nameLines, idxLines, macroLines, koreaLines, regimeLines, calLines, halfDayNote, overnightLines, sharedTail };
+
+  // ══ THE SIX SECTIONS ═══════════════════════════════════════════════════════
+  // Everything above builds the raw material. What follows arranges it into the six sections the
+  // brief actually ships, in lib/briefSections.js's voice. The blocks above are kept because
+  // several of them (calLines, the freshness machinery, the Korea bundle) are still the source of
+  // truth for what goes into these — the change is what the reader is shown, not what is measured.
+
+  // ── 🕐 CLOCK ───────────────────────────────────────────────────────────────
+  // Which of this region's markets are open, when the rest of them open, when the US opens in the
+  // reader's own clock, and what lands today as distinct from what lands this week.
+  const clockLines = (() => {
+    // One row per DISTINCT exchange in the region, named for the city rather than the index — a
+    // countdown is a fact about a venue, and "Hong Kong opens in 1h 36m" survives a change to
+    // which index this brief happens to quote.
+    const seen = new Set(), markets = [];
+    for (const i of (R.indices || [])) {
+      const cd = sessionCountdown(i.sym, now);
+      const key = cd.tz || i.sym;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      markets.push({ name: CITY[key] || i.name, ...cd });
+    }
+    // The US clock, for everyone. For the US brief this IS the region row above, so it is not
+    // repeated; for the other two it is the question the old brief never answered in any form.
+    let usOpen = null;
+    if (region !== 'us') {
+      const cd = sessionCountdown('QQQ', now);
+      // Rendered in the READER'S zone, not New York's — the whole point is to remove the
+      // conversion, and quoting 09:30 ET puts it straight back.
+      const openAt = cd.toOpen != null ? new Date(now.getTime() + cd.toOpen * 60000) : null;
+      usOpen = { ...cd, localTime: openAt ? clockIn(R.tz, openAt) : null };
+    }
+
+    const todayLocal = localDateIn(R.tz, now);
+    // TITLES ARE WRITTEN FOR A CALENDAR, NOT FOR A LINE. data/events carries editorial tails —
+    // "US CPI (Aug) — the print the Fed path trades off" — which are useful in a ten-day list and
+    // are three quarters of the width here, where four of them share one line. The tail is cut at
+    // the em-dash and the parenthetical kept, because "(Aug)" distinguishes two prints of the same
+    // series and the sentence after the dash does not distinguish anything.
+    const short = (t) => String(t).split(' — ')[0].trim();
+    const calText = (e) => {
+      const tag = whenTag(e).replace(/^ _\(/, '').replace(/\)_$/, '');
+      return `${short(e.title)}${tag ? ` _(${tag})_` : ''}`;
+    };
+    const todayEv = cal.filter(e => e.date === todayLocal && !e.reported).map(calText);
+    const aheadEv = cal.filter(e => e.date > todayLocal && !e.reported).slice(0, 3)
+      .map(e => `**${DOW[new Date(e.date + 'T00:00:00Z').getUTCDay()]}** ${short(e.title)}`);
+    return clockSection({ markets, usOpen, halfDayNote, today: todayEv, ahead: aheadEv });
+  })();
+
+  // ── 🌙 OVERNIGHT ───────────────────────────────────────────────────────────
+  // For Asia and Europe: the US tape they are reacting to. For the US: Asia and Europe, which the
+  // old brief suppressed entirely — leaving the US reader the only one of the three with no answer
+  // to "what already happened", while Asia had finished and Europe was two hours in.
+  const overnight = (() => {
+    if (region === 'us') {
+      // The other two regions' indices, quoted through the same batch the watchlist uses. Asia has
+      // closed by the 09:00 ET fire; Europe is mid-session, and its rows say so by being live.
+      const rows = [];
+      for (const key of ['asia', 'eu']) {
+        for (const i of (UNIVERSE[key].indices || [])) {
+          const f = foreign[i.sym];
+          if (f?.changePercent != null) rows.push({ name: i.name, changePct: +f.changePercent, key });
+        }
+      }
+      if (!rows.length) return null;
+      const grp = (k, emoji, word) => {
+        const r = rows.filter(x => x.key === k);
+        if (!r.length) return null;
+        return `${emoji} **${word}** — ${r.map(x => `${x.name} ${pctWord(x.changePct)}`).join(' · ')}`;
+      };
+      // ONE LINE EACH. Joined with the section's usual ' · ' they ran together into a single
+      // 140-character line in which the boundary between the two continents was a middot.
+      const legs = [grp('asia', '🌏', 'Asia'), grp('eu', '🇪🇺', 'Europe')].filter(Boolean);
+      // The lead is the SHAPE of the two together: agreeing is one piece of information and
+      // disagreeing is a different one, and neither is deducible from six percentages in a row.
+      // A REGION THAT DISAGREES WITH ITSELF IS NOT "FLAT". Averaging Hong Kong −0.5, Korea +1.4 and
+      // Japan 0.0 gives +0.02, which under a threshold test reads as no move at all — and the same
+      // day Europe was down 1.5% across every index it quotes. The reading was suppressed on the
+      // one morning it had something to say. So each region is classified by whether its own
+      // indices AGREE, and only then compared with the other.
+      const dir = (k) => {
+        const r = rows.filter(x => x.key === k && Math.abs(x.changePct) >= 0.15);
+        const all = rows.filter(x => x.key === k);
+        if (!all.length) return null;
+        if (!r.length) return 0;                                   // genuinely quiet
+        const up = r.filter(x => x.changePct > 0).length;
+        if (up === r.length) return 1;
+        if (up === 0) return -1;
+        return null;                                               // internally split
+      };
+      const a = dir('asia'), e = dir('eu');
+      const word = (v) => v > 0 ? 'higher' : v < 0 ? 'lower' : 'flat';
+      let lead = null;
+      if (a != null && e != null && a === e && a !== 0) {
+        lead = `👉 Asia and Europe both finished ${word(a)} — the US opens into a one-way overnight rather than a split one.`;
+      } else if (a != null && e != null && a !== e && a !== 0 && e !== 0) {
+        lead = `👉 Asia finished ${word(a)} and Europe ${word(e)}, so there is no single overnight direction to carry into the open.`;
+      } else if (a === null && e != null && e !== 0) {
+        lead = `👉 Asia's markets disagreed with each other while Europe moved ${word(e)} together — the cleaner signal into the open is the European one.`;
+      } else if (e === null && a != null && a !== 0) {
+        lead = `👉 Europe's markets disagreed with each other while Asia moved ${word(a)} together — the cleaner signal into the open is the Asian one.`;
+      }
+      return overnightSection({ lines: legs, lead });
+    }
+    if (!cross) return null;
+    const soxPct = sox?.changePct ?? null;
+    const spy = crossRow('breadth', 'SPY');
+    const legs = [
+      soxPct != null ? `📉 **Chips** SOX ${pctWord(soxPct)}` : null,
+      ...['SMH', 'QQQ', 'SPY'].map(n => { const r = crossRow('breadth', n); return r?.changePct != null ? `**${n}** ${pctWord(r.changePct)}` : null; }),
+    ].filter(Boolean);
+    const vix = crossRow('volCredit', 'VIX'), hyg = crossRow('volCredit', 'HYG');
+    const risk = [
+      vix?.price != null ? `😰 **VIX** ${vix.price}${vix.changePct != null ? ` ${pctWord(vix.changePct)}` : ''}` : null,
+      hyg?.changePct != null ? `**junk bonds** ${pctWord(hyg.changePct)}` : null,
+    ].filter(Boolean);
+    if (!legs.length && !risk.length) return null;
+    const note = breadthNote(soxPct, spy?.changePct ?? null, { narrow: 'chips', broad: 'the broad market' });
+    return overnightSection({ legs, risk, lead: note ? `👉 ${note}` : null });
+  })();
+
+  // ── 🌡️ BACKDROP ────────────────────────────────────────────────────────────
+  // NAMES, INDICES, MACRO, KOREA STRESS and REGIME were five headings carrying about six facts
+  // between them, one quote per line. Compressed here, biggest movers first, with each slow gauge
+  // named for what it measures rather than for its ticker.
+  const backdropLines = (() => {
+    const out = [];
+    const nameRow = nameQ.map(({ m, d }) => ({ name: m.name, changePct: d.changePct }));
+    // VIX IS NOT AN INDEX HERE. It sits in the US region's `indices` list, so it was rendered
+    // among QQQ/SOXX/SMH as a percentage change — and then again, four lines down, as the Fear
+    // gauge with its level and its band. Twice in one section, in two vocabularies.
+    const idxRow  = idxQ.filter(({ q }) => q.sym !== '^VIX').map(({ q, d }) => ({ name: q._name, changePct: d.changePct }));
+    const nl = compressLine(nameRow), il = compressLine(idxRow, { max: 4 });
+    const when = sharedTail ? ` _(${sharedTail.replace(/^ · /, '')})_` : '';
+    if (il) out.push(`📈 **Indices:**${when} ${il}`);
+    if (nl) out.push(`📋 **Names:**${sharedTail ? '' : ''} ${nl}`);
+    // The sector cut, only where it was computed. Europe's names carry no memory tag, so this
+    // rendered two em-dashes and an abbreviation on every EU brief.
+    if (!regime.staleWhileOpen && regime.split.label !== 'n/a') {
+      // THE LABEL IS RELATIVE AND THE NUMBERS ARE ABSOLUTE, and printing them side by side made
+      // the line contradict itself: "foundry +0.4% vs memory +2.8% — foundry-specific weakness"
+      // says weakness about a group that rose. The comparison is derived from the two figures
+      // instead, which is what the label was reaching for and cannot be read as a claim about
+      // either group's own direction.
+      const f = regime.split.fnd, mem = regime.split.mem;
+      const gap = (f != null && mem != null) ? f - mem : null;
+      const rel = gap == null ? null
+        : Math.abs(gap) < 0.5 ? 'the two moved together'
+        : gap > 0 ? 'foundry ahead of memory' : 'memory ahead of foundry';
+      out.push(`🔬 **Inside chips:** foundry ${pctWord(f) ?? '—'} vs memory ${pctWord(mem) ?? '—'}${rel ? ` — ${rel}` : ''}`);
+    }
+    if (!regime.staleWhileOpen && regime.aiAxis.label && regime.aiAxis.label !== 'n/a') {
+      out.push(`🤖 **AI vs the rest:** ${pctWord(regime.aiAxis.ai) ?? '—'} vs ${pctWord(regime.aiAxis.non) ?? '—'} — ${regime.aiAxis.label}`);
+    }
+    if (regime.staleWhileOpen) out.push('⚠️ **Equity prints are stale** — the market is open but these are prior closes, so the sector cuts are suppressed');
+    out.push(ratesLine({ us2y: macro.us2y?.value, us10y: macro.us10y?.value }));
+    out.push(creditLine({
+      oas: macro.oas?.value, date: macro.oas?.date, state: regime.credit.state,
+      stale: composed?.structured?.rows?.find(r => r.label === 'CREDIT')?.stale ?? false,
+      hygPct: crossRow('volCredit', 'HYG')?.changePct ?? null,
+    }));
+    out.push(oilLine({ wti: macro.wti?.price, brent: macro.brent?.price, above: regime.oil.above, stale: macro.wti?.stale }));
+    // ONCE PER BRIEF. For Asia and Europe the VIX is part of the US handoff and OVERNIGHT already
+    // carries it; printing it again here put the same number, to the same two decimals, in two
+    // sections of one message. The US brief has no US handoff, so this is its only rendering.
+    if (region === 'us') {
+      const vixRow = crossRow('volCredit', 'VIX');
+      out.push(volLine({ vix: vixRow?.price, changePct: vixRow?.changePct, band: vixRow?.benchmark?.band }));
+    }
+    // The inflation gap, only when it is saying something — see the note on coreSpread above.
+    const sp = coreSpread(macro.corePce?.value, macro.coreCpi?.value);
+    if (sp?.divergent) out.push(`🌡️ **Inflation:** the Fed's own gauge reads **${sp.pce}%** against the more familiar **${sp.cpi}%** — the one it targets is the lower of the two`);
+    // Korea keeps its own line rather than its own section: one gate, one sentence.
+    if (koreaLines && regime.korea) {
+      const k = regime.korea;
+      const won = k.won?.level != null ? `won at **${k.won.level}**` : 'no won print';
+      const vol = k.vol?.level != null ? ` · Korean fear gauge **${k.vol.level}**${k.vol.band && k.vol.band !== 'n/a' ? ` (${String(k.vol.band).toLowerCase()})` : ''}` : '';
+      // ONE STATE LINE, ONE IMPLICATION. Rendering k.cluster AND k.note AND the flow implication
+      // gave Korea three lines and two 👉 markers, and the tail of k.note ("won flat (+1.64 1d),
+      // VKOSPI HIGH rolling over (−3.36% 1d)") restated in gauge shorthand the two numbers already
+      // printed at the head of this very line. The state joins the data; only the flow reading —
+      // which is the part not deducible from the figures shown — gets the implication marker.
+      const state = String(k.note || '').split(' — ')[0].trim() || k.cluster || null;
+      out.push(`🇰🇷 **Korea:** ${won}${vol}${state ? ` — ${state}` : ''}`);
+      const impl = koreaFlowImplication(KOFIA_STORE.latest || {});
+      if (impl) out.push(`👉 ${impl}`);
+    }
+    return backdropSection(out);
+  })();
+
+  // ── 🔀 WHAT WOULD CHANGE IT ────────────────────────────────────────────────
+  // composed.leaning, not the raw one — see the note on its return in lib/read.js. A US brief must
+  // not carry a Korean flow gauge among its own tripwires.
+  const changeLines = changeSection({
+    items: ((composed?.leaning || leaning)?.items || []).map(plainTripwire).filter(Boolean),
+    flipsIf: composed?.structured?.flipsIf || null,
+    lead: composed?.structured?.lead || null,
+  });
+
+  return { clockLines, overnightLines: overnight, backdropLines, changeLines, halfDayNote };
 }
 
 // Korea-stress cluster block (Asia only). null when there's no Korea gate.
@@ -350,7 +506,7 @@ async function gexBlock(liveSpot, tense = 'preview') {
   return renderGexSection(rows, { ...vint, tense });
 }
 
-function assembleDiscord(region, label, blocks, read) {
+function assembleDiscord(region, label, blocks) {
   const emoji = { asia: '🌏', eu: '🇪🇺', us: '🇺🇸' }[region] || '📊';
   const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
 
@@ -359,21 +515,23 @@ function assembleDiscord(region, label, blocks, read) {
   // explicit divider rather than relying on extra \n's).
   const RULE = '───────────────';
   const sections = [
-    // FIRST, and deliberately. This is the layer a day trade is placed against, and the brief that
-    // buried it under fifteen quoted names was answering a different question from the one the
-    // reader opens it with.
-    ...(blocks.gexLines ? [`⚡ **${blocks.gexTense === 'closed' ? 'US HANDOFF' : "TODAY'S MAP"}**\n${blocks.gexLines}`] : []),
+    // ── THE ORDER IS THE ARGUMENT ──────────────────────────────────────────────
+    // Levels first, because that is the surface a day trade is placed against. Then the names
+    // moving against it. Then the clock that governs when. Then what already happened. Then the
+    // slower conditions all of it sits inside. And last the things that would make the page wrong,
+    // which is the only part still useful after the figures above have gone stale.
+    //
+    // GEX IS US-ONLY NOW. It is a map of the US option book, and Asia read it at 23:13 UTC against
+    // a session that had closed at 20:00 with its front expiry already expired — the map described
+    // a market that no longer existed. Europe reads it eight hours before the US opens, against a
+    // spot it has no live print for. Both got a picture accurate to the minute about the wrong
+    // minute. The US brief fires into the pre-open, which is the one time it is a preview.
+    ...(region === 'us' && blocks.gexLines ? [`⚡ **TODAY'S MAP**\n${blocks.gexLines}`] : []),
     ...(blocks.watchLines ? [`👀 **TODAY'S WATCHLIST**\n${blocks.watchLines}`] : []),
-    // The handoff comes FIRST for a brief that fires after the US close and before this region
-    // opens: it is the thing every line below reacts to.
-    ...(blocks.overnightLines ? [`🌙 **OVERNIGHT US** _(prior close)_\n${blocks.overnightLines}`] : []),
-    `📋 **NAMES**${blocks.sharedTail ? ` _(all${blocks.sharedTail.replace(/^ · /, ' ')})_` : ''}\n${blocks.nameLines}`,
-    `📈 **INDICES**\n${blocks.idxLines}`,
-    `🛢️ **MACRO**\n${blocks.macroLines}`,
-    ...(blocks.koreaLines ? [`🇰🇷 **KOREA STRESS**\n${blocks.koreaLines}`] : []),
-    `🧭 **REGIME**\n${blocks.regimeLines}`,
-    `📝 **READ**\n${read}`,
-    `📅 **CALENDAR** _(current / upcoming)_\n${blocks.calLines}`,
+    ...(blocks.clockLines ? [`🕐 **CLOCK**\n${blocks.clockLines}`] : []),
+    ...(blocks.overnightLines ? [`🌙 **OVERNIGHT**\n${blocks.overnightLines}`] : []),
+    ...(blocks.backdropLines ? [`🌡️ **BACKDROP**\n${blocks.backdropLines}`] : []),
+    ...(blocks.changeLines ? [`🔀 **WHAT WOULD CHANGE IT**\n${blocks.changeLines}`] : []),
   ];
 
   return [
@@ -382,7 +540,7 @@ function assembleDiscord(region, label, blocks, read) {
     ...(blocks.halfDayNote ? [blocks.halfDayNote] : []),
     ...sections.flatMap(s => [RULE, s]),
     RULE,
-    `*⭐ sector leader (cross-market tell) · ⏱ delayed feed · 🌐 global event · "prior close" = market shut*`,
+    `*👉 = what the arrangement is consistent with, never what to do · "prior close" = that market was shut when the price was taken*`,
   ].join('\n\n');
 }
 
@@ -473,11 +631,33 @@ async function runRegion(region, req) {
     }
   }
 
-  const { quotes, idxRaw, macro, regime, cross, sox, read: composed } = await assembleRegion(region);
+  const { quotes, idxRaw, macro, regime, cross, sox, leaning, read: composed } = await assembleRegion(region);
   // attach display names to indices
   const indices = idxRaw.map((q, i) => ({ ...q, _name: R.indices[i].name }));
   const cal = weekHighlights(new Date(), region, R.tz);
-  const blocks = buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox);
+
+  // ONE BATCHED QUOTE, TWO CONSUMERS. The watchlist needs whatever the region's own fetch did not
+  // cover, and the US brief's OVERNIGHT section needs the Asian and European indices. Both are the
+  // same call against the same route, so it is made once here rather than twice below.
+  const byS = new Map(quotes.map(q => [q.sym, q]));
+  const wanted = new Set(WATCH_UNIVERSE[region] || []);
+  if (region === 'us') for (const k of ['asia', 'eu']) for (const i of UNIVERSE[k].indices) wanted.add(i.sym);
+  const missing = [...wanted].filter(sym => !byS.has(sym) && !indices.some(q => q.sym === sym));
+  let extraQuotes = {};
+  if (missing.length) {
+    try {
+      // Same deployment, so the origin comes off the request rather than being configured — a
+      // hardcoded host is one preview deployment away from quoting production's prices.
+      const proto = req.headers?.['x-forwarded-proto'] || 'https';
+      const base = `${proto}://${req.headers?.host}`;
+      const r = await fetch(`${base}/api/prices?tickers=${encodeURIComponent(missing.join(','))}`,
+        { headers: { cookie: req.headers?.cookie || '' } });
+      if (r.ok) extraQuotes = await r.json();
+    } catch { /* the watchlist thins and OVERNIGHT drops — neither takes the brief down */ }
+  }
+
+  const blocks = buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox,
+    { leaning, composed, foreign: extraQuotes });
 
   // ── THE TWO NEW SECTIONS ───────────────────────────────────────────────────
   // Both are best-effort and both are omitted rather than faked. The option book is the same in
@@ -495,47 +675,36 @@ async function runRegion(region, req) {
   // the US finished against its book, one line per index, no pin and no map. EU (08:42) and the US
   // (12:42) both fire before the open and get the full map, which for them is a preview of what
   // the session runs into.
-  const usClosedNow = new Date().getUTCHours() * 60 + new Date().getUTCMinutes() >= 20 * 60;
-  const tense = (region === 'asia' || usClosedNow) ? 'closed' : 'preview';
-  try { blocks.gexLines = await gexBlock(liveSpot, tense); blocks.gexTense = tense; } catch { blocks.gexLines = null; }
+  //
+  // NOT FETCHED AT ALL outside the US brief. It was rendered on all three and is now dropped from
+  // two, so paying for the KV reads to build a block nobody sees would be waste with a latency
+  // cost attached. `tense` survives because a manual US run after 20:00 UTC is describing a closed
+  // session and must not claim a pin on options that have already expired.
+  if (region === 'us') {
+    const usClosedNow = new Date().getUTCHours() * 60 + new Date().getUTCMinutes() >= 20 * 60;
+    const tense = usClosedNow ? 'closed' : 'preview';
+    try { blocks.gexLines = await gexBlock(liveSpot, tense); blocks.gexTense = tense; } catch { blocks.gexLines = null; }
+  }
   // PUBLIC CHANNEL. Candidates are the region's configured universe and nothing else — lib/
   // watchlist.js takes no argument through which a holding could reach it.
   try {
     // The WATCH universe, not the semis `names` block. The old scan could only see 10 US names —
     // of the 24 roots actually traded in the last quarter it could see two — so it was answering
     // "what is moving in semiconductors" under a heading that promised something else.
-    const byS = new Map(quotes.map(q => [q.sym, q]));
     const wu = (WATCH_UNIVERSE[region] || []).map(sym => ({ name: sym, sym, role: null }));
-    const extra = wu.filter(n => !byS.has(n.sym)).map(n => n.sym);
-    // One batched quote for whatever the region's own fetch did not already cover.
-    let more = {};
-    if (extra.length) {
-      try {
-        // Same deployment, so the origin comes off the request rather than being configured —
-        // a hardcoded host is one preview deployment away from quoting production's prices.
-        const proto = req.headers?.['x-forwarded-proto'] || 'https';
-        const base = `${proto}://${req.headers?.host}`;
-        const r = await fetch(`${base}/api/prices?tickers=${encodeURIComponent(extra.join(','))}`,
-          { headers: { cookie: req.headers?.cookie || '' } });
-        if (r.ok) more = await r.json();
-      } catch { /* the watchlist thins rather than the brief failing */ }
-    }
     blocks.watchLines = renderWatchlist(watchlist(wu, sym => {
       const q = byS.get(sym);
       if (q) { const d = displayQuote(q, region); return { price: d.price, changePercent: d.changePct }; }
-      const m = more[sym];
+      const m = extraQuotes[sym];
       return m?.price != null ? { price: m.price, changePercent: m.changePercent } : null;
     }));
   } catch { blocks.watchLines = null; }
-  // The READ is the COMPOSED, deterministic one (lib/read.js) — same text the dashboard
-  // shows. No model call in the read path: every figure is traceable to a parsed field, so
-  // the Pre-Read cannot hallucinate a number or drift into positioning language.
-  // LINES, NOT A PARAGRAPH. The composed READ carries structured rows and always has; only the
-  // dashboard rendered them, so Discord got the 700-character prose version — the largest and least
-  // scannable block in the brief. Same data, same composer, one line per gauge.
-  const readLines = renderReadLines(composed);
-  const read = readLines.length ? readLines.join('\n') : (composed?.text || '(no gate inputs available)');
-  const message = assembleDiscord(region, R.label, blocks, read);
+  // THE READ SECTION IS GONE, NOT LOST. Its structured rows are what BACKDROP now renders and its
+  // tripwires are what WHAT WOULD CHANGE IT now renders — both from the same composed object, so
+  // there is still no model call anywhere in this path and every figure traces to a parsed field.
+  // What was removed is the third restatement: the READ repeated the credit level, the cross-asset
+  // pairing and the Korea cluster that MACRO, REGIME and KOREA STRESS had each already printed.
+  const message = assembleDiscord(region, R.label, blocks);
 
   // Optional: post to Discord if a webhook is set and ?post=1.
   // We check Discord's response (204 = success) and surface failures instead of

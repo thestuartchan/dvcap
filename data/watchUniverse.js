@@ -23,6 +23,13 @@
 //   FI                    Fiserv — does not resolve, cause unknown
 //   FAB / ADNOC Gas / ADNOC Distribution / e&  — no ADX suffix tried resolves (.ADX, .AD, .AE)
 //   The DFM names (DEWA, Salik, Parkin, Empower) resolve but are parked at the owner's request.
+//
+// REMOVED AS INDEX PRODUCTS, having arrived through the source list: IGLN.L (iShares Physical
+// Gold), INFR.L (iShares Global Infrastructure), IWDP.L (iShares Developed Markets Property
+// Yield), JEPG.L (JPM Global Equity Premium Income) and VHYL.L (Vanguard FTSE All-World High
+// Dividend Yield). Every one is a basket tracking an index, and the rule at the top of this file
+// admits no index products. DRAM stays: it was identified by name as the Roundhill Memory ETF and
+// asked for specifically, and a single-theme fund is a view on that theme rather than on a market.
 export const WATCH_UNIVERSE = Object.freeze({
   us: Object.freeze([
     'AAL',       'AAOI',      'AAPL',      'ACHR',      'ADBE',      'AEHR',      'AMAT',      'AMD',
@@ -38,14 +45,46 @@ export const WATCH_UNIVERSE = Object.freeze({
     'TER',       'TSLA',      'UNH',       'UPS',       'VFC',       'WMT',       'XPEV',      'ZETA',
   ]),
   eu: Object.freeze([
-    'AV.L',      'BATS.L',    'BP.L',      'DGE.L',     'IGLN.L',    'INFR.L',    'IWDP.L',    'JEPG.L',
-    'LGEN.L',    'NG.L',      'SHEL.L',    'SSE.L',     'SVT.L',     'ULVR.L',    'UU.L',      'VHYL.L',
+    // ── UK, LSE ──────────────────────────────────────────────────────────────
+    'AV.L',      'AZN.L',     'BARC.L',    'BATS.L',    'BP.L',      'DGE.L',     'GLEN.L',    'GSK.L',
+    'HSBA.L',    'LGEN.L',    'LSEG.L',    'NG.L',      'REL.L',     'RIO.L',     'RR.L',      'SHEL.L',
+    'SSE.L',     'SVT.L',     'TSCO.L',    'ULVR.L',    'UU.L',
+    // ── Netherlands, Euronext Amsterdam ──────────────────────────────────────
+    // THE EU LIST WAS ENTIRELY BRITISH. Every one of the sixteen entries was an LSE line, so the
+    // European watchlist could not surface ASML on a day ASML moved — while the same brief quoted
+    // ASML three lines below in its own NAMES block. Six of this region's names sat in
+    // data/universe.js and none of them was scannable.
+    'AD.AS',     'ADYEN.AS',  'ASM.AS',    'ASML.AS',   'BESI.AS',   'HEIA.AS',   'INGA.AS',   'PHIA.AS',
+    // ── France, Euronext Paris ───────────────────────────────────────────────
+    'AIR.PA',    'BNP.PA',    'CAP.PA',    'DG.PA',     'MC.PA',     'OR.PA',     'RMS.PA',    'SAF.PA',
+    'SAN.PA',    'STMPA.PA',  'SU.PA',     'TTE.PA',
+    // ── Germany, XETRA ───────────────────────────────────────────────────────
+    'ALV.DE',    'BAS.DE',    'BMW.DE',    'DBK.DE',    'DTE.DE',    'IFX.DE',    'MBG.DE',    'MUV2.DE',
+    'RHM.DE',    'SAP.DE',    'SIE.DE',    'VOW3.DE',
   ]),
   asia: Object.freeze([
     '0002.HK',   '0003.HK',   '0005.HK',   '0006.HK',   '000660.KS', '0008.HK',   '0066.HK',   '0386.HK',
     '042700.KS', '0823.HK',   '0857.HK',   '0883.HK',   '0939.HK',   '0941.HK',   '0981.HK',   '1038.HK',
-    '1398.HK',   '2330.TW',   '6823.HK',   'A17U.SI',   'CJLU.SI',   'D05.SI',    'M44U.SI',   'O39.SI',
-    'S63.SI',    'U11.SI',    'Z74.SI',
+    '1398.HK',   '6823.HK',   'A17U.SI',   'CJLU.SI',   'D05.SI',    'M44U.SI',   'O39.SI',    'S63.SI',
+    'U11.SI',    'Z74.SI',
+    // ── Korea ────────────────────────────────────────────────────────────────
+    // 005930 SAMSUNG WAS MISSING. It sits in this region's own `names` block in data/universe.js
+    // and in data/adjacent.js (7747/7347.HK on both sides), and the watchlist — the one thing that
+    // decides what gets looked at — could not see it. SK Hynix came through the source list and
+    // Samsung did not, which is an accident of what was in the images rather than a judgement.
+    '005930.KS', '005380.KS', '000270.KS', '035420.KS', '035720.KS', '051910.KS', '068270.KS',
+    '105560.KS', '207940.KS', '373220.KS',
+    // ── Japan ────────────────────────────────────────────────────────────────
+    // A LARGER HOLE THAN SAMSUNG: there was not one Japanese name here. The Asia brief quotes the
+    // Nikkei in its indices and its watchlist could never surface anything that moved it. Local
+    // primary listings on the JPX, same rule as everywhere else — no ADRs, no US wrappers.
+    // Chosen to cover the ground the rest of the list covers: chip equipment, tech megacaps,
+    // autos, trading houses, banks, industrials.
+    '4063.T',    '4502.T',    '6098.T',    '6146.T',    '6301.T',    '6501.T',    '6702.T',    '6758.T',
+    '6857.T',    '7011.T',    '7203.T',    '7267.T',    '7974.T',    '8031.T',    '8035.T',    '8058.T',
+    '8306.T',    '8316.T',    '9983.T',    '9984.T',
+    // ── Taiwan ───────────────────────────────────────────────────────────────
+    '2308.TW',   '2317.TW',   '2330.TW',   '2412.TW',   '2454.TW',   '2881.TW',   '3008.TW',
   ]),
 });
 
