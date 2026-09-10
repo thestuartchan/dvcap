@@ -669,7 +669,7 @@ async function runRegion(region, req) {
     }
   }
 
-  const { quotes, idxRaw, macro, regime, cross, sox, leaning, read: composed } = await assembleRegion(region);
+  const { quotes, idxRaw, macro, regime, cross, sox, leaning, hyg, nqLow, usRthOpen, usPrevSession, read: composed } = await assembleRegion(region);
   // attach display names to indices
   const indices = idxRaw.map((q, i) => ({ ...q, _name: R.indices[i].name }));
   const cal = weekHighlights(new Date(), region, R.tz);
@@ -726,8 +726,14 @@ async function runRegion(region, req) {
   // the brief from them with no network and no keys at all. Nothing here is private — it is market
   // data, the same figures the brief prints — and it is returned only when asked for.
   if (req.query.state === '1') {
+    // hyg / nqLow / usRthOpen / usPrevSession come out too, so the test can REBUILD `leaning` and
+    // `composed` from the inputs rather than replaying the frozen copies. Both are outputs of
+    // lib/gates.js and lib/read.js, and a fixture holding them means a change to either — a new
+    // gauge, a reworded row — cannot reach the golden. The whole point is that a change to the code
+    // shows up in the diff.
     return { status: 200, body: { region, capturedAt: new Date().toISOString(),
-      state: { quotes, indices, macro, regime, cal, cross, sox, leaning, composed } } };
+      state: { quotes, indices, macro, regime, cal, cross, sox, leaning, composed,
+               hyg, nqLow, usRthOpen, usPrevSession } } };
   }
 
   const blocks = buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox,
