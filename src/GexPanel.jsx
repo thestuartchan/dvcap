@@ -161,24 +161,52 @@ export function GexPanel() {
     setLiveBusy(true);
     setLiveErr(null);
     try {
-      const r = await fetch(`/api/gex?snapshot=1&dry=1&symbols=${encodeURIComponent(symbol)}`, { credentials: "include" });
-      const j = await r.json();
-      const row = (j?.results || []).find(x => x.symbol === symbol);
-      const hit = row?.ok ? row : null;
+      // ── TODAY'S SETTLED BOOK FIRST ─────────────────────────────────────────
+      // This button used to call ?snapshot=1&dry=1, which reads Yahoo — and Yahoo serves NO open
+      // interest before the US open. So the one time of day a trader reaches for a fresh gamma map
+      // was the one time this could not produce one, and it fell back to repricing the previous
+      // session's stored chain: yesterday's positioning wearing today's spot.
+      //
+      // ?settled=1 is OCC's settled open interest against CBOE's implied-vol surface, with gamma
+      // recomputed at the current spot. It is available overnight and stable all morning — measured
+      // 2026-09-10, final by 01:10 UTC and unchanged through 08:48.
+      //
+      // The Yahoo path stays as the fallback rather than being deleted: it is the only one of the
+      // two that reflects INTRADAY open-interest changes once the session is running, and a source
+      // that is better before the open is not automatically better after it.
+      let hit = null, j = null, via = "settled";
+      try {
+        const rs = await fetch(`/api/gex?settled=1&symbol=${encodeURIComponent(symbol)}`, { credentials: "include" });
+        const js = await rs.json();
+        const rowS = (js?.results || []).find(x => x.symbol === symbol);
+        if (rowS?.ok) hit = { ...rowS, mode: "settled" }; else j = js;
+      } catch { /* fall through to the snapshot below */ }
+
+      if (!hit) {
+        via = "snapshot";
+        const r = await fetch(`/api/gex?snapshot=1&dry=1&symbols=${encodeURIComponent(symbol)}`, { credentials: "include" });
+        j = await r.json();
+        const row = (j?.results || []).find(x => x.symbol === symbol);
+        hit = row?.ok ? row : null;
+        if (!hit && row?.reason) j = { ...j, reason: row.reason };
+      }
+      void via;
       // A REFUSAL IS AN ANSWER. The chain guards report what was wrong with the feed — a vol
       // surface that collapses the gamma calculation, open interest not yet populated — and that
       // is the most useful thing the button can say when it cannot say a number.
       if (!hit) {
-        setLiveErr(row?.reason
-          || j?.reason
-          || `no result came back for ${symbol}`);
+        setLiveErr(j?.reason || `no result came back for ${symbol}`);
       }
       // The snapshot result carries headline figures; re-read the stored row for the rest and
       // overlay. A live read that silently dropped the walls would be a downgrade, not a refresh.
       if (hit) setLive({ row: { ...(data?.latest || {}), ...hit.row, asOf: new Date().toISOString() },
                          byStrike: hit.byStrike || null, grid: hit.grid || null,
                          mode: hit.mode || "fresh", note: hit.mode === "repriced" ? hit : null,
-                         crossCheck: hit.crossCheck ?? null });
+                         crossCheck: hit.crossCheck ?? null,
+                         // Provenance, so the badge can say WHICH book this is rather than only
+                         // that it is fresh. A number without its source is not checkable.
+                         oi: hit.oi ?? null, ivSrc: hit.iv ?? null,
+                         spotSource: hit.spotSource ?? null, contracts: hit.contracts ?? null });
       else setLive(null);
     } catch (e) {
       setLive(null);
@@ -233,7 +261,9 @@ export function GexPanel() {
       {latest && (
         <span style={{ fontSize: 11.5, fontWeight: 800,
                        color: live ? (live.mode === "repriced" ? C.amber : C.green) : (TONE_FOR_AGE[fresh.level] || C.muted) }}>
-          {live ? (live.mode === "repriced" ? "◐ repriced" : "● live") : `${fresh.stale ? "⚠ " : ""}${fresh.label}`}
+          {live ? (live.mode === "repriced" ? "◐ repriced"
+                 : live.mode === "settled" ? "● settled book"
+                 : "● live") : `${fresh.stale ? "⚠ " : ""}${fresh.label}`}
         </span>
       )}
       <button onClick={refreshLive} disabled={liveBusy}
