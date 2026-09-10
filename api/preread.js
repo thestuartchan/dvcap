@@ -7,6 +7,7 @@ import { UNIVERSE } from '../data/universe.js';
 import { assembleRegion } from '../lib/assemble.js';
 import { getQuotes } from '../lib/quotes.js';
 import { weekHighlights } from '../lib/calendar.js';
+import { auctionEvents } from '../lib/auctions.js';
 import { marketState, localHour, localMinutesOfDay, localDateIn, isWeekendIn, localWeekday, closedExchanges, halfDayLabels, freshness, freshnessText, sessionCloseMin, sessionCountdown } from '../lib/sessions.js';
 import { kvGetJson, kvSetJson, kvConfigured } from '../lib/kv.js';
 import { coreSpread } from '../lib/inflation.js';
@@ -33,7 +34,7 @@ import { watchlist, renderWatchlist } from '../lib/watchlist.js';
 import { WATCH_UNIVERSE } from '../data/watchUniverse.js';
 import {
   clockSection, overnightSection, breadthNote, backdropSection, changeSection,
-  compressLine, creditLine, ratesLine, oilLine, volLine, plainTripwire, pctWord, clockIn, sinceSection,
+  compressLine, creditLine, ratesLine, oilLine, volLine, supplyLine, plainTripwire, pctWord, clockIn, sinceSection,
 } from '../lib/briefSections.js';
 
 
@@ -401,6 +402,9 @@ export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, 
       stale: composed?.structured?.rows?.find(r => r.label === 'CREDIT')?.stale ?? false,
       hygPct: crossRow('volCredit', 'HYG')?.changePct ?? null,
     }));
+    // SUPPLY sits directly under credit because it is the other half of the same question — what
+    // it costs to borrow, and who is willing to lend at it.
+    out.push(supplyLine(opts.auctions || null));
     out.push(oilLine({ wti: macro.wti?.price, brent: macro.brent?.price, above: regime.oil.above, stale: macro.wti?.stale }));
     // ONCE PER BRIEF. For Asia and Europe the VIX is part of the US handoff and OVERNIGHT already
     // carries it; printing it again here put the same number, to the same two decimals, in two
@@ -763,10 +767,16 @@ async function runRegion(region, req) {
     }
   }
 
-  const { quotes, idxRaw, macro, regime, cross, sox, leaning, hyg, nqLow, usRthOpen, usPrevSession, read: composed } = await assembleRegion(region);
+  const { quotes, idxRaw, macro, regime, cross, sox, leaning, hyg, nqLow, usRthOpen, usPrevSession, read: composed, auctions } = await assembleRegion(region);
   // attach display names to indices
   const indices = idxRaw.map((q, i) => ({ ...q, _name: R.indices[i].name }));
-  const cal = weekHighlights(new Date(), region, R.tz);
+  // Announced auctions join the hand-maintained calendar in its own shape. They carry a region and
+  // a scope, so weekHighlights' own region filter decides whether a US auction belongs in the Asia
+  // brief — this does not decide it here, where it would be a second rule to keep in step.
+  const handCal = weekHighlights(new Date(), region, R.tz);
+  const cal = [...handCal, ...auctionEvents(auctions, handCal)]
+    .filter(e => !region || e.region === region.toUpperCase() || e.scope === 'global')
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
 
   // ONE BATCHED QUOTE, TWO CONSUMERS. The watchlist needs whatever the region's own fetch did not
   // cover, and the US brief's OVERNIGHT section needs the Asian and European indices. Both are the
@@ -845,12 +855,12 @@ async function runRegion(region, req) {
     // gauge, a reworded row — cannot reach the golden. The whole point is that a change to the code
     // shows up in the diff.
     return { status: 200, body: { region, capturedAt: new Date().toISOString(),
-      state: { quotes, indices, macro, regime, cal, cross, sox, leaning, composed,
+      state: { quotes, indices, macro, regime, cal, cross, sox, leaning, composed, auctions,
                hyg, nqLow, usRthOpen, usPrevSession } } };
   }
 
   const blocks = buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox,
-    { leaning, composed, foreign: extraQuotes, prevSnap: previous?.snap || null });
+    { leaning, composed, auctions, foreign: extraQuotes, prevSnap: previous?.snap || null });
 
   // ── THE TWO NEW SECTIONS ───────────────────────────────────────────────────
   // Both are best-effort and both are omitted rather than faked. The option book is the same in
