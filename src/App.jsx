@@ -16,6 +16,7 @@ import { interventionAnnotation } from "../lib/fx.js";
 import { unInversionPhase, yieldCurveStatus, NORMAL_SPREAD } from "../lib/yieldcurve.js";
 import { pendingReconciliations, reconStats } from "../lib/recon.js";
 import { deriveRegimeProbabilities } from "../lib/regimeProb.js";
+import { applyRegimeGuard } from "../lib/posture.js";
 import { minersPairImplication } from "../lib/regimeState.js";
 import { southboundTrend, southboundLevelTrend, southboundRead, ahPremiumRead, sbStale } from "../lib/southbound.js";
 import { STATUS, creditStatus, deriveAction, headerSignal } from "../lib/status.js";
@@ -3513,17 +3514,25 @@ function Csop7709Tripwire({ t }) {
 
 // A1 — headline POSTURE card. The one card that says what to DO, resolving several
 // simultaneously-confirmed scenarios into a single risk stance + a short action list.
-function PostureCard({ p }) {
+// Defined at module scope, not inside PostureCard: a component created during render is a new
+// component type on every render, so React remounts the subtree and any state in it resets.
+const PostureRow = ({ label, children, color }) => (
+  <div style={{ display: "flex", gap: 10, marginTop: 5, alignItems: "baseline" }}>
+    <span style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, minWidth: 66, flexShrink: 0 }}>{label}</span>
+    <div style={{ fontSize: 12, color: color || C.mid, fontWeight: 600, lineHeight: 1.5 }}>{children}</div>
+  </div>
+);
+
+function PostureCard({ p: raw, regime = null }) {
+  // The regime probability is computed HERE, in the client, off user-set recession weights — so
+  // it arrives after composePosture has already run on the server. The guard is therefore applied
+  // to the composed object rather than reimplemented: "Stagflation 71%" and "RISK-ON" cannot both
+  // be the correct top-line read, and on 2026-09-10 they were rendered on the same header row.
+  const p = applyRegimeGuard(raw, regime);
   if (!p) return null;
   const col = p.tone === "red" ? C.red : p.tone === "green" ? C.green : p.tone === "amber" ? C.amber : C.muted;
   const bg  = p.tone === "red" ? C.rBg : p.tone === "green" ? C.gBg : p.tone === "amber" ? C.aBg : C.surf;
   const bdr = p.tone === "red" ? C.rBdr : p.tone === "green" ? C.gBdr : p.tone === "amber" ? C.aBdr : C.bdr;
-  const Row = ({ label, children, color }) => (
-    <div style={{ display: "flex", gap: 10, marginTop: 5, alignItems: "baseline" }}>
-      <span style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, minWidth: 66, flexShrink: 0 }}>{label}</span>
-      <div style={{ fontSize: 12, color: color || C.mid, fontWeight: 600, lineHeight: 1.5 }}>{children}</div>
-    </div>
-  );
   return (
     <Card style={{ background: bg, border: "1.5px solid " + bdr, borderTop: "5px solid " + col }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
@@ -3539,16 +3548,39 @@ function PostureCard({ p }) {
           </span>
         )}
       </div>
-      {p.working?.length > 0 && <Row label="Working" color={C.green}>{p.working.join(" · ")}</Row>}
-      {p.not?.length > 0 && <Row label="Not" color={C.red}>{p.not.join(" · ")}</Row>}
-      {p.do?.length > 0 && (
-        <Row label="Do">
-          {p.do.map((d, i) => <div key={i} style={{ marginTop: i ? 2 : 0 }}>→ {d}</div>)}
-        </Row>
+      {/* THE TAPE, SHOWN AS LEGS. A stance whose inputs are not visible is one nobody can check
+          against their own screen — which is how RISK-ON survived a render that contradicted it
+          in eleven places. Each leg carries its own daily range, so a tick that was too small to
+          vote says so rather than being silently dropped. */}
+      {p.tape?.legs?.length > 0 && (
+        <PostureRow label="Tape" color={p.tape.direction === "risk-off" ? C.red : p.tape.direction === "risk-on" ? C.green : C.mid}>
+          <span style={{ fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.3 }}>{p.tape.direction}</span>
+          {p.tape.legs.map(l => (
+            <span key={l.name} title={l.why || undefined} style={{ marginLeft: 8, fontVariantNumeric: "tabular-nums",
+              color: l.vote == null ? C.lbl : l.vote < 0 ? C.red : l.vote > 0 ? C.green : C.lbl }}>
+              {l.name} {l.value == null ? "n/a" : `${l.value >= 0 ? "+" : ""}${l.value}%`}
+              {l.vote === 0 && l.value != null && <span style={{ color: C.lbl, fontWeight: 600 }}> ·</span>}
+            </span>
+          ))}
+        </PostureRow>
       )}
-      {p.watch && <Row label="Watch" color={C.amber}>{p.watch}</Row>}
+      {p.working?.length > 0 && <PostureRow label="Working" color={C.green}>{p.working.join(" · ")}</PostureRow>}
+      {p.not?.length > 0 && <PostureRow label="Not" color={C.red}>{p.not.join(" · ")}</PostureRow>}
+      {/* WHY NOT RISK-ON. A stance that has been withheld is a different statement from one that
+          was never a candidate, and the reasons are the audit trail for the guards above. */}
+      {p.blockedBy?.length > 0 && (
+        <PostureRow label={p.withheld ? "No " + p.withheld : "Held by"} color={C.amber}>
+          {p.blockedBy.map((b, i) => <div key={i} style={{ marginTop: i ? 2 : 0 }}>· {b}</div>)}
+        </PostureRow>
+      )}
+      {p.do?.length > 0 && (
+        <PostureRow label="Do">
+          {p.do.map((d, i) => <div key={i} style={{ marginTop: i ? 2 : 0 }}>→ {d}</div>)}
+        </PostureRow>
+      )}
+      {p.watch && <PostureRow label="Watch" color={C.amber}>{p.watch}</PostureRow>}
       {p.next?.length > 0 && (
-        <Row label="Next">{p.next.map(n => `${n.label} ${n.date.slice(5)} (${n.daysTo}d)`).join(" · ")}</Row>
+        <PostureRow label="Next">{p.next.map(n => `${n.label} ${n.date.slice(5)} (${n.daysTo}d)`).join(" · ")}</PostureRow>
       )}
     </Card>
   );
@@ -3624,6 +3656,27 @@ function ScenarioBoard({ scenarios }) {
                     ▲ CHANGED {changed[s.id]} → {s.met}/{s.total}
                   </span>
                 )}
+                {/* THE MARK THE BOARD WOULD NOT PUBLISH. On 2026-09-10 C and D scored `30Y > 5.35%`
+                    and `30Y > 5.5%` against an 09-08 print of 5.25 and rendered `✗ … 0/2` while the
+                    live yield was 5.344 — six tenths of a basis point from C's line. "0/2" reads as
+                    "not close", which is worse than showing nothing, so the count goes too. */}
+                {s.unscored > 0 && !s.broken && (
+                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: C.amber,
+                                 background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 4, padding: "1px 5px" }}
+                    title={s.unscoredNote || "an input is too old to score against its threshold"}>
+                    ⚠ UNSCORED · {s.unscored} leg{s.unscored === 1 ? "" : "s"}
+                  </span>
+                )}
+                {/* NEAR — an unmet leg inside half an ATR of its own line. The state the board
+                    could not express: a scenario six tenths of a basis point away rendered
+                    identically to one nowhere near. */}
+                {s.near && !s.broken && !s.confirmed && (
+                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: "#fff",
+                                 background: C.amber, borderRadius: 4, padding: "1px 5px" }}
+                    title={s.nearest ? `${s.nearest.label}: ${s.nearest.display}` : "a leg is inside half an ATR of its threshold"}>
+                    ⚠ NEAR{s.nearest?.gapDisplay ? ` ${s.nearest.gapDisplay}` : ""}
+                  </span>
+                )}
                 {/* A composite whose inputs come from different days is not a reading. It is shown
                     as UNVERIFIED with the dates, never as a tick and never as a blank card. */}
                 {s.unverified && (
@@ -3646,18 +3699,26 @@ function ScenarioBoard({ scenarios }) {
                   {/* The entry count is DEMOTED, not deleted. "2/3" is still true and still worth
                       seeing; it just must not be the headline of a scenario that is over. */}
                   {s.broken ? <span style={{ fontSize: 11, fontWeight: 800 }}>OVER<span style={{ color: C.lbl, fontWeight: 600, fontSize: 10 }}> · entry was {s.met}/{s.total}</span></span>
-                    : <>{s.unverified ? "—" : s.total > 0 ? `${s.met}/${s.total}` : "n/a"} {s.unverified ? "" : s.confirmed ? "✓" : "✗"}</>}
+                    : <>{s.countDisplay ?? "—"} {(s.unverified || s.unscored > 0) ? "" : s.confirmed ? "✓" : "✗"}</>}
                   {s.unavailable > 0 && <span style={{ color: C.lbl, fontWeight: 600, fontSize: 10 }}> · {s.unavailable} n/a</span>}
+                  {s.unscored > 0 && <span style={{ color: C.amber, fontWeight: 700, fontSize: 10 }} title={s.unscoredNote || undefined}> · {s.unscored} unscored</span>}
                   {s.neutral > 0 && <span style={{ color: C.lbl, fontWeight: 600, fontSize: 10 }} title="inputs that moved less than half their own ATR — too small to confirm or deny"> · {s.neutral} below noise</span>}
                 </span>
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 14px", marginTop: 4 }}>
                 {s.conditions.map((c, i) => {
-                  const cc = c.met === null ? C.lbl : c.met ? toneCol : C.muted;
+                  // An UNSCORED leg is amber, not grey: grey is "nothing to see", and this is
+                  // "there is something here the board declined to mark".
+                  const cc = c.unscored ? C.amber : c.met === null ? C.lbl : c.met ? toneCol : C.muted;
                   return (
                     <span key={i} title={c.reason || undefined} style={{ fontSize: 11, fontWeight: 600, color: cc, fontVariantNumeric: "tabular-nums" }}>
-                      {c.met === null ? "·" : c.met ? "✓" : "✗"} {c.label}
+                      {c.unscored ? "⌀" : c.met === null ? "·" : c.met ? "✓" : "✗"} {c.label}
+                      {/* Value · distance from the line · that distance in the instrument's own
+                          daily range · where the number came from — all four, because the first
+                          alone is what let `✗ 30Y > 5.35%  5.25%` read as "not close". */}
                       <span style={{ color: C.lbl, fontWeight: 700 }}> {c.display}</span>
+                      {c.near && <span style={{ color: C.amber, fontWeight: 800 }}> ⚠ NEAR</span>}
+                      {c.unscored && <span style={{ color: C.amber, fontWeight: 800 }}> UNSCORED</span>}
                     </span>
                   );
                 })}
@@ -4682,7 +4743,7 @@ function pbGeo(sym) {
   return "US";
 }
 
-function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updated, onRefresh, fmtTime, reconSummary, liveIntervention }) {
+function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updated, onRefresh, fmtTime, reconSummary, liveIntervention, regime = null }) {
   // Both All and single-region are filtered views of ONE spine. `active` = loaded data for
   // the selected region(s); `data` (= first active) backs the global macro strip + calendar.
   const active = regions.map(r => byRegion[r]).filter(Boolean);
@@ -4756,7 +4817,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               Rates → everything else. The synthesis cluster leads; raw data and the book-specific
               tell cards (handoff / correlation / FX / events) drop to "everything else" below. */}
           {/* A1 — POSTURE headline: the single "what to do" card, above everything. */}
-          {data.posture && <PostureCard p={data.posture} />}
+          {data.posture && <PostureCard p={data.posture} regime={regime} />}
           {/* 1 — Scenario board (synthesis). */}
           {data.scenarios && <ScenarioBoard scenarios={data.scenarios} />}
           {/* 2 — Tripwires: vol regime + gauges + 7709, tagged by scenario. */}
@@ -7135,6 +7196,9 @@ export default function App() {
         {/* ── MACRO ── */}
         {tab === "global" && (
           <GlobalPlaybook
+            /* The stance card runs the regime guard client-side, where the probability is
+               computed. Passing the label + probability rather than reimplementing the guard. */
+            regime={{ label: liveRegime?.label, pct: regimeProbFor(liveRegime?.id) }}
             liveIntervention={liveIntervention}
             reconSummary={reconSummary}
             byRegion={pbData}

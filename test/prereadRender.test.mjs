@@ -60,6 +60,10 @@ for (const region of REGIONS) {
     credit: s.regime.credit, korea: s.regime.korea,
     vix: s.cross?.volCredit?.rows?.find(r => r.sym === '^VIX'),
     nq: s.nqLow, kofiaLatest: KOFIA_STORE.latest || {}, us30y: s.macro.us30y,
+    // `now` PINNED, for the same reason composeRead's is below: the 30Y tripwire ages its own
+    // observation against the render date, so an unpinned wall clock would move the golden every
+    // day with no code change between.
+    now: fx.capturedAt,
   });
   const composed = composeRead({
     credit: s.regime.credit, korea: s.regime.korea, cross: s.cross, hyg: s.hyg, leaning,

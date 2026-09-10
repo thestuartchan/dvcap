@@ -319,5 +319,108 @@ const NOW = '2026-09-03T08:00:00Z';
   ok('an empty board breaks nothing', all.every(s => s.broken === false));
 }
 
+// ── SCORING AGAINST A STALE PRINT (P0-2) ────────────────────────────────────
+// 2026-09-10, 13:28Z. The board rendered:
+//     C · HAWKISH RETURNS   ✗ 30Y > 5.35%   5.25%   → 0/2
+//     D · DISORDERLY        ✗ 30Y > 5.5%    5.25%   → 0/2
+// The live 30Y was 5.344%. The number was FRED's DGS30 for 09-08, correctly fetched, correctly
+// dated, and nine basis points behind — and `0/2` reads as "not close" on the day rates were the
+// entire story. The machinery to notice existed: A and B went UNVERIFIED off the same curve with
+// "observation dates disagree". The disclosure landed; the scoring guard did not.
+{
+  const RENDER = '2026-09-10T13:28:00Z';
+  const stale30y = { value: 5.25, atr: 0.0275, date: '2026-09-08' };   // the real ATR, from the board
+  const rows = evaluateScenarios({ us30y: stale30y }, undefined, { now: RENDER });
+  const c = rows.find(s => s.id === 'C'), d = rows.find(s => s.id === 'D');
+
+  const leg = c.conditions.find(x => /^30Y >/.test(x.label));
+  eq('the mark is withheld, not published', leg.met, null);
+  eq('and it says so as its own state', leg.unscored, true);
+  ok('naming the age of the print', /2 business days old/.test(leg.reason));
+  ok('and the reach that makes it unsafe', /could have travelled/.test(leg.reason));
+
+  // THE COUNT GOES TOO. "0/2" on a stale print is worse than showing nothing.
+  eq('the scenario reads UNSCORED', c.status, 'UNSCORED');
+  eq('and the count is suppressed', c.countDisplay, null);
+  eq('an unscored leg is not counted as an unavailable one', c.unavailable, 1);   // the basket leg
+  eq('it has its own count', c.unscored, 1);
+  ok('and the header can say which leg and why', /30Y > 5.35%/.test(c.unscoredNote));
+  // It cannot sort to the top either — that is the same false precision one step along.
+  eq('an unscored scenario is not close to anything', c.proximity, -1);
+  eq('and cannot confirm', c.confirmed, false);
+
+  // ROBUST TO ITS OWN STALENESS IS STILL SCORED. D's 30Y line is 5.50: a quarter of a point away,
+  // roughly nine times what the yield could travel in the two days since. Withholding that would
+  // delete the insurance scenario from the board every day and tell the reader nothing.
+  const dLeg = d.conditions.find(x => /^30Y > 5.5/.test(x.label));
+  eq('a mark staleness could not have flipped is still published', dLeg.met, false);
+  ok('and it is not marked unscored', !dLeg.unscored);
+
+  // HY OAS has no live feed anywhere on this board; 2.67 against a 3.50 line is 83bp clear.
+  const oasRows = evaluateScenarios({ oas: { value: 2.67, atr: 0.0231, date: '2026-09-08' } },
+    undefined, { now: RENDER });
+  const oasLeg = oasRows.find(s => s.id === 'D').conditions.find(x => /HY OAS >/.test(x.label));
+  eq('a delayed credit print far from its line still scores', oasLeg.met, false);
+  ok('with its vintage on the line', /obs 2026-09-08/.test(oasLeg.display));
+
+  // A LIVE INPUT HAS NOTHING TO AGE.
+  const liveRows = evaluateScenarios({
+    us30y: { value: 5.344, atr: 0.0275, date: '2026-09-10', live: true, liveAsOf: '2026-09-10 13:46 UTC' },
+  }, undefined, { now: RENDER });
+  const liveLeg = liveRows.find(s => s.id === 'C').conditions.find(x => /^30Y > 5.35/.test(x.label));
+  ok('a live input is not withheld', !liveLeg.unscored);
+  ok('and names its minute rather than a date', /live 2026-09-10 13:46 UTC/.test(liveLeg.display));
+
+  // NO ATR MEANS NO REACH TO COMPUTE, WHICH MEANS NO MARK. Same rule the magnitude gate uses.
+  const noAtr = evaluateScenarios({ us30y: { value: 5.25, date: '2026-09-08' } }, undefined, { now: RENDER });
+  eq('an unscaled stale input is withheld', noAtr.find(s => s.id === 'C').conditions[0].unscored, true);
+  // Past a few sessions nothing is published however clear of the line.
+  const ancient = evaluateScenarios({ oas: { value: 2.67, atr: 0.0231, date: '2026-08-20' } },
+    undefined, { now: RENDER });
+  eq('and an old one is withheld however clear of its line',
+     ancient.find(s => s.id === 'D').conditions.find(x => /HY OAS >/.test(x.label)).unscored, true);
+}
+
+// ── DISTANCE TO THRESHOLD, AND THE NEAR STATE (P6) ──────────────────────────
+// `✗ 30Y > 5.35%   5.25%` is three facts short: how far from the line, whether that distance is
+// large or small for this instrument, and when the number was observed.
+{
+  const RENDER = '2026-09-10T13:46:00Z';
+  const rows = evaluateScenarios({
+    us30y: { value: 5.344, atr: 0.0275, date: '2026-09-10', live: true, liveAsOf: '2026-09-10 13:46 UTC' },
+  }, undefined, { now: RENDER });
+  const c = rows.find(s => s.id === 'C');
+  const leg = c.conditions.find(x => /^30Y > 5.35/.test(x.label));
+
+  eq('the gap is carried in basis points', leg.gapDisplay, '−0.6bp');
+  eq('and as a multiple of the instrument\'s own daily range', leg.atrMult, 0.22);
+  ok('the rendered line carries value, distance and vintage',
+     /5\.344%/.test(leg.display) && /−0\.6bp/.test(leg.display) && /0\.22×ATR/.test(leg.display) && /live/.test(leg.display));
+
+  // Six tenths of a basis point from the line is inside half a 2.75bp ATR, so there is no verdict
+  // — and that absence is the NEAR state, not a shrug.
+  eq('sitting on the line yields no mark', leg.met, null);
+  eq('but it is flagged NEAR', leg.near, true);
+  eq('and the scenario header carries it', c.near, true);
+  eq('naming the nearest leg', c.nearest.label, '30Y > 5.35%');
+
+  // A leg comfortably clear of its line is not near.
+  const far = evaluateScenarios({ us30y: { value: 5.10, atr: 0.0275, date: '2026-09-10', live: true } },
+    undefined, { now: RENDER });
+  eq('a leg well clear of its line is not NEAR', far.find(s => s.id === 'C').near, false);
+  eq('and it does score', far.find(s => s.id === 'C').conditions[0].met, false);
+
+  // A NEAR scenario sorts up the consequence-weighted list. D outweighs C 9 to 6, so without this
+  // C would rank below a scenario whose own legs are nowhere near tripping.
+  const both = evaluateScenarios({
+    us30y: { value: 5.344, atr: 0.0275, date: '2026-09-10', live: true },
+    oas:   { value: 2.67,  atr: 0.0231, date: '2026-09-10', live: true },
+  }, undefined, { now: RENDER });
+  ok('D outweighs C on the books', both.find(s => s.id === 'D').weight > both.find(s => s.id === 'C').weight);
+  eq('and yet the NEAR scenario sorts first', both[0].id, 'C');
+  // It must not resurrect a scenario that is over.
+  ok('BROKEN still sorts below a live finding', both.findIndex(s => s.broken) === -1 || both[0].broken === false);
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

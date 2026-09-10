@@ -25,7 +25,7 @@
 🔀 **WHAT WOULD CHANGE IT**
 • 👁 **Lenders start charging more to carry risk** → junk spreads above 3.00pp **and** still rising over five days
 • 👁 **Fear climbing from an already-high base** → VIX above 20 **and** rising, not just rising
-• 👁 **The 30-year yield clears 5.35%** → that level on a close — the long end repricing, not a one-day wick
+• ⌀ **The 30-year yield clears 5.35%** — not scored: 5.25% · obs 2026-09-08, 2 business days old and inside the range it could have moved since
 • 🔴 **Nasdaq futures undercut yesterday's low** — already true, which puts yesterday's buyers underwater
 
 ───────────────
