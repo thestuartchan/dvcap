@@ -7,11 +7,11 @@
       "delta": -42500000
     },
     "kospi": {
-      "value": 7051.64,
+      "value": 7033.92,
       "unit": "P",
-      "asOf": "2026-09-09",
-      "delta": 97.12,
-      "pct": 1.4
+      "asOf": "2026-09-10",
+      "delta": -17.72,
+      "pct": -0.25
     },
     "deposits": {
       "value": 102846170,
@@ -49,19 +49,19 @@
       "pct": 0.41
     },
     "instNet": {
-      "value": 433,
+      "value": 574,
       "unit": "십억원",
-      "asOf": "2026-09-10"
+      "asOf": "2026-09-11"
     },
     "foreignNet": {
-      "value": -2481,
+      "value": -2622,
       "unit": "십억원",
-      "asOf": "2026-09-10"
+      "asOf": "2026-09-11"
     },
     "retailNet": {
       "value": 380,
       "unit": "십억원",
-      "asOf": "2026-09-10"
+      "asOf": "2026-09-11"
     }
   },
   "history": [
@@ -1819,6 +1819,45 @@
         "value": 811500000,
         "asOf": "2026-09-10"
       }
+    },
+    {
+      "savedAt": "2026-09-10T22:45:48.289Z",
+      "kospi": {
+        "value": 7033.92,
+        "asOf": "2026-09-10"
+      },
+      "deposits": {
+        "value": 102846170,
+        "asOf": "2026-09-09"
+      },
+      "marginLoans": {
+        "value": 32409222,
+        "asOf": "2026-09-09"
+      },
+      "cma": {
+        "value": 105483091,
+        "asOf": "2026-09-09"
+      },
+      "kr3yGovt": {
+        "value": 3.93,
+        "asOf": "2026-09-10"
+      },
+      "kr3yCorp": {
+        "value": 4.6,
+        "asOf": "2026-09-10"
+      },
+      "instNet": {
+        "value": 574,
+        "asOf": "2026-09-11"
+      },
+      "foreignNet": {
+        "value": -2622,
+        "asOf": "2026-09-11"
+      },
+      "retailNet": {
+        "value": 380,
+        "asOf": "2026-09-11"
+      }
     }
   ],
   "series": {
@@ -2633,6 +2672,13 @@
         "unit": "P",
         "delta": 97.12,
         "pct": 1.4
+      },
+      {
+        "date": "2026-09-10",
+        "value": 7033.92,
+        "unit": "P",
+        "delta": -17.72,
+        "pct": -0.25
       }
     ],
     "kr3yGovt": [
@@ -3411,6 +3457,13 @@
         "unit": "십억원",
         "delta": null,
         "pct": null
+      },
+      {
+        "date": "2026-09-11",
+        "value": -2622,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
       }
     ],
     "instNet": [
@@ -3623,6 +3676,13 @@
         "unit": "십억원",
         "delta": null,
         "pct": null
+      },
+      {
+        "date": "2026-09-11",
+        "value": 574,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
       }
     ],
     "retailNet": [
@@ -3817,6 +3877,13 @@
       },
       {
         "date": "2026-09-10",
+        "value": 380,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-09-11",
         "value": 380,
         "unit": "십억원",
         "delta": null,
