@@ -7,8 +7,8 @@
 //
 // VENUE MARKED WHERE IT IS NOT US. The core ticker decides which brief a name appears in, so an
 // Asian name carries its Hong Kong product; the venue is stated so nobody reaches for it in the
-// wrong session. A US-listed product on an Asian underlying is recorded in `also` rather than
-// rendered, because the brief it would appear in is trading a different clock.
+// wrong session. A US-listed wrapper on an Asian underlying is not carried at all — see the note
+// on SK Hynix below.
 //
 // EVERY ENTRY VERIFIED TWICE: identified from the issuer's own product page, then confirmed to
 // return a live price through this project's own feed. Nothing here is inferred from a ticker's
@@ -42,8 +42,12 @@ export const ADJACENT = Object.freeze({
 
   // ── Asia, CSOP on HKEX ─────────────────────────────────────────────────────
   // Flexible factor since 2026-08-03: up to 2x, varying daily. Stated as a maximum, not a constant.
-  '000660.KS': { up: '7709.HK', down: null, upX: 'up to 2x', venue: 'HKEX',
-                 also: { up: 'SKHL', venue: 'US' } },
+  // The CORE ticker is the Korean primary listing, never a US proxy or ADR. SKHL (Leverage
+  // Shares 2X Long SK Hynix, US) tracks the same company and is deliberately NOT here: a US
+  // wrapper trades in a different session against a different close, so a move measured on the
+  // Seoul tape does not describe what that wrapper did. It was carried for a while in an `also`
+  // field that nothing read — dead data shaped like a decision — and is removed rather than wired.
+  '000660.KS': { up: '7709.HK', down: null, upX: 'up to 2x', venue: 'HKEX' },
   '005930.KS': { up: '7747.HK', down: '7347.HK', upX: 'up to 2x', downX: 'up to -2x', venue: 'HKEX' },
 });
 
