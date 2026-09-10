@@ -219,6 +219,18 @@ for (const region of REGIONS) {
       monetization: s.monetization || null, handoff: s.handoff || null, smicAH: s.smicAH || null,
       foreign: {}, now: NOW }).backdropLines;
 
+  // ── THE FIXTURE MUST CARRY THE SHAPE PRODUCTION HANDS OVER ────────────────
+  // This one got through. The China line reads `smicAH.premium`; lib/smicah.js's fetch returns
+  // only `asOf` and a series, and the premium is DERIVED in lib/assemble.js. The fixture was
+  // hand-built with the derived shape, so the golden passed while the live brief rendered the
+  // currency alone and dropped the A/H half in silence — a fixture frozen on an output rather
+  // than an input, which is the exact failure this file's header warns about.
+  ok('the fixture carries the derived premium, not the raw fetch', Number.isFinite(s.smicAH?.premium));
+  ok('and the trend beside it', Number.isFinite(s.smicAH?.d5));
+  // Named the other way round too, because the scenario engine reads `level`.
+  ok('under both names its two consumers use', s.smicAH.premium === s.smicAH.level);
+  ok('and the golden actually renders it', /A\/H premium/.test(rendered.asia));
+
   // As captured: both axes inside their own bar, so neither renders.
   const quiet = build(s.regime);
   ok('a sub-threshold AI axis renders nothing', !/🤖/.test(quiet));
