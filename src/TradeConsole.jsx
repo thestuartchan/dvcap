@@ -31,6 +31,7 @@ import { decisionEntry, lastClosedWasWin, overrideTrend, guardOutcomes } from ".
 import { stopWidth, ATR_STATUS } from "../lib/atr.js";
 import { preTradeGuards, guardStates } from "../lib/guards.js";
 import { riskCoverage, rowExposure, stopOf } from "../lib/exposure.js";
+import { bookExposure, parseOptionSymbol, contractKey } from "../lib/bookExposure.js";
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
 import { companyName } from "../lib/companyNames.js";
 import { moveOnto } from "../lib/reorder.js";
@@ -1168,6 +1169,164 @@ const chainLook = (label) => CHAIN_LOOK[label] || CHAIN_FALLBACK;
 // had a picture. onError swaps the img out for the Unicode mark — the same mark the Discord card
 // uses — so the chain is always identifiable and the console degrades to exactly what the card
 // shows. No layout shift either: both occupy the same 15px box.
+// ── EXPOSURE TILE ────────────────────────────────────────────────────────────
+// Delta-notional, not premium. Greeks come from CBOE's published feed through the gated
+// /api/flex-sync?greeks= route — the contract identifiers go out, nothing about the position does,
+// and the arithmetic that turns a greek into a book total happens here on the console's own rows.
+//
+// PRIVATE. Positions, quantities and account value. It renders here and nowhere else: not in a
+// pre-read, not on a Discord card, not on any public route.
+const XPO_ROW = { display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginTop: 3 };
+const XpoStat = ({ label, value, sub, col, breach }) => (
+  <div style={{ flex: "1 1 150px", minWidth: 140 }}>
+    <div style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
+    <div style={{ display: "flex", alignItems: "baseline", gap: 7, marginTop: 2 }}>
+      <b style={{ fontSize: 18, color: col || C.mid }}>{value}</b>
+      {sub && <span style={{ fontSize: 11.5, color: breach ? C.red : C.muted, fontWeight: breach ? 800 : 400 }}>{sub}</span>}
+    </div>
+  </div>
+);
+
+function ExposureTile({ rows = [], nlv = null }) {
+  const [feed, setFeed] = useState(null);
+  const [err, setErr] = useState(null);
+
+  // The contracts to ask about, derived from the book. Stable string so the effect does not refire
+  // on every render of an unchanged book.
+  const spec = useMemo(() => {
+    const keys = (rows || [])
+      .filter(r => Math.abs(Number(r?.derived?.qty ?? r?.qty) || 0) > 0)
+      .map(r => contractKey(parseOptionSymbol(r?.symbol)))
+      .filter(Boolean);
+    return [...new Set(keys)].sort().join(",");
+  }, [rows]);
+
+  useEffect(() => {
+    // No setState on the empty path: an effect that writes state synchronously runs a second
+    // render every time, and here the empty case is already handled by deriving `live` below.
+    if (!spec) return undefined;
+    let cancelled = false;
+    fetch(`/api/flex-sync?greeks=${encodeURIComponent(spec)}`, { credentials: "include" })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then(j => { if (!cancelled) { setFeed({ ...j, spec }); setErr(j?.ok ? null : (j?.reason || "no greeks came back")); } })
+      .catch(e => { if (!cancelled) { setFeed(null); setErr(String(e.message || e)); } });
+    return () => { cancelled = true; };
+  }, [spec]);
+
+  // A feed from a PREVIOUS book must not price the current one: if the contract list has emptied
+  // or changed, the stale greeks are ignored until the new ones land rather than being applied to
+  // positions they do not belong to.
+  const live = (spec && feed?.spec === spec) ? feed : null;
+  const book = useMemo(() => bookExposure({
+    rows: (rows || []).map(r => ({ ...r, qty: r?.derived?.qty ?? r?.qty })),
+    greeks: live?.greeks || {},
+    underlyings: live?.spots || {},
+    nlv, asOf: live?.asOf || null, trend: live?.trend || [],
+  }), [rows, live, nlv]);
+
+  // ── THE DAILY POINT ────────────────────────────────────────────────────────
+  // The 20d series is the most useful row on the tile and it only exists if something writes to
+  // it. Posted once per calendar day, from the browser, on the same gated route — the server
+  // replaces a same-date row rather than appending, so a day of refreshes is one reading and not
+  // two hundred. The local marker keeps it to one request rather than one write.
+  const ratio = book.ratio;
+  useEffect(() => {
+    if (ratio == null || !live) return;
+    const day = new Date().toISOString().slice(0, 10);
+    const mark = `dvcap_exposure_point_${day}`;
+    try { if (localStorage.getItem(mark)) return; } catch (_) { /* private window — post anyway */ }
+    fetch(`/api/flex-sync?greeks=${encodeURIComponent(spec)}`, {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ point: { date: day, ratio, deltaNotional: book.deltaNotional } }),
+    }).then(() => { try { localStorage.setItem(mark, "1"); } catch (_) { /* nothing depends on it */ } })
+      .catch(() => { /* the tile is unaffected; the series simply misses a day */ });
+  }, [ratio, live, spec, book.deltaNotional]);
+
+  if (!book.available) return null;
+  const L = book.limits;
+  const money = (v) => v == null ? "—" : (v < 0 ? "−$" : "$") + Math.abs(Math.round(v)).toLocaleString("en-US");
+  const stateCol = book.state === "OVER CEILING" ? C.red
+    : book.state === "ELEVATED" ? C.amber : book.state === "TARGET" ? C.green : C.mid;
+  const over = book.state === "OVER CEILING";
+  const volOver = book.bookVol != null && book.bookVol > L.volTargetHi;
+  const thetaOver = book.thetaPct != null && book.thetaPct > L.thetaPctPerDay;
+
+  return (
+    <Card style={over ? { border: "1.5px solid " + C.rBdr, borderTop: "5px solid " + C.red } : undefined}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+        <SLabel>Exposure</SLabel>
+        <span style={{ fontSize: 11.5, color: C.muted }}>delta-notional, not premium</span>
+        {/* AS-OF ON EVERY READING. These are 15-minute delayed exchange greeks, and a risk number
+            without its timestamp is one nobody can check against their own screen. */}
+        <span style={{ marginLeft: "auto", fontSize: 11, color: C.lbl, fontWeight: 700 }}>
+          {book.asOf ? `as of ${String(book.asOf).slice(11, 16)}Z` : "awaiting greeks"}
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: 22, flexWrap: "wrap", marginTop: 9 }}>
+        <XpoStat label="Delta-notional" value={money(book.deltaNotional)} col={stateCol}
+          sub={book.ratio == null ? null : `${book.ratio}× NLV`} breach={over} />
+        <XpoStat label="Premium at risk" value={money(book.premium)}
+          sub={book.premiumPct == null ? null : `${book.premiumPct}% NLV`} />
+        <XpoStat label="Theta/day" value={money(book.theta)} col={thetaOver ? C.amber : C.mid}
+          sub={book.thetaPct == null ? null : `${book.thetaPct}% NLV`} breach={thetaOver} />
+        {/* COLOURED OFF THE VOL ESTIMATE, not the delta multiple — the same delta-notional is twice
+            as risky when underlying vol doubles, so a fixed multiple is wrong across regimes. */}
+        <XpoStat label="Est. book vol" value={book.bookVol == null ? "—" : `~${Math.round(book.bookVol * 100)}%`}
+          col={volOver ? C.red : C.green} breach={volOver}
+          sub={book.oneSd == null ? `target ${Math.round(L.volTargetLo * 100)}–${Math.round(L.volTargetHi * 100)}%` : `1sd ±${money(book.oneSd)}`} />
+        <XpoStat label="Vega" value={money(book.vega)} sub="per vol point" />
+      </div>
+
+      <div style={XPO_ROW}>
+        <span style={{ fontSize: 11, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>State</span>
+        <b style={{ fontSize: 13, color: stateCol }}>{over ? "⛔ " : ""}{book.state}</b>
+        {book.largest && (
+          <span style={{ fontSize: 11.5, color: (book.largest.ratio ?? 0) > L.singleCap ? C.red : C.muted, fontWeight: 700 }}>
+            largest {book.largest.symbol.trim()} {money(book.largest.deltaNotional)}
+            {book.largest.ratio == null ? "" : ` · ${book.largest.ratio}× NLV`}
+            {(book.largest.ratio ?? 0) > L.singleCap ? ` ⛔ over the ${L.singleCap}× cap` : ""}
+          </span>
+        )}
+      </div>
+
+      {/* THE MOST IMPORTANT ROW. One reading says where the book is; the series says it arrived
+          there gradually without anyone deciding to. Exposure creep is the failure mode, and a
+          point-in-time number cannot show it. */}
+      <div style={XPO_ROW}>
+        <span style={{ fontSize: 11, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>20d trend</span>
+        {book.trend.available
+          ? <b style={{ fontSize: 12.5, color: book.trend.dir === "rising" ? C.amber : book.trend.dir === "falling" ? C.green : C.mid }}>
+              {book.trend.arrow} {book.trend.note}
+            </b>
+          : <span style={{ fontSize: 11.5, color: C.lbl }}>{book.trend.note}</span>}
+      </div>
+
+      {book.breaches.length > 0 && (
+        <div style={{ marginTop: 7, padding: "7px 10px", borderRadius: 7, background: C.rBg, border: "1px solid " + C.rBdr }}>
+          {book.breaches.map((b, i) => (
+            <div key={i} style={{ fontSize: 11.5, color: C.red, fontWeight: 700, marginTop: i ? 2 : 0 }}>⛔ {b}</div>
+          ))}
+        </div>
+      )}
+
+      {/* A LINE THE FEED DID NOT CARRY IS NAMED, NEVER DROPPED. A book total that quietly omits
+          its largest position is the failure this tile exists to fix. */}
+      {book.unpriced.length > 0 && (
+        <div style={{ marginTop: 5, fontSize: 11, color: C.amber, fontWeight: 700 }}>
+          ⚠ {book.unpriced.length} line{book.unpriced.length === 1 ? "" : "s"} with no published greek — counted at premium only, not in delta:{" "}
+          {book.unpriced.map(u => u.symbol?.trim()).join(", ")}
+        </div>
+      )}
+      {err && <div style={{ marginTop: 5, fontSize: 11, color: C.amber }}>⚠ greeks feed — {err}</div>}
+      <div style={{ marginTop: 5, fontSize: 10.5, color: C.lbl, lineHeight: 1.5 }}>
+        {book.note}. Greeks are CBOE's published values, not modelled — no assumed rate or dividend.
+        Book vol assumes {Math.round(L.underlyingVol * 100)}% underlying and {L.correlation} correlation, so diversification does close to nothing.
+      </div>
+    </Card>
+  );
+}
+
 function ChainIcon({ look, size = 15 }) {
   const [failed, setFailed] = useState(false);
   const box = { width: size, height: size, display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" };
@@ -2241,6 +2400,14 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           )}
         </div>
       )}
+
+      {/* ── EXPOSURE — WHAT THE BOOK IS CARRYING, IN DELTA ──
+          The broker's leverage line counts long options at PREMIUM. Measured 2026-09-10 that read
+          0.74x against a delta-notional of roughly 3.5x NLV — an understatement of about five
+          times, with one QQQ line carrying 2.37x on its own. Risk coverage above answers "what
+          does a stop-out cost"; this answers "what am I carrying right now", and on this book the
+          two differ by a factor of twelve. */}
+      <ExposureTile rows={exposureRows} nlv={equityBase} />
 
       {/* ── P4 — RISK COVERAGE ──
           Three numbers, same units, never summed, and never collapsed into one. A single
