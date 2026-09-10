@@ -77,7 +77,8 @@ for (const region of REGIONS) {
     // one layer down.
   }, { region, now: NOW });
   const blocks = buildBlocks(region, s.quotes, s.indices, s.macro, s.regime, s.cal, s.cross, s.sox,
-    { leaning, composed, auctions: s.auctions || null, monetization: s.monetization || null, foreign: {}, now: NOW });
+    { leaning, composed, auctions: s.auctions || null, monetization: s.monetization || null,
+     handoff: s.handoff || null, smicAH: s.smicAH || null, foreign: {}, now: NOW });
   const text = assembleDiscord(region, UNIVERSE[region].label, blocks)
     // The header carries the render time and is the one line that cannot be frozen.
     .replace(/· \d{4}-\d{2}-\d{2} \d{2}:\d{2}Z\*\*/, '· <TIME>**');
@@ -136,7 +137,8 @@ for (const region of REGIONS) {
   const NOW = new Date(fx.capturedAt);
   const stale = buildBlocks('asia', s.quotes, s.indices, s.macro,
     { ...s.regime, staleWhileOpen: true }, s.cal, s.cross, s.sox,
-    { leaning: s.leaning, composed: s.composed, auctions: s.auctions || null, monetization: s.monetization || null, foreign: {}, now: NOW });
+    { leaning: s.leaning, composed: s.composed, auctions: s.auctions || null, monetization: s.monetization || null,
+     handoff: s.handoff || null, smicAH: s.smicAH || null, foreign: {}, now: NOW });
   // Only the BACKDROP warning is under test here, and it does not read the gauges.
   rendered._staleWhileOpen = stale.backdropLines || '';
   ok('an open market on stale prints says so', /⚠️ \*\*Equity prints are stale\*\*/.test(stale.backdropLines));
@@ -183,6 +185,11 @@ for (const region of REGIONS) {
     // instead rendered and asserted in full against a reconstructed real session in
     // test/monetization.test.mjs, so it is not a line nobody has looked at.
     ['🧩', 'software vs hardware — the capture minute is a moving-together day; rendered and asserted in test/monetization.test.mjs'],
+    // PAID BELOW, not merely deferred. Both sector cuts now render only when their own classifier
+    // says the spread means something, and all three captures are sub-threshold on the AI axis —
+    // 0.4pp to 0.8pp against a 1.5pp bar. The line is rendered through the real builder against a
+    // divergent axis in the block directly under this one, so it is not a line nobody has seen.
+    ['🤖', 'AI vs the rest — every capture is inside the 1.5pp bar; rendered through buildBlocks below'],
   ]);
 
   const seen = new Set();
@@ -195,6 +202,40 @@ for (const region of REGIONS) {
   // A waiver for a marker that no longer exists is stale bookkeeping pretending to be a decision.
   const stale = [...WAIVED.keys()].filter(e => !emitted.has(e));
   eq(`no stale waivers${stale.length ? ` — ${stale.join(' ')}` : ''}`, stale, []);
+}
+
+// ── THE TWO SECTOR CUTS, ON A DAY THEY SPEAK ─────────────────────────────────
+// Both used to render their own no-signal verdict: memoryVsFoundry and aiLeveredVsNon label a
+// spread under 1.5pp `moving together`, and the brief printed that as though it were a finding —
+// two of twelve backdrop rows, on the 2026-09-10 Asia brief, reporting the absence of a
+// divergence. They are suppressed there now, which is why the 🤖 marker cannot reach a golden and
+// is waived above. This is the payment: the real builder, the real fixture, a divergent axis.
+{
+  const fx = JSON.parse(readFileSync(new URL('./fixtures-preread-asia.json', import.meta.url), 'utf8'));
+  const s = fx.state;
+  const NOW = new Date(fx.capturedAt);
+  const build = (regime) => buildBlocks('asia', s.quotes, s.indices, s.macro, regime, s.cal, s.cross, s.sox,
+    { leaning: s.leaning, composed: s.composed, auctions: s.auctions || null,
+      monetization: s.monetization || null, handoff: s.handoff || null, smicAH: s.smicAH || null,
+      foreign: {}, now: NOW }).backdropLines;
+
+  // As captured: both axes inside their own bar, so neither renders.
+  const quiet = build(s.regime);
+  ok('a sub-threshold AI axis renders nothing', !/🤖/.test(quiet));
+  ok('and so does a sub-threshold chips split', !/🔬/.test(quiet));
+
+  // Divergent: the classifier says something, so the line appears and carries what it said.
+  const loud = build({ ...s.regime,
+    aiAxis: { ...s.regime.aiAxis, ai: -3.2, non: -0.4, spread: -2.8, label: 'AI-levered sold, non-AI holding' },
+    split: { ...s.regime.split, fnd: -0.4, mem: -2.9, spread: 2.5, label: 'memory-specific weakness (foundry holding)' } });
+  ok('a divergent AI axis renders', /🤖 \*\*AI vs the rest:\*\*/.test(loud));
+  ok('carrying both legs and the verdict', /-3\.2% vs -0\.4% — AI-levered sold, non-AI holding/.test(loud));
+  ok('a divergent chips split renders too', /🔬 \*\*Inside chips:\*\*/.test(loud));
+  // AND THE TEXT AGREES WITH THE CLASSIFIER. The rendered comparison used its own 0.5pp threshold
+  // while the label used 1.5pp, so a 0.7pp gap printed "foundry ahead of memory" — which reads as
+  // a finding — over a spread its own classifier had already dismissed.
+  ok('and the direction it renders matches the sign of the spread', /foundry ahead of memory/.test(loud));
+  ok('with no "moved together" wording surviving on a line that renders', !/moved together/.test(loud));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
