@@ -3656,6 +3656,27 @@ function ScenarioBoard({ scenarios }) {
                     ▲ CHANGED {changed[s.id]} → {s.met}/{s.total}
                   </span>
                 )}
+                {/* THE MARK THE BOARD WOULD NOT PUBLISH. On 2026-09-10 C and D scored `30Y > 5.35%`
+                    and `30Y > 5.5%` against an 09-08 print of 5.25 and rendered `✗ … 0/2` while the
+                    live yield was 5.344 — six tenths of a basis point from C's line. "0/2" reads as
+                    "not close", which is worse than showing nothing, so the count goes too. */}
+                {s.unscored > 0 && !s.broken && (
+                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: C.amber,
+                                 background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 4, padding: "1px 5px" }}
+                    title={s.unscoredNote || "an input is too old to score against its threshold"}>
+                    ⚠ UNSCORED · {s.unscored} leg{s.unscored === 1 ? "" : "s"}
+                  </span>
+                )}
+                {/* NEAR — an unmet leg inside half an ATR of its own line. The state the board
+                    could not express: a scenario six tenths of a basis point away rendered
+                    identically to one nowhere near. */}
+                {s.near && !s.broken && !s.confirmed && (
+                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: "#fff",
+                                 background: C.amber, borderRadius: 4, padding: "1px 5px" }}
+                    title={s.nearest ? `${s.nearest.label}: ${s.nearest.display}` : "a leg is inside half an ATR of its threshold"}>
+                    ⚠ NEAR{s.nearest?.gapDisplay ? ` ${s.nearest.gapDisplay}` : ""}
+                  </span>
+                )}
                 {/* A composite whose inputs come from different days is not a reading. It is shown
                     as UNVERIFIED with the dates, never as a tick and never as a blank card. */}
                 {s.unverified && (
@@ -3678,18 +3699,26 @@ function ScenarioBoard({ scenarios }) {
                   {/* The entry count is DEMOTED, not deleted. "2/3" is still true and still worth
                       seeing; it just must not be the headline of a scenario that is over. */}
                   {s.broken ? <span style={{ fontSize: 11, fontWeight: 800 }}>OVER<span style={{ color: C.lbl, fontWeight: 600, fontSize: 10 }}> · entry was {s.met}/{s.total}</span></span>
-                    : <>{s.unverified ? "—" : s.total > 0 ? `${s.met}/${s.total}` : "n/a"} {s.unverified ? "" : s.confirmed ? "✓" : "✗"}</>}
+                    : <>{s.countDisplay ?? "—"} {(s.unverified || s.unscored > 0) ? "" : s.confirmed ? "✓" : "✗"}</>}
                   {s.unavailable > 0 && <span style={{ color: C.lbl, fontWeight: 600, fontSize: 10 }}> · {s.unavailable} n/a</span>}
+                  {s.unscored > 0 && <span style={{ color: C.amber, fontWeight: 700, fontSize: 10 }} title={s.unscoredNote || undefined}> · {s.unscored} unscored</span>}
                   {s.neutral > 0 && <span style={{ color: C.lbl, fontWeight: 600, fontSize: 10 }} title="inputs that moved less than half their own ATR — too small to confirm or deny"> · {s.neutral} below noise</span>}
                 </span>
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 14px", marginTop: 4 }}>
                 {s.conditions.map((c, i) => {
-                  const cc = c.met === null ? C.lbl : c.met ? toneCol : C.muted;
+                  // An UNSCORED leg is amber, not grey: grey is "nothing to see", and this is
+                  // "there is something here the board declined to mark".
+                  const cc = c.unscored ? C.amber : c.met === null ? C.lbl : c.met ? toneCol : C.muted;
                   return (
                     <span key={i} title={c.reason || undefined} style={{ fontSize: 11, fontWeight: 600, color: cc, fontVariantNumeric: "tabular-nums" }}>
-                      {c.met === null ? "·" : c.met ? "✓" : "✗"} {c.label}
+                      {c.unscored ? "⌀" : c.met === null ? "·" : c.met ? "✓" : "✗"} {c.label}
+                      {/* Value · distance from the line · that distance in the instrument's own
+                          daily range · where the number came from — all four, because the first
+                          alone is what let `✗ 30Y > 5.35%  5.25%` read as "not close". */}
                       <span style={{ color: C.lbl, fontWeight: 700 }}> {c.display}</span>
+                      {c.near && <span style={{ color: C.amber, fontWeight: 800 }}> ⚠ NEAR</span>}
+                      {c.unscored && <span style={{ color: C.amber, fontWeight: 800 }}> UNSCORED</span>}
                     </span>
                   );
                 })}
