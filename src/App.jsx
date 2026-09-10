@@ -38,7 +38,7 @@ import { handoffChain } from "../lib/handoff.js";
 import { coreSpread, monthName } from "../lib/inflation.js";
 import { pathReading, ladder, CAVEATS as FED_PATH_CAVEATS } from "../lib/fedpath.js";
 import HOLIDAYS from "../data/holidays.json";
-import { SEC_YIELDS, PROXY, secYieldProxy, proxyDivergence, proxyError, apyFromSec, billFromDiscount, BILL_DAYS, compareCash } from "../lib/cashyield.js";
+import { SEC_YIELDS, PROXY, secYieldProxy, proxyDivergence, proxyError, ISSUER_PAGE, apyFromSec, billFromDiscount, BILL_DAYS, compareCash } from "../lib/cashyield.js";
 import { COMPANY_NAMES } from '../lib/companyNames.js';  // one map, shared with the trade console
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
@@ -1259,7 +1259,18 @@ function CashComparisonCard({ liveInd }) {
   // rather than assuming the residual fitted months ago still holds — and that error is the honest
   // tolerance on USFR's estimate, which cannot be checked any other way.
   const liveSgov = liveInd?.fundYields?.SGOV?.value != null ? liveInd.fundYields.SGOV : null;
-  const usfrSec = SEC_YIELDS.USFR.value;
+  // USFR's is hand-entered against the issuer link below — WisdomTree answers 403 to every
+  // automated route while loading fine in a browser. A newer hand entry beats the constant in the
+  // source; the constant remains the floor so the card never has nothing.
+  const [entered, setEntered] = useState(null);
+  const [form, setForm] = useState({ value: "", asOf: "" });
+  const [saveMsg, setSaveMsg] = useState(null);
+  useEffect(() => {
+    fetch("/api/manual-entry").then(r => r.json()).then(j => setEntered(j?.secYields || null)).catch(() => {});
+  }, []);
+  const usfrEntry = entered?.USFR?.value != null && entered.USFR.asOf > SEC_YIELDS.USFR.asOf ? entered.USFR : null;
+  const usfrSec = usfrEntry?.value ?? SEC_YIELDS.USFR.value;
+  const usfrAsOf = usfrEntry?.asOf ?? SEC_YIELDS.USFR.asOf;
   const sgovSec = liveSgov?.value ?? SEC_YIELDS.SGOV.value;
   const sgovAsOf = liveSgov?.asOf ?? SEC_YIELDS.SGOV.asOf;
   const sgovIsLive = !!liveSgov;
@@ -1275,7 +1286,7 @@ function CashComparisonCard({ liveInd }) {
   const pc = v => v == null ? "—" : `${v.toFixed(2)}%`;
   const rows = [
     { k: "USFR", sec: usfrSec, apy: apyFromSec(usfrSec), aw: cmp.rows.USFR.afterWht, liq: "T+1", credit: "US Govt", wht: `${Number(cfg.usfrWht) || 0}%`, whtTag: "✓ VERIFIED · Jul 30 2026 distribution", whtOk: true,
-      asOf: SEC_YIELDS.USFR.asOf, live: false },
+      asOf: usfrAsOf, live: false, entered: !!usfrEntry },
     { k: "SGOV", sec: sgovSec, apy: apyFromSec(sgovSec), aw: cmp.rows.SGOV.afterWht, liq: "T+1", credit: "US Govt", wht: `${Number(cfg.sgovWht) || 0}%`, whtTag: "⚠ UNVERIFIED · no SGOV distribution observed", whtOk: false, star: true,
       asOf: sgovAsOf, live: sgovIsLive },
     // The 6M bill is FRED DTB6, a DISCOUNT rate — not a fund SEC yield and not an APY. It used to
@@ -1356,10 +1367,43 @@ function CashComparisonCard({ liveInd }) {
             <div key={`v-${r.k}`} style={{ fontSize: 11, color: r.live ? C.mid : C.amber }}>
               <b>{r.k}</b> {r.sec}% — {r.live
                 ? <>live from the issuer, as of {r.asOf} ({age}d)</>
-                : <>a stored figure from {r.asOf} ({age}d) — its issuer blocks automated reads, so this one is refreshed by hand</>}
+                : <>{r.entered ? "hand-entered" : "a stored figure"} from {r.asOf} ({age}d) — its issuer blocks automated reads, so this one is refreshed by hand</>}
             </div>
           );
         })}
+        {/* ── THE HAND ENTRY, WITH THE LINK ──
+            The figure cannot be fetched, so the next best thing is making it a ten-second job:
+            the exact page, the exact field to copy, and the fund's own as-of date rather than
+            today's — stamping a two-day-old figure with the moment it was typed is the defect this
+            whole card is being fixed for. */}
+        <div style={{ marginTop: 6, padding: "7px 9px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 7 }}>
+          <div style={{ fontSize: 10.5, color: C.lbl, fontWeight: 700, marginBottom: 4 }}>
+            Update USFR — <a href={ISSUER_PAGE.USFR.url} target="_blank" rel="noreferrer" style={{ color: C.blue }}>
+              {ISSUER_PAGE.USFR.label}</a>, copy &ldquo;{ISSUER_PAGE.USFR.field}&rdquo; and its as-of date
+          </div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+            <input value={form.value} onChange={e => setForm(f => ({ ...f, value: e.target.value }))} placeholder="3.71"
+              style={{ fontSize: 13, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 70 }} />
+            <input value={form.asOf} onChange={e => setForm(f => ({ ...f, asOf: e.target.value }))} placeholder="YYYY-MM-DD"
+              style={{ fontSize: 13, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 116 }} />
+            <button onClick={async () => {
+              setSaveMsg(null);
+              try {
+                const r = await fetch("/api/manual-entry", { method: "POST", credentials: "include",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ secYield: { ticker: "USFR", value: form.value, asOf: form.asOf,
+                                                     dtb3AtAsOf: liveInd?.tbill3m ?? null } }) });
+                const j = await r.json();
+                if (!r.ok) { setSaveMsg({ ok: false, text: j?.error || `HTTP ${r.status}` }); return; }
+                setEntered(j?.secYields || null);
+                setForm({ value: "", asOf: "" });
+                setSaveMsg({ ok: true, text: `Saved — USFR ${j?.secYields?.USFR?.value}% as of ${j?.secYields?.USFR?.asOf}` });
+              } catch (e) { setSaveMsg({ ok: false, text: String(e?.message || e) }); }
+            }} style={{ fontSize: 12, fontWeight: 700, padding: "6px 12px", borderRadius: 6, cursor: "pointer",
+                        border: "1.5px solid " + C.bdr, background: C.surf, color: C.mid }}>Save</button>
+          </div>
+          {saveMsg ? <div style={{ fontSize: 11, marginTop: 4, fontWeight: 700, color: saveMsg.ok ? C.green : C.amber }}>{saveMsg.text}</div> : null}
+        </div>
         {modelErr ? (
           <div style={{ fontSize: 11, color: modelErr.diverged ? C.amber : C.muted }}>
             The bill-based estimate {modelErr.note.replace(/^checked/, "was checked")} — treat USFR&rsquo;s

@@ -176,7 +176,23 @@ export function GexPanel() {
       // that is better before the open is not automatically better after it.
       let hit = null, j = null, via = "settled";
       try {
-        const rs = await fetch(`/api/gex?settled=1&symbol=${encodeURIComponent(symbol)}`, { credentials: "include" });
+        // A LIVE SPOT, FETCHED. Recomputing gamma at the current price is the entire reason to
+        // press this button rather than read the stored row — but the panel holds no live quote of
+        // its own, only the stored series. Passing `data.latest.spot` would hand the server the
+        // PREVIOUS CLOSE and call it live, which is worse than the CBOE snapshot it would be
+        // overriding: CBOE's is at least today's, roughly fifteen minutes behind.
+        //
+        // So the price is fetched. If that fails, nothing is passed and settledGex falls back to
+        // CBOE's, which the footer then names — the one thing that must not happen is a stale spot
+        // presented as a live one.
+        let q = "";
+        try {
+          const pr = await fetch(`/api/prices?tickers=${encodeURIComponent(symbol)}`, { credentials: "include" });
+          const pj = await pr.json();
+          const px = Number(pj?.[symbol]?.price);
+          if (Number.isFinite(px) && px > 0) q = `&spot=${px}`;
+        } catch { /* no spot passed; the server names CBOE's in the footer */ }
+        const rs = await fetch(`/api/gex?settled=1&symbol=${encodeURIComponent(symbol)}${q}`, { credentials: "include" });
         const js = await rs.json();
         const rowS = (js?.results || []).find(x => x.symbol === symbol);
         if (rowS?.ok) hit = { ...rowS, mode: "settled" }; else j = js;
