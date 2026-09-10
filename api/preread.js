@@ -21,7 +21,7 @@ import { watchlist, renderWatchlist } from '../lib/watchlist.js';
 import { WATCH_UNIVERSE } from '../data/watchUniverse.js';
 import {
   clockSection, overnightSection, breadthNote, backdropSection, changeSection,
-  compressLine, creditLine, ratesLine, oilLine, volLine, plainTripwire, pctWord, clockIn,
+  compressLine, creditLine, ratesLine, oilLine, volLine, plainTripwire, pctWord, clockIn, sinceSection,
 } from '../lib/briefSections.js';
 
 
@@ -123,7 +123,7 @@ function displayQuote(q, region) {
 }
 
 function buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox, opts = {}) {
-  const { leaning = null, composed = null, foreign = {}, now = new Date() } = opts;
+  const { leaning = null, composed = null, foreign = {}, prevSnap = null, now = new Date() } = opts;
   const R = UNIVERSE[region];
   const names = R.names;
 
@@ -390,7 +390,15 @@ function buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox, op
     }
     // The inflation gap, only when it is saying something — see the note on coreSpread above.
     const sp = coreSpread(macro.corePce?.value, macro.coreCpi?.value);
-    if (sp?.divergent) out.push(`🌡️ **Inflation:** the Fed's own gauge reads **${sp.pce}%** against the more familiar **${sp.cpi}%** — the one it targets is the lower of the two`);
+    // BACKWARDS AS SHIPPED. `divergent` in lib/inflation.js means core PCE is ABOVE core CPI and
+    // still elevated — core CPI looks like the job is done and the series the Fed actually targets
+    // says it is not. The line read "the one it targets is the lower of the two", which is the
+    // reassuring reading of the alarming case, and it went out on the live Asia brief at 00:24Z
+    // over PCE 3.34% against CPI 2.47%.
+    if (sp?.divergent) {
+      out.push(`🌡️ **Inflation:** the headline-style measure reads **${sp.cpi}%**, but the gauge the Fed actually targets is **higher at ${sp.pce}%**`
+        + ` — the cooler of the two is not the one policy is set against`);
+    }
     // Korea keeps its own line rather than its own section: one gate, one sentence.
     if (koreaLines && regime.korea) {
       const k = regime.korea;
@@ -418,7 +426,23 @@ function buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox, op
     lead: composed?.structured?.lead || null,
   });
 
-  return { clockLines, overnightLines: overnight, backdropLines, changeLines, halfDayNote };
+  // ── 🔄 SINCE YESTERDAY ─────────────────────────────────────────────────────
+  // The slow gauges only, and only when one of them actually moved. The snapshot is built here
+  // from the same values the sections above rendered, so the delta can never describe a figure the
+  // brief did not show.
+  const vixNow = crossRow('volCredit', 'VIX');
+  const snap = {
+    oas: macro.oas?.value ?? null,
+    vix: vixNow?.price ?? null,
+    krw: regime.korea?.won?.level ?? null,
+    wti: macro.wti?.price ?? null,
+    wires: Object.fromEntries(((composed?.leaning || leaning)?.items || [])
+      .filter(i => i?.name && i.tripped != null)
+      .map(i => [plainTripwire(i)?.name || i.name, !!i.tripped])),
+  };
+  const sinceLines = sinceSection(snap, prevSnap);
+
+  return { clockLines, overnightLines: overnight, backdropLines, changeLines, halfDayNote, snap, sinceLines };
 }
 
 // Korea-stress cluster block (Asia only). null when there's no Korea gate.
@@ -495,7 +519,10 @@ async function gexBlock(liveSpot, tense = 'preview') {
       if (!row) row = { ...latest, pin: pinOf(stored.grid, { spot: latest.spot, today, expired }) };
 
       rows.push({ name: sym, spot: row.spot, putWall: row.putWall, callWall: row.callWall,
-                  flipLevel: row.flipLevel, pin: row.pin });
+                  flipLevel: row.flipLevel, pin: row.pin,
+                  // The book's own open-interest-weighted vol, for the expected-range line. It
+                  // survives repricing unchanged — repriceStored moves the spot, not the surface.
+                  iv: row.oiWeightedIv ?? latest.oiWeightedIv ?? null });
       // The WORST rung across the symbols wins the label — a footer claiming the spot is live is
       // false the moment one of the two could not be repriced.
       if (vint.rung === 'none' || (vint.rung === 'repriced' && rung === 'stored')) vint.rung = rung;
@@ -503,8 +530,16 @@ async function gexBlock(liveSpot, tense = 'preview') {
     } catch { /* one symbol short is a smaller loss than no section */ }
   }
   if (!rows.length) return null;
-  return renderGexSection(rows, { ...vint, tense });
+  return {
+    text: renderGexSection(rows, { ...vint, tense }),
+    walls: Object.fromEntries(rows.map(r => [r.name, { putWall: r.putWall, callWall: r.callWall }])),
+    spot: Object.fromEntries(rows.map(r => [r.name, r.spot])),
+  };
 }
+
+// The snapshot from the last delivered brief, or null on a first run. Named so the two call sites
+// cannot drift into reading the record differently.
+const prevSnapFor = (prev) => prev?.snap || null;
 
 function assembleDiscord(region, label, blocks) {
   const emoji = { asia: '🌏', eu: '🇪🇺', us: '🇺🇸' }[region] || '📊';
@@ -530,6 +565,9 @@ function assembleDiscord(region, label, blocks) {
     ...(blocks.watchLines ? [`👀 **TODAY'S WATCHLIST**\n${blocks.watchLines}`] : []),
     ...(blocks.clockLines ? [`🕐 **CLOCK**\n${blocks.clockLines}`] : []),
     ...(blocks.overnightLines ? [`🌙 **OVERNIGHT**\n${blocks.overnightLines}`] : []),
+    // Between what happened overnight and the conditions it happened inside — a delta against the
+    // last brief this region received. Absent on a day nothing slow moved, and on a first run.
+    ...(blocks.sinceLines ? [`🔄 **SINCE YOUR LAST BRIEF**\n${blocks.sinceLines}`] : []),
     ...(blocks.backdropLines ? [`🌡️ **BACKDROP**\n${blocks.backdropLines}`] : []),
     ...(blocks.changeLines ? [`🔀 **WHAT WOULD CHANGE IT**\n${blocks.changeLines}`] : []),
   ];
@@ -656,8 +694,24 @@ async function runRegion(region, req) {
     } catch { /* the watchlist thins and OVERNIGHT drops — neither takes the brief down */ }
   }
 
+  // ── THE LAST BRIEF THIS REGION ACTUALLY RECEIVED ───────────────────────────
+  // Read BEFORE the sections are built, because SINCE YESTERDAY is one of them. The same record
+  // backs the same-day dedupe and the delivery log; it is read once here and reused at the foot of
+  // this function rather than fetched twice.
+  //
+  // "Yesterday" means the last DELIVERED brief, not the last calendar day. A dropped run leaves no
+  // record, so the next brief compares against the last thing the reader actually saw — which is
+  // the comparison they can make in their head, and the only one that is not a lie after a gap.
+  let prevLog = null, previous = null;
+  if (kvConfigured()) {
+    try {
+      prevLog = (await kvGetJson(PREREAD_LAST_KEY)) || {};
+      previous = prevLog[region] || null;
+    } catch { /* no record is a first run, which renders no delta at all */ }
+  }
+
   const blocks = buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox,
-    { leaning, composed, foreign: extraQuotes });
+    { leaning, composed, foreign: extraQuotes, prevSnap: previous?.snap || null });
 
   // ── THE TWO NEW SECTIONS ───────────────────────────────────────────────────
   // Both are best-effort and both are omitted rather than faked. The option book is the same in
@@ -683,7 +737,16 @@ async function runRegion(region, req) {
   if (region === 'us') {
     const usClosedNow = new Date().getUTCHours() * 60 + new Date().getUTCMinutes() >= 20 * 60;
     const tense = usClosedNow ? 'closed' : 'preview';
-    try { blocks.gexLines = await gexBlock(liveSpot, tense); blocks.gexTense = tense; } catch { blocks.gexLines = null; }
+    try {
+      const g = await gexBlock(liveSpot, tense);
+      blocks.gexLines = g?.text || null;
+      blocks.gexTense = tense;
+      // Walls and spot go into the snapshot so tomorrow's brief can say a level moved. A reader
+      // placing against yesterday's put wall needs to know before they place, not after.
+      if (g?.walls) { blocks.snap.walls = g.walls; blocks.snap.spot = g.spot; }
+    } catch { blocks.gexLines = null; }
+    // Recomputed once the walls exist — the delta above ran before the option book was read.
+    blocks.sinceLines = sinceSection(blocks.snap, prevSnapFor(previous));
   }
   // PUBLIC CHANNEL. Candidates are the region's configured universe and nothing else — lib/
   // watchlist.js takes no argument through which a holding could reach it.
@@ -735,17 +798,14 @@ async function runRegion(region, req) {
   // WHAT RAN, AND WHEN. Written only on a confirmed post, so the record means "this brief reached
   // the channel" rather than "the function executed". A gate skip deliberately does not write —
   // the gap in the record IS the signal.
-  let previous = null;
-  if (kvConfigured()) {
+  if (kvConfigured() && posted?.ok) {
     try {
-      const log = (await kvGetJson(PREREAD_LAST_KEY)) || {};
-      previous = log[region] || null;
-      if (posted?.ok) {
-        // localDate is what the dedupe reads back. Written only on a confirmed post, so a failed
-        // delivery leaves the day open for the next attempt rather than marking it done.
-        await kvSetJson(PREREAD_LAST_KEY, { ...log, [region]: {
-          at: new Date().toISOString(), localDate: localDateIn(R.tz), cron: req.query.cron === '1' } });
-      }
+      // localDate is what the dedupe reads back. Written only on a confirmed post, so a failed
+      // delivery leaves the day open for the next attempt rather than marking it done — and so
+      // the snapshot always describes a brief that a reader actually received.
+      await kvSetJson(PREREAD_LAST_KEY, { ...(prevLog || {}), [region]: {
+        at: new Date().toISOString(), localDate: localDateIn(R.tz), cron: req.query.cron === '1',
+        snap: blocks.snap } });
     } catch { /* the brief matters more than the bookkeeping */ }
   }
 
