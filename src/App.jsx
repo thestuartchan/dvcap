@@ -35,7 +35,7 @@ function trendBps(series, lookbackDays) {
 }
 import { laborStress, sahmAnnotation, laborVerdict, laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead, quitsRead, revisionTrackerRead, twelveMonthAvgRead, ytdDivergenceRead } from "../lib/labor.js";
 import { handoffChain } from "../lib/handoff.js";
-import { coreSpread } from "../lib/inflation.js";
+import { coreSpread, monthName } from "../lib/inflation.js";
 import HOLIDAYS from "../data/holidays.json";
 import { SEC_YIELDS, PROXY, secYieldProxy, proxyDivergence, apyFromSec, billFromDiscount, BILL_DAYS, compareCash } from "../lib/cashyield.js";
 import { COMPANY_NAMES } from '../lib/companyNames.js';  // one map, shared with the trade console
@@ -7443,13 +7443,17 @@ export default function App() {
                 : v >= 2.5 ? { t: "above target",      c: "#eab308" }
                 : v >= 1.5 ? { t: "near target",       c: "#22c55e" }
                 :            { t: "below target",      c: "#3b82f6" };
-              const reading = (label, val, sub, trend, seriesColor) => {
+              // WHICH MONTH. Three tiles carried a figure, a source and a delta, and never said what
+              // period any of them covered — while CPI and PCE publish two and a half weeks apart, so
+              // for half of every month they are not the same month. A reader comparing the tiles was
+              // not told they might be comparing across a release.
+              const reading = (label, val, sub, trend, seriesColor, obsDate) => {
                 const band = bandOf(val);
                 return (
                   <div>
                     <div style={{ fontSize: 10, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>{label}</div>
                     <div style={{ fontSize: 24, fontWeight: 700, color: seriesColor }}>{val != null ? val.toFixed(1) + "%" : "—"}</div>
-                    <div style={{ fontSize: 11, color: "#888" }}>{sub}</div>
+                    <div style={{ fontSize: 11, color: "#888" }}>{sub}{obsDate ? <> · <b style={{ color: C.mid }}>{monthName(obsDate)}</b></> : null}</div>
                     {trendChip(trend)}
                     {band && <div style={{ fontSize: 10, fontWeight: 700, color: band.c, marginTop: 1 }}>● {band.t}</div>}
                   </div>
@@ -7459,9 +7463,9 @@ export default function App() {
                 <Card>
                   <SLabel>CPI Inflation Tracker</SLabel>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 4, marginBottom: 10 }}>
-                    {reading("Headline CPI", headline, "YoY · BLS", trendOf(hHist), CPI_SERIES.headline)}
-                    {reading("Core CPI", core, "Ex food & energy · BLS", trendOf(cHist), CPI_SERIES.core)}
-                    {reading("Core PCE", pce, "Fed's preferred · BEA", trendOf(pHist), CPI_SERIES.pce)}
+                    {reading("Headline CPI", headline, "YoY · BLS", trendOf(hHist), CPI_SERIES.headline, liveInd?.dates?.cpiHeadlineCurrent)}
+                    {reading("Core CPI", core, "Ex food & energy · BLS", trendOf(cHist), CPI_SERIES.core, liveInd?.dates?.cpiCoreCurrent)}
+                    {reading("Core PCE", pce, "Fed's preferred · BEA", trendOf(pHist), CPI_SERIES.pce, liveInd?.dates?.pceCoreCurrent)}
                   </div>
                   {/* ── THE GAP BETWEEN THE TWO CORE SERIES ──
                       Three tiles side by side invite the eye to read the smallest one, and for most
@@ -7472,8 +7476,29 @@ export default function App() {
                       Both figures are the same vintage as the tiles above — a spread built from two
                       release dates is a number about the calendar, not about inflation. */}
                   {(() => {
-                    const sp = coreSpread(pce, core);
+                    const sp = coreSpread(pce, core, {
+                      pceDate: liveInd?.dates?.pceCoreCurrent, cpiDate: liveInd?.dates?.cpiCoreCurrent,
+                    });
                     if (!sp) return null;
+                    // ACROSS TWO MONTHS IT IS NOT A SPREAD. The comment above claims both figures
+                    // share a vintage; nothing enforced it, and CPI publishes around the 11th while
+                    // PCE publishes at month end — so for about two weeks of every month core CPI is
+                    // a month ahead. The gap would move, the card would explain the move as
+                    // inflation, and the cause would be the release calendar.
+                    if (sp.sameVintage === false) {
+                      return (
+                        <div style={{ marginBottom: 12, padding: "8px 12px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8 }}>
+                          <div style={{ display: "flex", gap: 9, alignItems: "baseline", flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 10, fontWeight: 800, color: "#888", textTransform: "uppercase", letterSpacing: 0.5 }}>Core PCE − Core CPI</span>
+                            <b style={{ fontSize: 15, color: C.amber }}>not comparable this week</b>
+                          </div>
+                          <div style={{ fontSize: 11.5, color: C.mid, marginTop: 4, lineHeight: 1.5 }}>
+                            {sp.vintageNote}. The two tiles above are each correct for their own month;
+                            the difference between them is not. It becomes a spread again when PCE catches up.
+                          </div>
+                        </div>
+                      );
+                    }
                     const col = sp.tone === "warn" ? C.amber : sp.tone === "watch" ? C.mid : C.green;
                     const bg  = sp.tone === "warn" ? C.aBg : C.bg;
                     const bdr = sp.tone === "warn" ? C.aBdr : C.bdr;

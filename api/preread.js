@@ -398,13 +398,20 @@ export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, 
       out.push(volLine({ vix: vixRow?.price, changePct: vixRow?.changePct, band: vixRow?.benchmark?.band }));
     }
     // The inflation gap, only when it is saying something — see the note on coreSpread above.
-    const sp = coreSpread(macro.corePce?.value, macro.coreCpi?.value);
+    // The dates go in, so a gap across two release months is not reported as a movement in
+    // inflation — see the note in lib/inflation.js. CPI publishes around the 11th and PCE at month
+    // end, so for about two weeks of every month these are different months.
+    const sp = coreSpread(macro.corePce?.value, macro.coreCpi?.value,
+      { pceDate: macro.corePce?.date, cpiDate: macro.coreCpi?.date });
     // BACKWARDS AS SHIPPED. `divergent` in lib/inflation.js means core PCE is ABOVE core CPI and
     // still elevated — core CPI looks like the job is done and the series the Fed actually targets
     // says it is not. The line read "the one it targets is the lower of the two", which is the
     // reassuring reading of the alarming case, and it went out on the live Asia brief at 00:24Z
     // over PCE 3.34% against CPI 2.47%.
-    if (sp?.divergent) {
+    if (sp?.sameVintage === false) {
+      // Not the reading, because there isn't one this week.
+      out.push(`🌡️ **Inflation:** the two core measures are a month apart right now — ${sp.vintageNote}`);
+    } else if (sp?.divergent) {
       out.push(`🌡️ **Inflation:** the headline-style measure reads **${sp.cpi}%**, but the gauge the Fed actually targets is **higher at ${sp.pce}%**`
         + ` — the cooler of the two is not the one policy is set against`);
     }
