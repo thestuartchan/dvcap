@@ -36,8 +36,9 @@ function trendBps(series, lookbackDays) {
 import { laborStress, sahmAnnotation, laborVerdict, laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead, quitsRead, revisionTrackerRead, twelveMonthAvgRead, ytdDivergenceRead } from "../lib/labor.js";
 import { handoffChain } from "../lib/handoff.js";
 import { coreSpread, monthName } from "../lib/inflation.js";
+import { pathReading, ladder, CAVEATS as FED_PATH_CAVEATS } from "../lib/fedpath.js";
 import HOLIDAYS from "../data/holidays.json";
-import { SEC_YIELDS, PROXY, secYieldProxy, proxyDivergence, apyFromSec, billFromDiscount, BILL_DAYS, compareCash } from "../lib/cashyield.js";
+import { SEC_YIELDS, PROXY, secYieldProxy, proxyDivergence, proxyError, apyFromSec, billFromDiscount, BILL_DAYS, compareCash } from "../lib/cashyield.js";
 import { COMPANY_NAMES } from '../lib/companyNames.js';  // one map, shared with the trade console
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
@@ -1174,10 +1175,42 @@ function FedPathCard({ effr }) {
               : L.movesPriced == null ? "no EFFR to compare against"
               : `${Math.abs(L.movesPriced).toFixed(1)} × 25bp ${L.movesPriced >= 0 ? "HIKES" : "CUTS"} priced vs EFFR ${L.effr}%`}
           </div>
+          {/* ── WHAT 1.3 HIKES ACTUALLY MEANS ──
+              The card showed three correct numbers and explained none of them. "1.3 × 25bp HIKES"
+              is not a thing that can happen — the Fed moves in quarter points, so a fractional
+              count is a probability wearing the clothes of a forecast. Said in words, with the two
+              whole moves it sits between shown underneath so the arithmetic can be checked rather
+              than taken on trust. */}
+          {(() => {
+            // The same gate the count above uses: a stale entry must not gain an explanation it
+            // has not earned.
+            if (suppressDerived) return null;
+            const r = pathReading(L.impliedRate, L.effr, { contract: L.contract || null });
+            if (!r) return null;
+            const rungs = ladder(L.effr, { steps: Math.max(2, r.upper + 1) });
+            return (
+              <div style={{ marginTop: 6, padding: "7px 10px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 7 }}>
+                <div style={{ fontSize: 12.5, color: C.text, lineHeight: 1.5 }}>{r.sentence}</div>
+                <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 4 }}>
+                  {rungs.map(x => `${x.moves} = ${x.rate.toFixed(2)}%`).join("  ·  ")}
+                  {"  ·  priced "}<b style={{ color: C.mid }}>{L.impliedRate}%</b>
+                </div>
+              </div>
+            );
+          })()}
           <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 2 }}>
             ZQ {L.price} (100 − price = implied rate) · entered {L.date}
             {kofiaStale(L.date) ? <span style={{ color: C.amber, fontWeight: 700 }}> · ⚠ stale, re-enter</span> : null}
           </div>
+          {/* The three things the number does NOT say, stated once so the card cannot imply them.
+              The month-average point is the one that changes a reading: a hike landing mid-December
+              counts for half of December, so the count is a FLOOR on where the rate ends up. */}
+          <details style={{ marginTop: 5 }}>
+            <summary style={{ fontSize: 10.5, color: C.lbl, cursor: "pointer", fontWeight: 700 }}>▼ what this number does not say</summary>
+            <ul style={{ margin: "4px 0 0", paddingLeft: 16, fontSize: 11, color: C.mid, lineHeight: 1.55 }}>
+              {FED_PATH_CAVEATS.map((c, i) => <li key={i}>{c}</li>)}
+            </ul>
+          </details>
         </>
       ) : (
         <div style={{ fontSize: 12.5, color: C.muted }}>No entry yet — add today's ZQ settle below.</div>
@@ -1212,7 +1245,27 @@ function FedPathCard({ effr }) {
 function CashComparisonCard({ liveInd }) {
   const [cfg, setCfg] = useState(() => cacheLoad("cash_compare_v1", { bankRate: "3.65", conv: "apy", term: "6mo", usfrWht: "0", sgovWht: "0", posUsd: "53418" }));
   const set = (k, v) => setCfg(prev => { const next = { ...prev, [k]: v }; cacheSave("cash_compare_v1", next); return next; });
-  const usfrSec = SEC_YIELDS.USFR.value, sgovSec = SEC_YIELDS.SGOV.value;
+  // ── THE LIVE FIGURE WHERE THERE IS ONE ─────────────────────────────────────
+  // Both rows used to be constants in the source: USFR at 3.71% as of 2026-08-06, SGOV at 3.57% as
+  // of 2026-07-30. Read on 2026-09-10 those were 35 and 42 days old, and refreshing the dashboard
+  // did nothing to either — they needed a code change and a deploy. The verdict a reader acts on
+  // was computed from a figure five weeks old.
+  //
+  // iShares publishes SGOV's in the product page's structured data (3.62% as of 2026-09-08, against
+  // the stored 3.57%). WisdomTree answers 403 to every route, so USFR keeps its published anchor.
+  //
+  // THE ASYMMETRY IS THE POINT, not a compromise. SGOV is the only fund of the two whose true value
+  // can be observed, so it is the only way to measure what the proxy's error IS on a given day
+  // rather than assuming the residual fitted months ago still holds — and that error is the honest
+  // tolerance on USFR's estimate, which cannot be checked any other way.
+  const liveSgov = liveInd?.fundYields?.SGOV?.value != null ? liveInd.fundYields.SGOV : null;
+  const usfrSec = SEC_YIELDS.USFR.value;
+  const sgovSec = liveSgov?.value ?? SEC_YIELDS.SGOV.value;
+  const sgovAsOf = liveSgov?.asOf ?? SEC_YIELDS.SGOV.asOf;
+  const sgovIsLive = !!liveSgov;
+  // Measured against the bill rate on the SAME date the issuer's figure is dated to, so the number
+  // is the model's error and not the bill having moved since.
+  const modelErr = liveSgov ? proxyError(liveSgov, liveInd?.tbill3m ?? null) : null;
   const bill = liveCashYield(liveInd);
   const posUsd = Math.max(0, Math.round(Number(String(cfg.posUsd).replace(/,/g, "")) || 0));
   const bankRateNum = cfg.bankRate === "" ? null : Number(cfg.bankRate);
@@ -1221,8 +1274,10 @@ function CashComparisonCard({ liveInd }) {
   const cmp = compareCash({ usfrSec, sgovSec, usfrWht: Number(cfg.usfrWht) || 0, sgovWht: Number(cfg.sgovWht) || 0, bankRate: bankRateNum, bankConvention: cfg.conv, positionUsd: posUsd });
   const pc = v => v == null ? "—" : `${v.toFixed(2)}%`;
   const rows = [
-    { k: "USFR", sec: usfrSec, apy: apyFromSec(usfrSec), aw: cmp.rows.USFR.afterWht, liq: "T+1", credit: "US Govt", wht: `${Number(cfg.usfrWht) || 0}%`, whtTag: "✓ VERIFIED · Jul 30 2026 distribution", whtOk: true },
-    { k: "SGOV", sec: sgovSec, apy: apyFromSec(sgovSec), aw: cmp.rows.SGOV.afterWht, liq: "T+1", credit: "US Govt", wht: `${Number(cfg.sgovWht) || 0}%`, whtTag: "⚠ UNVERIFIED · no SGOV distribution observed", whtOk: false, star: true },
+    { k: "USFR", sec: usfrSec, apy: apyFromSec(usfrSec), aw: cmp.rows.USFR.afterWht, liq: "T+1", credit: "US Govt", wht: `${Number(cfg.usfrWht) || 0}%`, whtTag: "✓ VERIFIED · Jul 30 2026 distribution", whtOk: true,
+      asOf: SEC_YIELDS.USFR.asOf, live: false },
+    { k: "SGOV", sec: sgovSec, apy: apyFromSec(sgovSec), aw: cmp.rows.SGOV.afterWht, liq: "T+1", credit: "US Govt", wht: `${Number(cfg.sgovWht) || 0}%`, whtTag: "⚠ UNVERIFIED · no SGOV distribution observed", whtOk: false, star: true,
+      asOf: sgovAsOf, live: sgovIsLive },
     // The 6M bill is FRED DTB6, a DISCOUNT rate — not a fund SEC yield and not an APY. It used to
     // be dropped raw into all three columns, which both mislabelled it and understated it by ~17bp
     // against funds whose figures ARE compounded. It now shows its own quoted discount in the
@@ -1288,7 +1343,29 @@ function CashComparisonCard({ liveInd }) {
           <input value={cfg.sgovWht} onChange={e => set("sgovWht", e.target.value)} placeholder="0"
             style={{ display: "block", marginTop: 2, fontSize: 13, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 60 }} /></label>
       </div>
+      {/* ── HOW OLD IS EACH FIGURE, AND HOW FAR OFF IS THE ONE THAT CANNOT BE CHECKED ──
+          The table used to present two fund yields as if they were the same kind of thing. One is
+          now fetched from the issuer and two days old; the other is a constant in the source and
+          five weeks old, because WisdomTree answers 403 to every route. A reader comparing them is
+          entitled to know that, and to know how far the estimate for the unfetchable one is likely
+          to be out — which SGOV, the fund that CAN be observed, is the only evidence for. */}
       <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 8 }}>
+        {rows.filter(r => r.asOf).map(r => {
+          const age = Math.round((Date.now() - Date.parse(r.asOf + "T00:00:00Z")) / 86400000);
+          return (
+            <div key={`v-${r.k}`} style={{ fontSize: 11, color: r.live ? C.mid : C.amber }}>
+              <b>{r.k}</b> {r.sec}% — {r.live
+                ? <>live from the issuer, as of {r.asOf} ({age}d)</>
+                : <>a stored figure from {r.asOf} ({age}d) — its issuer blocks automated reads, so this one is refreshed by hand</>}
+            </div>
+          );
+        })}
+        {modelErr ? (
+          <div style={{ fontSize: 11, color: modelErr.diverged ? C.amber : C.muted }}>
+            The bill-based estimate {modelErr.note.replace(/^checked/, "was checked")} — treat USFR&rsquo;s
+            estimate, which has no issuer figure to check against, with the same tolerance.
+          </div>
+        ) : null}
         {rows.filter(r => r.whtTag).map(r => (
           <div key={r.k} style={{ fontSize: 11, color: r.whtOk ? C.green : C.amber, fontWeight: 700 }}>{r.k} withholding {r.wht} — {r.whtTag}</div>
         ))}
