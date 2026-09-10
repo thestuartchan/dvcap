@@ -515,7 +515,7 @@ function buildKorea(k) {
 // print, which is the whole reason repricing is worth doing. Where no live spot is available the
 // stored row stands as captured and says so.
 async function gexBlock(liveSpot, tense = 'preview') {
-  const rows = [], vint = { rung: 'none', from: null, asOf: null, spotSource: null };
+  const rows = [], vint = { rung: 'none', from: null, asOf: null, spotSource: null, ivAgeMin: null };
   // ── WHY EACH SYMBOL LANDED WHERE IT DID ────────────────────────────────────
   // The rung attempts were wrapped in a bare `catch {}`. That is correct behaviour — one symbol
   // short must not cost the section — and it meant a rung could fail every morning with no way to
@@ -558,6 +558,9 @@ async function gexBlock(liveSpot, tense = 'preview') {
           rung = 'occ';
           // The weaker of the two symbols' spot sources wins, same rule as the rung itself.
           if (st.spotSource === 'CBOE') vint.spotSource = 'CBOE';
+          // The OLDEST surface across the symbols wins, same rule as the rung.
+          const a = st.chain?.ivBlackout?.ageMin ?? null;
+          if (a != null && (vint.ivAgeMin == null || a > vint.ivAgeMin)) vint.ivAgeMin = a;
           // THIS RUNG'S OWN TIMESTAMP, not the stored capture's. The footer said "today's settled
           // open interest ... captured 18:33Z" — an 18:33 that belonged to YESTERDAY's Yahoo
           // snapshot, stamped onto a book fetched this morning. The line described the right data
