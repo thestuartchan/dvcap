@@ -532,6 +532,7 @@ async function gexBlock(liveSpot, tense = 'preview') {
       // final by 01:10 UTC and had not moved one series by 08:48. The expiries are matched to the
       // stored capture's so the two rungs describe the same book and the fall-through stays
       // comparable.
+      let settledAsOf = null;
       try {
         const st = await settledGex(sym, { spot: spot > 0 ? spot : null, expiries: latest.expiries || null });
         if (st?.ok && st.row) {
@@ -539,6 +540,11 @@ async function gexBlock(liveSpot, tense = 'preview') {
           rung = 'occ';
           // The weaker of the two symbols' spot sources wins, same rule as the rung itself.
           if (st.spotSource === 'CBOE') vint.spotSource = 'CBOE';
+          // THIS RUNG'S OWN TIMESTAMP, not the stored capture's. The footer said "today's settled
+          // open interest ... captured 18:33Z" — an 18:33 that belonged to YESTERDAY's Yahoo
+          // snapshot, stamped onto a book fetched this morning. The line described the right data
+          // and dated it to the wrong session.
+          settledAsOf = st.iv?.asOf || new Date().toISOString();
         }
       } catch { /* the top rung is best-effort; the cascade exists for exactly this */ }
       if (!row && spot > 0 && Math.abs(spot / latest.spot - 1) > 1e-9) {
@@ -559,7 +565,9 @@ async function gexBlock(liveSpot, tense = 'preview') {
       // is false the moment one of the two fell through to yesterday's. Ordered by RUNGS rather
       // than by a pair of comparisons, which is what let a third rung be added without another.
       if (vint.rung === 'none' || RUNGS.indexOf(rung) > RUNGS.indexOf(vint.rung)) vint.rung = rung;
-      vint.from = latest.date; vint.asOf = latest.asOf;
+      // The vintage belongs to the rung that produced the row, not to whatever was in storage.
+      vint.from = rung === 'occ' ? today : latest.date;
+      vint.asOf = rung === 'occ' ? settledAsOf : latest.asOf;
     } catch { /* one symbol short is a smaller loss than no section */ }
   }
   if (!rows.length) return null;
@@ -713,6 +721,11 @@ async function runRegion(region, req) {
   const byS = new Map(quotes.map(q => [q.sym, q]));
   const wanted = new Set(WATCH_UNIVERSE[region] || []);
   if (region === 'us') for (const k of ['asia', 'eu']) for (const i of UNIVERSE[k].indices) wanted.add(i.sym);
+  // THE MAP'S OWN SYMBOLS. QQQ is in the US region's indices and SPY is in nothing — not its
+  // indices, not its names, not the watch universe — so the map drew QQQ at this morning's
+  // pre-market print and SPY at CBOE's last published spot, two rows on one chart at two different
+  // instants. Quoted here so both rows are priced at the same moment.
+  for (const sym of GEX_SYMBOLS) wanted.add(sym);
   const missing = [...wanted].filter(sym => !byS.has(sym) && !indices.some(q => q.sym === sym));
   let extraQuotes = {};
   if (missing.length) {
@@ -779,7 +792,7 @@ async function runRegion(region, req) {
   // Asia fires 42 minutes after the close capture, the US brief 14h42m after it.
   const liveSpot = (sym) => {
     const hit = indices.find(q => q.sym === sym) || quotes.find(q => q.sym === sym);
-    const px = hit ? displayQuote(hit, region).price : null;   // live path — real clock is right here
+    const px = hit ? displayQuote(hit, region).price : extraQuotes[sym]?.price ?? null;   // live path — real clock is right here
     return Number.isFinite(+px) && +px > 0 ? +px : null;
   };
   // ── WHOSE SESSION IS THIS MAP ABOUT? ───────────────────────────────────────
