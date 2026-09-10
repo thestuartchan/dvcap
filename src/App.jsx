@@ -3647,6 +3647,77 @@ function ScenarioDescriptors({ s, toneCol }) {
   );
 }
 
+// P7 — THE AUCTION CARD. On 2026-09-10 the 30-year settled at 1pm and nothing on this board
+// mentioned it, on the morning the long end was the entire story and scenario C sat three tenths
+// of a basis point from its trigger. B's watch list names "30Y auction tail / bid-to-cover" and
+// there was nowhere to look.
+//
+// The tail is deliberately absent: it needs the when-issued yield at the bid deadline and no free
+// feed carries it. Bid-to-cover against the trailing run of the SAME tenor is the honest version
+// of the same question, and who took the paper is the part a cover can hide.
+// Module scope: a component created during render is a new type every pass and remounts its
+// subtree. `bn` rides along because both this and AuctionCard format the same offering sizes.
+const bn = (v) => v == null ? "—" : "$" + (v / 1e9).toFixed(0) + "bn";
+const AuctionResult = ({ x, label }) => (
+  <div style={{ padding: "7px 10px", borderRadius: 8, background: C.surf, border: "1px solid " + C.bdr }}>
+    <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+      <span style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 900, color: C.mid }}>{x.label}</span>
+      <span style={{ fontSize: 11, color: C.lbl, fontWeight: 700 }}>{x.auctionDate} · {bn(x.offering)}</span>
+      <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 900, fontVariantNumeric: "tabular-nums",
+                     color: x.read?.best ? C.green : x.read?.worst ? C.red : C.mid }}>
+        {x.highYield != null ? x.highYield.toFixed(3) + "%" : "—"}
+      </span>
+    </div>
+    {x.read?.note && <div style={{ fontSize: 11, color: C.mid, fontWeight: 600, marginTop: 3 }}>{x.read.note}</div>}
+    {x.read?.dealerNote && (
+      <div style={{ fontSize: 11, color: x.read.dealerHeavy ? C.amber : C.lbl, fontWeight: 600, marginTop: 1 }}>
+        {x.read.dealerNote}
+      </div>
+    )}
+    {/* The tail is named as absent rather than left off: a reader who knows to look for it needs
+        to know it is unavailable, not wonder whether the card forgot. */}
+    <div style={{ fontSize: 10, color: C.lbl, marginTop: 2 }} title={x.tailNote || undefined}>
+      indirect {x.indirectShare ?? "—"}% · tail not published
+    </div>
+  </div>
+);
+
+function AuctionCard({ a }) {
+  if (!a) return null;
+  const done = a.today?.filter(x => x.bidToCover != null) || [];
+  const last = a.lastLongEnd;
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+        <SLabel>🏛 Treasury supply</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>auction calendar · how the last long end went</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {done.map(x => <AuctionResult key={x.cusip + x.auctionDate} x={x} label="today" />)}
+        {/* Only when today has none of its own — otherwise the same auction prints twice. */}
+        {!done.length && last && <AuctionResult x={last} label="last long end" />}
+        {a.next && (
+          <div style={{ fontSize: 11.5, color: C.mid, fontWeight: 600 }}>
+            <b>Next coupon</b> · {a.next.label} {bn(a.next.offering)} — {a.next.auctionDate}
+            {a.next.closesAt ? `, bids close ${a.next.closesAt} ET` : ""}
+          </div>
+        )}
+        {a.nextLongEnd && a.nextLongEnd.cusip !== a.next?.cusip && (
+          <div style={{ fontSize: 11.5, color: C.mid, fontWeight: 600 }}>
+            <b>Next long end</b> · {a.nextLongEnd.label} {bn(a.nextLongEnd.offering)} — {a.nextLongEnd.auctionDate}
+          </div>
+        )}
+        {a.pendingToday?.length > 0 && (
+          <div style={{ fontSize: 11, color: C.amber, fontWeight: 700 }}>
+            ⏳ {a.pendingToday.map(x => `${x.label} bids close ${x.closesAt} ET`).join(" · ")} — results not yet published
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 // Part C — scenario board. Answers "which scenario am I in" at the top of the page, so the user
 // doesn't reassemble it from five category-bucketed sections. Each row: name, X/N met, and its
 // conditions with threshold + live value. Sorted server-side by consequence weight, then proximity.
@@ -4915,6 +4986,9 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {data.posture && <PostureCard p={data.posture} regime={regime} />}
           {/* 1 — Scenario board (synthesis). */}
           {data.scenarios && <ScenarioBoard scenarios={data.scenarios} />}
+          {/* P7 — Treasury supply. Sits directly under the scenario board because three of the six
+              scenarios are rates scenarios and this is the supply side of all three. */}
+          {data.auctions && <AuctionCard a={data.auctions} />}
           {/* 2 — Tripwires: vol regime + gauges + 7709, tagged by scenario. */}
           {data.volTerm && <VolRegime v={data.volTerm} />}
           <GaugesLeaning leaning={data.leaning} prominent />

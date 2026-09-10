@@ -6,6 +6,7 @@
 import { assembleRegion } from '../lib/assemble.js';
 import { structure } from '../lib/regime.js';
 import { weekHighlights } from '../lib/calendar.js';
+import { auctionEvents } from '../lib/auctions.js';
 import { freshness, sessionPhase, localClock } from '../lib/sessions.js';
 import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
 import { seriesFromHistory, normalizeSeries } from '../lib/series.js';
@@ -27,7 +28,7 @@ export default async function handler(req, res) {
   const assembled = await assembleRegion(region);
   if (!assembled) return res.status(400).json({ error: 'bad region' });
 
-  const { R, quotes, idxRaw, macro, regime, cross, hyg, leaning, csop7709, volTerm, handoff, scenarios, posture, smhSoxx, fxPnl, correlation, events, read, marketRegime, ladder, fx, won, intervention } = assembled;
+  const { R, quotes, idxRaw, macro, regime, cross, hyg, leaning, csop7709, volTerm, handoff, scenarios, posture, smhSoxx, fxPnl, correlation, events, read, marketRegime, ladder, fx, won, intervention, auctions } = assembled;
 
   // Attach display metadata + structure tag to each name, and names to indices.
   // `session` = explicit phase of that symbol's OWN exchange (live/pre/post/lunch/holiday/
@@ -78,7 +79,12 @@ export default async function handler(req, res) {
     fx,                   // P4  — FX leg decomposition + DXY reliability flag
     won,                  // F4  — USD/KRW attribution: macro move vs Korea-specific (Gate 2)
     intervention,         // F3  — manual intervention flag + DXY yen-leg attribution
-    calendar: weekHighlights(),
+    auctions,             // P7  — Treasury auction calendar + how the last long-end one went
+    // Announced auctions ride in the hand-maintained calendar's own shape, so every consumer of
+    // this field gets them without knowing they came from a feed.
+    calendar: (() => { const hand = weekHighlights();
+                       return [...hand, ...auctionEvents(auctions, hand)]
+                         .sort((a, b) => String(a.date).localeCompare(String(b.date))); })(),
     // `series` is the authoritative dated store (one row per observation date, ordered);
     // `history` stays for backward compatibility with older cached clients.
     kofia: {

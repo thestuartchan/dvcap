@@ -77,7 +77,7 @@ for (const region of REGIONS) {
     // one layer down.
   }, { region, now: NOW });
   const blocks = buildBlocks(region, s.quotes, s.indices, s.macro, s.regime, s.cal, s.cross, s.sox,
-    { leaning, composed, foreign: {}, now: NOW });
+    { leaning, composed, auctions: s.auctions || null, foreign: {}, now: NOW });
   const text = assembleDiscord(region, UNIVERSE[region].label, blocks)
     // The header carries the render time and is the one line that cannot be frozen.
     .replace(/· \d{4}-\d{2}-\d{2} \d{2}:\d{2}Z\*\*/, '· <TIME>**');
@@ -136,7 +136,7 @@ for (const region of REGIONS) {
   const NOW = new Date(fx.capturedAt);
   const stale = buildBlocks('asia', s.quotes, s.indices, s.macro,
     { ...s.regime, staleWhileOpen: true }, s.cal, s.cross, s.sox,
-    { leaning: s.leaning, composed: s.composed, foreign: {}, now: NOW });
+    { leaning: s.leaning, composed: s.composed, auctions: s.auctions || null, foreign: {}, now: NOW });
   // Only the BACKDROP warning is under test here, and it does not read the gauges.
   rendered._staleWhileOpen = stale.backdropLines || '';
   ok('an open market on stale prints says so', /⚠️ \*\*Equity prints are stale\*\*/.test(stale.backdropLines));
