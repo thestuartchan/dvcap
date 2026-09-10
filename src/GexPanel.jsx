@@ -176,22 +176,15 @@ export function GexPanel() {
       // that is better before the open is not automatically better after it.
       let hit = null, j = null, via = "settled";
       try {
-        // A LIVE SPOT, FETCHED. Recomputing gamma at the current price is the entire reason to
-        // press this button rather than read the stored row — but the panel holds no live quote of
-        // its own, only the stored series. Passing `data.latest.spot` would hand the server the
-        // PREVIOUS CLOSE and call it live, which is worse than the CBOE snapshot it would be
-        // overriding: CBOE's is at least today's, roughly fifteen minutes behind.
+        // NO SPOT PASSED. The panel used to fetch /api/prices and hand the result over, and that
+        // route returns the REGULAR print with no extended-hours overlay — so pre-open it passed
+        // the PRIOR CLOSE (716.31 against a live 707.94 on 2026-09-10) and the server reported it
+        // as the live spot because a caller had supplied it.
         //
-        // So the price is fetched. If that fails, nothing is passed and settledGex falls back to
-        // CBOE's, which the footer then names — the one thing that must not happen is a stale spot
-        // presented as a live one.
-        let q = "";
-        try {
-          const pr = await fetch(`/api/prices?tickers=${encodeURIComponent(symbol)}`, { credentials: "include" });
-          const pj = await pr.json();
-          const px = Number(pj?.[symbol]?.price);
-          if (Number.isFinite(px) && px > 0) q = `&spot=${px}`;
-        } catch { /* no spot passed; the server names CBOE's in the footer */ }
+        // The server resolves it now, with the same pre/post-aware call the pre-read uses. One
+        // definition of "the current price" instead of one per caller, and the panel cannot pass a
+        // stale one by accident.
+        const q = "";
         const rs = await fetch(`/api/gex?settled=1&symbol=${encodeURIComponent(symbol)}${q}`, { credentials: "include" });
         const js = await rs.json();
         const rowS = (js?.results || []).find(x => x.symbol === symbol);
