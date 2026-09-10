@@ -28,7 +28,7 @@ export default async function handler(req, res) {
   const assembled = await assembleRegion(region);
   if (!assembled) return res.status(400).json({ error: 'bad region' });
 
-  const { R, quotes, idxRaw, macro, regime, cross, hyg, leaning, csop7709, volTerm, handoff, scenarios, posture, smhSoxx, fxPnl, correlation, events, read, marketRegime, ladder, fx, won, intervention, auctions, vintages } = assembled;
+  const { R, quotes, idxRaw, macro, regime, cross, hyg, leaning, csop7709, volTerm, handoff, scenarios, posture, smhSoxx, fxPnl, correlation, events, read, marketRegime, ladder, fx, won, intervention, auctions, vintages, monetization } = assembled;
 
   // Attach display metadata + structure tag to each name, and names to indices.
   // `session` = explicit phase of that symbol's OWN exchange (live/pre/post/lunch/holiday/
@@ -73,6 +73,7 @@ export default async function handler(req, res) {
     marketRegime,         // P0.1 — cross-asset regime read (incl. HAWKISH_RATES_REPRICING)
     ladder,               // P5  — concentration ladder + single-theme alert
     smhSoxx,              // D3  — SMH − SOXX spread (mega-cap concentration vs cycle broadening)
+    monetization,         // Software vs hardware — the AI monetization gate (fourth rung on the ladder)
     fxPnl,                // D5  — FX overlay: local vs USD-translated move per Asia position
     correlation,          // D4  — SMIC/Hynix/Samsung rolling correlation (three-as-one warning)
     events,               // D2  — event positioning into upcoming catalysts (priced for perfection)

@@ -3718,6 +3718,69 @@ function AuctionCard({ a }) {
   );
 }
 
+// SOFTWARE vs HARDWARE — the AI monetization gate. Renders as a rung inside the breadth-ladder
+// card rather than its own box, because it EXTENDS that chain: equipment → semis → software.
+//
+// The state is never claimed off one session. This pair produces a dramatic-looking number on any
+// volatile day, and a board that shouts on one session of rotation is worse than no rung at all —
+// so until the spread has held direction for five sessions the label carries its pending flag and
+// renders muted.
+function MonetizationRung({ m }) {
+  if (!m?.available) return null;
+  const col = m.tone === "amber" ? C.amber : m.tone === "green" ? C.green : C.muted;
+  const pct = (v) => v == null ? "—" : `${v >= 0 ? "+" : ""}${v}%`;
+  const pp = (v) => v == null ? "—" : `${v >= 0 ? "+" : ""}${v}pp`;
+  const purityCol = m.purity?.state === "CONTAMINATED" ? C.amber
+    : m.purity?.state === "OK" ? C.green : C.lbl;
+  return (
+    <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid " + C.bdr }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4 }}>
+          Software vs hardware
+        </span>
+        <span style={{ fontSize: 10, color: C.lbl, fontWeight: 700 }}>AI monetization gate</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: C.mid }}>
+          {m.softSym} {pct(m.soft)} · {m.hardSym} {pct(m.hard)}
+        </span>
+        {/* THE SPREAD IN POINTS AND IN ITS OWN VOLATILITY. A 2.5pp gap is meaningless without
+            knowing whether that is a normal day for this pair. */}
+        <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 900, color: col, fontVariantNumeric: "tabular-nums" }}>
+          {pp(m.spread)}{m.atrMult != null ? ` · ${m.atrMult}×ATR` : ""}
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 3, fontSize: 11.5 }}>
+        <span style={{ color: C.mid, fontWeight: 700 }}>{m.pureSym} {pct(m.pure)}</span>
+        <span style={{ color: purityCol, fontWeight: 700 }} title={m.purity?.note || undefined}>
+          {m.softSym}−{m.pureSym} {pp(m.purity?.gap)} · purity {m.purity?.state ?? "unknown"}
+        </span>
+        {/* The cumulative series is the actual indicator; the 1d is the tick. */}
+        <span style={{ color: C.lbl, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+          20d {pp(m.cum20)} · 60d {pp(m.cum60)}
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap", marginTop: 4 }}>
+        <span style={{ fontSize: 12, fontWeight: 900, color: m.confirmed ? col : C.muted }}>{m.state}</span>
+        {!m.confirmed && (
+          <span style={{ fontSize: 10.5, color: C.amber, fontWeight: 700 }} title={m.pending || undefined}>
+            ⚠ {m.run}d only — {m.confirmSessions}d confirmation pending
+          </span>
+        )}
+      </div>
+      <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 2, lineHeight: 1.45 }}>{m.why}</div>
+      {/* THE RATES CONFOUND, TESTED. Software is the longer-duration leg, so on a hawkish day it
+          should underperform; when it outperforms into rising yields the duration explanation is
+          ruled out and the read is cleaner. The only place this rung gets MORE confident. */}
+      {m.ratesNote && (
+        <div style={{ fontSize: 10.5, marginTop: 2, lineHeight: 1.45,
+                      color: m.ratesRuledOut ? C.green : C.lbl }}>
+          {m.ratesRuledOut ? "✓ " : "· "}{m.ratesNote}
+          {m.thirtySource ? <span style={{ color: C.lbl }}> ({m.thirtySource})</span> : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Part C — scenario board. Answers "which scenario am I in" at the top of the page, so the user
 // doesn't reassemble it from five category-bucketed sections. Each row: name, X/N met, and its
 // conditions with threshold + live value. Sorted server-side by consequence weight, then proximity.
@@ -5369,6 +5432,11 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                   </div>
                 );
               })()}
+              {/* SOFTWARE vs HARDWARE — the fourth rung, so the chain reads equipment → semis →
+                  software: the actual capex-to-monetization sequence. The two rungs above it
+                  measure SPENDING; this one measures whether the spending is being monetized, and
+                  the two diverge at cycle turns. */}
+              <MonetizationRung m={data.monetization} />
             </Card>
           )}
 
