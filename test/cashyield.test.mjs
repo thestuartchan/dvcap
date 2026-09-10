@@ -62,7 +62,10 @@ for (const k of ['SGOV', 'USFR']) {
 const px = secYieldProxy(3.72);
 eq('bond-equivalent is above the discount', px.bey > 3.72, true);
 eq('SGOV sits under the BEY by fee + residual', +(px.beyExact - PROXY.SGOV.expense - PROXY.SGOV.residual).toFixed(2), px.SGOV);
-eq('USFR margin is positive, not the old +0.20', PROXY.USFR.residual < 0, true);
+// USFR's offset was −0.03 against anchors from August; refitted 2026-09-10 it is +0.06. What the
+// assertion is really guarding is that it is nowhere near the old +0.20, which was mostly the
+// missing discount→BEY conversion rather than a real margin.
+eq('USFR margin is small, not the old +0.20', Math.abs(PROXY.USFR.residual) < 0.10, true);
 
 // ── the gap is ATTRIBUTED, not all charged to the model ──
 const div = proxyDivergence(3.72);
