@@ -705,6 +705,26 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
     // shared strike reads as a zone even though the put side holds across three expiries.
     ok('the weaker agreement governs a shared strike', /rather than a line/.test(shared[0]));
   }
+  // ── WHEN THE LABEL AND THE HEAVY SIDE DISAGREE ─────────────────────────────
+  // Live on QQQ 2026-09-10: "**710.00** — heaviest call positioning, -0.1%. 1.5x put-heavy.
+  // Declines tend to slow here rather than turn." Every clause true, and it reads as a
+  // contradiction — a strike labelled for the calls, described by its puts.
+  {
+    const crossed = realLevels({ spot: 758.19, putWall: 770, callWall: 760, byStrike,
+      agreement: { call: { agree: 2, total: 5, matched: [] }, put: { agree: 2, total: 5, matched: [] } } });
+    ok('the disagreement is explained, not just stated', /But the puts there outweigh the calls 6.5x/.test(crossed[0]));
+    ok('and what it means for the level is said', /leans as a floor rather than a ceiling/.test(crossed[0]));
+    ok('the bare short form is gone from that line', !/6\.5x put-heavy/.test(crossed[0]));
+    // The mirror: a put wall whose calls are the heavy side.
+    ok('and it works the other way round', /But the calls there outweigh the puts 1\.5x, so it leans as a ceiling rather than a floor/.test(crossed[1]));
+    // A wall whose label AND heavy side agree keeps the short form — there is nothing to reconcile.
+    const aligned = realLevels({ spot: 758.19, putWall: 760, callWall: 770, byStrike,
+      agreement: { call: { agree: 2, total: 5, matched: [] }, put: { agree: 2, total: 5, matched: [] } } });
+    ok('an aligned wall stays short', /6\.5x put-heavy/.test(aligned[1]) && !/But the /.test(aligned[1]));
+    // A shared strike carries BOTH labels, so it has no side to contradict.
+    const shared2 = realLevels({ spot: 758.19, putWall: 760, callWall: 760, byStrike });
+    ok('a shared strike keeps the short form too', /6\.5x put-heavy/.test(shared2[0]));
+  }
   {
     const apart = realLevels({ spot: 758, putWall: 750, callWall: 770, byStrike,
       agreement: { call: { agree: 0, total: 5, matched: [] }, put: { agree: 1, total: 5, matched: ['2026-09-18'] } },
