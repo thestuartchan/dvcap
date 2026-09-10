@@ -525,7 +525,25 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
   // An inversion outranks everything: it is the rarer and larger fact.
   ok('an inverted front end still leads', /the unusual way round/.test(ratesLine({ us2y: 4.6, us10y: 4.4, us30y: 4.9 })));
   ok('two legs still render without the third', /2yr 4.39%/.test(ratesLine({ us2y: 4.39, us10y: 4.8 })));
+  // 2s10s is the whole shape test, so the 30Y alone cannot produce one.
   ok('and a lone 30Y does not claim a shape', !/way round|steepest/.test(ratesLine({ us30y: 5.25 })));
+
+  // ── A MISSING LEG IS A FACT, NOT A GAP ─────────────────────────────────────
+  // Observed live: a transient FRED miss dropped the 2yr and the line rendered "10yr · 30yr" with
+  // no shape and nothing to say a leg was absent. That is the same ambiguity as a flat print and a
+  // missing print rendering identically — the line quietly says less without saying that it is.
+  {
+    const short = ratesLine({ us10y: 4.8, us30y: 5.25 });
+    ok('a dropped leg is named', /no print for the 2yr/.test(short));
+    ok('and the withheld shape is accounted for', /the shape is not stated/.test(short));
+    ok('the legs that did print still do', /10yr 4.8%/.test(short) && /30yr 5.25%/.test(short));
+    ok('two absent legs read as a list', /the 2yr and 10yr/.test(ratesLine({ us30y: 5.25 })));
+    // NOT NARRATED WHEN IT CHANGES NOTHING. A leg missing from a line that was making no shape
+    // claim anyway is bookkeeping, and a brief that reports its own gaps teaches a reader to skip
+    // the line on the day a gap matters.
+    ok('a complete line says nothing about absence', !/no print/.test(ratesLine({ us2y: 4.39, us10y: 4.8, us30y: 5.25 })));
+    ok('nor does one whose shape survived the gap', !/no print/.test(ratesLine({ us2y: 4.39, us10y: 4.8 })));
+  }
   eq('no yields, no line', ratesLine({}), null);
 
   // ── THE TRIPWIRE, AT THE SCENARIO ENGINE'S OWN NUMBER ──────────────────────
