@@ -9569,6 +9569,39 @@
     }
    },
    "asOf": "2026-09-10T00:57:00.000Z"
+  },
+  "monetization": {
+   "available": true,
+   "softSym": "IGV",
+   "hardSym": "SMH",
+   "pureSym": "WCLD",
+   "soft": -0.81,
+   "hard": 0.1,
+   "pure": -1.57,
+   "spread": -0.91,
+   "atr": 2.969,
+   "atrMult": 0.3,
+   "cum20": -2.01,
+   "cum60": 17.89,
+   "purity": {
+    "state": "CONTAMINATED",
+    "gap": 0.76,
+    "gapMult": 1,
+    "note": "IGV is ahead of WCLD by 0.76pp (1\u00d7) \u2014 the megacap holdings are carrying it and the software strength is not broad"
+   },
+   "state": "MOVING TOGETHER",
+   "candidate": "MOVING TOGETHER",
+   "confirmed": true,
+   "run": 3,
+   "confirmSessions": 5,
+   "why": "0.91pp is inside 0.5\u00d7ATR (1.48pp) \u2014 an ordinary day for this pair",
+   "pending": null,
+   "ratesRuledOut": null,
+   "thirtyRising": true,
+   "thirtySource": "FRED 1d",
+   "ratesNote": null,
+   "tone": "muted",
+   "chainNote": "reads with SMH \u2212 SOXX above it: equipment \u2192 semis \u2192 software is the capex-to-monetization sequence, and movement down it is the cycle maturing"
   }
  }
 }

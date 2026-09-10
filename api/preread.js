@@ -34,7 +34,7 @@ import { watchlist, renderWatchlist } from '../lib/watchlist.js';
 import { WATCH_UNIVERSE } from '../data/watchUniverse.js';
 import {
   clockSection, overnightSection, breadthNote, backdropSection, changeSection,
-  compressLine, creditLine, ratesLine, oilLine, volLine, supplyLine, plainTripwire, pctWord, clockIn, sinceSection,
+  compressLine, creditLine, ratesLine, oilLine, volLine, supplyLine, monetizationLine, plainTripwire, pctWord, clockIn, sinceSection,
 } from '../lib/briefSections.js';
 
 
@@ -405,6 +405,10 @@ export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, 
     // SUPPLY sits directly under credit because it is the other half of the same question — what
     // it costs to borrow, and who is willing to lend at it.
     out.push(supplyLine(opts.auctions || null));
+    // The AI monetization gate. Sits with the backdrop rather than the map because it is a read on
+    // the capex cycle, not on today's positioning — and it renders only when the pair has said
+    // something, which most days it has not.
+    out.push(monetizationLine(opts.monetization || null));
     out.push(oilLine({ wti: macro.wti?.price, brent: macro.brent?.price, above: regime.oil.above, stale: macro.wti?.stale }));
     // ONCE PER BRIEF. For Asia and Europe the VIX is part of the US handoff and OVERNIGHT already
     // carries it; printing it again here put the same number, to the same two decimals, in two
@@ -773,7 +777,7 @@ async function runRegion(region, req) {
     }
   }
 
-  const { quotes, idxRaw, macro, regime, cross, sox, leaning, hyg, nqLow, usRthOpen, usPrevSession, read: composed, auctions } = await assembleRegion(region);
+  const { quotes, idxRaw, macro, regime, cross, sox, leaning, hyg, nqLow, usRthOpen, usPrevSession, read: composed, auctions, monetization } = await assembleRegion(region);
   // attach display names to indices
   const indices = idxRaw.map((q, i) => ({ ...q, _name: R.indices[i].name }));
   // Announced auctions join the hand-maintained calendar in its own shape. They carry a region and
@@ -861,12 +865,12 @@ async function runRegion(region, req) {
     // gauge, a reworded row — cannot reach the golden. The whole point is that a change to the code
     // shows up in the diff.
     return { status: 200, body: { region, capturedAt: new Date().toISOString(),
-      state: { quotes, indices, macro, regime, cal, cross, sox, leaning, composed, auctions,
+      state: { quotes, indices, macro, regime, cal, cross, sox, leaning, composed, auctions, monetization,
                hyg, nqLow, usRthOpen, usPrevSession } } };
   }
 
   const blocks = buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox,
-    { leaning, composed, auctions, foreign: extraQuotes, prevSnap: previous?.snap || null });
+    { leaning, composed, auctions, monetization, foreign: extraQuotes, prevSnap: previous?.snap || null });
 
   // ── THE TWO NEW SECTIONS ───────────────────────────────────────────────────
   // Both are best-effort and both are omitted rather than faked. The option book is the same in

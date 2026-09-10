@@ -77,7 +77,7 @@ for (const region of REGIONS) {
     // one layer down.
   }, { region, now: NOW });
   const blocks = buildBlocks(region, s.quotes, s.indices, s.macro, s.regime, s.cal, s.cross, s.sox,
-    { leaning, composed, auctions: s.auctions || null, foreign: {}, now: NOW });
+    { leaning, composed, auctions: s.auctions || null, monetization: s.monetization || null, foreign: {}, now: NOW });
   const text = assembleDiscord(region, UNIVERSE[region].label, blocks)
     // The header carries the render time and is the one line that cannot be frozen.
     .replace(/· \d{4}-\d{2}-\d{2} \d{2}:\d{2}Z\*\*/, '· <TIME>**');
@@ -136,7 +136,7 @@ for (const region of REGIONS) {
   const NOW = new Date(fx.capturedAt);
   const stale = buildBlocks('asia', s.quotes, s.indices, s.macro,
     { ...s.regime, staleWhileOpen: true }, s.cal, s.cross, s.sox,
-    { leaning: s.leaning, composed: s.composed, auctions: s.auctions || null, foreign: {}, now: NOW });
+    { leaning: s.leaning, composed: s.composed, auctions: s.auctions || null, monetization: s.monetization || null, foreign: {}, now: NOW });
   // Only the BACKDROP warning is under test here, and it does not read the gauges.
   rendered._staleWhileOpen = stale.backdropLines || '';
   ok('an open market on stale prints says so', /⚠️ \*\*Equity prints are stale\*\*/.test(stale.backdropLines));
@@ -176,6 +176,13 @@ for (const region of REGIONS) {
     ['⚡', 'the GEX map itself, for the same reason'],
     ['⚪', 'a market shut for a weekend or holiday on the capture date'],
     ['👀', 'the watchlist heading — the fixtures carry no cross-region quote batch'],
+    // A DEBT WITH A PAYMENT ATTACHED. The software-vs-hardware line renders only when the pair
+    // clears half its own normal day, and at the capture minute (2026-09-10T00:57Z, US shut, last
+    // session the 9th) IGV − SMH was 0.3×ATR — a moving-together day. Faking a firing state into
+    // the fixture would make the golden describe a session that did not happen. The line is
+    // instead rendered and asserted in full against a reconstructed real session in
+    // test/monetization.test.mjs, so it is not a line nobody has looked at.
+    ['🧩', 'software vs hardware — the capture minute is a moving-together day; rendered and asserted in test/monetization.test.mjs'],
   ]);
 
   const seen = new Set();
