@@ -8,6 +8,8 @@ import { watchlist, corroborate, renderWatchlist, WATCH_MAX, WATCH_MIN_PCT } fro
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const ok = (n, c) => eq(n, !!c, true);
+// Floating-point results need a tolerance, not an equality — expectedRange divides by √252.
+const near = (n, g, w, tol) => { const good = Number.isFinite(+g) && Math.abs(+g - w) <= tol; console.log(`${good ? '✅' : '❌'} ${n}` + (good ? '' : `  got ${g} want ${w}±${tol}`)); good ? pass++ : fail++; };
 
 // The real board of 2026-09-09.
 const QQQ = { name: 'QQQ', spot: 718.36, putWall: 700, callWall: 720, flipLevel: 718.83 };
@@ -189,8 +191,17 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
     const asian = watchlist([{ name: '373220.KS', sym: '373220.KS' }, { name: '051910.KS', sym: '051910.KS' },
                              { name: '005930.KS', sym: '005930.KS' }],
       s => ({ price: 100, changePercent: ({ '373220.KS': 6.46, '051910.KS': 5.56, '005930.KS': -2.1 })[s] }));
-    eq('a local listing renders under its company name', asian[0].name, 'LG Energy');
-    ok('and the raw ticker does not reach the reader', !/373220/.test(renderWatchlist(asian)));
+    // ── BOTH, NOT EITHER ─────────────────────────────────────────────────────
+    // The first version shipped bare tickers and told a reader nothing about what they were.
+    // Replacing them with names shipped the opposite failure: "Largan · 6,870 · +5.69%" is
+    // recognisable and cannot be typed into an order ticket.
+    eq('a local listing carries its company name', asian[0].name, 'LG Energy');
+    const txt = renderWatchlist(asian);
+    ok('and the ticker beside it, so the row can be acted on', /\*\*LG Energy\*\* `373220\.KS`/.test(txt));
+    // A US ticker IS its own name and must not be printed twice.
+    const us = renderWatchlist(watchlist([{ name: 'NVDA', sym: 'NVDA' }, { name: 'MU', sym: 'MU' }],
+      () => ({ price: 100, changePercent: 2.1 })));
+    ok('a name that is its own ticker is not doubled', !/NVDA\*\* `NVDA`/.test(us));
   }
 
   // ── SILENCE, NOT BOOKKEEPING ───────────────────────────────────────────────
@@ -386,13 +397,103 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
   {
     const { assertObservational } = await import('../lib/read.js');
     const src = (await import('node:fs')).readFileSync(new URL('../lib/briefSections.js', import.meta.url), 'utf8');
-    // Only the strings the reader can actually see, not the commentary explaining them.
-    for (const m of src.matchAll(/`([^`\\$]{12,})`|'([^'\n]{12,})'/g)) {
+    // Only the strings the reader can actually see, not the commentary explaining them. Both
+    // forms are pinned to a SINGLE LINE: a backtick class that allowed newlines ran from one
+    // template literal to the next and scanned the prose between them, which flagged a comment
+    // and would just as happily have missed a real violation inside the span it swallowed.
+    for (const m of src.matchAll(/`([^`\\$\n]{12,})`|'([^'\n]{12,})'/g)) {
       const text = m[1] || m[2];
       if (!/[a-z]{3} [a-z]{3}/.test(text)) continue;       // skip identifiers and format strings
       const v = assertObservational(text);
       ok(`no positioning language in "${text.slice(0, 44)}"`, v.ok);
     }
+  }
+}
+
+
+// ── 📏 EXPECTED RANGE ────────────────────────────────────────────────────────
+// The map says WHERE the levels are and never how far price is expected to travel. A put wall
+// 1.9% below spot is a different proposition on a day priced for ±0.6% than on one priced for
+// ±1.5%, and nothing in the brief distinguished those two days.
+{
+  const { expectedRange, TRADING_DAYS, renderGexSection } = await import('../lib/gexBrief.js');
+
+  eq('trading days, not calendar days', TRADING_DAYS, 252);
+  {
+    const e = expectedRange(716.275, 0.2175);
+    near('a one-day move at 21.75% vol', e.pts, 9.81, 0.02);
+    near('and as a percentage of spot', e.pct, 1.37, 0.02);
+  }
+  // √365 instead of √252 understates the daily move by about a fifth. Pinned, because the two
+  // roots look equally plausible in a formula and only one matches how the vol is quoted.
+  ok('the calendar-day root would give a smaller number', expectedRange(100, 0.20).pts > 100 * 0.20 / Math.sqrt(365));
+
+  // A quote arrives as 0.2175 from one source and 21.75 from another. Reading the second as a
+  // decimal would put the band out by a factor of a hundred.
+  eq('a percentage-form vol is normalised', expectedRange(716.275, 21.75).pts, expectedRange(716.275, 0.2175).pts);
+  // 300% annualised on an index is not a real reading, so the boundary sits well below it.
+  eq('no vol, no band', expectedRange(716, 0), null);
+  eq('no spot, no band', expectedRange(0, 0.2), null);
+  eq('and a missing vol is not treated as zero', expectedRange(716, null), null);
+
+  // It renders beside the levels, and only when the vol is there.
+  {
+    const rows = [{ name: 'QQQ', spot: 716.275, putWall: 700, callWall: 716, flipLevel: 719.57, iv: 0.2175, pin: { pinned: false } }];
+    const withIv = renderGexSection(rows, { rung: 'repriced' });
+    ok('the band renders with the levels', /Priced for\*\* \*\*QQQ\*\* ±9.81/.test(withIv));
+    // A BAND IS NOT A BOUNDARY. Roughly one day in three finishes outside it, and the line says so
+    // rather than letting the number read as a limit.
+    ok('and does not present itself as a limit', /one day in three finishes outside it/.test(withIv));
+    const noIv = renderGexSection(rows.map(r => ({ ...r, iv: null })), { rung: 'repriced' });
+    ok('no vol means no line, not a blank one', !/Priced for/.test(noIv));
+  }
+}
+
+// ── 🔄 SINCE YOUR LAST BRIEF ─────────────────────────────────────────────────
+// Every other section describes a state. A reader who read yesterday's brief already holds most of
+// that state; what they cannot get from today's message alone is what MOVED.
+{
+  const { sinceSection, SINCE_MIN } = await import('../lib/briefSections.js');
+
+  // A FIRST RUN HAS NOTHING TO COMPARE, and must not say so.
+  eq('no prior brief renders nothing', sinceSection({ oas: 2.67 }, null), null);
+  // A QUIET DAY RENDERS NOTHING EITHER. A brief that reports the absence of news every morning
+  // trains a reader to skip the line on the morning there is some.
+  eq('nothing moved renders nothing', sinceSection({ oas: 2.67, vix: 16.4 }, { oas: 2.67, vix: 16.4 }), null);
+  ok('and the noise floors are stated', SINCE_MIN.oas > 0 && SINCE_MIN.vix > 0);
+  eq('a move under the floor is print noise', sinceSection({ oas: 2.69 }, { oas: 2.67 }), null);
+
+  // TRIPWIRES FIRST: a gauge crossing its threshold is a change of state, the rest are changes of
+  // degree.
+  {
+    const out = sinceSection(
+      { wires: { 'The won weakens past 1400': true, 'VIX rising': false }, oas: 3.10 },
+      { wires: { 'The won weakens past 1400': false, 'VIX rising': true }, oas: 2.67 });
+    const lines = out.split('\n');
+    ok('a wire that crossed leads', /^• 🔴 \*\*The won weakens past 1400\*\* — crossed since yesterday$/.test(lines[0]));
+    ok('a wire that un-crossed is its own state', /🟢 \*\*VIX rising\*\* — no longer true/.test(out));
+    ok('and the degree changes follow', lines.indexOf(lines.find(l => /Credit spread/.test(l))) > 1);
+    ok('with the direction said in words', /lenders charging more/.test(out));
+  }
+  // A wire present in one brief and not the other is not a flip in either direction.
+  eq('a wire that appeared is not reported as a crossing',
+     sinceSection({ wires: { New: true } }, { wires: {} }), null);
+  eq('nor one that vanished', sinceSection({ wires: {} }, { wires: { Old: true } }), null);
+  // Nor is an unmeasurable gauge on either side.
+  eq('an unmeasurable reading is not a flip',
+     sinceSection({ wires: { A: true } }, { wires: { A: null } }), null);
+
+  // Oil moves in per cent, not in points — a $2 move means different things at $60 and at $100.
+  ok('oil is measured proportionally', /Oil\*\* 96 → \*\*102\*\* \(\+6.3%\)/.test(sinceSection({ wti: 102 }, { wti: 96 })));
+  eq('and a small proportional move is nothing', sinceSection({ wti: 96.5 }, { wti: 96 }), null);
+
+  // A LEVEL THAT MOVED IS THE ONE A READER MOST NEEDS BEFORE THEY PLACE AGAINST IT.
+  {
+    const out = sinceSection(
+      { walls: { QQQ: { putWall: 705, callWall: 716 } }, spot: { QQQ: 716 } },
+      { walls: { QQQ: { putWall: 700, callWall: 716 } } });
+    ok('a wall that moved is named with both levels', /QQQ put wall\*\* 700 → \*\*705\*\*/.test(out));
+    ok('and the one that did not is not mentioned', !/call wall/.test(out));
   }
 }
 
