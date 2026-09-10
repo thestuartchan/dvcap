@@ -20,12 +20,12 @@
 🌡️ **BACKDROP**
 • 📈 **Indices:** _(prior close)_ **DAX** -1.7% · **STOXX 50** -1.6% · **FTSE 100** -1.3%
 • 📋 **Names:** **BE Semi** -3.2% · **Siemens** -3.0% · **ASML** -1.3% · **STMicro** -0.8% · **SAP** +0.6% · **ASM Intl** -0.4%
-• 🤖 **AI vs the rest:** -1.6% vs -0.8% — moving together
-• 💵 **Money:** **2yr 4.39%** · **10yr 4.8%** · **30yr 5.25%** — the normal way round
+• 💵 **Money:** **2yr 4.39%** · **10yr 4.8%** · **30yr 5.25%** — the normal way round · 🇯🇵 **JGB** **10yr 2.891%** · **30yr 3.956%** _(as of 2026-09-09)_
 • 🩹 **Credit (HY OAS):** risky companies pay **2.67pp** over government debt _(as of 2026-09-08)_ — lenders are relaxed about risky borrowers · the junk-bond ETF (HYG) is **-0.2%** today
 • 🏛 **US 30-Year (reopening) auction today** — $22bn, bids close 01:00 PM ET
 • 🛢️ **Oil:** WTI **$96.61** · Brent **$101.33** — above its recent trend, so it adds to costs rather than easing them
 • 🌡️ **Inflation:** the headline-style measure reads **2.47%**, but the gauge the Fed actually targets is **higher at 3.34%** — the cooler of the two is not the one policy is set against
+• 🇨🇳 **China:** SMIC A/H premium **116.6pp** (+3pp 5d) — widening, so the H-share is the funding leg rather than the beneficiary
 
 ───────────────
 

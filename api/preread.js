@@ -34,7 +34,7 @@ import { watchlist, renderWatchlist } from '../lib/watchlist.js';
 import { WATCH_UNIVERSE } from '../data/watchUniverse.js';
 import {
   clockSection, overnightSection, breadthNote, backdropSection, changeSection,
-  compressLine, creditLine, ratesLine, oilLine, volLine, supplyLine, monetizationLine, plainTripwire, pctWord, clockIn, sinceSection,
+  compressLine, creditLine, ratesLine, oilLine, volLine, supplyLine, monetizationLine, handoffLine, chinaLine, plainTripwire, pctWord, clockIn, sinceSection,
 } from '../lib/briefSections.js';
 
 
@@ -379,7 +379,17 @@ export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, 
     if (nl) out.push(`📋 **Names:**${sharedTail ? '' : ''} ${nl}`);
     // The sector cut, only where it was computed. Europe's names carry no memory tag, so this
     // rendered two em-dashes and an abbreviation on every EU brief.
-    if (!regime.staleWhileOpen && regime.split.label !== 'n/a') {
+    // ── A LINE THAT PRINTS ITS OWN NO-SIGNAL VERDICT ───────────────────────
+    // memoryVsFoundry and aiLeveredVsNon both label a spread under 1.5pp `moving together` — the
+    // threshold they set for meaning anything, reported as a finding. On the 2026-09-10 Asia
+    // brief both fired and both said exactly that, two of twelve backdrop rows spending
+    // themselves to report the absence of a divergence. They also partition the SAME eleven names
+    // on the same threshold, so on the days they do speak they often say it twice.
+    //
+    // Not deleted: on a genuinely divergent day these are the most Asia-specific rows in the
+    // section, and that is the day a reader wants them.
+    const saidSomething = (l) => l && l !== 'n/a' && !/moving together|moved together/i.test(l);
+    if (!regime.staleWhileOpen && saidSomething(regime.split.label)) {
       // THE LABEL IS RELATIVE AND THE NUMBERS ARE ABSOLUTE, and printing them side by side made
       // the line contradict itself: "foundry +0.4% vs memory +2.8% — foundry-specific weakness"
       // says weakness about a group that rose. The comparison is derived from the two figures
@@ -387,16 +397,22 @@ export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, 
       // either group's own direction.
       const f = regime.split.fnd, mem = regime.split.mem;
       const gap = (f != null && mem != null) ? f - mem : null;
-      const rel = gap == null ? null
-        : Math.abs(gap) < 0.5 ? 'the two moved together'
-        : gap > 0 ? 'foundry ahead of memory' : 'memory ahead of foundry';
+      // DIRECTION ONLY. This used to carry its own "the two moved together" branch at 0.5pp while
+      // the module that computes the split calls anything under 1.5pp `moving together` — so a
+      // 0.7pp gap rendered as "foundry ahead of memory", which reads as a finding, over a spread
+      // its own classifier had already dismissed. The line now renders only above the module's
+      // threshold, which makes that branch unreachable and the contradiction impossible.
+      const rel = gap == null ? null : gap > 0 ? 'foundry ahead of memory' : 'memory ahead of foundry';
       out.push(`🔬 **Inside chips:** foundry ${pctWord(f) ?? '—'} vs memory ${pctWord(mem) ?? '—'}${rel ? ` — ${rel}` : ''}`);
     }
-    if (!regime.staleWhileOpen && regime.aiAxis.label && regime.aiAxis.label !== 'n/a') {
+    if (!regime.staleWhileOpen && saidSomething(regime.aiAxis.label)) {
       out.push(`🤖 **AI vs the rest:** ${pctWord(regime.aiAxis.ai) ?? '—'} vs ${pctWord(regime.aiAxis.non) ?? '—'} — ${regime.aiAxis.label}`);
     }
     if (regime.staleWhileOpen) out.push('⚠️ **Equity prints are stale** — the market is open but these are prior closes, so the sector cuts are suppressed');
-    out.push(ratesLine({ us2y: macro.us2y?.value, us10y: macro.us10y?.value, us30y: macro.us30y?.value }));
+    // THE HANDOFF FIRST, because it is the only row about the session that has not started.
+    out.push(handoffLine(opts.handoff || null));
+    out.push(ratesLine({ us2y: macro.us2y?.value, us10y: macro.us10y?.value, us30y: macro.us30y?.value,
+                         jgb: macro.jgb || null }));
     out.push(creditLine({
       oas: macro.oas?.value, date: macro.oas?.date, state: regime.credit.state,
       stale: composed?.structured?.rows?.find(r => r.label === 'CREDIT')?.stale ?? false,
@@ -435,6 +451,14 @@ export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, 
       out.push(`🌡️ **Inflation:** the headline-style measure reads **${sp.cpi}%**, but the gauge the Fed actually targets is **higher at ${sp.pce}%**`
         + ` — the cooler of the two is not the one policy is set against`);
     }
+    // China, on the same principle Korea has: one line carrying the currency and the one gauge
+    // that is specific to it. Rendered for every region — the yuan and the A/H premium are read by
+    // anyone holding the names, and the Asia brief is simply where most of them are.
+    out.push(chinaLine({
+      cnh: crossRow('fx', 'USD/CNH')?.price ?? null,
+      cnhPct: crossRow('fx', 'USD/CNH')?.changePct ?? null,
+      ah: opts.smicAH || null,
+    }));
     // Korea keeps its own line rather than its own section: one gate, one sentence.
     if (koreaLines && regime.korea) {
       const k = regime.korea;
@@ -777,7 +801,7 @@ async function runRegion(region, req) {
     }
   }
 
-  const { quotes, idxRaw, macro, regime, cross, sox, leaning, hyg, nqLow, usRthOpen, usPrevSession, read: composed, auctions, monetization } = await assembleRegion(region);
+  const { quotes, idxRaw, macro, regime, cross, sox, leaning, hyg, nqLow, usRthOpen, usPrevSession, read: composed, auctions, monetization, handoff, smicAH } = await assembleRegion(region);
   // attach display names to indices
   const indices = idxRaw.map((q, i) => ({ ...q, _name: R.indices[i].name }));
   // Announced auctions join the hand-maintained calendar in its own shape. They carry a region and
@@ -865,12 +889,12 @@ async function runRegion(region, req) {
     // gauge, a reworded row — cannot reach the golden. The whole point is that a change to the code
     // shows up in the diff.
     return { status: 200, body: { region, capturedAt: new Date().toISOString(),
-      state: { quotes, indices, macro, regime, cal, cross, sox, leaning, composed, auctions, monetization,
+      state: { quotes, indices, macro, regime, cal, cross, sox, leaning, composed, auctions, monetization, handoff, smicAH,
                hyg, nqLow, usRthOpen, usPrevSession } } };
   }
 
   const blocks = buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox,
-    { leaning, composed, auctions, monetization, foreign: extraQuotes, prevSnap: previous?.snap || null });
+    { leaning, composed, auctions, monetization, handoff, smicAH, foreign: extraQuotes, prevSnap: previous?.snap || null });
 
   // ── THE TWO NEW SECTIONS ───────────────────────────────────────────────────
   // Both are best-effort and both are omitted rather than faked. The option book is the same in

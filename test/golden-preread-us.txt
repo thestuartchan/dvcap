@@ -13,13 +13,13 @@
 • 📈 **Indices:** _(prior close)_ **SOXX** +0.7% · **QQQ** -0.3% · **SMH** +0.1%
 • 📋 **Names:** **MU** +2.8% · **GOOGL** -2.3% · **AMZN** -1.8% · **INTC** +1.7% · **ARM** +1.0% · **TXN** +1.0% _(+4 more)_
 • 🔬 **Inside chips:** foundry +0.4% vs memory +2.8% — memory ahead of foundry
-• 🤖 **AI vs the rest:** +0.8% vs +0.4% — moving together
-• 💵 **Money:** **2yr 4.39%** · **10yr 4.8%** · **30yr 5.25%** — the normal way round
+• 💵 **Money:** **2yr 4.39%** · **10yr 4.8%** · **30yr 5.25%** — the normal way round · 🇯🇵 **JGB** **10yr 2.891%** · **30yr 3.956%** _(as of 2026-09-09)_
 • 🩹 **Credit (HY OAS):** risky companies pay **2.67pp** over government debt _(as of 2026-09-08)_ — lenders are relaxed about risky borrowers · the junk-bond ETF (HYG) is **-0.2%** today
 • 🏛 **US 30-Year (reopening) auction today** — $22bn, bids close 01:00 PM ET
 • 🛢️ **Oil:** WTI **$96.61** · Brent **$101.36** — above its recent trend, so it adds to costs rather than easing them
 • 😰 **Fear:** VIX **16.46** +4.7% — priced for an ordinary session
 • 🌡️ **Inflation:** the headline-style measure reads **2.47%**, but the gauge the Fed actually targets is **higher at 3.34%** — the cooler of the two is not the one policy is set against
+• 🇨🇳 **China:** SMIC A/H premium **116.6pp** (+3pp 5d) — widening, so the H-share is the funding leg rather than the beneficiary
 
 ───────────────
 

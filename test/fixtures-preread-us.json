@@ -5202,7 +5202,7 @@
     "name": "HY OAS",
     "src": "BAMLH0A0HYM2",
     "cadence": "daily",
-    "note": "FRED daily \u2014 last hard print",
+    "note": "FRED daily — last hard print",
     "series": [
      {
       "date": "2023-11-01",
@@ -8238,7 +8238,7 @@
     "checked": false,
     "gapBps": null,
     "date": null,
-    "reason": "observation dates disagree \u2014 DGS10 2026-09-08, DFII10 2026-09-08, T10YIE 2026-09-09",
+    "reason": "observation dates disagree — DGS10 2026-09-08, DFII10 2026-09-08, T10YIE 2026-09-09",
     "toleranceBps": 3
    },
    "brentWtiSpread": 4.75,
@@ -8506,10 +8506,10 @@
     "cadence": "intraday"
    },
    "regimeSignal": {
-    "label": "DIVERGENT \u2014 gold-specific bid, debasement not supported",
+    "label": "DIVERGENT — gold-specific bid, debasement not supported",
     "mismatch": null,
     "windowSplit": null,
-    "discriminator": "OIL PASS-THROUGH \u2014 the 5y5y forward moved -1bps (flat within 2) while the 10Y breakeven sits 4bps ABOVE it. Near-term expectations above the far forward is a supply-shock signature; a monetary repricing would show in the forward, and it did not",
+    "discriminator": "OIL PASS-THROUGH — the 5y5y forward moved -1bps (flat within 2) while the 10Y breakeven sits 4bps ABOVE it. Near-term expectations above the far forward is a supply-shock signature; a monetary repricing would show in the forward, and it did not",
     "breakevens": {
      "tenYrBps": 0,
      "fwd5y5yBps": -1,
@@ -8559,7 +8559,61 @@
     "cadence": "daily"
    },
    "fives30s": 68,
-   "fives30sDeltaBps": -2
+   "fives30sDeltaBps": -2,
+   "jgb": {
+    "date": "2026-09-09",
+    "source": "Japan MoF daily JGB curve",
+    "2yr": {
+     "value": 1.833,
+     "date": "2026-09-09",
+     "name": "JGB 2yr",
+     "src": "MoF jgbcm.csv",
+     "cadence": "daily",
+     "prev": 1.848,
+     "prevDate": "2026-09-08",
+     "deltaBps": -2
+    },
+    "10yr": {
+     "value": 2.891,
+     "date": "2026-09-09",
+     "name": "JGB 10yr",
+     "src": "MoF jgbcm.csv",
+     "cadence": "daily",
+     "prev": 2.896,
+     "prevDate": "2026-09-08",
+     "deltaBps": 0
+    },
+    "20yr": {
+     "value": 3.713,
+     "date": "2026-09-09",
+     "name": "JGB 20yr",
+     "src": "MoF jgbcm.csv",
+     "cadence": "daily",
+     "prev": 3.717,
+     "prevDate": "2026-09-08",
+     "deltaBps": 0
+    },
+    "30yr": {
+     "value": 3.956,
+     "date": "2026-09-09",
+     "name": "JGB 30yr",
+     "src": "MoF jgbcm.csv",
+     "cadence": "daily",
+     "prev": 3.961,
+     "prevDate": "2026-09-08",
+     "deltaBps": 0
+    },
+    "40yr": {
+     "value": 3.96,
+     "date": "2026-09-09",
+     "name": "JGB 40yr",
+     "src": "MoF jgbcm.csv",
+     "cadence": "daily",
+     "prev": 3.965,
+     "prevDate": "2026-09-08",
+     "deltaBps": 0
+    }
+   }
   },
   "regime": {
    "split": {
@@ -8624,7 +8678,7 @@
     "level": "CALM",
     "dir": "falling",
     "word": "TIGHTENING",
-    "compound": "CALM \u00b7 TIGHTENING (\u22120.01 1d, +0.02 5d)",
+    "compound": "CALM · TIGHTENING (−0.01 1d, +0.02 5d)",
     "runs": 1,
     "escalated": false,
     "d1": {
@@ -8659,19 +8713,19 @@
      "bizDays": 2,
      "awaiting": false,
      "chip": "amber",
-     "label": "obs 2026-09-08 \u00b7 2d old"
+     "label": "obs 2026-09-08 · 2d old"
     },
     "marker": 2.9,
     "historical": {
      "recordTight": {
       "value": 2.41,
       "when": "Jun 2007",
-      "note": "static constant \u2014 outside the 3Y window"
+      "note": "static constant — outside the 3Y window"
      },
      "gfcPeak": {
       "value": 21.82,
       "when": "Dec 2008",
-      "note": "static constant \u2014 outside the 3Y window"
+      "note": "static constant — outside the 3Y window"
      }
     },
     "note": "calm credit market"
@@ -8679,7 +8733,7 @@
    "oil": {
     "price": 96.61,
     "above": true,
-    "label": "holding above pivot \u2014 inflation impulse building"
+    "label": "holding above pivot — inflation impulse building"
    },
    "us2y": 4.39,
    "korea": null
@@ -8687,7 +8741,7 @@
   "cal": [
    {
     "date": "2026-09-07",
-    "title": "US markets closed \u2014 Labor Day",
+    "title": "US markets closed — Labor Day",
     "region": "US",
     "tier": 2,
     "time": "00:00",
@@ -8696,7 +8750,7 @@
    },
    {
     "date": "2026-09-09",
-    "title": "US 10Y note auction \u2014 the demand read the 30Y trades off",
+    "title": "US 10Y note auction — the demand read the 30Y trades off",
     "region": "US",
     "tier": 2,
     "time": "13:00",
@@ -8705,7 +8759,7 @@
    },
    {
     "date": "2026-09-10",
-    "title": "ECB rate decision (Berlin away meeting) \u2014 presser 14:45 CET",
+    "title": "ECB rate decision (Berlin away meeting) — presser 14:45 CET",
     "region": "EU",
     "tier": 1,
     "scope": "global",
@@ -8741,7 +8795,7 @@
    },
    {
     "date": "2026-09-11",
-    "title": "US CPI (Aug) \u2014 the print the Fed path trades off",
+    "title": "US CPI (Aug) — the print the Fed path trades off",
     "region": "US",
     "tier": 1,
     "scope": "global",
@@ -8961,7 +9015,7 @@
     ]
    },
    "breadth": {
-    "label": "Breadth ladder (SMH \u2192 HYG)",
+    "label": "Breadth ladder (SMH → HYG)",
     "rows": [
      {
       "sym": "SMH",
@@ -9044,7 +9098,7 @@
     ]
    },
    "fx": {
-    "label": "FX legs (DXY is a blend \u2014 read the legs)",
+    "label": "FX legs (DXY is a blend — read the legs)",
     "rows": [
      {
       "sym": "EURUSD=X",
@@ -9126,7 +9180,7 @@
       "name": "Gold",
       "series": "COMEX front-month continuation",
       "contract": "GC=F",
-      "seriesNote": "futures, not spot \u2014 carries basis over spot; the regime read uses % change, which is basis-insensitive",
+      "seriesNote": "futures, not spot — carries basis over spot; the regime read uses % change, which is basis-insensitive",
       "price": 4442.6,
       "changePct": 1.11,
       "delta": 48.7,
@@ -9196,7 +9250,7 @@
     {
      "name": "OAS widening",
      "tripped": false,
-     "detail": "CALM \u00b7 TIGHTENING (+0.02 5d)",
+     "detail": "CALM · TIGHTENING (+0.02 5d)",
      "scenario": "Hawkish / Disorderly"
     },
     {
@@ -9251,15 +9305,15 @@
   },
   "composed": {
    "sentences": [
-    "Credit: HY OAS 2.67 reads CALM \u2014 no new print since 2026-09-08 (2 business days), so this is the 2026-09-08 reading and \"tightening\" describes the move into it, not today; HYG \u22120.18% 1D is selling credit intraday while OAS is not widening \u2014 the live tape leads the EOD print.",
-    "Cross-asset: gold 4442.6 +1.11% and BTC 78103.86 \u22120.43% 1D diverging \u2014 no clean cross-asset regime signal; DXY falling.",
-    "Tripwires: 1/3 leaning de-risking \u2014 tripped: NQ lower low; holding: OAS widening, VIX rising."
+    "Credit: HY OAS 2.67 reads CALM — no new print since 2026-09-08 (2 business days), so this is the 2026-09-08 reading and \"tightening\" describes the move into it, not today; HYG −0.18% 1D is selling credit intraday while OAS is not widening — the live tape leads the EOD print.",
+    "Cross-asset: gold 4442.6 +1.11% and BTC 78103.86 −0.43% 1D diverging — no clean cross-asset regime signal; DXY falling.",
+    "Tripwires: 1/3 leaning de-risking — tripped: NQ lower low; holding: OAS widening, VIX rising."
    ],
    "conflicts": [],
    "flip": null,
    "confidence": "low",
    "caveats": [
-    "HY OAS has not printed since 2026-09-08 (2 business days) \u2014 the credit gate is reading a stale observation"
+    "HY OAS has not printed since 2026-09-08 (2 business days) — the credit gate is reading a stale observation"
    ],
    "provenance": [
     "Credit/VIX/NQ clauses are composed off the prior US close"
@@ -9271,14 +9325,14 @@
      {
       "label": "CREDIT",
       "state": "CALM",
-      "detail": "OAS 2.67 (no new print since 2026-09-08 (2 business days)) \u00b7 HYG \u22120.18% (live)",
+      "detail": "OAS 2.67 (no new print since 2026-09-08 (2 business days)) · HYG −0.18% (live)",
       "stale": true,
       "tone": "amber"
      },
      {
       "label": "CROSS-ASSET",
       "state": "DIVERGENT",
-      "detail": "gold +1.11%, BTC \u22120.43%, vs real yield 2.43%",
+      "detail": "gold +1.11%, BTC −0.43%, vs real yield 2.43%",
       "tone": "muted"
      },
      {
@@ -9290,7 +9344,7 @@
     ],
     "flipsIf": null,
     "caveats": [
-     "HY OAS has not printed since 2026-09-08 (2 business days) \u2014 the credit gate is reading a stale observation"
+     "HY OAS has not printed since 2026-09-08 (2 business days) — the credit gate is reading a stale observation"
     ]
    },
    "leaning": {
@@ -9298,7 +9352,7 @@
      {
       "name": "OAS widening",
       "tripped": false,
-      "detail": "CALM \u00b7 TIGHTENING (+0.02 5d)",
+      "detail": "CALM · TIGHTENING (+0.02 5d)",
       "scenario": "Hawkish / Disorderly"
      },
      {
@@ -9359,7 +9413,7 @@
      "field": "cross.regime.10Y real.price"
     }
    ],
-   "text": "Credit: HY OAS 2.67 reads CALM \u2014 no new print since 2026-09-08 (2 business days), so this is the 2026-09-08 reading and \"tightening\" describes the move into it, not today; HYG \u22120.18% 1D is selling credit intraday while OAS is not widening \u2014 the live tape leads the EOD print. Cross-asset: gold 4442.6 +1.11% and BTC 78103.86 \u22120.43% 1D diverging \u2014 no clean cross-asset regime signal; DXY falling. Tripwires: 1/3 leaning de-risking \u2014 tripped: NQ lower low; holding: OAS widening, VIX rising. Credit/VIX/NQ clauses are composed off the prior US close. Confidence low \u2014 HY OAS has not printed since 2026-09-08 (2 business days) \u2014 the credit gate is reading a stale observation."
+   "text": "Credit: HY OAS 2.67 reads CALM — no new print since 2026-09-08 (2 business days), so this is the 2026-09-08 reading and \"tightening\" describes the move into it, not today; HYG −0.18% 1D is selling credit intraday while OAS is not widening — the live tape leads the EOD print. Cross-asset: gold 4442.6 +1.11% and BTC 78103.86 −0.43% 1D diverging — no clean cross-asset regime signal; DXY falling. Tripwires: 1/3 leaning de-risking — tripped: NQ lower low; holding: OAS widening, VIX rising. Credit/VIX/NQ clauses are composed off the prior US close. Confidence low — HY OAS has not printed since 2026-09-08 (2 business days) — the credit gate is reading a stale observation."
   },
   "hyg": {
    "available": true,
@@ -9373,9 +9427,9 @@
     "qqqChangePct": -0.29,
     "threshold": 1.5,
     "direction": "credit leading equities",
-    "note": "HYG vs QQQ +0.11pp \u2014 within the \u00b11.5pp band, no divergence signal"
+    "note": "HYG vs QQQ +0.11pp — within the ±1.5pp band, no divergence signal"
    },
-   "note": "HYG -0.18% 1D \u2014 credit being sold intraday; leads the EOD OAS print"
+   "note": "HYG -0.18% 1D — credit being sold intraday; leads the EOD OAS print"
   },
   "nqLow": {
    "dayLow": 29334.404296875,
@@ -9409,7 +9463,7 @@
      "indirectShare": null,
      "dealerShare": null,
      "tail": null,
-     "tailNote": "not published \u2014 a tail needs the when-issued yield at the bid deadline, which no free feed carries"
+     "tailNote": "not published — a tail needs the when-issued yield at the bid deadline, which no free feed carries"
     }
    ],
    "upcoming": [
@@ -9430,7 +9484,7 @@
      "indirectShare": null,
      "dealerShare": null,
      "tail": null,
-     "tailNote": "not published \u2014 a tail needs the when-issued yield at the bid deadline, which no free feed carries"
+     "tailNote": "not published — a tail needs the when-issued yield at the bid deadline, which no free feed carries"
     },
     {
      "cusip": "912797VH7",
@@ -9449,7 +9503,7 @@
      "indirectShare": null,
      "dealerShare": null,
      "tail": null,
-     "tailNote": "not published \u2014 a tail needs the when-issued yield at the bid deadline, which no free feed carries"
+     "tailNote": "not published — a tail needs the when-issued yield at the bid deadline, which no free feed carries"
     },
     {
      "cusip": "912797UD7",
@@ -9468,7 +9522,7 @@
      "indirectShare": null,
      "dealerShare": null,
      "tail": null,
-     "tailNote": "not published \u2014 a tail needs the when-issued yield at the bid deadline, which no free feed carries"
+     "tailNote": "not published — a tail needs the when-issued yield at the bid deadline, which no free feed carries"
     },
     {
      "cusip": "912797SK4",
@@ -9487,7 +9541,7 @@
      "indirectShare": null,
      "dealerShare": null,
      "tail": null,
-     "tailNote": "not published \u2014 a tail needs the when-issued yield at the bid deadline, which no free feed carries"
+     "tailNote": "not published — a tail needs the when-issued yield at the bid deadline, which no free feed carries"
     },
     {
      "cusip": "912810UX4",
@@ -9506,7 +9560,7 @@
      "indirectShare": null,
      "dealerShare": null,
      "tail": null,
-     "tailNote": "not published \u2014 a tail needs the when-issued yield at the bid deadline, which no free feed carries"
+     "tailNote": "not published — a tail needs the when-issued yield at the bid deadline, which no free feed carries"
     },
     {
      "cusip": "91282CRE3",
@@ -9525,7 +9579,7 @@
      "indirectShare": null,
      "dealerShare": null,
      "tail": null,
-     "tailNote": "not published \u2014 a tail needs the when-issued yield at the bid deadline, which no free feed carries"
+     "tailNote": "not published — a tail needs the when-issued yield at the bid deadline, which no free feed carries"
     }
    ],
    "next": {
@@ -9545,7 +9599,7 @@
     "indirectShare": null,
     "dealerShare": null,
     "tail": null,
-    "tailNote": "not published \u2014 a tail needs the when-issued yield at the bid deadline, which no free feed carries"
+    "tailNote": "not published — a tail needs the when-issued yield at the bid deadline, which no free feed carries"
    },
    "nextLongEnd": {
     "cusip": "912810UW6",
@@ -9564,7 +9618,7 @@
     "indirectShare": null,
     "dealerShare": null,
     "tail": null,
-    "tailNote": "not published \u2014 a tail needs the when-issued yield at the bid deadline, which no free feed carries"
+    "tailNote": "not published — a tail needs the when-issued yield at the bid deadline, which no free feed carries"
    },
    "lastLongEnd": {
     "cusip": "91282CRF0",
@@ -9583,7 +9637,7 @@
     "indirectShare": 79.2,
     "dealerShare": 4.3,
     "tail": null,
-    "tailNote": "not published \u2014 a tail needs the when-issued yield at the bid deadline, which no free feed carries",
+    "tailNote": "not published — a tail needs the when-issued yield at the bid deadline, which no free feed carries",
     "read": {
      "run": 2,
      "avgBidToCover": 2.56,
@@ -9593,8 +9647,8 @@
      "word": "the strongest of the run",
      "avgDealerShare": 8.2,
      "dealerHeavy": false,
-     "dealerNote": "dealers took 4.3% against a 8.2% run \u2014 end demand covered it",
-     "note": "bid-to-cover 2.71 against a 2.56 average of the last 2 \u2014 the strongest of the run"
+     "dealerNote": "dealers took 4.3% against a 8.2% run — end demand covered it",
+     "note": "bid-to-cover 2.71 against a 2.56 average of the last 2 — the strongest of the run"
     }
    },
    "asOf": "2026-09-10T00:57:00.000Z"
@@ -9616,21 +9670,145 @@
     "state": "CONTAMINATED",
     "gap": 0.76,
     "gapMult": 1,
-    "note": "IGV is ahead of WCLD by 0.76pp (1\u00d7) \u2014 the megacap holdings are carrying it and the software strength is not broad"
+    "note": "IGV is ahead of WCLD by 0.76pp (1×) — the megacap holdings are carrying it and the software strength is not broad"
    },
    "state": "MOVING TOGETHER",
    "candidate": "MOVING TOGETHER",
    "confirmed": true,
    "run": 3,
    "confirmSessions": 5,
-   "why": "0.91pp is inside 0.5\u00d7ATR (1.48pp) \u2014 an ordinary day for this pair",
+   "why": "0.91pp is inside 0.5×ATR (1.48pp) — an ordinary day for this pair",
    "pending": null,
    "ratesRuledOut": null,
    "thirtyRising": true,
    "thirtySource": "FRED 1d",
    "ratesNote": null,
    "tone": "muted",
-   "chainNote": "reads with SMH \u2212 SOXX above it: equipment \u2192 semis \u2192 software is the capex-to-monetization sequence, and movement down it is the cycle maturing"
+   "chainNote": "reads with SMH − SOXX above it: equipment → semis → software is the capex-to-monetization sequence, and movement down it is the cycle maturing"
+  },
+  "smicAH": {
+   "asOf": "2026-09-09",
+   "series": [
+    {
+     "date": "2026-07-22",
+     "premium": 147
+    },
+    {
+     "date": "2026-07-23",
+     "premium": 137.4
+    },
+    {
+     "date": "2026-07-27",
+     "premium": 135.8
+    },
+    {
+     "date": "2026-07-28",
+     "premium": 129.1
+    },
+    {
+     "date": "2026-07-29",
+     "premium": 125.8
+    },
+    {
+     "date": "2026-07-30",
+     "premium": 130.3
+    },
+    {
+     "date": "2026-08-03",
+     "premium": 117.5
+    },
+    {
+     "date": "2026-08-04",
+     "premium": 115.3
+    },
+    {
+     "date": "2026-08-05",
+     "premium": 114.4
+    },
+    {
+     "date": "2026-08-06",
+     "premium": 120.8
+    },
+    {
+     "date": "2026-08-10",
+     "premium": 121.7
+    },
+    {
+     "date": "2026-08-11",
+     "premium": 123.4
+    },
+    {
+     "date": "2026-08-12",
+     "premium": 120.9
+    },
+    {
+     "date": "2026-08-13",
+     "premium": 123
+    },
+    {
+     "date": "2026-08-17",
+     "premium": 111.8
+    },
+    {
+     "date": "2026-08-18",
+     "premium": 107
+    },
+    {
+     "date": "2026-08-19",
+     "premium": 104.3
+    },
+    {
+     "date": "2026-08-20",
+     "premium": 103.1
+    },
+    {
+     "date": "2026-08-24",
+     "premium": 110.5
+    },
+    {
+     "date": "2026-08-25",
+     "premium": 106.3
+    },
+    {
+     "date": "2026-08-26",
+     "premium": 107.7
+    },
+    {
+     "date": "2026-08-27",
+     "premium": 106.6
+    },
+    {
+     "date": "2026-08-31",
+     "premium": 112
+    },
+    {
+     "date": "2026-09-01",
+     "premium": 113.6
+    },
+    {
+     "date": "2026-09-02",
+     "premium": 109.6
+    },
+    {
+     "date": "2026-09-03",
+     "premium": 112.4
+    },
+    {
+     "date": "2026-09-07",
+     "premium": 112.3
+    },
+    {
+     "date": "2026-09-08",
+     "premium": 117.3
+    },
+    {
+     "date": "2026-09-09",
+     "premium": 116.6
+    }
+   ],
+   "premium": 116.6,
+   "d5": 3,
+   "d20": 2.2
   }
  }
 }
