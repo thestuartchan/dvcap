@@ -65,7 +65,13 @@ for (const region of REGIONS) {
     credit: s.regime.credit, korea: s.regime.korea, cross: s.cross, hyg: s.hyg, leaning,
     regimeSignal: s.macro.regimeSignal, kofiaLatest: KOFIA_STORE.latest || {},
     staleNotes: [], usRthOpen: s.usRthOpen, usPrevSession: s.usPrevSession,
-  }, { region });
+    // `now` PINNED HERE TOO. composeRead defaults it to the wall clock, and the OAS staleness rule
+    // is hour-dependent — FRED publishes the prior business day during the US morning, so the same
+    // observation reads "as of 2026-09-08" before 12:00Z and "no new print since 2026-09-08" after
+    // it. The golden was blessed at 10:00Z and started failing at 12:45Z with no code change
+    // between, which is the same drift already fixed for the per-quote freshness labels turning up
+    // one layer down.
+  }, { region, now: NOW });
   const blocks = buildBlocks(region, s.quotes, s.indices, s.macro, s.regime, s.cal, s.cross, s.sox,
     { leaning, composed, foreign: {}, now: NOW });
   const text = assembleDiscord(region, UNIVERSE[region].label, blocks)

@@ -5,6 +5,7 @@
 
 import { UNIVERSE } from '../data/universe.js';
 import { assembleRegion } from '../lib/assemble.js';
+import { getQuotes } from '../lib/quotes.js';
 import { weekHighlights } from '../lib/calendar.js';
 import { marketState, localHour, localMinutesOfDay, localDateIn, isWeekendIn, localWeekday, closedExchanges, halfDayLabels, freshness, freshnessText, sessionCloseMin, sessionCountdown } from '../lib/sessions.js';
 import { kvGetJson, kvSetJson, kvConfigured } from '../lib/kv.js';
@@ -737,11 +738,25 @@ async function runRegion(region, req) {
   const byS = new Map(quotes.map(q => [q.sym, q]));
   const wanted = new Set(WATCH_UNIVERSE[region] || []);
   if (region === 'us') for (const k of ['asia', 'eu']) for (const i of UNIVERSE[k].indices) wanted.add(i.sym);
-  // THE MAP'S OWN SYMBOLS. QQQ is in the US region's indices and SPY is in nothing — not its
-  // indices, not its names, not the watch universe — so the map drew QQQ at this morning's
-  // pre-market print and SPY at CBOE's last published spot, two rows on one chart at two different
-  // instants. Quoted here so both rows are priced at the same moment.
-  for (const sym of GEX_SYMBOLS) wanted.add(sym);
+  // THE MAP'S OWN SYMBOLS, ON THE SAME KIND OF QUOTE.
+  //
+  // First attempt at this added them to the batched /api/prices call, which fixed SPY having no
+  // quote at all and left a worse problem behind: /api/prices returns the REGULAR print and never
+  // an extended-hours one. So on 2026-09-10 at 12:45Z the map drew QQQ at its pre-market print
+  // (707.53, −1.2% on a gap-down morning) and SPY at its prior close (762.40, unmoved for four
+  // hours) — two rows on one shared axis, one describing this morning and one describing
+  // yesterday, under a footer reading "priced at the live spot". The axis is the whole premise of
+  // the chart, and a 1.2% vintage gap between its rows is wider than most of what it draws.
+  //
+  // getQuotes with `prepost` is the same call assembleRegion makes for the US region's own names,
+  // so the GEX symbols get the same pre/post overlay everything else on a US brief gets.
+  const gexQuotes = [];
+  if (region === 'us') {
+    try {
+      gexQuotes.push(...await getQuotes(GEX_SYMBOLS, { prepost: true }));
+    } catch { /* falls through to the batch below, and then to CBOE's spot */ }
+  }
+  for (const sym of GEX_SYMBOLS) if (!gexQuotes.some(q => q.sym === sym)) wanted.add(sym);
   const missing = [...wanted].filter(sym => !byS.has(sym) && !indices.some(q => q.sym === sym));
   let extraQuotes = {};
   if (missing.length) {
@@ -807,7 +822,8 @@ async function runRegion(region, req) {
   // same levels — so all three briefs carry it. The freshness differs a lot and the footer says so:
   // Asia fires 42 minutes after the close capture, the US brief 14h42m after it.
   const liveSpot = (sym) => {
-    const hit = indices.find(q => q.sym === sym) || quotes.find(q => q.sym === sym);
+    const hit = indices.find(q => q.sym === sym) || quotes.find(q => q.sym === sym)
+             || gexQuotes.find(q => q.sym === sym);
     const px = hit ? displayQuote(hit, region).price : extraQuotes[sym]?.price ?? null;   // live path — real clock is right here
     return Number.isFinite(+px) && +px > 0 ? +px : null;
   };
