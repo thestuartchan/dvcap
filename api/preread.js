@@ -122,7 +122,7 @@ function displayQuote(q, region) {
   return { price: q.price, changePct: q.changePct, tail: freshLabel(q.sym, q) };
 }
 
-function buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox, opts = {}) {
+export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox, opts = {}) {
   const { leaning = null, composed = null, foreign = {}, prevSnap = null, now = new Date() } = opts;
   const R = UNIVERSE[region];
   const names = R.names;
@@ -541,7 +541,7 @@ async function gexBlock(liveSpot, tense = 'preview') {
 // cannot drift into reading the record differently.
 const prevSnapFor = (prev) => prev?.snap || null;
 
-function assembleDiscord(region, label, blocks) {
+export function assembleDiscord(region, label, blocks) {
   const emoji = { asia: '🌏', eu: '🇪🇺', us: '🇺🇸' }[region] || '📊';
   const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
 
@@ -708,6 +708,26 @@ async function runRegion(region, req) {
       prevLog = (await kvGetJson(PREREAD_LAST_KEY)) || {};
       previous = prevLog[region] || null;
     } catch { /* no record is a first run, which renders no delta at all */ }
+  }
+
+  // ── ?state=1 — THE INPUTS, SO THE RENDER CAN BE TESTED WITHOUT THE FEEDS ───
+  // MEASURED: six of the thirty content lines on a live Asia brief — one in five — never render in
+  // a local run, because their inputs come from keyed feeds. Money, Credit and Inflation are the
+  // whole macro backdrop and all three are among them. That is not a gap in coverage, it is a
+  // section of the product that reaches the reader before it reaches anyone who could check it,
+  // and it is how "the one it targets is the lower of the two" shipped over a PCE of 3.34 against
+  // a CPI of 2.47 — a sentence that said the opposite of what the numbers said.
+  //
+  // check-env-independent.mjs does not catch this and is not meant to: it sets every variable to a
+  // DUMMY, which proves the answer does not depend on configuration. A dummy key returns no data,
+  // so the branches that need data still do not run.
+  //
+  // So the inputs come out and get frozen into test/fixtures-preread-*.json, and the suite renders
+  // the brief from them with no network and no keys at all. Nothing here is private — it is market
+  // data, the same figures the brief prints — and it is returned only when asked for.
+  if (req.query.state === '1') {
+    return { status: 200, body: { region, capturedAt: new Date().toISOString(),
+      state: { quotes, indices, macro, regime, cal, cross, sox, leaning, composed } } };
   }
 
   const blocks = buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox,
