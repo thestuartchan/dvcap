@@ -515,6 +515,13 @@ function buildKorea(k) {
 // stored row stands as captured and says so.
 async function gexBlock(liveSpot, tense = 'preview') {
   const rows = [], vint = { rung: 'none', from: null, asOf: null, spotSource: null };
+  // ── WHY EACH SYMBOL LANDED WHERE IT DID ────────────────────────────────────
+  // The rung attempts were wrapped in a bare `catch {}`. That is correct behaviour — one symbol
+  // short must not cost the section — and it meant a rung could fail every morning with no way to
+  // find out why: the footer said `repriced` and nothing anywhere said whether OCC had been slow,
+  // refused, or never tried. Recorded per symbol and returned on the API response, which the
+  // Discord message never carries.
+  const why = {}, rungOf = {};
   for (const sym of GEX_SYMBOLS) {
     try {
       const stored = await readGex(sym);
@@ -546,7 +553,8 @@ async function gexBlock(liveSpot, tense = 'preview') {
           // and dated it to the wrong session.
           settledAsOf = st.iv?.asOf || new Date().toISOString();
         }
-      } catch { /* the top rung is best-effort; the cascade exists for exactly this */ }
+        else why[sym] = st?.reason || 'settledGex returned no row';
+      } catch (e) { why[sym] = `settledGex threw — ${String(e?.message || e)}`; }
       if (!row && spot > 0 && Math.abs(spot / latest.spot - 1) > 1e-9) {
         const rp = await repriceStored(sym, { spot });
         if (rp?.row) {
@@ -564,15 +572,23 @@ async function gexBlock(liveSpot, tense = 'preview') {
       // The WORST rung across the symbols wins the label — a footer claiming today's settled book
       // is false the moment one of the two fell through to yesterday's. Ordered by RUNGS rather
       // than by a pair of comparisons, which is what let a third rung be added without another.
-      if (vint.rung === 'none' || RUNGS.indexOf(rung) > RUNGS.indexOf(vint.rung)) vint.rung = rung;
-      // The vintage belongs to the rung that produced the row, not to whatever was in storage.
-      vint.from = rung === 'occ' ? today : latest.date;
-      vint.asOf = rung === 'occ' ? settledAsOf : latest.asOf;
-    } catch { /* one symbol short is a smaller loss than no section */ }
+      // ONE SYMBOL'S RUNG WITH THE OTHER'S TIMESTAMP. The rung was worst-wins and the vintage was
+      // last-symbol-wins, so a run where QQQ fell to `repriced` and SPY reached `occ` printed the
+      // word "repriced" beside SPY's settled-book timestamp — a footer describing neither symbol.
+      // The vintage now moves with the rung it is attached to.
+      const worse = vint.rung === 'none' || RUNGS.indexOf(rung) > RUNGS.indexOf(vint.rung);
+      if (worse) {
+        vint.rung = rung;
+        vint.from = rung === 'occ' ? today : latest.date;
+        vint.asOf = rung === 'occ' ? settledAsOf : latest.asOf;
+      }
+      rungOf[sym] = rung;
+    } catch (e) { why[sym] = `${why[sym] ? why[sym] + '; ' : ''}symbol failed — ${String(e?.message || e)}`; }
   }
   if (!rows.length) return null;
   return {
     text: renderGexSection(rows, { ...vint, tense }),
+    diag: { rung: vint.rung, bySymbol: rungOf, fellBack: why },
     walls: Object.fromEntries(rows.map(r => [r.name, { putWall: r.putWall, callWall: r.callWall }])),
     spot: Object.fromEntries(rows.map(r => [r.name, r.spot])),
   };
@@ -813,6 +829,7 @@ async function runRegion(region, req) {
       const g = await gexBlock(liveSpot, tense);
       blocks.gexLines = g?.text || null;
       blocks.gexTense = tense;
+      blocks.gexDiag = g?.diag || null;
       // Walls and spot go into the snapshot so tomorrow's brief can say a level moved. A reader
       // placing against yesterday's put wall needs to know before they place, not after.
       if (g?.walls) { blocks.snap.walls = g.walls; blocks.snap.spot = g.spot; }
@@ -881,7 +898,7 @@ async function runRegion(region, req) {
     } catch { /* the brief matters more than the bookkeeping */ }
   }
 
-  return { status: 200, body: { region, message, regime, posted, previous, generatedAt: new Date().toISOString() } };
+  return { status: 200, body: { region, message, regime, posted, previous, gex: blocks.gexDiag || null, generatedAt: new Date().toISOString() } };
 }
 
 // ── ALL MODE, AND WHY IT EXISTS ──────────────────────────────────────────────
