@@ -273,8 +273,6 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
     IN_WATCH_UNIVERSE.size, Object.values(WATCH_UNIVERSE).flat().length);
 }
 
-console.log(`\n${pass} passed, ${fail} failed`);
-if (fail) process.exit(1);
 
 // ── THE SIX SECTIONS ─────────────────────────────────────────────────────────
 // GEX (US) / TODAY'S WATCHLIST / CLOCK / OVERNIGHT / BACKDROP / WHAT WOULD CHANGE IT.
@@ -397,3 +395,6 @@ if (fail) process.exit(1);
     }
   }
 }
+
+console.log(`\n${pass} passed, ${fail} failed`);
+if (fail) process.exit(1);
