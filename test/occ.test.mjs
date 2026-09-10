@@ -126,5 +126,88 @@ const FIX = readFileSync(new URL('./fixtures-occ-qqq.txt', import.meta.url), 'ut
   eq('and everything expired likewise', defaultExpiries(['2026-01-01'], NOW), []);
 }
 
+
+// ── HAS THE FILE ROLLED? ─────────────────────────────────────────────────────
+// "Pull at 08:00 UTC" is only as good as the day it was measured on. If OCC ever shifts its
+// publication, a scheduled fetch would serve the previous session's positioning under today's date
+// with nothing noticing — the exact failure this rung was built to escape. So the file says whether
+// it rolled, by remembering what it looked like last time.
+{
+  const { occFingerprint, occVintage, priorUsClose, US_CLOSE_UTC_HOUR } = await import('../lib/occ.js');
+  const T = (s) => new Date(s);
+  const parsed = { rows: 5085, totalOi: 12893337 };
+
+  eq('the close is 16:00 ET', US_CLOSE_UTC_HOUR, 20);
+  eq('the fingerprint is rows and total open interest', occFingerprint(parsed), '5085:12893337');
+  eq('nothing parsed has no fingerprint', occFingerprint(null), null);
+
+  // The most recent close AT OR BEFORE the moment asked about.
+  eq('mid-morning looks back to yesterday’s close', priorUsClose(T('2026-09-10T10:20:00Z')).toISOString(), '2026-09-09T20:00:00.000Z');
+  eq('and after today’s close, to today’s', priorUsClose(T('2026-09-10T22:30:00Z')).toISOString(), '2026-09-10T20:00:00.000Z');
+  // A weekend has no close of its own — a Saturday fetch still describes Friday's settlement.
+  eq('a Sunday walks back to Friday', priorUsClose(T('2026-09-13T10:00:00Z')).toISOString(), '2026-09-11T20:00:00.000Z');
+  eq('and a Saturday likewise', priorUsClose(T('2026-09-12T10:00:00Z')).toISOString(), '2026-09-11T20:00:00.000Z');
+
+  // UNKNOWN IS NOT TRUE. On a first observation there is no evidence the file rolled, and treating
+  // the absence of evidence as a pass is how a stale book gets drawn as a current one.
+  const first = occVintage(parsed, null, T('2026-09-10T01:10:00Z'));
+  eq('a first fetch cannot vouch for the vintage', first.rolledSinceClose, null);
+  ok('and says so rather than passing', /first observation/.test(first.note));
+
+  const stored = { fingerprint: first.fingerprint, firstSeenAt: first.firstSeenAt };
+
+  // THE LIVE CASE. Seen at 01:10Z, read at the 12:42Z pre-read: it rolled after the 09-09 close, so
+  // it is that session's settlement.
+  const atBrief = occVintage(parsed, stored, T('2026-09-10T12:42:00Z'));
+  eq('a file first seen after the close has rolled', atBrief.rolledSinceClose, true);
+  eq('and is unchanged since', atBrief.changed, false);
+  ok('with how long it has been still', atBrief.unchangedHours > 11);
+
+  // THE CASE THAT MATTERS. After today's close but before OCC republishes, the SAME bytes are now
+  // the previous session's book — and a clock-based rule would not notice.
+  const afterClose = occVintage(parsed, stored, T('2026-09-10T22:30:00Z'));
+  eq('the same file after the next close has NOT rolled', afterClose.rolledSinceClose, false);
+  ok('and says whose book it actually is', /previous session/.test(afterClose.note));
+
+  // ── A CHANGED FILE IS NOT NECESSARILY A FINISHED ONE ──────────────────────
+  // The roll was observed through a 2h28m gap, which says the file changed and NOT that the change
+  // was atomic. If OCC writes the series list progressively, a fetch landing mid-write returns a
+  // real, parseable, PARTIAL book — fewer contracts, less open interest, walls drawn from whatever
+  // had been written. Worse than a stale file, because a stale one is at least self-consistent.
+  {
+    const { OCC_CONFIRM_MIN, OCC_SHRINK_TOL } = await import('../lib/occ.js');
+    ok('a hold period is stated', OCC_CONFIRM_MIN > 0);
+    ok('and a shrink tolerance', OCC_SHRINK_TOL > 0 && OCC_SHRINK_TOL < 1);
+
+    const sameSeen = { fingerprint: '5085:12893337', firstSeenAt: '2026-09-10T01:10:00Z', rows: 5085 };
+    // Stable for eleven hours, rolled after the close, same size: as complete as observation can say.
+    eq('held still and full size is complete', occVintage(parsed, sameSeen, T('2026-09-10T12:42:00Z')).complete, true);
+    // Freshly changed is UNKNOWN, not complete — it has been stable for zero minutes by definition.
+    eq('a fingerprint seen seconds ago is not yet finished',
+       occVintage({ rows: 5090, totalOi: 13000000 }, sameSeen, T('2026-09-11T01:03:00Z')).complete, null);
+    // A PARTIAL WRITE IS SMALLER, and this catches it even if it is fetched twice and looks settled.
+    {
+      const small = occVintage({ rows: 3000, totalOi: 7000000 },
+        { ...sameSeen, fingerprint: 'other', firstSeenAt: '2026-09-11T00:10:00Z' }, T('2026-09-11T01:00:00Z'));
+      eq('a collapsed row count is not complete', small.complete, false);
+      ok('and says why', /possibly a partial write/.test(small.note));
+    }
+    // Expiries roll off legitimately, so a small fall is not a collapse.
+    eq('a few rows fewer is still complete',
+       occVintage({ rows: 5000, totalOi: 12800000 },
+         { fingerprint: '5000:12800000', firstSeenAt: '2026-09-10T01:10:00Z', rows: 5085 },
+         T('2026-09-10T12:42:00Z')).complete, true);
+    // And the file NOT having rolled is a definite false, not an unknown.
+    eq('the previous session’s book is definitely not complete',
+       occVintage(parsed, sameSeen, T('2026-09-10T22:30:00Z')).complete, false);
+  }
+
+  // A changed fingerprint restamps the roll time.
+  const rolled = occVintage({ rows: 5090, totalOi: 13000000 }, stored, T('2026-09-11T01:00:00Z'));
+  eq('new bytes are a new vintage', rolled.changed, true);
+  eq('dated to when they were seen', rolled.firstSeenAt, '2026-09-11T01:00:00.000Z');
+  eq('and that counts as rolled', rolled.rolledSinceClose, true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
