@@ -77,5 +77,30 @@ const page = (ticker, title, yieldPct, asOf) =>
   eq('USFR does not, and is not pretended to', ISHARES_URL.USFR, undefined);
 }
 
+
+// ── THE HAND ENTRY ───────────────────────────────────────────────────────────
+// SGOV's figure is fetched. USFR's cannot be — WisdomTree sits behind a Cloudflare bot challenge
+// that answers 403 to every automated route (product page, API path, holdings CSV) while loading
+// fine in a browser. That is exactly the case manual entry exists for, so the card carries the link
+// and the field name rather than pretending the number is unavailable.
+{
+  const { ISSUER_PAGE, SEC_YIELD_TICKERS } = await import('../lib/cashyield.js');
+  eq('both funds are tracked', SEC_YIELD_TICKERS, ['USFR', 'SGOV']);
+  ok('each has an issuer page to read it from', SEC_YIELD_TICKERS.every(t => /^https:\/\//.test(ISSUER_PAGE[t]?.url || '')));
+  // WHICH FIELD. "SEC 30-Day Yield" and "12m Trailing Yield" sit next to each other on both pages,
+  // and the trailing one is the backward-looking figure this whole card exists to stop using.
+  ok('and names the exact field to copy', SEC_YIELD_TICKERS.every(t => /SEC/.test(ISSUER_PAGE[t]?.field || '')));
+  eq('SGOV is marked fetchable', ISSUER_PAGE.SGOV.fetchable, true);
+  eq('USFR is not', ISSUER_PAGE.USFR.fetchable, false);
+  // A FLAG WITHOUT A REASON ROTS. Someone will retry the fetch in six months; the note says what
+  // they will hit and that the URL is not the problem.
+  ok('with the reason recorded', /Cloudflare|403/.test(ISSUER_PAGE.USFR.why || ''));
+  ok('and the fetchable one needs none', ISSUER_PAGE.SGOV.why === null);
+  // The fetcher and the hand entry must agree about what is plausible, or one route accepts a
+  // number the other refuses.
+  const { PLAUSIBLE_SEC_YIELD: bounds } = await import('../lib/fundYield.js');
+  ok('both routes share one plausible band', bounds.hi > bounds.lo && bounds.lo >= 0);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

@@ -18,6 +18,8 @@ const PREREAD_LAST_KEY = 'dvcap:preread:last:v1';
 import { appendDecision, overrideStats, DECISIONS_KEY, ACTIONS } from '../lib/decisions.js';
 import { GUARD_STATES } from '../lib/guards.js';
 import { sideOf } from '../lib/side.js';
+import { PLAUSIBLE_SEC_YIELD } from '../lib/fundYield.js';
+import { SEC_YIELD_TICKERS } from '../lib/cashyield.js';
 import { authorised, hasSessionCookie, refuse } from '../lib/apiauth.js';
 import { fetchHlAccount, fetchHlSpot, fetchSpotContext, fetchHyperliquid } from '../lib/hyperliquid.js';
 import { fetchWallets } from '../lib/wallet.js';
@@ -58,14 +60,15 @@ async function readStore() {
   const branch = process.env.GITHUB_BRANCH || 'main';
   const r = await fetch(`https://api.github.com/repos/${repo}/contents/${DATA_PATH}?ref=${encodeURIComponent(branch)}`, { headers: ghHeaders() });
   const emptyConsole = () => ({ rows: [], settings: {} });
-  if (!r.ok) return { store: { fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, recession: {}, console: emptyConsole() }, sha: null };
+  if (!r.ok) return { store: { fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, recession: {}, secYields: {}, console: emptyConsole() }, sha: null };
   const meta = await r.json();
-  let store = { fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, recession: {}, console: emptyConsole() };
+  let store = { fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, recession: {}, secYields: {}, console: emptyConsole() };
   try { store = JSON.parse(Buffer.from(meta.content, 'base64').toString('utf8')); } catch { /* default */ }
   store.fedPath ||= { latest: null, series: [] };
   store.fedPath.series ||= [];
   store.oasRecon ||= [];
   store.intervention ??= null;
+  store.secYields ||= {};
   store.recession ||= {};   // manual overrides for the Wall Street recession sources
   store.southbound ||= { series: [] };   // HKEX Southbound Stock Connect daily flow (hand-entered)
   store.southbound.series ||= [];
@@ -270,6 +273,7 @@ export default async function handler(req, res) {
         fedPath: { latest: store.fedPath.latest, series: store.fedPath.series.slice(-120) },
         oasRecon: store.oasRecon.slice(-180),
         intervention: store.intervention,
+        secYields: store.secYields || {},
         recession: store.recession,
         southbound: { series: store.southbound.series.slice(-60) },
         // Console comes from Redis when configured, else the git copy (migration path).
@@ -326,7 +330,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'GITHUB_TOKEN / GITHUB_REPO not configured' });
   }
 
-  const { fedPath, oasRecon, intervention, recession, southbound, console: consoleIn, decision } = req.body || {};
+  const { fedPath, oasRecon, intervention, recession, southbound, secYield, console: consoleIn, decision } = req.body || {};
 
   // ── ONE DECISION, APPENDED ──────────────────────────────────────────────────
   // Its own branch and its own key, deliberately. A decision is written the moment a fill is
@@ -361,6 +365,42 @@ export default async function handler(req, res) {
       .sort((a, b) => a.date.localeCompare(b.date)).slice(-400);
     store.fedPath.latest = row;
     saved.push('fedPath');
+  }
+
+  // ── A FUND'S 30-DAY SEC YIELD, BY HAND ──
+  // SGOV's is fetched from iShares. USFR's cannot be: WisdomTree sits behind a Cloudflare bot
+  // challenge that answers 403 to every automated route — the product page, the API path and the
+  // holdings CSV alike. It is not a dead URL; it loads fine in a browser, which is exactly the case
+  // manual entry exists for.
+  //
+  // VALIDATED THE SAME WAY THE FETCHED ONE IS. A hand-typed figure is not more trustworthy than a
+  // scraped one, and the digit most likely to be wrong is the one a person just typed. The bounds
+  // are lib/fundYield.js's, so both routes refuse the same numbers.
+  if (secYield && secYield.ticker) {
+    const ticker = String(secYield.ticker).trim().toUpperCase();
+    if (!SEC_YIELD_TICKERS.includes(ticker)) {
+      return res.status(422).json({ error: `${ticker} is not a fund this card tracks — expected one of ${SEC_YIELD_TICKERS.join(', ')}` });
+    }
+    const value = Number(secYield.value);
+    if (!Number.isFinite(value) || value < PLAUSIBLE_SEC_YIELD.lo || value > PLAUSIBLE_SEC_YIELD.hi) {
+      return res.status(422).json({ error: `${secYield.value} is not a plausible 30-day SEC yield — expected ${PLAUSIBLE_SEC_YIELD.lo}–${PLAUSIBLE_SEC_YIELD.hi}%` });
+    }
+    // The AS-OF IS THE FUND'S, NOT TODAY'S. The issuer publishes a figure dated to a business day
+    // that is usually a day or two back, and stamping it with the moment it was typed would make a
+    // two-day-old number look current — the exact defect this whole card is being fixed for.
+    const asOf = String(secYield.asOf || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) {
+      return res.status(422).json({ error: `as-of "${secYield.asOf}" is not a date — copy the "as of" shown beside the yield on the issuer's page` });
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    if (asOf > today) return res.status(422).json({ error: `as-of ${asOf} is in the future` });
+    store.secYields = { ...(store.secYields || {}), [ticker]: {
+      value: +value.toFixed(2), asOf, enteredAt: new Date().toISOString(),
+      // The bill rate on the figure's own date, so the proxy reconciliation measures the MODEL and
+      // not the bill having moved since — same reason SEC_YIELDS carries dtb3AtAsOf.
+      dtb3AtAsOf: Number.isFinite(Number(secYield.dtb3AtAsOf)) ? Number(secYield.dtb3AtAsOf) : null,
+    } };
+    saved.push('secYields');
   }
 
   // ── P2.5 reconciliation ──
