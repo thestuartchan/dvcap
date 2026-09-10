@@ -374,7 +374,7 @@ export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, 
       out.push(`🤖 **AI vs the rest:** ${pctWord(regime.aiAxis.ai) ?? '—'} vs ${pctWord(regime.aiAxis.non) ?? '—'} — ${regime.aiAxis.label}`);
     }
     if (regime.staleWhileOpen) out.push('⚠️ **Equity prints are stale** — the market is open but these are prior closes, so the sector cuts are suppressed');
-    out.push(ratesLine({ us2y: macro.us2y?.value, us10y: macro.us10y?.value }));
+    out.push(ratesLine({ us2y: macro.us2y?.value, us10y: macro.us10y?.value, us30y: macro.us30y?.value }));
     out.push(creditLine({
       oas: macro.oas?.value, date: macro.oas?.date, state: regime.credit.state,
       stale: composed?.structured?.rows?.find(r => r.label === 'CREDIT')?.stale ?? false,

@@ -29,6 +29,9 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { buildBlocks, assembleDiscord } from '../api/preread.js';
 import { UNIVERSE } from '../data/universe.js';
+import { gaugesLeaning } from '../lib/gates.js';
+import { composeRead } from '../lib/read.js';
+import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -44,8 +47,24 @@ const rendered = {};
 for (const region of REGIONS) {
   const fx = JSON.parse(readFileSync(new URL(`./fixtures-preread-${region}.json`, import.meta.url), 'utf8'));
   const s = fx.state;
+  // ── REBUILT, NOT REPLAYED ──────────────────────────────────────────────────
+  // `leaning` and `composed` are OUTPUTS of lib/gates.js and lib/read.js, and the capture contains
+  // both. Rendering the frozen copies would mean a change to either — a new gauge, a reworded row,
+  // a rescoped region filter — could never reach the golden, which is the one thing this file
+  // exists to prevent. They are recomputed here from the same inputs assemble.js hands them, so the
+  // golden is sensitive to the gauge set and the composer as well as to the renderers.
+  const leaning = gaugesLeaning({
+    credit: s.regime.credit, korea: s.regime.korea,
+    vix: s.cross?.volCredit?.rows?.find(r => r.sym === '^VIX'),
+    nq: s.nqLow, kofiaLatest: KOFIA_STORE.latest || {}, us30y: s.macro.us30y,
+  });
+  const composed = composeRead({
+    credit: s.regime.credit, korea: s.regime.korea, cross: s.cross, hyg: s.hyg, leaning,
+    regimeSignal: s.macro.regimeSignal, kofiaLatest: KOFIA_STORE.latest || {},
+    staleNotes: [], usRthOpen: s.usRthOpen, usPrevSession: s.usPrevSession,
+  }, { region });
   const blocks = buildBlocks(region, s.quotes, s.indices, s.macro, s.regime, s.cal, s.cross, s.sox,
-    { leaning: s.leaning, composed: s.composed, foreign: {}, now: NOW });
+    { leaning, composed, foreign: {}, now: NOW });
   const text = assembleDiscord(region, UNIVERSE[region].label, blocks)
     // The header carries the render time and is the one line that cannot be frozen.
     .replace(/· \d{4}-\d{2}-\d{2} \d{2}:\d{2}Z\*\*/, '· <TIME>**');
@@ -104,6 +123,7 @@ for (const region of REGIONS) {
   const stale = buildBlocks('asia', s.quotes, s.indices, s.macro,
     { ...s.regime, staleWhileOpen: true }, s.cal, s.cross, s.sox,
     { leaning: s.leaning, composed: s.composed, foreign: {}, now: NOW });
+  // Only the BACKDROP warning is under test here, and it does not read the gauges.
   rendered._staleWhileOpen = stale.backdropLines || '';
   ok('an open market on stale prints says so', /⚠️ \*\*Equity prints are stale\*\*/.test(stale.backdropLines));
   // AND THE CUTS GO QUIET. The warning is only half the behaviour; the other half is that the

@@ -20,15 +20,15 @@
 ───────────────
 
 🌡️ **BACKDROP**
-• 📈 **Indices:** **KOSPI** +1.1% · **Nikkei** -0.8% · **HSTECH** -0.8% · **HSI** -0.2%
-• 📋 **Names:** **ASMPT** +4.7% · **BYD** -2.4% · **Xiaomi** -2.0% · **Samsung** -0.7% · **Hua Hong** +0.5% · **SMIC** -0.5% _(+5 more)_
-• 🔬 **Inside chips:** foundry -0.1% vs memory -0.3% — the two moved together
-• 🤖 **AI vs the rest:** +0.8% vs flat — moving together
-• 💵 **Money:** **2yr 4.39%** · **10yr 4.8%** — the normal way round
+• 📈 **Indices:** **Nikkei** -1.4% · **HSTECH** -0.8% · **KOSPI** +0.7% · **HSI** -0.2%
+• 📋 **Names:** **ASMPT** +4.7% · **BYD** -2.4% · **Xiaomi** -2.0% · **Samsung** -1.1% · **Hua Hong** +0.5% · **SMIC** -0.5% _(+5 more)_
+• 🔬 **Inside chips:** foundry -0.1% vs memory -0.8% — foundry ahead of memory
+• 🤖 **AI vs the rest:** +0.6% vs flat — moving together
+• 💵 **Money:** **2yr 4.39%** · **10yr 4.8%** · **30yr 5.25%** — the normal way round
 • 🩹 **Credit:** risky companies pay **2.67pp** over government debt — **no new print** since 2026-09-08 — lenders are relaxed about risky borrowers · junk-bond ETF **-0.2%** today
-• 🛢️ **Oil:** WTI **$96.62** · Brent **$101.34** — above its recent trend, so it adds to costs rather than easing them
+• 🛢️ **Oil:** WTI **$96.61** · Brent **$101.33** — above its recent trend, so it adds to costs rather than easing them
 • 🌡️ **Inflation:** the headline-style measure reads **2.47%**, but the gauge the Fed actually targets is **higher at 3.34%** — the cooler of the two is not the one policy is set against
-• 🇰🇷 **Korea:** won at **1338.78** · Korean fear gauge **48.85** (high) — Korea washout draining
+• 🇰🇷 **Korea:** won at **1338.08** · Korean fear gauge **48.85** (high) — Korea washout draining
 • 👉 Cautious tone — foreigners are net sellers, and since foreign flow drives KOSPI, their exit is the dominant tell despite domestic buying. Dry powder is building (deposits ↑) — buffer and optionality intact for more upside.
 
 ───────────────
@@ -37,6 +37,7 @@
 • 👁 **Lenders start charging more to carry risk** → junk spreads above 3.00pp **and** still rising over five days
 • 👁 **The won weakens past 1491** → that level, on a close rather than a wick
 • 👁 **Fear climbing from an already-high base** → VIX above 20 **and** rising, not just rising
+• 👁 **The 30-year yield clears 5.35%** → that level on a close — the long end repricing, not a one-day wick
 • 🔴 **Nasdaq futures undercut yesterday's low** — already true, which puts yesterday's buyers underwater
 • 🔴 **Korean retail stops absorbing foreign selling** — already true, which leaves no domestic bid under the selling
 • ↪ The Korea read changes if KRW >1491 or retail stops absorbing foreign selling or VKOSPI into EXTREME.
