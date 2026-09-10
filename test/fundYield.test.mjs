@@ -1,0 +1,81 @@
+// test/fundYield.test.mjs — a fund's SEC yield, and the wrong number that nearly shipped.
+//
+// The cash comparison ran on two constants: USFR 3.71% as of 2026-08-06, SGOV 3.57% as of
+// 2026-07-30. Read on 2026-09-10 those were 35 and 42 days old, and refreshing the dashboard did
+// nothing to either. The verdict a reader acts on was computed from a figure five weeks old.
+import { parseIsharesSecYield, isoFromIssuerDate, PLAUSIBLE_SEC_YIELD, ISHARES_URL } from '../lib/fundYield.js';
+
+let pass = 0, fail = 0;
+const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
+const ok = (n, c) => eq(n, !!c, true);
+
+// The shape iShares publishes, reduced to the two fields that matter. The date lives INSIDE the
+// yield's own valueReference, which is the detail the first regex got wrong.
+const page = (ticker, title, yieldPct, asOf) =>
+  `<html><head><title>${title}</title></head><body>{"@type":"PropertyValue","name":"NAV as of","value":"100.48"},`
+  + `{"@type":"PropertyValue","name":"30 Day SEC Yield as of","value":"${yieldPct}%","valueReference":`
+  + `{"@type":"PropertyValue","name":"As of Dates","value":"${asOf}"}},`
+  + `{"@type":"PropertyValue","name":"12m Trailing Yield as of","value":"9.99%","valueReference":`
+  + `{"@type":"PropertyValue","name":"As of Dates","value":"Jan 01, 1999"}}</body></html>`;
+
+// ── the good case ────────────────────────────────────────────────────────────
+{
+  const r = parseIsharesSecYield(page('SGOV', 'iShares 0-3 Month Treasury Bond ETF | SGOV', '3.62', 'Sep 08, 2026'), 'SGOV');
+  eq('the yield is read', r.value, 3.62);
+  eq('and dated from its OWN valueReference', r.asOf, '2026-09-08');
+  ok('the parse succeeds', r.ok);
+  // THE DATE MUST COME FROM THE YIELD'S OWN OBJECT. An unbounded match ran past that object's
+  // closing brace and picked up the NEXT property's value — which is how a yield ends up dated by
+  // whatever field happens to follow it. The fixture's next field is deliberately Jan 01, 1999.
+  ok('never from the field that follows it', r.asOf !== '1999-01-01');
+  ok('and the trailing yield is not mistaken for the SEC one', r.value !== 9.99);
+}
+
+// ── THE WRONG NUMBER THAT NEARLY SHIPPED ─────────────────────────────────────
+// Reaching for a second fund to cross-check against, the obvious-looking iShares product id 271544
+// returned a page whose 30-day SEC yield read 5.16% — impossible for a Treasury floating-rate fund
+// while 3-month bills yield 3.80%. The regex was right and the page was real: id 271544 is SYSB,
+// the Systematic Bond ETF, not TFLO. Nothing in the URL said so and nothing in the extraction would
+// have caught it. A yield attached to the wrong fund looks exactly as trustworthy as a right one.
+{
+  const wrong = parseIsharesSecYield(page('SYSB', 'iShares Systematic Bond ETF | SYSB', '5.16', 'Sep 08, 2026'), 'TFLO');
+  eq('a page for another fund is refused', wrong.ok, false);
+  ok('and says which fund it actually is', /SYSB/.test(wrong.reason));
+  ok('no value escapes the refusal', wrong.value === undefined);
+  // The right ticker on the same page still works, so the guard tests identity and not the title.
+  eq('while the fund it IS for parses', parseIsharesSecYield(page('SYSB', 'iShares Systematic Bond ETF | SYSB', '5.16', 'Sep 08, 2026'), 'SYSB').ok, true);
+  eq('a page with no title cannot be identified', parseIsharesSecYield('<html><body>x</body></html>', 'SGOV').ok, false);
+  eq('and no ticker to check against is a refusal', parseIsharesSecYield(page('SGOV', 'x | SGOV', '3.62', 'Sep 08, 2026'), '').ok, false);
+}
+
+// ── the second guard, after identity ─────────────────────────────────────────
+{
+  ok('the plausible band is stated', PLAUSIBLE_SEC_YIELD.hi > PLAUSIBLE_SEC_YIELD.lo);
+  const silly = parseIsharesSecYield(page('SGOV', 'iShares | SGOV', '61.20', 'Sep 08, 2026'), 'SGOV');
+  eq('an implausible yield is refused', silly.ok, false);
+  ok('with the number named', /61.2/.test(silly.reason));
+  // AN UNDATED FIGURE IS REFUSED. Presented beside dated ones it invites the reader to assume it is
+  // today's, and it cannot be aged.
+  const undated = parseIsharesSecYield(page('SGOV', 'iShares | SGOV', '3.62', 'not a date'), 'SGOV');
+  eq('and so is one with no readable date', undated.ok, false);
+  eq('a missing yield field is a refusal too', parseIsharesSecYield('<html><head><title>SGOV</title></head><body></body></html>', 'SGOV').ok, false);
+}
+
+// ── date parsing ─────────────────────────────────────────────────────────────
+{
+  eq('the issuer writes a human date', isoFromIssuerDate('Sep 08, 2026'), '2026-09-08');
+  eq('a single-digit day is padded', isoFromIssuerDate('Jan 3, 2026'), '2026-01-03');
+  eq('a full month name works', isoFromIssuerDate('September 08, 2026'), '2026-09-08');
+  eq('nonsense is not a date', isoFromIssuerDate('As of Dates'), null);
+  eq('nor is nothing', isoFromIssuerDate(null), null);
+}
+
+// Only funds with a configured issuer page can be asked for. WisdomTree answers 403 to every route,
+// so USFR is deliberately absent rather than half-wired.
+{
+  ok('SGOV has an issuer page', !!ISHARES_URL.SGOV);
+  eq('USFR does not, and is not pretended to', ISHARES_URL.USFR, undefined);
+}
+
+console.log(`\n${pass} passed, ${fail} failed`);
+if (fail) process.exit(1);

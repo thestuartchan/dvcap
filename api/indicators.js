@@ -2,6 +2,7 @@ import { LABOR_SERIES } from "../lib/labor.js";
 import { fetchSmicAHPremium } from "../lib/smicah.js";
 import { backoffMs, sleep } from '../lib/throttle.js';
 import { fredGate } from '../lib/fred.js';
+import { fetchIsharesSecYield } from '../lib/fundYield.js';
 
 export default async function handler(req, res) {
   const FRED_KEY = process.env.FRED_API_KEY;
@@ -781,6 +782,22 @@ export default async function handler(req, res) {
     // minute, while stale-while-revalidate keeps the response instant and means FRED still
     // sees at most ~1 origin fetch a minute regardless of traffic.
     res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
+    // ── THE ONE FUND YIELD THAT CAN BE FETCHED ───────────────────────────────
+    // SGOV's 30-day SEC yield is published in the iShares product page's structured data. USFR's
+    // issuer answers 403 to everything, so it keeps the constant in lib/cashyield.js plus the
+    // fitted proxy — and this figure is what makes that proxy CHECKABLE, because SGOV is the only
+    // fund of the two whose true value can be observed on the day.
+    //
+    // Best-effort and never fatal: the card falls back to the published constant, which is what it
+    // used before this existed. Attached here rather than on a route of its own because the
+    // deployment is at the 12-function cap and has been taken down by exceeding it once already.
+    try {
+      const sgov = await fetchIsharesSecYield('SGOV');
+      result.fundYields = { SGOV: sgov.ok ? { value: sgov.value, asOf: sgov.asOf, source: sgov.source }
+                                          : { error: sgov.reason } };
+    } catch (e) {
+      result.fundYields = { SGOV: { error: String(e?.message || e) } };
+    }
     return res.status(200).json(result);
   } catch (e) {
     console.error("Indicator fetch error:", e.message);
