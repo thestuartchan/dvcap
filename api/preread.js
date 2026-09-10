@@ -18,6 +18,17 @@ import { kofiaStoredLine, koreaFlowRead, koreaFlowImplication } from '../lib/kof
 import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
 import { readGex, repriceStored, settledGex, GEX_SYMBOLS } from '../lib/gexStore.js';
 import { renderGexSection, pinOf, RUNGS } from '../lib/gexBrief.js';
+import { wallAgreement } from '../lib/gexRead.js';
+
+// wallAgreement answers for ONE wall at a time; the levels section needs both, each on its own
+// terms. A pair verdict was what previously let "0 of 6" sit beside a wall that was in fact one
+// expiry's own peak — see the note in lib/gexRead.js.
+const wallAgreementBoth = (grid, callWall, putWall) => {
+  if (!grid) return null;
+  try {
+    return { call: wallAgreement(grid, callWall, callWall), put: wallAgreement(grid, putWall, putWall) };
+  } catch { return null; }
+};
 import { watchlist, renderWatchlist } from '../lib/watchlist.js';
 import { WATCH_UNIVERSE } from '../data/watchUniverse.js';
 import {
@@ -550,7 +561,7 @@ async function gexBlock(liveSpot, tense = 'preview') {
       // final by 01:10 UTC and had not moved one series by 08:48. The expiries are matched to the
       // stored capture's so the two rungs describe the same book and the fall-through stays
       // comparable.
-      let settledAsOf = null;
+      let settledAsOf = null, rowByStrike = null, rowAgreement = null;
       try {
         const st = await settledGex(sym, { spot: spot > 0 ? spot : null, expiries: latest.expiries || null });
         if (st?.ok && st.row) {
@@ -566,6 +577,8 @@ async function gexBlock(liveSpot, tense = 'preview') {
           // snapshot, stamped onto a book fetched this morning. The line described the right data
           // and dated it to the wrong session.
           settledAsOf = st.iv?.asOf || new Date().toISOString();
+          rowByStrike = st.byStrike || null;
+          rowAgreement = wallAgreementBoth(st.grid, st.row.callWall, st.row.putWall);
         }
         else why[sym] = st?.reason || 'settledGex returned no row';
       } catch (e) { why[sym] = `settledGex threw — ${String(e?.message || e)}`; }
@@ -574,12 +587,21 @@ async function gexBlock(liveSpot, tense = 'preview') {
         if (rp?.row) {
           row = { ...rp.row, pin: pinOf(rp.grid, { spot, today, expired }) };
           rung = 'repriced';
+          rowByStrike = rp.byStrike || null;
+          rowAgreement = wallAgreementBoth(rp.grid, rp.row.callWall, rp.row.putWall);
         }
       }
       if (!row) row = { ...latest, pin: pinOf(stored.grid, { spot: latest.spot, today, expired }) };
 
       slots[slot] = ({ name: sym, spot: row.spot, putWall: row.putWall, callWall: row.callWall,
                   flipLevel: row.flipLevel, pin: row.pin,
+                  // The flip ZONE, so "what kind of day" can name both edges rather than a line —
+                  // the zone width is how far the pivot moves as the dealer assumption varies.
+                  flipZoneLo: row.flipZoneLo, flipZoneHi: row.flipZoneHi,
+                  // The per-strike gamma split, so a wall can say which side of it is heavy. SPY
+                  // carried both walls on 760 with put gamma 6.5x the call gamma there, and the
+                  // brief rendered that as a tie.
+                  byStrike: rowByStrike, agreement: rowAgreement,
                   // The book's own open-interest-weighted vol, for the expected-range line. It
                   // survives repricing unchanged — repriceStored moves the spot, not the surface.
                   iv: row.oiWeightedIv ?? latest.oiWeightedIv ?? null });

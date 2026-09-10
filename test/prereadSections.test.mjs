@@ -648,5 +648,105 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
   ok('the state has words', /delayed feed/.test(freshnessText({ state: 'delayed', ageMin: 20 })));
 }
 
+
+// ── THE ASYMMETRY A WALL HIDES ───────────────────────────────────────────────
+// A wall is the strike carrying the most gamma-weighted open interest ON THAT SIDE, and the two
+// sides are counted independently. So "put wall 760 · call wall 760" is not a balanced strike — it
+// is one strike that won both counts. Observed on SPY 2026-09-10: both walls at 760 with put gamma
+// 6,665 against call gamma 1,031. Six and a half to one, rendered as a tie.
+{
+  const { mapRow, wallDominance, realLevels, dayKind, DOMINANCE_MIN } = await import('../lib/gexBrief.js');
+  const byStrike = [
+    { strike: 760, callGamma: 1031, putGamma: 6665 },
+    { strike: 765, callGamma: 962, putGamma: 1100 },
+    { strike: 770, callGamma: 877, putGamma: 600 },
+  ];
+
+  // ── A COLLISION IS A FACT, NOT A DRAWING PROBLEM ───────────────────────────
+  // The marks were written in order and the later overwrote the earlier, so when both walls landed
+  // in one column the put wall VANISHED and the row showed a lone `C` — the dominant half of the
+  // strike erased by draw order.
+  {
+    const collided = mapRow('SPY', { spot: 758.19, putWall: 760, callWall: 760, flipLevel: 767.68 });
+    ok('both walls in one cell render as B', /B/.test(collided));
+    ok('and neither is silently lost', !/P/.test(collided.slice(4)) && !/C/.test(collided.slice(4)));
+    const apart = mapRow('QQQ', { spot: 709.5, putWall: 700, callWall: 710, flipLevel: 718.4 });
+    ok('separate walls keep their own glyphs', /P/.test(apart.slice(4)) && /C/.test(apart.slice(4)));
+    ok('and do not become B', !/B/.test(apart));
+    // The pivot keeps its own mark: a pivot sharing a cell with a wall is a different statement.
+    ok('the price mark still wins its own cell', /\^/.test(collided));
+  }
+
+  // ── WHICH SIDE IS ACTUALLY HEAVY ───────────────────────────────────────────
+  {
+    const d = wallDominance(byStrike, 760);
+    eq('the heavy side is named', d.heavy, 'put');
+    eq('with the ratio', d.ratio, 6.5);
+    eq('and it is not two-sided', d.twoSided, false);
+    // A strike where the two sides are close IS two-sided, and saying "1.1x put-heavy" about it
+    // would dress a coin flip as a finding.
+    eq('a near-even strike says so instead', wallDominance(byStrike, 765).twoSided, true);
+    ok('the threshold is stated', DOMINANCE_MIN > 1);
+    eq('a strike with no row has no verdict', wallDominance(byStrike, 999), null);
+  }
+
+  // ── ONE STRIKE, ONE LINE ───────────────────────────────────────────────────
+  // The first cut looped the walls independently, so a strike winning both counts printed TWICE —
+  // and the second copy described the CALL wall as "6.5x the calls there", which is the put side's
+  // ratio pasted onto the wrong sentence.
+  {
+    const shared = realLevels({ spot: 758.19, putWall: 760, callWall: 760, byStrike,
+      agreement: { call: { agree: 0, total: 5, matched: [] }, put: { agree: 3, total: 5, matched: ['2026-09-18'] } } });
+    eq('a shared strike is one line, not two', shared.length, 1);
+    ok('and says both walls are on it', /both walls sit on this one strike/.test(shared[0]));
+    ok('named for the side that is heavy', /6.5x put-heavy/.test(shared[0]));
+    ok('never for the side it is not', !/put-heavy.*call-heavy|6.5x the calls/.test(shared[0]));
+    // A LEVEL IS ONLY AS STANDING AS ITS LEAST-SUPPORTED HALF. The call side peaks nowhere, so the
+    // shared strike reads as a zone even though the put side holds across three expiries.
+    ok('the weaker agreement governs a shared strike', /rather than a line/.test(shared[0]));
+  }
+  {
+    const apart = realLevels({ spot: 758, putWall: 750, callWall: 770, byStrike,
+      agreement: { call: { agree: 0, total: 5, matched: [] }, put: { agree: 1, total: 5, matched: ['2026-09-18'] } },
+      pin: { pinned: true, share: 24, band: '757–759' } });
+    eq('separate walls are separate lines', apart.length, 3);
+    // A wall no expiry peaks at is a SUM, not a level — a point implies precision it lacks.
+    ok('a wall nothing peaks at reads as a zone', /No single expiry peaks exactly here/.test(apart[0]));
+    // One that is a single expiry's book stops existing when that expiry does.
+    ok('a one-expiry wall names the expiry', /Owned by the 2026-09-18 expiry/.test(apart[1]));
+    ok('and the pin is the third real level', /That is the pin/.test(apart[2]));
+  }
+  eq('no spot, no levels', realLevels({ spot: 0 }), []);
+
+  // ── WHAT KIND OF DAY ───────────────────────────────────────────────────────
+  // The regime as three bands rather than one label: "negative gamma" is a fact about where price
+  // IS, and the reader wants to know what happens if it moves.
+  {
+    const d = dayKind({ spot: 758.19, flipZoneLo: 760.95, flipZoneHi: 767.68 });
+    eq('three bands', d.length, 3);
+    ok('and the one price is in is marked', d.filter(l => /← here now/.test(l)).length === 1);
+    ok('below the zone is where moves extend', /Below 760.95.*extend rather than fade/.test(d[0]));
+    ok('marked as the live one', /← here now/.test(d[0]));
+    ok('above is where they are absorbed', /Above 767.68.*absorbed/.test(d[1]));
+    // The zone width is reported because it is why "above" and "below" are not a single line.
+    ok('and the zone states its own width', /zone is 6.73 wide/.test(d[2]));
+    eq('no zone, no bands', dayKind({ spot: 758 }), []);
+  }
+
+  // ── STILL OBSERVATIONAL ────────────────────────────────────────────────────
+  // These describe what an arrangement is consistent with and never what to do about it.
+  {
+    const { assertObservational } = await import('../lib/read.js');
+    const all = [
+      ...realLevels({ spot: 758, putWall: 760, callWall: 770, byStrike,
+        agreement: { call: { agree: 0, total: 5 }, put: { agree: 2, total: 5 } },
+        pin: { pinned: true, share: 24, band: '757–759' } }),
+      ...dayKind({ spot: 758, flipZoneLo: 761, flipZoneHi: 767 }),
+    ];
+    ok('there is something to check', all.length >= 5);
+    for (const l of all) ok(`observational: "${l.slice(2, 40)}"`, assertObservational(l).ok);
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
