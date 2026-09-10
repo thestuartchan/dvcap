@@ -39,6 +39,7 @@ import { coreSpread, monthName } from "../lib/inflation.js";
 import { pathReading, ladder, CAVEATS as FED_PATH_CAVEATS } from "../lib/fedpath.js";
 import HOLIDAYS from "../data/holidays.json";
 import { SEC_YIELDS, PROXY, secYieldProxy, proxyDivergence, proxyError, ISSUER_PAGE, apyFromSec, billFromDiscount, BILL_DAYS, compareCash } from "../lib/cashyield.js";
+import { parseSecYieldPaste, parseYieldValue } from "../lib/fundYield.js";
 import { COMPANY_NAMES } from '../lib/companyNames.js';  // one map, shared with the trade console
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
@@ -1263,7 +1264,7 @@ function CashComparisonCard({ liveInd }) {
   // automated route while loading fine in a browser. A newer hand entry beats the constant in the
   // source; the constant remains the floor so the card never has nothing.
   const [entered, setEntered] = useState(null);
-  const [form, setForm] = useState({ value: "", asOf: "" });
+  const [form, setForm] = useState({ paste: "", value: "", asOf: "" });
   const [saveMsg, setSaveMsg] = useState(null);
   useEffect(() => {
     fetch("/api/manual-entry").then(r => r.json()).then(j => setEntered(j?.secYields || null)).catch(() => {});
@@ -1381,22 +1382,48 @@ function CashComparisonCard({ liveInd }) {
             Update USFR — <a href={ISSUER_PAGE.USFR.url} target="_blank" rel="noreferrer" style={{ color: C.blue }}>
               {ISSUER_PAGE.USFR.label}</a>, copy &ldquo;{ISSUER_PAGE.USFR.field}&rdquo; and its as-of date
           </div>
+          {/* PASTE THE WHOLE THING. Retyping two numbers you are looking at is where the wrong
+              digit comes from, and the only reason this field exists is that the figure cannot be
+              fetched — so the hand path should be as close to a copy as it can be. Select the line
+              on the issuer page and drop it here; the two fields below fill in and stay editable. */}
+          <input value={form.paste}
+            onChange={e => {
+              const text = e.target.value;
+              const p = parseSecYieldPaste(text);
+              setForm(f => ({ ...f, paste: text,
+                value: p.value != null ? String(p.value) : f.value,
+                asOf: p.asOf || f.asOf }));
+              // TWO PERCENTAGES IN ONE PASTE IS AMBIGUOUS. "SEC 30-Day Yield" sits beside "12m
+              // Trailing Yield" on both pages, and taking the first silently is how the wrong one
+              // gets saved. It still fills — and it says which it took.
+              setSaveMsg(p.ambiguous ? { ok: false, text: `That paste had ${p.ambiguous.length} percentages (${p.ambiguous.join("%, ")}%) — took ${p.value}%. Check it is the SEC yield, not the trailing one.` } : null);
+            }}
+            placeholder="paste the line from the issuer page, or fill the fields below"
+            style={{ width: "100%", boxSizing: "border-box", fontSize: 12, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, marginBottom: 5 }} />
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-            <input value={form.value} onChange={e => setForm(f => ({ ...f, value: e.target.value }))} placeholder="3.71"
-              style={{ fontSize: 13, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 70 }} />
-            <input value={form.asOf} onChange={e => setForm(f => ({ ...f, asOf: e.target.value }))} placeholder="YYYY-MM-DD"
-              style={{ fontSize: 13, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 116 }} />
+            <input value={form.value} onChange={e => setForm(f => ({ ...f, value: e.target.value }))} placeholder="3.71%"
+              style={{ fontSize: 13, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 78 }} />
+            {/* A NATIVE DATE INPUT, so the as-of is picked from a calendar rather than typed in a
+                format the reader has to remember. `max` is today: the issuer's figure is dated to a
+                business day already past, and a future one is a typo the server refuses anyway. */}
+            <input type="date" value={form.asOf} max={new Date().toISOString().slice(0, 10)}
+              onChange={e => setForm(f => ({ ...f, asOf: e.target.value }))}
+              style={{ fontSize: 13, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6 }} />
             <button onClick={async () => {
               setSaveMsg(null);
+              // Parsed here too, so the typed path and the pasted path accept the same things —
+              // a form that takes "3.68%" only when pasted is a form with two rules.
+              const value = parseYieldValue(form.value);
+              if (value == null) { setSaveMsg({ ok: false, text: `"${form.value}" is not a yield — a number, with or without the % sign` }); return; }
               try {
                 const r = await fetch("/api/manual-entry", { method: "POST", credentials: "include",
                   headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ secYield: { ticker: "USFR", value: form.value, asOf: form.asOf,
+                  body: JSON.stringify({ secYield: { ticker: "USFR", value, asOf: form.asOf,
                                                      dtb3AtAsOf: liveInd?.tbill3m ?? null } }) });
                 const j = await r.json();
                 if (!r.ok) { setSaveMsg({ ok: false, text: j?.error || `HTTP ${r.status}` }); return; }
                 setEntered(j?.secYields || null);
-                setForm({ value: "", asOf: "" });
+                setForm({ paste: "", value: "", asOf: "" });
                 setSaveMsg({ ok: true, text: `Saved — USFR ${j?.secYields?.USFR?.value}% as of ${j?.secYields?.USFR?.asOf}` });
               } catch (e) { setSaveMsg({ ok: false, text: String(e?.message || e) }); }
             }} style={{ fontSize: 12, fontWeight: 700, padding: "6px 12px", borderRadius: 6, cursor: "pointer",

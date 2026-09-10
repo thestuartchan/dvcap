@@ -18,7 +18,7 @@ const PREREAD_LAST_KEY = 'dvcap:preread:last:v1';
 import { appendDecision, overrideStats, DECISIONS_KEY, ACTIONS } from '../lib/decisions.js';
 import { GUARD_STATES } from '../lib/guards.js';
 import { sideOf } from '../lib/side.js';
-import { PLAUSIBLE_SEC_YIELD } from '../lib/fundYield.js';
+import { PLAUSIBLE_SEC_YIELD, parseYieldValue, parseIssuerDate } from '../lib/fundYield.js';
 import { SEC_YIELD_TICKERS } from '../lib/cashyield.js';
 import { authorised, hasSessionCookie, refuse } from '../lib/apiauth.js';
 import { fetchHlAccount, fetchHlSpot, fetchSpotContext, fetchHyperliquid } from '../lib/hyperliquid.js';
@@ -381,15 +381,18 @@ export default async function handler(req, res) {
     if (!SEC_YIELD_TICKERS.includes(ticker)) {
       return res.status(422).json({ error: `${ticker} is not a fund this card tracks — expected one of ${SEC_YIELD_TICKERS.join(', ')}` });
     }
-    const value = Number(secYield.value);
+    // Parsed, not Number()'d — so the API accepts "3.68%" exactly as the form does. Two entry
+    // paths that disagree about what a yield looks like is two rules to remember.
+    const value = parseYieldValue(secYield.value);
     if (!Number.isFinite(value) || value < PLAUSIBLE_SEC_YIELD.lo || value > PLAUSIBLE_SEC_YIELD.hi) {
       return res.status(422).json({ error: `${secYield.value} is not a plausible 30-day SEC yield — expected ${PLAUSIBLE_SEC_YIELD.lo}–${PLAUSIBLE_SEC_YIELD.hi}%` });
     }
     // The AS-OF IS THE FUND'S, NOT TODAY'S. The issuer publishes a figure dated to a business day
     // that is usually a day or two back, and stamping it with the moment it was typed would make a
     // two-day-old number look current — the exact defect this whole card is being fixed for.
-    const asOf = String(secYield.asOf || '').slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) {
+    // Any of the forms the issuer pages print, normalised to ISO here.
+    const asOf = parseIssuerDate(secYield.asOf) || '';
+    if (!asOf) {
       return res.status(422).json({ error: `as-of "${secYield.asOf}" is not a date — copy the "as of" shown beside the yield on the issuer's page` });
     }
     const today = new Date().toISOString().slice(0, 10);

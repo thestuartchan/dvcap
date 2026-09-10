@@ -102,5 +102,52 @@ const page = (ticker, title, yieldPct, asOf) =>
   ok('both routes share one plausible band', bounds.hi > bounds.lo && bounds.lo >= 0);
 }
 
+
+// ── TAKING WHAT A PERSON ACTUALLY PASTES ─────────────────────────────────────
+// The form asked for a bare number and a typed YYYY-MM-DD — asking someone reading an issuer page
+// to retype two things they are looking at. Retyping is where the wrong digit comes from, and the
+// only reason this field exists is that the figure could not be fetched.
+{
+  const { parseYieldValue, parseIssuerDate, parseSecYieldPaste } = await import('../lib/fundYield.js');
+
+  eq('a bare number', parseYieldValue('3.68'), 3.68);
+  eq('with the per-cent sign', parseYieldValue('3.68%'), 3.68);
+  eq('and with the spacing a copy leaves behind', parseYieldValue(' 3.68 % '), 3.68);
+  // A SINGLE CLEAN NUMBER OR NOTHING. "3.68 / 3.71" silently taking the first is worse than
+  // refusing, because the reader has no way to see which half was kept.
+  eq('two numbers is not a yield', parseYieldValue('3.68/3.71'), null);
+  eq('nor is prose', parseYieldValue('3.68 percent'), null);
+  eq('nor nothing', parseYieldValue(''), null);
+
+  // The forms the issuer pages actually print.
+  eq('the iShares form', parseIssuerDate('Sep 08, 2026'), '2026-09-08');
+  eq('spelled out', parseIssuerDate('September 08, 2026'), '2026-09-08');
+  eq('ISO', parseIssuerDate('2026-09-08'), '2026-09-08');
+  eq('day-first with a month name', parseIssuerDate('08 Sep 2026'), '2026-09-08');
+  // AMBIGUOUS DATES ARE READ US-STYLE AND SAID SO — both funds are US-listed with US pages.
+  eq('the slash form is US month-first', parseIssuerDate('09/08/2026'), '2026-09-08');
+  // ...and anything that cannot be a US month is refused rather than silently swapped.
+  eq('a first field above twelve is refused, not swapped', parseIssuerDate('13/08/2026'), null);
+  // A date that does not exist is a typo, not a date.
+  eq('the 31st of February is a typo', parseIssuerDate('2026-02-31'), null);
+  eq('and so is month thirteen', parseIssuerDate('2026-13-01'), null);
+  eq('nonsense is not a date', parseIssuerDate('as of'), null);
+
+  // A whole pasted line, in either order.
+  eq('value and date from one paste', parseSecYieldPaste('30 Day SEC Yield as of 09/08/2026  3.68%'),
+     { value: 3.68, asOf: '2026-09-08', ambiguous: null });
+  // TWO PERCENTAGES IS AMBIGUOUS. "SEC 30-Day Yield" sits beside "12m Trailing Yield" on both
+  // pages, and the trailing figure is the backward-looking one this card exists to stop using.
+  // It still fills — and it reports what it found, so the reader can check which was taken.
+  {
+    const both = parseSecYieldPaste('SEC 30-Day Yield 3.68% 12m Trailing 3.69% as of Sep 08, 2026');
+    eq('the first percentage is taken', both.value, 3.68);
+    eq('and the ambiguity is reported, not hidden', both.ambiguous, [3.68, 3.69]);
+  }
+  // A partial paste fills what it can rather than refusing everything.
+  eq('a date with no yield still yields a date', parseSecYieldPaste('as of 2026-09-08').asOf, '2026-09-08');
+  eq('and an empty paste claims nothing', parseSecYieldPaste(''), { value: null, asOf: null });
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
