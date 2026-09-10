@@ -34,6 +34,7 @@ import { refresh } from './tradecard.js';
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
 import { fetchCboeGreeks } from '../lib/cboe.js';
 import { parseOptionSymbol, contractKey, TREND_WINDOW } from '../lib/bookExposure.js';
+import { appendRun, SIZER_RUNS_KEY, MAX_RUNS } from '../lib/sizer.js';
 
 // The same optional secret the card endpoint uses, so the scheduler carries one key rather than
 // two. Unset leaves both open, which is the state the project starts in.
@@ -276,6 +277,23 @@ export async function exposureTrend(point = null) {
   return { ok: true, rows, wrote: false };
 }
 
+// ── SIZER RUNS ───────────────────────────────────────────────────────────────
+// Every time a size is asked for, whether or not the trade is taken. That last part is the point:
+// lib/decisions.js begins at a FILL, so a trade that was sized and then declined leaves no trace
+// in it — and "sized and not taken" is the outcome the whole exercise exists to produce more of.
+// Gated, on the account route, for the same reason the greeks are: this is the book.
+export async function sizerRuns(run = null) {
+  if (!kvConfigured()) return { ok: false, reason: 'Redis not configured' };
+  const stored = (await kvGetJson(SIZER_RUNS_KEY)) || { runs: [] };
+  const runs = Array.isArray(stored.runs) ? stored.runs : [];
+  if (run && run.at && run.symbol) {
+    const next = appendRun(runs, run, MAX_RUNS);
+    await kvSetJson(SIZER_RUNS_KEY, { runs: next });
+    return { ok: true, runs: next, wrote: true };
+  }
+  return { ok: true, runs, wrote: false };
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') { res.status(405).json({ error: 'method not allowed' }); return; }
   if (!(await authorised(req))) { res.status(401).json({ error: 'unauthorised', why: refusalReason(req) }); return; }
@@ -300,6 +318,19 @@ export default async function handler(req, res) {
   // ?greeks=QQQ|2026-10-16|C|730,... — published greeks for contracts the book holds, plus the
   // 20d exposure series. Read-only unless a point is posted. See exposureGreeks above for why it
   // is here and not on the public chain route.
+  // ?sizer=1 — GET reads the recorded runs, POST appends one. See sizerRuns above.
+  if (String(req.query?.sizer ?? '') === '1') {
+    try {
+      let body = req.body;
+      if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = null; } }
+      const run = req.method === 'POST' && body && typeof body === 'object' ? body.run : null;
+      res.status(200).json(await sizerRuns(run || null));
+    } catch (e) {
+      console.error('sizer-runs', e);
+      res.status(200).json({ ok: false, reason: String(e?.message || e) });
+    }
+    return;
+  }
   const greeksQ = String(req.query?.greeks ?? '').trim();
   if (greeksQ) {
     try {

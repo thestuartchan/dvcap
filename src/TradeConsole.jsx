@@ -32,6 +32,7 @@ import { stopWidth, ATR_STATUS } from "../lib/atr.js";
 import { preTradeGuards, guardStates } from "../lib/guards.js";
 import { riskCoverage, rowExposure, stopOf } from "../lib/exposure.js";
 import { bookExposure, parseOptionSymbol, contractKey } from "../lib/bookExposure.js";
+import { sizeTrade, sizerRun, reconcileRuns, SIZER_LIMITS } from "../lib/sizer.js";
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
 import { companyName } from "../lib/companyNames.js";
 import { moveOnto } from "../lib/reorder.js";
@@ -1187,7 +1188,10 @@ const XpoStat = ({ label, value, sub, col, breach }) => (
   </div>
 );
 
-function ExposureTile({ rows = [], nlv = null }) {
+// COMPUTED ONCE, USED IN BOTH. The exposure tile reports the book and the sizer decides what may
+// be added to it; if each fetched and totalled its own, the panel could show one delta-notional
+// and refuse a trade against a different one.
+function useBookExposure(rows, nlv) {
   const [feed, setFeed] = useState(null);
   const [err, setErr] = useState(null);
 
@@ -1243,7 +1247,207 @@ function ExposureTile({ rows = [], nlv = null }) {
       .catch(() => { /* the tile is unaffected; the series simply misses a day */ });
   }, [ratio, live, spec, book.deltaNotional]);
 
-  if (!book.available) return null;
+  return { book, live, spec, err };
+}
+
+// ── POSITION SIZER ───────────────────────────────────────────────────────────
+// The exposure tile reports a problem after it exists; this prevents it. One rule governs
+// everything — size so that one ATR of adverse movement costs 1% of NLV — then the concentration
+// caps, then the smallest result. See lib/sizer.js for the worked example this was built from: the
+// QQQ line where both tests said five contracts and the position was twenty.
+function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] }) {
+  const [tkr, setTkr] = useState("");
+  const [kind, setKind] = useState("option");
+  const [strike, setStrike] = useState("");
+  const [expiry, setExpiry] = useState("");
+  const [px, setPx] = useState(null);          // { price, atr, atrPct } for the underlying
+  const [greek, setGreek] = useState(null);    // { delta, mark, asOf, indicative }
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState(null);
+  const [runs, setRuns] = useState([]);
+
+  // Recorded runs, read back once so the reconciliation survives a reload. A run is the QUESTION;
+  // lib/decisions.js records the answer. Both are wanted — see the note in lib/sizer.js.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/flex-sync?sizer=1", { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (!cancelled && Array.isArray(j?.runs)) setRuns(j.runs); })
+      .catch(() => { /* the panel works without the history */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  // ── INTENDED vs ACTUAL ─────────────────────────────────────────────────────
+  // The highest-value output of the whole module. The rules only work if they are followed, and
+  // the only way to know whether they are is to measure the gap.
+  const recon = useMemo(() => reconcileRuns(runs, fills), [runs, fills]);
+
+  const root = tkr.trim().toUpperCase();
+  const ready = !!root && (kind === "stock" || (Number(strike) > 0 && /^\d{4}-\d{2}-\d{2}$/.test(expiry)));
+
+  const look = async () => {
+    if (!ready) return;
+    setBusy(true); setNote(null);
+    try {
+      const a = await fetch(`/api/atr?tickers=${encodeURIComponent(root)}`, { credentials: "include" }).then(r => r.json());
+      const hit = a?.[root];
+      if (!hit || hit.status !== "ok") { setNote(`no ATR for ${root} — ${hit?.status || "not returned"}`); setPx(null); }
+      else setPx({ atr: hit.atr, atrPct: hit.atrPct, price: null });
+      if (kind === "option") {
+        const key = `${root}|${expiry}|C|${Number(strike)}`;
+        const g = await fetch(`/api/flex-sync?greeks=${encodeURIComponent(key)}`, { credentials: "include" }).then(r => r.json());
+        const row = g?.greeks?.[key];
+        const spot = g?.spots?.[root] ?? null;
+        if (spot != null) setPx(p => ({ ...(p || {}), price: spot }));
+        // FROZEN IS NOT MISSING. Out of hours the feed serves the prior close; the size is still
+        // computed and marked INDICATIVE with the stamp, never blanked.
+        setGreek(row ? { delta: row.delta, mark: row.mark ?? row.bid, asOf: g.asOf,
+                         indicative: isStale(g.asOf) } : null);
+        if (!row) setNote(n => n || `no published greeks for ${root} ${expiry} ${strike}C`);
+      } else setGreek(null);
+    } catch (e) { setNote(String(e.message || e)); }
+    setBusy(false);
+  };
+
+  const result = useMemo(() => (!ready || !px?.atr) ? null : sizeTrade({
+    kind, symbol: kind === "option" ? `${root} ${expiry} C${strike}` : root,
+    price: px?.price, atr: px?.atr, atrPct: px?.atrPct,
+    delta: greek?.delta ?? null, mark: greek?.mark ?? null,
+    expiry: kind === "option" ? expiry : null,
+    nlv, bookDeltaNotional: book?.deltaNotional ?? 0,
+    catalysts: calendar, indicative: !!greek?.indicative, asOf: greek?.asOf ?? null,
+  }), [ready, kind, root, expiry, strike, px, greek, nlv, book, calendar]);
+
+  const record = async () => {
+    const run = sizerRun(result);
+    if (!run) return;
+    const next = [...runs, run];
+    setRuns(next);
+    try {
+      await fetch("/api/flex-sync?sizer=1", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ run }),
+      });
+    } catch (_) { /* the panel still shows it; only the record is lost */ }
+  };
+
+  const money = (v) => v == null ? "—" : (v < 0 ? "−$" : "$") + Math.abs(Math.round(v)).toLocaleString("en-US");
+
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+        <SLabel>Position sizer</SLabel>
+        <span style={{ fontSize: 11.5, color: C.muted }}>one ATR against you costs {SIZER_LIMITS.riskPct}% of NLV</span>
+        <span style={{ marginLeft: "auto", fontSize: 11, color: C.lbl, fontWeight: 700 }}>NLV {money(nlv)}</span>
+      </div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
+        <SzFld label="Ticker"><input value={tkr} onChange={e => setTkr(e.target.value)} style={SZ_IN} placeholder="QQQ" /></SzFld>
+        <SzFld label="Type">
+          <select value={kind} onChange={e => setKind(e.target.value)} style={SZ_IN}>
+            <option value="stock">Stock</option><option value="option">Option</option>
+          </select>
+        </SzFld>
+        {kind === "option" && <SzFld label="Strike"><input value={strike} onChange={e => setStrike(e.target.value)} style={SZ_IN} placeholder="730" /></SzFld>}
+        {kind === "option" && <SzFld label="Expiry"><input value={expiry} onChange={e => setExpiry(e.target.value)} style={SZ_IN} placeholder="2026-10-16" /></SzFld>}
+        <Btn onClick={look} disabled={!ready || busy}>{busy ? "…" : "Size it"}</Btn>
+      </div>
+      {px?.atr != null && (
+        <div style={{ fontSize: 11.5, color: C.muted, marginTop: 5 }}>
+          ATR(20) {px.atr.toFixed(2)}{px.atrPct != null ? ` (${px.atrPct.toFixed(2)}%)` : ""}
+          {px.price != null ? ` · ${root} ${px.price.toFixed(2)}` : ""}
+          {greek?.delta != null ? ` · δ ${greek.delta.toFixed(2)} · mark ${Number(greek.mark).toFixed(2)}` : ""}
+          {result?.dte != null ? ` · ${result.dte} DTE` : ""}
+        </div>
+      )}
+      {note && <div style={{ fontSize: 11.5, color: C.amber, marginTop: 4 }}>⚠ {note}</div>}
+
+      {recon.n > 0 && (
+        <div style={{ marginTop: 7, paddingTop: 7, borderTop: "1px solid " + C.bdr, fontSize: 11.5,
+                      color: recon.exceeded > 0 ? C.amber : C.muted, lineHeight: 1.55 }}>
+          <b style={{ fontSize: 10.5, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Intended vs actual </b>
+          {recon.note}
+          {recon.meanRatio != null && <span> · mean {recon.meanRatio}×</span>}
+          {recon.notTaken > 0 && <span style={{ color: C.green }}> · {recon.notTaken} sized and not taken</span>}
+          {recon.worst && recon.worst.ratio > 1.05 && (
+            <div style={{ color: C.red, fontWeight: 700 }}>
+              worst {recon.worst.symbol}: {recon.worst.intended} intended, {recon.worst.actual} taken ({recon.worst.ratio}×)
+            </div>
+          )}
+        </div>
+      )}
+
+      {result?.ok && (
+        <div style={{ marginTop: 9 }}>
+          {result.zeroDte && (
+            <div style={{ fontSize: 11.5, fontWeight: 800, color: C.amber, marginBottom: 4 }}>
+              ⚡ 0DTE rule set active — premium governs, the ATR test is not used
+            </div>
+          )}
+          {/* BOTH TESTS, ALWAYS, AND WHICH ONE BINDS. For volatile single names the concentration
+              cap usually wins; for options they often agree. Hiding the losing one removes the
+              only part of this that teaches anything. */}
+          {result.tests.map((t, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 12,
+                                  color: t.binds ? C.text : C.muted, fontWeight: t.binds ? 800 : 600 }}>
+              <span style={{ minWidth: 190 }}>{t.binds ? "→ " : "   "}{t.name}</span>
+              <b style={{ fontVariantNumeric: "tabular-nums" }}>{t.size == null ? "—" : `${t.size}`}</b>
+              <span style={{ fontSize: 11, color: C.lbl }}>{t.detail}</span>
+            </div>
+          ))}
+          <div style={{ borderTop: "1px solid " + C.bdr, marginTop: 5, paddingTop: 5,
+                        display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Size</span>
+            {/* BLOCK, DO NOT WARN. The one thing this must not do is compute a clean number for a
+                trade the book cannot carry — so the blocked size is struck and the fitting one
+                shown in its place. */}
+            {result.blocked
+              ? <><b style={{ fontSize: 20, color: C.red }}>⛔ EXCEEDS CEILING</b>
+                  <span style={{ fontSize: 12.5, color: C.mid }}>
+                    <s style={{ color: C.lbl }}>{result.size}</s> — {result.fitSize} would fit
+                  </span></>
+              : <b style={{ fontSize: 22, color: result.belowOne ? C.amber : C.green }}>
+                  {result.size}{result.kind === "option" ? " contracts" : " shares"}
+                </b>}
+            {result.premium != null && <span style={{ fontSize: 12, color: C.muted }}>{money(result.premium)} {result.kind === "option" ? "premium" : "notional"}</span>}
+            {result.indicative && <span style={{ fontSize: 11, fontWeight: 800, color: C.amber }}>INDICATIVE</span>}
+            <Btn onClick={record} style={{ marginLeft: "auto" }}>Record run</Btn>
+          </div>
+          {/* THE FOUR LINES THAT ARE WHY THIS BELONGS ON THE PANEL. The calculator knows the book,
+              so it answers "does this fit alongside what I already hold". */}
+          {result.deltaAdded != null && (
+            <div style={{ fontSize: 11.5, color: C.mid, marginTop: 5, lineHeight: 1.6 }}>
+              <div>Adds {money(result.deltaAdded)} delta-notional · {nlv > 0 ? `${(result.deltaAdded / nlv).toFixed(2)}× NLV` : "—"}</div>
+              <div>Current book <b>{result.book.before}×</b> → after this trade{" "}
+                <b style={{ color: result.blocked ? C.red : result.book.after > result.book.target ? C.amber : C.green }}>{result.book.after}×</b>
+                {result.book.after > result.book.target && !result.blocked ? ` ⚠ past the ${result.book.target}× target` : ""}
+              </div>
+              <div style={{ color: C.lbl }}>Budget remaining {result.book.remaining}× to the {result.book.ceiling}× ceiling</div>
+            </div>
+          )}
+          {result.warnings.map((w, i) => <div key={i} style={{ fontSize: 11.5, color: C.red, fontWeight: 700, marginTop: 3 }}>⛔ {w}</div>)}
+          {result.notes.map((w, i) => <div key={i} style={{ fontSize: 11, color: C.lbl, marginTop: 2, lineHeight: 1.45 }}>· {w}</div>)}
+        </div>
+      )}
+    </Card>
+  );
+}
+const SzFld = ({ label, children }) => (
+  <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>
+    {label}{children}
+  </label>
+);
+const SZ_IN = { background: "transparent", border: "1px solid " + C.bdr, borderRadius: 6,
+                padding: "4px 7px", fontSize: 13, fontWeight: 700, color: C.text, minWidth: 96 };
+// Greeks older than this are the prior close, not a live quote — the size is still computed and
+// marked INDICATIVE rather than blanked, per the same rule the vintage work applies everywhere.
+const STALE_MIN = 30;
+const isStale = (asOf) => {
+  const t = Date.parse(asOf || "");
+  return !Number.isFinite(t) || (Date.now() - t) / 60000 > STALE_MIN;
+};
+
+function ExposureTile({ book, err }) {
+  if (!book?.available) return null;
   const L = book.limits;
   const money = (v) => v == null ? "—" : (v < 0 ? "−$" : "$") + Math.abs(Math.round(v)).toLocaleString("en-US");
   const stateCol = book.state === "OVER CEILING" ? C.red
@@ -2158,6 +2362,19 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   // remounting, and focus is preserved.
   // ── P4 — the three numbers, computed once and read by both the header and the panel ──
   const exposureRows = useMemo(() => derivedRows.map(r => ({ ...r, livePrice: priceOf(r) })), [derivedRows, prices]);
+  // COMPUTED ONCE, USED IN BOTH — the tile reports the book, the sizer decides what may be added
+  // to it, and two separate totals on one panel would let it refuse a trade against a number it
+  // is not showing.
+  const bookX = useBookExposure(exposureRows, equityBase);
+  // OPENING fills only, flattened, for the sizer's intended-vs-actual reconciliation. A closing
+  // fill has no suggested size to have overridden — the same filter lib/decisions.js applies, and
+  // for the same reason: a sell is an open on a short and an exit on a long.
+  const openingFills = useMemo(() => derivedRows.flatMap(r => {
+    const opens = openSideFor(r?.derived?.side ?? r?.side);
+    return (r?.derived?.fills || [])
+      .filter(f => f?.side === opens && Number(f.qty) > 0 && (f.at || f.date))
+      .map(f => ({ symbol: r.symbol, qty: Number(f.qty), at: f.at || `${f.date}T00:00:00Z` }));
+  }), [derivedRows]);
   const coverage = useMemo(
     () => riskCoverage(exposureRows, { equityBase, rates: fxRates, base: baseCcy }),
     [exposureRows, equityBase, fxRates, baseCcy]);
@@ -2407,7 +2624,8 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           times, with one QQQ line carrying 2.37x on its own. Risk coverage above answers "what
           does a stop-out cost"; this answers "what am I carrying right now", and on this book the
           two differ by a factor of twelve. */}
-      <ExposureTile rows={exposureRows} nlv={equityBase} />
+      <PositionSizer book={bookX.book} nlv={equityBase} fills={openingFills} />
+      <ExposureTile book={bookX.book} err={bookX.err} />
 
       {/* ── P4 — RISK COVERAGE ──
           Three numbers, same units, never summed, and never collapsed into one. A single
