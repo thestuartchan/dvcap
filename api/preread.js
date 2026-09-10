@@ -565,7 +565,7 @@ async function gexBlock(liveSpot, tense = 'preview') {
       // final by 01:10 UTC and had not moved one series by 08:48. The expiries are matched to the
       // stored capture's so the two rungs describe the same book and the fall-through stays
       // comparable.
-      let settledAsOf = null, rowByStrike = null, rowAgreement = null;
+      let settledAsOf = null, rowByStrike = null, rowAgreement = null, rowDecay = null;
       try {
         const st = await settledGex(sym, { spot: spot > 0 ? spot : null, expiries: latest.expiries || null });
         if (st?.ok && st.row) {
@@ -583,6 +583,10 @@ async function gexBlock(liveSpot, tense = 'preview') {
           settledAsOf = st.iv?.asOf || new Date().toISOString();
           rowByStrike = st.byStrike || null;
           rowAgreement = wallAgreementBoth(st.grid, st.row.callWall, st.row.putWall);
+          // P8 — only the settled rung carries it. `repriced` and `stored` move yesterday's book
+          // to today's spot; the front expiry on those is a day that has already gone, and a
+          // decay reading built on it would describe an expiry that is already behind us.
+          rowDecay = st.decay || null;
         }
         else why[sym] = st?.reason || 'settledGex returned no row';
       } catch (e) { why[sym] = `settledGex threw — ${String(e?.message || e)}`; }
@@ -606,6 +610,8 @@ async function gexBlock(liveSpot, tense = 'preview') {
                   // carried both walls on 760 with put gamma 6.5x the call gamma there, and the
                   // brief rendered that as a tie.
                   byStrike: rowByStrike, agreement: rowAgreement,
+                  // P8 — what stops existing at the next expiry. Settled rung only; see above.
+                  decay: rowDecay,
                   // The book's own open-interest-weighted vol, for the expected-range line. It
                   // survives repricing unchanged — repriceStored moves the spot, not the surface.
                   iv: row.oiWeightedIv ?? latest.oiWeightedIv ?? null });

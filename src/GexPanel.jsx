@@ -89,6 +89,44 @@ const XSTATE = {
   unknown: { mark: "·", color: "muted" },
   context: { mark: "·", color: "muted" },
 };
+// ── P8 — WHAT EXPIRES ────────────────────────────────────────────────────────
+// Every level on this panel is a statement about positioning that has an expiry date, and the
+// panel never said when. A put wall carrying 6.5× the calls is a floor; the same wall at 62%
+// today's expiry is a floor until 4pm, and the two rendered identically.
+//
+// Computed in lib/gexDecay.js by running walls() and flipLevel() over the chain with the front
+// expiry removed — the exact book that survives, not an estimate from the summarised grid.
+function DecayTile({ d }) {
+  if (!d?.lines?.length) return null;
+  // A level that does not survive is the finding; one that does is a reassurance. Amber only for
+  // the first, so the tile is not permanently yellow.
+  const moves = !!(d.moves?.putWall?.material || d.moves?.callWall?.material || d.moves?.flip?.material);
+  return (
+    <div style={{ marginTop: 9, padding: "8px 10px", borderRadius: 7, lineHeight: 1.55,
+                  background: moves ? C.aBg : C.surf,
+                  border: "1px solid " + (moves ? C.aBdr : C.bdr) }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap", marginBottom: 3 }}>
+        <span style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>
+          What expires
+        </span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: C.lbl }}>
+          {d.front}{d.expiringToday ? " · today" : ""}
+          {d.rollingOff?.oi ? ` · ${(d.rollingOff.oi / 1000).toFixed(0)}k contracts` : ""}
+        </span>
+      </div>
+      {d.lines.map((l, i) => (
+        // The lines carry **bold** markers from the shared brief renderer; split on them so the
+        // panel and the brief cannot drift into two wordings of the same sentence.
+        <div key={i} style={{ fontSize: 11.5, color: moves ? C.amber : C.mid, marginTop: i ? 2 : 0 }}>
+          {String(l).split("**").map((part, j) => j % 2
+            ? <b key={j} style={{ color: C.mid }}>{part}</b>
+            : <span key={j}>{part}</span>)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CrossCheck({ x }) {
   if (!x) return null;
   if (!x.ok) {
@@ -210,6 +248,10 @@ export function GexPanel() {
       // overlay. A live read that silently dropped the walls would be a downgrade, not a refresh.
       if (hit) setLive({ row: { ...(data?.latest || {}), ...hit.row, asOf: new Date().toISOString() },
                          byStrike: hit.byStrike || null, grid: hit.grid || null,
+                         // P8 — what stops existing tonight. Only the settled recompute carries
+                         // it: a repriced row is yesterday's book at today's spot, so its front
+                         // expiry is a day that has already gone.
+                         decay: hit.decay || null,
                          mode: hit.mode || "fresh", note: hit.mode === "repriced" ? hit : null,
                          crossCheck: hit.crossCheck ?? null,
                          // Provenance, so the badge can say WHICH book this is rather than only
@@ -238,6 +280,7 @@ export function GexPanel() {
   const latest = live?.row || data?.latest || null;
   const strikeSource = live?.byStrike || data?.byStrike || null;
   const grid = live?.grid || data?.grid || null;
+  const decay = live?.decay || data?.decay || null;
   const fresh = ageOf(latest?.asOf || (latest?.date ? `${latest.date}T13:00:00Z` : null));
   const read = useMemo(
     () => gexRead({ row: latest, byStrike: strikeSource || [], grid, live: !!live }),
@@ -394,6 +437,7 @@ export function GexPanel() {
             {latest.flipFragile ? "⚠ " : ""}{latest.flipNote}
           </div>
         )}
+        <DecayTile d={decay} />
         <CrossCheck x={live?.crossCheck ?? data?.latest?.crossCheck ?? null} />
 
         {/* The open-to-close change, which the overwrite used to destroy. It is a read on positioning
