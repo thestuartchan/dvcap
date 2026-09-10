@@ -1,5 +1,7 @@
 // test/scenarios.test.mjs — magnitude, vintage, and how long a scenario has been saying this.
-import { evaluateScenarios, SCENARIO_CFG, ATR_GATE } from '../lib/scenarios.js';
+import { evaluateScenarios, SCENARIO_CFG, ATR_GATE,
+         PARTICIPATE_ATR, basketParticipation } from '../lib/scenarios.js';
+import { assertObservational } from '../lib/read.js';
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; console.log(`✅ ${n}`); } else { fail++; console.log(`❌ ${n}`); } };
@@ -298,13 +300,100 @@ const NOW = '2026-09-03T08:00:00Z';
   eq('an "any" break fires with the other leg missing', cp({ d5: +1.8, atr: 0.5 }).broken, true);
 }
 
-// C's falsifier is also a disjunction, and its second leg is categorical.
+// ── C: THE BASKET IS EVIDENCE, NOT PREMISE ──────────────────────────────────
+// C used to be the only scenario in the schema with a DISJUNCTIVE break — "30Y back below the
+// line OR the basket no longer selling together" — and it was the only one that misbehaved. Two
+// of two to enter and one of two to retire: on 2026-09-10 it retired itself three tenths of a
+// basis point from its own trigger, because XLP ticked up 0.41%.
 {
-  const c = (live) => evaluateScenarios(live).find(s => s.id === 'C');
-  const basketMixed = [{ name: 'TLT', dir: 'rising', date: '2026-09-09' }, { name: 'GLD', dir: 'falling', date: '2026-09-09' }, { name: 'IWM', dir: 'falling', date: '2026-09-09' }];
-  eq('the basket breaking up ends C', c({ basket: basketMixed }).broken, true);
-  const basketAll = basketMixed.map(b => ({ ...b, dir: 'falling' }));
-  eq('a basket still selling together does not', c({ basket: basketAll }).broken, false);
+  const c = (live) => evaluateScenarios(live, undefined, { now: '2026-09-10T15:20:00Z' }).find(s => s.id === 'C');
+  const through = { value: 5.62, atr: 0.0275, date: '2026-09-10', live: true };
+  const mixed = [{ name: 'TLT', changePct: -0.84, atr: 0.62 }, { name: 'GLD', changePct: -0.86, atr: 1.9 },
+                 { name: 'XLU', changePct: -0.54, atr: 0.9 }, { name: 'IWM', changePct: -0.85, atr: 1.3 },
+                 { name: 'XLP', changePct: +0.41, atr: 0.6 }];
+
+  // THE DEFECT ITSELF: a dispersing basket no longer retires the scenario.
+  eq('a dissenting basket member does not end C', c({ us30y: through, basket: mixed }).broken, false);
+  eq('and C confirms on its premise alone', c({ us30y: through, basket: mixed }).status, 'CONFIRMED');
+  // Symmetric now: one leg to enter, the same leg to retire.
+  eq('C enters on one condition', c({ us30y: through }).conditions.length, 1);
+  eq('and breaks on the same one', c({ us30y: through }).breakConditions.length, 1);
+  eq('as a conjunction, like the other five', c({ us30y: through }).breakMode, 'all');
+  ok('and the break tests the defining variable', /^30Y back below/.test(c({ us30y: through }).breakConditions[0].label));
+  // The premise failing still ends it.
+  eq('the 30Y back through the line ends C',
+     c({ us30y: { value: 5.10, atr: 0.0275, date: '2026-09-10', live: true } }).broken, true);
+
+  // ── CHARACTER, IN PLACE OF THE RETIREMENT ─────────────────────────────────
+  const ch = c({ us30y: through, basket: mixed }).character;
+  eq('the basket reads as a confidence state', ch.state, 'CHARACTER UNCONFIRMED');
+  eq('naming the dissenter rather than counting it', ch.dissent, ['XLP']);
+  ok('and saying it is dispersion, not a different character', /dispersion within the basket/.test(ch.note));
+  eq('with the count still shown', ch.display, '4/5 selling together');
+  eq('and nothing routed anywhere', ch.routesTo, null);
+
+  // WHICH NAME DISSENTS CARRIES DIFFERENT INFORMATION. Gold bid against duration is an inflation
+  // bid — a stagflationary character, not a hawkish one — and it belongs to the stagflation read
+  // rather than to C's obituary. A 2-of-5 count treats XLP and gold identically; this does not.
+  const goldBid = mixed.map(b => b.name === 'GLD' ? { ...b, changePct: +1.4 } : { ...b, changePct: b.name === 'XLP' ? -0.5 : b.changePct });
+  const gch = c({ us30y: through, basket: goldBid }).character;
+  eq('gold dissenting is named too', gch.dissent, ['GLD']);
+  ok('but read as a different character', /stagflationary rather than hawkish/.test(gch.note));
+  eq('and routed to the read that owns it', gch.routesTo, 'stagflation');
+  // Gold merely HOLDING while the rest sell is also not the hawkish signature.
+  const goldFlat = mixed.map(b => b.name === 'GLD' ? { ...b, changePct: +0.1 } : (b.name === 'XLP' ? { ...b, changePct: -0.5 } : b));
+  ok('gold holding is the same finding, said differently',
+     /sells gold on rising real yields/.test(c({ us30y: through, basket: goldFlat }).character.note));
+
+  // A unanimous basket confirms the character and says so.
+  const allIn = mixed.map(b => b.name === 'XLP' ? { ...b, changePct: -0.5 } : b);
+  const ach = c({ us30y: through, basket: allIn }).character;
+  eq('a unanimous basket confirms the character', ach.confirmed, true);
+  eq('with no state to flag', ach.state, null);
+
+  // ── PARTICIPATION IS A MAGNITUDE (entry side) ─────────────────────────────
+  // "Selling together" was every member's `dir` reading falling, and `dir` is the sign of the last
+  // tick: a name down 0.01% counted as taking part in a risk-parity unwind.
+  const tick = mixed.map(b => b.name === 'XLP' ? { ...b, changePct: -0.01 } : b);
+  eq('a name down a hundredth of a per cent is not participating',
+     c({ us30y: through, basket: tick }).character.dissent, ['XLP']);
+  ok('the participation floor is a named constant', PARTICIPATE_ATR > 0 && PARTICIPATE_ATR < ATR_GATE);
+  // A basket with no ATRs degrades to the sign test rather than going dark — marked, not silent.
+  const noScale = [{ name: 'TLT', dir: 'falling' }, { name: 'GLD', dir: 'falling' }, { name: 'IWM', dir: 'falling' }];
+  eq('an unscaled basket still reads', basketParticipation(noScale).allSelling, true);
+  ok('and says none of it was scaled', basketParticipation(noScale).participating.every(r => !r.scaled));
+  eq('too little of it readable, no verdict', basketParticipation([{ name: 'TLT', dir: 'falling' }]).allSelling, null);
+}
+
+// ── THE SCHEMA-WIDE RULE ────────────────────────────────────────────────────
+// A break condition may only reference the scenario's defining variable. Confirming evidence gets
+// a confidence state, never a retirement.
+{
+  const all = evaluateScenarios({});
+  // C was the only disjunction across two different KINDS of leg. CP's remaining "any" is two
+  // windows of ONE measure, which is a different thing.
+  const anyMode = all.filter(s => s.breakMode === 'any').map(s => s.id);
+  eq('exactly one scenario still breaks on a disjunction', anyMode, ['CP']);
+  ok('and both its legs are the same measure',
+     all.find(s => s.id === 'CP').breakConditions.every(c => /A\/H premium/.test(c.label)));
+  // Every break leg is a categorical or a magnitude on the scenario's own variable — none of them
+  // is a basket-style corroboration flag any more.
+  ok('no break leg is a corroboration flag', all.every(s => !s.breakConditions.some(c => /selling together|basket/i.test(c.label))));
+}
+
+// ── CP AUDIT: NOISE CANNOT RETIRE IT ────────────────────────────────────────
+// Asked for directly. CP breaks on a widening premium on EITHER horizon, so the question is
+// whether a 5d wiggle can retire it while the 20d is still compressing.
+{
+  const cp = (ah) => evaluateScenarios({ ah }).find(s => s.id === 'CP');
+  // 0.4×ATR of widening on the 5d against a compressing 20d: under the gate, no break.
+  eq('a 5d widening inside the noise floor cannot retire it',
+     cp({ d5: +0.2, d20: -2.4, atr: 0.5 }).broken, false);
+  ok('and the leg says why rather than reading as a clean miss',
+     /under 0\.5×ATR/.test(cp({ d5: +0.2, d20: -2.4, atr: 0.5 }).breakConditions[0].display));
+  // A real 5d widening still ends it — the short window leads the long one by construction, which
+  // is why the disjunction is the right shape here and was the wrong shape on C.
+  eq('a 5d widening clear of the floor does', cp({ d5: +1.8, d20: -2.4, atr: 0.5 }).broken, true);
 }
 
 // Every scenario has one. A board where half the cards can be disproved and half cannot is a board
@@ -342,7 +431,7 @@ const NOW = '2026-09-03T08:00:00Z';
   // THE COUNT GOES TOO. "0/2" on a stale print is worse than showing nothing.
   eq('the scenario reads UNSCORED', c.status, 'UNSCORED');
   eq('and the count is suppressed', c.countDisplay, null);
-  eq('an unscored leg is not counted as an unavailable one', c.unavailable, 1);   // the basket leg
+  eq('an unscored leg is not counted as an unavailable one', c.unavailable, 0);
   eq('it has its own count', c.unscored, 1);
   ok('and the header can say which leg and why', /30Y > 5.35%/.test(c.unscoredNote));
   // It cannot sort to the top either — that is the same false precision one step along.
@@ -460,6 +549,69 @@ const NOW = '2026-09-03T08:00:00Z';
   const wLeg = withheld.find(s => s.id === 'C').conditions.find(x => /^30Y > 5.35/.test(x.label));
   eq('a withheld mark is unscored', wLeg.unscored, true);
   ok('and carries no date-safe claim', !wLeg.dateSafe);
+}
+
+// ── DESCRIPTORS: WATCH · EXPECT · NOT ───────────────────────────────────────
+// The cards said what was being MEASURED — a name, a thesis, the trigger legs, what it would
+// mean, what would break it — and nothing about what to do with it. Three of the six are rates
+// scenarios that look alike at a glance and whose implications INVERT.
+{
+  const all = evaluateScenarios({});
+  const by = Object.fromEntries(all.map(s => [s.id, s]));
+
+  ok('every scenario carries a watch list', all.every(s => s.watchlist.length >= 3));
+  ok('and concrete expectations', all.every(s => s.expect.length >= 2 && s.expect.length <= 6));
+  ok('and at least one discriminator', all.every(s => s.notLines.length >= 1));
+
+  // WATCH IS NOT THE TRIGGER LEGS. The legs are the measurement, taken after the fact; the watch
+  // list is what moves first. A watch list that merely restates the legs adds nothing.
+  const legWords = (s) => s.conditions.map(c => c.label.toLowerCase()).join(' ');
+  ok('the watch list is not a restatement of the trigger legs',
+     all.every(s => s.watchlist.some(w => !legWords(s).includes(w.toLowerCase()))));
+  // `watch` (singular) is the stance card's single metric and must survive alongside it.
+  ok('the headline watch metric is untouched', all.every(s => typeof s.watch === 'string' && s.watch.length > 0));
+  ok('and is a different thing from the chip row', all.every(s => !Array.isArray(s.watch)));
+
+  // THE INVERSION THE BOARD COULD NOT SHOW. B says the dollar falls; C says it rises.
+  ok('B expects a weaker dollar', by.B.expect.some(e => /dollar DOWN/.test(e)));
+  ok('C expects a stronger one', by.C.expect.some(e => /dollar UP/.test(e)));
+  ok('B is a steepener', by.B.expect.some(e => /steepener/.test(e)));
+  ok('C is a flattener', by.C.expect.some(e => /flattener/.test(e)));
+  // D is the only one where gold sells too.
+  eq('exactly one scenario expects gold to sell', all.filter(s => s.expect.some(e => /gold sells/.test(e))).map(s => s.id), ['D']);
+
+  // EXPECT AUDITS ITSELF. C lists gold DOWN on rising real yields; on 2026-09-10 gold was not
+  // selling, which is the character problem stated by the card before anyone reasons about it.
+  ok('C expects gold to fall on rising real yields', by.C.expect.some(e => /gold DOWN on rising real yields/.test(e)));
+
+  // NOT names the ADJACENT scenario and the single test between them.
+  eq('C is discriminated against both its neighbours', by.C.notIds.sort(), ['B', 'D']);
+  ok('and names credit as the test against D', /credit/i.test(by.C.notLines[0]));
+  ok('D says the credit leg is the whole difference', /credit leg is the entire difference/.test(by.D.notLine));
+  ok('A is discriminated against B', by.A.notIds.includes('B'));
+  // KM and CP are discriminated against a STATE rather than a sibling card.
+  eq('KM has no sibling to be confused with', by.KM.notIds, []);
+  ok('but still names what it is not', /capital flight/.test(by.KM.notLine));
+
+  // THE LETTERS STAY, THE NAMES DESCRIBE THEMSELVES.
+  eq('the ids are the stable key', all.map(s => s.id).sort(), ['A', 'B', 'C', 'CP', 'D', 'KM']);
+  ok('and no name is opaque any more', !all.some(s => /PLAN WORKS|DURATION LEG BREAKS|HAWKISH RETURNS|^DISORDERLY$/.test(s.name)));
+  eq('C says what it is', by.C.name, 'FED PATH REPRICES HAWKISH');
+  eq('and D says what separates it', by.D.name, 'HAWKISH BREAK WITH CREDIT CRACK');
+}
+
+// ── OBSERVATION, NOT INSTRUCTION ────────────────────────────────────────────
+// Every string the board prints goes through the same assertion the READ does. A direction is an
+// observation; a direction with a verb attached is a trade.
+{
+  const all = evaluateScenarios({});
+  const strings = all.flatMap(s => [s.name, s.gloss, s.implication, s.falsifier, ...s.expect, ...s.notLines,
+                                    ...s.watchlist, s.character?.note].filter(Boolean));
+  ok('there is something to check', strings.length >= 60);
+  for (const t of strings) {
+    const v = assertObservational(t);
+    ok(`observational: "${String(t).slice(0, 34)}"`, v.ok);
+  }
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

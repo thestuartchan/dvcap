@@ -3586,6 +3586,67 @@ function PostureCard({ p: raw, regime = null }) {
   );
 }
 
+// WATCH / EXPECT / NOT for one scenario card. Module scope, not defined during render — a
+// component created inside a render is a new type each pass and remounts its own state, which
+// here is the open/closed toggle.
+const DescHead = ({ children }) => (
+  <span style={{ fontSize: 9.5, fontWeight: 800, color: C.muted, textTransform: "uppercase",
+                 letterSpacing: 0.5, minWidth: 46, flexShrink: 0, display: "inline-block" }}>{children}</span>
+);
+
+function ScenarioDescriptors({ s, toneCol }) {
+  // A live or NEAR scenario is the one being decided about, so it opens itself. DERIVED, not
+  // synced through an effect: an effect that mirrors a prop into state runs a second render every
+  // time the prop moves, and loses the reader's own click the moment the board refreshes.
+  const auto = !s.broken && (s.confirmed || s.near);
+  const [override, setOverride] = useState(null);
+  const open = override ?? auto;
+  if (!s.watchlist?.length && !s.expect?.length && !s.notLines?.length) return null;
+  return (
+    <div style={{ marginTop: 5 }}>
+      <button onClick={() => setOverride(!open)}
+        style={{ background: "none", border: "none", padding: 0, cursor: "pointer",
+                 fontSize: 9.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.5 }}>
+        {open ? "▾" : "▸"} watch · expect · not
+      </button>
+      {open && (
+        <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 4 }}>
+          {/* WATCH is deliberately NOT the trigger legs. The legs are the measurement, taken after
+              the fact; these are the instruments that move first. */}
+          {s.watchlist?.length > 0 && (
+            <div style={{ display: "flex", gap: 6, alignItems: "baseline", flexWrap: "wrap" }}>
+              <DescHead>watch</DescHead>
+              {s.watchlist.map(w => (
+                <span key={w} style={{ fontSize: 10, fontWeight: 700, color: C.mid, background: C.surf,
+                                       border: "1px solid " + C.bdr, borderRadius: 4, padding: "1px 5px" }}>{w}</span>
+              ))}
+            </div>
+          )}
+          {/* EXPECT audits itself: a scenario marked live while the tape does the opposite of what
+              this says is a visible sign the classification is wrong. */}
+          {s.expect?.length > 0 && (
+            <div style={{ display: "flex", gap: 6, alignItems: "baseline" }}>
+              <DescHead>expect</DescHead>
+              <div style={{ fontSize: 11, color: C.mid, fontWeight: 600, lineHeight: 1.5 }}>
+                {s.expect.map((e, i) => <div key={i}>· {e}</div>)}
+              </div>
+            </div>
+          )}
+          {/* The question a reader actually has is not "what is C" but "why is this C and not B". */}
+          {s.notLines?.length > 0 && (
+            <div style={{ display: "flex", gap: 6, alignItems: "baseline" }}>
+              <DescHead>not</DescHead>
+              <div style={{ fontSize: 11, color: toneCol, fontWeight: 600, lineHeight: 1.5 }}>
+                {s.notLines.map((n, i) => <div key={i}>{n}</div>)}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Part C — scenario board. Answers "which scenario am I in" at the top of the page, so the user
 // doesn't reassemble it from five category-bucketed sections. Each row: name, X/N met, and its
 // conditions with threshold + live value. Sorted server-side by consequence weight, then proximity.
@@ -3667,6 +3728,17 @@ function ScenarioBoard({ scenarios }) {
                     ⚠ UNSCORED · {s.unscored} leg{s.unscored === 1 ? "" : "s"}
                   </span>
                 )}
+                {/* CHARACTER — confirming evidence that is NOT corroborating. It used to be half
+                    of C's disjunctive break, which retired the scenario three tenths of a basis
+                    point from its own trigger because XLP ticked up. Evidence weakening lowers
+                    confidence; it does not retire a scenario. */}
+                {s.character?.state && !s.broken && (
+                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: C.amber,
+                                 background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 4, padding: "1px 5px" }}
+                    title={s.character.note || undefined}>
+                    ⚠ {s.character.state}
+                  </span>
+                )}
                 {/* NEAR — an unmet leg inside half an ATR of its own line. The state the board
                     could not express: a scenario six tenths of a basis point away rendered
                     identically to one nowhere near. */}
@@ -3723,6 +3795,19 @@ function ScenarioBoard({ scenarios }) {
                   );
                 })}
               </div>
+              {/* The character reading, where a scenario has one. Named dissent, not a count:
+                  gold bid against duration is an inflation bid and reads stagflationary; XLP
+                  dissenting is dispersion. "4/5" says the same thing about both. */}
+              {s.character && s.character.display && s.character.display !== "n/a" && (
+                <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.45,
+                              color: s.character.confirmed ? C.mid : C.amber }}>
+                  {s.character.confirmed ? "✓" : "⚠"} {s.character.label} — <b>{s.character.display}</b>
+                  {s.character.dissent?.length > 0 && <> · {s.character.dissent.join(", ")} not participating</>}
+                  {s.character.note && (
+                    <div style={{ color: C.lbl, fontWeight: 600, marginTop: 1 }}>{s.character.note}</div>
+                  )}
+                </div>
+              )}
               {/* A2 — the consequence, AND ONLY WHERE THE SCENARIO HOLDS.
                   This used to render on every card, muted when unconfirmed, which made it a
                   standing assertion rather than a conclusion. On the 2026-09-03 board every
@@ -3772,6 +3857,16 @@ function ScenarioBoard({ scenarios }) {
                   )}
                 </div>
               )}
+              {/* ── WATCH · EXPECT · NOT ──────────────────────────────────────────────
+                  The cards said what was being MEASURED and nothing about what to do with it.
+                  Three of the six are rates scenarios whose implications INVERT — B says the
+                  dollar falls, C says it rises; B favours banks and value, C sells everything
+                  that competes with cash; D is C plus a credit crack and the only one where gold
+                  sells too — and none of that was extractable from the board.
+
+                  Open by default on the scenario that is live or NEAR, because that is the one
+                  the reader is deciding about; everything else is one click away. */}
+              <ScenarioDescriptors s={s} toneCol={toneCol} />
               {s.qualifier && (
                 <div style={{ marginTop: 4, fontSize: 10.5, color: C.amber, lineHeight: 1.5 }}>
                   ⚠ {s.qualifier}
