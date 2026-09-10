@@ -282,25 +282,10 @@
     }
   ],
   "intervention": {
-    "legacy": {
-      "active": false,
-      "since": null,
-      "note": null,
-      "clearedAt": "2026-09-03T08:25:46.706Z",
-      "previousSince": "2026-08-21"
-    },
-    "regimes": {
-      "JPY": {
-        "currency": "JPY",
-        "grade": "SUSPECTED",
-        "since": "2026-08-21",
-        "review": "2026-09-18",
-        "defendedLevel": null,
-        "note": "SUSPECTED, not CONFIRMED: read off price action. CONFIRMED needs an official statement or the Japan MoF monthly intervention data. Review at the 2026-09-18 BOJ."
-      }
-    },
-    "events": {},
-    "context": {}
+    "active": true,
+    "since": "2026-09-10",
+    "note": null,
+    "setAt": "2026-09-10T08:36:22.383Z"
   },
   "recession": {},
   "southbound": {
