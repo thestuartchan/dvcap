@@ -497,5 +497,53 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
   }
 }
 
+
+// ── 💵 THE CURVE HAS TWO HALVES ──────────────────────────────────────────────
+// The line carried 2yr and 10yr and read the shape off that pair alone, so a curve steepening at
+// the LONG end — a different fact, with a different cause — was invisible to it. The 30Y was
+// already fetched, already carried a 10s30s delta in lib/assemble.js and was already a scenario
+// condition; it simply never reached the brief.
+{
+  const { ratesLine, LONG_END_LED_PP, plainTripwire } = await import('../lib/briefSections.js');
+  const { SCENARIO_CFG } = await import('../lib/scenarios.js');
+  const { gaugesLeaning } = await import('../lib/gates.js');
+
+  ok('the 30Y reaches the line', /30yr 5.25%/.test(ratesLine({ us2y: 4.39, us10y: 4.8, us30y: 5.25 })));
+  // A LONG-END-LED STEEPENING IS NOT A POLICY CALL. 2s10s is what the market has priced into the
+  // next couple of years; 10s30s is the price of holding duration at all.
+  ok('a long end steeper than the front is called out',
+     /steepest part is the long end/.test(ratesLine({ us2y: 3.0, us10y: 3.4, us30y: 4.4 })));
+  ok('and is not described as a view on policy',
+     /rather than a view on where policy goes/.test(ratesLine({ us2y: 3.0, us10y: 3.4, us30y: 4.4 })));
+  ok('a front-led one says so instead',
+     /policy-sensitive front end/.test(ratesLine({ us2y: 3.0, us10y: 4.0, us30y: 4.1 })));
+  // 10s30s +45bp against 2s10s +41bp is a four-basis-point difference and not a story. The
+  // threshold has to stay quiet there, or the line invents a narrative every single day.
+  ok('a four-basis-point difference is not a story',
+     /the normal way round/.test(ratesLine({ us2y: 4.39, us10y: 4.8, us30y: 5.25 })));
+  ok('the threshold is stated', LONG_END_LED_PP > 0);
+  // An inversion outranks everything: it is the rarer and larger fact.
+  ok('an inverted front end still leads', /the unusual way round/.test(ratesLine({ us2y: 4.6, us10y: 4.4, us30y: 4.9 })));
+  ok('two legs still render without the third', /2yr 4.39%/.test(ratesLine({ us2y: 4.39, us10y: 4.8 })));
+  ok('and a lone 30Y does not claim a shape', !/way round|steepest/.test(ratesLine({ us30y: 5.25 })));
+  eq('no yields, no line', ratesLine({}), null);
+
+  // ── THE TRIPWIRE, AT THE SCENARIO ENGINE'S OWN NUMBER ──────────────────────
+  // SCENARIO_CFG.hawkish30y has sat at 5.35 all along and nothing told a reader. On the capture
+  // date the yield was 5.25 — ten basis points away.
+  const wires = gaugesLeaning({ us30y: { value: 5.25, deltaBps: 1 } }).items.map(i => i.name);
+  ok('the long end is one of the gauges', wires.some(n => /^30Y >/.test(n)));
+  // ONE NUMBER, NOT TWO COPIES. A restated threshold is a threshold that can drift, and the
+  // failure is the gauge and the scenario describing the same level at different values.
+  ok('and it carries the scenario engine’s threshold', wires.some(n => n === `30Y > ${SCENARIO_CFG.hawkish30y}%`));
+  eq('below the level it has not fired', gaugesLeaning({ us30y: { value: 5.25 } }).items.find(i => /^30Y >/.test(i.name)).tripped, false);
+  eq('above it, it has', gaugesLeaning({ us30y: { value: 5.40 } }).items.find(i => /^30Y >/.test(i.name)).tripped, true);
+  // No print is unavailable, not calm — the same rule every other gauge here follows.
+  eq('no print is not a passing reading', gaugesLeaning({}).items.find(i => /^30Y >/.test(i.name)).tripped, null);
+  // And the live threshold survives into the plain-English name rather than being hardcoded there.
+  eq('the gloss carries the live level', plainTripwire({ name: '30Y > 5.35%', tripped: false }).name,
+     'The 30-year yield clears 5.35%');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
