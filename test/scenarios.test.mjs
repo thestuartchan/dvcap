@@ -422,5 +422,45 @@ const NOW = '2026-09-03T08:00:00Z';
   ok('BROKEN still sorts below a live finding', both.findIndex(s => s.broken) === -1 || both[0].broken === false);
 }
 
+// ── THE VETO THAT WOULD HAVE DISABLED THE INSURANCE SCENARIO ────────────────
+// D's legs are `30Y > 5.5%` and `HY OAS > 3.5%`. Once the 30Y comes off a live feed and HY OAS
+// still cannot (ICE publishes it end-of-day through FRED and there is no intraday spread feed
+// here), the two observation dates disagree EVERY DAY by construction. Under the blanket
+// all-dates-must-agree rule D would read UNVERIFIED forever — the scenario that exists for the
+// worst day, unable to confirm however far through both lines the market went.
+//
+// A published level mark has already answered the vintage question in its sharpest form: could
+// the age of this observation have carried the value across this line? No, or there would be no
+// mark. It does not need the blanket veto on top.
+{
+  const RENDER = '2026-09-11T14:00:00Z';
+  const cracked = evaluateScenarios({
+    us30y: { value: 5.62, atr: 0.0275, date: '2026-09-11', live: true, liveAsOf: '2026-09-11 13:58 UTC' },
+    oas:   { value: 3.90, atr: 0.0231, date: '2026-09-10' },   // yesterday's print, no live feed exists
+  }, undefined, { now: RENDER });
+  const d = cracked.find(s => s.id === 'D');
+  eq('both legs are through their lines', d.met, 2);
+  eq('and the scenario confirms', d.status, 'CONFIRMED');
+  eq('rather than being vetoed on a date disagreement it cannot avoid', d.unverified, false);
+
+  // THE PROTECTION IS NOT WEAKENED. A move condition composed across two different days is a
+  // statement about the release calendar, and that veto stands — it is what the machinery was
+  // built for: a TLT quote twelve hours old validating a thesis against rate cards stale to 09-01.
+  const mixedDays = evaluateScenarios({
+    tlt: { value: -1.4, atr: 0.62, date: '2026-09-11' },
+    tenThirtyDeltaBps: { value: 6, atr: 1.15, date: '2026-09-08' },
+  }, undefined, { now: RENDER });
+  eq('a move condition still cannot be composed across days', mixedDays.find(s => s.id === 'B').unverified, true);
+  ok('and it says which dates disagree', /2026-09-08/.test(JSON.stringify(mixedDays.find(s => s.id === 'B').vintage)));
+
+  // AND A LEVEL MARK THE GUARD WITHHELD IS NOT DATE-SAFE — it never got a mark, so it never
+  // answered the question.
+  const withheld = evaluateScenarios({ us30y: { value: 5.25, atr: 0.0275, date: '2026-09-09' } },
+    undefined, { now: RENDER });
+  const wLeg = withheld.find(s => s.id === 'C').conditions.find(x => /^30Y > 5.35/.test(x.label));
+  eq('a withheld mark is unscored', wLeg.unscored, true);
+  ok('and carries no date-safe claim', !wLeg.dateSafe);
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
