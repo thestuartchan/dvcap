@@ -32,6 +32,8 @@ import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf,
 import { post, webhookFromEnv } from '../lib/discord.js';
 import { refresh } from './tradecard.js';
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
+import { fetchCboeGreeks } from '../lib/cboe.js';
+import { parseOptionSymbol, contractKey, TREND_WINDOW } from '../lib/bookExposure.js';
 
 // The same optional secret the card endpoint uses, so the scheduler carries one key rather than
 // two. Unset leaves both open, which is the state the project starts in.
@@ -203,6 +205,77 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   return result;
 }
 
+// ── EXPOSURE: PUBLISHED GREEKS FOR CONTRACTS THE BOOK HOLDS ──────────────────
+// GATED, and it lives on this route rather than the public /api/gex for one reason: the LIST of
+// contracts asked about is itself a statement about the book. /api/gex is declared public because
+// it carries "no account state", and a request that names the exact strikes someone holds would
+// quietly stop being true.
+//
+// Nothing about the position goes out. The caller sends contract identifiers; the response is the
+// exchange's published delta, gamma, theta and vega plus the underlying spot. Quantities, cost and
+// account value never leave the console — the arithmetic that turns greeks into a book total
+// happens in the browser, on the console's own rows.
+export const EXPOSURE_TREND_KEY = 'dvcap:exposure:trend:v1';
+const MAX_CONTRACTS = 60;
+
+export async function exposureGreeks(spec = '') {
+  // "QQQ|2026-10-16|C|730,AVGO|2026-10-16|C|390" — or bare symbols, which parse to the same key.
+  const keys = [...new Set(String(spec || '').split(',').map(x => x.trim()).filter(Boolean))].slice(0, MAX_CONTRACTS);
+  const parsed = keys.map(k => {
+    const parts = k.split('|');
+    if (parts.length === 4) {
+      const strike = Number(parts[3]);
+      if (!Number.isFinite(strike)) return null;
+      return { root: parts[0].toUpperCase(), expiry: parts[1],
+               type: parts[2].toUpperCase() === 'C' ? 'call' : 'put', strike };
+    }
+    return parseOptionSymbol(k);
+  }).filter(Boolean);
+  if (!parsed.length) return { ok: false, reason: 'no parseable contracts requested' };
+
+  // One CBOE request per ROOT, not per contract: the delayed-quote payload is the whole chain.
+  const byRoot = new Map();
+  for (const c of parsed) {
+    if (!byRoot.has(c.root)) byRoot.set(c.root, []);
+    byRoot.get(c.root).push(contractKey(c));
+  }
+  const results = await Promise.all([...byRoot.entries()].map(([root, want]) => fetchCboeGreeks(root, want)));
+  const greeks = {}, spots = {}, failed = [];
+  let asOf = null;
+  for (const r of results) {
+    if (!r.ok) { failed.push({ symbol: r.symbol, reason: r.reason }); continue; }
+    Object.assign(greeks, r.greeks);
+    if (r.spot != null) spots[r.symbol] = r.spot;
+    // The OLDEST stamp across the roots wins — a tile cannot be fresher than the stalest leg in it.
+    if (r.asOf && (asOf == null || r.asOf < asOf)) asOf = r.asOf;
+  }
+  const missing = parsed.map(contractKey).filter(k => !greeks[k]);
+  return {
+    ok: true, greeks, spots, asOf, failed, missing,
+    requested: parsed.length, matched: Object.keys(greeks).length,
+    source: 'CBOE delayed quotes — published greeks, not modelled',
+  };
+}
+
+// The 20d series. One row per date, and a re-post on the same date REPLACES rather than appends —
+// the panel recomputes on every refresh and a day would otherwise carry twenty readings.
+export async function exposureTrend(point = null) {
+  if (!kvConfigured()) return { ok: false, reason: 'Redis not configured' };
+  const stored = (await kvGetJson(EXPOSURE_TREND_KEY)) || { rows: [] };
+  const rows = Array.isArray(stored.rows) ? stored.rows : [];
+  if (point && point.date && Number.isFinite(Number(point.ratio))) {
+    const keep = rows.filter(r => r?.date !== point.date);
+    keep.push({ date: point.date, ratio: +Number(point.ratio).toFixed(2),
+                deltaNotional: Number.isFinite(Number(point.deltaNotional)) ? Math.round(Number(point.deltaNotional)) : null,
+                at: new Date().toISOString() });
+    keep.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const trimmed = keep.slice(-(TREND_WINDOW * 3));
+    await kvSetJson(EXPOSURE_TREND_KEY, { rows: trimmed });
+    return { ok: true, rows: trimmed, wrote: true };
+  }
+  return { ok: true, rows, wrote: false };
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') { res.status(405).json({ error: 'method not allowed' }); return; }
   if (!(await authorised(req))) { res.status(401).json({ error: 'unauthorised', why: refusalReason(req) }); return; }
@@ -224,6 +297,25 @@ export default async function handler(req, res) {
   const since = /^\d{4}-\d{2}-\d{2}$/.test(sinceQ) ? sinceQ : null;
   const fromQ = String(req.query?.from ?? '').trim();
   const from = /^\d{4}-\d{2}-\d{2}$/.test(fromQ) ? fromQ : null;
+  // ?greeks=QQQ|2026-10-16|C|730,... — published greeks for contracts the book holds, plus the
+  // 20d exposure series. Read-only unless a point is posted. See exposureGreeks above for why it
+  // is here and not on the public chain route.
+  const greeksQ = String(req.query?.greeks ?? '').trim();
+  if (greeksQ) {
+    try {
+      // Vercel parses a JSON body into an object; a client that sends a different content-type
+      // leaves it a string, and a silently ignored point is a series that never populates.
+      let body = req.body;
+      if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = null; } }
+      const point = req.method === 'POST' && body && typeof body === 'object' ? body.point : null;
+      const [g, t] = await Promise.all([exposureGreeks(greeksQ), exposureTrend(point || null)]);
+      res.status(200).json({ ...g, trend: t.ok ? t.rows : [], trendWrote: !!t.wrote });
+    } catch (e) {
+      console.error('exposure-greeks', e);
+      res.status(200).json({ ok: false, reason: String(e?.message || e) });
+    }
+    return;
+  }
   try {
     res.status(200).json(await sync(origin, { apply, ack, trades, from, peek, unrecorded, since }));
   } catch (e) {
