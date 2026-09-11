@@ -141,8 +141,19 @@ function displayQuote(q, region, now = new Date()) {
   return { price: q.price, changePct: q.changePct, tail: freshLabel(q.sym, q, now.getTime()) };
 }
 
+// ── THE OPERATOR'S OWN DATA IS AN INPUT, NOT AN AMBIENT FACT ─────────────────
+// KOFIA_STORE is a file in this repository that the operator writes to from the console, and the
+// brief read it straight off the module import. That made every golden a hostage to a hand entry:
+// the Korea flow read and the retail-absorption tripwire are computed from it, so a manual entry
+// at 13:29Z on 2026-09-11 changed the rendered asia brief, failed the golden, failed `prebuild`,
+// and failed the Vercel deploy — for three commits, none of which had touched any of it.
+//
+// It is a parameter now. Production passes nothing and gets the file, exactly as before; the
+// golden suite passes test/fixtures-kofia.json, frozen at the fixtures' own capture instant, so
+// the brief is rendered from ONE set of inputs and a hand entry can no longer move it.
 export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox, opts = {}) {
-  const { leaning = null, composed = null, foreign = {}, prevSnap = null, now = new Date() } = opts;
+  const { leaning = null, composed = null, foreign = {}, prevSnap = null, now = new Date(),
+          kofia = KOFIA_STORE } = opts;
   const R = UNIVERSE[region];
   const names = R.names;
 
@@ -182,7 +193,7 @@ export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, 
   // four-line block of labels and numbers. Each is now its own named line in BACKDROP with the
   // gauge described rather than abbreviated — see ratesLine / creditLine / oilLine / volLine.
 
-  const koreaLines = buildKorea(regime.korea);
+  const koreaLines = buildKorea(regime.korea, kofia);
 
   // regimeLines restated the credit state, the oil label and the Korea cluster that MACRO and
   // KOREA STRESS had already printed a few lines above. The two classifications that were NOT
@@ -472,7 +483,7 @@ export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, 
       // which is the part not deducible from the figures shown — gets the implication marker.
       const state = String(k.note || '').split(' — ')[0].trim() || k.cluster || null;
       out.push(`🇰🇷 **Korea:** ${won}${vol}${state ? ` — ${state}` : ''}`);
-      const impl = koreaFlowImplication(KOFIA_STORE.latest || {});
+      const impl = koreaFlowImplication(kofia?.latest || {});
       if (impl) out.push(`👉 ${impl}`);
     }
     return backdropSection(out);
@@ -507,7 +518,7 @@ export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, 
 }
 
 // Korea-stress cluster block (Asia only). null when there's no Korea gate.
-function buildKorea(k) {
+function buildKorea(k, kofia = KOFIA_STORE) {
   if (!k) return null;
   const { won, vol } = k;
   const wonLine = won.level != null
@@ -520,7 +531,7 @@ function buildKorea(k) {
     : '• **VKOSPI fut** — no print';
   // KOFIA manual-entry gate: margin loans (신용융자) — the deleveraging tell that replaced
   // 7709 — plus investor cash and KR 3Y yields. Latest from data/korea_kofia.json (server).
-  const kf = KOFIA_STORE.latest || {};
+  const kf = kofia?.latest || {};
   const kfLine = (key, label) => { const s = kofiaStoredLine(key, kf[key]); return s ? `• **${label}** ${s}` : null; };
   const yields = (kf.kr3yGovt || kf.kr3yCorp)
     ? `• **KR 3Y** ${kf.kr3yGovt ? `govt ${kf.kr3yGovt.value}%` : ''}${kf.kr3yGovt && kf.kr3yCorp ? ' · ' : ''}${kf.kr3yCorp ? `corp ${kf.kr3yCorp.value}%` : ''}${kf.kr3yGovt?.asOf ? ` · ${kf.kr3yGovt.asOf.slice(5)}` : ''}`

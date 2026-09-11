@@ -36,7 +36,16 @@ import { buildBlocks, assembleDiscord } from '../api/preread.js';
 import { UNIVERSE } from '../data/universe.js';
 import { gaugesLeaning } from '../lib/gates.js';
 import { composeRead } from '../lib/read.js';
-import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
+// ── FROZEN, BECAUSE THE OPERATOR WRITES TO THE LIVE ONE ──────────────────────
+// This was `data/korea_kofia.json` — a file the operator edits from the console several times a
+// week. The Korea flow read and the retail-absorption tripwire are computed from it, so a hand
+// entry changed the rendered brief with no code change behind it: on 2026-09-11 one did, the asia
+// golden failed, `prebuild` failed, and the Vercel deploy failed for three commits in a row, none
+// of which had touched Korea. A golden whose input is a live file is not a golden.
+//
+// Frozen at the fixtures' own capture instant, so every input to the rendered brief comes from
+// one moment.
+import KOFIA_STORE from './fixtures-kofia.json' with { type: 'json' };
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -78,7 +87,7 @@ for (const region of REGIONS) {
   }, { region, now: NOW });
   const blocks = buildBlocks(region, s.quotes, s.indices, s.macro, s.regime, s.cal, s.cross, s.sox,
     { leaning, composed, auctions: s.auctions || null, monetization: s.monetization || null,
-     handoff: s.handoff || null, smicAH: s.smicAH || null, foreign: {}, now: NOW });
+     handoff: s.handoff || null, smicAH: s.smicAH || null, foreign: {}, kofia: KOFIA_STORE, now: NOW });
   const text = assembleDiscord(region, UNIVERSE[region].label, blocks)
     // The header carries the render time and is the one line that cannot be frozen.
     .replace(/· \d{4}-\d{2}-\d{2} \d{2}:\d{2}Z\*\*/, '· <TIME>**');
@@ -138,13 +147,42 @@ for (const region of REGIONS) {
   const stale = buildBlocks('asia', s.quotes, s.indices, s.macro,
     { ...s.regime, staleWhileOpen: true }, s.cal, s.cross, s.sox,
     { leaning: s.leaning, composed: s.composed, auctions: s.auctions || null, monetization: s.monetization || null,
-     handoff: s.handoff || null, smicAH: s.smicAH || null, foreign: {}, now: NOW });
+     handoff: s.handoff || null, smicAH: s.smicAH || null, foreign: {}, kofia: KOFIA_STORE, now: NOW });
   // Only the BACKDROP warning is under test here, and it does not read the gauges.
   rendered._staleWhileOpen = stale.backdropLines || '';
   ok('an open market on stale prints says so', /⚠️ \*\*Equity prints are stale\*\*/.test(stale.backdropLines));
   // AND THE CUTS GO QUIET. The warning is only half the behaviour; the other half is that the
   // sector reads computed from those prints must not still be printed beside it as if current.
   ok('and the sector cuts it invalidates are suppressed', !/Inside chips|AI vs the rest/.test(stale.backdropLines));
+}
+
+// ── THE HAND ENTRY IS AN INPUT, AND THE GOLDEN PROVES IT ────────────────────
+// The brief read data/korea_kofia.json straight off its module import, so a hand entry from the
+// console changed the rendered brief with no code change behind it — and on 2026-09-11 one did:
+// the asia golden failed, `prebuild` failed with it, and the Vercel deploy failed for three
+// commits in a row, none of which had touched Korea.
+//
+// Passing the store in is only half a fix; the other half is proving the import is no longer read
+// behind it. Two different stores must produce two different briefs, or the parameter is
+// decoration and the file is still being read underneath.
+{
+  const fx = JSON.parse(readFileSync(new URL('./fixtures-preread-asia.json', import.meta.url), 'utf8'));
+  const s = fx.state, NOW = new Date(fx.capturedAt);
+  const build = (kofia) => buildBlocks('asia', s.quotes, s.indices, s.macro, s.regime, s.cal, s.cross, s.sox,
+    { leaning: s.leaning, composed: s.composed, auctions: s.auctions || null, monetization: s.monetization || null,
+      handoff: s.handoff || null, smicAH: s.smicAH || null, foreign: {}, kofia, now: NOW });
+
+  // Foreigners net BUYERS instead of sellers — the one input the flow read turns on.
+  const flipped = JSON.parse(JSON.stringify(KOFIA_STORE));
+  const fn = flipped.latest?.foreignNet;
+  ok('the frozen store carries the foreign flow the read turns on', fn && Number.isFinite(+fn.value));
+  fn.value = Math.abs(+fn.value);
+  const inst = flipped.latest?.instNet; if (inst) inst.value = Math.abs(+inst.value);
+
+  const a = build(KOFIA_STORE).backdropLines, b = build(flipped).backdropLines;
+  ok('the frozen store reads foreigners as sellers', /net sellers|Risk-OFF/.test(a));
+  ok('and the flipped one does not', !/net sellers/.test(b));
+  ok('so the store really is the input, not the file behind it', a !== b);
 }
 
 // ── NO LINE SHIPS UNRENDERED ─────────────────────────────────────────────────
@@ -217,7 +255,7 @@ for (const region of REGIONS) {
   const build = (regime) => buildBlocks('asia', s.quotes, s.indices, s.macro, regime, s.cal, s.cross, s.sox,
     { leaning: s.leaning, composed: s.composed, auctions: s.auctions || null,
       monetization: s.monetization || null, handoff: s.handoff || null, smicAH: s.smicAH || null,
-      foreign: {}, now: NOW }).backdropLines;
+      foreign: {}, kofia: KOFIA_STORE, now: NOW }).backdropLines;
 
   // ── THE FIXTURE MUST CARRY THE SHAPE PRODUCTION HANDS OVER ────────────────
   // This one got through. The China line reads `smicAH.premium`; lib/smicah.js's fetch returns
