@@ -1,5 +1,5 @@
 // Regression tests for lib/positions.js — fill-based accounting for scaled spot/swing positions.
-import { splitIntoTrades, collapseFills, derivePosition, positionPnl, levelHit, distancePct, summarize, realizedCurve, applyRolls } from '../lib/positions.js';
+import { splitIntoTrades, collapseFills, derivePosition, positionPnl, levelHit, distancePct, summarize, realizedCurve, applyRolls, oversellSplit } from '../lib/positions.js';
 let pass=0,fail=0;
 const eq=(n,g,w)=>{const ok=JSON.stringify(g)===JSON.stringify(w);console.log(`${ok?'✅':'❌'} ${n}`+(ok?'':`  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`));ok?pass++:fail++;};
 
@@ -413,6 +413,63 @@ eq('negative quotes are refused too', positionPnl(zeroed, -5).marketValue, null)
     { id: 'Two', symbol: 'L', rolledFrom: 'L', derived: derivePosition([{ side: 'buy', qty: 1, price: 12, date: '2026-02-01' }]) }]);
   eq('only one row may claim a leg', [one.derived.rollAdjusted, two.derived.rollAdjusted], [true, undefined]);
   eq('and the winner is adjusted by it', one.derived.avgCost, 11);
+}
+
+
+// ── SELLING MORE THAN YOU HOLD ───────────────────────────────────────────────
+// AAPU, 2026-09-11: a 300-share exit went out as 400 by mistake and was bought back the same
+// minute. Entered as it happened on one long row, derivePosition clamps the sell to 300 and then
+// reads the 100-share buy-back as a NEW OPENING BUY — leaving a phantom 100-share long nobody
+// held, at a cost basis nobody paid. The clamp is right for a typo and wrong for this.
+{
+  const base = [
+    { side: 'buy', qty: 1100, price: 39.39, date: '2026-09-09' },
+    { side: 'sell', qty: 800, price: 40.00, date: '2026-09-09' },
+  ];
+  const long300 = derivePosition(base, { side: 'long' });
+  eq('the position to oversell is 300', long300.qty, 300);
+
+  // THE FAILURE, PINNED. If this ever stops being true the split has stopped being necessary.
+  const naive = derivePosition([...base,
+    { side: 'sell', qty: 400, price: 44.12, date: '2026-09-11' },
+    { side: 'buy', qty: 100, price: 44.33, date: '2026-09-11' }], { side: 'long' });
+  eq('entered on one row it leaves a phantom long', naive.qty, 100);
+  eq('at a basis nobody paid', naive.avgCost, 44.33);
+  eq('and it warns, which is the only reason anyone would notice', naive.warnings.some(w => /exceeds the 300 held/.test(w)), true);
+
+  const sp = oversellSplit(long300, { side: 'sell', qty: 400 });
+  eq('the close is the size actually held', sp.closeQty, 300);
+  eq('the excess is the rest', sp.excessQty, 100);
+  eq('and it opens the OTHER way', sp.side, 'short');
+  eq('whose opening fill is a sell', sp.fillSide, 'sell');
+
+  // THE WHOLE POINT: split, the two rows carry the prices actually traded and the P&L is right.
+  const closed = derivePosition([...base, { side: 'sell', qty: 300, price: 44.12, date: '2026-09-11' }], { side: 'long' });
+  const excess = derivePosition([{ side: 'sell', qty: 100, price: 44.12, date: '2026-09-11' },
+                                 { side: 'buy', qty: 100, price: 44.33, date: '2026-09-11' }], { side: 'short' });
+  eq('the long closes flat', closed.qty, 0);
+  eq('the excess row closes flat too', excess.qty, 0);
+  eq('and the mistake costs what it cost', excess.realized, -21);
+  // Identical to the net-price shortcut, which is the arithmetic check that the split invents nothing.
+  const net = derivePosition([...base, { side: 'sell', qty: 300, price: 44.05, date: '2026-09-11' }], { side: 'long' });
+  eq('total realised matches the net-price entry to the cent', +(closed.realized + excess.realized).toFixed(2), net.realized);
+
+  // ── WHAT IS NOT A SPLIT ────────────────────────────────────────────────────
+  eq('closing exactly what is held is not an oversell', oversellSplit(long300, { side: 'sell', qty: 300 }), null);
+  eq('nor is closing less', oversellSplit(long300, { side: 'sell', qty: 100 }), null);
+  // OPENING MORE IS NEVER OVERSELLING — a bigger buy on a long is just a bigger position.
+  eq('a buy on a long is not an oversell at any size', oversellSplit(long300, { side: 'buy', qty: 9999 }), null);
+  // NOTHING OPEN IS A DIFFERENT QUESTION, deliberately not answered: a sell against a flat row is
+  // either a short on the wrong row or a position never recorded, and guessing creates an inversion.
+  eq('a flat row is left alone', oversellSplit(derivePosition([], { side: 'long' }), { side: 'sell', qty: 100 }), null);
+  eq('and a missing quantity is not a split', oversellSplit(long300, { side: 'sell', qty: null }), null);
+
+  // IT WORKS THE OTHER WAY ROUND TOO. Covering more than you are short opens a long.
+  const short100 = derivePosition([{ side: 'sell', qty: 100, price: 44.12, date: '2026-09-11' }], { side: 'short' });
+  const sc = oversellSplit(short100, { side: 'buy', qty: 250 });
+  eq('over-covering a short closes the 100', sc.closeQty, 100);
+  eq('and opens a long with the rest', [sc.excessQty, sc.side, sc.fillSide], [150, 'long', 'buy']);
+  eq('a sell on a short is not an oversell', oversellSplit(short100, { side: 'sell', qty: 9999 }), null);
 }
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);

@@ -21,7 +21,7 @@ import {
 import { C } from "./theme.js";
 import { SLabel, Card, Btn } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
-import { derivePosition, applyRolls, splitIntoTrades, collapseFills, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, realizedCurve } from "../lib/positions.js";
+import { derivePosition, applyRolls, splitIntoTrades, collapseFills, oversellSplit, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, realizedCurve } from "../lib/positions.js";
 import { sideOf, isShort, openSideFor, closeSideFor, geometryCheck, levelVocab, fillVerb, SIDES, SIDE_LABEL, DEFAULT_SIDE } from "../lib/side.js";
 import { fmtPrice } from "../lib/price.js";
 import { archivePeriods, hiddenSummary, GRAINS } from "../lib/archive.js";
@@ -125,6 +125,7 @@ const FillForm = ({ ctx, symbol, row }) => {
     derived: row.derived, pct: row.pnl?.unrealizedPct,
     side: fillFor.side, fillPrice: fillFor.price,
   }) : null;
+  const oversell = row ? oversellSplit(row.derived, { side: fillFor.side, qty: +fillFor.qty }) : null;
   return (
 
       <div style={{ marginTop: 10, padding: "11px 12px", borderRadius: 9, background: C.bg, border: "1.5px solid " + (fillFor.side === "buy" ? C.green : C.blue) }}>
@@ -164,6 +165,9 @@ const FillForm = ({ ctx, symbol, row }) => {
               <span style={{ marginLeft: "auto", fontSize: 10, color: C.muted }}>advisory — none of this blocks the fill</span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              {/* The panel only exists for an OPENING fill now, so `adding` is non-null whenever the
+                  addToLoser guard is red — the filter that used to hide the generic row is what let
+                  a cover show one. Kept as a guard against the two drifting apart again. */}
               {guardPanel.guards.filter(g => g.id !== "addToLoser" || !adding).map(g => <GuardRow key={g.id} g={g} />)}
             </div>
           </div>
@@ -205,6 +209,18 @@ const FillForm = ({ ctx, symbol, row }) => {
             <Btn onClick={declineFill} color={C.amber} bgColor={C.aBg} label="Decided against it" />
           )}
           <Btn onClick={() => setFillFor(null)} color={C.mid} bgColor={C.bg} label="Cancel" />
+          {/* ── SAID BEFORE IT HAPPENS, NOT AFTER ─────────────────────────────
+              Closing more than is open splits into two rows, and a split that arrives as a
+              surprise is worse than the clamp it replaced. The sentence is here, under the size
+              box, while the number can still be corrected — most oversells typed into this form
+              really are typos. */}
+          {oversell && (
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.amber, flexBasis: "100%" }}>
+              ⚠ That is more than the {oversell.closeQty} open. Recording it closes this row and
+              opens a {SIDE_LABEL[oversell.side]} row for the other {oversell.excessQty} — correct
+              the size if that is not what happened.
+            </span>
+          )}
           {/* Name the drift, since that is what a stop-out is actually about. */}
           {fillFor.intent === "stopped" && fillFor.stopAt != null && Number.isFinite(+fillFor.price) && +fillFor.price !== +fillFor.stopAt && (() => {
             const slip = ((+fillFor.price - +fillFor.stopAt) / +fillFor.stopAt) * 100;
@@ -2130,11 +2146,22 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   const del = (id) => { setRows(p => p.filter(r => r.id !== id)); touch(); };
   const addLevel = (id, kind) => {
     const r = rows.find(x => x.id === id); if (!r) return;
+    // ── A LEVEL ADDED AFTER THE EXIT IS A RECONSTRUCTION ──────────────────────
+    // The archive is editable so a stop that was never typed in can be put back — without one
+    // there is no risk unit, so a closed trade prints no R anywhere, and the console was the only
+    // place that could supply it and the one place that would not let you.
+    //
+    // But a stop recorded now is not the same evidence as a stop recorded before the entry. One is
+    // what you committed to; the other is what you remember committing to, written knowing how it
+    // turned out. Both are worth having and they are not interchangeable, so the row carries which
+    // it is rather than letting the R that follows look like it was always there.
+    const closed = derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side }).status === "closed";
     // BLANK, not seeded at the live price. Seeding looked helpful and was actively wrong: a buy or
     // sell level AT the current price is hit the instant it is created, so every new level arrived
     // already flashing "⚡ level hit" and the row's alert state became meaningless. A level with no
     // price is inert by construction — `active` filters on `at != null` — and the row says so.
-    upd(id, { levels: [...(r.levels || []), { id: Math.random().toString(36).slice(2, 8), kind, at: null, to: null, note: "" }] });
+    upd(id, { levels: [...(r.levels || []), { id: Math.random().toString(36).slice(2, 8), kind, at: null, to: null, note: "",
+      ...(closed ? { backfilled: new Date().toISOString().slice(0, 10) } : {}) }] });
   };
   const updLevel = (id, lid, patch) => {
     const r = rows.find(x => x.id === id); if (!r) return;
@@ -2173,7 +2200,19 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
     const qty = +f.qty, price = +f.price;
     if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(price)) { setSaveMsg("A fill needs a positive quantity and a price."); setTimeout(() => setSaveMsg(null), 4000); return; }
     const r = rows.find(x => x.id === f.rowId); if (!r) return;
-    const fills = [...(r.fills || []), { id: Math.random().toString(36).slice(2, 8), date: f.date, side: f.side, qty, price, note: f.note || "" }];
+    // ── CLOSING MORE THAN IS OPEN OPENS THE OTHER WAY ─────────────────────────
+    // The fill engine clamps an oversell and warns, which is right for a typo and wrong for what
+    // actually happened on AAPU 2026-09-11: a 300-share exit went out as 400 and was bought back
+    // the same minute. Entered on one row, the clamp swallowed the extra 100 and then read the
+    // buy-back as a new opening buy — a phantom long nobody held at a basis nobody paid.
+    //
+    // Split instead: this row closes at the size it held, and the excess opens a row in the other
+    // direction. Two trades, because that is two trades — and it is the shape the broker's own
+    // statement reconciles against, since both legs keep the prices that were actually traded.
+    const held = derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side });
+    const split = oversellSplit(held, { side: f.side, qty });
+    const mkFill = (q) => ({ id: Math.random().toString(36).slice(2, 8), date: f.date, side: f.side, qty: q, price, note: f.note || "" });
+    const fills = [...(r.fills || []), mkFill(split ? split.closeQty : qty)];
     // A LIFECYCLE CHANGE needs saying out loud. Selling the last unit moves the row out of Open
     // positions and into a section that is collapsed by default, so with no announcement the row
     // simply disappeared — indistinguishable from having deleted it, on the one action in the tab
@@ -2209,6 +2248,22 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
     } catch { /* never let logging break the thing being logged */ }
 
     upd(f.rowId, { fills });
+    if (split) {
+      // A NEW ROW, NOT A NEGATIVE QUANTITY. The excess is its own trade with its own direction, and
+      // it inherits nothing from this one but the ticker and the contract size — no thesis, no
+      // levels, no tags. Its opening fill is the same price and date, because it is the same fill.
+      const id = `${r.symbol}-${Math.random().toString(36).slice(2, 8)}`;
+      setRows(p => [...p, {
+        id, symbol: r.symbol, side: split.side, currency: r.currency || "USD",
+        thesis: "", levels: [], tags: [], label: `${fillVerb(split.side).open} from an oversell on ${f.date}`,
+        ...(r.multiplier ? { multiplier: r.multiplier, margined: !!r.margined } : {}),
+        fills: [{ id: Math.random().toString(36).slice(2, 8), date: f.date, side: split.fillSide,
+                  qty: split.excessQty, price, note: `the ${qty} closed only ${split.closeQty} — this is the excess` }],
+      }]);
+      setExpanded(id);
+      setSaveMsg(`${qty} closed the ${split.closeQty} held — the other ${split.excessQty} opened a ${SIDE_LABEL[split.side]} row at ${price}.`);
+      setTimeout(() => setSaveMsg(null), 9000);
+    }
     setFillFor(null);
     if (after.status !== before.status) {
       setMoved({
@@ -2384,10 +2439,21 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   // questions are about the whole book. Recomputed as the quantity is typed, so the panel is a
   // live read on the trade being entered rather than on the one that was opened.
   const guardPanel = useMemo(() => {
-    if (!fillFor || fillFor.side !== "buy") return null;
-    const r = rows.find(x => x.id === fillFor.rowId);
-    const dr = derivedRows.find(x => x.id === fillFor.rowId);
-    if (!r || !dr) return null;
+    const r = fillFor ? rows.find(x => x.id === fillFor.rowId) : null;
+    const dr = fillFor ? derivedRows.find(x => x.id === fillFor.rowId) : null;
+    if (!fillFor || !r || !dr) return null;
+    // ── AN ENTRY PANEL, AND ONLY FOR AN ENTRY ─────────────────────────────────
+    // This read `fillFor.side !== "buy"`, which is the opening side of a LONG and the CLOSING side
+    // of a short — so on a short row the panel was exactly inverted: silent on the sell that opens
+    // or adds to the position, and lit on the buy that closes it. Observed on AAPU 2026-09-11,
+    // covering a 100-share short: "Size vs suggested — 100 against a suggested 40" and "Add to a
+    // loser — add #2 to a position 1.68% underwater", both printed over a fill that FLATTENED the
+    // book. addToLoser() itself was already side-aware and correctly returned null; the panel
+    // reached past it and asked the hypothetical-add question anyway.
+    //
+    // Nothing here has anything to say about a close. There is no sizing question when you are
+    // getting out, and adding to a loser is the one thing a close cannot be.
+    if (fillFor.side !== openSideFor(dr.derived?.side ?? r.side)) return null;
     const qty = numOrNull(fillFor.qty), price = numOrNull(fillFor.price) ?? priceOf(dr);
 
     // Notional AFTER this fill — the question is what you will be holding, not what you hold.
@@ -3227,9 +3293,11 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
                   ...g.rows.map(r => {
                   const td = { padding: "6px 10px", borderBottom: "1px solid " + C.bdr };
                   const days = daysBetween(r.derived.firstDate, r.derived.lastDate);
-                  return (
-                    <tr key={r.id} title={r.thesis || ""}>
-                      <td style={{ ...td, fontWeight: 700 }}>{r.symbol} {ccyChip(r.currency)}
+                  const line = (
+                    <tr key={r.id} title={r.thesis || "Open to edit"}
+                        onClick={() => setExpanded(expanded === r.id ? null : r.id)}
+                        style={{ cursor: "pointer", background: expanded === r.id ? C.bg : undefined }}>
+                      <td style={{ ...td, fontWeight: 700 }}>{caret(expanded === r.id)} {r.symbol} {ccyChip(r.currency)}
                         {r.derived.multiplier > 1 ? <span style={{ fontWeight: 700, color: C.amber, fontSize: 11 }}> ×{r.derived.multiplier}</span> : null}
                         {r.trade ? <span style={{ fontWeight: 600, color: C.lbl, fontSize: 11.5 }}> · {r.trade}</span> : null}</td>
                       <td style={{ ...td, color: C.lbl, whiteSpace: "nowrap" }}>
@@ -3241,7 +3309,26 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
                       <td style={{ ...td, color: pnlCol(r.derived.realizedPct) }}>{r.derived.realizedPct == null ? "—" : (r.derived.realizedPct > 0 ? "+" : "") + r.derived.realizedPct + "%"}</td>
                     </tr>
                   );
-                })])];
+                  // ── THE ARCHIVE IS NOT A DIFFERENT STORE ─────────────────────
+                  // It never was — `archived` is a FILTER over the same rows, so an archived trade
+                  // was always as editable as an open one and there was simply no way in. The cost
+                  // of that was specific: R is (exit − entry) ÷ (entry − stop), so a trade closed
+                  // without a stop recorded on it prints no R on the console, none in the Discord
+                  // closed card, and nowhere else either — and the one place that could supply the
+                  // missing stop was the one place that would not let you.
+                  //
+                  // The same editor, opened in place. Nothing here is archive-specific, which is
+                  // the point: a closed row that needs a correction needs the same controls the
+                  // open one has, and a second cut-down editor would be a second set of rules.
+                  const editor = expanded === r.id ? (
+                    <tr key={`${r.id}-edit`}>
+                      <td colSpan={7} style={{ padding: "0 0 12px" }}>
+                        <PositionRow r={r} mode="closed" ctx={ctx} />
+                      </td>
+                    </tr>
+                  ) : null;
+                  return editor ? [line, editor] : line;
+                }).flat()])];
                 })}
               </tbody>
               {/* Totals are in the BASE currency, so a row whose FX rate is missing is left out and

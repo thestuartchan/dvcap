@@ -127,8 +127,25 @@ function DecayTile({ d }) {
   );
 }
 
-function CrossCheck({ x }) {
+// ── A CHECK IS ABOUT THE NUMBERS IT WAS RUN ON ───────────────────────────────
+// `live?.crossCheck ?? data?.latest?.crossCheck` fell through to the STORED capture whenever a live
+// recompute carried no cross-check of its own — which is always, because the settled recompute does
+// not run one. So the panel rendered a comparison from a previous session, undated, directly under
+// a headline it had never seen.
+//
+// Observed 2026-09-11: the headline read spot 715.41, call wall 715, put wall 700 — agreeing with
+// CBOE and with an independent third-party read. Under it, in red: "✗ disagrees with CBOE on put
+// wall · ours 710, theirs 700". Both halves of that were computed at 2026-09-10 18:24Z against a
+// spot of 709.51. The only disagreement on screen was between two different days, and nothing said
+// so. A stale ✗ is worse than no check at all: it spends the credibility of a real one.
+//
+// The fallback stays — yesterday's check is still the last one anybody ran, and hiding it would
+// leave the figures unverified with no sign of that either. It is now DATED, told apart from the
+// numbers above it, and stripped of its verdict colour, because it is not a verdict on these.
+function CrossCheck({ x, of = null }) {
   if (!x) return null;
+  // Whose numbers this was run against, when they are not the ones on screen.
+  const from = of ? `${(of.asOf || of.date || "").slice(0, 16).replace("T", " ")}Z capture` : null;
   if (!x.ok) {
     return (
       <div style={{ marginTop: 9, fontSize: 11.5, color: C.muted, paddingTop: 8, borderTop: "1px solid " + C.bdr }}>
@@ -137,7 +154,9 @@ function CrossCheck({ x }) {
       </div>
     );
   }
-  const tone = x.clean ? C.green : C.purple;
+  // A STALE CHECK HAS NO VERDICT COLOUR. Red says "this is wrong"; it cannot say that about
+  // figures it never saw.
+  const tone = of ? C.muted : (x.clean ? C.green : C.purple);
   return (
     <div style={{ marginTop: 9, paddingTop: 8, borderTop: "1px solid " + C.bdr }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
@@ -149,6 +168,13 @@ function CrossCheck({ x }) {
           CBOE · their open interest, their vols, their gamma
         </span>
       </div>
+      {from && (
+        <div style={{ marginTop: 5, padding: "6px 9px", borderRadius: 6, background: C.aBg, border: "1px solid " + C.aBdr,
+                      fontSize: 11, lineHeight: 1.5, color: C.amber, fontWeight: 700 }}>
+          ⚠ This is the {from}, at spot {fmtNum(of.spot)} — not the figures above. No cross-check has
+          been run against the current recompute, so those remain unverified against a second source.
+        </div>
+      )}
       <div style={{ marginTop: 6, display: "grid", gap: 3,
                     gridTemplateColumns: "minmax(96px,auto) minmax(72px,auto) minmax(72px,auto) 1fr" }}>
         {(x.checks || []).map(c => {
@@ -438,7 +464,10 @@ export function GexPanel() {
           </div>
         )}
         <DecayTile d={decay} />
-        <CrossCheck x={live?.crossCheck ?? data?.latest?.crossCheck ?? null} />
+        {/* `of` is non-null exactly when the check on screen was run against numbers other than the
+            ones above it — which is every live recompute, since the settled path runs no check. */}
+        <CrossCheck x={live?.crossCheck ?? data?.latest?.crossCheck ?? null}
+                    of={live && !live.crossCheck ? (data?.latest ?? null) : null} />
 
         {/* The open-to-close change, which the overwrite used to destroy. It is a read on positioning
             decaying through the session, and on 2026-09-01 it was large enough to flip the flip

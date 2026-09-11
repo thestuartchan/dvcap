@@ -7,6 +7,7 @@
 // here rather than on a Discord server.
 import { publicView, buildCard, buildClosedCard, closedLine, rOf, lockedPct, isOptionTrade, showsOnCard, CLOSED_WINDOW_DAYS, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, dirOf, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS, DOT } from '../lib/tradecard.js';
 import { isWebhookUrl, alertTtlMin, mentionFromEnv, webhookFromEnv } from '../lib/discord.js';
+import { derivePosition } from '../lib/positions.js';
 import fs from 'node:fs';
 let pass=0,fail=0;
 const eq=(n,g,w)=>{const ok=JSON.stringify(g)===JSON.stringify(w);console.log(`${ok?'✅':'❌'} ${n}`+(ok?'':`  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`));ok?pass++:fail++;};
@@ -438,6 +439,58 @@ eq('sorted by exit date', order[0].includes('CLOSED_LAST'), true);
   // Yellow, not orange: orange sits beside red in hue and reads as a warning, where watching is a
   // neutral pending state.
   eq('watching is yellow', DOT.watching, '🟡');
+}
+
+
+// ── AN R REBUILT AFTER THE FACT IS STILL AN R, AND SAYS SO ──────────────────
+// R is (exit − entry) ÷ (entry − stop), so a trade closed with no stop recorded on it prints no R
+// anywhere — not on the console, not on the closed card. The archive is editable now so the stop
+// can be put back, which is right: it is the only place the number can come from.
+//
+// But a stop typed after the exit is not the stop the trade was taken against. One is a
+// commitment, the other is a recollection written knowing the outcome. Both are worth having and
+// they are not the same evidence, so the mark travels with the number.
+{
+  const row = (lv) => ({
+    symbol: 'AAPU', side: 'long', price: 44.12, levels: lv,
+    fills: [{ side: 'buy', qty: 300, price: 39.39, date: '2026-09-09' },
+            { side: 'sell', qty: 300, price: 44.12, date: '2026-09-11' }],
+  });
+  const derive = (r) => ({ ...r, derived: derivePosition(r.fills, { side: r.side }) });
+
+  const none = publicView(derive(row([])), { today: '2026-09-11' });
+  eq('no stop, no R — the honest answer, not a gap to paper over', none.r, null);
+  eq('and nothing to mark', none.rReconstructed, null);
+
+  const live = publicView(derive(row([{ kind: 'stop', at: 37.50 }])), { today: '2026-09-11' });
+  eq('a stop recorded in the ordinary way gives R', live.r, 2.5);
+  eq('and carries no mark', live.rReconstructed, null);
+
+  const back = publicView(derive(row([{ kind: 'stop', at: 37.50, backfilled: '2026-09-11' }])), { today: '2026-09-11' });
+  eq('a backfilled stop gives the SAME R', back.r, 2.5);
+  eq('and is marked as reconstructed', back.rReconstructed, true);
+
+  // ON THE CARD: a dagger, not a clause. A sentence per line would drown the column it sits in.
+  eq('the ordinary R prints clean', /\+2\.5R\*\*$/.test(closedLine(live)) || closedLine(live).includes('**+2.5R**'), true);
+  eq('the rebuilt one carries the dagger', closedLine(back).includes('**+2.5R**†'), true);
+  eq('and the plain one does not', closedLine(live).includes('†'), false);
+
+  // THE FOOTER EXPLAINS THE MARK WHEREVER IT APPEARS — including when every trade has an R, which
+  // is the case the old footer (only counting trades WITHOUT a stop) would have said nothing about.
+  const card = buildClosedCard([derive(row([{ kind: 'stop', at: 37.50, backfilled: '2026-09-11' }]))],
+    { today: '2026-09-11' });
+  eq('the footer says what † means', /† R from a stop recorded after the trade closed/.test(card.embeds[0].footer?.text || ''), true);
+  // And both absences can be named at once — a card naming only one implies the rest are solid.
+  const mixed = buildClosedCard([
+    derive(row([{ kind: 'stop', at: 37.50, backfilled: '2026-09-11' }])),
+    derive(row([])),
+  ], { today: '2026-09-11' });
+  const ft = mixed.embeds[0].footer?.text || '';
+  eq('a missing stop is still counted', /1 closed without a recorded stop/.test(ft), true);
+  eq('alongside the dagger note', /†/.test(ft), true);
+
+  // A BACKFILLED STOP IS STILL A STOP for every other purpose — the level itself is unchanged.
+  eq('the stop level still renders', back.stop?.at, 37.5);
 }
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
