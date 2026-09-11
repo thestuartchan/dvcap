@@ -674,6 +674,13 @@ async function gexBlock(liveSpot, tense = 'preview') {
 // cannot drift into reading the record differently.
 const prevSnapFor = (prev) => prev?.snap || null;
 
+// ── THE MAP GETS ITS OWN MESSAGE ─────────────────────────────────────────────
+// Named once, because it is used twice: as the section heading, and as the point the Discord post
+// is forced to break at. The map is the surface a trade is placed against and everything after it
+// is the context that surface sits in — two different reads, at two different moments, so they go
+// out as part 1 and part 2 rather than wherever the 4,096th character happens to land.
+export const MAP_HEAD = "⚡ **TODAY'S MAP**";
+
 export function assembleDiscord(region, label, blocks) {
   const emoji = { asia: '🌏', eu: '🇪🇺', us: '🇺🇸' }[region] || '📊';
   const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
@@ -694,7 +701,7 @@ export function assembleDiscord(region, label, blocks) {
     // a market that no longer existed. Europe reads it eight hours before the US opens, against a
     // spot it has no live print for. Both got a picture accurate to the minute about the wrong
     // minute. The US brief fires into the pre-open, which is the one time it is a preview.
-    ...(region === 'us' && blocks.gexLines ? [`⚡ **TODAY'S MAP**\n${blocks.gexLines}`] : []),
+    ...(region === 'us' && blocks.gexLines ? [`${MAP_HEAD}\n${blocks.gexLines}`] : []),
     ...(blocks.watchLines ? [`👀 **TODAY'S WATCHLIST**\n${blocks.watchLines}`] : []),
     ...(blocks.clockLines ? [`🕐 **CLOCK**\n${blocks.clockLines}`] : []),
     ...(blocks.overnightLines ? [`🌙 **OVERNIGHT**\n${blocks.overnightLines}`] : []),
@@ -974,7 +981,12 @@ async function runRegion(region, req) {
         // postLong splits at this brief's own section rule and posts the parts in order. Several
         // MESSAGES, not several embeds: Discord caps total characters across all embeds in one
         // message at 6,000, which today's brief already exceeds.
-        posted = await postLong(process.env.DISCORD_WEBHOOK, message, { label: R.label });
+        //
+        // BREAKAFTER is a deliberate break on top of that: TODAY'S MAP ends its message even when
+        // the brief would have fitted, because the map and the macro half are read at different
+        // moments. It is a minimum part count, never a maximum — a forced part still over the cap
+        // is split again underneath it.
+        posted = await postLong(process.env.DISCORD_WEBHOOK, message, { label: R.label, breakAfter: [MAP_HEAD] });
       } catch (e) {
         posted = { ok: false, error: String(e?.message || e) };
       }

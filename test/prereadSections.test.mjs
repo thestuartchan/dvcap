@@ -3,7 +3,7 @@
 // The map and the watchlist are what a day trade is actually placed against, and both have a way
 // of failing that looks like working: a map whose two rows are on different scales, and a
 // watchlist that quietly reaches into the book. Both are tested for here rather than trusted.
-import { mapRow, pinOf, renderGexSection, MAP_W, PIN_MIN_SHARE, PIN_NEAR_PCT } from '../lib/gexBrief.js';
+import { mapRow, pinOf, renderGexSection, MAP_W, PIN_MIN_SHARE, PIN_NEAR_PCT, SPACER, SUB_RULE } from '../lib/gexBrief.js';
 import { watchlist, corroborate, renderWatchlist, WATCH_MAX, WATCH_MIN_PCT } from '../lib/watchlist.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -96,6 +96,42 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
   ok('though the same book pins before the close', pinOf(
     { expiries: [{ expiry: '2026-09-09', shareOfAbs: 35, peakPutStrike: 716, peakCallStrike: 717 }] },
     { spot: 716.27, today: '2026-09-09', expired: false }).pinned);
+
+  // ── GROUPED BY INSTRUMENT ──────────────────────────────────────────────────
+  // It used to run five loops over the symbols, so everything QQQ's book was saying was scattered
+  // across four headings interleaved with four SPY ones. Nobody trades both at once.
+  {
+    const g = renderGexSection(
+      [{ ...QQQ, iv: 0.2175, decay: { lines: ['62% of the book expires today'] }, pin: { pinned: true, share: 23.7, band: '717–719' } },
+       { ...SPY, iv: 0.13, decay: { lines: ['11% of the book expires today'] }, pin: { pinned: false, share: 3.6, band: null } }],
+      { rung: 'repriced', from: '2026-09-08' });
+    const lines = g.split('\n');
+    const at = (t) => lines.findIndex(l => l.includes(t));
+    // EVERY QQQ LINE BEFORE EVERY SPY LINE. This is the whole request, and it is an ordering
+    // claim — one that the old five-loop shape could not satisfy no matter how it was worded.
+    ok('the instrument headings are the divisions now', at('__**QQQ**') >= 0 && at('__**SPY**') > at('__**QQQ**'));
+    const qHead = at('__**QQQ**'), sHead = at('__**SPY**');
+    for (const sub of ['**levels that are real**', '**what kind of day**', '**what expires**']) {
+      const first = lines.findIndex(l => l === sub), second = lines.findIndex((l, i) => l === sub && i > first);
+      ok(`${sub} appears under each instrument`, first > qHead && first < sHead && second > sHead);
+    }
+    // And the sub-headings no longer carry the symbol — the block above them does.
+    ok('no symbol-prefixed sub-headings survive', !/QQQ — levels that are real|SPY — what kind of day/.test(g));
+    // THE CROSS-INSTRUMENT CLAIMS STAY OUTSIDE THE BLOCKS, because neither row can make them.
+    ok('the map is still one comparison at the top', at('```') < qHead);
+    ok('and what is anchored against what is still one claim at the bottom', at('is anchored, SPY is not') > sHead);
+
+    // ── AIR ────────────────────────────────────────────────────────────────────
+    // Discord collapses bare consecutive newlines, so the spacing has to be a line with content
+    // that renders as nothing. A zero-width space is that line.
+    eq('the spacer is a zero-width space, not an empty line', SPACER, '​');
+    ok('the section breathes', lines.filter(l => l === SPACER).length >= 8);
+    ok('and the instruments are divided from each other', lines.includes(SUB_RULE));
+    ok('with the divider between them, not before the first', lines.indexOf(SUB_RULE) > qHead && lines.indexOf(SUB_RULE) < sHead);
+    // The sub-rule must not be mistakeable for the brief's own section rule, or splitForDiscord
+    // would break a message in the middle of the map.
+    ok('the sub-rule is lighter than the brief\'s section rule', !SUB_RULE.includes('─'));
+  }
 
   const asTaken = renderGexSection(rows, { rung: 'stored', from: '2026-09-08' });
   ok('an unrepriced read says the pivot is not now\'s', /not repriced/.test(asTaken));
@@ -445,10 +481,16 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
   {
     const rows = [{ name: 'QQQ', spot: 716.275, putWall: 700, callWall: 716, flipLevel: 719.57, iv: 0.2175, pin: { pinned: false } }];
     const withIv = renderGexSection(rows, { rung: 'repriced' });
-    ok('the band renders with the levels', /Priced for\*\* \*\*QQQ\*\* ±9.81/.test(withIv));
+    // It belongs to ITS instrument's block now, so it carries no symbol of its own — the heading
+    // above it does. The symbol prefix was what made the line unreadable with two indices in it.
+    ok('the band renders with the levels', /Priced for\*\* ±9\.81 \(±1\.37%\)/.test(withIv));
+    ok('under the instrument it belongs to', withIv.indexOf('**QQQ**') < withIv.indexOf('Priced for'));
+    ok('and carries no symbol of its own', !/Priced for\*\* \*\*QQQ/.test(withIv));
     // A BAND IS NOT A BOUNDARY. Roughly one day in three finishes outside it, and the line says so
-    // rather than letting the number read as a limit.
+    // rather than letting the number read as a limit — ONCE, above the blocks, not repeated under
+    // every instrument. Repeating a forty-word caveat per symbol is the clutter, not the caution.
     ok('and does not present itself as a limit', /one day in three finishes outside it/.test(withIv));
+    eq('said once, not per symbol', withIv.split('one day in three').length - 1, 1);
     const noIv = renderGexSection(rows.map(r => ({ ...r, iv: null })), { rung: 'repriced' });
     ok('no vol means no line, not a blank one', !/Priced for/.test(noIv));
   }
