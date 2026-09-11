@@ -1,0 +1,67 @@
+{
+  "_note": "frozen KOFIA store as it stood at the fixtures capture instant (2026-09-10T00:57Z) — data/korea_kofia.json @ 8ad6ce4",
+  "latest": {
+    "units7709": {
+      "value": 854000000,
+      "asOf": "2026-09-09",
+      "delta": -66000000
+    },
+    "kospi": {
+      "value": 7051.64,
+      "unit": "P",
+      "asOf": "2026-09-09",
+      "delta": 97.12,
+      "pct": 1.4
+    },
+    "deposits": {
+      "value": 96986329,
+      "unit": "백만원",
+      "asOf": "2026-09-08",
+      "delta": 3060541,
+      "pct": 3.26
+    },
+    "marginLoans": {
+      "value": 32738698,
+      "unit": "백만원",
+      "asOf": "2026-09-08",
+      "delta": -451627,
+      "pct": -1.36
+    },
+    "cma": {
+      "value": 104931799,
+      "unit": "백만원",
+      "asOf": "2026-09-08",
+      "delta": 269169,
+      "pct": 0.26
+    },
+    "kr3yGovt": {
+      "value": 3.91,
+      "unit": "%",
+      "asOf": "2026-09-09",
+      "delta": 0.009,
+      "pct": 0.23
+    },
+    "kr3yCorp": {
+      "value": 4.581,
+      "unit": "%",
+      "asOf": "2026-09-09",
+      "delta": 0.006,
+      "pct": 0.13
+    },
+    "instNet": {
+      "value": 942,
+      "unit": "십억원",
+      "asOf": "2026-09-09"
+    },
+    "foreignNet": {
+      "value": -435,
+      "unit": "십억원",
+      "asOf": "2026-09-09"
+    },
+    "retailNet": {
+      "value": -2288,
+      "unit": "십억원",
+      "asOf": "2026-09-09"
+    }
+  }
+}
