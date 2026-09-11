@@ -10,7 +10,7 @@
 // An earlier check found the two in exact agreement and recorded that as a property of the sources.
 // It was a property of the HOUR it ran in.
 import { readFileSync } from 'node:fs';
-import { parseOccSeries, mergeOccIv, occKey, defaultExpiries, MIN_OCC_COVERAGE, DEFAULT_NEAR_COUNT } from '../lib/occ.js';
+import { parseOccSeries, mergeOccIv, occKey, defaultExpiries, refreshExpiries, MIN_OCC_COVERAGE, DEFAULT_NEAR_COUNT } from '../lib/occ.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -207,6 +207,49 @@ const FIX = readFileSync(new URL('./fixtures-occ-qqq.txt', import.meta.url), 'ut
   eq('new bytes are a new vintage', rolled.changed, true);
   eq('dated to when they were seen', rolled.firstSeenAt, '2026-09-11T01:00:00.000Z');
   eq('and that counts as rolled', rolled.rolledSinceClose, true);
+}
+
+
+// ── A STORED EXPIRY LIST GOES STALE ONE DATE AT A TIME ──────────────────────
+// The stored capture's expiry list is replayed so the settled recompute is like-for-like with the
+// rung below it. But a list captured yesterday names yesterday's dates.
+//
+// Measured on the live QQQ recompute, 2026-09-11 16:04Z: it ran on
+//   2026-09-10, 2026-09-11, 2026-09-14, 2026-09-18, 2026-10-16, 2026-12-18
+// — six dates, one of them already expired. So the map was drawn over FIVE, and every "% of the
+// gamma" below it was a share of five while reporting as a share of the sample. A denominator that
+// shrinks silently rounds the concentration number UP.
+{
+  const AVAIL = ['2026-09-11', '2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17',
+                 '2026-09-18', '2026-09-21', '2026-10-16', '2026-12-18'];
+  const NOW = new Date('2026-09-11T16:00:00Z');
+  const STORED = ['2026-09-10', '2026-09-11', '2026-09-14', '2026-09-18', '2026-10-16', '2026-12-18'];
+
+  const r = refreshExpiries(STORED, AVAIL, NOW);
+  eq('the expired date is dropped', r.dropped, ['2026-09-10']);
+  eq('and reported, not swallowed', r.dropped.length, 1);
+  // TOPPED BACK UP, so the sample is the size the rule meant it to be rather than one short.
+  eq('the sample is restored to its full size', r.expiries.length, STORED.length);
+  eq('with the next live daily taking the empty slot', r.expiries,
+     ['2026-09-11', '2026-09-14', '2026-09-15', '2026-09-18', '2026-10-16', '2026-12-18']);
+  ok('and nothing expired survives', r.expiries.every(d => d >= '2026-09-11'));
+  // TODAY IS NOT EXPIRED. The front expiry is the whole subject of the decay tile; dropping it on
+  // its own expiry day would remove the one number that matters most that day.
+  ok("today's expiry is kept", r.expiries.includes('2026-09-11'));
+
+  // A LIST THAT IS ALREADY CURRENT IS LEFT ALONE — no churn, and the cache key stays a hit.
+  const same = refreshExpiries(r.expiries, AVAIL, NOW);
+  eq('a current list is unchanged', same.expiries, r.expiries);
+  eq('and drops nothing', same.dropped, []);
+
+  // TOP-UP ONLY FROM WHAT IS ACTUALLY LISTED — never invented.
+  const scarce = refreshExpiries(STORED, ['2026-09-11', '2026-12-18'], NOW);
+  ok('it cannot top up past what exists', scarce.expiries.every(d => ['2026-09-11', '2026-09-14', '2026-09-18', '2026-10-16', '2026-12-18'].includes(d)));
+  ok('and every survivor is live', scarce.expiries.every(d => d >= '2026-09-11'));
+
+  // Nothing stored at all falls through to the default shape rather than to an empty universe.
+  eq('an empty stored list still yields the default set', refreshExpiries([], AVAIL, NOW).expiries,
+     defaultExpiries(AVAIL, NOW));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -1357,16 +1357,36 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
         <span style={{ marginLeft: "auto", fontSize: 11, color: C.lbl, fontWeight: 700 }}>NLV {money(nlv)}</span>
       </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
-        <SzFld label="Ticker"><input value={tkr} onChange={e => setTkr(e.target.value)} style={SZ_IN} placeholder="QQQ" /></SzFld>
+        <SzFld label="Ticker"><input value={tkr} onChange={e => setTkr(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && ready && !busy) look(); }}
+          style={{ ...SZ_IN, textTransform: "uppercase" }} placeholder="QQQ" /></SzFld>
         <SzFld label="Type">
           <select value={kind} onChange={e => setKind(e.target.value)} style={SZ_IN}>
             <option value="stock">Stock</option><option value="option">Option</option>
           </select>
         </SzFld>
-        {kind === "option" && <SzFld label="Strike"><input value={strike} onChange={e => setStrike(e.target.value)} style={SZ_IN} placeholder="730" /></SzFld>}
-        {kind === "option" && <SzFld label="Expiry"><input value={expiry} onChange={e => setExpiry(e.target.value)} style={SZ_IN} placeholder="2026-10-16" /></SzFld>}
-        <Btn onClick={look} disabled={!ready || busy}>{busy ? "…" : "Size it"}</Btn>
+        {kind === "option" && <SzFld label="Strike"><input value={strike} inputMode="decimal" onChange={e => setStrike(e.target.value)} style={SZ_IN} placeholder="730" /></SzFld>}
+        {/* A REAL DATE INPUT. It was a free-text box wanting an exact YYYY-MM-DD — the same format
+            `ready` tests for with a regex — so every other spelling of the date silently left the
+            button disabled with nothing on screen saying why. Every other date in this console is
+            a picker; this one had no reason not to be. */}
+        {kind === "option" && <SzFld label="Expiry"><input type="date" value={expiry} onChange={e => setExpiry(e.target.value)} style={SZ_IN} /></SzFld>}
+        {/* LABEL, NOT CHILDREN. ui.jsx's Btn renders `{label}` and never touches `children`, so
+            this shipped as an unlabelled, colourless pill — a button nobody could see, on the one
+            control that makes the panel do anything. scripts/check-required-props.mjs now fails the
+            build on a component given children it cannot render. */}
+        <Btn onClick={look} disabled={!ready || busy} color="#fff" bgColor={C.blue} label={busy ? "…" : "Size it"} />
       </div>
+      {/* A DISABLED BUTTON IS NOT AN EXPLANATION. `ready` wants a ticker, and for an option a
+          positive strike and a real date — three conditions behind one greyed-out control, with
+          nothing on screen naming the one that is missing. */}
+      {!ready && (
+        <div style={{ fontSize: 11.5, color: C.lbl, marginTop: 5 }}>
+          Needs {[!root ? "a ticker" : null,
+                  kind === "option" && !(Number(strike) > 0) ? "a strike" : null,
+                  kind === "option" && !/^\d{4}-\d{2}-\d{2}$/.test(expiry) ? "an expiry date" : null]
+                 .filter(Boolean).join(" · ")}.
+        </div>
+      )}
       {px?.atr != null && (
         <div style={{ fontSize: 11.5, color: C.muted, marginTop: 5 }}>
           ATR(20) {px.atr.toFixed(2)}{px.atrPct != null ? ` (${px.atrPct.toFixed(2)}%)` : ""}
@@ -1426,7 +1446,9 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
                 </b>}
             {result.premium != null && <span style={{ fontSize: 12, color: C.muted }}>{money(result.premium)} {result.kind === "option" ? "premium" : "notional"}</span>}
             {result.indicative && <span style={{ fontSize: 11, fontWeight: 800, color: C.amber }}>INDICATIVE</span>}
-            <Btn onClick={record} style={{ marginLeft: "auto" }}>Record run</Btn>
+            <span style={{ marginLeft: "auto" }}>
+              <Btn onClick={record} color={C.mid} bgColor={C.bg} label="Record run" />
+            </span>
           </div>
           {/* THE FOUR LINES THAT ARE WHY THIS BELONGS ON THE PANEL. The calculator knows the book,
               so it answers "does this fit alongside what I already hold". */}
