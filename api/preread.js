@@ -8,6 +8,7 @@ import { assembleRegion } from '../lib/assemble.js';
 import { getQuotes } from '../lib/quotes.js';
 import { weekHighlights } from '../lib/calendar.js';
 import { auctionEvents } from '../lib/auctions.js';
+import { postLong } from '../lib/discord.js';
 import { marketState, localHour, localMinutesOfDay, localDateIn, isWeekendIn, localWeekday, closedExchanges, halfDayLabels, freshness, freshnessText, sessionCloseMin, sessionCountdown } from '../lib/sessions.js';
 import { kvGetJson, kvSetJson, kvConfigured } from '../lib/kv.js';
 import { coreSpread } from '../lib/inflation.js';
@@ -963,17 +964,17 @@ async function runRegion(region, req) {
       posted = { ok: false, error: 'DISCORD_WEBHOOK not set' };
     } else {
       try {
-        // Post as an embed: description caps at 4096 chars (vs 2000 for plain
-        // `content`), so the full Pre-Read fits in one message without truncating
-        // off the calendar/read. Markdown (bold, bullets) still renders.
-        const wr = await fetch(process.env.DISCORD_WEBHOOK, {
-          method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ embeds: [{ description: message.slice(0, 4096) }] }),
-        });
-        const body = wr.ok ? '' : (await wr.text().catch(() => ''));
-        posted = wr.ok
-          ? { ok: true, status: wr.status }
-          : { ok: false, status: wr.status, error: body.slice(0, 300) };
+        // ── SPLIT, NOT TRUNCATED ──────────────────────────────────────────────
+        // This was `message.slice(0, 4096)`, and on 2026-09-11 at 12:59Z the US brief went out at
+        // 6,122 characters: BACKDROP, WHAT WOULD CHANGE IT, SINCE YOUR LAST BRIEF and the footer
+        // were cut without a word, and the message ended on a dangling rule mid-heading. The
+        // comment above it said the brief "fits in one message", which stopped being true the
+        // moment a section was added — and every section added this week made it longer.
+        //
+        // postLong splits at this brief's own section rule and posts the parts in order. Several
+        // MESSAGES, not several embeds: Discord caps total characters across all embeds in one
+        // message at 6,000, which today's brief already exceeds.
+        posted = await postLong(process.env.DISCORD_WEBHOOK, message, { label: R.label });
       } catch (e) {
         posted = { ok: false, error: String(e?.message || e) };
       }
