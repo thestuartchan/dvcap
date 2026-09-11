@@ -32,7 +32,63 @@ function walk(node, visit, parent = null) {
   }
 }
 
+// ── COMPONENTS THAT DO NOT TAKE CHILDREN ─────────────────────────────────────
+// A second silent failure, from the same family and caught by none of the checks above.
+//
+// <Btn onClick={look} disabled={!ready}>{busy ? "…" : "Size it"}</Btn> — ui.jsx's Btn renders
+// `{label}` and never touches `children`, so that button shipped with NO TEXT ON IT. It is not a
+// crash, nothing throws, the build passes and the undefined-prop check is right not to fire: an
+// absent `label` renders nothing, which is legal. The position sizer went out with an unlabelled,
+// colourless button nobody could see, and stayed that way until a screenshot arrived.
+//
+// Statically decidable: if a component's props pattern has no `children` and no rest element, any
+// element written with non-whitespace children is throwing that content away.
+function childlessComponents(ast) {
+  const out = new Map();   // name → line, for components that ignore children
+  const consider = (name, fn) => {
+    if (!/^[A-Z]/.test(name || '') || !fn) return;
+    const param = fn.params[0];
+    // NO PARAMS AT ALL still cannot render children.
+    if (param && param.type !== 'ObjectPattern') return;         // `props` — unknowable, skip
+    if (param) {
+      for (const pr of param.properties) {
+        if (pr.type === 'RestElement') return;                   // {...rest} may forward children
+        if (pr.type === 'Property' && (pr.key?.name === 'children' || pr.value?.name === 'children')) return;
+      }
+    }
+    out.set(name, fn.loc?.start.line ?? 0);
+  };
+  for (const n of ast.body) {
+    if (n.type === 'FunctionDeclaration') consider(n.id?.name, n);
+    if (n.type === 'ExportNamedDeclaration' && n.declaration?.type === 'FunctionDeclaration') {
+      consider(n.declaration.id?.name, n.declaration);
+    }
+    const decls = n.type === 'VariableDeclaration' ? n
+                : (n.type === 'ExportNamedDeclaration' && n.declaration?.type === 'VariableDeclaration') ? n.declaration : null;
+    for (const d of decls?.declarations || []) {
+      if (d.id?.type !== 'Identifier') continue;
+      const fn = d.init;
+      if (fn?.type === 'ArrowFunctionExpression' || fn?.type === 'FunctionExpression') consider(d.id.name, fn);
+    }
+  }
+  return out;
+}
+
+// A child that is only whitespace or a comment carries nothing and is not a mistake.
+const carriesContent = (c) =>
+  (c.type === 'JSXText' && c.value.trim() !== '')
+  || c.type === 'JSXElement' || c.type === 'JSXFragment'
+  || (c.type === 'JSXExpressionContainer' && c.expression.type !== 'JSXEmptyExpression');
+
 let bad = 0;
+// Components are collected across ALL the files first, because the one that started this is
+// defined in ui.jsx and called in TradeConsole.jsx — a per-file pass could never have seen it.
+const childless = new Map();
+for (const file of FILES) {
+  const ast = Parser.parse(readFileSync(file, 'utf8'), { ecmaVersion: 'latest', sourceType: 'module', locations: true });
+  for (const [name, line] of childlessComponents(ast)) childless.set(name, { file, line });
+}
+
 for (const file of FILES) {
   const src = readFileSync(file, 'utf8');
   const ast = Parser.parse(src, { ecmaVersion: 'latest', sourceType: 'module', locations: true });
@@ -64,6 +120,14 @@ for (const file of FILES) {
   }
 
   walk(ast, (n) => {
+    if (n.type === 'JSXElement' && n.openingElement.name.type === 'JSXIdentifier') {
+      const name = n.openingElement.name.name;
+      const def = childless.get(name);
+      if (def && n.children.some(carriesContent)) {
+        console.error(`✗ ${file}:${n.loc.start.line} — <${name}> is given children, but ${def.file}:${def.line} never renders them. They are dropped silently.`);
+        bad++;
+      }
+    }
     if (n.type !== 'JSXOpeningElement' || n.name.type !== 'JSXIdentifier') return;
     const req = comps.get(n.name.name);
     if (!req) return;
@@ -78,7 +142,7 @@ for (const file of FILES) {
 }
 
 if (bad) {
-  console.error(`\n${bad} missing required prop${bad === 1 ? '' : 's'} — the class of break that renders a blank tab while the build passes.`);
+  console.error(`\n${bad} problem${bad === 1 ? '' : 's'} — the class of break that renders a blank tab, or an invisible button, while the build passes.`);
   process.exit(1);
 }
-console.log('✔ required-prop check passed (every dereferenced prop is supplied at each call site)');
+console.log(`✔ required-prop check passed (every dereferenced prop is supplied at each call site; ${childless.size} childless components checked for dropped children)`);

@@ -50,7 +50,11 @@ const c = (expiry, type, strike, oi, iv = 0.22) => ({ expiry, type, strike, oi, 
 
   ok('the lines name the replacement level',
      d.lines.some(l => /put wall at 710/.test(l) && /\*\*700\*\*/.test(l)));
-  ok('and say how much of the book goes', d.lines.some(l => /36\.7% of the gross gamma expires at today's close/.test(l)));
+  ok('and say how much of the book goes', d.lines.some(l => /36\.7% of the gamma in the expiries read expires at today's close/.test(l)));
+  // THE DENOMINATOR IS NAMED. This read covers six expiries of roughly twenty (lib/occ.js), so a
+  // share of it is not a share of the whole listed book — and a smaller denominator rounds the
+  // number UP, on a figure whose whole job is to say how much of what you see is about to go.
+  ok('and never claims to be a share of the whole book', !d.lines.some(l => /gross gamma/.test(l)));
 }
 
 // ── A LEVEL THAT SURVIVES IS A DIFFERENT STATEMENT ──────────────────────────
