@@ -217,6 +217,31 @@ for (const kind of ['buy', 'sell', 'stop'])
 eq('short fill verbs', [fillVerb('short').open, fillVerb('short').close], ['Shorted', 'Covered']);
 eq('long fill verbs', [fillVerb('long').open, fillVerb('long').close], ['Bought', 'Sold']);
 eq('an unreadable side still gets words', fillVerb('sideways').open, 'Bought');
+
+// ── THE TALLY UNDER THE BUTTONS SPEAKS THE SAME LANGUAGE ────────────────────
+// Observed on a live AAPU short, 2026-09-11: the buttons read "+ Shorted" and "− Covered", the
+// fill form said "RECORD A COVER", and between them the tally read "100 bought · 0 sold" on a row
+// whose only fill is a sell. `bought`/`sold` are the ENGINE's names for opened and closed quantity
+// (lib/positions.js says so) and are right as field names; printed raw they are long-only words
+// over a short position.
+eq('a long is bought and sold', [fillVerb('long').opened, fillVerb('long').closed], ['bought', 'sold']);
+eq('a short is shorted and covered', [fillVerb('short').opened, fillVerb('short').closed], ['shorted', 'covered']);
+// PAST TENSE, LOWER CASE — it follows a count ("100 shorted"), it does not open a sentence.
+for (const sd of ['long', 'short']) {
+  const v = fillVerb(sd);
+  for (const k of ['opened', 'closed']) eq(`${sd}.${k} is lower case`, v[k], v[k].toLowerCase());
+  // The tally and the button must describe the SAME act, or the row contradicts itself between
+  // two lines eight pixels apart — which is exactly how this shipped.
+  eq(`${sd} tally agrees with its open button`, v.opened, v.open.toLowerCase());
+  eq(`${sd} tally agrees with its close button`, v.closed, v.close.toLowerCase());
+}
+// And the present-tense forms the fill list labels each row with stay distinct from both.
+eq('the fill list words a long buy/sell', [fillVerb('long').openShort, fillVerb('long').closeShort], ['buy', 'sell']);
+eq('and a short short/cover', [fillVerb('short').openShort, fillVerb('short').closeShort], ['short', 'cover']);
+// WHICH FILL IS WHICH is openSideFor's job, not the word's — the fill list colours and labels off
+// it, and keyed on buy/sell instead it was inverted on every short.
+eq('a short opens on a sell', openSideFor('short'), 'sell');
+eq('and a long on a buy', openSideFor('long'), 'buy');
 eq('and so do its levels', levelVocab('sideways', 'stop').verb, 'breaks below');
 
 // ── every existing long row is untouched ─────────────────────────────────────
