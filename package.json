@@ -12,7 +12,8 @@
     "check:status": "node scripts/check-status-tokens.mjs",
     "test": "for f in test/*.test.mjs; do node \"$f\" || exit 1; done",
     "check:data": "node scripts/check-data-revert.mjs",
-    "check:auth": "node scripts/check-api-auth.mjs && node scripts/check-env-independent.mjs"
+    "check:auth": "node scripts/check-api-auth.mjs && node scripts/check-env-independent.mjs",
+    "check:deploy": "NODE_USE_ENV_PROXY=1 node --no-warnings scripts/check-deploy.mjs"
   },
   "dependencies": {
     "react": "^19.2.6",
