@@ -67,6 +67,40 @@ const section = (title, n) => `**${title}**\n` + Array.from({ length: n }, (_, i
   eq('an ordinary brief reports none', overlongLines(section('MAP', 200)), []);
 }
 
+// ── A BREAK SOMEONE CHOSE, NOT ONE THE CAP IMPOSED ──────────────────────────
+// Greedy fill puts the break wherever the 4,096th character lands. TODAY'S MAP is the surface a
+// trade is placed against and the rest of the brief is the context that surface sits in — read at
+// different moments, so they go out as two messages.
+{
+  const HEAD = "⚡ **TODAY'S MAP**";
+  const brief = [`${HEAD}\nthe map`, section('WATCHLIST', 8), section('CLOCK', 6), section('BACKDROP', 10)].join(SEP);
+  ok('the fixture is well inside the cap', brief.length < EMBED_LIMIT);
+  eq('and without a break it is one message', splitForDiscord(brief).length, 1);
+
+  const parts = splitForDiscord(brief, { breakAfter: [HEAD] });
+  eq('the map gets its own message', parts.length, 2);
+  ok('part 1 is the map', parts[0].startsWith(HEAD) && !parts[0].includes('WATCHLIST'));
+  ok('part 2 is everything after it', parts[1].includes('WATCHLIST') && parts[1].includes('BACKDROP'));
+  // A DELIBERATE BREAK MUST NOT COST WHAT THE FIX BOUGHT. Rejoining still reproduces the brief.
+  eq('and rejoining still loses nothing', parts.join(SEP), brief);
+
+  // A MINIMUM, NEVER A MAXIMUM. A forced part still over the cap is split again underneath, so
+  // this can never reintroduce the truncation it sits on top of.
+  const fat = [`${HEAD}\n` + section('MAP', 200), section('BACKDROP', 200)].join(SEP);
+  const fatParts = splitForDiscord(fat, { breakAfter: [HEAD] });
+  ok('an over-cap forced part is split again', fatParts.length > 2);
+  ok('every part still inside the cap', fatParts.every(p => p.length <= EMBED_LIMIT));
+
+  // A brief that does not contain the marker is untouched — Asia and Europe carry no map.
+  const noMap = [section('CLOCK', 6), section('BACKDROP', 10)].join(SEP);
+  eq('no marker, no forced break', splitForDiscord(noMap, { breakAfter: [HEAD] }), [noMap]);
+  // The header block ahead of the map rides with it rather than becoming a message of its own.
+  const withHeader = ['🇺🇸 **DAILY PRE-READ**', `${HEAD}\nthe map`, section('CLOCK', 6)].join(SEP);
+  const hp = splitForDiscord(withHeader, { breakAfter: [HEAD] });
+  eq('the brief header rides with the map', hp.length, 2);
+  ok('in part 1', hp[0].includes('DAILY PRE-READ') && hp[0].includes(HEAD));
+}
+
 // ── THE REAL BRIEF, AS CAPTURED ─────────────────────────────────────────────
 // The goldens are the actual assembled output. If a future section pushes one over the cap, this
 // is where it shows up — as a split that still reproduces the brief, never as a loss.
