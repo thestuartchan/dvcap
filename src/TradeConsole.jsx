@@ -371,6 +371,9 @@ const {
   const ins = INSURANCE_TICKERS[r.symbol];
   const open = expanded === r.id;
   const d = r.derived, p = r.pnl;
+  // The words for THIS row's direction, in one place. A short opens on a sell and closes on a buy,
+  // and every label below follows from that rather than from the words "buy" and "sell".
+  const fv = fillVerb(r.side);
   // Share of the book this position represents — the number that turns "+$957" into "is this too
   // big?". Computed in the BASE currency, and simply absent when the FX rate or equity is missing
   // rather than shown as a figure that quietly means something else.
@@ -969,11 +972,15 @@ const {
 
           {/* fills */}
           <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, margin: "12px 0 5px" }}>
-            Fills {d.nFills > 0 && <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0, color: C.lbl }}>· {d.bought} bought · {d.sold} sold · avg {d.avgCost?.toFixed(2) ?? "—"}</span>}
+            Fills {d.nFills > 0 && <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0, color: C.lbl }}>· {d.bought} {fv.opened} · {d.sold} {fv.closed} · avg {d.avgCost?.toFixed(2) ?? "—"}</span>}
           </div>
           {(d.fills || []).map(f => (
             <div key={f.id} style={{ display: "flex", gap: 7, alignItems: "center", fontSize: 12, color: C.mid, marginBottom: 4, flexWrap: "wrap" }}>
-              <b style={{ color: f.side === "buy" ? C.green : C.blue, minWidth: 32 }}>{f.side}</b>
+              {/* GREEN OPENS, BLUE CLOSES — the same pairing the two buttons above use. Keyed off
+                  buy/sell it was inverted on a short: the sell that opened the position showed in
+                  the closing colour under a word ("sell") the rest of the row never uses. */}
+              <b style={{ color: f.side === openSideFor(r.side) ? C.green : C.blue, minWidth: 38 }}
+                 title={f.side}>{f.side === openSideFor(r.side) ? fv.openShort : fv.closeShort}</b>
               {/* WHERE THIS FILL CAME FROM. A number you typed and a number the broker reported are
                   not the same kind of fact, and once the statement starts writing fills the
                   difference stops being obvious. The id is the broker's own, which is also what
@@ -993,7 +1000,7 @@ const {
           {(d.incomplete || []).map(f => (
             <div key={f.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12, marginTop: 5, padding: "7px 9px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 7 }}>
               <b style={{ color: C.amber }}>⚠ quantity needed</b>
-              <span style={{ color: C.mid }}>{f.side} @ {f.price}{f.date ? ` · ${f.date}` : ""}</span>
+              <span style={{ color: C.mid }}>{f.side === openSideFor(r.side) ? fv.openShort : fv.closeShort} @ {f.price}{f.date ? ` · ${f.date}` : ""}</span>
               <span style={{ color: C.lbl }}>how many?</span>
               <NumCommit dk={`q:${f.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value="" placeholder="qty" width={90}
                 title="Type the full quantity, then press Enter or click away."
@@ -1041,7 +1048,7 @@ const {
                   {trips.length > 1 && <>This row went flat and was re-entered, so it holds <b>{trips.length} separate trades</b>. Splitting gives each its own row — the closed ones move to the archive.<br /></>}
                   {col.to < col.from && (col.exact
                     ? <>Collapsing replaces the partial fills with one size-weighted average each way. Realised P&amp;L is unchanged.</>
-                    : <span style={{ color: C.amber, fontWeight: 700 }}>⚠ Collapsing this row would move realised P&amp;L by {col.delta > 0 ? "+" : ""}{col.delta} — it has sold part of an open position, so the sell was measured against a different average. Split it first.</span>)}
+                    : <span style={{ color: C.amber, fontWeight: 700 }}>⚠ Collapsing this row would move realised P&amp;L by {col.delta > 0 ? "+" : ""}{col.delta} — it has {fv.closed} part of an open position, so the {fv.closeShort} was measured against a different average. Split it first.</span>)}
                 </div>
               </div>
             );
