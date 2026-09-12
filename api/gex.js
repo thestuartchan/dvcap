@@ -8,10 +8,11 @@
 //
 //   GET /api/gex?symbol=QQQ          read the stored series (default)
 //   GET /api/gex?snapshot=1[&dry=1]  capture today's chain — the cron target
-import { kvConfigured } from '../lib/kv.js';
-import { captureGex, readGex, settledGex, GEX_SYMBOLS } from '../lib/gexStore.js';
+import { kvConfigured, kvGetJson } from '../lib/kv.js';
+import { captureGex, readGex, settledGex, observeRoll, OCC_ROLL_LOG_KEY, GEX_SYMBOLS } from '../lib/gexStore.js';
 import { getQuotes } from '../lib/quotes.js';
 import { marketState } from '../lib/sessions.js';
+import { rollSummary } from '../lib/occ.js';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'private, no-store');
@@ -43,6 +44,33 @@ export default async function handler(req, res) {
   //
   // It never writes. captureGex owns the daily series, and a second writer racing it would put two
   // vintages under one date.
+  // ── THE ROLL LOG ──────────────────────────────────────────────────────────
+  // `?rolls=1` reads what has been observed; `&probe=1` also TAKES an observation first, which is
+  // the cheap way to sample overnight: it fetches OCC and fingerprints it and does not solve a
+  // gamma profile, so it costs one 280KB fetch rather than a full recompute.
+  //
+  // Every settled recompute records too — this endpoint exists so a sampler does not have to pay
+  // for a map nobody is going to look at.
+  if (String(req.query?.rolls || '') === '1') {
+    const syms = String(req.query?.symbols || req.query?.symbol || '').trim()
+      ? String(req.query.symbols || req.query.symbol).split(',').map(x => x.trim().toUpperCase()).filter(Boolean)
+      : GEX_SYMBOLS;
+    const probed = [];
+    if (String(req.query?.probe || '') === '1') {
+      for (const sym of syms) { try { probed.push(await observeRoll(sym)); } catch (e) { probed.push({ symbol: sym, ok: false, why: String(e?.message || e) }); } }
+    }
+    const log = (await kvGetJson(OCC_ROLL_LOG_KEY)) || [];
+    const against = /^\d{2}:\d{2}$/.test(String(req.query?.against || '')) ? String(req.query.against) : '12:42';
+    return res.status(200).json({
+      mode: 'rolls', at: new Date().toISOString(), against,
+      probed: probed.length ? probed : undefined,
+      // Per symbol AND combined: the two roots publish together on every observation so far, and a
+      // summary that merged them would hide the night they did not.
+      summary: Object.fromEntries(syms.map(s => [s, rollSummary(log, { symbol: s, againstUtc: against })])),
+      log,
+    });
+  }
+
   if (String(req.query?.settled || '') === '1') {
     const syms = String(req.query?.symbols || req.query?.symbol || '').trim()
       ? String(req.query.symbols || req.query.symbol).split(',').map(x => x.trim().toUpperCase()).filter(Boolean)
