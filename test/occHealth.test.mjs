@@ -109,6 +109,27 @@ const spoil = (patch) => healthSample({ ...sound, ...patch }, { symbol: 'QQQ', a
   eq('one of them progressive', split.progressive, 1);
   eq('spanning 33 minutes', split.minWriteSpanMin, 33);
   ok('reported as a floor, never as a duration', /which is a floor and not a duration/.test(split.note));
+  // ── TWO SYMBOLS ARE NOT ONE PROGRESSIVE WRITE ─────────────────────────────
+  // Grouping the whole log at once reported QQQ at 16:32:17 and SPY at 16:32:18 as ONE settlement
+  // that "wrote in more than one step", spanning zero minutes. Two roots publishing a second apart
+  // is two roots. Found on the first real data this function ever saw.
+  const twoRoots = transitionRuns([roll('2026-09-12T16:32:17Z', 'QQQ'), roll('2026-09-12T16:32:18Z', 'SPY')]);
+  eq('each root is its own settlement', twoRoots.settlements, 2);
+  eq('and both are single-step', [twoRoots.atomic, twoRoots.progressive], [2, 0]);
+  eq('so no write span is claimed', twoRoots.minWriteSpanMin, null);
+  // The runs carry which root they belong to, so an interleaving can never be read back as one.
+  eq('runs are labelled by root', twoRoots.runs && transitionRuns([roll('2026-09-12T16:32:17Z', 'QQQ')]).settlements, 1);
+  // A real progressive write in ONE root still reads as one.
+  const oneRoot = transitionRuns([roll('2026-09-15T01:05:00Z', 'QQQ'), roll('2026-09-15T01:38:00Z', 'QQQ')]);
+  eq('two steps in one root is progressive', oneRoot.progressive, 1);
+  eq('spanning the gap between them', oneRoot.minWriteSpanMin, 33);
+  // And the two cases interleaved in time must not contaminate each other.
+  const interleaved = transitionRuns([roll('2026-09-15T01:05:00Z', 'QQQ'), roll('2026-09-15T01:06:00Z', 'SPY'),
+                                      roll('2026-09-15T01:38:00Z', 'QQQ'), roll('2026-09-15T01:39:00Z', 'SPY')]);
+  eq('each root keeps its own run', interleaved.settlements, 2);
+  eq('both progressive, neither merged', interleaved.progressive, 2);
+  eq('and the span is within a root, not across them', interleaved.minWriteSpanMin, 33);
+
   // A DAY APART IS TWO NIGHTS, not one long write.
   ok('the grouping window is hours, not days', SAME_WRITE_MAX_MIN < 24 * 60);
 

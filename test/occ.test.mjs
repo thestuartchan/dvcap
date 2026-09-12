@@ -338,7 +338,27 @@ const FIX = readFileSync(new URL('./fixtures-occ-qqq.txt', import.meta.url), 'ut
   eq('the tightest bracket is carried too', s.tightestBracketMin, 30);
   // A COUNT OF NIGHTS, ALWAYS. Three brackets that disagree are not a schedule, and a
   // recommendation that does not carry how thin it is gets read as one.
-  ok('the note says how many nights it rests on', /^3 rolls observed/.test(s.note));
+  ok('the note says how many nights it rests on', /^3 rolls bracketed/.test(s.note));
+
+  // ── AN UNTIMED TRANSITION IS NOT A ROLL TIME ──────────────────────────────
+  // The first observation after a deploy catches up with a settlement that happened hours earlier:
+  // its `to` is when WE looked, not when OCC wrote. Timing off one of those put a 16:32Z catch-up
+  // in as the latest roll end and reported "-3.8h clear of 12:42Z" — a margin reading as a
+  // catastrophic failure that describes nothing. Found on the first real data this ever saw.
+  const catchUp = { symbol: 'QQQ', to: '2026-09-12T16:32:17Z', from: null, bracketMin: null };
+  const only = rollSummary([catchUp], { symbol: 'QQQ' });
+  eq('it is counted as observed', only.n, 1);
+  eq('but not as timed', only.timed, 0);
+  eq('so there is no latest end', only.latestEndUtc, null);
+  eq('and no margin is invented', only.marginMin, null);
+  ok('and the note says why', /none of them bracketed/.test(only.note));
+  // IT IS STILL VISIBLE. Dropping it would hide that a transition was seen at all.
+  eq('the entry survives in the log', only.entries.length, 1);
+  // Mixed: the timed one governs and the untimed one is counted beside it.
+  const mixed = rollSummary([...log.filter(x => x.symbol === 'QQQ'), catchUp], { symbol: 'QQQ' });
+  eq('the latest TIMED end is the one reported', mixed.latestEndUtc, '02:31');
+  eq('with the untimed counted separately', mixed.untimed, 1);
+  ok('and named in the note', /1 untimed/.test(mixed.note));
   ok('and how much room there is', /10\.2h clear of 12:42Z/.test(s.note));
 
   // THE SESSION, NOT THE UTC DAY. A roll at 02:31Z on a Saturday is FRIDAY's settlement; bucketing
