@@ -1288,6 +1288,9 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);
   const [runs, setRuns] = useState([]);
+  // The quantity actually intended. Free-form and never required — the panel computes and renders
+  // everything with it blank, and it changes what is REPORTED rather than what is allowed.
+  const [qty, setQty] = useState("");
 
   // Recorded runs, read back once so the reconciliation survives a reload. A run is the QUESTION;
   // lib/decisions.js records the answer. Both are wanted — see the note in lib/sizer.js.
@@ -1339,7 +1342,8 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
     expiry: kind === "option" ? expiry : null,
     nlv, bookDeltaNotional: book?.deltaNotional ?? 0,
     catalysts: calendar, indicative: !!greek?.indicative, asOf: greek?.asOf ?? null,
-  }), [ready, kind, root, expiry, strike, px, greek, nlv, book, calendar]);
+    entered: Number(qty) > 0 ? Number(qty) : null,
+  }), [ready, kind, root, expiry, strike, px, greek, nlv, book, calendar, qty]);
 
   const record = async () => {
     const run = sizerRun(result);
@@ -1439,37 +1443,69 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
           ))}
           <div style={{ borderTop: "1px solid " + C.bdr, marginTop: 5, paddingTop: 5,
                         display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
-            <span style={{ fontSize: 11, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Size</span>
-            {/* BLOCK, DO NOT WARN. The one thing this must not do is compute a clean number for a
-                trade the book cannot carry — so the blocked size is struck and the fitting one
-                shown in its place. */}
-            {result.blocked
-              ? <><b style={{ fontSize: 20, color: C.red }}>⛔ EXCEEDS CEILING</b>
-                  <span style={{ fontSize: 12.5, color: C.mid }}>
-                    <s style={{ color: C.lbl }}>{result.size}</s> — {result.fitSize} would fit
-                  </span></>
-              : <b style={{ fontSize: 22, color: result.belowOne ? C.amber : C.green }}>
-                  {result.size}{result.kind === "option" ? " contracts" : " shares"}
-                </b>}
+            {/* SUGGESTED, NOT MAXIMUM. It is the output of a rule the operator set, not a limit
+                imposed on them — and this panel used to strike it through and print ⛔ EXCEEDS
+                CEILING past 1.5× NLV, refusing to answer its one question at the moment the answer
+                was most worth arguing with. Every constraint renders as a fact with its numbers
+                attached and takes no action. */}
+            <span style={{ fontSize: 11, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>→ Suggested</span>
+            <b style={{ fontSize: 22, color: result.belowOne ? C.amber : C.green }}>
+              {result.size}{result.kind === "option" ? " contracts" : " shares"}
+            </b>
             {result.premium != null && <span style={{ fontSize: 12, color: C.muted }}>{money(result.premium)} {result.kind === "option" ? "premium" : "notional"}</span>}
             {result.indicative && <span style={{ fontSize: 11, fontWeight: 800, color: C.amber }}>INDICATIVE</span>}
             <span style={{ marginLeft: "auto" }}>
               <Btn onClick={record} color={C.mid} bgColor={C.bg} label="Record run" />
             </span>
           </div>
-          {/* THE FOUR LINES THAT ARE WHY THIS BELONGS ON THE PANEL. The calculator knows the book,
-              so it answers "does this fit alongside what I already hold". */}
-          {result.deltaAdded != null && (
+          {/* ── WHAT YOU ENTERED, AGAINST WHAT THE RULE SAID ─────────────────────
+              The single most useful line here: it names the gap without arguing about it. The
+              field is free — anything can be typed in it and nothing downstream changes behaviour,
+              only what is reported. */}
+          <div style={{ display: "flex", gap: 9, alignItems: "baseline", flexWrap: "wrap", marginTop: 6 }}>
+            <span style={{ fontSize: 11, color: C.lbl, fontWeight: 700 }}>You entered</span>
+            <input value={qty} inputMode="numeric" onChange={e => setQty(e.target.value)}
+              style={{ ...SZ_IN, minWidth: 74 }} placeholder="—" />
+            {result.enteredMultiple != null && (
+              <b style={{ fontSize: 12.5, color: result.enteredMultiple > 1.05 ? C.amber : result.enteredMultiple < 0.95 ? C.mid : C.green }}>
+                {result.enteredMultiple > 1.05 ? "⚠ " : ""}{result.enteredMultiple}× suggested
+              </b>
+            )}
+            {result.enteredPremium != null && <span style={{ fontSize: 11.5, color: C.muted }}>{money(result.enteredPremium)} {result.kind === "option" ? "premium" : "notional"}</span>}
+          </div>
+
+          {/* THE BOOK CHECK, WHICH IS WHY THIS BELONGS ON THE PANEL. The calculator knows what is
+              already held, so it answers "does this fit alongside it" — and it FOLLOWS THE ENTERED
+              SIZE where there is one, because "what will I be holding if I do what I just typed" is
+              the question actually being asked at that moment. */}
+          {result.book.after != null && (
             <div style={{ fontSize: 11.5, color: C.mid, marginTop: 5, lineHeight: 1.6 }}>
-              <div>Adds {money(result.deltaAdded)} delta-notional · {nlv > 0 ? `${(result.deltaAdded / nlv).toFixed(2)}× NLV` : "—"}</div>
-              <div>Current book <b>{result.book.before}×</b> → after this trade{" "}
-                <b style={{ color: result.blocked ? C.red : result.book.after > result.book.target ? C.amber : C.green }}>{result.book.after}×</b>
-                {result.book.after > result.book.target && !result.blocked ? ` ⚠ past the ${result.book.target}× target` : ""}
+              <div style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Book delta-notional</div>
+              <div>now <b>{result.book.before}×</b> NLV → after{" "}
+                <b style={{ color: result.pastCeiling ? C.red : result.pastTarget ? C.amber : C.green }}>{result.book.after}×</b>
+                <span style={{ color: C.lbl }}> · target {result.book.target}× · ceiling {result.book.ceiling}×</span>
+                {result.book.follows === "entered" && result.book.atSuggested != null
+                  ? <span style={{ color: C.lbl }}> · {result.book.atSuggested}× at the suggested size</span> : null}
               </div>
-              <div style={{ color: C.lbl }}>Budget remaining {result.book.remaining}× to the {result.book.ceiling}× ceiling</div>
+              {result.deltaAdded != null && <div style={{ color: C.lbl }}>Adds {money(result.book.follows === "entered" ? result.enteredDelta : result.deltaAdded)} delta-notional</div>}
             </div>
           )}
-          {result.warnings.map((w, i) => <div key={i} style={{ fontSize: 11.5, color: C.red, fontWeight: 700, marginTop: 3 }}>⛔ {w}</div>)}
+          {/* OPTIONAL, AND ALWAYS RENDERED. The prior design made "what happens before this
+              expires?" a required input; it is a flag joined against the P7 event calendar, and a
+              blank one reports as what it is. */}
+          {result.kind === "option" && result.catalysts && (
+            <div style={{ fontSize: 11.5, color: C.mid, marginTop: 5 }}>
+              <span style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Catalyst before {expiry} </span>
+              {!result.catalysts.checked
+                ? <span style={{ color: C.lbl }}>not checked — no calendar loaded</span>
+                : result.catalysts.none
+                  ? <b style={{ color: C.amber }}>none scheduled</b>
+                  : <b style={{ color: C.green }}>{result.catalysts.first || `${result.catalysts.n} scheduled`}</b>}
+            </div>
+          )}
+          {/* A STATEMENT OF FACT, NOT A PERMISSION. The glyph was ⛔, which reads as a refusal on a
+              panel that no longer refuses anything. */}
+          {result.warnings.map((w, i) => <div key={i} style={{ fontSize: 11.5, color: C.amber, fontWeight: 700, marginTop: 3 }}>⚠ {w}</div>)}
           {result.notes.map((w, i) => <div key={i} style={{ fontSize: 11, color: C.lbl, marginTop: 2, lineHeight: 1.45 }}>· {w}</div>)}
         </div>
       )}
@@ -1529,12 +1565,16 @@ function ExposureTile({ book, err }) {
 
       <div style={XPO_ROW}>
         <span style={{ fontSize: 11, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>State</span>
-        <b style={{ fontSize: 13, color: stateCol }}>{over ? "⛔ " : ""}{book.state}</b>
+        {/* ⚠ AND NOT ⛔, EVERYWHERE A LIMIT IS EVALUATED. This tile takes no action and never did —
+            it reports what the book is. But ⛔ reads as a refusal, and a glyph that says "stopped"
+            on a panel that stops nothing teaches the reader to discount it. Warn, never block, is
+            the rule for the whole stack; this is the half of it that is only wording. */}
+        <b style={{ fontSize: 13, color: stateCol }}>{over ? "⚠ " : ""}{book.state}</b>
         {book.largest && (
           <span style={{ fontSize: 11.5, color: (book.largest.ratio ?? 0) > L.singleCap ? C.red : C.muted, fontWeight: 700 }}>
             largest {book.largest.symbol.trim()} {money(book.largest.deltaNotional)}
             {book.largest.ratio == null ? "" : ` · ${book.largest.ratio}× NLV`}
-            {(book.largest.ratio ?? 0) > L.singleCap ? ` ⛔ over the ${L.singleCap}× cap` : ""}
+            {(book.largest.ratio ?? 0) > L.singleCap ? ` ⚠ over the ${L.singleCap}× cap` : ""}
           </span>
         )}
       </div>
@@ -1554,7 +1594,7 @@ function ExposureTile({ book, err }) {
       {book.breaches.length > 0 && (
         <div style={{ marginTop: 7, padding: "7px 10px", borderRadius: 7, background: C.rBg, border: "1px solid " + C.rBdr }}>
           {book.breaches.map((b, i) => (
-            <div key={i} style={{ fontSize: 11.5, color: C.red, fontWeight: 700, marginTop: i ? 2 : 0 }}>⛔ {b}</div>
+            <div key={i} style={{ fontSize: 11.5, color: C.red, fontWeight: 700, marginTop: i ? 2 : 0 }}>⚠ {b}</div>
           ))}
         </div>
       )}

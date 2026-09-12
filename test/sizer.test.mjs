@@ -25,7 +25,7 @@ const NLV = 202000;
   eq('taking the book from 0.40×', r.book.before, 0.4);
   eq('to 1.15×', r.book.after, 1.15);
   eq('with 0.35× left to the ceiling', r.book.remaining, 0.35);
-  eq('and it is not blocked', r.blocked, false);
+  eq('and nothing is past the ceiling at that size', r.pastCeiling, false);
   ok('but it is past the target and says so', r.notes.some(n => /past the 1× target/.test(n)));
   eq('36 days to expiry', r.dte, 36);
 }
@@ -63,16 +63,29 @@ const NLV = 202000;
   ok('with what it means', r.warnings.some(w => /too volatile or the account too small/.test(w)));
 }
 
-// ── BLOCK, DO NOT WARN ──────────────────────────────────────────────────────
-// The one thing this must not do is compute a clean number for a trade the book cannot carry.
+// ── WARN, NEVER BLOCK ───────────────────────────────────────────────────────
+// This refused. Past 1.5× NLV it struck the computed size through, printed ⛔ EXCEEDS CEILING and
+// offered the size that would fit instead — so the one question asked of it went unanswered exactly
+// when the answer was most worth arguing with.
+//
+// The ceiling is not wrong; deciding for the operator is. Frameworks build best practice, and the
+// room to act on instinct in an exceptional case is what makes an operator good at this. Overrides
+// should be rare and must never be foreclosed. Every constraint is now a fact with its numbers
+// attached, and the discipline lives in the log instead.
 {
   const r = sizeTrade({ kind: 'option', symbol: 'QQQ 730C', price: 718, atr: 8.5, delta: 0.42,
     mark: 11.90, expiry: '2026-10-16', nlv: NLV, bookDeltaNotional: 250000, now: NOW });
-  eq('the trade is blocked', r.blocked, true);
-  eq('the size that would fit is shown instead', r.fitSize, 1);
+  eq('the ceiling is reported', r.pastCeiling, true);
+  eq('and nothing is refused', r.ok, true);
+  eq('the size stands as the rule computed it', r.size, 5);
+  eq('the size that would fit is reported beside it, never substituted', r.fitSize, 1);
   ok('and the reason names the ceiling', r.warnings.some(w => /past the 1.5× ceiling/.test(w)));
-  // The computed size is still returned — the reader is entitled to see what was refused.
-  eq('the refused size is still visible', r.size, 5);
+  ok('with what would sit inside it', r.warnings.some(w => /1 would sit inside it/.test(w)));
+  // NO FIELD IS HIDDEN AND NOTHING IS STRUCK THROUGH: premium, delta and the book projection are
+  // all computed at the size the rule returned, exactly as on a trade that fits.
+  eq('the premium is still computed', r.premium, 5950);
+  ok('and the delta added', r.deltaAdded > 0);
+  eq('there is no blocked flag left to branch on', r.blocked, undefined);
   // A book already past the ceiling has no room at all.
   const full = sizeTrade({ kind: 'stock', price: 100, atr: 3, nlv: NLV, bookDeltaNotional: NLV * 2, now: NOW });
   eq('a book already over has no room', full.fitSize, 0);
@@ -162,7 +175,17 @@ const NLV = 202000;
   eq('no calendar means not checked', catalystCheck('2026-10-16', null, NOW).checked, false);
   const r = sizeTrade({ kind: 'option', price: 718, atr: 8.5, delta: 0.42, mark: 11.9,
     expiry: '2026-09-12', nlv: NLV, catalysts: cal, now: NOW });
-  ok('and the warning reaches the result', r.warnings.some(w => /no scheduled catalyst/.test(w)));
+  // A FLAG, NOT A STOP. The prior design proposed making this a required input; it is optional in
+  // every sense, and an expiry with nothing scheduled is reported as a NOTE rather than a warning
+  // because it is a fact about the calendar, not a fault in the trade.
+  ok('and it reaches the result', r.notes.some(w => /no scheduled catalyst/.test(w)));
+  ok('without becoming a warning', !r.warnings.some(w => /no scheduled catalyst/.test(w)));
+  eq('and the size is computed regardless', r.size > 0, true);
+  // NOTHING REQUIRES THE CALENDAR. Omitting it changes what is reported, never what is returned.
+  const noCal = sizeTrade({ kind: 'option', price: 718, atr: 8.5, delta: 0.42, mark: 11.9,
+    expiry: '2026-09-12', nlv: NLV, now: NOW });
+  eq('no calendar, same size', noCal.size, r.size);
+  eq('and it says so rather than assuming', noCal.catalysts.checked, false);
 }
 
 // ── THE JOURNAL, AND THE ONLY THING THAT PROVES ANY OF THIS WORKS ───────────
@@ -181,7 +204,7 @@ const NLV = 202000;
   const rec = reconcileRuns([run], [{ symbol: 'QQQ 730C', qty: 20, at: '2026-09-01T14:02:00Z' }]);
   eq('the fill is matched to the run', rec.taken, 1);
   eq('and the override measured', rec.worst.ratio, 4);
-  ok('said in a sentence', /actual exceeded intended on 1 of 1/.test(rec.note));
+  ok('said in a sentence', /actual exceeded suggested on 1 of 1/.test(rec.note));
   eq('intended and actual are both kept', [rec.worst.intended, rec.worst.actual], [5, 20]);
 
   // A SIZED-AND-DECLINED TRADE IS NOT A VIOLATION. It is the tool working, and it is counted as
@@ -197,13 +220,25 @@ const NLV = 202000;
   const obeyed = reconcileRuns([run], [{ symbol: 'QQQ 730C', qty: 5, at: '2026-09-01T14:02:00Z' }]);
   eq('taking the suggested size is followed', obeyed.followed, 1);
   eq('with a ratio of one', obeyed.meanRatio, 1);
-  // A BLOCKED run is measured against what it OFFERED, not against what it refused.
-  const blockedRun = sizerRun(sizeTrade({ kind: 'option', symbol: 'QQQ 730C', price: 718, atr: 8.5,
+  // PAST THE CEILING IS MEASURED AGAINST THE RULE'S OWN SIZE, because that is now what was on
+  // screen. It used to be measured against the substitute the ceiling offered.
+  const overRun = sizerRun(sizeTrade({ kind: 'option', symbol: 'QQQ 730C', price: 718, atr: 8.5,
     delta: 0.42, mark: 11.9, expiry: '2026-10-16', nlv: NLV, bookDeltaNotional: 250000, now: NOW }),
     { at: '2026-09-01T13:45:00Z' });
-  const vsBlocked = reconcileRuns([blockedRun], [{ symbol: 'QQQ 730C', qty: 5, at: '2026-09-01T14:00:00Z' }]);
-  eq('a blocked run is measured against the size it offered', vsBlocked.worst.intended, 1);
-  eq('so taking five against a fitting one is 5x', vsBlocked.worst.ratio, 5);
+  eq('the run no longer carries a block flag', overRun.blocked, undefined);
+  const vsOver = reconcileRuns([overRun], [{ symbol: 'QQQ 730C', qty: 5, at: '2026-09-01T14:00:00Z' }]);
+  eq('it is measured against the suggested size', vsOver.worst.intended, 5);
+  eq('so taking exactly it is 1x', vsOver.worst.ratio, 1);
+
+  // ── THE LOG IS A RECORD OF WHAT WAS SHOWN ──────────────────────────────────
+  // Runs written before the ceiling stopped blocking carry `blocked: true` and were shown `fitSize`
+  // instead of `size`. They are still measured against what was actually on screen at the time:
+  // rewriting their meaning retrospectively would make an old row describe a moment that never
+  // happened. Nothing writes `blocked` any more, so this only ever applies to history.
+  const legacy = { at: '2026-08-01T13:45:00Z', symbol: 'QQQ 730C', size: 5, blocked: true, fitSize: 1 };
+  const vsLegacy = reconcileRuns([legacy], [{ symbol: 'QQQ 730C', qty: 5, at: '2026-08-01T14:00:00Z' }]);
+  eq('a legacy blocked run keeps its offered size', vsLegacy.worst.intended, 1);
+  eq('so the same fill reads as 5x there', vsLegacy.worst.ratio, 5);
   eq('nothing recorded is nothing to report', reconcileRuns([], []).n, 0);
 }
 
@@ -216,10 +251,13 @@ const NLV = 202000;
   eq('the suggestion carries the field the log reads', r.roomQty, 5);
   eq('and the full size beside it', r.fullQty, 5);
   ok('with a mode and a risk percentage', r.mode === 'option' && r.effPct === SIZER_LIMITS.riskPct);
-  // A blocked run offers the fitting size to that log, not the refused one.
+  // ONE SIZE, AND IT IS THE RULE'S. `roomQty` used to become `fitSize` once the book was past the
+  // ceiling, so the reconciliation measured an override against a number the ceiling had
+  // substituted rather than against what the rule said.
   const b = sizeTrade({ kind: 'option', price: 718, atr: 8.5, delta: 0.42, mark: 11.9,
     expiry: '2026-10-16', nlv: NLV, bookDeltaNotional: 250000, now: NOW });
-  eq('a blocked run recommends what fits', b.roomQty, 1);
+  eq('past the ceiling it still recommends the rule\'s size', b.roomQty, 5);
+  eq('with what would fit reported separately', b.fitSize, 1);
 }
 
 // ── CONFIGURABLE, WITH THE SHIPPED DEFAULTS THE SPEC NAMES ──────────────────
@@ -233,6 +271,96 @@ const NLV = 202000;
   eq('a raised concentration cap is respected', loose.size, 272);
   eq('and the ATR test now binds', loose.binding, 'ATR test');
   eq('the reading carries the limits it used', loose.limits.singleNamePct, 25);
+}
+
+
+// ── WHAT YOU TYPED, AGAINST WHAT THE RULE SAID ──────────────────────────────
+// The single most useful line on the card: it names the gap without arguing about it. And the
+// half the log is built around — the suggested size alone cannot say later whether a rule was
+// followed.
+{
+  const base = { kind: 'option', symbol: 'QQQ 730C', price: 718, atr: 8.5, atrPct: 1.18,
+                 delta: 0.42, mark: 11.90, expiry: '2026-10-16', nlv: NLV, bookDeltaNotional: 80800, now: NOW };
+  const blank = sizeTrade(base);
+  // A BLANK FIELD IS A QUESTION NEVER ASKED, not agreement with the suggestion, and must not read
+  // as it — 1.00× would be indistinguishable from having typed the suggested size.
+  eq('nothing entered is null, not zero and not one', blank.entered, null);
+  eq('and there is no multiple to report', blank.enteredMultiple, null);
+  eq('the book projection follows the suggestion', blank.book.follows, 'suggested');
+
+  const over = sizeTrade({ ...base, entered: 20 });
+  eq('the entered size is kept', over.entered, 20);
+  eq('and the gap named', over.enteredMultiple, 4);
+  eq('with its own premium', over.enteredPremium, 23800);
+  // THE BOOK FOLLOWS WHAT WAS TYPED. "What will I be holding if I do what I just typed" is the
+  // question being asked at that moment; projecting the suggestion answers a different one.
+  eq('the projection follows the entry', over.book.follows, 'entered');
+  // 20 × 0.42 × 100 × 718 = $603,120 of delta-notional on top of $80,800, against a $202,000 NLV.
+  eq('to 3.39× at twenty', over.book.after, 3.39);
+  // AND THE SUGGESTION STAYS VISIBLE BESIDE IT rather than being replaced.
+  eq('the suggested projection is kept too', over.book.atSuggested, 1.15);
+  eq('the suggested size is untouched by the override', over.size, blank.size);
+
+  // TYPING THE SUGGESTED SIZE IS 1×, and is not flagged.
+  eq('following the rule is 1x', sizeTrade({ ...base, entered: 5 }).enteredMultiple, 1);
+  // UNDER-SIZING IS REPORTED TOO — the gap runs both ways and only one direction is a risk.
+  eq('half the suggestion is 0.4x', sizeTrade({ ...base, entered: 2 }).enteredMultiple, 0.4);
+  // NOTHING IS REFUSED AT ANY SIZE. This is the whole principle in one assertion.
+  const absurd = sizeTrade({ ...base, entered: 5000 });
+  eq('an absurd entry still computes', absurd.ok, true);
+  eq('and still returns the rule\'s size', absurd.size, 5);
+  ok('while saying where the book lands', absurd.pastCeiling === true);
+  eq('junk in the field is ignored, not fatal', sizeTrade({ ...base, entered: 'abc' }).entered, null);
+  eq('and so is a negative', sizeTrade({ ...base, entered: -5 }).entered, null);
+}
+
+// ── THE LOG CARRIES BOTH NUMBERS, AND THE CATALYST STATE ────────────────────
+{
+  const cal = [{ date: '2026-10-14', title: 'US CPI (Sep)', tier: 1 }];
+  const r = sizeTrade({ kind: 'option', symbol: 'QQQ 730C', price: 718, atr: 8.5, delta: 0.42,
+    mark: 11.9, expiry: '2026-10-16', nlv: NLV, bookDeltaNotional: 80800, catalysts: cal,
+    entered: 20, now: NOW });
+  const run = sizerRun(r, { at: '2026-09-11T13:45:00Z' });
+  eq('the run records what was suggested', run.size, 5);
+  eq('and what was entered', run.entered, 20);
+  eq('and the multiple', run.enteredMultiple, 4);
+  eq('and where the book landed', [run.bookBefore, run.bookAfter], [0.4, 3.39]);
+  // RECORDED, NOT ACTED ON. The run says the ceiling was passed and the size stands.
+  eq('and that the ceiling was passed', run.pastCeiling, true);
+  // NOT CHECKED and CHECKED-AND-EMPTY are different facts about a trade and collapse into each
+  // other if only one is stored.
+  eq('the catalyst state is recorded', [run.catalyst.checked, run.catalyst.none], [true, false]);
+  eq('with the event named', run.catalyst.first, 'US CPI (Sep)');
+  const none = sizerRun(sizeTrade({ kind: 'option', price: 718, atr: 8.5, delta: 0.42, mark: 11.9,
+    expiry: '2026-10-16', nlv: NLV, now: NOW }), { at: '2026-09-11T13:45:00Z' });
+  eq('an unchecked calendar is recorded as unchecked', none.catalyst.checked, false);
+}
+
+// ── A ROLLING MONTHLY STAT, WHICH IS WHERE THE DISCIPLINE LIVES ─────────────
+// An all-time mean flattens the thing worth seeing. A number on screen at the moment of entry does
+// not stop a decision taken with conviction; reading a month later that actual exceeded suggested
+// on 6 of 19 trades is legible in a way the moment never is — and it works BECAUSE it did not
+// intervene. An occasional override is the system working; a pattern is what this is for.
+{
+  const run = (at, symbol, size) => ({ at, symbol, size });
+  const runs = [run('2026-08-04T14:00:00Z', 'QQQ', 5), run('2026-08-19T14:00:00Z', 'SPY', 10),
+                run('2026-09-02T14:00:00Z', 'QQQ', 5), run('2026-09-11T14:00:00Z', 'AAPU', 100)];
+  const fills = [{ symbol: 'QQQ', qty: 20, at: '2026-08-04T15:00:00Z' },
+                 { symbol: 'SPY', qty: 10, at: '2026-08-19T15:00:00Z' },
+                 { symbol: 'QQQ', qty: 5, at: '2026-09-02T15:00:00Z' },
+                 { symbol: 'AAPU', qty: 300, at: '2026-09-11T15:00:00Z' }];
+  const rec = reconcileRuns(runs, fills);
+  eq('every month present is bucketed', rec.byMonth.map(m => m.month), ['2026-09', '2026-08']);
+  eq('newest first, so the current month reads at the top', rec.thisMonth.month, '2026-09');
+  eq('with its own count', [rec.thisMonth.taken, rec.thisMonth.exceeded], [2, 1]);
+  eq('and its own mean, not the all-time one', rec.thisMonth.meanRatio, 2);
+  ok('the all-time mean differs, which is the point', rec.meanRatio !== rec.thisMonth.meanRatio);
+  ok('each month says it in a sentence', /exceeded suggested on 1 of 2/.test(rec.thisMonth.note));
+  // A month where the rule was followed throughout reports zero, not nothing.
+  const clean = reconcileRuns([run('2026-07-01T14:00:00Z', 'X', 10)],
+                              [{ symbol: 'X', qty: 10, at: '2026-07-01T15:00:00Z' }]);
+  eq('a followed month counts the follow', [clean.thisMonth.exceeded, clean.thisMonth.followed], [0, 1]);
+  eq('and nothing matched means no months', reconcileRuns([run('2026-07-01T14:00:00Z', 'X', 10)], []).byMonth, []);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
