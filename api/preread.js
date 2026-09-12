@@ -569,7 +569,10 @@ function buildKorea(k, kofia = KOFIA_STORE) {
 // `spot` comes from the live quote where the region has one — for the US that is the pre-market
 // print, which is the whole reason repricing is worth doing. Where no live spot is available the
 // stored row stands as captured and says so.
-async function gexBlock(liveSpot, tense = 'preview') {
+// `publishing` is true only when this brief will actually be POSTED. A dry run renders the same
+// map and reaches nobody, and counting it as a publish would put the soundness record out of step
+// with what readers actually saw — in both directions, since dry runs cluster around changes.
+async function gexBlock(liveSpot, tense = 'preview', opts = {}) {
   const rows = [], vint = { rung: 'none', from: null, asOf: null, spotSource: null, ivAgeMin: null };
   // ── WHY EACH SYMBOL LANDED WHERE IT DID ────────────────────────────────────
   // The rung attempts were wrapped in a bare `catch {}`. That is correct behaviour — one symbol
@@ -607,7 +610,11 @@ async function gexBlock(liveSpot, tense = 'preview') {
       // comparable.
       let settledAsOf = null, rowByStrike = null, rowAgreement = null, rowDecay = null;
       try {
-        const st = await settledGex(sym, { spot: spot > 0 ? spot : null, expiries: latest.expiries || null });
+        // PUBLISHED. This map goes into a brief that reaches a reader and cannot be withdrawn, so
+        // its soundness verdict is stamped as the one that counts. lib/occHealth.js reads back
+        // "was what went out sound" from these and nothing else.
+        const st = await settledGex(sym, { spot: spot > 0 ? spot : null, expiries: latest.expiries || null,
+                                           published: !!opts?.publishing });
         if (st?.ok && st.row) {
           row = { ...st.row, pin: pinOf(st.grid, { spot: st.spotUsed, today, expired }) };
           rung = 'occ';
@@ -941,7 +948,7 @@ async function runRegion(region, req) {
     const usClosedNow = new Date().getUTCHours() * 60 + new Date().getUTCMinutes() >= 20 * 60;
     const tense = usClosedNow ? 'closed' : 'preview';
     try {
-      const g = await gexBlock(liveSpot, tense);
+      const g = await gexBlock(liveSpot, tense, { publishing: req.query.post === '1' });
       blocks.gexLines = g?.text || null;
       blocks.gexTense = tense;
       blocks.gexDiag = g?.diag || null;

@@ -9,10 +9,11 @@
 //   GET /api/gex?symbol=QQQ          read the stored series (default)
 //   GET /api/gex?snapshot=1[&dry=1]  capture today's chain — the cron target
 import { kvConfigured, kvGetJson } from '../lib/kv.js';
-import { captureGex, readGex, settledGex, observeRoll, OCC_ROLL_LOG_KEY, GEX_SYMBOLS } from '../lib/gexStore.js';
+import { captureGex, readGex, settledGex, observeRoll, OCC_ROLL_LOG_KEY, OCC_HEALTH_KEY, GEX_SYMBOLS } from '../lib/gexStore.js';
 import { getQuotes } from '../lib/quotes.js';
 import { marketState } from '../lib/sessions.js';
-import { rollSummary } from '../lib/occ.js';
+import { rollSummary, OCC_CONFIRM_MIN } from '../lib/occ.js';
+import { healthSummary, transitionRuns, confirmMinVerdict } from '../lib/occHealth.js';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'private, no-store');
@@ -51,6 +52,32 @@ export default async function handler(req, res) {
   //
   // Every settled recompute records too — this endpoint exists so a sampler does not have to pay
   // for a map nobody is going to look at.
+  // ── DID WHAT WENT OUT HOLD UP? ────────────────────────────────────────────
+  // The loop this closes is not "when does OCC publish" — the rung has never trusted a clock, it
+  // asks the file whether it rolled. It is "has the brief ever gone out on a book that was not
+  // sound, and would anyone know". Every verdict is recorded now; this reads them back.
+  if (String(req.query?.health || '') === '1') {
+    const days = Math.min(180, Math.max(1, Number(req.query?.days) || 30));
+    const [log, rolls] = await Promise.all([
+      kvGetJson(OCC_HEALTH_KEY).then(v => v || []).catch(() => []),
+      kvGetJson(OCC_ROLL_LOG_KEY).then(v => v || []).catch(() => []),
+    ]);
+    const runs = transitionRuns(rolls);
+    return res.status(200).json({
+      mode: 'health', at: new Date().toISOString(), days,
+      // The whole book, and each symbol, because one symbol failing while the other is fine is a
+      // different problem from both failing and a combined rate hides it.
+      overall: healthSummary(log, { days }),
+      bySymbol: Object.fromEntries(GEX_SYMBOLS.map(s2 => [s2, healthSummary(log, { days, symbol: s2 })])),
+      // ATOMIC OR PROGRESSIVE, with no sampling grid — a settlement written in one step produces
+      // one transition, one written in several produces several, and the span between the first
+      // and last is the floor OCC_CONFIRM_MIN has to clear.
+      write: runs,
+      confirmMin: confirmMinVerdict(runs, OCC_CONFIRM_MIN),
+      rolls: rollSummary(rolls, { againstUtc: '12:42' }),
+    });
+  }
+
   if (String(req.query?.rolls || '') === '1') {
     const syms = String(req.query?.symbols || req.query?.symbol || '').trim()
       ? String(req.query.symbols || req.query.symbol).split(',').map(x => x.trim().toUpperCase()).filter(Boolean)
