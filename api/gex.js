@@ -62,6 +62,8 @@ export default async function handler(req, res) {
       kvGetJson(OCC_HEALTH_KEY).then(v => v || []).catch(() => []),
       kvGetJson(OCC_ROLL_LOG_KEY).then(v => v || []).catch(() => []),
     ]);
+    // Per root as well as combined — transitionRuns partitions by symbol internally, but a caller
+    // reading one root's write shape should not have to trust that it did.
     const runs = transitionRuns(rolls);
     return res.status(200).json({
       mode: 'health', at: new Date().toISOString(), days,
@@ -73,6 +75,7 @@ export default async function handler(req, res) {
       // one transition, one written in several produces several, and the span between the first
       // and last is the floor OCC_CONFIRM_MIN has to clear.
       write: runs,
+      writeBySymbol: Object.fromEntries(GEX_SYMBOLS.map(s2 => [s2, transitionRuns(rolls, { symbol: s2 })])),
       confirmMin: confirmMinVerdict(runs, OCC_CONFIRM_MIN),
       rolls: rollSummary(rolls, { againstUtc: '12:42' }),
     });
