@@ -699,6 +699,21 @@ const {
                 </span>
               </label>
             )}
+            {/* ── QUOTE AS ──
+                The row's symbol is what YOU call it; the quote feed may call it something else.
+                This field existed on the row and was read by quoteSym() and had no way to be set
+                except by editing the JSON export. ASML on Euronext is `ASML.AS` to the feed; a row
+                you would rather label ASML can now say so here instead of renaming itself. */}
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}
+                   title="What the price feed calls this — Yahoo's symbol. Leave blank to quote the row's own symbol. e.g. ASML.AS for the Amsterdam listing, 0981.HK for Hong Kong.">
+              Quote as<br />
+              <input value={r.quoteSymbol || ""} onChange={e => upd(r.id, { quoteSymbol: e.target.value.trim().toUpperCase().slice(0, 24) })}
+                placeholder={quoteSym({ ...r, quoteSymbol: "" }) || "feed symbol"}
+                style={{ width: 110, padding: "5px 9px", border: "1.5px solid " + (r.quoteSymbol ? C.blue : C.bdr), borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text, textTransform: "uppercase" }} />
+              <span style={{ display: "block", fontWeight: 500, color: C.muted, fontSize: 10.5, marginTop: 2, maxWidth: 160, lineHeight: 1.35 }}>
+                {r.quoteSymbol ? `priced off ${r.quoteSymbol}` : "blank = the symbol itself"}
+              </span>
+            </label>
             <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Trade label<br />
               <input value={r.trade || ""} onChange={e => upd(r.id, { trade: e.target.value })} placeholder="e.g. Aug 18 entry"
                 style={{ width: 120, padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>

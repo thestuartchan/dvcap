@@ -81,6 +81,28 @@ eq('futures roots come back rolled up', parseTrades(T({ tradeID: '14', symbol: '
   eq('and what is after it is recorded', plan.apply.map(a => a.fill.tradeId), ['21:HOOD']);
 }
 
+// ── ONE ROOT, TWO LISTINGS ───────────────────────────────────────────────────
+// IBKR reports the Nasdaq and the Euronext ASML both as `ASML`, in USD and EUR. Keyed by root
+// alone, a EUR trade would have been applied to the USD row — the price is in the wrong currency
+// and the position is on the wrong exchange, and nothing in the fill would say so.
+{
+  const us = { id: 'ASML-us', symbol: 'ASML',    currency: 'USD', fills: [{ id: 'a', side: 'buy', qty: 10, price: 900, date: '2026-09-01' }] };
+  const eu = { id: 'ASML-eu', symbol: 'ASML.AS', currency: 'EUR', fills: [{ id: 'b', side: 'buy', qty: 5,  price: 820, date: '2026-09-01' }] };
+  const tUs = T({ tradeID: '501', symbol: 'ASML', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'BUY', quantity: 2, tradePrice: 905, ibCommission: -1, tradeDate: '20260910' });
+  const tEu = T({ tradeID: '502', symbol: 'ASML', assetCategory: 'STK', currency: 'EUR', multiplier: 1, buySell: 'BUY', quantity: 3, tradePrice: 825, ibCommission: -1, tradeDate: '20260910' });
+  const plan = planTrades(withDerived([us, eu]), parseTrades(tUs + tEu), { from: '2026-09-01' });
+  // By trade id, not price: the fill price carries the commission (−1 over 2 shares is +0.50).
+  eq('each trade lands on its own listing', plan.apply.map(a => [a.rowId, a.fill.tradeId]).sort(), [['ASML-eu', '502:ASML'], ['ASML-us', '501:ASML']]);
+  eq('nothing is ambiguous', plan.report, []);
+  eq('and nothing is created', plan.creates, []);
+  // With only the Nasdaq row held, the EUR trade is a sale-with-no-position question for a person
+  // — it must not be applied to the USD row because the roots happen to agree.
+  const one = planTrades(withDerived([us]), parseTrades(tUs + tEu), { from: '2026-09-01', positions: [] });
+  eq('the USD trade still applies to the USD row', one.apply.find(a => a.fill.tradeId === '501:ASML')?.rowId, 'ASML-us');
+  eq('the EUR buy opens its own row rather than joining the USD one', one.creates.map(c => [c.symbol, c.currency]), [['ASML', 'EUR']]);
+  eq('and its fill goes onto that new row, not the USD one', one.apply.find(a => a.fill.tradeId === '502:ASML')?.rowId, one.creates[0].id);
+}
+
 // ── idempotence ──
 // This is what allows a 30-day window, which is what makes a missed run heal itself.
 {
