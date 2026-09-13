@@ -3544,7 +3544,7 @@ const PostureRow = ({ label, children, color }) => (
   </div>
 );
 
-function PostureCard({ p: raw, regime = null }) {
+function PostureCard({ p: raw, regime = null, tape = null }) {
   // The regime probability is computed HERE, in the client, off user-set recession weights — so
   // it arrives after composePosture has already run on the server. The guard is therefore applied
   // to the composed object rather than reimplemented: "Stagflation 71%" and "RISK-ON" cannot both
@@ -3583,6 +3583,26 @@ function PostureCard({ p: raw, regime = null }) {
               {l.vote === 0 && l.value != null && <span style={{ color: C.lbl, fontWeight: 600 }}> ·</span>}
             </span>
           ))}
+        </PostureRow>
+      )}
+      {/* ── THE TAPE CARD, FOLDED IN ─────────────────────────────────────────
+          A standalone "Tape regime" card lower on the page showed this same session's legs a
+          second time under its own heading, with the three lines the leg row above lacks: the
+          label, what decided it, and the gold-pair read that disambiguates gold. One tape, one
+          place — those lines now sit directly under the legs they explain. */}
+      {tape && tape.state !== "INSUFFICIENT_DATA" && (
+        <PostureRow label="Read" color={tape.color || C.mid}>
+          <span style={{ fontWeight: 800 }}>{tape.label}</span>
+          {tape.discriminator ? <span style={{ color: C.mid, fontWeight: 600 }}> — {tape.discriminator}</span> : null}
+          {tape.reasons?.length > 0 && <div style={{ color: C.muted, fontWeight: 500, marginTop: 2, lineHeight: 1.45 }}>{tape.reasons.join(" · ")}</div>}
+          {tape.corroboration && !tape.corroboration.available && (
+            <div style={{ color: C.amber, fontWeight: 700, marginTop: 2 }}>{tape.corroboration.note}</div>
+          )}
+          {tape.goldPair && (
+            <div style={{ marginTop: 2, color: tape.goldPair.available ? C.muted : C.amber, fontWeight: tape.goldPair.available ? 500 : 700, lineHeight: 1.45 }}>
+              gold pair · {String(tape.goldPair.reading || "").replace(/_/g, " ")} — {tape.goldPair.note}
+            </div>
+          )}
         </PostureRow>
       )}
       {p.working?.length > 0 && <PostureRow label="Working" color={C.green}>{p.working.join(" · ")}</PostureRow>}
@@ -5005,6 +5025,62 @@ function pbGeo(sym) {
   return "US";
 }
 
+// ── THE RATES, IN ONE LINE ───────────────────────────────────────────────────
+// The Overview carried the Macro tab's whole rates card — nine tiles and a regime-inputs grid —
+// as its fifth block. The full card lives in the fold below; what the synthesis needs above it is
+// the five numbers a rates scenario turns on, on one line, with their day's move.
+function RatesStrip({ macro }) {
+  if (!macro) return null;
+  const bp = (d) => d == null ? "" : ` ${d >= 0 ? "+" : "−"}${Math.abs(Math.round(d))}bp`;
+  const it = (label, v, d, unit = "%") => v == null ? null : (
+    <span key={label} style={{ whiteSpace: "nowrap" }}>
+      <span style={{ color: C.lbl, fontWeight: 700 }}>{label} </span>
+      <b style={{ color: C.text, fontVariantNumeric: "tabular-nums" }}>{v}{unit}</b>
+      {d != null && <span style={{ color: d > 0 ? C.amber : d < 0 ? C.green : C.muted, fontSize: 11, fontWeight: 700 }}>{bp(d)}</span>}
+    </span>
+  );
+  const items = [
+    it("2Y", macro.us2y?.value, macro.us2y?.deltaBps),
+    it("10Y", macro.us10y?.value, macro.us10y?.deltaBps),
+    it("30Y", macro.us30y?.value, macro.us30y?.deltaBps),
+    macro.twos10s != null ? it("2s10s", `${macro.twos10s >= 0 ? "+" : ""}${macro.twos10s}`, macro.twos10sDeltaBps, "bp") : null,
+    it("OAS", macro.oas?.value, macro.oas?.deltaBps, ""),
+    macro.wti?.value != null ? it("WTI", `$${macro.wti.value}`, null, "") : null,
+  ].filter(Boolean);
+  if (!items.length) return null;
+  return (
+    <div style={{ display: "flex", gap: "4px 16px", flexWrap: "wrap", alignItems: "baseline", fontSize: 12.5,
+                  padding: "8px 14px", background: C.surf, border: "1.5px solid " + C.bdr, borderRadius: 12 }}>
+      <span style={{ fontSize: 10, fontWeight: 800, color: C.lbl, letterSpacing: 1.5, textTransform: "uppercase" }}>Rates</span>
+      {items}
+      <span style={{ marginLeft: "auto", fontSize: 10.5, color: C.lbl }}>full card in Data below · Macro tab</span>
+    </div>
+  );
+}
+
+// ── THE FOLD ─────────────────────────────────────────────────────────────────
+// Everything below the synthesis — regime per region, the rates card, tape, breadth, events,
+// handoff, names, indices, cross-asset, calendar — is reference. It is what the synthesis was
+// composed FROM, and it is where a reader goes to check a claim, not to form one. Roughly twenty
+// card-level blocks sat on the same scroll as the six that carry the conclusion. Closed by
+// default; the choice is remembered, because a reader who wants it open wants it open every day.
+function DataFold({ children }) {
+  const [open, setOpen] = useState(() => cacheLoad("overview_data_open_v1", false));
+  return (
+    <details open={open}
+      onToggle={e => { const o = e.currentTarget.open; setOpen(o); cacheSave("overview_data_open_v1", o); }}
+      style={{ background: C.surf, border: "1.5px solid " + C.bdr, borderRadius: 14, padding: "10px 16px" }}>
+      <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, color: C.mid, letterSpacing: 1.2, textTransform: "uppercase", listStyle: "none" }}>
+        {open ? "▾" : "▸"} Data
+        <span style={{ fontWeight: 600, letterSpacing: 0, textTransform: "none", color: C.muted, marginLeft: 8 }}>
+          regime · rates · breadth · events · handoff · names · indices · cross-asset · calendar — what the read above was composed from
+        </span>
+      </summary>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 12 }}>{children}</div>
+    </details>
+  );
+}
+
 function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updated, onRefresh, fmtTime, reconSummary, liveIntervention, regime = null }) {
   // Both All and single-region are filtered views of ONE spine. `active` = loaded data for
   // the selected region(s); `data` (= first active) backs the global macro strip + calendar.
@@ -5079,7 +5155,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               Rates → everything else. The synthesis cluster leads; raw data and the book-specific
               tell cards (handoff / correlation / FX / events) drop to "everything else" below. */}
           {/* A1 — POSTURE headline: the single "what to do" card, above everything. */}
-          {data.posture && <PostureCard p={data.posture} regime={regime} />}
+          {data.posture && <PostureCard p={data.posture} regime={regime} tape={data.marketRegime} />}
           {/* 1 — Scenario board (synthesis). */}
           {data.scenarios && <ScenarioBoard scenarios={data.scenarios} />}
           {/* P7 — Treasury supply. Sits directly under the scenario board because three of the six
@@ -5140,6 +5216,9 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
             );
           })()}
 
+          <RatesStrip macro={data.macro} />
+
+          <DataFold>
           {/* 4 — Credit (master gauge) lives inside the regime block below; it follows READ. */}
           {/* Regime summary — one card per active region (stacked in All view) */}
           {active.map(d => (
@@ -5378,38 +5457,6 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {/* Southbound Stock Connect (SMIC mainland flow) — same class as the Korea flow panel,
               shown alongside it when Asia is active. Self-fetches its own manual store. */}
           {regions.includes("asia") && <SouthboundPanel />}
-
-          {/* Tape regime + breadth ladder (everything-else): today's cross-asset price action. */}
-          {data.marketRegime && data.marketRegime.state !== "INSUFFICIENT_DATA" && (
-            <Card>{/* I.2 — regime state is not a status token; no badge, no bar. */}
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                <SLabel>🎛️ Tape regime</SLabel>
-                <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>cross-asset, today's price action</span>
-              </div>
-              <div style={{ fontSize: 17, fontWeight: 900, color: data.marketRegime.color }}>{data.marketRegime.label}</div>
-              {/* P0.1 — scope label: this and the structural Stagflation read measure different things. */}
-              <div style={{ fontSize: 11, fontWeight: 800, color: C.blue, letterSpacing: 0.3, marginTop: 1 }}>today's tape · one session</div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: C.mid, marginTop: 2 }}>{data.marketRegime.discriminator}</div>
-              {data.marketRegime.reasons?.map((s, i) => (
-                <div key={i} style={{ fontSize: 12, color: C.muted, marginTop: 3, lineHeight: 1.5 }}>· {s}</div>
-              ))}
-              {data.marketRegime.corroboration && !data.marketRegime.corroboration.available && (
-                <div style={{ fontSize: 11, color: C.amber, fontWeight: 700, marginTop: 4 }}>{data.marketRegime.corroboration.note}</div>
-              )}
-              {/* F2 — the gold pair, stated explicitly. Gold alone is ambiguous and has been
-                  read both ways in a week; the breakeven leg is what disambiguates it. */}
-              {data.marketRegime.goldPair && (
-                <div style={{ marginTop: 6, padding: "7px 10px", borderRadius: 6,
-                  background: data.marketRegime.goldPair.available ? C.bg : C.aBg,
-                  border: "1px solid " + (data.marketRegime.goldPair.available ? C.bdr : C.aBdr),
-                  fontSize: 11.5, lineHeight: 1.55,
-                  color: data.marketRegime.goldPair.available ? C.muted : C.amber,
-                  fontWeight: data.marketRegime.goldPair.available ? 400 : 700 }}>
-                  <b>Gold pair · {data.marketRegime.goldPair.reading.replace(/_/g, " ")}</b> — {data.marketRegime.goldPair.note}
-                </div>
-              )}
-            </Card>
-          )}
 
           {/* Concentration ladder (P5) — fixed order, widest beta to narrowest. */}
           {data.ladder && data.ladder.spread != null && (
@@ -5678,6 +5725,8 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               })}
             </Card>
           )}
+
+          </DataFold>
 
           <div style={{ fontSize: 11, color: C.lbl, textAlign: "center" }}>
             Same data spine as the Discord pre-reads · {regions.length === 3 ? "All regions" : regions.map(r => r.toUpperCase()).join(" · ")}
