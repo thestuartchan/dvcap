@@ -19,7 +19,7 @@ import { deriveRegimeProbabilities } from "../lib/regimeProb.js";
 import { applyRegimeGuard } from "../lib/posture.js";
 import { minersPairImplication } from "../lib/regimeState.js";
 import { southboundTrend, southboundLevelTrend, southboundRead, ahPremiumRead, sbStale } from "../lib/southbound.js";
-import { STATUS, creditStatus, deriveAction, headerSignal } from "../lib/status.js";
+import { STATUS, creditStatus, deriveAction } from "../lib/status.js";
 import { HORIZON, HORIZON_LABEL, consensusFor, calendarWindow, dispersionRead, NO_CONVERSION_NOTE, consensusVintage } from "../lib/recession.js";
 import { buildViews, evaluateViews, regimeCluster, divergenceRead } from "../lib/analystViews.js";
 import { fmtCcy } from "../lib/fxrates.js";
@@ -118,8 +118,8 @@ const INDICATORS = [
     signal(liveVal) {
       if (liveVal == null) return { label: "No print", text: "The live series is unavailable, so this indicator has no current reading. The chart below is history only.", state: "UNKNOWN" };
       const v = liveVal;
-      if (v >= 5.5)  return { label:"Recession Confirmed",  text:"Unemployment above 5.5% — recession is underway by historical standards. Capital preservation is the priority.", state:"DANGER" };
-      if (v >= 5.0)  return { label:"Recession Zone",       text:"Crossed 5.0% — recession historically confirmed at this level. Defensive positioning warranted.",              state:"DANGER" };
+      if (v >= 5.5)  return { label:"Recession Confirmed",  text:"Unemployment above 5.5% — recession is underway by historical standards. At this level drawdown, not return, is the variable that decides the year.", state:"DANGER" };
+      if (v >= 5.0)  return { label:"Recession Zone",       text:"Crossed 5.0% — recession historically confirmed at this level. Historically this is where defensive books were built, and where building one starts to cost.",              state:"DANGER" };
       if (v >= 4.5)  return { label:"Sahm Rule Triggered",  text:"At or above the Sahm Rule threshold. Labour market deteriorating — leading indicator for recession.",           state:"WATCH" };
       if (v >= 4.0)  return { label:"Elevated vs '23 low",  text:"Above the 4.0% historical average and well up from the 3.4% '23 trough — but that's the trend-since-low read; check the last-vs-prior print for near-term direction.", state:"ELEVATED" };
       return           { label:"Healthy",                   text:"Below historical average. Labour market resilient — low near-term recession risk from this indicator.",         state:"BENIGN" };
@@ -139,11 +139,11 @@ const INDICATORS = [
     signal(liveVal) {
       if (liveVal == null) return { label: "No print", text: "The live series is unavailable, so this indicator has no current reading. The chart below is history only.", state: "UNKNOWN" };
       const v = liveVal;
-      if (v >= 6.0)  return { label:"Recession Imminent",  text:"Spreads above 6% — markets pricing systemic stress. This is the deflationary trip wire. Rotate to Treasuries and cash immediately.", state:"DANGER" };
-      if (v >= 4.5)  return { label:"Alert — Act Now",     text:"Breached the 4.5% alert threshold. Insurance accumulation phase is over — full defensive rotation warranted.",                      state:"DANGER" };
-      if (v >= 3.5)  return { label:"Widening — Watch",    text:"Spreads widening toward the alert zone. Begin building insurance positions. Don't wait for 4.5% to confirm.",                       state:"WATCH" };
+      if (v >= 6.0)  return { label:"Recession Imminent",  text:"Spreads above 6% — markets pricing systemic stress. This is the deflationary trip wire: the regime in which Treasuries and cash are the assets that hold.", state:"DANGER" };
+      if (v >= 4.5)  return { label:"Alert — breached",    text:"Breached the 4.5% alert threshold. Insurance bought from here is bought after the move, at the price the move set.",                      state:"DANGER" };
+      if (v >= 3.5)  return { label:"Widening — Watch",    text:"Spreads widening toward the alert zone. Insurance is cheapest before 4.5% confirms it and dearest after.",                       state:"WATCH" };
       if (v >= 3.0)  return { label:"Mild Stress",         text:"Mild stress appearing. Markets slightly nervous but not panicking. Monitor weekly.",                                                  state:"ELEVATED" };
-      return           { label:"Benign — No Stress",       text:"Markets are calm. No credit stress priced. This is the window to accumulate insurance cheaply before spreads move.",                 state:"BENIGN" };
+      return           { label:"Benign — No Stress",       text:"Markets are calm. No credit stress priced. Insurance is at its cheapest here, and stays cheap only until spreads move.",                 state:"BENIGN" };
     },
   },
 ];
@@ -2108,9 +2108,6 @@ const FED_LANGUAGE_STATES = {
     color: "#ef4444",
     bg: "#fef2f2",
     description: "Higher for longer dominant. No acknowledgment of downside risks. Rate cuts not on the table.",
-    sgov_usfr: "Optimal hold. Yield stays elevated. No action needed.",
-    ief_tlt: "Avoid. Duration risk with no catalyst for rate decline.",
-    equities: "Hold existing positions. No new deployment. Stage 1-2 only.",
     watchFor: "Watch for: first mention of 'data dependent' flexibility, any acknowledgment of labor market softening, or dissenting dovish votes at FOMC.",
   },
   hawkish_tilt: {
@@ -2118,9 +2115,6 @@ const FED_LANGUAGE_STATES = {
     color: "#f97316",
     bg: "#fff7ed",
     description: "Still holding but beginning to acknowledge growth risks or disinflation progress. 'Data dependent' language increasing.",
-    sgov_usfr: "Still optimal. Yield may begin modest compression. No action yet.",
-    ief_tlt: "Begin watching IEF. Do not buy yet — wait for neutral or better.",
-    equities: "No deployment yet. Prepare Stage 4 checklist mentally.",
     watchFor: "Watch for: 'appropriate to begin discussing' rate adjustments, explicit acknowledgment of disinflation progress, two consecutive dovish dissenting votes.",
   },
   neutral: {
@@ -2128,9 +2122,6 @@ const FED_LANGUAGE_STATES = {
     color: "#eab308",
     bg: "#fefce8",
     description: "Balanced language. Internal debate visible. Historical pivot precursor — typically 1-2 meetings before first cut.",
-    sgov_usfr: "Begin preparing rotation. Futures should be pricing 25-50bps cuts by now.",
-    ief_tlt: "Buy IEF in partial size — first tranche only. Do not go full duration yet.",
-    equities: "Stage 4 imminent. Finalize deployment target list. Confirm VIX trajectory.",
     watchFor: "Watch for: explicit 'easing may be appropriate' language, removal of 'higher for longer' phrasing, Fed Chair press conference tone shift.",
   },
   dovish_tilt: {
@@ -2138,9 +2129,6 @@ const FED_LANGUAGE_STATES = {
     color: "#22c55e",
     bg: "#f0fdf4",
     description: "Explicit acknowledgment that policy needs to ease. First cut likely within 1-2 meetings.",
-    sgov_usfr: "Rotate now. Sell USFR → Buy IEF same day. Yield compression imminent.",
-    ief_tlt: "Full IEF position. Consider partial TLT if deflation scenario confirmed.",
-    equities: "Stage 4 active. Begin software sleeve deployment within 30 days of first cut.",
     watchFor: "Watch for: first actual cut, pace of subsequent cuts, terminal rate language.",
   },
   active_easing: {
@@ -2148,9 +2136,6 @@ const FED_LANGUAGE_STATES = {
     color: "#16a34a",
     bg: "#dcfce7",
     description: "Cutting cycle underway. Focus shifts to pace and terminal rate.",
-    sgov_usfr: "Exit entirely. Yield collapsing. Hold only IBKR sweep for trading float.",
-    ief_tlt: "IEF appreciating. Begin rolling proceeds into equities as positions fill.",
-    equities: "Full Stage 4-5 deployment. Software first, hardware fills, ARM adds. Drift to 50/50 by mid-2027.",
     watchFor: "Watch for: pause signals, re-acceleration of inflation, terminal rate guidance.",
   },
 };
@@ -6163,28 +6148,37 @@ export default function App() {
                 {(pricesLoading || indLoading) ? "⏳ Refreshing…" : "🔄 Refresh All"}
               </button>
               {(() => {
-                // M.4 — the header is a STATED FUNCTION of named inputs, not a separate
-                // judgement. It previously ran `cs > 6.0 || labStress.severe`, so a severe
-                // labour print alone printed DANGER / "threshold breached" while HY OAS sat at
-                // 2.84 with no threshold breached at all — section H in miniature, and the
-                // reason the header disagreed with the action card directly beneath it.
-                // headerSignal() applies credit's veto FIRST, then takes the more severe of
-                // (regime, credit).
-                const cs = liveInd ? liveInd.creditSpread : 2.75;
-                const regimeStatus = derivedRegimes?.contested ? "WATCH"
-                  : (liveRegime?.id === "def" ? "ELEVATED" : liveRegime?.id === "stag" ? "WATCH" : "BENIGN");
-                const hs = headerSignal({ oas: cs, regimeStatus });
-                const tokH = STATUS[hs.signal] || STATUS.WATCH;
-                const lbl = hs.signal || "WATCH";
-                const col = tokH.color, bg = tokH.bg, bdr = tokH.bdr;
-                // The subtitle names the binding input rather than asserting a breach.
-                const sub = hs.credit === "BENIGN"
-                  ? `credit benign · ${liveRegime?.label ?? "regime"}`
-                  : `OAS ${cs} · ${liveRegime?.label ?? "regime"}`;
+                // ── ONE ACTION SURFACE ───────────────────────────────────────
+                // This tile answered "what to do" in a third vocabulary — BENIGN / WATCH /
+                // ELEVATED — beside the Overview's stance (RISK-ON / RISK-OFF / MIXED) and the
+                // Macro strip's "Do:". Three answers to one question, and they could disagree;
+                // on 2026-09-10 two of them did. The PostureCard is the one composed from live
+                // legs, guarded against the regime, and carrying its own audit trail — so the
+                // header shows THAT stance and nothing else claims to be one. Credit's veto still
+                // applies underneath: it is one of the posture's blockers, not a separate verdict.
+                // (It also carried a `2.75` fallback for the credit spread. Gone with it.)
+                const usPosture = applyRegimeGuard(pbData?.us?.posture ?? null, { label: liveRegime?.label, pct: regimeProbFor(liveRegime?.id) });
+                if (!usPosture) {
+                  return (
+                    <div style={{ background: C.bg, border: "1.5px solid " + C.bdr, borderRadius: 10, padding: "6px 14px", textAlign: "center", minWidth: 90 }}>
+                      <div style={{ color: C.lbl, fontSize: 10, letterSpacing: 2, textTransform: "uppercase", fontWeight: 700 }}>Stance</div>
+                      <div style={{ color: C.muted, fontSize: 13, fontWeight: 800, lineHeight: 1.2 }}>no tape read</div>
+                      <div style={{ color: C.lbl, fontSize: 10, marginTop: 2, lineHeight: 1.2 }}>open the Daily Overview</div>
+                    </div>
+                  );
+                }
+                const tone = usPosture.tone;
+                const col = tone === "red" ? C.red : tone === "green" ? C.green : tone === "amber" ? C.amber : C.mid;
+                const bg  = tone === "red" ? C.rBg : tone === "green" ? C.gBg : tone === "amber" ? C.aBg : C.bg;
+                const bdr = tone === "red" ? C.rBdr : tone === "green" ? C.gBdr : tone === "amber" ? C.aBdr : C.bdr;
+                // The subtitle names what is holding the stance, or how many gauges lean.
+                const sub = usPosture.withheld
+                  ? `no ${usPosture.withheld} — ${usPosture.blockedBy?.[0] ?? "held"}`
+                  : `${usPosture.tripwires ?? "—"} tripwires · ${liveRegime?.label ?? "regime"}`;
                 return (
                   <div style={{ background: bg, border: "1.5px solid " + bdr, borderRadius: 10, padding: "6px 14px", textAlign: "center", minWidth: 90 }}>
-                    <div style={{ color: C.lbl, fontSize: 10, letterSpacing: 2, textTransform: "uppercase", fontWeight: 700 }}>Signal</div>
-                    <div style={{ color: col, fontSize: 17, fontWeight: 900, lineHeight: 1 }}>{lbl}</div>
+                    <div style={{ color: C.lbl, fontSize: 10, letterSpacing: 2, textTransform: "uppercase", fontWeight: 700 }}>Stance</div>
+                    <div style={{ color: col, fontSize: 17, fontWeight: 900, lineHeight: 1 }}>{usPosture.posture}</div>
                     <div style={{ color: col, fontSize: 10, marginTop: 2, opacity: 0.75, lineHeight: 1.2 }}>{sub}</div>
                   </div>
                 );
@@ -6327,7 +6321,7 @@ export default function App() {
 
             {/* ACTION CARD — top, high-emphasis, colorizes with signal */}
             {(() => {
-              const cs = liveInd ? liveInd.creditSpread : 2.75;
+              const cs = liveInd?.creditSpread ?? null;   // null, never a chosen number — creditStatus(null) is null and the stage falls through
               // ── Sections H + L — derived, with CREDIT'S VETO applied ──
               // Previously: isDanger = cs > 6.0 || labStress.severe, which let a severe labour
               // print alone print "Stage 3 — Full Insurance Active" while the master gauge
@@ -6556,7 +6550,7 @@ export default function App() {
         {tab === "posture" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {(() => {
-              const cs = liveInd ? liveInd.creditSpread : 2.75;
+              const cs = liveInd?.creditSpread ?? null;   // null, never a chosen number — creditStatus(null) is null and the stage falls through
               // Same derivation as the Indicators action card — ONE rule, so the two surfaces
               // cannot disagree about the stage. Credit's veto (L.2) applies here identically:
               // a severe labour print alone cannot put the book at Stage 3 while the master
@@ -7550,7 +7544,6 @@ export default function App() {
               const rec = derivedRegimes?.weightedAvg ?? null;
               const headline = liveInd?.cpiHeadlineCurrent ?? null;
               const realCash = headline != null ? +(SEC_YIELDS.USFR.value - headline).toFixed(2) : null;
-              const best = activeRegime?.best || [], worst = activeRegime?.worst || [];
               const item = (k, v, col) => (<span style={{ display: "inline-flex", gap: 6, alignItems: "baseline" }}><span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: C.lbl }}>{k}</span><b style={{ color: col || C.text, fontWeight: 800 }}>{v}</b></span>);
               return (
                 <div style={{ background: r.bg, border: "1.5px solid " + r.bdr, borderTop: "4px solid " + r.color, borderRadius: 12, padding: "11px 16px" }}>
@@ -7561,11 +7554,13 @@ export default function App() {
                     <span style={{ color: C.bdr }}>·</span>
                     {item("Real cash yield", realCash != null ? `${realCash >= 0 ? "+" : ""}${realCash}pp` : "—", realCash != null ? (realCash > 0 ? C.green : C.red) : C.muted)}
                   </div>
-                  {(best.length || worst.length) ? (
-                    <div style={{ marginTop: 6, fontSize: 13, color: C.mid, lineHeight: 1.5 }}>
-                      <b style={{ color: r.color }}>Do:</b> hold {best.slice(0, 2).join(", ")}{worst.length ? <> · <span style={{ color: C.muted }}>avoid {worst.slice(0, 2).join(", ")}</span></> : null}
-                    </div>
-                  ) : null}
+                  {/* No "Do:" here. It was a lookup into the regime's static best/worst lists,
+                      printed in the voice of a live instruction, beside a real one on the
+                      Overview that it could contradict. This strip states the STRUCTURAL regime —
+                      months, consensus-derived. The stance is the tape's, and lives in one place. */}
+                  <div style={{ marginTop: 6, fontSize: 11.5, color: C.muted, lineHeight: 1.5 }}>
+                    structural · consensus-derived · months — the tape stance is on the Daily Overview
+                  </div>
                 </div>
               );
             })()}
@@ -7736,14 +7731,6 @@ export default function App() {
                 {/* P0.1 — scope label: this is the STRUCTURAL regime, distinct from the Global
                     Playbook tape read (one session) and the debasement cross-asset read (5d). */}
                 <div style={{ fontSize: 11, fontWeight: 800, color: C.blue, letterSpacing: 0.3, marginBottom: 4 }}>structural · consensus-derived · months</div>
-                <div style={{ color: C.muted, fontSize: 13, fontStyle: "italic", lineHeight: 1.6, marginBottom: 10 }}>
-                  {{
-                    stag: "Prioritise insurance (miners, staples). Hold cash. Avoid new software/growth entries. TLT is a trap here.",
-                    def:  "TLT and cash are primary hedges. Reduce equity exposure. Watch for Fed pivot signal before deploying.",
-                    ref:  "Gradual equity deployment appropriate. REITs and growth names benefit. Begin filling long-term positions in tranches.",
-                    inf:  "Real assets and pipelines outperform. Equities with pricing power hold. Avoid long-duration bonds.",
-                  }[activeRegime.id]}
-                </div>
                 <p style={{ color: C.mid, fontSize: 15, lineHeight: 1.75, margin: "0 0 12px" }}>{activeRegime.desc}</p>
                 <div style={{ padding: "10px 13px", background: "#fff", border: "1px solid " + activeRegime.bdr, borderRadius: 8 }}>
                   <div style={{ color: activeRegime.color, fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Transition trigger</div>
@@ -7901,11 +7888,14 @@ export default function App() {
                     </div>
                   )}
                   <p style={{ fontSize: 13, marginTop: 10, color: C.mid, lineHeight: 1.6 }}>{FED_LANGUAGE_STATUS.summary}</p>
-                  <div className="mwd-grid-2" style={{ gap: 12, marginTop: 12, background: currentState.bg, borderRadius: 8, padding: 12 }}>
-                    {cell("SGOV / USFR", currentState.sgov_usfr)}
-                    {cell("IEF / TLT", currentState.ief_tlt)}
-                    {cell("Equities / Deployment", currentState.equities)}
-                    {cell("Watch For", currentState.watchFor, true)}
+                  {/* WHAT THE STATE IS AND WHAT WOULD MOVE IT — not what to hold in it. The three
+                      instrument cells that sat here ("Rotate now. Sell USFR → Buy IEF same day.")
+                      were a fifth surface issuing instructions, keyed to a label a person sets by
+                      hand after each meeting. Fed context is the meeting's character and the tell
+                      for the next one; the stance is the tape's, in one place. */}
+                  <div style={{ marginTop: 12, background: currentState.bg, borderRadius: 8, padding: 12 }}>
+                    {cell("This state", currentState.description)}
+                    <div style={{ marginTop: 8 }}>{cell("Watch for", currentState.watchFor, true)}</div>
                   </div>
                 </Card>
               );
@@ -8587,7 +8577,7 @@ export default function App() {
                         label: "HY Credit Spread", value: hy, unit: "%", threshold: 4.5,
                         thresholdLabel: "alert >4.5%", good: "below", fmtVal: v => v.toFixed(2),
                         context: (v, breached) => breached
-                          ? `At ${v.toFixed(2)}%, credit markets are pricing stress. Companies are struggling to refinance debt — this is the classic deflationary warning. Act now.`
+                          ? `At ${v.toFixed(2)}%, credit markets are pricing stress. Companies are struggling to refinance debt — this is the classic deflationary warning.`
                           : `At ${v.toFixed(2)}%, credit markets are calm — investors aren't panicking yet. This scenario needs spreads to widen to 4.5%+ before it becomes probable. Watch weekly.`,
                       },
                       // P1.4 — the trigger is the EMPLOYMENT–POPULATION RATIO, not U3.
@@ -8619,8 +8609,8 @@ export default function App() {
                       })(),
                     ],
                     tip: (liveInd && hy != null)
-                      ? (hy > 4.5 ? "⚠️ Credit spreads have breached the alert level. Deflationary recession risk is now elevated — consider rotating toward Treasuries and cash."
-                        : hy > 3.5 ? "📡 Spreads are widening toward the alert zone. Start building insurance positions — don't wait for 4.5% to confirm."
+                      ? (hy > 4.5 ? "⚠️ Credit spreads have breached the alert level — deflationary recession risk is elevated. This is the scenario in which Treasuries and cash outperform."
+                        : hy > 3.5 ? "📡 Spreads are widening toward the alert zone. Insurance is cheapest before 4.5% confirms it and dearest after."
                         : `✅ Both indicators are well within safe territory today. This scenario requires credit spreads to more than double from here (${hy.toFixed(2)}% → 4.5%+). Low near-term risk.`)
                       : "Hit Refresh signals to get live readings for this scenario.",
                   },
@@ -8723,7 +8713,7 @@ export default function App() {
                         ? (m2Dir ? `⚠️ M2 is re-accelerating ($${(m2Val/1000).toFixed(1)}T, rising) — money supply expanding again.`
                           : `M2 at $${(m2Val/1000).toFixed(1)}T and falling — not yet signalling fiscal dominance.`)
                         : "";
-                      return `${dxyNote} ${m2Note} Both signals need to confirm simultaneously for this scenario to become probable. Currently a tail risk — but hold gold miners as insurance regardless.`.trim();
+                      return `${dxyNote} ${m2Note} Both signals need to confirm simultaneously for this scenario to become probable. Currently a tail risk; gold miners are the hedge this scenario is priced against.`.trim();
                     })(),
                   },
                 ];
