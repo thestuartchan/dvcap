@@ -3364,6 +3364,27 @@ function StateChip({ label, color, filled }) {
   );
 }
 
+// ── HAND-KEPT, AND SAID SO ───────────────────────────────────────────────────
+// Several blocks on the Macro tab are maintained by a person after an event — the Fed-language
+// read after each FOMC, the September hike odds, the recession narrative, the panel of house
+// forecasts — and they rendered in the same visual weight as tiles fed by a live series. A reader
+// could not tell a print from an opinion written three weeks ago. This names both facts: that a
+// person wrote it, and when. Amber, with REFRESH DUE, once it is older than the cadence the block
+// is meant to be refreshed on — so a stale essay looks stale rather than current.
+function HandKept({ asOf, cadenceDays = null, what = null }) {
+  const t = Date.parse(asOf || "");
+  const days = Number.isFinite(t) ? Math.floor((Date.now() - t) / 86400000) : null;
+  const stale = cadenceDays != null && days != null && days > cadenceDays;
+  const col = stale ? C.amber : C.muted;
+  return (
+    <span title={what ? `Updated by hand ${what} — not fed by a live series.` : "Updated by hand, not fed by a live series."}
+      style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: col,
+               background: stale ? C.aBg : "transparent", border: "1px solid " + col + "66", borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap" }}>
+      ✍ hand-kept{asOf ? ` · as of ${asOf}` : ""}{days != null ? ` · ${days}d` : ""}{stale ? " · REFRESH DUE" : ""}
+    </span>
+  );
+}
+
 // One cross-asset row: value + 1D delta + direction. A row with no prior close shows NO
 // direction and says why (Stage 1A) rather than implying a trend from a single print.
 function CrossRow({ r }) {
@@ -7761,6 +7782,10 @@ export default function App() {
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                     <SLabel>Fed pricing — what's priced for the Fed</SLabel>
                     <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>two market reads, cross-checked · ZQ futures path below</span>
+                    {/* The 6-month path is live from FRED. The meeting odds are a number a person copied
+                        from FedWatch/Kalshi on a date — a week's cadence is generous for odds on a
+                        meeting days away. */}
+                    <span style={{ marginLeft: "auto" }}><HandKept asOf={SEP_HIKE_ODDS.asOf} cadenceDays={7} what="from CME FedWatch / Kalshi — the meeting-odds row only" /></span>
                   </div>
                   <div style={{ marginTop: 6 }}>
                     {row("6-month path", bps != null ? `${bps} bps` : "—", bps != null ? `${bps > 0 ? "cuts" : bps < 0 ? "hikes" : "flat"} priced · 6M bill ${tb != null ? tb.toFixed(2) : "—"}% vs funds ${cf != null ? cf.toFixed(2) : "—"}%` : "Fed funds / T-bill not loaded", bps != null ? dirCol(sixDir) : C.muted)}
@@ -7789,7 +7814,10 @@ export default function App() {
                     <div>
                       <SLabel>Fed Language Status</SLabel>
                       <div style={{ color: currentState.color, fontSize: 20, fontWeight: 700, lineHeight: 1.2 }}>{currentState.label}</div>
-                      <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>{FED_LANGUAGE_STATUS.lastEvent} · Updated {FED_LANGUAGE_STATUS.lastUpdated}</div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap", marginTop: 4 }}>
+                        <HandKept asOf={FED_LANGUAGE_STATUS.lastUpdated} cadenceDays={49} what="after each FOMC meeting or minutes release" />
+                        <span style={{ fontSize: 12, color: C.muted }}>{FED_LANGUAGE_STATUS.lastEvent}</span>
+                      </div>
                     </div>
                     <div style={{ fontSize: 11, color: "#888", textAlign: "right" }}>Next: {FED_LANGUAGE_STATUS.nextEvent}</div>
                   </div>
@@ -7830,7 +7858,6 @@ export default function App() {
                     {cell("Equities / Deployment", currentState.equities)}
                     {cell("Watch For", currentState.watchFor, true)}
                   </div>
-                  <div style={{ fontSize: 11, color: C.lbl, marginTop: 10 }}>Updated manually after each FOMC meeting or significant Fed communication.</div>
                 </Card>
               );
             })()}
@@ -8180,9 +8207,6 @@ export default function App() {
                 <span style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>slowest input · {CONSENSUS_VINTAGE.label}, {CONSENSUS_VINTAGE.staleNote}</span>
               </div>
               {(() => {
-                const lastUpdate = new Date("2026-06-29");
-                const daysStale = Math.floor((Date.now() - lastUpdate.getTime()) / 86400000);
-                const isStale = daysStale > 90;
                 return (
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10, fontSize: 12 }}>
                     <span style={{ color: C.lbl }}>Last updated: <b style={{ color: C.muted }}>June 29, 2026</b> · Updated post Iran peace deal + June FOMC</span>
@@ -8191,11 +8215,7 @@ export default function App() {
                     <span style={{ color: C.lbl, flexBasis: "100%", fontSize: 11, lineHeight: 1.5 }}>
                       A hand-kept panel of named houses and models — not a survey. Refreshed quarterly, a week or two after each FOMC projection round (late Mar · late Jun · late Sep · mid Dec), which is when the houses revise.
                     </span>
-                    {isStale && (
-                      <span style={{ background: C.aBg, color: C.amber, border: "1px solid " + C.aBdr, borderRadius: 6, padding: "2px 8px", fontWeight: 700 }}>
-                        ⚠️ {daysStale} days stale — refresh due (quarterly cadence)
-                      </span>
-                    )}
+                    <HandKept asOf="2026-06-29" cadenceDays={90} what="quarterly, a week or two after each FOMC projection round" />
                     <span style={{ color: C.lbl, fontStyle: "italic" }}>Updating this table recalculates regime probabilities automatically.</span>
                   </div>
                 );
@@ -8404,9 +8424,15 @@ export default function App() {
                   ))}
                 </div>
               </div>
-              <div style={{ marginTop: 12, padding: "12px 14px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8 }}>
-                <span style={{ color: C.amber, fontWeight: 700, fontSize: 13 }}>⚠️ The signal that matters: </span>
-                <span style={{ color: C.amber, fontSize: 14, lineHeight: 1.65 }}>Goldman's dramatic round-trip — 15% (pre-war) → 30% (March peak) → 15% (June post-deal) — shows how oil-driven the near-term risk was. Post peace deal, 2026 recession odds have broadly normalized. The more important signal is 2027: Kalshi at {recKalshi2027 != null ? `${recKalshi2027}%` : "— (not loaded)"} (the live market) suggests markets expect delayed reckoning from debt refinancing at 5-7%, $1.3T consumer revolving credit balances, and corporate capex compression — still the higher of the two horizons. New risk to monitor: the July FOMC minutes (released Aug 19) show 'many participants' saw further tightening as likely necessary — an upgrade from June's 'only a few', so the three hike dissents understate the committee's hawkishness. If hikes materialize, recession risk reprices sharply higher.</span>
+              {/* AN ESSAY, NOT AN ALARM. This paragraph is written by hand after a data event and
+                  was styled as a live warning — amber box, warning glyph — so a three-week-old
+                  reading of the July minutes looked like something that had just fired. It keeps
+                  its content and loses the alarm: neutral surface, the chip up front, and the
+                  one live number in it (Kalshi) labelled as the only live thing here. */}
+              <div style={{ marginTop: 12, padding: "12px 14px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8 }}>
+                <div style={{ marginBottom: 6 }}><HandKept asOf="2026-08-24" cadenceDays={30} what="after each data event that changes the recession read" /></div>
+                <span style={{ color: C.text, fontWeight: 700, fontSize: 13 }}>The signal that matters: </span>
+                <span style={{ color: C.mid, fontSize: 14, lineHeight: 1.65 }}>Goldman's dramatic round-trip — 15% (pre-war) → 30% (March peak) → 15% (June post-deal) — shows how oil-driven the near-term risk was. Post peace deal, 2026 recession odds have broadly normalized. The more important signal is 2027: Kalshi at {recKalshi2027 != null ? `${recKalshi2027}%` : "— (not loaded)"} (the live market) suggests markets expect delayed reckoning from debt refinancing at 5-7%, $1.3T consumer revolving credit balances, and corporate capex compression — still the higher of the two horizons. New risk to monitor: the July FOMC minutes (released Aug 19) show 'many participants' saw further tightening as likely necessary — an upgrade from June's 'only a few', so the three hike dissents understate the committee's hawkishness. If hikes materialize, recession risk reprices sharply higher.</span>
               </div>
             </Card>
 
@@ -8576,7 +8602,7 @@ export default function App() {
                         : oil < 80
                         ? `WTI at $${oil.toFixed(1)} is technically below the $80 trigger — but July 7–8 Hormuz attacks reversed the disinflationary impulse. The Fed needs sustained sub-$80 oil for multiple months, not a brief dip.`
                         : `WTI at $${oil.toFixed(1)} ${oilDir} — above the $80 threshold. Until sustained below $80, inflation stays too sticky for the Fed to cut.`;
-                      return `⚠️ June FOMC minutes (Jul 8): "only a few" members saw a case to hike — less hawkish than the dot plot implied, but Warsh gave no forward guidance and is firmly on hold. ${oilNote} Next live catalysts: June CPI (mid-July) and June PCE (late July).`;
+                      return `⚠️ June FOMC minutes (Jul 8): "only a few" members saw a case to hike — less hawkish than the dot plot implied, but Warsh gave no forward guidance and is firmly on hold. ${oilNote}`;
                     })(),
                   },
                   {
