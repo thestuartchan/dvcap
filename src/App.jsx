@@ -8406,7 +8406,7 @@ export default function App() {
               </div>
               <div style={{ marginTop: 12, padding: "12px 14px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8 }}>
                 <span style={{ color: C.amber, fontWeight: 700, fontSize: 13 }}>⚠️ The signal that matters: </span>
-                <span style={{ color: C.amber, fontSize: 14, lineHeight: 1.65 }}>Goldman's dramatic round-trip — 15% (pre-war) → 30% (March peak) → 15% (June post-deal) — shows how oil-driven the near-term risk was. Post peace deal, 2026 recession odds have broadly normalized. The more important signal is 2027: Kalshi at {recKalshi2027 != null ? recKalshi2027 : 41}% (the live market) suggests markets expect delayed reckoning from debt refinancing at 5-7%, $1.3T consumer revolving credit balances, and corporate capex compression — still the higher of the two horizons. New risk to monitor: the July FOMC minutes (released Aug 19) show 'many participants' saw further tightening as likely necessary — an upgrade from June's 'only a few', so the three hike dissents understate the committee's hawkishness. If hikes materialize, recession risk reprices sharply higher.</span>
+                <span style={{ color: C.amber, fontSize: 14, lineHeight: 1.65 }}>Goldman's dramatic round-trip — 15% (pre-war) → 30% (March peak) → 15% (June post-deal) — shows how oil-driven the near-term risk was. Post peace deal, 2026 recession odds have broadly normalized. The more important signal is 2027: Kalshi at {recKalshi2027 != null ? `${recKalshi2027}%` : "— (not loaded)"} (the live market) suggests markets expect delayed reckoning from debt refinancing at 5-7%, $1.3T consumer revolving credit balances, and corporate capex compression — still the higher of the two horizons. New risk to monitor: the July FOMC minutes (released Aug 19) show 'many participants' saw further tightening as likely necessary — an upgrade from June's 'only a few', so the three hike dissents understate the committee's hawkishness. If hikes materialize, recession risk reprices sharply higher.</span>
               </div>
             </Card>
 
@@ -8419,13 +8419,18 @@ export default function App() {
                 <Btn onClick={fetchIndicators} disabled={indLoading} color="#fff" bgColor={C.blue} label={indLoading ? "Fetching…" : "🔄 Refresh signals"} />
               </div>
               {(() => {
-                // Live values with static fallbacks
-                const hy  = liveInd ? liveInd.creditSpread  : 2.75;
-                const ue  = laborView?.u3?.value ?? (liveInd ? liveInd.unemployment : 4.4);
-                const yc  = liveInd ? liveInd.yieldSpread   : 0.38;
-                const cpi = liveInd ? liveInd.cpi            : null;
-                const gdp = liveInd ? liveInd.gdp            : null;
-                const oil = liveInd?.oil ?? 88;
+                // ── NO STATIC FALLBACKS ──────────────────────────────────────
+                // These were `2.75`, `4.4`, `0.38`, `$88`, `105` and `$21.5T`: numbers chosen
+                // when the card was written, rendered in the same weight as a live print, with a
+                // threshold bar drawn against them and a sentence explaining what they meant. A
+                // feed that failed produced a confident read on a figure nobody had fetched. A
+                // missing input is null, and SignalBar says "not loaded" and draws nothing.
+                const hy  = liveInd?.creditSpread ?? null;
+                const ue  = laborView?.u3?.value ?? liveInd?.unemployment ?? null;
+                const yc  = liveInd?.yieldSpread ?? null;
+                const cpi = liveInd?.cpi ?? null;
+                const gdp = liveInd?.gdp ?? null;
+                const oil = liveInd?.oil ?? null;
                 const oilPrev = liveInd?.oilPrev ?? null;
 
                 // CPI/GDP formatted for display
@@ -8453,6 +8458,19 @@ export default function App() {
 
                 // SignalBar — with analyst context sentence below the bar
                 function SignalBar({ label, value, unit, threshold, thresholdLabel, good, fmtVal, context }) {
+                  // A FEED THAT DID NOT LOAD IS NOT A READING OF ZERO. Nothing below runs on a null: no bar,
+                  // no breach verdict, no sentence explaining a number nobody fetched.
+                  if (value == null || !Number.isFinite(+value)) {
+                    return (
+                      <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px", border: "1px dashed " + C.bdr, flex: "1 1 150px", minWidth: 140 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                          <span style={{ color: C.mid, fontSize: 11, fontWeight: 700 }}>{label}</span>
+                          <span style={{ color: C.lbl, fontSize: 10, fontWeight: 800 }}>NOT LOADED</span>
+                        </div>
+                        <div style={{ fontSize: 12, color: C.lbl, lineHeight: 1.5 }}>No live print for this input, so the {thresholdLabel} test cannot be run. Refresh signals; if it stays blank, the feed failed and the strip at the top of the tab will say which.</div>
+                      </div>
+                    );
+                  }
                   const pct = Math.min(100, Math.max(0, (value / (threshold * 1.5)) * 100));
                   const breached = good === "below" ? value >= threshold : value <= threshold;
                   const barColor = breached ? C.red : C.green;
@@ -8525,7 +8543,7 @@ export default function App() {
                         };
                       })(),
                     ],
-                    tip: liveInd
+                    tip: (liveInd && hy != null)
                       ? (hy > 4.5 ? "⚠️ Credit spreads have breached the alert level. Deflationary recession risk is now elevated — consider rotating toward Treasuries and cash."
                         : hy > 3.5 ? "📡 Spreads are widening toward the alert zone. Start building insurance positions — don't wait for 4.5% to confirm."
                         : `✅ Both indicators are well within safe territory today. This scenario requires credit spreads to more than double from here (${hy.toFixed(2)}% → 4.5%+). Low near-term risk.`)
@@ -8537,7 +8555,7 @@ export default function App() {
                     path: "A Gulf peace deal or OPEC production increase brings oil below $80. Inflation cools, the Fed resumes cutting, and growth bounces back. This is the best-case exit from stagflation — and what equity markets would celebrate most.",
                     signals: [
                       {
-                        label: "Yield Spread", value: Math.abs(yc), unit: "%", threshold: 0.5,
+                        label: "Yield Spread", value: yc == null ? null : Math.abs(yc), unit: "%", threshold: 0.5,
                         thresholdLabel: "normal >0.5%", good: "above", fmtVal: v => (yc >= 0 ? "+" : "-") + v.toFixed(2),
                         context: (v, breached) => breached
                           ? `Spread is below 0.5% — curve hasn't fully normalized yet. Recovery hasn't been confirmed by the bond market.`
@@ -8553,7 +8571,9 @@ export default function App() {
                     ],
                     tip: (() => {
                       const oilDir = oilPrev && oil ? (oil > oilPrev ? "↑ rising" : "↓ falling") : "";
-                      const oilNote = oil < 80
+                      const oilNote = oil == null
+                        ? "WTI not loaded — the oil trigger cannot be evaluated this refresh."
+                        : oil < 80
                         ? `WTI at $${oil.toFixed(1)} is technically below the $80 trigger — but July 7–8 Hormuz attacks reversed the disinflationary impulse. The Fed needs sustained sub-$80 oil for multiple months, not a brief dip.`
                         : `WTI at $${oil.toFixed(1)} ${oilDir} — above the $80 threshold. Until sustained below $80, inflation stays too sticky for the Fed to cut.`;
                       return `⚠️ June FOMC minutes (Jul 8): "only a few" members saw a case to hike — less hawkish than the dot plot implied, but Warsh gave no forward guidance and is firmly on hold. ${oilNote} Next live catalysts: June CPI (mid-July) and June PCE (late July).`;
@@ -8572,7 +8592,7 @@ export default function App() {
                           : `At ${v.toFixed(1)}%, unemployment is approaching the zone where the Fed's dual mandate becomes impossible to satisfy simultaneously.`,
                       },
                       {
-                        label: "Yield Spread", value: Math.abs(yc), unit: "%", threshold: 1.0,
+                        label: "Yield Spread", value: yc == null ? null : Math.abs(yc), unit: "%", threshold: 1.0,
                         thresholdLabel: "normal >1%", good: "above", fmtVal: v => (yc >= 0 ? "+" : "-") + v.toFixed(2),
                         context: (v, breached) => breached
                           ? `Spread hasn't reached 1%+ — the curve isn't pricing a sustained growth recovery yet. Consistent with a prolonged stagnation environment.`
@@ -8591,21 +8611,21 @@ export default function App() {
                     path: "The US government keeps spending regardless of the Fed. The dollar structurally weakens. AI generates a genuine productivity surprise. The result: persistent inflation above 4%, but with real growth — a 1990s-style boom with a debasement twist. Gold miners, commodities, and Bitcoin are the standout winners.",
                     signals: [
                       {
-                        label: "Yield Spread", value: Math.abs(yc), unit: "%", threshold: 1.5,
+                        label: "Yield Spread", value: yc == null ? null : Math.abs(yc), unit: "%", threshold: 1.5,
                         thresholdLabel: "boom >1.5%", good: "above", fmtVal: v => (yc >= 0 ? "+" : "-") + v.toFixed(2),
                         context: (v, breached) => breached
                           ? `Spread above 1.5% would suggest the bond market is pricing strong sustained growth — a precondition for this scenario.`
                           : `At ${(yc >= 0 ? "+" : "") + yc.toFixed(2)}%, the spread is well below the 1.5% level associated with inflationary boom conditions. This scenario remains a tail risk.`,
                       },
                       {
-                        label: "US Dollar Index", value: liveInd?.dxy ?? 105, unit: "", threshold: 95,
+                        label: "US Dollar Index", value: liveInd?.dxy ?? null, unit: "", threshold: 95,
                         thresholdLabel: "weak <95", good: "below", fmtVal: v => v.toFixed(1),
                         context: (v, breached) => breached
                           ? `Dollar index at ${v.toFixed(1)} — weakening meaningfully. A sustained break below 95 would signal dollar structural decline, which is a key precondition for the inflationary boom scenario.`
                           : `Dollar index at ${v.toFixed(1)} — still relatively strong. A structural dollar decline (sustained below 95) would be required to validate this scenario. Watch for sustained trend lower.`,
                       },
                       {
-                        label: "M2 Money Supply", value: liveInd?.m2 ? liveInd.m2 / 1000 : 21.5, unit: "T", threshold: 22,
+                        label: "M2 Money Supply", value: liveInd?.m2 ? liveInd.m2 / 1000 : null, unit: "T", threshold: 22,
                         thresholdLabel: "re-accel >$22T", good: "above", fmtVal: v => "$" + v.toFixed(1),
                         context: (v, breached) => {
                           const dir = liveInd?.m2Rising ? "↑ rising" : "↓ falling";
