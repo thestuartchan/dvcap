@@ -17,6 +17,7 @@ import { unInversionPhase, yieldCurveStatus, NORMAL_SPREAD } from "../lib/yieldc
 import { pendingReconciliations, reconStats } from "../lib/recon.js";
 import { deriveRegimeProbabilities } from "../lib/regimeProb.js";
 import { applyRegimeGuard } from "../lib/posture.js";
+import { regimeFlipsIf } from "../lib/regime.js";
 import { minersPairImplication } from "../lib/regimeState.js";
 import { southboundTrend, southboundLevelTrend, southboundRead, ahPremiumRead, sbStale } from "../lib/southbound.js";
 import { STATUS, creditStatus, deriveAction } from "../lib/status.js";
@@ -3605,6 +3606,10 @@ function PostureCard({ p: raw, regime = null, tape = null }) {
         </PostureRow>
       )}
       {p.watch && <PostureRow label="Watch" color={C.amber}>{p.watch}</PostureRow>}
+      {/* FLIPS IF — the condition, in the stance's own terms, from the same branches that chose
+          it. WATCH is what to look at; this is what has to happen. It used to exist only on the
+          Read card, and the stance is where a reader needs it most. */}
+      {p.flipsIf && <PostureRow label="Flips if" color={C.blue}>{p.flipsIf}</PostureRow>}
       {p.next?.length > 0 && (
         <PostureRow label="Next">{p.next.map(n => `${n.label} ${n.date.slice(5)} (${n.daysTo}d)`).join(" · ")}</PostureRow>
       )}
@@ -5268,6 +5273,18 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                 <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{d.regime?.oil?.label ?? "—"}</div>
               </div>
             </div>
+            {/* FLIPS IF — where each gate on this card changes state, read back from the same
+                constants the gates run on. The card said what the credit gate WAS; not where it
+                would stop being that. */}
+            {(() => {
+              const f = regimeFlipsIf(d.regime, { oas: d.macro?.oas?.value ?? data.macro?.oas?.value ?? null });
+              return f ? (
+                <div style={{ marginTop: 10, display: "flex", gap: 12, alignItems: "baseline" }}>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4, minWidth: 66, flexShrink: 0 }}>Flips if</span>
+                  <span style={{ fontSize: 12, color: C.blue, fontWeight: 700, lineHeight: 1.5 }}>{f}</span>
+                </div>
+              ) : null;
+            })()}
             {/* Korea-local stress gate (Asia only) */}
             {d.regime?.korea && <div style={{ marginTop: 12 }}><KoreaStressPanel korea={d.regime.korea} /></div>}
           </Card>

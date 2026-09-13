@@ -187,5 +187,51 @@ eq('the leg set is the one the brief named', TAPE_LEGS, ['equity', 'gold', 'btc'
   ok('and the confirmed consequence still reaches DO', p.do.includes('Insurance scenario'));
 }
 
+// ── FLIPS IF, ON EVERY STANCE ────────────────────────────────────────────────
+// State → evidence → what changes it. WATCH names the thing to look at; FLIPS IF names the
+// condition, derived from the same branches that chose the stance — so it cannot describe a rule
+// other than the one that ran. It renders on every stance, because an uncertain stance is when a
+// reader needs the flip condition most.
+{
+  const TAPE_ON = { equity: { value: 1.6, atr: 1.2 }, gold: { value: 0.1, atr: 1.0 }, btc: { value: 3.0, atr: 2.4 }, dxy: { value: -0.5, atr: 0.35 } };
+  const QUIET = { tripped: 0, usable: 6, unavailable: [] };
+
+  // The 2026-09-10 render: MIXED. The flip names BOTH halves and which way each opens.
+  const mixed = composePosture({ scenarios: [], leaning: LEANING_0910, volTerm: VOL_CONTANGO, credit: CREDIT_CALM_STALE, tape: TAPE_0910, now: NOW });
+  ok('MIXED names the two halves', /the two halves agree/.test(mixed.flipsIf));
+  ok('and which legs have to reverse', /reversing\) opens RISK-ON/.test(mixed.flipsIf));
+  ok('and what closes it the other way', /breaking closes to RISK-OFF/.test(mixed.flipsIf));
+
+  // RISK-OFF: the flip is the score threshold, with the reasons that put it there.
+  const off = composePosture({ scenarios: [], leaning: { tripped: 5, usable: 6, unavailable: [] }, volTerm: { regime: 'BACKWARDATION' },
+    credit: { level: 'STRESSED', effective: 'stressed', obs: { available: true, obsDate: '2026-09-09', bizDays: 1 } }, tape: TAPE_0910, now: NOW });
+  eq('the fixture is risk-off', off.posture, 'RISK-OFF');
+  ok('its flip is the score dropping', /the score drops below 2\.5 — now \d/.test(off.flipsIf));
+  ok('with the reasons attached', /tripwires/.test(off.flipsIf) && /backwardation/.test(off.flipsIf));
+
+  // WITHHELD: no tape reading blocks RISK-ON; the flip is that blocker clearing.
+  const held = composePosture({ scenarios: [], leaning: QUIET, volTerm: VOL_CONTANGO, tape: null, now: NOW });
+  eq('no tape withholds RISK-ON', held.withheld, 'RISK-ON');
+  ok('and the flip is the blocker clearing', /^to RISK-ON once this clears: no cross-asset tape reading/.test(held.flipsIf));
+
+  // RISK-ON: the flip is any one of four named things.
+  const on = composePosture({ scenarios: [], leaning: QUIET, volTerm: VOL_CONTANGO, tape: TAPE_ON, now: NOW });
+  eq('a clean tape in contango is RISK-ON', on.posture, 'RISK-ON');
+  ok('its flip lists the four exits', /a tripwire firing/.test(on.flipsIf) && /vol leaving contango/.test(on.flipsIf));
+
+  // NEUTRAL without a blocker: the flip is the score band, both ways.
+  const mid = composePosture({ scenarios: [], leaning: QUIET, volTerm: { regime: 'FLAT' }, tape: TAPE_ON, now: NOW });
+  eq('flat vol on a clean tape is neutral', mid.posture, 'NEUTRAL, SELECTIVE');
+  eq('with nothing withheld', mid.withheld, null);
+  ok('its flip names both thresholds', /to RISK-ON at score ≤ 0, to RISK-OFF at ≥ 2\.5 — now 0\.5/.test(mid.flipsIf));
+
+  // NO SIGNAL still says what would change it.
+  const none = composePosture({ scenarios: [], leaning: null, tape: null, now: NOW });
+  eq('nothing in is NO SIGNAL', none.posture, 'NO SIGNAL');
+  ok('and even that has a flip', /any input arrives/.test(none.flipsIf));
+  // EVERY STANCE CARRIES ONE — an empty flip row is the row that went missing on 2026-09-10.
+  for (const p of [mixed, off, held, on, mid, none]) ok(`${p.posture} has a flip condition`, typeof p.flipsIf === 'string' && p.flipsIf.length > 20);
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
