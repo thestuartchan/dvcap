@@ -112,7 +112,10 @@ ok('nor does a cash leg', !autoAddable({ assetCategory: 'STK', symbol: 'SGOV' })
 // ── reconciliation ──
 const row = (id, symbol, fills, extra = {}) => ({ id, symbol, ...extra, fills, derived: derivePosition(fills, { multiplier: extra.multiplier || 1 }) });
 const INTC = row('INTC-open', 'INTC', [{ side: 'buy', qty: 30, price: 98.723337, date: '2026-08-05' }]);
-const HK = row('0981.HK-open', '0981.HK', [{ side: 'buy', qty: 500, price: 70.478952, date: '2026-07-10' }]);
+// CURRENCY IS PART OF THE ROW. This fixture had none and defaulted to USD against a statement line
+// in HKD, and it matched anyway — because the key was the root alone. That is the collapse the
+// instrument key exists to end, so the fixture now says what the row would actually carry.
+const HK = row('0981.HK-open', '0981.HK', [{ side: 'buy', qty: 500, price: 70.478952, date: '2026-07-10' }], { currency: 'HKD' });
 const MGC = row('MGC-DEC26', 'MGC', [{ side: 'buy', qty: 1, price: 4649.70464, date: '2026-08-26' }], { margined: true, multiplier: 10 });
 const HOOD_SHORT = row('HOOD-open', 'HOOD', [{ side: 'buy', qty: 50, price: 107.010003, date: '2026-08-21' }]);
 
@@ -137,6 +140,47 @@ eq('tagged so it is obvious where it came from', nvda.tags, ['new', 'flex']);
 ok('and says in the row that the history is flat by construction', /statement reports a position, not the fills/.test(nvda.thesis));
 
 // ── the same instrument under two names ──
+// ── ONE ROOT, TWO LISTINGS ───────────────────────────────────────────────────
+// ASML trades on Nasdaq in dollars and on Euronext Amsterdam in euros, and IBKR reports both as
+// `ASML`. The console tells them apart as `ASML` and `ASML.AS`; rootOf() strips the suffix, and
+// keyed by root alone the statement side kept whichever listing came second and lost the first.
+{
+  const nasdaq = row('ASML-us', 'ASML', [{ side: 'buy', qty: 10, price: 900, date: '2026-09-01' }], { currency: 'USD' });
+  const ams    = row('ASML-eu', 'ASML.AS', [{ side: 'buy', qty: 5, price: 820, date: '2026-09-01' }], { currency: 'EUR' });
+  const both = [
+    { root: 'ASML', symbol: 'ASML', currency: 'USD', qty: 10, costBasisPrice: 900, assetCategory: 'STK' },
+    { root: 'ASML', symbol: 'ASML', currency: 'EUR', qty: 5,  costBasisPrice: 820, assetCategory: 'STK' },
+  ];
+  const r = reconcile([nasdaq, ams], both, { today: '2026-09-13' });
+  eq('both listings match, each to its own row', r.agree.map(a => a.rowId ?? a.id).sort(), ['ASML-eu', 'ASML-us'].sort());
+  eq('neither is ambiguous', r.ambiguous, []);
+  eq('nothing is added', r.adds, []);
+  eq('and nothing is reported', r.report, []);
+  // THE OLD FAILURE, PINNED. With one listing in the console and both at the broker, the second is
+  // named as a currency mismatch — never matched to the wrong row, never silently dropped.
+  const one = reconcile([nasdaq], both, { today: '2026-09-13' });
+  eq('the held listing still matches', one.agree.length, 1);
+  eq('the other is reported, not added', [one.adds.length, one.report.length], [0, 1]);
+  eq('as a currency mismatch', one.report[0].kind, 'currency-mismatch');
+  eq('naming the row it collides with', one.report[0].rowIds, ['ASML-us']);
+}
+
+// ── A ROW WHOSE CURRENCY IS WRONG IS NAMED ONCE, AS THAT ────────────────────
+// The other way the same key mismatches: an HK stock left on USD in the console. Under the full
+// key it no longer matches, and the first cut of this then reported it TWICE — as a currency
+// mismatch and, because its key was never seen, as missing at the broker. One row, one verdict.
+{
+  const wrongCcy = row('0981.HK-usd', '0981.HK', [{ side: 'buy', qty: 500, price: 70.478952, date: '2026-07-10' }]);   // no currency → USD
+  // The statement carries `0981`; matchKey normalises to `981`. Filter on the normalised form.
+  const r = reconcile([wrongCcy], st.positions.filter(p => matchKey(p.root) === '981'), { today: '2026-08-27', asOf: '2026-08-27' });
+  eq('it does not match', r.agree, []);
+  eq('and is not auto-added as a duplicate', r.adds, []);
+  eq('one report, not two', r.report.length, 1);
+  eq('and it is the mismatch, not "missing"', r.report[0].kind, 'currency-mismatch');
+  eq('with the console currency named', r.report[0].rowCurrencies, ['USD']);
+  ok('and the fix pointed at', /currency is wrong/.test(r.report[0].note));
+}
+
 // IBKR reports SMIC as `981`; the console calls it `0981.HK` because the quote feed needs the
 // padded form. Stripping the suffix is not enough — `0981` and `981` are still different strings,
 // and the first live run announced the position as missing at the broker AND queued a duplicate
@@ -145,7 +189,9 @@ eq('leading zeros do not make two instruments', matchKey('0981'), matchKey('981'
 eq('a letter root is untouched', matchKey('MGC'), 'MGC');
 {
   const smicPos = parseStatement('<OpenPosition symbol="981" assetCategory="STK" currency="HKD" conid="132135163" multiplier="1" position="500" costBasisPrice="70.478952" />').positions;
-  const consoleRow = row('0981.HK-open', '0981.HK', [{ side: 'buy', qty: 500, price: 70.478952, date: '2026-07-10' }]);
+  // In HKD, as the row would carry it. Currency-less it defaulted to USD and matched anyway on the
+  // root alone — which is the collapse the instrument key ends. See the currency-mismatch case above.
+  const consoleRow = row('0981.HK-open', '0981.HK', [{ side: 'buy', qty: 500, price: 70.478952, date: '2026-07-10' }], { currency: 'HKD' });
   const r = reconcile([consoleRow], smicPos, { today: '2026-08-27' });
   eq('so 981 and 0981.HK are one position', r.agree.map(a => a.id), ['0981.HK-open']);
   eq('nothing is queued to add', r.adds, []);
