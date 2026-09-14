@@ -3075,6 +3075,21 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           </label>
           <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Risk / trade (%)<br />
             {nInput(settings.baseRiskPct, v => { setSettings(x => ({ ...x, baseRiskPct: v === "" ? null : v })); touch(); }, "1", 64)}</label>
+          {/* ── THE TRADES WATERMARK ──
+              The date from which the IBKR statement is the record of fills. Before it, the console's
+              hand-entered history stands (bulk averages that no per-trade statement line will ever
+              match 1:1); from it, statement fills are adopted and applied. It existed only as
+              settings.flexTradesFrom, settable by typing ?from= into the sync URL. A replay that
+              reaches back over hand-kept history creates phantom rows and fails the gate. */}
+          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}
+                 title="Fills in the IBKR statement dated on or after this day are taken from the statement; earlier ones are yours as entered. Set it to the first day the statement, not your hand entry, should be the record — a batch that reaches back over hand-entered bulk history will not reconcile.">
+            IBKR is the record from<br />
+            <input type="date" value={settings.flexTradesFrom || ""} onChange={e => { setSettings(x => ({ ...x, flexTradesFrom: e.target.value || null })); touch(); }}
+              style={{ padding: "5px 8px", border: "1.5px solid " + (settings.flexTradesFrom ? C.blue : C.aBdr), borderRadius: 7, fontSize: 12, background: C.surf, color: C.text }} />
+            <div style={{ fontSize: 10.5, fontWeight: 600, color: settings.flexTradesFrom ? C.lbl : C.amber, marginTop: 2 }}>
+              {settings.flexTradesFrom ? "statement fills adopted from this day" : "unset — statement fills are not ingested"}
+            </div>
+          </label>
           <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Default allocation (%)<br />
             {nInput(settings.targetPct, v => { setSettings(x => ({ ...x, targetPct: v === "" ? null : v })); touch(); }, "5", 64)}</label>
           <div style={{ fontSize: 11.5, color: C.muted, flex: "1 1 240px", lineHeight: 1.55 }}>
