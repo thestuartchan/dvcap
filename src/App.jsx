@@ -1721,12 +1721,14 @@ function GrowthLegBlock({ title, p, kind }) {
     : l.unit === "x" ? l.value.toFixed(3)
     : l.unit === "idx" ? `${l.value >= 0 ? "+" : "−"}${Math.abs(l.value).toFixed(2)}`
     : l.unit === "h" ? `${l.value.toFixed(1)}h`
+    : l.unit === "pmi" ? l.value.toFixed(1)
     : `${l.value >= 0 ? "" : "−"}${Math.abs(l.value).toFixed(1)}%`;
   const subOf = l => {
     if (!l.available) return <span style={{ fontSize: 11, fontWeight: 700, color: C.amber }}>excluded</span>;
     const t = l.change != null ? (l.unit === "h" ? `${l.change >= 0 ? "+" : "−"}${Math.abs(l.change).toFixed(1)}h 3m`
         : `${l.change >= 0 ? "+" : "−"}${Math.abs(l.change).toFixed(1)}% ${kind === "market" ? "20s" : kind === "monthly" ? "3m" : "q/q"}`)
       : l.unit === "idx" && l.delta != null ? `${l.delta >= 0 ? "+" : "−"}${Math.abs(l.delta).toFixed(2)} m/m`
+      : l.unit === "pmi" && l.delta != null ? `${l.delta >= 0 ? "+" : "−"}${Math.abs(l.delta).toFixed(1)} m/m`
       : l.trend != null ? `${l.trend >= 0 ? "+" : "−"}${Math.abs(l.trend).toFixed(1)} 4w`
       : l.delta != null ? `${l.delta >= 0 ? "+" : "−"}${Math.abs(l.delta).toFixed(1)}pp` : null;
     const vote = l.score > 0 ? "▲" : l.score < 0 ? "▼" : "•";
@@ -1745,6 +1747,7 @@ function GrowthLegBlock({ title, p, kind }) {
       <div className="mwd-metric-grid" style={{ marginTop: 8 }}>
         {p.legs.map(l => (
           <MetricCard key={l.key} label={l.label}
+            labelRight={l.handKept ? <span title="Hand-keyed from the release, not a live feed" style={{ fontSize: 10, color: C.muted }}>✍</span> : null}
             title={l.available ? `${l.read} · obs ${l.date}` : `${l.label}: ${l.reason}`}
             value={fmtLeg(l)} valueColor={l.available ? undefined : C.muted}
             sub={subOf(l)} />
@@ -1769,11 +1772,78 @@ function GrowthLegBlock({ title, p, kind }) {
   );
 }
 
+// ── THE ISM ENTRY ────────────────────────────────────────────────────────────
+// One print a month, from the release, into data/manual_entry.json by the same route as the Fed
+// path. The growth leg ages it from the release date and drops it after thirty-five days, so a
+// missed month reads as a missing input rather than as last month's economy.
+function IsmEntryPanel({ entry, onChange }) {
+  const lastMonth = (() => { const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - 1); return d.toISOString().slice(0, 7); })();
+  const [period, setPeriod] = useState(lastMonth);
+  const [pmi, setPmi] = useState("");
+  const [orders, setOrders] = useState("");
+  const [services, setServices] = useState("");
+  const [asOf, setAsOf] = useState(new Date().toISOString().slice(0, 10));
+  const [open, setOpen] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const L = entry?.latest || null;
+  async function save() {
+    setSaving(true); setMsg(null);
+    try {
+      const r = await fetch("/api/manual-entry", {
+        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+        body: JSON.stringify({ ism: { period, manufacturing: pmi, newOrders: orders === "" ? null : orders, services: services === "" ? null : services, asOf } }),
+      });
+      const j = await r.json();
+      if (r.ok) {
+        const fresh = await fetch("/api/manual-entry").then(x => x.json()).catch(() => null);
+        if (fresh?.ism) onChange(fresh.ism); else onChange({ latest: j.ism, series: [...(entry?.series || []), j.ism] });
+        setPmi(""); setOrders(""); setServices(""); setOpen(false);
+        setMsg({ ok: true, text: `Saved ISM ${j.ism?.manufacturing} for ${j.ism?.period}` });
+      } else setMsg({ ok: false, text: j.error || "save failed" });
+    } catch (e) { setMsg({ ok: false, text: String(e.message) }); }
+    setSaving(false);
+  }
+  const inp = (v, set, ph, w = 64) => (
+    <input value={v} onChange={e => set(e.target.value)} placeholder={ph} inputMode="decimal"
+      style={{ width: w, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} />
+  );
+  return (
+    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <HandKept asOf={L?.asOf || null} cadenceDays={35} what="from the ISM release, first business day of the month" />
+        {L ? <span style={{ fontSize: 11.5, color: C.mid }}>ISM {L.manufacturing}{L.newOrders != null ? ` · new orders ${L.newOrders}` : ""}{L.services != null ? ` · services ${L.services}` : ""} · {L.period}</span>
+           : <span style={{ fontSize: 11.5, color: C.amber }}>no ISM entered</span>}
+        <button onClick={() => setOpen(o => !o)}
+          style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 700 }}>
+          {open ? "close" : "enter this month"}
+        </button>
+        {msg && <span style={{ fontSize: 11.5, color: msg.ok ? C.green : C.amber, fontWeight: 700 }}>{msg.text}</span>}
+      </div>
+      {open && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 11.5, color: C.muted }}>
+          <span>month</span><input type="month" value={period} onChange={e => setPeriod(e.target.value)} style={{ padding: "4px 6px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12, background: C.surf, color: C.text }} />
+          <span>PMI</span>{inp(pmi, setPmi, "48.7")}
+          <span>new orders</span>{inp(orders, setOrders, "47.1")}
+          <span>services</span>{inp(services, setServices, "52.0")}
+          <span>released</span><input type="date" value={asOf} onChange={e => setAsOf(e.target.value)} style={{ padding: "4px 6px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12, background: C.surf, color: C.text }} />
+          <button onClick={save} disabled={saving || pmi === ""}
+            style={{ cursor: "pointer", background: C.blue, color: "#fff", border: "none", borderRadius: 7, padding: "5px 12px", fontSize: 12, fontWeight: 800, opacity: (saving || pmi === "") ? 0.5 : 1 }}>
+            {saving ? "saving…" : "save"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GrowthPulsePanel({ growth, market, monthly }) {
+  const [ism, setIsm] = useState(null);
+  useEffect(() => { fetch("/api/manual-entry").then(r => r.json()).then(j => setIsm(j?.ism || null)).catch(() => {}); }, []);
   if (!growth && !market && !monthly) return null;
   const weekly = growthPulse(growth || {});
   const mkt = marketPulse(market || {});
-  const mon = monthlyPulse(monthly || {});
+  const mon = monthlyPulse(monthly || {}, { ism });
   const axis = growthAxis({ market: mkt, weekly, monthly: mon });
   // The card's own status: agreement takes the legs' shared status; any disagreement is WATCH,
   // because a turning point is the state that is not actionable alone.
@@ -1800,6 +1870,7 @@ function GrowthPulsePanel({ growth, market, monthly }) {
             <div>CFNAI 3m:&nbsp;&nbsp;&nbsp;&nbsp;≥0 trend · ≤−0.70 recession signal</div>
             <div>Temp help:&nbsp;&nbsp;&nbsp;±1.5% over 3 months</div>
             <div>Mfg hours:&nbsp;&nbsp;&nbsp;±0.3h over 3 months</div>
+            <div>ISM:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;≥52 momentum · &lt;50 contraction · hand-kept, 35d</div>
           </div>
           <div style={{ fontSize: 11.5, color: tok.color, lineHeight: 1.55, marginTop: 6 }}>
             The market leads the weekly data by one to three months; the weekly data leads the monthly leading series by another month; all three lead the payroll headline below. One axis, four vintages.
@@ -1809,6 +1880,7 @@ function GrowthPulsePanel({ growth, market, monthly }) {
       <GrowthLegBlock title="Market-implied" p={mkt} kind="market" />
       <GrowthLegBlock title="Weekly data" p={weekly} kind="weekly" />
       <GrowthLegBlock title="Monthly leading" p={mon} kind="monthly" />
+      <IsmEntryPanel entry={ism} onChange={setIsm} />
     </Card>
   );
 }

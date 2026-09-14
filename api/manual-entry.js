@@ -69,6 +69,8 @@ async function readStore() {
   store.oasRecon ||= [];
   store.intervention ??= null;
   store.secYields ||= {};
+  store.ism ||= { latest: null, series: [] };   // ISM PMI — one hand-keyed print a month (growth axis)
+  store.ism.series ||= [];
   store.recession ||= {};   // manual overrides for the Wall Street recession sources
   store.southbound ||= { series: [] };   // HKEX Southbound Stock Connect daily flow (hand-entered)
   store.southbound.series ||= [];
@@ -274,6 +276,8 @@ export default async function handler(req, res) {
         oasRecon: store.oasRecon.slice(-180),
         intervention: store.intervention,
         secYields: store.secYields || {},
+        // The ISM entry — one hand-keyed print a month for the growth axis (lib/growth.js ismLeg).
+        ism: { latest: store.ism?.latest ?? null, series: (store.ism?.series || []).slice(-36) },
         recession: store.recession,
         southbound: { series: store.southbound.series.slice(-60) },
         // Console comes from Redis when configured, else the git copy (migration path).
@@ -330,7 +334,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'GITHUB_TOKEN / GITHUB_REPO not configured' });
   }
 
-  const { fedPath, oasRecon, intervention, recession, southbound, secYield, console: consoleIn, decision } = req.body || {};
+  const { fedPath, oasRecon, intervention, recession, southbound, secYield, ism, console: consoleIn, decision } = req.body || {};
 
   // ── ONE DECISION, APPENDED ──────────────────────────────────────────────────
   // Its own branch and its own key, deliberately. A decision is written the moment a fill is
@@ -404,6 +408,36 @@ export default async function handler(req, res) {
       dtb3AtAsOf: Number.isFinite(Number(secYield.dtb3AtAsOf)) ? Number(secYield.dtb3AtAsOf) : null,
     } };
     saved.push('secYields');
+  }
+
+  // ── ISM — one print a month, keyed from the release ──
+  // Validated as a survey reading: the headline is required and every index given must sit in
+  // the range a diffusion index can take; the month is the survey month (YYYY-MM) and the release
+  // date is the operator's own as-of, which cannot precede the survey month or follow today. The
+  // growth leg ages the entry from that release date and drops it after one cycle.
+  if (ism && typeof ism === 'object') {
+    const period = String(ism.period || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(period)) return res.status(422).json({ error: `ISM month "${ism.period}" is not YYYY-MM` });
+    const idx = (k) => {
+      if (ism[k] == null || ism[k] === '') return null;
+      const v = Number(ism[k]);
+      if (!Number.isFinite(v) || v < 20 || v > 80) throw new Error(`ISM ${k} ${ism[k]} is not a diffusion-index reading (20–80)`);
+      return +v.toFixed(1);
+    };
+    let manufacturing, newOrders, services;
+    try { manufacturing = idx('manufacturing'); newOrders = idx('newOrders'); services = idx('services'); }
+    catch (e) { return res.status(422).json({ error: e.message }); }
+    if (manufacturing == null) return res.status(422).json({ error: 'the manufacturing PMI headline is required' });
+    const asOf = String(ism.asOf || '').slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) return res.status(422).json({ error: `release date "${ism.asOf}" is not YYYY-MM-DD` });
+    if (asOf > today) return res.status(422).json({ error: `release date ${asOf} is in the future` });
+    if (asOf.slice(0, 7) < period) return res.status(422).json({ error: `release date ${asOf} precedes the survey month ${period}` });
+    const row = { period, manufacturing, newOrders, services, asOf };
+    store.ism.series = [...store.ism.series.filter(r => r.period !== period), row]
+      .sort((a, b) => a.period < b.period ? -1 : 1).slice(-36);
+    store.ism.latest = store.ism.series[store.ism.series.length - 1];
+    saved.push('ism:' + period);
   }
 
   // ── P2.5 reconciliation ──
@@ -562,5 +596,5 @@ export default async function handler(req, res) {
     }),
   });
   if (!w.ok) return res.status(502).json({ error: 'GitHub commit failed', detail: (await w.text()).slice(0, 300) });
-  return res.status(200).json({ ok: true, saved, console: consoleResult, fedPath: store.fedPath.latest, reconRows: store.oasRecon.length });
+  return res.status(200).json({ ok: true, saved, console: consoleResult, fedPath: store.fedPath.latest, ism: store.ism.latest, reconRows: store.oasRecon.length });
 }

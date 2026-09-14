@@ -3,7 +3,7 @@
 // Built from inputs, never from a captured output: every fixture is a synthetic FRED block with
 // the shape api/indicators.js produces, so the verdict is exercised on the arithmetic, and the
 // clock is pinned so no assertion here can drift with the calendar.
-import { growthPulse, marketPulse, monthlyPulse, growthAxis, MARKET_LABEL, MARKET_PAIRS, MONTHLY_SERIES, CFNAI_RECESSION, MARKET_LOOKBACK, GROWTH_SERIES, CLAIMS_WINDOW, CLAIMS_LOOKBACK, CLAIMS_RISE_PCT, WEI_STRONG, GDPNOW_STRONG, GDPNOW_WEAK, MIN_LEGS } from '../lib/growth.js';
+import { growthPulse, marketPulse, monthlyPulse, growthAxis, MARKET_LABEL, MARKET_PAIRS, MONTHLY_SERIES, CFNAI_RECESSION, ISM_STALE_DAYS, MARKET_LOOKBACK, GROWTH_SERIES, CLAIMS_WINDOW, CLAIMS_LOOKBACK, CLAIMS_RISE_PCT, WEI_STRONG, GDPNOW_STRONG, GDPNOW_WEAK, MIN_LEGS } from '../lib/growth.js';
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; console.log(`✅ ${n}`); } else { fail++; console.log(`❌ ${n}`); } };
@@ -216,7 +216,8 @@ const tempFlat = () => mSeries('TEMPHELPS', monthly('2026-08', 16, () => 2700));
 const hoursFlat = () => mSeries('AWHMAN', monthly('2026-08', 16, () => 40.5));
 {
   const p = monthlyPulse({ cfnai: cfnaiAt(0.12), tempHelp: tempFlat(), hours: hoursFlat() }, { now: NOW });
-  eq('three usable monthly legs', [p.usable, p.of], [3, 3]);
+  eq('three usable monthly legs of four — ISM is not entered', [p.usable, p.of], [3, 4]);
+  ok('and the missing entry is named without instructing anyone', /no ISM entry — hand-keyed monthly/.test(p.excluded[0].reason));
   eq('an index above zero with flat temp help and hours is EXPANDING on the sum', [p.verdict, p.score], ['EXPANDING', 1]);
   const c = p.legs.find(l => l.key === 'cfnai');
   ok('the index reads above trend', /above trend/.test(c.read));
@@ -282,6 +283,43 @@ const hoursFlat = () => mSeries('AWHMAN', monthly('2026-08', 16, () => 40.5));
   eq('and stale by mid-October, two weeks after August\'s was due', late.legs.find(l => l.key === 'cfnai').available, false);
   const aug = mSeries('TEMPHELPS', monthly('2026-08', 16, () => 2700));
   eq('an August BLS print is current into early October', monthlyPulse({ tempHelp: aug, hours: hoursFlat() }, { now: new Date('2026-10-05T14:00:00Z') }).legs.find(l => l.key === 'tempHelp').available, true);
+}
+
+// ── ISM: HAND-KEPT, EXPIRING, AND CAPPED BY NEW ORDERS ───────────────────────
+const ism = (manufacturing, newOrders, services, asOf = '2026-09-01', period = '2026-08', series = []) =>
+  ({ latest: { period, manufacturing, newOrders, services, asOf }, series });
+{
+  const p = monthlyPulse({ cfnai: cfnaiAt(0.1), tempHelp: tempFlat(), hours: hoursFlat() }, { now: NOW, ism: ism(53.2, 54.0, 52.5) });
+  const l = p.legs.find(x => x.key === 'ism');
+  eq('four usable legs with an ISM entered', [p.usable, p.of], [4, 4]);
+  eq('53.2 votes for growth', l.score, 1);
+  ok('the read carries the headline, the month, new orders and services', /ISM manufacturing 53\.2 \(2026-08\), expanding with momentum; new orders 54\.0; services 52\.5/.test(l.read));
+  ok('the leg is flagged hand-kept', l.handKept === true);
+  ok('and ages in calendar days from the release date', l.vintage.days === 13);
+  eq('48.7 votes against', monthlyPulse({}, { now: NOW, ism: ism(48.7, 47.1, 51.0) }).legs.find(x => x.key === 'ism').score, -1);
+  const barely = monthlyPulse({}, { now: NOW, ism: ism(50.8, 51.2, 52.0) }).legs.find(x => x.key === 'ism');
+  eq('50.8 is expanding, barely — no vote', [barely.score, /expanding, barely/.test(barely.read)], [0, true]);
+  const capped = monthlyPulse({}, { now: NOW, ism: ism(52.6, 48.9, 52.0) }).legs.find(x => x.key === 'ism');
+  eq('a strong headline with new orders below 50 does not vote for growth', capped.score, 0);
+  ok('and says why', /leading component is already below 50/.test(capped.read));
+  ok('with the flip on new orders, not the headline', /new orders back above 50\.0/.test(capped.flip));
+  const withPrev = monthlyPulse({}, { now: NOW, ism: ism(48.7, 47.1, 51.0, '2026-09-01', '2026-08', [{ period: '2026-07', manufacturing: 49.3 }]) }).legs.find(x => x.key === 'ism');
+  eq('the change is against the previous month entered', withPrev.delta, -0.6);
+}
+{
+  // Entered 1 August for July; on 14 September that is 44 days — past the cycle.
+  const p = monthlyPulse({}, { now: NOW, ism: ism(49.0, 48.0, 51.0, '2026-08-01', '2026-07') });
+  const l = p.legs.find(x => x.key === 'ism');
+  eq(`an entry older than ${ISM_STALE_DAYS} days is excluded, not footnoted`, l.available, false);
+  ok('with its date and age', /ISM entry from 2026-08-01 is 44 days old/.test(l.reason));
+  eq('the same entry is fresh a fortnight earlier — the clock is an input', monthlyPulse({}, { now: new Date('2026-08-30T14:00:00Z'), ism: ism(49.0, 48.0, 51.0, '2026-08-01', '2026-07') }).legs.find(x => x.key === 'ism').available, true);
+  eq('no entry at all is excluded', monthlyPulse({}, { now: NOW }).legs.find(x => x.key === 'ism').available, false);
+  eq('an entry with no release date is excluded', monthlyPulse({}, { now: NOW, ism: { latest: { manufacturing: 50 } } }).legs.find(x => x.key === 'ism').available, false);
+}
+// ── THE INDEX PRINTS TWO DECIMALS ────────────────────────────────────────────
+{
+  const l = monthlyPulse({ cfnai: cfnaiAt(-0.04) }, { now: NOW }).legs.find(x => x.key === 'cfnai');
+  ok('−0.04 prints as −0.04, not −0.0', /Chicago Fed index −0\.04/.test(l.read));
 }
 
 console.log(`${pass} passed, ${fail} failed`);
