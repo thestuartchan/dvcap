@@ -714,6 +714,16 @@ const {
                 {r.quoteSymbol ? `priced off ${r.quoteSymbol}` : "blank = the symbol itself"}
               </span>
             </label>
+            {/* ── BROKER COST BASIS ──
+                The acknowledged IBKR figure. Set by the banner's one-click, or here by hand when
+                the statement is not to hand. Blank = not acknowledged. */}
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}
+                   title="IBKR's cost basis for this position, as the statement reports it. Recording it here says the gap against the console's own average is expected (lots vs average cost) — the reconciliation checks against this exact figure and reports again the day IBKR's number changes.">
+              Broker cost basis<br />
+              <input value={r.costBasisAck ?? ""} inputMode="decimal" onChange={e => upd(r.id, { costBasisAck: e.target.value === "" ? null : e.target.value })}
+                placeholder="not acknowledged"
+                style={{ width: 110, padding: "5px 9px", border: "1.5px solid " + (r.costBasisAck ? C.blue : C.bdr), borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} />
+            </label>
             <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Trade label<br />
               <input value={r.trade || ""} onChange={e => upd(r.id, { trade: e.target.value })} placeholder="e.g. Aug 18 entry"
                 style={{ width: 120, padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
@@ -1824,6 +1834,8 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   // What the scheduled IBKR reconciliation last did. Server-owned: it arrives beside the console
   // rather than inside it, because a save replaces the console object wholesale.
   const [flexNote, setFlexNote] = useState(null);
+  const [ackBusy, setAckBusy] = useState(null);
+  const [ackMsg, setAckMsg] = useState(null);
   // What the backfill did, shown once. A number changing under the reader without a word is how
   // the original error survived a month.
   const [multNote, setMultNote] = useState(null);
@@ -2190,6 +2202,20 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
     setAddSym(""); setAddSide(DEFAULT_SIDE); setExpanded(id); touch();
   };
   const upd = (id, patch) => { setRows(p => p.map(r => r.id === id ? { ...r, ...patch } : r)); touch(); };
+  // Accept the broker's cost basis on one row. The server does the recording (it holds the
+  // statement); the row here takes the same figure so the editor shows it without a reload that
+  // would clobber unsaved edits, and the banner is re-read.
+  const acknowledge = async (id) => {
+    setAckBusy(id); setAckMsg(null);
+    try {
+      const j = await fetch(`/api/flex-sync?apply=1&ack=${encodeURIComponent(id)}`, { credentials: "include" }).then(r => r.json());
+      const done = (j?.acknowledged || []).find(a => a.id === id);
+      const refused = (j?.refused || []).find(a => a.id === id);
+      if (done) { upd(id, { costBasisAck: done.to }); setAckMsg({ ok: true, text: `Recorded IBKR's ${done.to} on the row — the console keeps ${done.from} as its own average` }); refreshLive(); }
+      else setAckMsg({ ok: false, text: refused?.reason || j?.error || "nothing acknowledged" });
+    } catch (e) { setAckMsg({ ok: false, text: String(e.message || e) }); }
+    setAckBusy(null);
+  };
 
   // ── REORDERING ────────────────────────────────────────────────────────────
   // The order lives in `rows` itself rather than in a separate list of ids, so it persists with
@@ -2769,10 +2795,23 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           {flexNote.needsYou?.length > 0 && (
             <div style={{ marginTop: 6, fontSize: 11.5, color: C.mid, display: "flex", gap: 7, flexWrap: "wrap" }}>
               {flexNote.needsYou.map((n, i) => (
-                <span key={i} style={{ background: C.surf, border: "1px solid " + C.bdr, borderRadius: 7, padding: "2px 8px" }}>
-                  <b>{n.root}</b> · {n.what}
+                <span key={i} style={{ background: C.surf, border: "1px solid " + C.bdr, borderRadius: 7, padding: "2px 8px", display: "inline-flex", gap: 8, alignItems: "center" }}>
+                  <span><b>{n.root}</b> · {n.what}</span>
+                  {/* ── THE ONE-CLICK ACKNOWLEDGEMENT ──
+                      The mechanism existed — /api/flex-sync?ack=<row> records the broker's cost
+                      basis on the row so the two accountings stop disagreeing — but nothing on
+                      screen called it, so the banner named a problem and offered no way through.
+                      Offered only where it applies: a cost-only gap. A quantity gap is a missing
+                      fill and the server refuses to acknowledge it. */}
+                  {n.ackable && n.id && (
+                    <button disabled={ackBusy === n.id} onClick={() => acknowledge(n.id)}
+                      style={{ cursor: "pointer", background: C.blue, color: "#fff", border: "none", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800, opacity: ackBusy === n.id ? 0.5 : 1 }}>
+                      {ackBusy === n.id ? "…" : "Accept IBKR's cost basis"}
+                    </button>
+                  )}
                 </span>
               ))}
+              {ackMsg && <span style={{ fontSize: 11.5, color: ackMsg.ok ? C.green : C.amber, fontWeight: 700, flexBasis: "100%" }}>{ackMsg.text}</span>}
             </div>
           )}
         </div>
