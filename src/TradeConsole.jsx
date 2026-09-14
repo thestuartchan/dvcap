@@ -1751,6 +1751,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   const [kvOn, setKvOn]         = useState(null);
   const [expanded, setExpanded] = useState(null);
   const [addSym, setAddSym]     = useState("");
+  const [symHint, setSymHint]   = useState(false);   // the ticker-spelling pointer beside the add field
   const [addSide, setAddSide]   = useState(DEFAULT_SIDE);
   const [fillFor, setFillFor]   = useState(null);   // open "record a fill" form
   const [sizeOpen, setSizeOpen] = useState({});     // per-row: is the size suggestion unfolded
@@ -3049,6 +3050,14 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           <SLabel>Add a setup</SLabel>
           <input value={addSym} onChange={e => setAddSym(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addRow(); }} placeholder="Ticker"
             style={{ width: 180, padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 13, background: C.surf, color: C.text, textTransform: "uppercase" }} />
+          {/* A pointer on how the feed spells things, because the feed's spelling is not always
+              yours: a bare US ticker is fine, Hong Kong wants the zero-padded code with .HK, a
+              European listing wants its exchange suffix, and a coin wants its -USD pair (a bare
+              BTC is a security ticker and is left alone). Small, and a click away rather than
+              always on — the title covers the desktop hover, the toggle covers touch. */}
+          <button onClick={() => setSymHint(h => !h)} aria-label="How to write the ticker"
+            title="US: QQQ · Hong Kong: 0981.HK · Europe: ASML.AS, SHEL.L, MC.PA, SAP.DE · crypto: BTC-USD, ETH-USD · futures: MNQ, MGC (=F is added) · if the feed calls it something else, set Quote as in the row."
+            style={{ cursor: "pointer", width: 22, height: 22, borderRadius: 999, border: "1.5px solid " + (symHint ? C.blue : C.bdr), background: C.surf, color: symHint ? C.blue : C.muted, fontSize: 11.5, fontWeight: 900, padding: 0, lineHeight: 1 }}>?</button>
           {/* Direction, chosen before the row exists. Defaulting silently to long is what the
               console did for its whole life, and it is fine as a DEFAULT — it is not fine as the
               only option. */}
@@ -3065,6 +3074,11 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           <Btn onClick={() => addRow()} color="#fff" bgColor={C.blue} label="+ Add" />
           <span style={{ fontSize: 11.5, color: C.muted }}>starts as a watched setup — add levels and a stop before it becomes a position</span>
         </div>
+        {symHint && (
+          <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
+            How the feed spells it — <b>US</b> QQQ · <b>Hong Kong</b> 0981.HK (zero-padded code) · <b>Europe</b> ASML.AS, SHEL.L, MC.PA, SAP.DE (exchange suffix) · <b>crypto</b> BTC-USD, ETH-USD (a bare BTC is a security ticker) · <b>futures</b> MNQ, MGC (=F is added) · a name the feed does not know can be priced off another with <i>Quote as</i> in the row.
+          </div>
+        )}
       </Card>
 
       {/* Setups have no size to sort by and no rule worth keeping, so they are simply in your
