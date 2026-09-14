@@ -1,13 +1,13 @@
 {
   "fedPath": {
     "latest": {
-      "date": "2026-09-10",
+      "date": "2026-09-14",
       "contract": "Dec-2026",
-      "price": 96.045,
-      "impliedRate": 3.955,
+      "price": 95.91,
+      "impliedRate": 4.09,
       "effr": 3.63,
-      "movesPriced": 1.3,
-      "enteredAt": "2026-09-10T08:35:57.451Z"
+      "movesPriced": 1.84,
+      "enteredAt": "2026-09-14T09:02:10.383Z"
     },
     "series": [
       {
@@ -108,6 +108,15 @@
         "effr": 3.63,
         "movesPriced": 1.3,
         "enteredAt": "2026-09-10T08:35:57.451Z"
+      },
+      {
+        "date": "2026-09-14",
+        "contract": "Dec-2026",
+        "price": 95.91,
+        "impliedRate": 4.09,
+        "effr": 3.63,
+        "movesPriced": 1.84,
+        "enteredAt": "2026-09-14T09:02:10.383Z"
       }
     ]
   },
@@ -118,7 +127,7 @@
       "hyg_qqq_divergence": -1.96,
       "oas_actual_chg": 0.02,
       "direction_agreed": false,
-      "loggedAt": "2026-09-11T21:26:25.222Z"
+      "loggedAt": "2026-09-14T11:03:10.166Z"
     },
     {
       "date": "2026-08-06",
@@ -126,7 +135,7 @@
       "hyg_qqq_divergence": -3.1,
       "oas_actual_chg": -0.04,
       "direction_agreed": true,
-      "loggedAt": "2026-09-11T21:26:25.225Z"
+      "loggedAt": "2026-09-14T11:03:10.170Z"
     },
     {
       "date": "2026-08-07",
@@ -134,7 +143,7 @@
       "hyg_qqq_divergence": -1.96,
       "oas_actual_chg": -0.01,
       "direction_agreed": true,
-      "loggedAt": "2026-09-11T21:26:25.225Z"
+      "loggedAt": "2026-09-14T11:03:10.170Z"
     },
     {
       "date": "2026-08-12",
@@ -142,7 +151,7 @@
       "hyg_qqq_divergence": 0.86,
       "oas_actual_chg": -0.01,
       "direction_agreed": false,
-      "loggedAt": "2026-09-11T21:26:25.225Z"
+      "loggedAt": "2026-09-14T11:03:10.170Z"
     },
     {
       "date": "2026-08-13",
@@ -150,7 +159,7 @@
       "hyg_qqq_divergence": 0.38,
       "oas_actual_chg": 0,
       "direction_agreed": true,
-      "loggedAt": "2026-09-11T21:26:25.225Z"
+      "loggedAt": "2026-09-14T11:03:10.170Z"
     },
     {
       "date": "2026-08-14",
@@ -158,7 +167,7 @@
       "hyg_qqq_divergence": 0.38,
       "oas_actual_chg": -0.04,
       "direction_agreed": true,
-      "loggedAt": "2026-09-11T21:26:25.225Z"
+      "loggedAt": "2026-09-14T11:03:10.170Z"
     },
     {
       "date": "2026-08-17",
@@ -166,7 +175,7 @@
       "hyg_qqq_divergence": 0.04,
       "oas_actual_chg": 0.03,
       "direction_agreed": true,
-      "loggedAt": "2026-09-11T21:26:25.225Z"
+      "loggedAt": "2026-09-14T11:03:10.170Z"
     },
     {
       "date": "2026-08-18",
@@ -174,7 +183,7 @@
       "hyg_qqq_divergence": 0.04,
       "oas_actual_chg": 0.05,
       "direction_agreed": true,
-      "loggedAt": "2026-09-11T21:26:25.225Z"
+      "loggedAt": "2026-09-14T11:03:10.171Z"
     },
     {
       "date": "2026-08-19",
@@ -182,7 +191,7 @@
       "hyg_qqq_divergence": 1.59,
       "oas_actual_chg": -0.02,
       "direction_agreed": false,
-      "loggedAt": "2026-09-11T21:26:25.225Z"
+      "loggedAt": "2026-09-14T11:03:10.171Z"
     },
     {
       "date": "2026-08-20",
@@ -190,7 +199,7 @@
       "hyg_qqq_divergence": 0.43,
       "oas_actual_chg": 0.02,
       "direction_agreed": false,
-      "loggedAt": "2026-09-11T21:26:25.225Z"
+      "loggedAt": "2026-09-14T11:03:10.171Z"
     },
     {
       "date": "2026-08-21",
@@ -198,7 +207,7 @@
       "hyg_qqq_divergence": 0.53,
       "oas_actual_chg": -0.05,
       "direction_agreed": false,
-      "loggedAt": "2026-09-11T21:26:25.225Z"
+      "loggedAt": "2026-09-14T11:03:10.171Z"
     },
     {
       "date": "2026-08-24",
@@ -206,7 +215,7 @@
       "hyg_qqq_divergence": -0.29,
       "oas_actual_chg": -0.01,
       "direction_agreed": true,
-      "loggedAt": "2026-09-11T21:26:25.225Z"
+      "loggedAt": "2026-09-14T11:03:10.171Z"
     },
     {
       "date": "2026-08-25",
@@ -214,7 +223,7 @@
       "hyg_qqq_divergence": 1.59,
       "oas_actual_chg": 0.01,
       "direction_agreed": true,
-      "loggedAt": "2026-09-11T21:26:25.225Z"
+      "loggedAt": "2026-09-14T11:03:10.171Z"
     },
     {
       "date": "2026-08-27",
@@ -222,7 +231,7 @@
       "hyg_qqq_divergence": -0.12,
       "oas_actual_chg": -0.04,
       "direction_agreed": false,
-      "loggedAt": "2026-09-11T21:26:25.226Z"
+      "loggedAt": "2026-09-14T11:03:10.171Z"
     },
     {
       "date": "2026-08-28",
@@ -230,7 +239,7 @@
       "hyg_qqq_divergence": 1.59,
       "oas_actual_chg": -0.03,
       "direction_agreed": false,
-      "loggedAt": "2026-09-11T21:26:25.226Z"
+      "loggedAt": "2026-09-14T11:03:10.171Z"
     },
     {
       "date": "2026-08-31",
@@ -238,7 +247,7 @@
       "hyg_qqq_divergence": 0.49,
       "oas_actual_chg": 0.03,
       "direction_agreed": true,
-      "loggedAt": "2026-09-11T21:26:25.226Z"
+      "loggedAt": "2026-09-14T11:03:10.171Z"
     },
     {
       "date": "2026-09-01",
@@ -246,7 +255,7 @@
       "hyg_qqq_divergence": -0.13,
       "oas_actual_chg": 0.02,
       "direction_agreed": true,
-      "loggedAt": "2026-09-11T21:26:25.226Z"
+      "loggedAt": "2026-09-14T11:03:10.171Z"
     },
     {
       "date": "2026-09-02",
@@ -254,7 +263,7 @@
       "hyg_qqq_divergence": 0.38,
       "oas_actual_chg": 0.01,
       "direction_agreed": true,
-      "loggedAt": "2026-09-11T21:26:25.226Z"
+      "loggedAt": "2026-09-14T11:03:10.171Z"
     },
     {
       "date": "2026-09-03",
@@ -262,7 +271,7 @@
       "hyg_qqq_divergence": -0.22,
       "oas_actual_chg": -0.01,
       "direction_agreed": true,
-      "loggedAt": "2026-09-11T21:26:25.226Z"
+      "loggedAt": "2026-09-14T11:03:10.171Z"
     },
     {
       "date": "2026-09-04",
@@ -270,7 +279,7 @@
       "hyg_qqq_divergence": -1.06,
       "oas_actual_chg": 0.03,
       "direction_agreed": false,
-      "loggedAt": "2026-09-11T21:26:25.226Z"
+      "loggedAt": "2026-09-14T11:03:10.171Z"
     },
     {
       "date": "2026-09-08",
@@ -278,7 +287,7 @@
       "hyg_qqq_divergence": -0.24,
       "oas_actual_chg": -0.01,
       "direction_agreed": false,
-      "loggedAt": "2026-09-11T21:26:25.226Z"
+      "loggedAt": "2026-09-14T11:03:10.171Z"
     },
     {
       "date": "2026-09-09",
@@ -286,7 +295,7 @@
       "hyg_qqq_divergence": 0.03,
       "oas_actual_chg": 0.04,
       "direction_agreed": true,
-      "loggedAt": "2026-09-11T21:26:25.226Z"
+      "loggedAt": "2026-09-14T11:03:10.171Z"
     },
     {
       "date": "2026-09-10",
@@ -294,7 +303,7 @@
       "hyg_qqq_divergence": 0.11,
       "oas_actual_chg": -0.01,
       "direction_agreed": false,
-      "loggedAt": "2026-09-11T21:26:25.226Z"
+      "loggedAt": "2026-09-14T11:03:10.171Z"
     }
   ],
   "intervention": {
