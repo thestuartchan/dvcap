@@ -35,6 +35,7 @@ function trendBps(series, lookbackDays) {
   const t = trendOf(series, { lookbackDays });
   return t ? Math.round(t.delta * 100) : null;
 }
+import { growthPulse } from "../lib/growth.js";
 import { laborStress, sahmAnnotation, laborVerdict, laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead, quitsRead, revisionTrackerRead, twelveMonthAvgRead, ytdDivergenceRead } from "../lib/labor.js";
 import { handoffChain } from "../lib/handoff.js";
 import { coreSpread, monthName } from "../lib/inflation.js";
@@ -1704,6 +1705,83 @@ function CreditBlock({ credit, oas, hyg, reconSummary, history, depth = "full" }
 // The scoring rule is unchanged and lives in lib/labor.js: U3 is never scored alone, because
 // the rate can FALL on labour-force exit. Emp-pop is the control — employed ÷ working-age
 // population — and it cannot be gamed that way. That is why it is the hero metric.
+// ── F.6 — the WEEKLY leg of the growth axis ──────────────────────────────────
+// Claims, continuing claims, the NY Fed Weekly Economic Index and GDPNow, scored in lib/growth.js.
+// The labour module below is monthly and lands three to five weeks after the fact; this leg is
+// the same axis a month earlier. It describes what the weekly data is consistent with, which leg
+// is carrying the read, and what flips it. A late leg is excluded and named, never counted flat.
+function GrowthPulsePanel({ growth }) {
+  if (!growth) return null;
+  const p = growthPulse(growth);
+  const tok = STATUS[p.status] || STATUS.WATCH;
+  const fmtLeg = l => l.value == null ? "—"
+    : l.unit === "k" ? (l.value >= 1000 ? `${(l.value / 1000).toFixed(2)}M` : `${Math.round(l.value)}k`)
+    : `${l.value >= 0 ? "" : "−"}${Math.abs(l.value).toFixed(1)}%`;
+  const subOf = l => {
+    if (!l.available) return <span style={{ fontSize: 11, fontWeight: 700, color: C.amber }}>excluded</span>;
+    const t = l.change != null ? `${l.change >= 0 ? "+" : "−"}${Math.abs(l.change).toFixed(1)}% q/q`
+      : l.trend != null ? `${l.trend >= 0 ? "+" : "−"}${Math.abs(l.trend).toFixed(1)} 4w`
+      : l.delta != null ? `${l.delta >= 0 ? "+" : "−"}${Math.abs(l.delta).toFixed(1)}pp` : null;
+    const vote = l.score > 0 ? "▲" : l.score < 0 ? "▼" : "•";
+    return <span style={{ fontSize: 12, fontWeight: 800, color: l.score > 0 ? STATUS.BENIGN.color : l.score < 0 ? STATUS.ELEVATED.color : C.mid }}>{vote}{t ? ` ${t}` : ""}</span>;
+  };
+  const badge = (
+    <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: 0.5, color: tok.color, background: tok.bg, border: "1px solid " + tok.bdr, borderRadius: 5, padding: "2px 8px" }}>
+      {p.verdict} / {p.status}
+    </span>
+  );
+  return (
+    <Card style={{ borderLeft: "4px solid " + tok.color }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+        <div style={{ minWidth: 260, flex: "1 1 320px" }}>
+          <SLabel>Growth · weekly leg</SLabel>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 22, fontWeight: 900, letterSpacing: -0.5, color: tok.color }}>{p.verdict}</span>
+            {badge}
+            <span style={{ fontSize: 11, color: C.lbl, fontWeight: 700 }}>{p.usable} of {p.of} legs · {p.agreement}</span>
+          </div>
+          <div style={{ fontSize: 12.5, color: C.text, marginTop: 4, lineHeight: 1.5 }}>{p.read}.</div>
+          {p.flipsIf && <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>↪ {p.flipsIf}</div>}
+        </div>
+        <div style={{ background: tok.bg, border: "1px solid " + tok.bdr, borderRadius: 8, padding: "8px 12px", maxWidth: 360 }}>
+          <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: C.mid, lineHeight: 1.7 }}>
+            <div>Claims:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;4wk avg ±10% vs a quarter ago</div>
+            <div>Continuing:&nbsp;&nbsp;4wk avg ±5% vs a quarter ago</div>
+            <div>WEI:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;≥1.5 trend · &lt;0 contraction</div>
+            <div>GDPNow:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;≥2.0 trend · &lt;1.0 stall-speed</div>
+          </div>
+          <div style={{ fontSize: 11.5, color: tok.color, lineHeight: 1.55, marginTop: 6 }}>
+            Weekly series turn one to three months before payrolls. A split between this leg and the monthly labour read is the turning-point state, not an error.
+          </div>
+        </div>
+      </div>
+      <div className="mwd-metric-grid">
+        {p.legs.map(l => (
+          <MetricCard key={l.key} label={l.label}
+            title={l.available ? `${l.read} · obs ${l.date}` : `${l.label}: ${l.reason}`}
+            value={fmtLeg(l)} valueColor={l.available ? undefined : C.muted}
+            sub={subOf(l)} />
+        ))}
+      </div>
+      {p.excluded.length > 0 && (
+        <div style={{ fontSize: 11.5, color: C.amber, marginTop: 8, lineHeight: 1.5 }}>
+          Excluded: {p.excluded.map(e => `${e.label} — ${e.reason}`).join(" · ")}
+        </div>
+      )}
+      {p.unverified.length > 0 && (
+        <div style={{ fontSize: 11.5, color: C.amber, marginTop: 6, lineHeight: 1.5 }}>
+          Series identity unverified: {p.unverified.map(u => `${u.key} (${u.mismatch})`).join(" · ")}
+        </div>
+      )}
+      {p.vintage && (
+        <div style={{ fontSize: 11, color: C.lbl, marginTop: 8 }}>
+          Oldest usable print {p.vintage.bizDays} business day{p.vintage.bizDays === 1 ? "" : "s"} old · FRED ICSA, CCSA, WEI, GDPNOW
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function LaborPanel({ labor, depth = "full", extras = null, announced = false }) {
   if (!labor) return null;
   const g = k => labor[k] && labor[k].ok ? labor[k] : null;
@@ -7599,7 +7677,7 @@ export default function App() {
               <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: C.lbl, marginRight: 2 }}>Jump to</span>
               {[
                 ["Regime", "macro-regime"], ["Credit", "macro-credit"], ["Fed", "macro-fed"],
-                ["Inflation", "macro-inflation"], ["Labor", "macro-labor"], ["Recession", "macro-recession"],
+                ["Inflation", "macro-inflation"], ["Growth", "macro-growth"], ["Labor", "macro-labor"], ["Recession", "macro-recession"],
                 ["Transitions", "macro-transitions"],
               ].map(([lbl, id]) => (
                 <button key={id} onClick={() => { const el = typeof document !== "undefined" && document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }}
@@ -8258,6 +8336,11 @@ export default function App() {
             {/* F.5 — the labour module is a paragraph of interpretation, so it sits where the
                 user is already reading rather than glancing. Same shared definition as the
                 Indicators tab (G.3) — one module, rendered once per tab. */}
+            {/* F.6 — the weekly growth leg sits directly above the monthly labour module: same axis,
+                a month earlier. The two are meant to be read against each other. */}
+            <div id="macro-growth" style={{ scrollMarginTop: 96 }} />
+            <GrowthPulsePanel growth={liveInd?.growth} />
+
             <div id="macro-labor" style={{ scrollMarginTop: 96 }} />
             <LaborPanel labor={laborView} extras={laborExtras} announced={laborAnnounced} />
 
