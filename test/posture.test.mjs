@@ -134,6 +134,10 @@ eq('the leg set is the one the brief named', TAPE_LEGS, ['equity', 'gold', 'btc'
   eq('below it does not', regimeBlock({ label: 'Stagflation', pct: REGIME_BLOCK_PCT - 1 }), null);
   eq('a benign regime does not', regimeBlock({ label: 'Reflationary Growth', pct: 88 }), null);
   eq('and neither does a missing probability', regimeBlock({ label: 'Stagflation' }), null);
+  // The guard matches the ID when it has one, so a relabelled regime cannot switch it off.
+  eq('an id of stag blocks whatever the label says', typeof regimeBlock({ id: 'stag', label: 'Sideways Grind', pct: 71 }), 'string');
+  eq('an id of ref does not, even under a hostile-sounding label', regimeBlock({ id: 'ref', label: 'Stagflation-lite', pct: 90 }), null);
+  eq('def blocks by id', typeof regimeBlock({ id: 'def', label: 'Deflationary Recession', pct: 65 }), 'string');
 
   const green = { posture: 'RISK-ON', tone: 'green', blockedBy: [] };
   const guarded = applyRegimeGuard(green, { label: 'Stagflation', pct: 71 });

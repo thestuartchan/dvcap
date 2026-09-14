@@ -37,6 +37,16 @@ function trendBps(series, lookbackDays) {
 }
 import { growthPulse, marketPulse, monthlyPulse, growthAxis } from "../lib/growth.js";
 import { consensusAlive, regimeVintage as regimeVintageOf } from "../lib/regimeVintage.js";
+
+// ── AN UNMAPPED REGIME RANKS NOTHING ─────────────────────────────────────────
+// Every ranking site on the Posture, Insurance and Income tabs fell back to the STAGFLATION column
+// when the regime id was not in its table, so a regime the tables did not know rendered as
+// stagflation with no notice. A missing key now leaves the list in its declared order and the
+// site says it is unranked. (The id is one of four in practice; this is what happens when it is not.)
+const INS_RANK_KEY = { stag: "stagRank", def: "defRank", ref: "refRank", inf: "infRank" };
+const INCOME_RANK_KEY = { stag: "rank", def: "defRank", ref: "refRank", inf: "infRank" };
+const rankKeyFor = (table, id) => table[id] ?? null;
+const byRank = (key) => (a, b) => key ? ((a[key] ?? 99) - (b[key] ?? 99)) : 0;
 import { laborStress, sahmAnnotation, laborVerdict, laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead, quitsRead, revisionTrackerRead, twelveMonthAvgRead, ytdDivergenceRead } from "../lib/labor.js";
 import { handoffChain } from "../lib/handoff.js";
 import { coreSpread, monthName } from "../lib/inflation.js";
@@ -6515,7 +6525,6 @@ export default function App() {
         {/* ── TRADE CONSOLE (Tier 3) ── */}
         {tab === "console" && (
           <TradeConsole
-            regimeHistory={regimeHistory}
             liveRegime={liveRegime}
             regimeProbFor={regimeProbFor}
             liveInd={liveInd}
@@ -6807,8 +6816,8 @@ export default function App() {
               };
               // Fix A — top regime-ranked insurance instruments feed the stage tracker
               // (same rankKey + sort as the Insurance tab; best-ranked first).
-              const insRankKey = { stag: "stagRank", def: "defRank", ref: "refRank", inf: "infRank" }[activeRegime.id] || "stagRank";
-              const rankedIns = [...ASSETS].sort((a, b) => (a[insRankKey] || 9) - (b[insRankKey] || 9));
+              const insRankKey = rankKeyFor(INS_RANK_KEY, activeRegime.id);
+              const rankedIns = [...ASSETS].sort(byRank(insRankKey));
               const top2Ins = rankedIns.slice(0, 2).map(a => a.name).join(", ");
               const top3Ins = rankedIns.slice(0, 3).map(a => a.name).join(", ");
               const stageNote = s => s.n === 2
@@ -7006,8 +7015,8 @@ export default function App() {
               // immediately answers "given the regime, what's my best insurance and what to avoid."
               // Same rankKey the best→worst bars use elsewhere; growth regimes (inf/ref) still have a
               // real-asset ordering even though they aren't crash scenarios.
-              const insRankKey = { stag: "stagRank", def: "defRank", ref: "refRank", inf: "infRank" }[liveRegime?.id] || "stagRank";
-              const insRanked = [...ASSETS].sort((a, b) => (a[insRankKey] ?? 99) - (b[insRankKey] ?? 99));
+              const insRankKey = rankKeyFor(INS_RANK_KEY, liveRegime?.id);
+              const insRanked = [...ASSETS].sort(byRank(insRankKey));
               const insBest = insRanked.slice(0, 2);
               const insWorst = insRanked[insRanked.length - 1];
               return (
@@ -7259,10 +7268,11 @@ export default function App() {
 
             {/* Regime-aware context banner — best→worst ranking for the active macro regime */}
             {(() => {
-              const rankKey = { stag: "stagRank", def: "defRank", ref: "refRank", inf: "infRank" }[activeRegime.id] || "stagRank";
-              const sorted = [...ASSETS].sort((a, b) => (a[rankKey] || 9) - (b[rankKey] || 9));
+              const rankKey = rankKeyFor(INS_RANK_KEY, activeRegime.id);
+              const sorted = [...ASSETS].sort(byRank(rankKey));
               return (
                 <div style={{ background: activeRegime.bg, border: "1.5px solid " + activeRegime.bdr, borderRadius: 14, padding: "14px 18px", borderTop: "4px solid " + activeRegime.color }}>
+                  {!rankKey && <div style={{ fontSize: 11.5, color: C.amber, fontWeight: 700, marginBottom: 6 }}>Regime "{activeRegime.id}" has no ranking column — the list is in its declared order, unranked.</div>}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
                     <div>
                       <div style={{ fontSize: 11, letterSpacing: 2.5, textTransform: "uppercase", color: activeRegime.color, fontWeight: 700, marginBottom: 3 }}>Active Regime · context</div>
@@ -7306,8 +7316,8 @@ export default function App() {
 
             {/* Asset selector — sorted by active regime rank */}
             {(() => {
-              const rankKey = { stag: "stagRank", def: "defRank", ref: "refRank", inf: "infRank" }[activeRegime.id] || "stagRank";
-              const sorted = [...ASSETS].sort((a, b) => (a[rankKey] || 9) - (b[rankKey] || 9));
+              const rankKey = rankKeyFor(INS_RANK_KEY, activeRegime.id);
+              const sorted = [...ASSETS].sort(byRank(rankKey));
               return (
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: "100%" }}>
@@ -7350,11 +7360,12 @@ export default function App() {
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {/* Regime-aware banner */}
             {(() => {
-              const rankKey = { stag: "rank", def: "defRank", ref: "refRank", inf: "infRank" }[activeRegime.id] || "rank";
-              const sorted = [...INCOME_PLAYS].sort((a, b) => (a[rankKey] || 9) - (b[rankKey] || 9));
+              const rankKey = rankKeyFor(INCOME_RANK_KEY, activeRegime.id);
+              const sorted = [...INCOME_PLAYS].sort(byRank(rankKey));
               const proofLabel = { stag: "stagflation-proof", def: "deflation-resilient", ref: "growth-aligned", inf: "inflation-proof" }[activeRegime.id] || "resilient";
               return (
                 <div style={{ background: activeRegime.bg, border: "1.5px solid " + activeRegime.bdr, borderRadius: 14, padding: "14px 18px", borderTop: "4px solid " + activeRegime.color }}>
+                  {!rankKey && <div style={{ fontSize: 11.5, color: C.amber, fontWeight: 700, marginBottom: 6 }}>Regime "{activeRegime.id}" has no ranking column — the ladder is in its declared order, unranked.</div>}
                   <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
                     <div>
                       <div style={{ fontSize: 11, letterSpacing: 2.5, textTransform: "uppercase", color: activeRegime.color, fontWeight: 700, marginBottom: 3 }}>Active Regime · {activeRegime.label}</div>
@@ -7394,8 +7405,8 @@ export default function App() {
 
             {/* Category selector + detail — sorted by active regime */}
             {(() => {
-              const rankKey = { stag: "rank", def: "defRank", ref: "refRank", inf: "infRank" }[activeRegime.id] || "rank";
-              const sorted = [...INCOME_PLAYS].sort((a, b) => (a[rankKey] || 9) - (b[rankKey] || 9));
+              const rankKey = rankKeyFor(INCOME_RANK_KEY, activeRegime.id);
+              const sorted = [...INCOME_PLAYS].sort(byRank(rankKey));
               return (
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: "100%" }}>
@@ -7435,8 +7446,8 @@ export default function App() {
                         </div>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                           {(() => {
-                            const rankKey = { stag: "rank", def: "defRank", ref: "refRank", inf: "infRank" }[activeRegime.id] || "rank";
-                            const rv = activeIncome[rankKey] || "?";
+                            const rankKey = rankKeyFor(INCOME_RANK_KEY, activeRegime.id);
+                            const rv = rankKey ? (activeIncome[rankKey] || "?") : "?";
                             const isTop = rv <= 2; const isBot = rv >= 5;
                             const col = isTop ? C.green : isBot ? C.red : C.amber;
                             const bg  = isTop ? C.gBg  : isBot ? C.rBg  : C.aBg;
@@ -7736,7 +7747,7 @@ export default function App() {
           <GlobalPlaybook
             /* The stance card runs the regime guard client-side, where the probability is
                computed. Passing the label + probability rather than reimplementing the guard. */
-            regime={{ label: liveRegime?.label, pct: regimeProbFor(liveRegime?.id) }}
+            regime={{ id: liveRegime?.id, label: liveRegime?.label, pct: regimeProbFor(liveRegime?.id) }}
             liveIntervention={liveIntervention}
             reconSummary={reconSummary}
             byRegion={pbData}
