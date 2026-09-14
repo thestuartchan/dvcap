@@ -36,6 +36,8 @@ function trendBps(series, lookbackDays) {
   return t ? Math.round(t.delta * 100) : null;
 }
 import { growthPulse, marketPulse, monthlyPulse, growthAxis } from "../lib/growth.js";
+import { marketInflation, nowcastInflation, printedInflation, inflationAxis } from "../lib/inflationAxis.js";
+import { measuredAxes, axesLogRow } from "../lib/quadrant.js";
 import { announced, overlayJulyLabor, RECESSION_SOURCES, recessionAsOfState, parseProbability, RECESSION_STALE_ZERO_DAYS, recessionSrcKey, mergeRecessionSources, CONSENSUS_VINTAGE, FALLBACK_REGIMES, regimeSnapshot, regimeLogRow } from "../lib/regimeEngine.js";
 
 // ── AN UNMAPPED REGIME RANKS NOTHING ─────────────────────────────────────────
@@ -1733,17 +1735,23 @@ function GrowthLegBlock({ title, p, kind }) {
     : l.unit === "idx" ? `${l.value >= 0 ? "+" : "−"}${Math.abs(l.value).toFixed(2)}`
     : l.unit === "h" ? `${l.value.toFixed(1)}h`
     : l.unit === "pmi" ? l.value.toFixed(1)
+    : l.unit === "$" ? `$${l.value.toFixed(0)}`
+    : kind === "inflation" ? `${l.value.toFixed(2)}%`
     : `${l.value >= 0 ? "" : "−"}${Math.abs(l.value).toFixed(1)}%`;
   const subOf = l => {
     if (!l.available) return <span style={{ fontSize: 11, fontWeight: 700, color: C.amber }}>excluded</span>;
-    const t = l.change != null ? (l.unit === "h" ? `${l.change >= 0 ? "+" : "−"}${Math.abs(l.change).toFixed(1)}h 3m`
+    const t = l.trendBp != null ? `${l.trendBp >= 0 ? "+" : "−"}${Math.abs(l.trendBp)}bp 20s`
+      : l.change != null ? (l.unit === "h" ? `${l.change >= 0 ? "+" : "−"}${Math.abs(l.change).toFixed(1)}h 3m`
         : `${l.change >= 0 ? "+" : "−"}${Math.abs(l.change).toFixed(1)}% ${kind === "market" ? "20s" : kind === "monthly" ? "3m" : "q/q"}`)
       : l.unit === "idx" && l.delta != null ? `${l.delta >= 0 ? "+" : "−"}${Math.abs(l.delta).toFixed(2)} m/m`
       : l.unit === "pmi" && l.delta != null ? `${l.delta >= 0 ? "+" : "−"}${Math.abs(l.delta).toFixed(1)} m/m`
       : l.trend != null ? `${l.trend >= 0 ? "+" : "−"}${Math.abs(l.trend).toFixed(1)} 4w`
       : l.delta != null ? `${l.delta >= 0 ? "+" : "−"}${Math.abs(l.delta).toFixed(1)}pp` : null;
     const vote = l.score > 0 ? "▲" : l.score < 0 ? "▼" : "•";
-    return <span style={{ fontSize: 12, fontWeight: 800, color: l.score > 0 ? STATUS.BENIGN.color : l.score < 0 ? STATUS.ELEVATED.color : C.mid }}>{vote}{t ? ` ${t}` : ""}</span>;
+    // Growth up is benign; inflation up is not. The colour follows the axis, the arrow the sign.
+    const upCol = kind === "inflation" ? STATUS.ELEVATED.color : STATUS.BENIGN.color;
+    const dnCol = kind === "inflation" ? STATUS.BENIGN.color : STATUS.ELEVATED.color;
+    return <span style={{ fontSize: 12, fontWeight: 800, color: l.score > 0 ? upCol : l.score < 0 ? dnCol : C.mid }}>{vote}{t ? ` ${t}` : ""}</span>;
   };
   return (
     <div style={{ borderTop: "1px solid " + C.bdr, paddingTop: 10, marginTop: 10 }}>
@@ -1848,9 +1856,7 @@ function IsmEntryPanel({ entry, onChange }) {
   );
 }
 
-function GrowthPulsePanel({ growth, market, monthly }) {
-  const [ism, setIsm] = useState(null);
-  useEffect(() => { fetch("/api/manual-entry").then(r => r.json()).then(j => setIsm(j?.ism || null)).catch(() => {}); }, []);
+function GrowthPulsePanel({ growth, market, monthly, ism, onIsmChange }) {
   if (!growth && !market && !monthly) return null;
   const weekly = growthPulse(growth || {});
   const mkt = marketPulse(market || {});
@@ -1891,7 +1897,92 @@ function GrowthPulsePanel({ growth, market, monthly }) {
       <GrowthLegBlock title="Market-implied" p={mkt} kind="market" />
       <GrowthLegBlock title="Weekly data" p={weekly} kind="weekly" />
       <GrowthLegBlock title="Monthly leading" p={mon} kind="monthly" />
-      <IsmEntryPanel entry={ism} onChange={setIsm} />
+      <IsmEntryPanel entry={ism} onChange={onIsmChange} />
+    </Card>
+  );
+}
+
+// ── F.7 — the inflation axis: market, nowcast, printed, read against each other ───────────────
+// Breakevens and oil price inflation daily; the Cleveland Fed nowcasts the current month each
+// business day; the BLS and BEA print last. Same shape as the growth card, same discipline.
+function InflationAxisPanel({ data, liveInd }) {
+  if (!data) return null;
+  const market = marketInflation(data);
+  const nowcast = nowcastInflation(data.cleveland || {});
+  const printed = printedInflation({
+    coreCpiYoY: liveInd?.cpiCoreCurrent != null ? { value: liveInd.cpiCoreCurrent, date: liveInd?.asOf?.cpiCoreCurrent ?? null } : null,
+    corePceYoY: liveInd?.pceCoreCurrent != null ? { value: liveInd.pceCoreCurrent, date: liveInd?.asOf?.pceCoreCurrent ?? null } : null,
+    coreCpiIdx: data.coreCpiIdx || null,
+  });
+  const axis = inflationAxis({ market, nowcast, printed });
+  const st = axis.state === "confirmed" ? (nowcast.status !== "WATCH" ? nowcast.status : printed.status) : "WATCH";
+  const tok = STATUS[st] || STATUS.WATCH;
+  const cl = data.cleveland;
+  return (
+    <Card style={{ borderLeft: "4px solid " + tok.color }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
+        <div style={{ minWidth: 260, flex: "1 1 320px" }}>
+          <SLabel>Inflation axis</SLabel>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 22, fontWeight: 900, letterSpacing: -0.5, color: tok.color, textTransform: "uppercase" }}>{axis.state.replace("-", " ")}</span>
+            <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: 0.5, color: tok.color, background: tok.bg, border: "1px solid " + tok.bdr, borderRadius: 5, padding: "2px 8px" }}>{st}</span>
+          </div>
+          <div style={{ fontSize: 12.5, color: C.text, marginTop: 4, lineHeight: 1.5 }}>{axis.read}.</div>
+          {cl?.ok && (
+            <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+              Cleveland Fed nowcast {cl.period}: CPI {cl.cpi?.toFixed(2)}% · core CPI {cl.coreCpi?.toFixed(2)}% · PCE {cl.pce?.toFixed(2)}% · core PCE {cl.corePce?.toFixed(2)}% y/y · as of {cl.asOf}{cl.cache ? " · cached" : ""}
+            </div>
+          )}
+        </div>
+        <div style={{ background: tok.bg, border: "1px solid " + tok.bdr, borderRadius: 8, padding: "8px 12px", maxWidth: 380 }}>
+          <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: C.mid, lineHeight: 1.7 }}>
+            <div>Core y/y:&nbsp;&nbsp;&nbsp;&nbsp;≥3.0 hot · ≤2.5 at target</div>
+            <div>5Y/10Y BE:&nbsp;&nbsp;&nbsp;≥2.5 hot · ≤2.0 cool</div>
+            <div>Oil:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;±10% over 20 sessions</div>
+            <div>Nowcast:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Cleveland Fed, each business day</div>
+          </div>
+          <div style={{ fontSize: 11.5, color: tok.color, lineHeight: 1.55, marginTop: 6 }}>
+            The market leads the nowcast by weeks; the nowcast leads the print by a month. A hot read on the printed legs alone is last month's inflation.
+          </div>
+        </div>
+      </div>
+      <GrowthLegBlock title="Market-implied" p={market} kind="inflation" />
+      <GrowthLegBlock title="Cleveland Fed nowcast" p={nowcast} kind="inflation" />
+      <GrowthLegBlock title="Printed data" p={printed} kind="inflation" />
+    </Card>
+  );
+}
+
+// ── THE MEASURED QUADRANT BESIDE THE CONSENSUS REGIME ────────────────────────
+// The watching period, on screen: what the two axes measure against what the consensus engine
+// derives. Agreement and disagreement are both stated; neither drives anything yet.
+function QuadrantStrip({ liveInd, ism, liveRegime, regimeProbFor, regimeVintage }) {
+  if (!liveInd) return null;
+  const ax = measuredAxes(liveInd, { ism });
+  const q = ax.quadrant;
+  const agree = q.id && liveRegime?.id ? (q.id === liveRegime.id ? "agree" : "disagree") : null;
+  const tok = agree === "agree" ? STATUS.BENIGN : agree === "disagree" ? STATUS.WATCH : STATUS.WATCH;
+  const qLabel = q.id ? `${q.label}` : "no quadrant";
+  return (
+    <Card style={{ borderLeft: "4px solid " + tok.color }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+        <SLabel>Measured vs consensus</SLabel>
+        <span style={{ fontSize: 12.5, color: C.text }}>
+          <b>Measured:</b> {qLabel}{q.id ? ` — ${q.read}` : ` — ${q.read}`}
+        </span>
+        <span style={{ color: C.bdr }}>·</span>
+        <span style={{ fontSize: 12.5, color: C.text }}>
+          <b>Consensus:</b> {liveRegime?.label ?? "—"} {liveRegime ? `${regimeProbFor(liveRegime.id)}%` : ""}{regimeVintage?.grade && regimeVintage.grade !== "fresh" ? ` (consensus ${regimeVintage.grade})` : ""}
+        </span>
+        {agree && (
+          <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: 0.5, color: tok.color, background: tok.bg, border: "1px solid " + tok.bdr, borderRadius: 5, padding: "2px 8px" }}>
+            {agree === "agree" ? "AGREE" : "DISAGREE"}
+          </span>
+        )}
+      </div>
+      <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+        Growth axis {ax.growth.state.replace("-", " ")} · inflation axis {ax.inflation.state.replace("-", " ")}. The measured quadrant is logged daily beside the consensus regime and drives nothing until the two have been watched against each other.
+      </div>
     </Card>
   );
 }
@@ -5856,8 +5947,9 @@ export default function App() {
   // Task 1b — manual recession-source overrides, keyed by recessionSrcKey. Loaded once from the
   // manual store; refreshed after a save by the RecessionEntryPanel via onSaved.
   const [recessionOverrides, setRecessionOverrides] = useState({});
+  const [ismEntry, setIsmEntry] = useState(null);   // the hand-kept ISM print, shared by the growth card and the log
   useEffect(() => {
-    fetch("/api/manual-entry").then(r => r.json()).then(j => setRecessionOverrides(j.recession || {})).catch(() => {});
+    fetch("/api/manual-entry").then(r => r.json()).then(j => { setRecessionOverrides(j.recession || {}); setIsmEntry(j.ism || null); }).catch(() => {});
   }, []);
 
   const { prices, loading: pricesLoading, updated: pricesUpdated, fetchPrices } = useLivePrices();
@@ -5955,6 +6047,7 @@ export default function App() {
         tape: pbData?.us?.marketRegime?.inputs ?? null,
         ladderSpread: pbData?.us?.ladder?.spread ?? null,
         inputs: { oas: liveInd?.creditSpread ?? null, tenY: liveInd?.tenY ?? null, twoY: liveInd?.twoY ?? null },
+        axes: liveInd ? axesLogRow(measuredAxes(liveInd, { ism: ismEntry })) : null,
       },
     });
     fetch("/api/regime-log", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), credentials: "include" })
@@ -7543,7 +7636,7 @@ export default function App() {
               <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: C.lbl, marginRight: 2 }}>Jump to</span>
               {[
                 ["Regime", "macro-regime"], ["Credit", "macro-credit"], ["Fed", "macro-fed"],
-                ["Inflation", "macro-inflation"], ["Growth", "macro-growth"], ["Labor", "macro-labor"], ["Recession", "macro-recession"],
+                ["Inflation", "macro-inflation"], ["Axes", "macro-growth"], ["Labor", "macro-labor"], ["Recession", "macro-recession"],
                 ["Transitions", "macro-transitions"],
               ].map(([lbl, id]) => (
                 <button key={id} onClick={() => { const el = typeof document !== "undefined" && document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }}
@@ -8205,7 +8298,9 @@ export default function App() {
             {/* F.6 — the weekly growth leg sits directly above the monthly labour module: same axis,
                 a month earlier. The two are meant to be read against each other. */}
             <div id="macro-growth" style={{ scrollMarginTop: 96 }} />
-            <GrowthPulsePanel growth={liveInd?.growth} market={liveInd?.growthMarket} monthly={liveInd?.growthMonthly} />
+            <QuadrantStrip liveInd={liveInd} ism={ismEntry} liveRegime={liveRegime} regimeProbFor={regimeProbFor} regimeVintage={regimeVintage} />
+            <GrowthPulsePanel growth={liveInd?.growth} market={liveInd?.growthMarket} monthly={liveInd?.growthMonthly} ism={ismEntry} onIsmChange={setIsmEntry} />
+            <InflationAxisPanel data={liveInd?.inflationAxis} liveInd={liveInd} />
 
             <div id="macro-labor" style={{ scrollMarginTop: 96 }} />
             <LaborPanel labor={laborView} extras={laborExtras} announced={laborAnnounced} />
