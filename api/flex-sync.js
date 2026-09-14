@@ -28,7 +28,7 @@ import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY } from '
 const SEEN_KEY = 'dvcap:flex:seen:v1';
 import { derivePosition, splitIntoTrades } from '../lib/positions.js';
 import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, unrecordedTrades } from '../lib/flexTrades.js';
-import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf, planAck, flexEnv, flexConfigured, isoDate } from '../lib/flex.js';
+import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf, planAck, reconcilingFill, flexEnv, flexConfigured, isoDate } from '../lib/flex.js';
 import { post, webhookFromEnv } from '../lib/discord.js';
 import { refresh } from './tradecard.js';
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
@@ -144,7 +144,23 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
         // NAME THE ROOTS. "The batch did not reconcile" sent the reader to every position; the gate
         // knows exactly which ones failed and why, and the banner is where that belongs.
         const who = (gate.problems || []).map(p => `${p.root}${p.console != null ? ` (console ${p.console}${p.consoleSide ? ` ${String(p.consoleSide).toUpperCase()}` : ''}, statement ${p.ibkr != null ? `${p.ibkr}${p.ibkrSide ? ` ${String(p.ibkrSide).toUpperCase()}` : ''}` : 'not held'})` : ''}`);
-        result.trades.discarded = `the batch did not reconcile against the statement’s own position list${who.length ? ` — ${who.join('; ')}` : ''} — so none of it was applied`;
+        // THE WATERMARK, SUGGESTED. A root the statement does not hold, left open by fills the planner
+        // put in a row it CREATED, is the batch reaching back over hand-kept history: the fills that
+        // built the phantom are dated before the hand entries they should have matched. The day after
+        // the latest of them is the earliest watermark that excludes them.
+        const failedRoots = new Set((gate.problems || []).map(p => String(p.root).split('|')[0]));
+        const createdIds = new Set((tradePlan.creates || []).map(r => r.id));
+        const phantomDates = (tradePlan.apply || [])
+          .filter(a => createdIds.has(a.rowId) && failedRoots.has(String(a.root)))
+          .map(a => a.fill?.date).filter(Boolean).sort();
+        let suggest = '';
+        if (phantomDates.length) {
+          const last = new Date(phantomDates[phantomDates.length - 1] + 'T00:00:00Z'); last.setUTCDate(last.getUTCDate() + 1);
+          const day = last.toISOString().slice(0, 10);
+          result.trades.suggestedFrom = day;
+          suggest = ` — the fills that built it are dated ${phantomDates[0]}${phantomDates.length > 1 ? ` to ${phantomDates[phantomDates.length - 1]}` : ''}, before the hand entries they should have matched; set "IBKR is the record from" to ${day} to take the statement from there`;
+        }
+        result.trades.discarded = `the batch did not reconcile against the statement’s own position list${who.length ? ` — ${who.join('; ')}` : ''} — so none of it was applied${suggest}`;
       }
     }
   }
@@ -169,6 +185,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
     recorded: tradePlan ? tradePlan.apply.length : 0,
     opened: tradePlan ? tradePlan.creates.map(c => c.symbol) : [],
     discarded: result.trades?.discarded || null,
+    suggestedFrom: result.trades?.suggestedFrom || null,
     // Everything that a human has to decide, flattened into one list the banner can render.
     needsYou: [
       // WHICH kind of disagreement, so the banner can offer the one-click acknowledgement only where
@@ -180,7 +197,9 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
         what: d.qty ? `quantity disagrees — console ${d.qty.console}, statement ${d.qty.ibkr}: a fill is missing here`
                     : `cost basis disagrees — console ${d.avg?.console}, statement ${d.avg?.ibkr}`,
         root: d.root, id: d.id, qty: d.qty || null, avg: d.avg || null,
-        qtyDiffers: !!d.qty, costDiffers: !!d.avg, ackable: !d.qty && !!(d.avg && d.avg.ibkr != null) })),
+        qtyDiffers: !!d.qty, costDiffers: !!d.avg, ackable: !d.qty && !!(d.avg && d.avg.ibkr != null),
+        // What to record so the console matches the statement — IBKR is the record.
+        fix: reconcilingFill(d, { asOf }) })),
       ...rec.ambiguous.map(a => ({ what: 'ambiguous — two rows share this symbol', root: a.root })),
       ...rec.report.filter(r => r.kind === 'missing-at-broker').map(r => ({ what: 'open here, not at the broker', root: r.root, id: r.id })),
       ...((tradePlan?.report) || []).map(r => ({ what: r.kind.replace(/-/g, ' '), root: r.root })),
