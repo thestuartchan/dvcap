@@ -38,7 +38,9 @@ function trendBps(series, lookbackDays) {
 import { growthPulse, marketPulse, monthlyPulse, growthAxis } from "../lib/growth.js";
 import { marketInflation, nowcastInflation, printedInflation, inflationAxis } from "../lib/inflationAxis.js";
 import { measuredAxes, axesLogRow } from "../lib/quadrant.js";
-import { announced, overlayJulyLabor, RECESSION_SOURCES, recessionAsOfState, parseProbability, RECESSION_STALE_ZERO_DAYS, recessionSrcKey, mergeRecessionSources, CONSENSUS_VINTAGE, FALLBACK_REGIMES, regimeSnapshot, regimeLogRow } from "../lib/regimeEngine.js";
+import { handKeptLedger } from "../lib/ledger.js";
+import CALENDAR from "../data/calendar.json";
+import { announced, overlayJulyLabor, RECESSION_SOURCES, recessionAsOfState, parseProbability, RECESSION_STALE_ZERO_DAYS, recessionSrcKey, mergeRecessionSources, CONSENSUS_VINTAGE, FALLBACK_REGIMES, regimeSnapshot, regimeLogRow, RECESSION_SOURCE_CADENCE, ANNOUNCED_PRINTS, LABOR_ANNOUNCED } from "../lib/regimeEngine.js";
 
 // ── AN UNMAPPED REGIME RANKS NOTHING ─────────────────────────────────────────
 // Every ranking site on the Posture, Insurance and Income tabs fell back to the STAGFLATION column
@@ -1983,6 +1985,66 @@ function QuadrantStrip({ liveInd, ism, liveRegime, regimeProbFor, regimeVintage 
       <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
         Growth axis {ax.growth.state.replace("-", " ")} · inflation axis {ax.inflation.state.replace("-", " ")}. The measured quadrant is logged daily beside the consensus regime and drives nothing until the two have been watched against each other.
       </div>
+    </Card>
+  );
+}
+
+// ── THE HAND-KEPT LEDGER ─────────────────────────────────────────────────────
+// lib/ledger.js builds the list; this renders it. Stale and missing first. Each row: the input,
+// when it was last kept, its cadence, what the system DOES when it is late, and where it lives.
+const LEDGER_TONE = {
+  stale: { tok: STATUS.ELEVATED, word: "stale — not used" }, missing: { tok: STATUS.ELEVATED, word: "missing" },
+  due: { tok: STATUS.WATCH, word: "due — still used" }, fresh: { tok: STATUS.BENIGN, word: "fresh" },
+  retired: { tok: null, word: "retired" }, undated: { tok: null, word: "undated" },
+};
+function HandKeptLedgerPanel({ ledger }) {
+  if (!ledger) return null;
+  const { rows, counts } = ledger;
+  const attention = counts.stale + counts.missing + counts.due;
+  const tok = counts.stale + counts.missing > 0 ? STATUS.ELEVATED : counts.due > 0 ? STATUS.WATCH : STATUS.BENIGN;
+  const chip = (n, s) => n > 0 ? (
+    <span key={s} style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: 0.4, color: (LEDGER_TONE[s].tok || { color: C.muted }).color, background: (LEDGER_TONE[s].tok || { bg: C.bg }).bg, border: "1px solid " + (LEDGER_TONE[s].tok || { bdr: C.bdr }).bdr, borderRadius: 5, padding: "2px 8px" }}>
+      {n} {s.toUpperCase()}
+    </span>) : null;
+  const age = r => r.days == null ? "—" : r.state === "fresh" && r.key === "holidays" ? `${r.days}d left` : r.key === "calendar" ? (r.note || "") : `${r.days}d${r.bizDays != null ? ` · ${r.bizDays} biz` : ""}`;
+  return (
+    <Card style={{ borderLeft: "4px solid " + tok.color }}>
+      <details open={attention > 0}>
+        <summary style={{ cursor: "pointer", listStyle: "none", display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+          <SLabel>✍ Hand-kept ledger</SLabel>
+          <span style={{ fontSize: 12.5, color: C.text }}>{rows.length} inputs a person keeps · {attention === 0 ? "all current" : `${attention} need attention`}</span>
+          {["stale", "missing", "due"].map(s => chip(counts[s], s))}
+          <span style={{ fontSize: 11, color: C.lbl, marginLeft: "auto" }}>as of {ledger.asOf}</span>
+        </summary>
+        <div style={{ overflowX: "auto", marginTop: 10 }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11.5, minWidth: 720 }}>
+            <thead>
+              <tr style={{ color: C.lbl, textTransform: "uppercase", letterSpacing: 0.5, fontSize: 9.5 }}>
+                {["State", "Input", "Last kept", "Age", "Cadence", "When late", "Kept at"].map(h => <th key={h} style={{ textAlign: "left", padding: "4px 8px 6px 0", borderBottom: "1px solid " + C.bdr, fontWeight: 800 }}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => {
+                const t = LEDGER_TONE[r.state] || LEDGER_TONE.undated;
+                const col = t.tok ? t.tok.color : C.muted;
+                return (
+                  <tr key={r.key} style={{ borderBottom: "1px solid " + C.bdr, verticalAlign: "top" }} title={r.note || ""}>
+                    <td style={{ padding: "6px 8px 6px 0", whiteSpace: "nowrap" }}>
+                      <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: 0.4, color: col, background: t.tok ? t.tok.bg : "transparent", border: "1px solid " + (t.tok ? t.tok.bdr : C.bdr), borderRadius: 4, padding: "1px 6px" }}>{t.word}</span>
+                    </td>
+                    <td style={{ padding: "6px 8px 6px 0", color: C.text, fontWeight: 700 }}>{r.label}<div style={{ fontSize: 10, color: C.lbl, fontWeight: 600 }}>{r.group}</div></td>
+                    <td style={{ padding: "6px 8px 6px 0", color: C.mid, whiteSpace: "nowrap" }}>{r.asOf || "—"}</td>
+                    <td style={{ padding: "6px 8px 6px 0", color: col, fontWeight: 800, whiteSpace: "nowrap" }}>{age(r)}</td>
+                    <td style={{ padding: "6px 8px 6px 0", color: C.mid }}>{r.cadence || "—"}</td>
+                    <td style={{ padding: "6px 8px 6px 0", color: C.mid, maxWidth: 320 }}>{r.rule}</td>
+                    <td style={{ padding: "6px 0", color: C.lbl, fontSize: 10.5 }}>{r.where}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </details>
     </Card>
   );
 }
@@ -5948,8 +6010,9 @@ export default function App() {
   // manual store; refreshed after a save by the RecessionEntryPanel via onSaved.
   const [recessionOverrides, setRecessionOverrides] = useState({});
   const [ismEntry, setIsmEntry] = useState(null);   // the hand-kept ISM print, shared by the growth card and the log
+  const [manualStore, setManualStore] = useState(null);   // the whole manual-entry store, for the hand-kept ledger
   useEffect(() => {
-    fetch("/api/manual-entry").then(r => r.json()).then(j => { setRecessionOverrides(j.recession || {}); setIsmEntry(j.ism || null); }).catch(() => {});
+    fetch("/api/manual-entry").then(r => r.json()).then(j => { setRecessionOverrides(j.recession || {}); setIsmEntry(j.ism || null); setManualStore(j); }).catch(() => {});
   }, []);
 
   const { prices, loading: pricesLoading, updated: pricesUpdated, fetchPrices } = useLivePrices();
@@ -5974,6 +6037,26 @@ export default function App() {
   const fallbackRegimes = FALLBACK_REGIMES;
   const snap = useMemo(() => regimeSnapshot(liveInd, { overrides: recessionOverrides }), [liveInd, recessionOverrides]);
   const { recConsensus, recKalshi2027, recDecayed, laborView, laborAnnounced, laborExtras, derivedRegimes, regimeVintage } = snap;
+  // ── THE HAND-KEPT LEDGER ─────────────────────────────────────────────────────
+  // Every input a person keeps, with its age and what the system does when it is late. One list,
+  // so nothing is overlooked for a while because its badge was on a tab nobody opened.
+  const ledger = useMemo(() => handKeptLedger({
+    manual: manualStore || {}, kofia: pbData?.asia?.kofia?.latest || null,
+    consts: {
+      consensusVintage: CONSENSUS_VINTAGE, recessionSources: effectiveRecessionSources, recessionCadence: RECESSION_SOURCE_CADENCE,
+      fedLanguage: FED_LANGUAGE_STATUS, sepOdds: SEP_HIKE_ODDS, secYields: SEC_YIELDS,
+      analystBoard: { asOf: "2026-06-29", cadence: 90 }, recessionProse: { asOf: "2026-08-24", cadence: 30 },
+      announced: {
+        pceCore: { ...ANNOUNCED_PRINTS.pceCore, fredAsOf: liveInd?.asOf?.pceCoreCurrent ?? null },
+        gdpGrowth: { ...ANNOUNCED_PRINTS.gdpGrowth, fredAsOf: liveInd?.asOf?.gdpGrowth ?? null },
+        labor: { label: "July Employment Situation", period: LABOR_ANNOUNCED.period, released: LABOR_ANNOUNCED.released, fredAsOf: liveInd?.labor?.empPop?.date ?? null },
+      },
+    },
+    files: {
+      holidaysThrough: Object.entries(HOLIDAYS).filter(([k]) => !k.startsWith("_")).flatMap(([, v]) => [...(v?.closed || []), ...(v?.half || [])]).sort().at(-1) ?? null,
+      calendarEvents: Array.isArray(CALENDAR) ? CALENDAR : (CALENDAR?.events || []),
+    },
+  }), [manualStore, pbData, liveInd, effectiveRecessionSources]);
   // Section D — one labour-stress read, replacing every unemployment-RATE tripwire.
   const labStress = laborStress({
     empPop: { delta: laborView?.empPop?.delta ?? null },
@@ -6313,6 +6396,7 @@ export default function App() {
                 {chip("Fed", fedLbl || "—", fedState.color || C.mid)}
                 {derivedRegimes?.contested && flag("⚖ CONTESTED")}
                 {regimeDiverged && flag("📌 PINNED ≠ LIVE")}
+                {(ledger.counts.stale + ledger.counts.missing) > 0 && <span title={`${ledger.counts.stale} stale, ${ledger.counts.missing} never entered — see the Macro tab ledger`}>{flag(`✍ ${ledger.counts.stale + ledger.counts.missing} HAND-KEPT OUT`)}</span>}
                 {regimeVintage.grade !== "fresh" && <span title={regimeVintage.note}>{flag(`🗓 CONSENSUS ${regimeVintage.grade.toUpperCase()}${regimeVintage.pct != null ? ` · ${regimeVintage.pct}% ALIVE` : ""}`)}</span>}
               </div>
             );
@@ -7635,7 +7719,7 @@ export default function App() {
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", padding: "2px 2px" }}>
               <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: C.lbl, marginRight: 2 }}>Jump to</span>
               {[
-                ["Regime", "macro-regime"], ["Credit", "macro-credit"], ["Fed", "macro-fed"],
+                ["Ledger", "macro-ledger"], ["Regime", "macro-regime"], ["Credit", "macro-credit"], ["Fed", "macro-fed"],
                 ["Inflation", "macro-inflation"], ["Axes", "macro-growth"], ["Labor", "macro-labor"], ["Recession", "macro-recession"],
                 ["Transitions", "macro-transitions"],
               ].map(([lbl, id]) => (
@@ -7676,6 +7760,9 @@ export default function App() {
                 slow-moving: regime + contested guard, then rates, then CPI, then the
                 labour module, then the consensus block (slowest). Credit stays on the
                 Global Playbook tab where it already lives. ── */}
+            <div id="macro-ledger" style={{ scrollMarginTop: 96 }} />
+            <HandKeptLedgerPanel ledger={ledger} />
+
             <div id="macro-regime" style={{ scrollMarginTop: 96 }} />
             <Card>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
