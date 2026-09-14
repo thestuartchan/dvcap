@@ -20,7 +20,7 @@ import { applyRegimeGuard } from "../lib/posture.js";
 import { regimeFlipsIf } from "../lib/regime.js";
 import { minersPairImplication } from "../lib/regimeState.js";
 import { southboundTrend, southboundLevelTrend, southboundRead, ahPremiumRead, sbStale } from "../lib/southbound.js";
-import { STATUS, creditStatus, deriveAction } from "../lib/status.js";
+import { STATUS, creditStatus, deriveAction, headerSignal } from "../lib/status.js";
 import { HORIZON, HORIZON_LABEL, consensusFor, calendarWindow, dispersionRead, NO_CONVERSION_NOTE, consensusVintage } from "../lib/recession.js";
 import { buildViews, evaluateViews, regimeCluster, divergenceRead } from "../lib/analystViews.js";
 import { fmtCcy } from "../lib/fxrates.js";
@@ -6165,38 +6165,44 @@ export default function App() {
                 {(pricesLoading || indLoading) ? "⏳ Refreshing…" : "🔄 Refresh All"}
               </button>
               {(() => {
-                // ── ONE ACTION SURFACE ───────────────────────────────────────
-                // This tile answered "what to do" in a third vocabulary — BENIGN / WATCH /
-                // ELEVATED — beside the Overview's stance (RISK-ON / RISK-OFF / MIXED) and the
-                // Macro strip's "Do:". Three answers to one question, and they could disagree;
-                // on 2026-09-10 two of them did. The PostureCard is the one composed from live
-                // legs, guarded against the regime, and carrying its own audit trail — so the
-                // header shows THAT stance and nothing else claims to be one. Credit's veto still
-                // applies underneath: it is one of the posture's blockers, not a separate verdict.
-                // (It also carried a `2.75` fallback for the credit spread. Gone with it.)
-                const usPosture = applyRegimeGuard(pbData?.us?.posture ?? null, { label: liveRegime?.label, pct: regimeProbFor(liveRegime?.id) });
-                if (!usPosture) {
-                  return (
-                    <div style={{ background: C.bg, border: "1.5px solid " + C.bdr, borderRadius: 10, padding: "6px 14px", textAlign: "center", minWidth: 90 }}>
-                      <div style={{ color: C.lbl, fontSize: 10, letterSpacing: 2, textTransform: "uppercase", fontWeight: 700 }}>Stance</div>
-                      <div style={{ color: C.muted, fontSize: 13, fontWeight: 800, lineHeight: 1.2 }}>no tape read</div>
-                      <div style={{ color: C.lbl, fontSize: 10, marginTop: 2, lineHeight: 1.2 }}>open the Daily Overview</div>
-                    </div>
-                  );
-                }
-                const tone = usPosture.tone;
-                const col = tone === "red" ? C.red : tone === "green" ? C.green : tone === "amber" ? C.amber : C.mid;
-                const bg  = tone === "red" ? C.rBg : tone === "green" ? C.gBg : tone === "amber" ? C.aBg : C.bg;
-                const bdr = tone === "red" ? C.rBdr : tone === "green" ? C.gBdr : tone === "amber" ? C.aBdr : C.bdr;
-                // The subtitle names what is holding the stance, or how many gauges lean.
-                const sub = usPosture.withheld
-                  ? `no ${usPosture.withheld} — ${usPosture.blockedBy?.[0] ?? "held"}`
-                  : `${usPosture.tripwires ?? "—"} tripwires · ${liveRegime?.label ?? "regime"}`;
+                // ── THE HEADER IS THE MACRO STATE, NOT THE DAILY STANCE ──────────
+                // Two different questions at two different horizons. This tile is the STRUCTURAL
+                // regime — months, consensus-derived — gated by credit's veto: headerSignal()
+                // applies the veto first, then takes the more severe of (regime, credit). The
+                // tape stance on the Daily Overview is what to make of THIS session, weeks at
+                // most. For one deploy this tile showed the tape stance instead, on the argument
+                // that "what to do" had too many surfaces — but this was never an instruction, it
+                // was a state, and merging it into the tape lost a horizon rather than removing a
+                // duplicate. The site's own scope labels separate the two; so does this.
+                //
+                // M.4 — the header is a STATED FUNCTION of named inputs, not a separate
+                // judgement. It previously ran `cs > 6.0 || labStress.severe`, so a severe
+                // labour print alone printed DANGER while HY OAS sat at 2.84 with no threshold
+                // breached at all. Credit's veto first.
+                //
+                // No `2.75` fallback: a missing spread is null, creditStatus(null) is null, and
+                // headerSignal then reads the regime alone and the subtitle says the spread did
+                // not load — never a chosen number wearing a live one's weight.
+                const cs = liveInd?.creditSpread ?? null;
+                const regimeStatus = derivedRegimes?.contested ? "WATCH"
+                  : (liveRegime?.id === "def" ? "ELEVATED" : liveRegime?.id === "stag" ? "WATCH" : "BENIGN");
+                const hs = headerSignal({ oas: cs, regimeStatus });
+                const tokH = STATUS[hs.signal] || STATUS.WATCH;
+                const lbl = hs.signal || "WATCH";
+                const col = tokH.color, bg = tokH.bg, bdr = tokH.bdr;
+                // The subtitle names the binding input rather than asserting a breach.
+                const sub = hs.credit == null
+                  ? `OAS not loaded · ${liveRegime?.label ?? "regime"}`
+                  : hs.credit === "BENIGN"
+                  ? `credit benign · ${liveRegime?.label ?? "regime"}`
+                  : `OAS ${cs} · ${liveRegime?.label ?? "regime"}`;
                 return (
-                  <div style={{ background: bg, border: "1.5px solid " + bdr, borderRadius: 10, padding: "6px 14px", textAlign: "center", minWidth: 90 }}>
-                    <div style={{ color: C.lbl, fontSize: 10, letterSpacing: 2, textTransform: "uppercase", fontWeight: 700 }}>Stance</div>
-                    <div style={{ color: col, fontSize: 17, fontWeight: 900, lineHeight: 1 }}>{usPosture.posture}</div>
+                  <div style={{ background: bg, border: "1.5px solid " + bdr, borderRadius: 10, padding: "6px 14px", textAlign: "center", minWidth: 90 }}
+                       title="The structural macro state — the consensus-derived regime with credit's veto applied. Months, not today. The tape stance for this session is on the Daily Overview.">
+                    <div style={{ color: C.lbl, fontSize: 10, letterSpacing: 2, textTransform: "uppercase", fontWeight: 700 }}>Macro signal</div>
+                    <div style={{ color: col, fontSize: 17, fontWeight: 900, lineHeight: 1 }}>{lbl}</div>
                     <div style={{ color: col, fontSize: 10, marginTop: 2, opacity: 0.75, lineHeight: 1.2 }}>{sub}</div>
+                    <div style={{ color: C.lbl, fontSize: 9, marginTop: 2, letterSpacing: 0.3 }}>structural · months</div>
                   </div>
                 );
               })()}

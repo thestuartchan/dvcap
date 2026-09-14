@@ -193,7 +193,7 @@ export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, 
   // four-line block of labels and numbers. Each is now its own named line in BACKDROP with the
   // gauge described rather than abbreviated — see ratesLine / creditLine / oilLine / volLine.
 
-  const koreaLines = buildKorea(regime.korea, kofia);
+  const koreaLines = buildKorea(regime.korea, kofia, now);
 
   // regimeLines restated the credit state, the oil label and the Korea cluster that MACRO and
   // KOREA STRESS had already printed a few lines above. The two classifications that were NOT
@@ -483,7 +483,7 @@ export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, 
       // which is the part not deducible from the figures shown — gets the implication marker.
       const state = String(k.note || '').split(' — ')[0].trim() || k.cluster || null;
       out.push(`🇰🇷 **Korea:** ${won}${vol}${state ? ` — ${state}` : ''}`);
-      const impl = koreaFlowImplication(kofia?.latest || {});
+      const impl = koreaFlowImplication(kofia?.latest || {}, { now });
       if (impl) out.push(`👉 ${impl}`);
     }
     return backdropSection(out);
@@ -518,7 +518,7 @@ export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, 
 }
 
 // Korea-stress cluster block (Asia only). null when there's no Korea gate.
-function buildKorea(k, kofia = KOFIA_STORE) {
+function buildKorea(k, kofia = KOFIA_STORE, now = new Date()) {
   if (!k) return null;
   const { won, vol } = k;
   const wonLine = won.level != null
@@ -532,7 +532,7 @@ function buildKorea(k, kofia = KOFIA_STORE) {
   // KOFIA manual-entry gate: margin loans (신용융자) — the deleveraging tell that replaced
   // 7709 — plus investor cash and KR 3Y yields. Latest from data/korea_kofia.json (server).
   const kf = kofia?.latest || {};
-  const kfLine = (key, label) => { const s = kofiaStoredLine(key, kf[key]); return s ? `• **${label}** ${s}` : null; };
+  const kfLine = (key, label) => { const s = kofiaStoredLine(key, kf[key], now); return s ? `• **${label}** ${s}` : null; };
   const yields = (kf.kr3yGovt || kf.kr3yCorp)
     ? `• **KR 3Y** ${kf.kr3yGovt ? `govt ${kf.kr3yGovt.value}%` : ''}${kf.kr3yGovt && kf.kr3yCorp ? ' · ' : ''}${kf.kr3yCorp ? `corp ${kf.kr3yCorp.value}%` : ''}${kf.kr3yGovt?.asOf ? ` · ${kf.kr3yGovt.asOf.slice(5)}` : ''}`
     : null;
@@ -547,8 +547,8 @@ function buildKorea(k, kofia = KOFIA_STORE) {
     kfLine('units7709', '7709 units'),
   ].filter(Boolean);
   // Flow read + macro implication (same logic as the dashboard Korea panel).
-  const read = koreaFlowRead(kf);
-  const impl = koreaFlowImplication(kf);
+  const read = koreaFlowRead(kf, { now });
+  const impl = koreaFlowImplication(kf, { now });
   const readLines = [
     read ? `• **Read:** ${read}` : null,
     impl ? `• **Implication:** ${impl}` : null,
