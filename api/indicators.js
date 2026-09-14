@@ -1,4 +1,5 @@
 import { LABOR_SERIES } from "../lib/labor.js";
+import { GROWTH_SERIES } from "../lib/growth.js";
 import { fetchSmicAHPremium } from "../lib/smicah.js";
 import { backoffMs, sleep } from '../lib/throttle.js';
 import { fredGate } from '../lib/fred.js';
@@ -188,7 +189,7 @@ export default async function handler(req, res) {
   // fetch: FRED's own series metadata title must contain the expected fragment. A repurposed
   // or mistyped ID yields verified:false and a named mismatch, which the UI surfaces — it
   // never silently renders the wrong series as if it were the right one.
-  async function fredLabor(id, expectTitle) {
+  async function fredLabor(id, expectTitle, limit = 16) {
     const base = `api_key=${FRED_KEY}&file_type=json`;
     try {
       // BOTH REQUESTS NOW GO THROUGH fredFetch, which retries and is gated. They did not before:
@@ -196,7 +197,7 @@ export default async function handler(req, res) {
       // was false for exactly the series it was reporting — the ones that produced HTTP 200/429.
       const [meta, obsJson] = await Promise.all([
         fredFetch(`https://api.stlouisfed.org/fred/series?series_id=${id}&${base}`, `${id} (title check)`),
-        fredFetch(`https://api.stlouisfed.org/fred/series/observations?series_id=${id}&sort_order=desc&limit=16&${base}`, id),
+        fredFetch(`https://api.stlouisfed.org/fred/series/observations?series_id=${id}&sort_order=desc&limit=${limit}&${base}`, id),
       ]);
       // THE DATA IS WHAT MATTERS. Previously either request failing blanked the tile, so a
       // rate-limited TITLE CHECK threw away observations that had arrived perfectly well — that is
@@ -222,7 +223,52 @@ export default async function handler(req, res) {
         delta: (obs[0] && obs[1]) ? +(obs[0].value - obs[1].value).toFixed(2) : null,
         // Year-ago value for level series that need a y/y read.
         yearAgo: obs[12]?.value ?? null,
-        history: obs.slice(0, 16).reverse(),
+        history: obs.slice(0, limit).reverse(),
+      };
+    } catch (e) {
+      const err = String(e?.message || e);
+      feedErrors.push({ series: id, error: err });
+      return { id, ok: false, error: err };
+    }
+  }
+
+  // A NOWCAST IS DATED BY ITS RELEASE, NOT BY THE QUARTER IT FORECASTS. FRED stores GDPNow as one
+  // observation per quarter, revised in place after every input release, so the observation date
+  // sits at the quarter's start all quarter long and cannot age the figure. Asking for vintages
+  // (realtime_start in the past) returns each estimate as its own row: the current one runs to
+  // 9999-12-31, the previous one's realtime_end is the day it was superseded. So `asOf` is the
+  // release date and `prev` is the previous estimate for the SAME quarter — which is the change
+  // the growth leg reports, rather than a comparison against last quarter's final nowcast.
+  async function fredNowcast(id, expectTitle) {
+    const base = `api_key=${FRED_KEY}&file_type=json`;
+    const iso = d => d.toISOString().slice(0, 10);
+    const realtimeStart = iso(new Date(Date.now() - 120 * 864e5));
+    const observationStart = iso(new Date(Date.now() - 200 * 864e5));
+    try {
+      const [meta, obsJson] = await Promise.all([
+        fredFetch(`https://api.stlouisfed.org/fred/series?series_id=${id}&${base}`, `${id} (title check)`),
+        fredFetch(`https://api.stlouisfed.org/fred/series/observations?series_id=${id}&realtime_start=${realtimeStart}&observation_start=${observationStart}&sort_order=desc&${base}`, id),
+      ]);
+      if (!obsJson) return { id, ok: false, error: 'observations unavailable' };
+      const title = meta?.seriess?.[0]?.title ?? null;
+      const rows = (obsJson?.observations || [])
+        .filter(o => o.value !== '.' && o.value != null && o.value !== '')
+        .map(o => ({ period: o.date, asOf: o.realtime_start, until: o.realtime_end, value: parseFloat(o.value) }))
+        .filter(o => Number.isFinite(o.value));
+      if (!rows.length) return { id, ok: false, error: 'no observations' };
+      const period = rows.reduce((m, r) => r.period > m ? r.period : m, rows[0].period);
+      const vintages = rows.filter(r => r.period === period).sort((a, b) => a.asOf < b.asOf ? -1 : 1);
+      const latest = vintages[vintages.length - 1], prev = vintages[vintages.length - 2] ?? null;
+      const verified = !!(title && expectTitle && title.toLowerCase().includes(expectTitle.toLowerCase()));
+      const q = `Q${Math.floor((+period.slice(5, 7) - 1) / 3) + 1} ${period.slice(0, 4)}`;
+      return {
+        id, ok: true, title, verified,
+        mismatch: verified ? null
+          : title == null ? 'could not reach FRED to verify this series id — the figure itself is the series FRED returned'
+          : `expected title containing "${expectTitle}", FRED returned "${title}"`,
+        quarter: q, period, value: latest.value, asOf: latest.asOf,
+        prev: prev?.value ?? null, prevAsOf: prev?.asOf ?? null,
+        history: vintages.map(v => ({ date: v.asOf, value: v.value })),
       };
     } catch (e) {
       const err = String(e?.message || e);
@@ -563,6 +609,7 @@ export default async function handler(req, res) {
       tenYHistory, twoYHistory, unempHistory, creditHistory,
       cpiHeadlineHistory, cpiCoreHistory, pceCoreHistory,
       kalshi2026Feed, kalshi2027Feed, polymarketFeed, nyFedCurveFeed, smicAHFeed,
+      growthRaw,
     ] = await Promise.all([
       fredLatest("DGS10"),
       fredLatest("DGS2"),
@@ -611,6 +658,11 @@ export default async function handler(req, res) {
       fetchPolymarketRecession(2026),
       fetchNyFedYieldCurve(),
       fetchSmicAHPremium(),   // China-policy-trade sentiment gauge (Southbound panel)
+      // The weekly growth leg — claims, continuing claims and the WEI as identity-checked weekly
+      // series with enough history for a 4-week average a quarter apart; GDPNow by vintage.
+      Promise.all(Object.entries(GROWTH_SERIES).map(async ([key, m]) =>
+        [key, key === 'gdpNow' ? await fredNowcast(m.id, m.expectTitle) : await fredLabor(m.id, m.expectTitle, 20)]))
+        .then(Object.fromEntries),
     ]);
 
     // ── Yield spread history: prefer FRED's published series ──────────────────
@@ -716,6 +768,8 @@ export default async function handler(req, res) {
       etfYields: { USFR: usfrYield, SGOV: sgovYield },
       // P1 — labour block. Each series carries its own verified flag + mismatch reason.
       labor: laborRaw,
+      // The weekly growth leg (lib/growth.js scores it). Each series carries its own verified flag.
+      growth: growthRaw,
       termPremium: termPremiumRaw,   // Section B — model estimate; use direction/trend only
       dxy:      dxyRaw.latest,
       dxyPrev:  dxyRaw.prev,
