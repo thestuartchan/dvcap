@@ -78,7 +78,7 @@ const find = (l, key) => l.rows.find(r => r.key === key);
   eq('under 60 days of coverage is due', find(soon, 'holidays').state, 'due');
   eq('a calendar with nothing in the next fortnight is due — silence is the failure mode', find(soon, 'calendar').state, 'due');
   ok('and the rule says so', /silent/.test(find(soon, 'calendar').rule));
-  const raw = handKeptLedger({ files: { calendarEvents: [{ date: '2026-09-16' }, { date: '2026-09-30' }, { date: '2026-12-30' }] }, now: NOW });
+  const raw = handKeptLedger({ files: { calendarEvents: [{ date: '2026-09-16' }, { date: '2026-09-26' }, { date: '2026-12-30' }] }, now: NOW });
   eq('raw events are counted against the injected clock', [find(raw, 'calendar').state, /2 events in the next 14 days · last entered 2026-12-30/.test(find(raw, 'calendar').note)], ['fresh', true]);
 }
 
