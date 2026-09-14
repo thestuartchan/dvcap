@@ -1198,9 +1198,12 @@
         "empPop": 59.1,
         "oas": 2.7,
         "tenY": 4.95,
-        "twoY": 4.56
+        "twoY": 4.56,
+        "consensusAlive": 0.769,
+        "regimeVintage": "decayed"
       },
-      "loggedAt": "2026-09-14T09:00:44.746Z"
+      "loggedAt": "2026-09-14T13:07:39.157Z",
+      "source": "cron"
     }
   ]
 }
