@@ -3,7 +3,7 @@
 // Built from inputs, never from a captured output: every fixture is a synthetic FRED block with
 // the shape api/indicators.js produces, so the verdict is exercised on the arithmetic, and the
 // clock is pinned so no assertion here can drift with the calendar.
-import { growthPulse, marketPulse, growthAxis, MARKET_LABEL, MARKET_PAIRS, MARKET_LOOKBACK, GROWTH_SERIES, CLAIMS_WINDOW, CLAIMS_LOOKBACK, CLAIMS_RISE_PCT, WEI_STRONG, GDPNOW_STRONG, GDPNOW_WEAK, MIN_LEGS } from '../lib/growth.js';
+import { growthPulse, marketPulse, monthlyPulse, growthAxis, MARKET_LABEL, MARKET_PAIRS, MONTHLY_SERIES, CFNAI_RECESSION, MARKET_LOOKBACK, GROWTH_SERIES, CLAIMS_WINDOW, CLAIMS_LOOKBACK, CLAIMS_RISE_PCT, WEI_STRONG, GDPNOW_STRONG, GDPNOW_WEAK, MIN_LEGS } from '../lib/growth.js';
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; console.log(`✅ ${n}`); } else { fail++; console.log(`❌ ${n}`); } };
@@ -200,6 +200,73 @@ const flatPairs = () => Object.fromEntries(Object.keys(MARKET_PAIRS).map(k => [k
   eq('one leg missing is named as the only reader', growthAxis({ weekly: V('INSUFFICIENT'), market: V('EXPANDING') }).state, 'market-only');
   eq('both missing is insufficient', growthAxis({}).state, 'insufficient');
   eq('firm market against mixed data is turning-up as well — mixed is not firm', growthAxis({ weekly: V('MIXED'), market: V('EXPANDING') }).state, 'turning-up');
+}
+
+// ── THE MONTHLY LEADING LEG ──────────────────────────────────────────────────
+// Monthly history dated the first of the month, ascending, `n` prints ending at `endMonth`.
+function monthly(endMonth, n, gen) {
+  const out = []; const [y, m] = endMonth.split('-').map(Number);
+  for (let i = n - 1; i >= 0; i--) { const d = new Date(Date.UTC(y, m - 1 - i, 1)); out.push({ date: d.toISOString().slice(0, 10), value: gen(n - 1 - i, n) }); }
+  return out;
+}
+const mSeries = (id, history) => series(id, history);
+// August prints (dated 2026-08-01) on a 14 September clock: 30 business days old, inside every tolerance.
+const cfnaiAt = v => mSeries('CFNAIMA3', monthly('2026-08', 16, () => v));
+const tempFlat = () => mSeries('TEMPHELPS', monthly('2026-08', 16, () => 2700));
+const hoursFlat = () => mSeries('AWHMAN', monthly('2026-08', 16, () => 40.5));
+{
+  const p = monthlyPulse({ cfnai: cfnaiAt(0.12), tempHelp: tempFlat(), hours: hoursFlat() }, { now: NOW });
+  eq('three usable monthly legs', [p.usable, p.of], [3, 3]);
+  eq('an index above zero with flat temp help and hours is EXPANDING on the sum', [p.verdict, p.score], ['EXPANDING', 1]);
+  const c = p.legs.find(l => l.key === 'cfnai');
+  ok('the index reads above trend', /above trend/.test(c.read));
+  ok('and its flip is the zero line', /below 0\.0/.test(c.flip));
+  const th = p.legs.find(l => l.key === 'tempHelp');
+  ok('temp help flips are levels in thousands from the base month', /above 2.74M \(\+1\.5%\) or below 2.66M \(−1\.5%\) vs 2026-05/.test(th.flip));
+  const h = p.legs.find(l => l.key === 'hours');
+  ok('hours flips are in hours', /above 40\.8h \(\+0\.3h\) or below 40\.2h \(−0\.3h\)/.test(h.flip));
+}
+{
+  // Temp help down 2% over three months, hours −0.4h, index at −0.75: every leg cut.
+  const temp = mSeries('TEMPHELPS', monthly('2026-08', 16, (i, n) => i >= n - 1 ? 2646 : 2700));
+  const hrs = mSeries('AWHMAN', monthly('2026-08', 16, (i, n) => i >= n - 1 ? 40.1 : 40.5));
+  const p = monthlyPulse({ cfnai: cfnaiAt(-0.75), tempHelp: temp, hours: hrs }, { now: NOW });
+  eq('every monthly leg negative is CONTRACTING', [p.verdict, p.agreement], ['CONTRACTING', 'confirmed']);
+  ok(`the index at ${CFNAI_RECESSION} reads at the recession signal`, /at the recession signal/.test(p.legs.find(l => l.key === 'cfnai').read));
+  ok('temp help reads being cut with the change in percent', /−2\.0% over 3 months — being cut/.test(p.legs.find(l => l.key === 'tempHelp').read));
+  ok('hours read the change in hours', /−0\.4h over 3 months — being cut/.test(p.legs.find(l => l.key === 'hours').read));
+  const between = monthlyPulse({ cfnai: cfnaiAt(-0.3), tempHelp: tempFlat(), hours: hoursFlat() }, { now: NOW });
+  eq('an index between the two bars is below trend, scoring flat', [between.legs[0].score, between.verdict], [0, 'MIXED']);
+}
+{
+  // A print from April on a September clock is past a publication cycle plus slack.
+  const old = mSeries('TEMPHELPS', monthly('2026-04', 16, () => 2700));
+  const p = monthlyPulse({ cfnai: cfnaiAt(0.1), tempHelp: old, hours: hoursFlat() }, { now: NOW });
+  eq('a stale monthly print is excluded', p.legs.find(l => l.key === 'tempHelp').available, false);
+  ok('with the last print named', /has not printed since 2026-04-01/.test(p.excluded[0].reason));
+  const short = monthlyPulse({ cfnai: cfnaiAt(0.1), tempHelp: mSeries('TEMPHELPS', monthly('2026-08', 2, () => 2700)), hours: hoursFlat() }, { now: NOW });
+  ok('too short a history is excluded with the count', /needs 4 monthly prints, have 2/.test(short.legs.find(l => l.key === 'tempHelp').reason));
+  ok('every monthly series asserts a title fragment', Object.values(MONTHLY_SERIES).every(m => m.expectTitle && m.lagBizDays > 0));
+}
+
+// ── THE AXIS WITH THREE LEGS ─────────────────────────────────────────────────
+{
+  const V = v => ({ verdict: v });
+  const all = growthAxis({ market: V('EXPANDING'), weekly: V('EXPANDING'), monthly: V('EXPANDING') });
+  eq('three legs agreeing is confirmed', all.state, 'confirmed');
+  ok('and the read names all three', /market and the weekly data and the monthly leading series agree/i.test(all.read));
+  const t1 = growthAxis({ market: V('CONTRACTING'), weekly: V('EXPANDING'), monthly: V('EXPANDING') });
+  eq('market down, both data legs firm is turning-down', t1.state, 'turning-down');
+  ok('and says the market leads', /the market leads/.test(t1.read));
+  const t2 = growthAxis({ market: V('CONTRACTING'), weekly: V('SOFTENING'), monthly: V('EXPANDING') });
+  eq('market and weekly down, monthly still firm is turning-down further along', t2.state, 'turning-down');
+  ok('and names the two faster legs against the slow one', /market and the weekly data are weakening while the monthly leading series still reads firm — the faster series lead/i.test(t2.read));
+  const t3 = growthAxis({ market: V('EXPANDING'), weekly: V('EXPANDING'), monthly: V('CONTRACTING') });
+  eq('both faster legs firm with the monthly still weak is turning-up', t3.state, 'turning-up');
+  const sp = growthAxis({ market: V('EXPANDING'), weekly: V('CONTRACTING'), monthly: V('EXPANDING') });
+  eq('a fast-slow-fast pattern is a split, not a turn', sp.state, 'split');
+  eq('the two-leg cases are unchanged with the monthly leg absent', growthAxis({ market: V('CONTRACTING'), weekly: V('EXPANDING') }).state, 'turning-down');
+  eq('a lone monthly leg reads as data-only', growthAxis({ monthly: V('MIXED') }).state, 'data-only');
 }
 
 console.log(`${pass} passed, ${fail} failed`);
