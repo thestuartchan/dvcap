@@ -1,5 +1,5 @@
 import { LABOR_SERIES } from "../lib/labor.js";
-import { GROWTH_SERIES } from "../lib/growth.js";
+import { GROWTH_SERIES, MARKET_PAIRS } from "../lib/growth.js";
 import { fetchSmicAHPremium } from "../lib/smicah.js";
 import { backoffMs, sleep } from '../lib/throttle.js';
 import { fredGate } from '../lib/fred.js';
@@ -275,6 +275,48 @@ export default async function handler(req, res) {
       feedErrors.push({ series: id, error: err });
       return { id, ok: false, error: err };
     }
+  }
+
+  // ── THE MARKET-IMPLIED GROWTH RATIOS ──────────────────────────────────────
+  // Daily closes for every symbol the pairs in lib/growth.js name, then each ratio on the dates
+  // BOTH legs traded (copper and gold futures print on days the ETFs do not, and vice versa on
+  // exchange holidays — a ratio across mismatched sessions is a number with no meaning). Adjusted
+  // closes where Yahoo gives them, so an ETF's quarterly distribution does not print as a 0.5%
+  // move in a 2% bar. Keyless; a symbol that fails is reported on every pair it is part of.
+  async function fetchMarketPairs() {
+    const syms = [...new Set(Object.values(MARKET_PAIRS).flatMap(m => [m.num, m.den]))];
+    const closes = {};
+    const errors = {};
+    await Promise.all(syms.map(async sym => {
+      try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=3mo`;
+        const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json" }, signal: AbortSignal.timeout(9000) });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const res = (await r.json())?.chart?.result?.[0];
+        const ts = res?.timestamp || [];
+        const adj = res?.indicators?.adjclose?.[0]?.adjclose;
+        const cl = res?.indicators?.quote?.[0]?.close || [];
+        const m = new Map();
+        ts.forEach((t, i) => {
+          const v = (adj && adj[i] != null) ? adj[i] : cl[i];
+          if (Number.isFinite(v) && v > 0) m.set(new Date(t * 1000).toISOString().slice(0, 10), v);
+        });
+        if (!m.size) throw new Error('no closes');
+        closes[sym] = m;
+      } catch (e) {
+        errors[sym] = String(e?.message || e);
+        feedErrors.push({ series: `Yahoo ${sym}`, error: errors[sym] });
+      }
+    }));
+    const pairs = {};
+    for (const [key, m] of Object.entries(MARKET_PAIRS)) {
+      const a = closes[m.num], b = closes[m.den];
+      if (!a || !b) { pairs[key] = { ok: false, num: m.num, den: m.den, error: errors[m.num] || errors[m.den] || 'leg missing' }; continue; }
+      const series = [...a.keys()].filter(d => b.has(d)).sort()
+        .map(d => ({ date: d, value: +(a.get(d) / b.get(d)).toFixed(6) }));
+      pairs[key] = series.length ? { ok: true, num: m.num, den: m.den, series } : { ok: false, num: m.num, den: m.den, error: 'no shared sessions' };
+    }
+    return { pairs, symbols: syms, fetchedAt: new Date().toISOString() };
   }
 
   // ── Fetch history for chart — returns [{d, v}] array ──────────────────────
@@ -609,7 +651,7 @@ export default async function handler(req, res) {
       tenYHistory, twoYHistory, unempHistory, creditHistory,
       cpiHeadlineHistory, cpiCoreHistory, pceCoreHistory,
       kalshi2026Feed, kalshi2027Feed, polymarketFeed, nyFedCurveFeed, smicAHFeed,
-      growthRaw,
+      growthRaw, growthMarketRaw,
     ] = await Promise.all([
       fredLatest("DGS10"),
       fredLatest("DGS2"),
@@ -663,6 +705,8 @@ export default async function handler(req, res) {
       Promise.all(Object.entries(GROWTH_SERIES).map(async ([key, m]) =>
         [key, key === 'gdpNow' ? await fredNowcast(m.id, m.expectTitle) : await fredLabor(m.id, m.expectTitle, 20)]))
         .then(Object.fromEntries),
+      // The market-implied growth ratios — five relative-performance pairs, keyless.
+      fetchMarketPairs(),
     ]);
 
     // ── Yield spread history: prefer FRED's published series ──────────────────
@@ -770,6 +814,8 @@ export default async function handler(req, res) {
       labor: laborRaw,
       // The weekly growth leg (lib/growth.js scores it). Each series carries its own verified flag.
       growth: growthRaw,
+      // The market-implied growth ratios (lib/growth.js marketPulse scores them).
+      growthMarket: growthMarketRaw,
       termPremium: termPremiumRaw,   // Section B — model estimate; use direction/trend only
       dxy:      dxyRaw.latest,
       dxyPrev:  dxyRaw.prev,

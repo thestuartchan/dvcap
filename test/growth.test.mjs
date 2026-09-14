@@ -3,7 +3,7 @@
 // Built from inputs, never from a captured output: every fixture is a synthetic FRED block with
 // the shape api/indicators.js produces, so the verdict is exercised on the arithmetic, and the
 // clock is pinned so no assertion here can drift with the calendar.
-import { growthPulse, GROWTH_SERIES, CLAIMS_WINDOW, CLAIMS_LOOKBACK, CLAIMS_RISE_PCT, WEI_STRONG, GDPNOW_STRONG, GDPNOW_WEAK, MIN_LEGS } from '../lib/growth.js';
+import { growthPulse, marketPulse, growthAxis, MARKET_LABEL, MARKET_PAIRS, MARKET_LOOKBACK, GROWTH_SERIES, CLAIMS_WINDOW, CLAIMS_LOOKBACK, CLAIMS_RISE_PCT, WEI_STRONG, GDPNOW_STRONG, GDPNOW_WEAK, MIN_LEGS } from '../lib/growth.js';
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; console.log(`✅ ${n}`); } else { fail++; console.log(`❌ ${n}`); } };
@@ -56,7 +56,7 @@ const gdpNow = (value, prev = null) => ({ id: 'GDPNOW', ok: true, verified: true
   eq('with the change computed against the average a quarter earlier', [c.avg, c.prior, c.change], [258, 230, 12.2]);
   ok('the flip names the level the average has to fall back below, from the prior base', /back below 253k/.test(c.flip));
   eq('one leg against, two for, is still EXPANDING on the sum', p.verdict, 'EXPANDING');
-  ok('but the read names claims as weakening', /initial claims weakening/.test(p.read));
+  ok('but the read names claims as weakening, with the series name in its own case', /Initial claims weakening/.test(p.read));
   // And a bar computed from the constant: +10% of 230k = 253k, printed on the flat leg's flip.
   const flat = growthPulse({ claims: flatClaims(), continuing: flatCont(), wei: weiAt(1.9), gdpNow: gdpNow(2.4) }, { now: NOW }).legs.find(l => l.key === 'claims');
   ok(`a steady leg's flip states both bars (${CLAIMS_RISE_PCT}% either way)`, /above 253k/.test(flat.flip) && /below 207k/.test(flat.flip));
@@ -121,6 +121,85 @@ const gdpNow = (value, prev = null) => ({ id: 'GDPNOW', ok: true, verified: true
   const p = growthPulse({ claims: wrong, continuing: flatCont(), wei: weiAt(1.9), gdpNow: gdpNow(2.4) }, { now: NOW });
   eq('an unverified series is named', p.unverified.map(u => u.key), ['claims']);
   ok('every series in the contract asserts a title fragment', Object.values(GROWTH_SERIES).every(m => m.expectTitle && m.lagBizDays > 0));
+}
+
+// ── WORDING: NAMES KEEP THEIR CASE, BARS PRINT ONE DECIMAL ───────────────────
+{
+  const p = growthPulse({ claims: flatClaims(), continuing: flatCont(), wei: weiAt(1.9), gdpNow: gdpNow(2.4) }, { now: NOW });
+  ok('the split sentence prints GDPNow, not gdpnow', /GDPNow firm/.test(p.read) && !/gdpnow/.test(p.read));
+  ok('and the WEI by its full name', /Weekly Economic Index/.test(p.read));
+  ok('a bar prints with one decimal', /GDPNow below 2\.0/.test(p.flipsIf) && /WEI below 1\.5/.test(p.flipsIf));
+}
+
+// ── THE MARKET LEG ───────────────────────────────────────────────────────────
+// Daily ratio series ending on a Friday (2026-09-11) for a Monday clock; `n` sessions.
+function daily(endDate, n, gen) {
+  const out = []; const d = new Date(endDate + 'T00:00:00Z'); let i = n - 1;
+  while (out.length < n) {
+    const wd = d.getUTCDay();
+    if (wd !== 0 && wd !== 6) { out.unshift({ date: d.toISOString().slice(0, 10), value: gen(i, n) }); i--; }
+    d.setUTCDate(d.getUTCDate() - 1);
+  }
+  return out;
+}
+const ratio = (series) => ({ ok: true, series });
+const flatPairs = () => Object.fromEntries(Object.keys(MARKET_PAIRS).map(k => [k, ratio(daily('2026-09-11', 45, () => 1.0))]));
+{
+  const p = marketPulse({ pairs: flatPairs() }, { now: NOW });
+  eq('five flat ratios read MIXED', [p.verdict, p.usable, p.of], ['MIXED', 5, 5]);
+  ok('the read says the ratios sit inside their bands', /All 5 market ratios sit inside their bands/.test(p.read));
+  const c = p.legs.find(l => l.key === 'cyclicals');
+  eq(`the change is measured over ${MARKET_LOOKBACK} sessions`, c.change, 0);
+  ok('and the flip names the pair, both bars and the base date', /XLY\/XLP above 1\.02 \(\+2\.0%\) or below 0\.98 \(−2\.0%\) vs the 2026-08-14 base/.test(c.flip));
+  eq('a flat market leg is labelled FLAT for the reader while the verdict token stays shared', [p.label, p.verdict], ['FLAT', 'MIXED']);
+  ok('and the read uses the market\'s own words', /no growth tilt priced/.test(p.read));
+}
+{
+  // Cyclicals +3% over the month, copper/gold −5%, breadth +2%, the rest flat.
+  const pairs = flatPairs();
+  pairs.cyclicals = ratio(daily('2026-09-11', 45, (i, n) => i >= n - 1 ? 1.03 : 1.0));
+  pairs.copperGold = ratio(daily('2026-09-11', 45, (i, n) => i >= n - 1 ? 0.95 : 1.0));
+  pairs.breadth = ratio(daily('2026-09-11', 45, (i, n) => i >= n - 1 ? 1.02 : 1.0));
+  const p = marketPulse({ pairs }, { now: NOW });
+  eq('cyclicals +3% votes for growth', p.legs.find(l => l.key === 'cyclicals').score, 1);
+  eq('copper/gold −5% votes against, past its wider 4% bar', p.legs.find(l => l.key === 'copperGold').score, -1);
+  eq('breadth +2% votes for, past its 1.5% bar', p.legs.find(l => l.key === 'breadth').score, 1);
+  eq('two for, one against, two flat is EXPANDING on the sum', [p.verdict, p.score], ['EXPANDING', 1]);
+  eq('shown to the reader as PAYING FOR GROWTH', p.label, MARKET_LABEL.EXPANDING);
+  ok('the read names the pairs by label', /Copper \/ gold weakening/.test(p.read) && /Cyclicals \/ defensives, Equal-weight \/ cap-weight firm/.test(p.read));
+  ok('a moving pair reads paying for growth or safety', /paying for growth/.test(p.legs.find(l => l.key === 'cyclicals').read) && /paying for safety/.test(p.legs.find(l => l.key === 'copperGold').read));
+}
+{
+  // A ratio whose last session is nine business days old is a broken feed, not a flat market.
+  const pairs = flatPairs();
+  pairs.transports = ratio(daily('2026-09-01', 45, () => 1.0));
+  const p = marketPulse({ pairs }, { now: NOW });
+  const t = p.legs.find(l => l.key === 'transports');
+  eq('a quiet feed is excluded', t.available, false);
+  ok('with its last session and age', /has not printed since 2026-09-01 \(9 business days\)/.test(t.reason));
+  const short = marketPulse({ pairs: { ...flatPairs(), breadth: ratio(daily('2026-09-11', 12, () => 1.0)) } }, { now: NOW });
+  ok('too few sessions is excluded with the count', /needs 21 sessions, have 12/.test(short.legs.find(l => l.key === 'breadth').reason));
+  const none = marketPulse({}, { now: NOW });
+  eq('no pairs at all is INSUFFICIENT with every ratio excluded', [none.verdict, none.excluded.length], ['INSUFFICIENT', 5]);
+  eq('a market leg never reports unverified series — there is no title to check', none.unverified, []);
+  // Copper/gold sits near 0.0013: a bar has to print as a number the reader can watch for.
+  const tiny = marketPulse({ pairs: { ...flatPairs(), copperGold: ratio(daily('2026-09-11', 45, () => 0.001312)) } }, { now: NOW });
+  const cg = tiny.legs.find(l => l.key === 'copperGold');
+  ok('a ratio near zero prints its bars to four significant figures', /above 0\.001364/.test(cg.flip) && /below 0\.00126/.test(cg.flip));
+  eq('the weekly leg keeps its own label', growthPulse({ claims: flatClaims(), continuing: flatCont(), wei: weiAt(1.9), gdpNow: gdpNow(2.4) }, { now: NOW }).label, 'EXPANDING');
+}
+
+// ── THE AXIS: THE TWO LEGS AGAINST EACH OTHER ────────────────────────────────
+{
+  const V = v => ({ verdict: v });
+  eq('agreement up is confirmed', growthAxis({ weekly: V('EXPANDING'), market: V('EXPANDING') }).state, 'confirmed');
+  eq('agreement down is confirmed', growthAxis({ weekly: V('CONTRACTING'), market: V('SOFTENING') }).state, 'confirmed');
+  eq('market paying for safety against firm data is turning-down', growthAxis({ weekly: V('EXPANDING'), market: V('CONTRACTING') }).state, 'turning-down');
+  eq('market paying for growth against soft data is turning-up', growthAxis({ weekly: V('SOFTENING'), market: V('EXPANDING') }).state, 'turning-up');
+  ok('and the read says the market leads', /the market leads/.test(growthAxis({ weekly: V('MIXED'), market: V('CONTRACTING') }).read));
+  eq('one leg missing is named as the only reader', growthAxis({ weekly: V('INSUFFICIENT'), market: V('EXPANDING') }).state, 'market-only');
+  eq('both missing is insufficient', growthAxis({}).state, 'insufficient');
+  eq('firm market against mixed data is turning-up as well — mixed is not firm', growthAxis({ weekly: V('MIXED'), market: V('EXPANDING') }).state, 'turning-up');
 }
 
 console.log(`${pass} passed, ${fail} failed`);
