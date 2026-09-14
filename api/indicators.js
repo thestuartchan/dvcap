@@ -2,6 +2,7 @@ import { LABOR_SERIES } from "../lib/labor.js";
 import { GROWTH_SERIES, MARKET_PAIRS, MONTHLY_SERIES } from "../lib/growth.js";
 import { INFLATION_SERIES } from "../lib/inflationAxis.js";
 import { kvGetJson, kvSetJson, kvConfigured } from "../lib/kv.js";
+import { zqMovesPriced } from "../lib/fedpath.js";
 import { fetchSmicAHPremium } from "../lib/smicah.js";
 import { backoffMs, sleep } from '../lib/throttle.js';
 import { fredGate } from '../lib/fred.js';
@@ -381,6 +382,41 @@ export default async function handler(req, res) {
     }
   }
 
+  // ── THE MARKET-IMPLIED FED PATH, FED ──────────────────────────────────────
+  // 30-day fed funds futures (ZQ) were a daily hand entry — one contract's settle typed from the
+  // CME page — because IBKR has no stateless auth. Yahoo carries every listed ZQ contract as
+  // ZQ<month code><yy>.CBT, so the strip is read here: the front eight months, last daily close
+  // and its date, implied rate = 100 − price, against the effective rate from FRED. The manual
+  // entry remains and outranks the feed for its own date — a typed settle beats a delayed close.
+  const ZQ_MONTH_CODES = ['F', 'G', 'H', 'J', 'K', 'M', 'N', 'Q', 'U', 'V', 'X', 'Z'];
+  const ZQ_MONTHS_AHEAD = 8;
+  async function fetchFedPathStrip(effr) {
+    const now = new Date();
+    const contracts = [];
+    for (let i = 0; i < ZQ_MONTHS_AHEAD; i++) {
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + i, 1));
+      const yy = String(d.getUTCFullYear()).slice(2);
+      const code = ZQ_MONTH_CODES[d.getUTCMonth()];
+      const label = `${d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })}-${d.getUTCFullYear()}`;
+      contracts.push({ code: `ZQ${code}${yy}`, symbol: `ZQ${code}${yy}.CBT`, label, month: d.toISOString().slice(0, 7) });
+    }
+    const rows = await Promise.all(contracts.map(async c => {
+      try {
+        const m = await yahooCloses(c.symbol);
+        const dates = [...m.keys()].sort();
+        const date = dates[dates.length - 1], price = m.get(date);
+        const impliedRate = +(100 - price).toFixed(3);
+        return { ...c, ok: true, date, price: +price.toFixed(4), impliedRate, movesPriced: zqMovesPriced(impliedRate, effr) };
+      } catch (e) {
+        return { ...c, ok: false, error: String(e?.message || e) };
+      }
+    }));
+    const okRows = rows.filter(r => r.ok);
+    if (!okRows.length) feedErrors.push({ series: 'Yahoo ZQ strip', error: rows[0]?.error || 'no contracts' });
+    return { ok: okRows.length > 0, effr, effrSource: effr != null ? 'FRED EFFR' : null, asOf: okRows.map(r => r.date).sort().at(-1) ?? null,
+             contracts: rows, source: 'Yahoo · CBOT 30-day fed funds futures, last daily close' };
+  }
+
   // ── Fetch history for chart — returns [{d, v}] array ──────────────────────
   // observationStart: earliest date to fetch from
   // transform: optional function to post-process the value
@@ -713,7 +749,7 @@ export default async function handler(req, res) {
       tenYHistory, twoYHistory, unempHistory, creditHistory,
       cpiHeadlineHistory, cpiCoreHistory, pceCoreHistory,
       kalshi2026Feed, kalshi2027Feed, polymarketFeed, nyFedCurveFeed, smicAHFeed,
-      growthRaw, growthMarketRaw, growthMonthlyRaw, inflationSeriesRaw, oilSeriesRaw, clevelandRaw,
+      growthRaw, growthMarketRaw, growthMonthlyRaw, inflationSeriesRaw, oilSeriesRaw, clevelandRaw, effrRaw,
     ] = await Promise.all([
       fredLatest("DGS10"),
       fredLatest("DGS2"),
@@ -779,7 +815,10 @@ export default async function handler(req, res) {
         .then(Object.fromEntries),
       fetchOilSeries(),
       fetchClevelandNowcast(),
+      fredLatest("EFFR"),       // the effective rate the ZQ strip is read against
     ]);
+    // The ZQ strip needs the effective rate, so it runs after the fan-out rather than inside it.
+    const fedPathFeed = await fetchFedPathStrip(effrRaw?.value > 0 ? effrRaw.value : null);
 
     // ── Yield spread history: prefer FRED's published series ──────────────────
     // The merge below is kept as a fallback only. Merging DGS10 and DGS2 requires both legs
@@ -892,6 +931,8 @@ export default async function handler(req, res) {
       growthMonthly: growthMonthlyRaw,
       // The inflation axis feeds (lib/inflationAxis.js scores them; core y/y comes from the fields above).
       inflationAxis: { ...inflationSeriesRaw, oil: oilSeriesRaw, cleveland: clevelandRaw },
+      // The market-implied Fed path from the ZQ strip (replaces the daily hand entry; the entry outranks it for its own date).
+      fedPathFeed,
       termPremium: termPremiumRaw,   // Section B — model estimate; use direction/trend only
       dxy:      dxyRaw.latest,
       dxyPrev:  dxyRaw.prev,

@@ -1145,7 +1145,7 @@ function bizDaysSince(isoDate, now = new Date()) {
   while (d < end) { d.setUTCDate(d.getUTCDate() + 1); const wd = d.getUTCDay(); if (wd !== 0 && wd !== 6) n++; }
   return n;
 }
-function FedPathCard({ effr }) {
+function FedPathCard({ effr, feed = null }) {
   const [data, setData] = useState(null);
   const [price, setPrice] = useState("");
   const [contract, setContract] = useState("Dec-2026");
@@ -1171,8 +1171,19 @@ function FedPathCard({ effr }) {
     setSaving(false);
   }
 
-  const L = data?.latest;
-  // C2 — suppress the derived hike/cut count once the manual entry is >3 business days old.
+  // ── FED, WITH THE HAND ENTRY AS THE OVERRIDE ──
+  // The ZQ strip comes from api/indicators.js (Yahoo, last daily close). The typed settle still
+  // wins for its own date — a settle is a better number than a delayed close — but a feed row
+  // dated later than the last entry is the current one, and the daily hand entry is no longer
+  // the only way this card stays alive.
+  const feedRow = (() => {
+    const c = feed?.ok ? (feed.contracts || []).find(x => x.ok && x.label === contract) : null;
+    if (!c) return null;
+    return { date: c.date, contract: c.label, price: c.price, impliedRate: c.impliedRate, effr: feed.effr ?? null, movesPriced: c.movesPriced ?? null, source: "feed" };
+  })();
+  const manualRow = data?.latest ? { ...data.latest, source: "entry" } : null;
+  const L = (manualRow && feedRow) ? (manualRow.date >= feedRow.date ? manualRow : feedRow) : (manualRow || feedRow);
+  // C2 — suppress the derived hike/cut count once the entry is >3 business days old.
   const staleBiz = L?.date ? bizDaysSince(L.date) : 0;
   const suppressDerived = staleBiz > 3;
   // The divergence between this and the qualitative Fed read IS the story when they disagree.
@@ -1181,7 +1192,7 @@ function FedPathCard({ effr }) {
     <Card>{/* I.2 — informational: no status badge, so no accent bar. */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <SLabel>📈 Market-implied Fed path</SLabel>
-        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>ZQ 30-day fed funds futures · manual entry (no free feed)</span>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>ZQ 30-day fed funds futures · {feed?.ok ? "fed from the CBOT strip, hand entry overrides for its own date" : "manual entry (feed unavailable)"}</span>
       </div>
       {L ? (
         <>
@@ -1190,7 +1201,7 @@ function FedPathCard({ effr }) {
           </div>
           <div style={{ fontSize: 12.5, color: suppressDerived ? C.amber : diverges ? C.amber : C.mid, fontWeight: (suppressDerived || diverges) ? 800 : 600, marginTop: 2 }}>
             {suppressDerived
-              ? `derived hike/cut count suppressed — entry ${staleBiz} business days old, re-enter today's ZQ settle`
+              ? `derived hike/cut count suppressed — ${L.source === "feed" ? "last close" : "entry"} ${staleBiz} business days old`
               : L.movesPriced == null ? "no EFFR to compare against"
               : `${Math.abs(L.movesPriced).toFixed(1)} × 25bp ${L.movesPriced >= 0 ? "HIKES" : "CUTS"} priced vs EFFR ${L.effr}%`}
           </div>
@@ -1217,8 +1228,18 @@ function FedPathCard({ effr }) {
               </div>
             );
           })()}
+          {feed?.ok && (
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 6, fontSize: 10.5, color: C.mid }} title={`${feed.source} · EFFR ${feed.effr ?? "—"} (${feed.effrSource || "no EFFR"})`}>
+              {(feed.contracts || []).filter(c => c.ok).map(c => (
+                <button key={c.code} onClick={() => setContract(c.label)}
+                  style={{ cursor: "pointer", background: c.label === contract ? C.blue : C.surf, color: c.label === contract ? "#fff" : C.mid, border: "1.5px solid " + (c.label === contract ? C.blue : C.bdr), borderRadius: 999, padding: "2px 9px", fontSize: 10.5, fontWeight: 700 }}>
+                  {c.label.slice(0, 3)} {c.impliedRate.toFixed(2)}%
+                </button>
+              ))}
+            </div>
+          )}
           <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 2 }}>
-            ZQ {L.price} (100 − price = implied rate) · entered {L.date}
+            ZQ {L.price} (100 − price = implied rate) · {L.source === "feed" ? `last close ${L.date} · feed` : `entered ${L.date}`}
             {kofiaStale(L.date) ? <span style={{ color: C.amber, fontWeight: 700 }}> · ⚠ stale, re-enter</span> : null}
           </div>
           {/* The three things the number does NOT say, stated once so the card cannot imply them.
@@ -6045,6 +6066,7 @@ export default function App() {
     consts: {
       consensusVintage: CONSENSUS_VINTAGE, recessionSources: effectiveRecessionSources, recessionCadence: RECESSION_SOURCE_CADENCE,
       fedLanguage: FED_LANGUAGE_STATUS, sepOdds: SEP_HIKE_ODDS, secYields: SEC_YIELDS,
+      fedPathFeed: liveInd?.fedPathFeed ?? null,
       analystBoard: { asOf: "2026-06-29", cadence: 90 }, recessionProse: { asOf: "2026-08-24", cadence: 30 },
       announced: {
         pceCore: { ...ANNOUNCED_PRINTS.pceCore, fredAsOf: liveInd?.asOf?.pceCoreCurrent ?? null },
@@ -8048,7 +8070,7 @@ export default function App() {
               );
             })()}
 
-            <FedPathCard effr={liveInd?.currentFedFunds ?? null} />
+            <FedPathCard effr={liveInd?.currentFedFunds ?? null} feed={liveInd?.fedPathFeed ?? null} />
             <InterventionToggle
               jpyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "JPY=X")?.changePct ?? null}
               dxyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "DX-Y.NYB")?.changePct ?? null}

@@ -39,6 +39,9 @@ const find = (l, key) => l.rows.find(r => r.key === key);
   eq('a fresh override is fresh', find(l, 'override:JPMorgan').state, 'fresh');
   const fresh = handKeptLedger({ manual: { fedPath: { latest: { date: '2026-09-11' } }, ism: { latest: { asOf: '2026-09-01', manufacturing: 49 } } }, now: NOW });
   eq('Friday\'s settle is fresh on Monday', find(fresh, 'fedPath').state, 'fresh');
+  const fed = handKeptLedger({ manual: { fedPath: { latest: { date: '2026-09-08' } } }, consts: { fedPathFeed: { ok: true, asOf: '2026-09-12' } }, now: NOW });
+  eq('with the ZQ strip fed, the Fed path is retired from the chores, whatever the entry\'s age', [find(fed, 'fedPath').state, find(fed, 'fedPath').asOf], ['retired', '2026-09-12']);
+  ok('and the note says the entry is an override now', /last hand entry 2026-09-08/.test(find(fed, 'fedPath').note));
   eq('an ISM entered on the first is fresh on the fourteenth', find(fresh, 'ism').state, 'fresh');
 }
 

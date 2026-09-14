@@ -166,7 +166,11 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
     discarded: result.trades?.discarded || null,
     // Everything that a human has to decide, flattened into one list the banner can render.
     needsYou: [
-      ...rec.differs.map(d => ({ what: 'disagrees with the statement', root: d.root, id: d.id })),
+      // WHICH kind of disagreement, so the banner can offer the one-click acknowledgement only where
+      // it applies: a cost-basis gap on a partly exited position is an accounting convention; a
+      // quantity gap is a fill the console never recorded and must not be papered over.
+      ...rec.differs.map(d => ({ what: d.qty ? 'quantity disagrees with the statement — a fill is missing here' : 'cost basis disagrees with the statement', root: d.root, id: d.id,
+                                 qtyDiffers: !!d.qty, costDiffers: !!d.avg, ackable: !d.qty && !!(d.avg && d.avg.ibkr != null) })),
       ...rec.ambiguous.map(a => ({ what: 'ambiguous — two rows share this symbol', root: a.root })),
       ...rec.report.filter(r => r.kind === 'missing-at-broker').map(r => ({ what: 'open here, not at the broker', root: r.root, id: r.id })),
       ...((tradePlan?.report) || []).map(r => ({ what: r.kind.replace(/-/g, ' '), root: r.root })),
