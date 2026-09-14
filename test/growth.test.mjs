@@ -267,6 +267,21 @@ const hoursFlat = () => mSeries('AWHMAN', monthly('2026-08', 16, () => 40.5));
   eq('a fast-slow-fast pattern is a split, not a turn', sp.state, 'split');
   eq('the two-leg cases are unchanged with the monthly leg absent', growthAxis({ market: V('CONTRACTING'), weekly: V('EXPANDING') }).state, 'turning-down');
   eq('a lone monthly leg reads as data-only', growthAxis({ monthly: V('MIXED') }).state, 'data-only');
+  const wording = growthAxis({ market: { verdict: 'CONTRACTING', label: 'PAYING FOR SAFETY' }, weekly: V('EXPANDING'), monthly: V('CONTRACTING') });
+  ok('a split read uses each leg\'s own words — the market pays for safety, it does not contract', /The market paying for safety, the weekly data expanding/.test(wording.read));
+}
+// ── A PRINT IS CURRENT UNTIL THE NEXT ONE LANDS ──────────────────────────────
+// 2026-09-14 live: July's Chicago Fed index (dated 07-01, released late August) was the latest
+// print and was excluded at 53 business days, because the tolerance measured the release lag
+// rather than the publication cycle. The next index lands about 25 September.
+{
+  const july = mSeries('CFNAIMA3', monthly('2026-07', 16, () => -0.04));
+  const p = monthlyPulse({ cfnai: july, tempHelp: tempFlat(), hours: hoursFlat() }, { now: NOW });
+  eq('July\'s index is still current on 14 September', p.legs.find(l => l.key === 'cfnai').available, true);
+  const late = monthlyPulse({ cfnai: july }, { now: new Date('2026-10-12T14:00:00Z') });
+  eq('and stale by mid-October, two weeks after August\'s was due', late.legs.find(l => l.key === 'cfnai').available, false);
+  const aug = mSeries('TEMPHELPS', monthly('2026-08', 16, () => 2700));
+  eq('an August BLS print is current into early October', monthlyPulse({ tempHelp: aug, hours: hoursFlat() }, { now: new Date('2026-10-05T14:00:00Z') }).legs.find(l => l.key === 'tempHelp').available, true);
 }
 
 console.log(`${pass} passed, ${fail} failed`);
