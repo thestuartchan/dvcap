@@ -21,6 +21,9 @@ import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
 import { readGex, repriceStored, settledGex, GEX_SYMBOLS } from '../lib/gexStore.js';
 import { renderGexSection, pinOf, RUNGS } from '../lib/gexBrief.js';
 import { wallAgreement } from '../lib/gexRead.js';
+import { regimeSnapshot, regimeLogRow } from '../lib/regimeEngine.js';
+import { writeRegimeRow, logConfigured } from '../lib/regimeLog.js';
+import MANUAL_STORE from '../data/manual_entry.json' with { type: 'json' };
 
 // wallAgreement answers for ONE wall at a time; the levels section needs both, each on its own
 // terms. A pair verdict was what previously let "0 of 6" sit beside a wall that was in fact one
@@ -1055,9 +1058,37 @@ async function runAll(req, regions = ['asia', 'eu', 'us']) {
   return { status: 200, body: { all: true, delivered, results, generatedAt: new Date().toISOString() } };
 }
 
+// ── THE DAILY REGIME ROW, WRITTEN WHETHER OR NOT ANYONE OPENED THE PAGE ──────
+// The dashboard logs the regime once a day per browser, so the history had holes wherever nobody
+// looked. Each cron firing now runs the same engine on the same indicators payload (fetched from
+// this deployment's own public route, so the fetchers are not duplicated) and merges a row for
+// today. Failures are reported in the response, never thrown — the brief must post regardless.
+async function logRegime(req) {
+  if (!logConfigured()) return { skipped: 'store not configured' };
+  try {
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    const origin = `${proto}://${req.headers.host}`;
+    const r = await fetch(`${origin}/api/indicators`, { signal: AbortSignal.timeout(25000) });
+    if (!r.ok) return { ok: false, error: `indicators HTTP ${r.status}` };
+    const ind = await r.json();
+    const snap = regimeSnapshot(ind, { overrides: MANUAL_STORE?.recession || {} });
+    if (!snap.derivedRegimes) return { ok: false, error: 'no consensus — engine returned no probabilities' };
+    const row = regimeLogRow(snap, {
+      source: 'cron',
+      extra: { inputs: { oas: ind?.creditSpread ?? null, tenY: ind?.tenY ?? null, twoY: ind?.twoY ?? null } },
+    });
+    const w = await writeRegimeRow(row);
+    return { ...w, live_regime: row.live_regime, vintage: snap.regimeVintage?.grade ?? null };
+  } catch (e) {
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
 export default async function handler(req, res) {
   const r = req.query.all === '1'
     ? await runAll(req)
     : await runRegion((req.query.region || 'asia').toLowerCase(), req);
+  // Only the scheduled runs log; a browser hitting the route to read a brief does not commit.
+  if (req.query.cron === '1') r.body = { ...(r.body || {}), regimeLog: await logRegime(req) };
   res.status(r.status).json(r.body);
 }
