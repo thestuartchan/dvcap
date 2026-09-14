@@ -143,7 +143,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
       else if (changes) {
         // NAME THE ROOTS. "The batch did not reconcile" sent the reader to every position; the gate
         // knows exactly which ones failed and why, and the banner is where that belongs.
-        const who = (gate.problems || []).map(p => `${p.root}${p.console != null ? ` (console ${p.console}${p.ibkr != null ? `, statement ${p.ibkr}` : ''})` : ''}`);
+        const who = (gate.problems || []).map(p => `${p.root}${p.console != null ? ` (console ${p.console}${p.consoleSide ? ` ${String(p.consoleSide).toUpperCase()}` : ''}, statement ${p.ibkr != null ? `${p.ibkr}${p.ibkrSide ? ` ${String(p.ibkrSide).toUpperCase()}` : ''}` : 'not held'})` : ''}`);
         result.trades.discarded = `the batch did not reconcile against the statement’s own position list${who.length ? ` — ${who.join('; ')}` : ''} — so none of it was applied`;
       }
     }
@@ -174,8 +174,13 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
       // WHICH kind of disagreement, so the banner can offer the one-click acknowledgement only where
       // it applies: a cost-basis gap on a partly exited position is an accounting convention; a
       // quantity gap is a fill the console never recorded and must not be papered over.
-      ...rec.differs.map(d => ({ what: d.qty ? 'quantity disagrees with the statement — a fill is missing here' : 'cost basis disagrees with the statement', root: d.root, id: d.id,
-                                 qtyDiffers: !!d.qty, costDiffers: !!d.avg, ackable: !d.qty && !!(d.avg && d.avg.ibkr != null) })),
+      // WITH THE NUMBERS. "Quantity disagrees" sent the reader to the statement to find out by how
+      // much; the reconciliation already knows both figures.
+      ...rec.differs.map(d => ({
+        what: d.qty ? `quantity disagrees — console ${d.qty.console}, statement ${d.qty.ibkr}: a fill is missing here`
+                    : `cost basis disagrees — console ${d.avg?.console}, statement ${d.avg?.ibkr}`,
+        root: d.root, id: d.id, qty: d.qty || null, avg: d.avg || null,
+        qtyDiffers: !!d.qty, costDiffers: !!d.avg, ackable: !d.qty && !!(d.avg && d.avg.ibkr != null) })),
       ...rec.ambiguous.map(a => ({ what: 'ambiguous — two rows share this symbol', root: a.root })),
       ...rec.report.filter(r => r.kind === 'missing-at-broker').map(r => ({ what: 'open here, not at the broker', root: r.root, id: r.id })),
       ...((tradePlan?.report) || []).map(r => ({ what: r.kind.replace(/-/g, ' '), root: r.root })),
