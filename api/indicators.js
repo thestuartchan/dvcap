@@ -1,5 +1,7 @@
 import { LABOR_SERIES } from "../lib/labor.js";
 import { GROWTH_SERIES, MARKET_PAIRS, MONTHLY_SERIES } from "../lib/growth.js";
+import { INFLATION_SERIES } from "../lib/inflationAxis.js";
+import { kvGetJson, kvSetJson, kvConfigured } from "../lib/kv.js";
 import { fetchSmicAHPremium } from "../lib/smicah.js";
 import { backoffMs, sleep } from '../lib/throttle.js';
 import { fredGate } from '../lib/fred.js';
@@ -283,27 +285,31 @@ export default async function handler(req, res) {
   // exchange holidays — a ratio across mismatched sessions is a number with no meaning). Adjusted
   // closes where Yahoo gives them, so an ETF's quarterly distribution does not print as a 0.5%
   // move in a 2% bar. Keyless; a symbol that fails is reported on every pair it is part of.
+  // Daily closes for one Yahoo symbol over three months, keyed by ISO date. Adjusted where Yahoo
+  // gives them, so an ETF's quarterly distribution does not print as a move inside a 2% bar.
+  async function yahooCloses(sym) {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=3mo`;
+    const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json" }, signal: AbortSignal.timeout(9000) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const res = (await r.json())?.chart?.result?.[0];
+    const ts = res?.timestamp || [];
+    const adj = res?.indicators?.adjclose?.[0]?.adjclose;
+    const cl = res?.indicators?.quote?.[0]?.close || [];
+    const m = new Map();
+    ts.forEach((t, i) => {
+      const v = (adj && adj[i] != null) ? adj[i] : cl[i];
+      if (Number.isFinite(v) && v > 0) m.set(new Date(t * 1000).toISOString().slice(0, 10), v);
+    });
+    if (!m.size) throw new Error('no closes');
+    return m;
+  }
   async function fetchMarketPairs() {
     const syms = [...new Set(Object.values(MARKET_PAIRS).flatMap(m => [m.num, m.den]))];
     const closes = {};
     const errors = {};
     await Promise.all(syms.map(async sym => {
-      try {
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=3mo`;
-        const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json" }, signal: AbortSignal.timeout(9000) });
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const res = (await r.json())?.chart?.result?.[0];
-        const ts = res?.timestamp || [];
-        const adj = res?.indicators?.adjclose?.[0]?.adjclose;
-        const cl = res?.indicators?.quote?.[0]?.close || [];
-        const m = new Map();
-        ts.forEach((t, i) => {
-          const v = (adj && adj[i] != null) ? adj[i] : cl[i];
-          if (Number.isFinite(v) && v > 0) m.set(new Date(t * 1000).toISOString().slice(0, 10), v);
-        });
-        if (!m.size) throw new Error('no closes');
-        closes[sym] = m;
-      } catch (e) {
+      try { closes[sym] = await yahooCloses(sym); }
+      catch (e) {
         errors[sym] = String(e?.message || e);
         feedErrors.push({ series: `Yahoo ${sym}`, error: errors[sym] });
       }
@@ -317,6 +323,62 @@ export default async function handler(req, res) {
       pairs[key] = series.length ? { ok: true, num: m.num, den: m.den, series } : { ok: false, num: m.num, den: m.den, error: 'no shared sessions' };
     }
     return { pairs, symbols: syms, fetchedAt: new Date().toISOString() };
+  }
+
+  // ── THE INFLATION AXIS FEEDS ──────────────────────────────────────────────
+  // Oil as a daily series (the scalar `oil` above is a 5-day fetch), for the 20-session impulse.
+  async function fetchOilSeries() {
+    try {
+      const m = await yahooCloses('CL=F');
+      return { ok: true, symbol: 'CL=F', series: [...m.entries()].sort().map(([date, value]) => ({ date, value: +value.toFixed(2) })) };
+    } catch (e) {
+      feedErrors.push({ series: 'Yahoo CL=F (series)', error: String(e?.message || e) });
+      return { ok: false, symbol: 'CL=F', error: String(e?.message || e) };
+    }
+  }
+  // The Cleveland Fed inflation nowcast — year-over-year, current month, published each business
+  // day. The site serves the chart's own JSON: one element per month since 2013, each with a
+  // daily series per index. Seven megabytes for four numbers, so the extract is cached in KV for
+  // six hours when KV is configured. Source: https://www.clevelandfed.org/indicators-and-data/inflation-nowcasting
+  const CLEVELAND_URL = 'https://www.clevelandfed.org/-/media/files/webcharts/inflationnowcasting/nowcast_year.json';
+  const CLEVELAND_KEY = 'dvcap:cleveland:nowcast:v1';
+  const CLEVELAND_TTL_MS = 6 * 3600 * 1000;
+  async function fetchClevelandNowcast() {
+    try {
+      if (kvConfigured()) {
+        const cached = await kvGetJson(CLEVELAND_KEY);
+        if (cached?.fetchedAt && Date.now() - Date.parse(cached.fetchedAt) < CLEVELAND_TTL_MS) return { ...cached, cache: 'kv' };
+      }
+      const r = await fetch(CLEVELAND_URL, { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' }, signal: AbortSignal.timeout(25000) });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+      if (!Array.isArray(j) || !j.length) throw new Error('unexpected shape');
+      const NAMES = { 'CPI Inflation': 'cpi', 'Core CPI Inflation': 'coreCpi', 'PCE Inflation': 'pce', 'Core PCE Inflation': 'corePce',
+                      'Actual CPI Inflation': 'cpiActual', 'Actual Core CPI Inflation': 'coreCpiActual', 'Actual PCE Inflation': 'pceActual', 'Actual Core PCE Inflation': 'corePceActual' };
+      const extract = (el) => {
+        const out = { period: el?.chart?.subcaption ?? null };
+        for (const d of el?.dataset || []) {
+          const k = NAMES[d.seriesname]; if (!k) continue;
+          const vals = (d.data || []).map(x => parseFloat(x?.value)).filter(Number.isFinite);
+          out[k] = vals.length ? +vals[vals.length - 1].toFixed(3) : null;
+        }
+        return out;
+      };
+      const cur = extract(j[j.length - 1]);
+      const prior = extract(j[j.length - 2]);
+      // The file's own stamp is the vintage: "2026-09-11 00:00".
+      const stamp = String(j[j.length - 1]?.chart?._comment || '').slice(0, 10);
+      const asOf = /^\d{4}-\d{2}-\d{2}$/.test(stamp) ? stamp : null;
+      const period = cur.period ? cur.period.replace(/^(\d{4})-(\d{1,2})$/, (_, y, m) => `${y}-${String(m).padStart(2, '0')}`) : null;
+      const out = { ok: true, asOf, period, cpi: cur.cpi, coreCpi: cur.coreCpi, pce: cur.pce, corePce: cur.corePce,
+                    prior: { ...prior, period: prior.period ? prior.period.replace(/^(\d{4})-(\d{1,2})$/, (_, y, m) => `${y}-${String(m).padStart(2, '0')}`) : null },
+                    source: 'Federal Reserve Bank of Cleveland, Inflation Nowcasting', fetchedAt: new Date().toISOString() };
+      if (kvConfigured()) await kvSetJson(CLEVELAND_KEY, out);
+      return out;
+    } catch (e) {
+      feedErrors.push({ series: 'Cleveland Fed nowcast', error: String(e?.message || e) });
+      return { ok: false, error: String(e?.message || e) };
+    }
   }
 
   // ── Fetch history for chart — returns [{d, v}] array ──────────────────────
@@ -651,7 +713,7 @@ export default async function handler(req, res) {
       tenYHistory, twoYHistory, unempHistory, creditHistory,
       cpiHeadlineHistory, cpiCoreHistory, pceCoreHistory,
       kalshi2026Feed, kalshi2027Feed, polymarketFeed, nyFedCurveFeed, smicAHFeed,
-      growthRaw, growthMarketRaw, growthMonthlyRaw,
+      growthRaw, growthMarketRaw, growthMonthlyRaw, inflationSeriesRaw, oilSeriesRaw, clevelandRaw,
     ] = await Promise.all([
       fredLatest("DGS10"),
       fredLatest("DGS2"),
@@ -711,6 +773,12 @@ export default async function handler(req, res) {
       // hours, identity-checked; sixteen prints cover the 3-month change with a year of context.
       Promise.all(Object.entries(MONTHLY_SERIES).map(async ([key, m]) => [key, await fredLabor(m.id, m.expectTitle, 16)]))
         .then(Object.fromEntries),
+      // The inflation axis — breakevens daily (30 prints for a 20-session trend), the core CPI
+      // index monthly (for the 3-month annualised rate), oil as a series, the Cleveland nowcast.
+      Promise.all(Object.entries(INFLATION_SERIES).map(async ([key, m]) => [key, await fredLabor(m.id, m.expectTitle, key === 'coreCpiIdx' ? 16 : 30)]))
+        .then(Object.fromEntries),
+      fetchOilSeries(),
+      fetchClevelandNowcast(),
     ]);
 
     // ── Yield spread history: prefer FRED's published series ──────────────────
@@ -822,6 +890,8 @@ export default async function handler(req, res) {
       growthMarket: growthMarketRaw,
       // The monthly leading leg (lib/growth.js monthlyPulse scores it).
       growthMonthly: growthMonthlyRaw,
+      // The inflation axis feeds (lib/inflationAxis.js scores them; core y/y comes from the fields above).
+      inflationAxis: { ...inflationSeriesRaw, oil: oilSeriesRaw, cleveland: clevelandRaw },
       termPremium: termPremiumRaw,   // Section B — model estimate; use direction/trend only
       dxy:      dxyRaw.latest,
       dxyPrev:  dxyRaw.prev,

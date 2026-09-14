@@ -23,6 +23,7 @@ import { renderGexSection, pinOf, RUNGS } from '../lib/gexBrief.js';
 import { wallAgreement } from '../lib/gexRead.js';
 import { regimeSnapshot, regimeLogRow } from '../lib/regimeEngine.js';
 import { writeRegimeRow, logConfigured } from '../lib/regimeLog.js';
+import { measuredAxes, axesLogRow } from '../lib/quadrant.js';
 import MANUAL_STORE from '../data/manual_entry.json' with { type: 'json' };
 
 // wallAgreement answers for ONE wall at a time; the levels section needs both, each on its own
@@ -1073,12 +1074,13 @@ async function logRegime(req) {
     const ind = await r.json();
     const snap = regimeSnapshot(ind, { overrides: MANUAL_STORE?.recession || {} });
     if (!snap.derivedRegimes) return { ok: false, error: 'no consensus — engine returned no probabilities' };
+    const axes = measuredAxes(ind, { ism: MANUAL_STORE?.ism || null });
     const row = regimeLogRow(snap, {
       source: 'cron',
-      extra: { inputs: { oas: ind?.creditSpread ?? null, tenY: ind?.tenY ?? null, twoY: ind?.twoY ?? null } },
+      extra: { inputs: { oas: ind?.creditSpread ?? null, tenY: ind?.tenY ?? null, twoY: ind?.twoY ?? null }, axes: axesLogRow(axes) },
     });
     const w = await writeRegimeRow(row);
-    return { ...w, live_regime: row.live_regime, vintage: snap.regimeVintage?.grade ?? null };
+    return { ...w, live_regime: row.live_regime, vintage: snap.regimeVintage?.grade ?? null, quadrant: axes.quadrant.id, growth: axes.growth.state, inflation: axes.inflation.state };
   } catch (e) {
     return { ok: false, error: String(e?.message || e) };
   }
