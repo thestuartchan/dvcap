@@ -10,7 +10,7 @@
 // An earlier check found the two in exact agreement and recorded that as a property of the sources.
 // It was a property of the HOUR it ran in.
 import { readFileSync } from 'node:fs';
-import { parseOccSeries, mergeOccIv, occKey, defaultExpiries, refreshExpiries, MIN_OCC_COVERAGE, DEFAULT_NEAR_COUNT,
+import { parseOccSeries, mergeOccIv, occKey, defaultExpiries, refreshExpiries, MIN_OCC_COVERAGE, DEFAULT_NEAR_COUNT, DEFAULT_FRIDAY_COUNT,
          seenRecord, rollEntry, appendRoll, rollSummary, ROLL_LOG_MAX, occVintage } from '../lib/occ.js';
 
 let pass = 0, fail = 0;
@@ -120,8 +120,18 @@ const FIX = readFileSync(new URL('./fixtures-occ-qqq.txt', import.meta.url), 'ut
   // monthlies — the calendar changes and a hardcoded rule about third Fridays would rot.
   ok('the front monthly is reached by horizon', picked.includes('2026-09-18'));
   ok('and the two beyond it', picked.includes('2026-10-16') && picked.includes('2026-12-18'));
-  // SIX, the shape the stored capture uses — three dailies plus three horizons.
-  eq('which reproduces the stored capture’s shape', picked.length, 6);
+  // On this sparse listing the Fridays coincide with the horizons, so the set is still six.
+  eq('on a sparse listing the Fridays and horizons coincide', picked.length, 6);
+  // ── THE NEXT TWO FRIDAYS, ON A FULL LISTING ──
+  // 2026-09-14: the three nearest dailies were Mon/Tue/Wed; the Friday-week-after book (the 25th)
+  // carried five times the Wednesday book and was not read. Weeklies expire on Fridays.
+  const FULL = ['2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17', '2026-09-18', '2026-09-21', '2026-09-22',
+                '2026-09-23', '2026-09-24', '2026-09-25', '2026-10-02', '2026-10-16', '2026-11-20', '2026-12-18'];
+  const full = defaultExpiries(FULL, new Date('2026-09-14T13:00:00Z'));
+  eq(`the next ${DEFAULT_FRIDAY_COUNT} Fridays are read`, [full.includes('2026-09-18'), full.includes('2026-09-25')], [true, true]);
+  eq('the whole shape: three near, two Fridays, three horizons, de-duplicated', full,
+     ['2026-09-14', '2026-09-15', '2026-09-16', '2026-09-18', '2026-09-21', '2026-09-25', '2026-10-16', '2026-12-18']);
+  ok('the Tuesday-after and the second October Friday are still not read — the shape is a sample, not the book', !full.includes('2026-09-22') && !full.includes('2026-10-02'));
   ok('sorted, so the set is stable across runs', picked.join() === [...picked].sort().join());
   eq('nothing listed picks nothing', defaultExpiries([], NOW), []);
   eq('and everything expired likewise', defaultExpiries(['2026-01-01'], NOW), []);
