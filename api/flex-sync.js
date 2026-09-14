@@ -199,7 +199,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
         root: d.root, id: d.id, qty: d.qty || null, avg: d.avg || null,
         qtyDiffers: !!d.qty, costDiffers: !!d.avg, ackable: !d.qty && !!(d.avg && d.avg.ibkr != null),
         // What to record so the console matches the statement — IBKR is the record.
-        fix: reconcilingFill(d, { asOf }) })),
+        fix: reconcilingFill(d, { asOf, statementFills: (tradePlan?.apply || []).filter(a => a.root === d.root && (a.rowId === d.id || !rows.some(r => r.id === a.rowId))).map(a => a.fill) }) })),
       ...rec.ambiguous.map(a => ({ what: 'ambiguous — two rows share this symbol', root: a.root })),
       ...rec.report.filter(r => r.kind === 'missing-at-broker').map(r => ({ what: 'open here, not at the broker', root: r.root, id: r.id })),
       ...((tradePlan?.report) || []).map(r => ({ what: r.kind.replace(/-/g, ' '), root: r.root })),

@@ -2833,9 +2833,10 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
                         rowId: row.id,
                         side: n.fix.side === "add" ? openSideFor(row.side) : closeSideFor(row.side),
                         intent: n.fix.side === "add" ? "buy" : "sell",
-                        qty: n.fix.qty, price: n.fix.price ?? "",
-                        date: n.fix.date || flexNote.asOf || new Date().toISOString().slice(0, 10),
-                        note: `reconciling fill — IBKR statement ${flexNote.asOf || ""}`.trim(),
+                        // From the statement's own trade line when it has one — exact price, day and trade id.
+                        qty: n.fix.fills?.[0] ? n.fix.fills[0].qty : n.fix.qty, price: n.fix.fills?.[0] ? n.fix.fills[0].price : (n.fix.price ?? ""),
+                        date: n.fix.fills?.[0]?.date || n.fix.date || flexNote.asOf || new Date().toISOString().slice(0, 10),
+                        note: n.fix.fills?.[0]?.tradeId ? `IBKR trade ${n.fix.fills[0].tradeId}, commission included` : `reconciling fill — IBKR statement ${flexNote.asOf || ""}`.trim(),
                       })}
                         style={{ cursor: "pointer", background: C.surf, color: C.blue, border: "1.5px solid " + C.blue, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800 }}>
                         Record it

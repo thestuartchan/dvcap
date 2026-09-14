@@ -491,6 +491,23 @@ eq('elements are found whether or not they self-close', elements('<A x="1"/><A x
   eq('carrying the as-of figure it was compared against', bad.differs[0].avg.asOf, 9.2);
 }
 
+// ── AN OPTION IS NOT ITS UNDERLYING ──────────────────────────────────────────
+// 2026-09-14: INTC read "console 30, statement 6: a fill is missing here". The 6 was the option
+// line — six contracts on INTC — keyed by its underlying and compared against the 30-share row.
+{
+  const { parseStatement, reconcile } = await import('../lib/flex.js');
+  const xml = `<FlexQueryResponse><FlexStatements><FlexStatement accountId="U1" fromDate="2026-09-11" toDate="2026-09-11"><OpenPositions>
+<OpenPosition accountId="U1" currency="USD" assetCategory="STK" symbol="INTC" position="30" costBasisPrice="25.00" levelOfDetail="SUMMARY" />
+<OpenPosition accountId="U1" currency="USD" assetCategory="OPT" symbol="INTC  261017C00030000" underlyingSymbol="INTC" multiplier="100" position="6" costBasisPrice="1.20" levelOfDetail="SUMMARY" />
+</OpenPositions></FlexStatement></FlexStatements></FlexQueryResponse>`;
+  const st = parseStatement(xml);
+  const rows = [{ id: 'intc', symbol: 'INTC', currency: 'USD', side: 'long', status: 'open', derived: { qty: 30, avgCost: 25, unadjustedAvgCost: 25, status: 'open', sold: 0 } }];
+  const rec = reconcile(rows, st.positions, { asOf: '2026-09-11', derive: r => r.derived });
+  eq('the share row agrees with the share line', rec.agree.map(a => a.root), ['INTC']);
+  eq('and is not contradicted by the option line', rec.differs, []);
+  eq('the option is reported as outside scope, by its underlying', rec.report.filter(r => r.kind === 'unmatched').map(r => `${r.root}:${r.assetClass}:${r.qty}`), ['INTC:option:6']);
+}
+
 // ── THE FILL THAT CLOSES A QUANTITY GAP ──────────────────────────────────────
 // IBKR is the record: the banner says what to record, not that something differs.
 {
@@ -509,6 +526,19 @@ eq('elements are found whether or not they self-close', elements('<A x="1"/><A x
   const fresh = reconcilingFill({ qty: { console: 0, ibkr: 40 }, avg: { console: null, ibkr: 12.5 } });
   eq('nothing held before: the statement basis is the price', [fresh.qty, fresh.price], [40, 12.5]);
   eq('no quantity gap is no fill', reconcilingFill({ avg: { console: 1, ibkr: 2 } }), null);
+  // Four decimals, not floating-point residue: 2108.7533 − 1058 is 1050.7533, not 1050.7532999999999.
+  const frac = reconcilingFill({ qty: { console: 1058, ibkr: 2108.7533 }, basis: { console: 50.4257, ibkr: 50.43, agree: true } }, { asOf: '2026-09-11' });
+  eq('a fractional gap is stated to four decimals', frac.qty, 1050.7533);
+  eq('and when the cost bases already agree the missing buy is priced at the average, with the wording of a buy', [frac.side, frac.price], ['add', 50.43]);
+  ok('never as a reduction', /bought at 50\.43 — the cost bases already agree/.test(frac.text) && !/reduction/.test(frac.text));
+  // The statement's own trade lines beat any solving.
+  const carried = reconcilingFill({ qty: { console: 30, ibkr: 6 }, basis: { console: 25, ibkr: 25, agree: true } },
+    { asOf: '2026-09-11', statementFills: [{ side: 'sell', qty: 24, price: 26.1, date: '2026-09-10', tradeId: '77' }] });
+  eq('a fill the statement carries is proposed exactly', [carried.fromStatement, carried.covers, carried.price, carried.date], [true, true, 26.1, '2026-09-10']);
+  ok('and the text says it applies with the batch or can be recorded now', /the statement carries it: sold 24 @ 26\.1 on 2026-09-10 — these apply with the batch/.test(carried.text));
+  const partial = reconcilingFill({ qty: { console: 30, ibkr: 6 } }, { statementFills: [{ side: 'sell', qty: 10, price: 26, date: '2026-09-10' }] });
+  eq('fills that cover only part of the gap say so', partial.covers, false);
+  ok('a sale outside the window says where the price is', /IBKR trade confirmation/.test(reconcilingFill({ qty: { console: 30, ibkr: 6 } }).text));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
