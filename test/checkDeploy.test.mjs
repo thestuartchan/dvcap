@@ -67,6 +67,18 @@ const live = (sha, extra = {}) => ({ url: 'https://dvcap.vercel.app', sha, age: 
   ok('and says the live site will answer anyway', /will answer normally/.test(bad.lines.join(' ')));
 
   eq('no verdict yet is 2', verdict({ status: readStatus({ state: 'pending', statuses: [] }), live: null, wantSha: SHA }).code, 2);
+  // ── SUPERSEDED IS NOT PENDING ──
+  // 2026-09-14: a data commit landed a minute after a merge, Vercel built that one, issued no
+  // verdict for the merge, and the checker waited past its timeout on a build that never came
+  // while the site had been serving a descendant of the wanted commit for twenty minutes.
+  const LATER = '5825e804a9d77e1a290906a4519acac2f12a7592';
+  const sup = verdict({ status: readStatus({ state: 'pending', statuses: [] }), live: live(LATER, { contains: true }), wantSha: SHA });
+  eq('a live descendant of the wanted commit is the wanted commit, deployed — 0 with no verdict of its own', sup.code, 0);
+  ok('and it says which build is serving and that no verdict was issued', /is live inside a later build/.test(sup.lines[0]) && /no build verdict was issued/.test(sup.lines[1]));
+  eq('a live sha that does NOT contain it is still pending', verdict({ status: readStatus({ state: 'pending', statuses: [] }), live: live(LATER, { contains: false }), wantSha: SHA }).code, 2);
+  eq('and an unknown ancestry is still pending — never assumed', verdict({ status: readStatus({ state: 'pending', statuses: [] }), live: live(LATER, { contains: null }), wantSha: SHA }).code, 2);
+  eq('a successful build served as a later descendant is also 0', verdict({ status: readStatus({ state: 'success', statuses: [{ state: 'success' }] }), live: live(LATER, { contains: true }), wantSha: SHA }).code, 0);
+  eq('but a successful build served as an unrelated sha is still 3', verdict({ status: readStatus({ state: 'success', statuses: [{ state: 'success' }] }), live: live(LATER, { contains: false }), wantSha: SHA }).code, 3);
   eq('still building is 2', verdict({ status: readStatus({ state: 'pending', statuses: [{ state: 'pending' }] }), live: null, wantSha: SHA }).code, 2);
 
   // A SUCCESSFUL BUILD IS NOT THE SAME CLAIM AS A LIVE ONE — this is the half that version.json

@@ -140,7 +140,12 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
       result.trades = { ...result.trades, plan: tradePlan, verified: gate.ok, problems: gate.problems, summary: summariseTrades(tradePlan) };
       const changes = tradePlan.adopt.length + tradePlan.apply.length + tradePlan.creates.length;
       if (changes && gate.ok) tradeRows = after;
-      else if (changes) result.trades.discarded = 'the batch did not reconcile against the statement’s own position list, so none of it was applied';
+      else if (changes) {
+        // NAME THE ROOTS. "The batch did not reconcile" sent the reader to every position; the gate
+        // knows exactly which ones failed and why, and the banner is where that belongs.
+        const who = (gate.problems || []).map(p => `${p.root}${p.console != null ? ` (console ${p.console}${p.ibkr != null ? `, statement ${p.ibkr}` : ''})` : ''}`);
+        result.trades.discarded = `the batch did not reconcile against the statement’s own position list${who.length ? ` — ${who.join('; ')}` : ''} — so none of it was applied`;
+      }
     }
   }
 

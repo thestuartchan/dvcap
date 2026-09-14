@@ -1836,6 +1836,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   const [flexNote, setFlexNote] = useState(null);
   const [ackBusy, setAckBusy] = useState(null);
   const [ackMsg, setAckMsg] = useState(null);
+  const [recheckBusy, setRecheckBusy] = useState(false);
   // What the backfill did, shown once. A number changing under the reader without a word is how
   // the original error survived a month.
   const [multNote, setMultNote] = useState(null);
@@ -2784,14 +2785,30 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
               🧾 IBKR statement{flexNote.asOf ? ` · ${flexNote.asOf}` : ""}
             </b>
             <span style={{ fontSize: 12.5, color: C.mid }}>{flexNote.summary}</span>
+            {/* ── RE-CHECK NOW ──
+                The note is written by the scheduled run (weekdays 12:00Z). A change made here —
+                a fill recorded, a cost basis accepted — is not reflected until the next run unless
+                this asks for one. Same call the schedule makes; it writes only what reconciles. */}
+            <button disabled={recheckBusy} onClick={async () => {
+              setRecheckBusy(true); setAckMsg(null);
+              try {
+                const j = await fetch("/api/flex-sync?apply=1&trades=1", { credentials: "include" }).then(r => r.json());
+                setAckMsg({ ok: !j?.error, text: j?.error || `re-checked against the ${j?.asOf || "latest"} statement` });
+                refreshLive();
+              } catch (e) { setAckMsg({ ok: false, text: String(e.message || e) }); }
+              setRecheckBusy(false);
+            }} style={{ marginLeft: "auto", cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 700, opacity: recheckBusy ? 0.5 : 1 }}>
+              {recheckBusy ? "checking…" : "↻ Re-check now"}
+            </button>
             <button onClick={() => { setNoteSeen(flexNote.at); try { localStorage.setItem(FLEX_SEEN_LS, flexNote.at); } catch { /* quota */ } }}
-              style={{ marginLeft: "auto", cursor: "pointer", background: "none", border: "none", color: C.lbl, fontSize: 12, fontWeight: 700 }}>✕ Got it</button>
+              style={{ cursor: "pointer", background: "none", border: "none", color: C.lbl, fontSize: 12, fontWeight: 700 }}>✕ Got it</button>
           </div>
           {flexNote.discarded && (
             <div style={{ marginTop: 6, fontSize: 11.5, color: C.amber, fontWeight: 700 }}>
               Nothing was written — {flexNote.discarded}
             </div>
           )}
+          {ackMsg && <div style={{ marginTop: 6, fontSize: 11.5, color: ackMsg.ok ? C.green : C.amber, fontWeight: 700 }}>{ackMsg.text}</div>}
           {flexNote.needsYou?.length > 0 && (
             <div style={{ marginTop: 6, fontSize: 11.5, color: C.mid, display: "flex", gap: 7, flexWrap: "wrap" }}>
               {flexNote.needsYou.map((n, i) => (
@@ -2811,7 +2828,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
                   )}
                 </span>
               ))}
-              {ackMsg && <span style={{ fontSize: 11.5, color: ackMsg.ok ? C.green : C.amber, fontWeight: 700, flexBasis: "100%" }}>{ackMsg.text}</span>}
+
             </div>
           )}
         </div>
