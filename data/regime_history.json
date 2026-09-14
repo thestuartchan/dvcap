@@ -1196,13 +1196,13 @@
         "ladderSpread": 1.5,
         "u3": 4.1,
         "empPop": 59.1,
-        "oas": 2.7,
+        "oas": 2.65,
         "tenY": 4.95,
         "twoY": 4.56,
         "consensusAlive": 0.769,
         "regimeVintage": "decayed"
       },
-      "loggedAt": "2026-09-14T13:57:13.783Z",
+      "loggedAt": "2026-09-14T15:14:39.943Z",
       "source": "cron",
       "axes": {
         "growth": {
