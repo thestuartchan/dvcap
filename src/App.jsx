@@ -15,13 +15,13 @@ import { freshnessText, humanizeAge } from "../lib/sessions.js";
 import { interventionAnnotation } from "../lib/fx.js";
 import { unInversionPhase, yieldCurveStatus, NORMAL_SPREAD } from "../lib/yieldcurve.js";
 import { pendingReconciliations, reconStats } from "../lib/recon.js";
-import { deriveRegimeProbabilities } from "../lib/regimeProb.js";
+import {  } from "../lib/regimeProb.js";
 import { applyRegimeGuard } from "../lib/posture.js";
 import { regimeFlipsIf } from "../lib/regime.js";
 import { minersPairImplication } from "../lib/regimeState.js";
 import { southboundTrend, southboundLevelTrend, southboundRead, ahPremiumRead, sbStale } from "../lib/southbound.js";
 import { STATUS, creditStatus, deriveAction, headerSignal } from "../lib/status.js";
-import { HORIZON, HORIZON_LABEL, consensusFor, calendarWindow, dispersionRead, NO_CONVERSION_NOTE, consensusVintage, horizonOf } from "../lib/recession.js";
+import { HORIZON, HORIZON_LABEL, dispersionRead, NO_CONVERSION_NOTE } from "../lib/recession.js";
 import { buildViews, evaluateViews, regimeCluster, divergenceRead } from "../lib/analystViews.js";
 import { fmtCcy } from "../lib/fxrates.js";
 import { realizedCurve } from "../lib/positions.js";
@@ -36,7 +36,7 @@ function trendBps(series, lookbackDays) {
   return t ? Math.round(t.delta * 100) : null;
 }
 import { growthPulse, marketPulse, monthlyPulse, growthAxis } from "../lib/growth.js";
-import { consensusAlive, regimeVintage as regimeVintageOf } from "../lib/regimeVintage.js";
+import { announced, overlayJulyLabor, RECESSION_SOURCES, recessionAsOfState, parseProbability, RECESSION_STALE_ZERO_DAYS, recessionSrcKey, mergeRecessionSources, CONSENSUS_VINTAGE, FALLBACK_REGIMES, regimeSnapshot, regimeLogRow } from "../lib/regimeEngine.js";
 
 // ── AN UNMAPPED REGIME RANKS NOTHING ─────────────────────────────────────────
 // Every ranking site on the Posture, Insurance and Income tabs fell back to the STAGFLATION column
@@ -2213,66 +2213,6 @@ function LaborPanel({ labor, depth = "full", extras = null, announced = false })
 // "FRED" value) or show a stale figure as current (which would misread the trend), announced
 // prints live here with their source and release date, render as an explicitly-labelled
 // overlay, and AUTO-RETIRE the moment FRED's own asOf reaches the same period.
-const ANNOUNCED_PRINTS = {
-  pceCore: {
-    period: "2026-06-01", label: "June core PCE", value: 3.3, mom: 0.1,
-    headline: 3.7, headlineMom: -0.1, prev: 3.4,
-    source: "BEA", released: "2026-07-30",
-    note: "cooled from May's 3.4% (~3-year high)",
-  },
-  gdpGrowth: {
-    period: "2026-04-01", label: "Q2 2026 advance GDP", value: 1.5, prev: 2.1,
-    source: "BEA advance estimate", released: "2026-07-30",
-    note: "decelerating from Q1's +2.1%, below consensus — drag from government spending and inventories; consumer spending accelerated",
-  },
-};
-// Return the announced print only while it is NEWER than what the live series carries.
-function announced(key, fredAsOf) {
-  const a = ANNOUNCED_PRINTS[key];
-  if (!a) return null;
-  if (fredAsOf && String(fredAsOf) >= a.period) return null;   // FRED caught up → retire
-  return a;
-}
-
-// ─── ANNOUNCED LABOUR PRINT (Amendment 3 — July Employment Situation) ──────────
-// The July 2026 Employment Situation released 08:30 ET on 2026-08-07, ahead of FRED's ingest,
-// so the live labour series still carry June until FRED updates. Rather than hardcode over the
-// live fields, the released figures are overlaid here and AUTO-RETIRE the moment FRED's own
-// emp-pop asOf reaches July. Values are the published figures; per-series deltas are computed
-// against the live prior at overlay time so the month-over-month move is real, not asserted.
-// emp-pop is not published as a headline — it is the identity participation × (1 − U3).
-const LABOR_ANNOUNCED = {
-  period: "2026-07-01", released: "2026-08-07", source: "BLS Employment Situation",
-  u3: 4.1, participation: 61.4,
-  empPop: +(61.4 * (1 - 4.1 / 100)).toFixed(1),   // 58.9 — identity, not a fabricated print
-  payrollsDeltaK: -23,                             // the monthly change itself
-  // Extras with no single live FRED series — the fixture the amendment supplies.
-  revisions: [{ month: "May", k: -66 }, { month: "June", k: -37 }],
-  twelveMoAvgK: 34,
-  ytd: { householdK: -833, payrollK: 392, laborForceK: -1100 },
-  ahe: { mom: 0.3, yoy: 3.5 },
-};
-// Returns { labor, applied, extras } — labor merged with the July overlay when FRED is behind.
-function overlayJulyLabor(labor) {
-  if (!labor) return { labor, applied: false, extras: null };
-  const live = labor.empPop;
-  if (live?.date && String(live.date) >= LABOR_ANNOUNCED.period) return { labor, applied: false, extras: null };
-  const A = LABOR_ANNOUNCED;
-  const d = (v, key) => labor[key]?.value != null ? +(v - labor[key].value).toFixed(1) : null;
-  const set = (key, value, delta) => labor[key]
-    ? { ...labor[key], value, delta, prev: labor[key].value ?? null, date: A.period, announced: true }
-    : labor[key];
-  const merged = {
-    ...labor,
-    u3: set("u3", A.u3, d(A.u3, "u3")),
-    participation: set("participation", A.participation, d(A.participation, "participation")),
-    empPop: set("empPop", A.empPop, d(A.empPop, "empPop")),
-    payrolls: labor.payrolls
-      ? { ...labor.payrolls, delta: A.payrollsDeltaK, date: A.period, announced: true }
-      : labor.payrolls,
-  };
-  return { labor: merged, applied: true, extras: A };
-}
 
 // ─── FED LANGUAGE STATUS ──────────────────────────────────────────────────────
 // Manually-updated status card (no live fetch). Update the STATUS fields below
@@ -2338,16 +2278,6 @@ const FED_LANGUAGE_STATES = {
 // meantime, so the vintage is stamped on the regime block itself rather than only in the table
 // below it. The age and the deferral are DERIVED (lib/recession.js::consensusVintage) — both were
 // hardcoded prose, so the age could not tick and the deferral could not expire.
-const CONSENSUS_VINTAGE_BASE = {
-  asOf: "2026-06-30",
-  // The releases the refresh waits on, with the date each actually lands. Once the last one is in
-  // the past the refresh stops being deferred and starts being owed.
-  gatedOn: [
-    { date: "2026-08-07", label: "July Employment Situation" },
-    { date: "2026-08-28", label: "BLS benchmark revision" },
-  ],
-};
-const CONSENSUS_VINTAGE = consensusVintage(CONSENSUS_VINTAGE_BASE);
 
 // ─── WALL STREET RECESSION PROBABILITY ────────────────────────────────────────
 // Manually-updated source table. `color` drives the probability cell colour; `year` and `name` are
@@ -2367,164 +2297,6 @@ const CONSENSUS_VINTAGE = consensusVintage(CONSENSUS_VINTAGE_BASE);
 // changed is recorded in each note. A number goes in here only from a source that was actually
 // read — a search-engine summary of a house's view is not one, which is why two rows below say
 // "unverified" rather than carrying a plausible figure.
-const RECESSION_SOURCES = [
-  { name: "Goldman Sachs",             probability: "15%",    timeframe: "12-month", year: 2026, notes: "CONFIRMED CURRENT 2026-09-07: still 15%, no newer print. The path was 25% (pre-Iran war) → 30% (March peak Hormuz) → 15% (June 26, post peace deal), and 15% is also the unconditional long-run average. The row is the latest print, not an overdue one. Cites lower oil, higher real income, AI wealth effect, solid capex; GDP H2 2026 +2.0%. Flags Fed rate-hike risk as the new variable.", asOf: "2026-06-26", color: "green" },
-  { name: "NY Fed Yield Curve Model",  probability: "~15%",   timeframe: "12-month", year: 2026, notes: "Fallback only — the board derives this live from the current 10Y-3M spread via the Estrella-Mishkin probit. As of 2026-09-04 the spread is 0.83ppt and the model reads 15%, still far below the 30% historical alarm threshold and further from inversion than the +62bps this row used to quote.", asOf: "2026-09-04", color: "green" },
-  { name: "Kalshi prediction market",  probability: "5%",     timeframe: "End-2026", year: 2026, notes: "Fallback only — the live feed (KXRECSSNBER-26) drives the displayed value. Refreshed 2026-09-07 from that feed: 5%, down from the 22% June print this row used to carry. Real-money market, CFTC-regulated.", asOf: "2026-09-07", color: "green" },
-  { name: "Kalshi prediction market",  probability: "25%",    timeframe: "End-2027", year: 2027, notes: "Fallback only — live feed KXRECSSNBER-27 drives the display. Refreshed 2026-09-07: 25%, down from the 41% this row carried. Still well above the 2026 contract, which is the point of showing both: the market prices a later reckoning, not none.", asOf: "2026-09-07", color: "amber" },
-  { name: "Polymarket",                probability: "7%",     timeframe: "End-2026", year: 2026, notes: "Fallback only — live feed (us-recession-by-end-of-2026) drives the display. Refreshed 2026-09-07: 7%, down from the ~12.5% June print. Correlated with Kalshi and weighted as one block with it, not as two independent views.", asOf: "2026-09-07", color: "green" },
-  { name: "BNP Paribas",               probability: "Low",    timeframe: "12-month", year: 2026, notes: "Qualitative only — excluded from weighted average. 'Well-positioned to absorb shock.' US net energy exporter status cited. No numeric update available.", color: "green" },
-  { name: "July FOMC Minutes", probability: "Elevated", timeframe: "qualitative", year: 2026, notes: "Released Aug 19, 2026. 'Many participants' assessed further policy tightening would likely be necessary — a material upgrade from June's 'only a few', so the three hike dissents UNDERSTATE the committee's hawkishness. Warsh floated cutting FOMC meetings from 8 to 6 a year (no decision; 2026 schedule unaffected). Board discussed an intermeeting incident disrupting transaction settlements.", asOf: "2026-08-19", color: "amber" },
-];
-
-// Weighted-average weights per source. Sum is 1.10 (intentional — the average
-// divides by the realized total weight, so it need not sum to 1.0). Sources not
-// listed here (e.g. BNP "Low") are excluded automatically.
-const RECESSION_SOURCE_WEIGHTS = {
-  "NY Fed DSGE Model": 0.18,
-  "NY Fed Yield Curve Model": 0.20,
-  "Goldman Sachs": 0.20,
-  "JPMorgan": 0.15,
-  "EY-Parthenon (Daco)": 0.07,
-  "Moody's Analytics (Zandi)": 0.10,
-  "Kalshi prediction market": 0.10, // 2026 row only; 2027 row handled separately
-  "Polymarket": 0.10,
-};
-
-// Expected publication cadence per source, in days — how often THIS source actually publishes a
-// recession probability. The as-of chip used to flag every row past a flat 45 days as "stale",
-// which conflated two different things: a number that is simply the source's LATEST print (a
-// research house publishes episodically — Goldman's 60-day-old 15% is its current view, not an
-// overdue fetch) and a number that is genuinely PAST DUE (the NY Fed DSGE model publishes monthly;
-// at 177 days something is actually wrong). Flagging both identically trained the eye to ignore the
-// flag and sent the reader hunting for updates that do not exist. Within cadence → neutral "latest";
-// past cadence → amber "overdue", which now means something. This is presentation only: the
-// weighted average is unaffected — recencyFactor() above still decays every source linearly to
-// zero at 180 days regardless of cadence, which is the correct treatment for the MATH.
-const RECESSION_SOURCE_CADENCE = {
-  "NY Fed DSGE Model": 30,              // quarterly-ish model run, published monthly
-  "NY Fed Yield Curve Model": 30,       // monthly update (auto-fed daily here)
-  "Kalshi prediction market": 1,        // live market — any gap is a feed failure
-  "Kalshi prediction market 2027": 1,
-  "Polymarket": 1,
-  "Goldman Sachs": 120,                 // episodic research note, event-driven
-  "JPMorgan": 120,
-  "Moody's Analytics (Zandi)": 120,
-  "EY-Parthenon (Daco)": 120,
-  "BNP Paribas": 120,
-  "July FOMC Minutes": 45,              // tied to the FOMC calendar (8 meetings/yr)
-};
-const RECESSION_DEFAULT_CADENCE = 90;
-
-// Age + whether the source is genuinely OVERDUE for its own cadence.
-function recessionAsOfState(name, asOf) {
-  if (!asOf) return null;
-  const days = Math.round((Date.now() - new Date(asOf + "T00:00:00Z")) / 864e5);
-  const cadence = RECESSION_SOURCE_CADENCE[name] ?? RECESSION_DEFAULT_CADENCE;
-  return { days, cadence, overdue: days > cadence };
-}
-
-// Parse a probability string ("~15%", "35.8%", "Low") to a number, or null.
-const parseProbability = (probStr) => {
-  if (!probStr || probStr === "Low" || probStr === "High") return null;
-  const cleaned = probStr.replace("~", "").replace("%", "").trim();
-  const num = parseFloat(cleaned);
-  return isNaN(num) ? null : num;
-};
-
-// A source's weight decays LINEARLY to zero by this age. A March-2026 crisis-peak estimate
-// (≈160 days old on 2026-08-07) was carrying full weight in the average that feeds the regime
-// engine — a defect. Decay (rather than a hard 45-day cliff) fades old vintages without a jump,
-// and fully drops anything ≥180 days. Sources with no asOf are treated as current.
-const RECESSION_STALE_ZERO_DAYS = 180;
-function recencyFactor(asOf, nowIso) {
-  if (!asOf || !nowIso) return 1;
-  const age = Math.round((Date.parse(nowIso) - Date.parse(asOf)) / 86400000);
-  if (!Number.isFinite(age) || age <= 0) return 1;
-  if (age >= RECESSION_STALE_ZERO_DAYS) return 0;
-  return +(1 - age / RECESSION_STALE_ZERO_DAYS).toFixed(3);
-}
-
-// Weighted average of the 2026 recession-probability sources, recency-decayed. The Kalshi 2027
-// row is pulled out separately as the delayed-reckoning modifier input. `nowIso` (YYYY-MM-DD)
-// drives the decay; pass null to disable it (full weight, the old behaviour).
-const computeWeightedRecessionProb = (sources, nowIso = null) => {
-  let weightedSum = 0, totalWeight = 0, kalshi2027 = null;
-  const decayed = [];
-  sources.forEach(source => {
-    if (source.name === "Kalshi prediction market" && source.year === 2027) {
-      kalshi2027 = parseProbability(source.probability);
-      return;
-    }
-    // A1 — archived vintages (condition invalidated) are excluded outright, not decayed. Decay
-    // handles aging; it does not handle a forecast whose stated precondition no longer holds.
-    if (source.archived) return;
-    const weight = RECESSION_SOURCE_WEIGHTS[source.name];
-    const prob = parseProbability(source.probability);
-    if (!weight || prob === null) return;
-    const factor = recencyFactor(source.asOf, nowIso);
-    if (factor < 0.999) decayed.push({ name: source.name, asOf: source.asOf, factor });
-    const eff = weight * factor;
-    if (eff > 0) { weightedSum += prob * eff; totalWeight += eff; }
-  });
-  const weightedAvg = totalWeight > 0 ? weightedSum / totalWeight : null;
-
-  // ── Horizon-split consensus (lib/recession.js) ──
-  // `weightedAvg` above is the LEGACY all-horizons blend, kept only so the change is auditable.
-  // It mixed rolling-12m forecasts with calendar-year contracts whose window shrinks toward
-  // Dec 31, which dragged the number down for calendar reasons alone. The regime engine now
-  // consumes `rolling` — the horizon it actually asks about ("recession within 12 months").
-  const rows = sources
-    .filter(s => !(s.name === "Kalshi prediction market" && s.year === 2027))
-    .map(s => ({
-      name: s.name, prob: parseProbability(s.probability),
-      weight: RECESSION_SOURCE_WEIGHTS[s.name] || 0,
-      recency: recencyFactor(s.asOf, nowIso),
-      asOf: s.asOf, year: s.year, timeframe: s.timeframe, archived: s.archived,
-    }));
-  const rolling  = consensusFor(rows, HORIZON.ROLLING);
-  const calendar = consensusFor(rows, HORIZON.CALENDAR);
-  const calWindow = calendarWindow(nowIso || new Date().toISOString().slice(0, 10), 2026);
-
-  return {
-    weightedAvg,          // legacy blend — displayed for comparison, no longer drives the engine
-    regimeInput: rolling.value ?? weightedAvg,   // what the regime engine consumes
-    rolling, calendar, calWindow,
-    kalshi2027, decayed,
-    // The share of the rolling consensus's nominal weight still alive after decay — the number
-    // that grades the regime's vintage for the sizer, the action card and the header.
-    alive: consensusAlive(rows.filter(r => horizonOf(r.timeframe) === HORIZON.ROLLING)),
-  };
-};
-
-// Two Kalshi rows share the name "Kalshi prediction market" (2026 vs 2027), so a bare name is
-// not a unique key for feed/override addressing. This composite key disambiguates them and is
-// used identically on the server (api/indicators recessionFeeds keys) and in the manual store.
-const recessionSrcKey = (r) =>
-  (r.name === "Kalshi prediction market" && r.year === 2027) ? "Kalshi prediction market 2027" : r.name;
-
-// Merge live auto-feeds (Task 1a) and manual overrides (Task 1b) over the static rows.
-// Precedence per row: manual override > auto-feed > static default. Only probability/asOf/notes
-// are touched; weight and timeframe always come from the static definition. `source` records the
-// provenance so the table can badge each row (📡 live / ✍️ manual / static).
-function mergeRecessionSources(statics, feeds = {}, manual = {}) {
-  const fmtPct = (v) => (/%/.test(String(v)) ? String(v) : `${v}%`);
-  return statics.map((r) => {
-    const key = recessionSrcKey(r);
-    const man = manual[key];
-    if (man && man.probability != null && man.probability !== "") {
-      return { ...r, probability: fmtPct(man.probability), asOf: man.asOf || r.asOf,
-        notes: man.notes || r.notes, source: "manual", sourceAt: man.enteredAt || null };
-    }
-    const auto = feeds[key];
-    if (auto && auto.probability != null) {
-      // Live rows carry their OWN note ("Live real-money market…", "Model-derived…") so the row's
-      // static prose — written for the old hand-entered value — can't contradict the fresh number.
-      return { ...r, probability: fmtPct(auto.probability), asOf: auto.asOf || r.asOf, notes: auto.note || r.notes, source: "auto" };
-    }
-    return { ...r, source: "static" };
-  });
-}
 
 // Task 1b — manual-entry panel for the recession sources, on the same POST-to-/api/manual-entry
 // pattern as the KOFIA / fed-path / intervention panels. Source dropdown → probability → as-of →
@@ -6102,43 +5874,14 @@ export default function App() {
     [liveInd, recessionOverrides]
   );
 
-  // Regime probabilities derived from the recession table + live CPI. Falls back
-  // to the prior static split when no weighted average is available.
-  const fallbackRegimes = { stagflation: 48, reflationary: 17, deflationary: 30, inflationary: 5 };
-  const recConsensus = computeWeightedRecessionProb(effectiveRecessionSources, new Date().toISOString().slice(0, 10));
-  // The regime engine consumes the ROLLING-12M consensus — the horizon it actually asks about.
-  const { regimeInput: recWeightedAvg, kalshi2027: recKalshi2027, decayed: recDecayed } = recConsensus;
-  const cpiForRegime = liveInd?.cpiHeadlineCurrent ?? liveInd?.cpi ?? null;
-  // Section A — the growth/inflation context that decides whether a falling recession
-  // probability is a GROWTH story or a STAGFLATION story. Both legs are live.
-  const coreHist = liveInd?.pceCoreHistory || [];
-  // Amendment 3 — overlay the announced July labour print over the live (FRED-lagged) series so
-  // every downstream read (verdict, Sahm, regime signal) sees July, not June. Auto-retires when
-  // FRED catches up. One computation, reused by both LaborPanel renders and the regime context.
-  const { labor: laborView, applied: laborAnnounced, extras: laborExtras } = overlayJulyLabor(liveInd?.labor);
-  // R4/R8.1 — the 12-month average: the fixture when announced, else derived from PAYEMS history.
-  const laborTwelveMoK = laborExtras?.twelveMoAvgK
-    ?? ((laborView?.payrolls?.history?.length >= 13)
-      ? Math.round((laborView.payrolls.history.at(-1).value - laborView.payrolls.history.at(-13).value) / 12)
-      : null);
-  // R8.1 — the labour deterioration signal fed to deriveRegimeProbabilities.
-  const laborRegimeSignal = {
-    payrollsK: laborView?.payrolls?.delta ?? null,
-    empPopDelta: laborView?.empPop?.delta ?? null,
-    twelveMoAvgK: laborTwelveMoK,
-  };
-  const regimeCtx = {
-    gdpGrowth: (announced("gdpGrowth", liveInd?.asOf?.gdpGrowth)?.value) ?? liveInd?.gdpGrowth ?? null,
-    gdpGrowthPrev: (announced("gdpGrowth", liveInd?.asOf?.gdpGrowth)?.prev) ?? liveInd?.gdpGrowthPrev ?? null,
-    coreInflation: (announced("pceCore", liveInd?.asOf?.pceCoreCurrent)?.value) ?? liveInd?.pceCoreCurrent ?? null,
-    coreCooling: coreHist.length >= 2 ? coreHist[coreHist.length - 1].value < coreHist[coreHist.length - 2].value : null,
-    labor: laborRegimeSignal,
-  };
-  const derivedRegimes = deriveRegimeProbabilities(recWeightedAvg, cpiForRegime, recKalshi2027, regimeCtx);
-  // How much of the consensus behind that regime is still alive. Consumed by the sizer (haircut),
-  // the action card (conviction) and the header/strip (a visible age) — the same input that was
-  // footnoted on three surfaces and drove nothing.
-  const regimeVintage = regimeVintageOf({ ...(recConsensus.alive || {}), refreshDue: CONSENSUS_VINTAGE.refreshDue, staleNote: CONSENSUS_VINTAGE.staleNote });
+  // ── THE REGIME, FROM THE SHARED ENGINE ──────────────────────────────────────
+  // lib/regimeEngine.js runs the whole pipeline — merged sources, decayed consensus, announced
+  // overlays, labour signal, context, probabilities, vintage — on the indicators payload. The
+  // pre-read cron calls the same function on the same payload to write the daily log, so the
+  // dashboard and the log cannot disagree about what the regime was.
+  const fallbackRegimes = FALLBACK_REGIMES;
+  const snap = useMemo(() => regimeSnapshot(liveInd, { overrides: recessionOverrides }), [liveInd, recessionOverrides]);
+  const { recConsensus, recKalshi2027, recDecayed, laborView, laborAnnounced, laborExtras, derivedRegimes, regimeVintage } = snap;
   // Section D — one labour-stress read, replacing every unemployment-RATE tripwire.
   const labStress = laborStress({
     empPop: { delta: laborView?.empPop?.delta ?? null },
@@ -6200,23 +5943,20 @@ export default function App() {
     if (!derivedRegimes || !liveRegime) return;
     const today = new Date().toISOString().slice(0, 10);
     if (cacheLoad("regime_log_last_v1", null) === today) return;   // already logged today
-    const body = {
-      date: today,
-      stagflation_p: derivedRegimes.stagflation, reflationary_p: derivedRegimes.reflationary,
-      deflationary_p: derivedRegimes.deflationary, inflationary_p: derivedRegimes.inflationary,
-      hawkish_repricing: pbData?.us?.marketRegime?.state ?? null,
-      live_regime: liveRegime.id, view_regime: activeRegime.id, pinned: !!regimePin.pinned,
-      // Same-day HYG reading — the thing the delayed OAS print will later be scored against.
-      hyg_chg: pbData?.us?.hyg?.changePct ?? null,
-      hyg_qqq_divergence: pbData?.us?.hyg?.divergence?.spread ?? null,
-      inputs: {
-        weightedRecessionProb: recWeightedAvg, cpi: cpiForRegime, kalshi2027: recKalshi2027,
+    // The same row builder the cron uses, plus what only the client knows: the pinned view, the
+    // tape state and the same-day HYG reading the delayed OAS print is later scored against.
+    const body = regimeLogRow(snap, {
+      date: today, source: 'client',
+      extra: {
+        hawkish_repricing: pbData?.us?.marketRegime?.state ?? null,
+        view_regime: activeRegime.id, pinned: !!regimePin.pinned,
+        hyg_chg: pbData?.us?.hyg?.changePct ?? null,
+        hyg_qqq_divergence: pbData?.us?.hyg?.divergence?.spread ?? null,
         tape: pbData?.us?.marketRegime?.inputs ?? null,
         ladderSpread: pbData?.us?.ladder?.spread ?? null,
-        u3: liveInd?.labor?.u3?.value ?? null, empPop: liveInd?.labor?.empPop?.value ?? null,
-        oas: liveInd?.creditSpread ?? null, tenY: liveInd?.tenY ?? null, twoY: liveInd?.twoY ?? null,
+        inputs: { oas: liveInd?.creditSpread ?? null, tenY: liveInd?.tenY ?? null, twoY: liveInd?.twoY ?? null },
       },
-    };
+    });
     fetch("/api/regime-log", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), credentials: "include" })
       .then(r => r.ok ? cacheSave("regime_log_last_v1", today) : null)
       .catch(() => {});
