@@ -21,7 +21,7 @@ import { regimeFlipsIf } from "../lib/regime.js";
 import { minersPairImplication } from "../lib/regimeState.js";
 import { southboundTrend, southboundLevelTrend, southboundRead, ahPremiumRead, sbStale } from "../lib/southbound.js";
 import { STATUS, creditStatus, deriveAction, headerSignal } from "../lib/status.js";
-import { HORIZON, HORIZON_LABEL, consensusFor, calendarWindow, dispersionRead, NO_CONVERSION_NOTE, consensusVintage } from "../lib/recession.js";
+import { HORIZON, HORIZON_LABEL, consensusFor, calendarWindow, dispersionRead, NO_CONVERSION_NOTE, consensusVintage, horizonOf } from "../lib/recession.js";
 import { buildViews, evaluateViews, regimeCluster, divergenceRead } from "../lib/analystViews.js";
 import { fmtCcy } from "../lib/fxrates.js";
 import { realizedCurve } from "../lib/positions.js";
@@ -36,6 +36,7 @@ function trendBps(series, lookbackDays) {
   return t ? Math.round(t.delta * 100) : null;
 }
 import { growthPulse, marketPulse, monthlyPulse, growthAxis } from "../lib/growth.js";
+import { consensusAlive, regimeVintage as regimeVintageOf } from "../lib/regimeVintage.js";
 import { laborStress, sahmAnnotation, laborVerdict, laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead, quitsRead, revisionTrackerRead, twelveMonthAvgRead, ytdDivergenceRead } from "../lib/labor.js";
 import { handoffChain } from "../lib/handoff.js";
 import { coreSpread, monthName } from "../lib/inflation.js";
@@ -2480,6 +2481,9 @@ const computeWeightedRecessionProb = (sources, nowIso = null) => {
     regimeInput: rolling.value ?? weightedAvg,   // what the regime engine consumes
     rolling, calendar, calWindow,
     kalshi2027, decayed,
+    // The share of the rolling consensus's nominal weight still alive after decay — the number
+    // that grades the regime's vintage for the sizer, the action card and the header.
+    alive: consensusAlive(rows.filter(r => horizonOf(r.timeframe) === HORIZON.ROLLING)),
   };
 };
 
@@ -6121,6 +6125,10 @@ export default function App() {
     labor: laborRegimeSignal,
   };
   const derivedRegimes = deriveRegimeProbabilities(recWeightedAvg, cpiForRegime, recKalshi2027, regimeCtx);
+  // How much of the consensus behind that regime is still alive. Consumed by the sizer (haircut),
+  // the action card (conviction) and the header/strip (a visible age) — the same input that was
+  // footnoted on three surfaces and drove nothing.
+  const regimeVintage = regimeVintageOf({ ...(recConsensus.alive || {}), refreshDue: CONSENSUS_VINTAGE.refreshDue, staleNote: CONSENSUS_VINTAGE.staleNote });
   // Section D — one labour-stress read, replacing every unemployment-RATE tripwire.
   const labStress = laborStress({
     empPop: { delta: laborView?.empPop?.delta ?? null },
@@ -6377,13 +6385,14 @@ export default function App() {
                   : hs.credit === "BENIGN"
                   ? `credit benign · ${liveRegime?.label ?? "regime"}`
                   : `OAS ${cs} · ${liveRegime?.label ?? "regime"}`;
+                const vint = regimeVintage.grade === "fresh" ? "structural · months" : `structural · months · consensus ${regimeVintage.grade}`;
                 return (
                   <div style={{ background: bg, border: "1.5px solid " + bdr, borderRadius: 10, padding: "6px 14px", textAlign: "center", minWidth: 90 }}
                        title="The structural macro state — the consensus-derived regime with credit's veto applied. Months, not today. The tape stance for this session is on the Daily Overview.">
                     <div style={{ color: C.lbl, fontSize: 10, letterSpacing: 2, textTransform: "uppercase", fontWeight: 700 }}>Macro signal</div>
                     <div style={{ color: col, fontSize: 17, fontWeight: 900, lineHeight: 1 }}>{lbl}</div>
                     <div style={{ color: col, fontSize: 10, marginTop: 2, opacity: 0.75, lineHeight: 1.2 }}>{sub}</div>
-                    <div style={{ color: C.lbl, fontSize: 9, marginTop: 2, letterSpacing: 0.3 }}>structural · months</div>
+                    <div style={{ color: regimeVintage.grade === "fresh" ? C.lbl : C.amber, fontSize: 9, marginTop: 2, letterSpacing: 0.3 }} title={regimeVintage.note}>{vint}</div>
                   </div>
                 );
               })()}
@@ -6461,6 +6470,7 @@ export default function App() {
                 {chip("Fed", fedLbl || "—", fedState.color || C.mid)}
                 {derivedRegimes?.contested && flag("⚖ CONTESTED")}
                 {regimeDiverged && flag("📌 PINNED ≠ LIVE")}
+                {regimeVintage.grade !== "fresh" && <span title={regimeVintage.note}>{flag(`🗓 CONSENSUS ${regimeVintage.grade.toUpperCase()}${regimeVintage.pct != null ? ` · ${regimeVintage.pct}% ALIVE` : ""}`)}</span>}
               </div>
             );
           })()}
@@ -6512,6 +6522,7 @@ export default function App() {
             creditDanger={creditStatus(liveInd?.creditSpread) === "DANGER"}
             contested={!!derivedRegimes?.contested}
             regimeDiverged={regimeDiverged}
+            regimeVintage={regimeVintage}
             prices={prices}
             fetchPrices={fetchPrices}
             pricesLoading={pricesLoading}
@@ -6536,10 +6547,11 @@ export default function App() {
                 oas: cs,
                 regimeLabel: liveRegime?.label, regimePct: regimeProbFor(liveRegime?.id),
                 regimeContested: !!derivedRegimes?.contested,
+                regimeConviction: regimeVintage.conviction,
                 labourVerdict: laborVerdictFor(liveInd), labourSevere: labStress.severe,
                 ratesNote: liveInd?.yieldSpread != null ? `curve ${liveInd.yieldSpread >= 0 ? "+" : ""}${liveInd.yieldSpread.toFixed(2)}%` : null,
                 vintages: {
-                  regime: `${CONSENSUS_VINTAGE.label}, ${CONSENSUS_VINTAGE.staleNote}`,
+                  regime: `${CONSENSUS_VINTAGE.label}, ${CONSENSUS_VINTAGE.staleNote}${regimeVintage.pct != null ? `, ${regimeVintage.pct}% of the consensus alive` : ''}`,
                   credit: liveInd?.asOf?.creditSpread ? `obs ${liveInd.asOf.creditSpread}` : null,
                   labour: liveInd?.labor?.empPop?.date ? `obs ${liveInd.labor.empPop.date}` : null,
                 },
