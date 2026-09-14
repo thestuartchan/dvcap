@@ -86,8 +86,19 @@ export function verdict({ status, live, wantSha }) {
     lines.push('  Nothing deployed. Whatever is live is an older build, and it will answer normally.');
     return { code: 1, lines };
   }
+  // ── SUPERSEDED IS NOT PENDING ──
+  // 2026-09-14 19:2xZ: a data commit landed on main a minute after a merge. Vercel built the later
+  // commit and issued NO verdict for the earlier one — so a checker waiting on the earlier sha's
+  // status waited past its timeout while the site had been serving a build that contained it for
+  // twenty minutes. A live sha that is a DESCENDANT of the wanted one is the wanted one, deployed.
+  const age = Number.isFinite(+live?.age) ? `, age ${live.age}s` : '';
+  if (live?.sha && live.contains === true && short(live.sha) !== want) {
+    lines.push(`✔ ${want} is live inside a later build — ${new URL(live.url).host} is serving ${short(live.sha)}${age}, which contains it`);
+    if (status.state !== 'success') lines.push(`  (no build verdict was issued for ${want} itself: Vercel built the later commit instead)`);
+    return { code: 0, lines };
+  }
   if (status.state === 'none') {
-    lines.push(`◌ no deployment reported for ${want} yet — queued, or the webhook has not landed.`);
+    lines.push(`◌ no deployment reported for ${want} yet — queued, the webhook has not landed, or a later commit is being built instead.`);
     return { code: 2, lines };
   }
   if (status.state !== 'success') {
@@ -99,7 +110,6 @@ export function verdict({ status, live, wantSha }) {
     lines.push('  but the live site did not answer with a version — check it by hand before saying it shipped.');
     return { code: 3, lines };
   }
-  const age = Number.isFinite(+live.age) ? `, age ${live.age}s` : '';
   if (short(live.sha) === want) {
     lines.push(`  and ${new URL(live.url).host} is serving it (${short(live.sha)}${age})`);
     return { code: 0, lines };
@@ -151,6 +161,25 @@ if (isMain) {
       return { url: site, sha: j?.sha || null, age: res.headers.get('age'), cache: res.headers.get('x-vercel-cache') };
     } catch { return null; }
   };
+  // Does the live sha CONTAIN the wanted one? GitHub's compare answers 'ahead' or 'identical' when
+  // the head (live) descends from the base (wanted). Unknown on any error — never assumed.
+  const contains = async (liveSha) => {
+    if (!liveSha) return null;
+    if (liveSha.startsWith(sha) || sha.startsWith(liveSha.slice(0, sha.length))) return true;
+    try {
+      const url = `https://api.github.com/repos/${r.owner}/${r.repo}/compare/${sha}...${liveSha}`;
+      let res = await fetch(url, { headers: auth });
+      if (res.status === 401 && auth !== base) { auth = base; res = await fetch(url, { headers: auth }); }
+      if (!res.ok) return null;
+      const j = await res.json();
+      return j?.status === 'ahead' || j?.status === 'identical' ? true : (j?.status ? false : null);
+    } catch { return null; }
+  };
+  const liveWithContains = async () => {
+    const l = await getLive();
+    if (!l) return null;
+    return { ...l, contains: await contains(l.sha) };
+  };
 
   // A CHECK THAT CANNOT REACH ITS SOURCE EXITS 2, NOT 1 AND NEVER 0. "I could not find out" and
   // "the build failed" are different answers, and so are "I could not find out" and "it is fine".
@@ -159,12 +188,19 @@ if (isMain) {
     let status = await getStatus();
     // POLLING IS OPT-IN. A single read is the honest default: "not yet" is a real answer and a
     // caller that wants to wait says so.
+    let live = null;
     while (flag('wait') && !TERMINAL.has(status.state) && Date.now() < deadline) {
+      // A later build that contains the wanted commit ends the wait — there will be no verdict
+      // for the wanted sha itself.
+      live = await liveWithContains();
+      if (live?.contains === true) break;
       console.log(`  … ${status.state} — waiting`);
       await new Promise(r2 => setTimeout(r2, POLL_S * 1000));
       status = await getStatus();
     }
-    const v = verdict({ status, live: status.state === 'success' ? await getLive() : null, wantSha: sha });
+    if (!live || status.state === 'success') live = await liveWithContains();
+    if (process.env.CHECK_DEPLOY_DEBUG) console.error(`  [debug] status=${status.state} live=${JSON.stringify(live)}`);
+    const v = verdict({ status, live: (status.state === 'success' || live?.contains === true) ? live : null, wantSha: sha });
     for (const l of v.lines) console.log(l);
     process.exit(v.code);
   } catch (e) {
