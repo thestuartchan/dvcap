@@ -1737,7 +1737,7 @@ function Holdings({ data, title, note, open, onToggle, money, bare = false, look
   );
 }
 
-export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, contested, regimeDiverged, prices, fetchPrices, pricesLoading }) {
+export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, contested, regimeDiverged, regimeVintage = null, prices, fetchPrices, pricesLoading }) {
   const LS = "dvcap_console_v2";
   // Dismissal is by TIMESTAMP, not a flag: the next run's news must reappear rather than being
   // permanently silenced by one click on the last one.
@@ -2021,7 +2021,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
     }
     return out;
   }, [settings?.sizing]);
-  const regimeCtx = { regimeId: liveRegime?.id, creditDanger, contested, pinnedDiverged: regimeDiverged, sizing: mergedSizing };
+  const regimeCtx = { regimeId: liveRegime?.id, creditDanger, contested, pinnedDiverged: regimeDiverged, vintage: regimeVintage, sizing: mergedSizing };
   const rm = regimeMultiplier(regimeCtx);
 
   // ── derive everything from fills ──
@@ -2984,7 +2984,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           <span style={{ fontSize: 11.5, color: C.muted }}>suggestions only — shown beside your own number, never applied</span>
           <span style={{ marginLeft: "auto", fontSize: 12.5 }}>
             <span style={{ color: C.lbl, fontWeight: 700 }}>regime ×</span> <b style={{ color: liveRegime?.color }}>{rm.mult.toFixed(2)}</b>
-            <span style={{ color: C.muted, fontSize: 11.5 }}> ({rm.reasons[rm.reasons.length - 1]})</span>
+            <span style={{ color: C.muted, fontSize: 11.5 }} title={rm.reasons.join(' · ')}> ({rm.reasons[rm.reasons.length - 1]})</span>
           </span>
           {/* The live multiplier stays on the header — it is the one number here you read without
               intending to change anything, and it is the reason to open the rest. */}
