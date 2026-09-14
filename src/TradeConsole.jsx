@@ -1296,6 +1296,10 @@ function useBookExposure(rows, nlv) {
 function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] }) {
   const [tkr, setTkr] = useState("");
   const [kind, setKind] = useState("option");
+  // CALL OR PUT. The chain key was hard-coded to the call, so a put at the same strike was priced
+  // off the call's delta and mark — for a 714 put with spot at 712 that is 0.38 against a true
+  // −0.62 and $1.59 against about $3, and the suggested size was wrong by the ratio.
+  const [right, setRight] = useState("C");
   const [strike, setStrike] = useState("");
   const [expiry, setExpiry] = useState("");
   const [px, setPx] = useState(null);          // { price, atr, atrPct } for the underlying
@@ -1335,7 +1339,7 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
       if (!hit || hit.status !== "ok") { setNote(`no ATR for ${root} — ${hit?.status || "not returned"}`); setPx(null); }
       else setPx({ atr: hit.atr, atrPct: hit.atrPct, price: null });
       if (kind === "option") {
-        const key = `${root}|${expiry}|C|${Number(strike)}`;
+        const key = `${root}|${expiry}|${right}|${Number(strike)}`;
         const g = await fetch(`/api/flex-sync?greeks=${encodeURIComponent(key)}`, { credentials: "include" }).then(r => r.json());
         const row = g?.greeks?.[key];
         const spot = g?.spots?.[root] ?? null;
@@ -1344,21 +1348,21 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
         // computed and marked INDICATIVE with the stamp, never blanked.
         setGreek(row ? { delta: row.delta, mark: row.mark ?? row.bid, asOf: g.asOf,
                          indicative: isStale(g.asOf) } : null);
-        if (!row) setNote(n => n || `no published greeks for ${root} ${expiry} ${strike}C`);
+        if (!row) setNote(n => n || `no published greeks for ${root} ${expiry} ${strike}${right}`);
       } else setGreek(null);
     } catch (e) { setNote(String(e.message || e)); }
     setBusy(false);
   };
 
   const result = useMemo(() => (!ready || !px?.atr) ? null : sizeTrade({
-    kind, symbol: kind === "option" ? `${root} ${expiry} C${strike}` : root,
+    kind, symbol: kind === "option" ? `${root} ${expiry} ${right}${strike}` : root,
     price: px?.price, atr: px?.atr, atrPct: px?.atrPct,
     delta: greek?.delta ?? null, mark: greek?.mark ?? null,
     expiry: kind === "option" ? expiry : null,
     nlv, bookDeltaNotional: book?.deltaNotional ?? 0,
     catalysts: calendar, indicative: !!greek?.indicative, asOf: greek?.asOf ?? null,
     entered: Number(qty) > 0 ? Number(qty) : null,
-  }), [ready, kind, root, expiry, strike, px, greek, nlv, book, calendar, qty]);
+  }), [ready, kind, right, root, expiry, strike, px, greek, nlv, book, calendar, qty]);
 
   const record = async () => {
     const run = sizerRun(result);
@@ -1390,6 +1394,11 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
             <option value="stock">Stock</option><option value="option">Option</option>
           </select>
         </SzFld>
+        {kind === "option" && <SzFld label="Right">
+          <select value={right} onChange={e => { setRight(e.target.value); setGreek(null); }} style={SZ_IN}>
+            <option value="C">Call</option><option value="P">Put</option>
+          </select>
+        </SzFld>}
         {kind === "option" && <SzFld label="Strike"><input value={strike} inputMode="decimal" onChange={e => setStrike(e.target.value)} style={SZ_IN} placeholder="730" /></SzFld>}
         {/* A REAL DATE INPUT. It was a free-text box wanting an exact YYYY-MM-DD — the same format
             `ready` tests for with a regex — so every other spelling of the date silently left the
@@ -1417,7 +1426,7 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
         <div style={{ fontSize: 11.5, color: C.muted, marginTop: 5 }}>
           ATR(20) {px.atr.toFixed(2)}{px.atrPct != null ? ` (${px.atrPct.toFixed(2)}%)` : ""}
           {px.price != null ? ` · ${root} ${px.price.toFixed(2)}` : ""}
-          {greek?.delta != null ? ` · δ ${greek.delta.toFixed(2)} · mark ${Number(greek.mark).toFixed(2)}` : ""}
+          {greek?.delta != null ? ` · ${strike}${right === "P" ? "P" : "C"} δ ${greek.delta.toFixed(2)} · mark ${Number(greek.mark).toFixed(2)}` : ""}
           {result?.dte != null ? ` · ${result.dte} DTE` : ""}
         </div>
       )}
