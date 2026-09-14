@@ -72,7 +72,7 @@ const fred = (id, history) => ({ id, ok: true, verified: true, mismatch: null, v
   eq('all hot is confirmed', inflationAxis({ market: V('HOT', 1), nowcast: V('HOT', 1), printed: V('HOT', 1) }).state, 'confirmed');
   const t = inflationAxis({ market: V('COOLING', -1), nowcast: V('BETWEEN', 0), printed: V('HOT', 1) });
   eq('market cool, nowcast between, printed hot — a turn toward cool, in lead order', t.state, 'turning-cool');
-  ok('read names the market against the slower legs', /The market reads cool while the nowcast and the printed data still read/.test(t.read));
+  ok('the read names the leading leg against the slowest one, with the in-between leg implied by the turn', /The market reads cool while the printed data still reads hot/.test(t.read));
   eq('the axis lean is the sign of the sum', t.lean, 0);
   eq('printed hot while both faster legs cool is turning-cool with a cool lean', inflationAxis({ market: V('COLD', -1), nowcast: V('COOLING', -1), printed: V('HOT', 1) }).lean, -1);
   eq('fast-slow-fast is a split', inflationAxis({ market: V('HOT', 1), nowcast: V('COLD', -1), printed: V('HOT', 1) }).state, 'split');
