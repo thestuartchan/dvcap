@@ -35,7 +35,7 @@ function trendBps(series, lookbackDays) {
   const t = trendOf(series, { lookbackDays });
   return t ? Math.round(t.delta * 100) : null;
 }
-import { growthPulse, marketPulse, growthAxis } from "../lib/growth.js";
+import { growthPulse, marketPulse, monthlyPulse, growthAxis } from "../lib/growth.js";
 import { laborStress, sahmAnnotation, laborVerdict, laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead, quitsRead, revisionTrackerRead, twelveMonthAvgRead, ytdDivergenceRead } from "../lib/labor.js";
 import { handoffChain } from "../lib/handoff.js";
 import { coreSpread, monthName } from "../lib/inflation.js";
@@ -1719,10 +1719,14 @@ function GrowthLegBlock({ title, p, kind }) {
   const fmtLeg = l => l.value == null ? "—"
     : l.unit === "k" ? (l.value >= 1000 ? `${(l.value / 1000).toFixed(2)}M` : `${Math.round(l.value)}k`)
     : l.unit === "x" ? l.value.toFixed(3)
+    : l.unit === "idx" ? `${l.value >= 0 ? "+" : "−"}${Math.abs(l.value).toFixed(2)}`
+    : l.unit === "h" ? `${l.value.toFixed(1)}h`
     : `${l.value >= 0 ? "" : "−"}${Math.abs(l.value).toFixed(1)}%`;
   const subOf = l => {
     if (!l.available) return <span style={{ fontSize: 11, fontWeight: 700, color: C.amber }}>excluded</span>;
-    const t = l.change != null ? `${l.change >= 0 ? "+" : "−"}${Math.abs(l.change).toFixed(1)}% ${kind === "market" ? "20s" : "q/q"}`
+    const t = l.change != null ? (l.unit === "h" ? `${l.change >= 0 ? "+" : "−"}${Math.abs(l.change).toFixed(1)}h 3m`
+        : `${l.change >= 0 ? "+" : "−"}${Math.abs(l.change).toFixed(1)}% ${kind === "market" ? "20s" : kind === "monthly" ? "3m" : "q/q"}`)
+      : l.unit === "idx" && l.delta != null ? `${l.delta >= 0 ? "+" : "−"}${Math.abs(l.delta).toFixed(2)} m/m`
       : l.trend != null ? `${l.trend >= 0 ? "+" : "−"}${Math.abs(l.trend).toFixed(1)} 4w`
       : l.delta != null ? `${l.delta >= 0 ? "+" : "−"}${Math.abs(l.delta).toFixed(1)}pp` : null;
     const vote = l.score > 0 ? "▲" : l.score < 0 ? "▼" : "•";
@@ -1765,11 +1769,12 @@ function GrowthLegBlock({ title, p, kind }) {
   );
 }
 
-function GrowthPulsePanel({ growth, market }) {
-  if (!growth && !market) return null;
+function GrowthPulsePanel({ growth, market, monthly }) {
+  if (!growth && !market && !monthly) return null;
   const weekly = growthPulse(growth || {});
   const mkt = marketPulse(market || {});
-  const axis = growthAxis({ weekly, market: mkt });
+  const mon = monthlyPulse(monthly || {});
+  const axis = growthAxis({ market: mkt, weekly, monthly: mon });
   // The card's own status: agreement takes the legs' shared status; any disagreement is WATCH,
   // because a turning point is the state that is not actionable alone.
   const st = AXIS_STATUS[axis.state] ?? weekly.status;
@@ -1792,14 +1797,18 @@ function GrowthPulsePanel({ growth, market }) {
             <div>WEI:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;≥1.5 trend · &lt;0 contraction</div>
             <div>GDPNow:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;≥2.0 trend · &lt;1.0 stall-speed</div>
             <div>Ratios:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;±2% over 20 sessions (breadth 1.5, copper/gold 4)</div>
+            <div>CFNAI 3m:&nbsp;&nbsp;&nbsp;&nbsp;≥0 trend · ≤−0.70 recession signal</div>
+            <div>Temp help:&nbsp;&nbsp;&nbsp;±1.5% over 3 months</div>
+            <div>Mfg hours:&nbsp;&nbsp;&nbsp;±0.3h over 3 months</div>
           </div>
           <div style={{ fontSize: 11.5, color: tok.color, lineHeight: 1.55, marginTop: 6 }}>
-            The market leg leads the weekly data by one to three months, and the weekly data leads the monthly labour module below by another month. The same axis, three vintages.
+            The market leads the weekly data by one to three months; the weekly data leads the monthly leading series by another month; all three lead the payroll headline below. One axis, four vintages.
           </div>
         </div>
       </div>
       <GrowthLegBlock title="Market-implied" p={mkt} kind="market" />
       <GrowthLegBlock title="Weekly data" p={weekly} kind="weekly" />
+      <GrowthLegBlock title="Monthly leading" p={mon} kind="monthly" />
     </Card>
   );
 }
@@ -8361,7 +8370,7 @@ export default function App() {
             {/* F.6 — the weekly growth leg sits directly above the monthly labour module: same axis,
                 a month earlier. The two are meant to be read against each other. */}
             <div id="macro-growth" style={{ scrollMarginTop: 96 }} />
-            <GrowthPulsePanel growth={liveInd?.growth} market={liveInd?.growthMarket} />
+            <GrowthPulsePanel growth={liveInd?.growth} market={liveInd?.growthMarket} monthly={liveInd?.growthMonthly} />
 
             <div id="macro-labor" style={{ scrollMarginTop: 96 }} />
             <LaborPanel labor={laborView} extras={laborExtras} announced={laborAnnounced} />

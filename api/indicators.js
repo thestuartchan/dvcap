@@ -1,5 +1,5 @@
 import { LABOR_SERIES } from "../lib/labor.js";
-import { GROWTH_SERIES, MARKET_PAIRS } from "../lib/growth.js";
+import { GROWTH_SERIES, MARKET_PAIRS, MONTHLY_SERIES } from "../lib/growth.js";
 import { fetchSmicAHPremium } from "../lib/smicah.js";
 import { backoffMs, sleep } from '../lib/throttle.js';
 import { fredGate } from '../lib/fred.js';
@@ -651,7 +651,7 @@ export default async function handler(req, res) {
       tenYHistory, twoYHistory, unempHistory, creditHistory,
       cpiHeadlineHistory, cpiCoreHistory, pceCoreHistory,
       kalshi2026Feed, kalshi2027Feed, polymarketFeed, nyFedCurveFeed, smicAHFeed,
-      growthRaw, growthMarketRaw,
+      growthRaw, growthMarketRaw, growthMonthlyRaw,
     ] = await Promise.all([
       fredLatest("DGS10"),
       fredLatest("DGS2"),
@@ -707,6 +707,10 @@ export default async function handler(req, res) {
         .then(Object.fromEntries),
       // The market-implied growth ratios — five relative-performance pairs, keyless.
       fetchMarketPairs(),
+      // The monthly leading leg — the Chicago Fed 3-month average, temp help and manufacturing
+      // hours, identity-checked; sixteen prints cover the 3-month change with a year of context.
+      Promise.all(Object.entries(MONTHLY_SERIES).map(async ([key, m]) => [key, await fredLabor(m.id, m.expectTitle, 16)]))
+        .then(Object.fromEntries),
     ]);
 
     // ── Yield spread history: prefer FRED's published series ──────────────────
@@ -816,6 +820,8 @@ export default async function handler(req, res) {
       growth: growthRaw,
       // The market-implied growth ratios (lib/growth.js marketPulse scores them).
       growthMarket: growthMarketRaw,
+      // The monthly leading leg (lib/growth.js monthlyPulse scores it).
+      growthMonthly: growthMonthlyRaw,
       termPremium: termPremiumRaw,   // Section B — model estimate; use direction/trend only
       dxy:      dxyRaw.latest,
       dxyPrev:  dxyRaw.prev,
