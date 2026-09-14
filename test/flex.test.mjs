@@ -491,5 +491,25 @@ eq('elements are found whether or not they self-close', elements('<A x="1"/><A x
   eq('carrying the as-of figure it was compared against', bad.differs[0].avg.asOf, 9.2);
 }
 
+// ── THE FILL THAT CLOSES A QUANTITY GAP ──────────────────────────────────────
+// IBKR is the record: the banner says what to record, not that something differs.
+{
+  const { reconcilingFill } = await import('../lib/flex.js');
+  const add = reconcilingFill({ qty: { console: 1058, ibkr: 1063 }, avg: { console: 50.4257, ibkr: 50.43 } }, { asOf: '2026-09-11' });
+  eq('a statement holding more is a buy of the difference', [add.side, add.qty], ['add', 5]);
+  // (1063 × 50.43 − 1058 × 50.4257) / 5 = 51.34 — the one price that lands the average on the statement's.
+  eq('priced so the average lands on the statement basis', add.price, 51.3399);
+  ok('and the text says so, with the date', /record 5 bought at 51\.3399, which lands the average on the statement's 50\.43, dated on or before 2026-09-11/.test(add.text));
+  const cut = reconcilingFill({ qty: { console: 200, ibkr: 150 }, avg: { console: 30, ibkr: 30 } }, { asOf: '2026-09-11' });
+  eq('a statement holding less is a sale of the difference with no price — a reduction does not move the average', [cut.side, cut.qty, cut.price], ['reduce', 50, null]);
+  ok('and says why the price is the operator\'s', /at the price received/.test(cut.text));
+  const wild = reconcilingFill({ qty: { console: 100, ibkr: 101 }, avg: { console: 10, ibkr: 20 } });
+  eq('an implausible solved price is not offered', wild.price, null);
+  ok('and the reason is stated', /cannot be reached by one fill/.test(wild.text));
+  const fresh = reconcilingFill({ qty: { console: 0, ibkr: 40 }, avg: { console: null, ibkr: 12.5 } });
+  eq('nothing held before: the statement basis is the price', [fresh.qty, fresh.price], [40, 12.5]);
+  eq('no quantity gap is no fill', reconcilingFill({ avg: { console: 1, ibkr: 2 } }), null);
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

@@ -2804,8 +2804,14 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
               style={{ cursor: "pointer", background: "none", border: "none", color: C.lbl, fontSize: 12, fontWeight: 700 }}>✕ Got it</button>
           </div>
           {flexNote.discarded && (
-            <div style={{ marginTop: 6, fontSize: 11.5, color: C.amber, fontWeight: 700 }}>
-              Nothing was written — {flexNote.discarded}
+            <div style={{ marginTop: 6, fontSize: 11.5, color: C.amber, fontWeight: 700, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <span>Nothing was written — {flexNote.discarded}</span>
+              {flexNote.suggestedFrom && settings.flexTradesFrom !== flexNote.suggestedFrom && (
+                <button onClick={() => { setSettings(x => ({ ...x, flexTradesFrom: flexNote.suggestedFrom })); touch(); setAckMsg({ ok: true, text: `watermark set to ${flexNote.suggestedFrom} — Save to cloud, then Re-check` }); }}
+                  style={{ cursor: "pointer", background: C.surf, color: C.blue, border: "1.5px solid " + C.blue, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800 }}>
+                  Set "IBKR is the record from" to {flexNote.suggestedFrom}
+                </button>
+              )}
             </div>
           )}
           {ackMsg && <div style={{ marginTop: 6, fontSize: 11.5, color: ackMsg.ok ? C.green : C.amber, fontWeight: 700 }}>{ackMsg.text}</div>}
@@ -2813,7 +2819,29 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
             <div style={{ marginTop: 6, fontSize: 11.5, color: C.mid, display: "flex", gap: 7, flexWrap: "wrap" }}>
               {flexNote.needsYou.map((n, i) => (
                 <span key={i} style={{ background: C.surf, border: "1px solid " + C.bdr, borderRadius: 7, padding: "2px 8px", display: "inline-flex", gap: 8, alignItems: "center" }}>
-                  <span><b>{n.root}</b> · {n.what}</span>
+                  <span><b>{n.root}</b> · {n.what}{n.fix ? <> — <i>{n.fix.text}</i></> : null}</span>
+                  {/* ── RECORD IT ──
+                      IBKR is the record. The reconciliation has computed the fill that closes the
+                      gap; this opens the fill form on that row with it filled in, so the operator
+                      confirms a proposal rather than reverse-engineers one. A reduction's price is
+                      the operator's to type — the form opens with it blank. */}
+                  {n.fix && n.id && (() => {
+                    const row = rows.find(x => x.id === n.id);
+                    if (!row) return null;
+                    return (
+                      <button onClick={() => setFillFor({
+                        rowId: row.id,
+                        side: n.fix.side === "add" ? openSideFor(row.side) : closeSideFor(row.side),
+                        intent: n.fix.side === "add" ? "buy" : "sell",
+                        qty: n.fix.qty, price: n.fix.price ?? "",
+                        date: n.fix.date || flexNote.asOf || new Date().toISOString().slice(0, 10),
+                        note: `reconciling fill — IBKR statement ${flexNote.asOf || ""}`.trim(),
+                      })}
+                        style={{ cursor: "pointer", background: C.surf, color: C.blue, border: "1.5px solid " + C.blue, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800 }}>
+                        Record it
+                      </button>
+                    );
+                  })()}
                   {/* ── THE ONE-CLICK ACKNOWLEDGEMENT ──
                       The mechanism existed — /api/flex-sync?ack=<row> records the broker's cost
                       basis on the row so the two accountings stop disagreeing — but nothing on
