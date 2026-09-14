@@ -54,8 +54,8 @@ const ok = (n, c) => eq(n, !!c, true);
 const REGIONS = ['asia', 'eu', 'us'];
 const UPDATE = process.env.UPDATE_GOLDEN === '1';
 
-const rendered = {};
-for (const region of REGIONS) {
+// One function, called twice — once for the golden and once under a shimmed wall clock (below).
+function renderRegion(region) {
   const fx = JSON.parse(readFileSync(new URL(`./fixtures-preread-${region}.json`, import.meta.url), 'utf8'));
   const s = fx.state;
   const NOW = new Date(fx.capturedAt);
@@ -91,6 +91,12 @@ for (const region of REGIONS) {
   const text = assembleDiscord(region, UNIVERSE[region].label, blocks)
     // The header carries the render time and is the one line that cannot be frozen.
     .replace(/· \d{4}-\d{2}-\d{2} \d{2}:\d{2}Z\*\*/, '· <TIME>**');
+  return text;
+}
+
+const rendered = {};
+for (const region of REGIONS) {
+  const text = renderRegion(region);
   rendered[region] = text;
 
   const goldenUrl = new URL(`./golden-preread-${region}.txt`, import.meta.url);
@@ -105,6 +111,52 @@ for (const region of REGIONS) {
       if (a[i] !== b[i]) console.log(`   line ${i + 1}\n   - ${a[i] ?? '(none)'}\n   + ${b[i] ?? '(none)'}`);
     }
     console.log('   Re-run with UPDATE_GOLDEN=1 once the new output is what you intend.');
+  }
+}
+
+// ── THE GOLDEN MUST NOT KNOW WHAT DAY IT IS ──────────────────────────────────
+// 2026-09-14: the asia golden failed on a branch that had not touched a single brief input. The
+// fixture's KOFIA flows are dated 09-09; kofiaStale() counts business days to a DATE and, in six
+// call sites, took that date from `new Date()` rather than from the pinned instant. Two business
+// days after the print was 09-11; the weekend hid it; Monday crossed the line. Worse, the golden
+// as blessed already carried a "Stale inputs: 09-08" suffix that was true of the day it was
+// blessed and false of the instant it claims to render — the pinned clock was being honoured by
+// some layers and ignored by others, and the file recorded whichever the last blesser's calendar
+// said.
+//
+// So the brief is rendered again under two shimmed wall clocks — one BEFORE the fixture's own
+// dates and one half a year AFTER — and each must be byte-identical to the pinned render. Two
+// clocks, not one: on the day this was written the real clock and a future one both put every
+// fixture print past the staleness line, so a single future shim agreed with an unthreaded render
+// and proved nothing. A clock earlier than the prints cannot call them stale, so an unthreaded
+// site now has to disagree with itself. Any layer that reaches past the pinned `now` shows up here
+// as a diff on the day it is introduced, rather than on the next weekend that happens to cross a
+// staleness boundary.
+{
+  const RealDate = Date;
+  const shims = [
+    ['2020', RealDate.UTC(2020, 0, 6, 15, 0, 0)],
+    ['2027', RealDate.UTC(2027, 2, 1, 15, 0, 0)],
+  ];
+  for (const [label, at] of shims) {
+    class ShimDate extends RealDate {
+      constructor(...a) { super(...(a.length ? a : [at])); }
+      static now() { return at; }
+    }
+    globalThis.Date = ShimDate;
+    try {
+      for (const region of REGIONS) {
+        const again = renderRegion(region);
+        const same = again === rendered[region];
+        ok(`the ${region} brief renders the same with the wall clock moved to ${label}`, same);
+        if (!same) {
+          const a = rendered[region].split('\n'), b = again.split('\n');
+          for (let i = 0; i < Math.max(a.length, b.length); i++) {
+            if (a[i] !== b[i]) console.log(`   line ${i + 1}\n   - ${a[i] ?? '(none)'}\n   + ${b[i] ?? '(none)'}`);
+          }
+        }
+      }
+    } finally { globalThis.Date = RealDate; }
   }
 }
 
