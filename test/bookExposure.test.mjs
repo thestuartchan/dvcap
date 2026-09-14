@@ -1,5 +1,5 @@
 // test/bookExposure.test.mjs — what the book is carrying, in delta.
-import { bookExposure, positionExposure, parseOptionSymbol, contractKey, equityDelta,
+import { bookExposure, positionExposure, parseOptionSymbol, contractKey, equityDelta, isCashLike, CASH_LIKE_ETF,
          trendRead, EXPOSURE_LIMITS, LEVERAGED_ETF, TREND_MIN } from '../lib/bookExposure.js';
 import { pickCboeGreeks } from '../lib/cboe.js';
 
@@ -64,6 +64,18 @@ const book = bookExposure({ rows: ROWS, greeks: GREEKS, underlyings: SPOTS, nlv:
   eq('so it carries $73,000, not $36,500', aapu.deltaNotional, 73000);
   ok('and the source of the multiple is stated', /leveraged-etf/.test(aapu.deltaSource));
   eq('an ordinary equity is 1×', equityDelta('AAPL').delta, 1);
+  // ── CASH LEGS CARRY NO MARKET DELTA ──
+  // USFR at 1.0 delta put a quarter of NLV into delta-notional as if a T-bill wrapper moved with the market.
+  eq('a cash-like ETF is 0×, and says why', equityDelta('USFR'), { delta: 0, source: 'cash-like ETF' });
+  ok('the table names the usual T-bill wrappers', ['USFR', 'SGOV', 'BIL', 'SHV'].every(isCashLike) && CASH_LIKE_ETF.length >= 8);
+  eq('a stated delta still wins over the cash table', equityDelta('USFR', 0.1).source, 'row');
+  {
+    const rows = [{ symbol: 'USFR', qty: 1058, livePrice: 50.46 }, { symbol: 'QQQ', qty: 100, livePrice: 712 }];
+    const book = bookExposure({ rows, nlv: 212000, underlyings: { USFR: 50.46, QQQ: 712 } });
+    eq('the cash leg is held out of delta-notional', book.deltaNotional, 71200);
+    eq('and named with its value and share of NLV', [book.cashLegs.symbols, book.cashLegs.value, book.cashLegs.pctNlv], [['USFR'], 53386.68, 25.2]);
+    eq('so the ratio is the book that moves', book.ratio, 0.34);
+  }
   eq('an inverse fund keeps its sign', equityDelta('SQQQ').delta, -3);
   // A ROW MAY STATE ITS OWN. The table only fills a gap — the same reasoning as lib/futures.js,
   // where a wrong default is worse than a missing one.

@@ -419,7 +419,7 @@ const {
   const cls = [justMoved === r.id ? "dvcap-row-in dvcap-flash" : "dvcap-row-in", "dvcap-drag-target",
                dragging ? "dvcap-dragging" : ""].filter(Boolean).join(" ");
   return (
-    <div className={cls}
+    <div className={cls} data-row={r.id}
       onDragOver={reorderable && ctx.dragId ? (e => { e.preventDefault(); if (ctx.overId !== r.id) ctx.setOverId(r.id); }) : undefined}
       onDrop={reorderable && ctx.dragId ? (e => { e.preventDefault(); ctx.dropRow(ctx.dragId, r.id); ctx.endDrag(); }) : undefined}
       style={{ border: "1.5px solid " + (anyHit ? C.amber : C.bdr), borderLeft: "4px solid " + (anyHit ? C.amber : mode === "open" ? C.blue : C.bdr), borderRadius: 10, overflow: "hidden",
@@ -1596,6 +1596,11 @@ function ExposureTile({ book, err }) {
           sub={book.oneSd == null ? `target ${Math.round(L.volTargetLo * 100)}–${Math.round(L.volTargetHi * 100)}%` : `1sd ±${money(book.oneSd)}`} />
         <XpoStat label="Vega" value={money(book.vega)} sub="per vol point" />
       </div>
+      {book.cashLegs?.value > 0 && (
+        <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6 }}>
+          Cash legs {money(book.cashLegs.value)}{book.cashLegs.pctNlv != null ? ` (${book.cashLegs.pctNlv}% of NLV)` : ""} — {book.cashLegs.symbols.join(", ")} — held out of delta-notional: a T-bill wrapper does not move with the market. Counted in NLV, not in what the book is carrying.
+        </div>
+      )}
 
       <div style={XPO_ROW}>
         <span style={{ fontSize: 11, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>State</span>
@@ -2829,7 +2834,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
                     const row = rows.find(x => x.id === n.id);
                     if (!row) return null;
                     return (
-                      <button onClick={() => setFillFor({
+                      <button onClick={() => { setExpanded(row.id); setTimeout(() => { try { document.querySelector(`[data-row="${row.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }); } catch { /* no DOM */ } }, 60); setFillFor({
                         rowId: row.id,
                         side: n.fix.side === "add" ? openSideFor(row.side) : closeSideFor(row.side),
                         intent: n.fix.side === "add" ? "buy" : "sell",
@@ -2837,7 +2842,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
                         qty: n.fix.fills?.[0] ? n.fix.fills[0].qty : n.fix.qty, price: n.fix.fills?.[0] ? n.fix.fills[0].price : (n.fix.price ?? ""),
                         date: n.fix.fills?.[0]?.date || n.fix.date || flexNote.asOf || new Date().toISOString().slice(0, 10),
                         note: n.fix.fills?.[0]?.tradeId ? `IBKR trade ${n.fix.fills[0].tradeId}, commission included` : `reconciling fill — IBKR statement ${flexNote.asOf || ""}`.trim(),
-                      })}
+                      }); }}
                         style={{ cursor: "pointer", background: C.surf, color: C.blue, border: "1.5px solid " + C.blue, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800 }}>
                         Record it
                       </button>
