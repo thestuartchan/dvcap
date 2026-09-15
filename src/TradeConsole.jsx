@@ -427,7 +427,7 @@ const {
       {/* The row is TWO blocks, not one wrapping run: an info block that flexes and wraps inside
           itself, and an action block that never leaves the top line. Letting the whole row wrap put
           0981.HK's buttons on a second line purely because its label was two words long. */}
-      <div onClick={() => setExpanded(open ? null : r.id)} style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", cursor: "pointer", background: open ? C.bg : C.surf }}>
+      <div className="dvcap-row-head" onClick={() => setExpanded(open ? null : r.id)} style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", cursor: "pointer", background: open ? C.bg : C.surf }}>
         <span style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap", flex: "1 1 auto", minWidth: 0 }}>
         {/* ── THREE GROUPS, IN ONE ORDER, ALWAYS ──
             WHO it is · WHAT it costs on the tape · WHAT it is doing for you. Everything about the
@@ -2790,6 +2790,16 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
               🧾 IBKR statement{flexNote.asOf ? ` · ${flexNote.asOf}` : ""}
             </b>
             <span style={{ fontSize: 12.5, color: C.mid }}>{flexNote.summary}</span>
+            {/* ── THE WATERMARK, ON THE BANNER ──
+                It lived in the Sizing card behind a Show button, which is where nobody looks when
+                the statement banner is telling them to set it. The same setting, here. */}
+            <label style={{ fontSize: 11, color: C.lbl, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}
+                   title="Fills in the IBKR statement dated on or after this day are taken from the statement; earlier ones are yours as entered. Save to cloud, then Re-check.">
+              IBKR is the record from
+              <input type="date" value={settings.flexTradesFrom || ""} onChange={e => { setSettings(x => ({ ...x, flexTradesFrom: e.target.value || null })); touch(); }}
+                style={{ padding: "3px 6px", border: "1.5px solid " + (settings.flexTradesFrom ? C.blue : C.aBdr), borderRadius: 6, fontSize: 11.5, background: C.surf, color: C.text }} />
+              {!settings.flexTradesFrom && <span style={{ color: C.amber }}>unset</span>}
+            </label>
             {/* ── RE-CHECK NOW ──
                 The note is written by the scheduled run (weekdays 12:00Z). A change made here —
                 a fill recorded, a cost basis accepted — is not reflected until the next run unless

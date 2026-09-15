@@ -56,6 +56,16 @@ button, input, textarea, select { font-family: inherit; }
   .mwd-grid-2 { grid-template-columns: 1fr; }
 }
 
+/* Console position rows on a phone: the header is two blocks — the info block that wraps inside
+   itself and the action block that never leaves the top line. On a narrow screen "never leaves
+   the top line" put the buttons on top of the row's own text (USFR, 2026-09-15). Below 640px the
+   header wraps and the actions take a line of their own beneath the info. !important because the
+   layout is inline on the element. */
+@media (max-width: 640px) {
+  .dvcap-row-head { flex-wrap: wrap !important; }
+  .dvcap-row-head .dvcap-row-actions { flex-basis: 100% !important; margin-left: 0 !important; justify-content: flex-start; padding-top: 4px; }
+}
+
 /* Regime probability cards: 4-col → 2-col → 1-col */
 .mwd-regime-grid {
   display: grid;
