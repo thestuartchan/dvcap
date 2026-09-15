@@ -1252,6 +1252,83 @@
         "quadrant": null,
         "quadrantRead": "between quadrants — the growth axis is flat"
       }
+    },
+    {
+      "date": "2026-09-15",
+      "stagflation_p": 65,
+      "reflationary_p": 17,
+      "deflationary_p": 13,
+      "inflationary_p": 5,
+      "hawkish_repricing": null,
+      "live_regime": "stag",
+      "view_regime": null,
+      "pinned": null,
+      "hyg_chg": null,
+      "hyg_qqq_divergence": null,
+      "inputs": {
+        "weightedRecessionProb": 14.4,
+        "cpi": 3.35302,
+        "kalshi2027": 23,
+        "tape": null,
+        "ladderSpread": null,
+        "u3": 4.1,
+        "empPop": 59.1,
+        "oas": 2.65,
+        "tenY": 4.96,
+        "twoY": 4.63,
+        "consensusAlive": 0.772,
+        "regimeVintage": "decayed"
+      },
+      "axes": {
+        "growth": {
+          "state": "split",
+          "lean": 0,
+          "market": {
+            "verdict": "CONTRACTING",
+            "lean": -1,
+            "usable": 5,
+            "of": 5
+          },
+          "weekly": {
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 4,
+            "of": 4
+          },
+          "monthly": {
+            "verdict": "MIXED",
+            "lean": 0,
+            "usable": 3,
+            "of": 4
+          }
+        },
+        "inflation": {
+          "state": "turning-hot",
+          "lean": 0,
+          "market": {
+            "verdict": "HOT",
+            "lean": 1,
+            "usable": 3,
+            "of": 3
+          },
+          "nowcast": {
+            "verdict": "BETWEEN",
+            "lean": 0,
+            "usable": 2,
+            "of": 2
+          },
+          "printed": {
+            "verdict": "COOLING",
+            "lean": -1,
+            "usable": 3,
+            "of": 3
+          }
+        },
+        "quadrant": null,
+        "quadrantRead": "between quadrants — the growth axis is flat"
+      },
+      "source": "cron",
+      "loggedAt": "2026-09-15T00:58:46.835Z"
     }
   ]
 }
