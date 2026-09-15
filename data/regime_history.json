@@ -1268,7 +1268,7 @@
       "inputs": {
         "weightedRecessionProb": 14.4,
         "cpi": 3.35302,
-        "kalshi2027": 25,
+        "kalshi2027": 22,
         "tape": {
           "gold": "down",
           "tlt": "up",
@@ -1283,7 +1283,7 @@
         "ladderSpread": -3.99,
         "u3": 4.1,
         "empPop": 59.1,
-        "oas": 2.65,
+        "oas": 2.71,
         "tenY": 4.96,
         "twoY": 4.63,
         "consensusAlive": 0.772,
@@ -1338,7 +1338,7 @@
         "quadrantRead": "between quadrants — the growth axis is flat"
       },
       "source": "client+cron",
-      "loggedAt": "2026-09-15T13:51:40.297Z"
+      "loggedAt": "2026-09-15T17:18:43.396Z"
     }
   ]
 }
