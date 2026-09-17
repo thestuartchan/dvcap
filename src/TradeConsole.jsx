@@ -32,7 +32,7 @@ import { stopWidth, ATR_STATUS } from "../lib/atr.js";
 import { preTradeGuards, guardStates } from "../lib/guards.js";
 import { riskCoverage, rowExposure, stopOf } from "../lib/exposure.js";
 import { bookExposure, parseOptionSymbol, contractKey } from "../lib/bookExposure.js";
-import { sizeTrade, sizerRun, reconcileRuns, SIZER_LIMITS } from "../lib/sizer.js";
+import { sizeTrade, sizerRun, reconcileRuns, mismatchReview, SIZER_LIMITS } from "../lib/sizer.js";
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
 import { companyName } from "../lib/companyNames.js";
 import { moveOnto } from "../lib/reorder.js";
@@ -1317,6 +1317,10 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);
   const [runs, setRuns] = useState([]);
+  // THE CATALYST WINDOW — what happens between now and expiry (+14 days), from the one macro
+  // calendar, the earnings feed and the read-across map. Information only: it never changes the
+  // size, and amber is its ceiling. Null until "Size it" is pressed; the lookup rides with it.
+  const [cat, setCat] = useState(null);
   // The quantity actually intended. Free-form and never required — the panel computes and renders
   // everything with it blank, and it changes what is REPORTED rather than what is allowed.
   const [qty, setQty] = useState("");
@@ -1342,7 +1346,16 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
 
   const look = async () => {
     if (!ready) return;
-    setBusy(true); setNote(null);
+    setBusy(true); setNote(null); setCat(null);
+    // The window is fetched alongside the price, not after it — a slow earnings feed must not hold
+    // up the size, and a failed one reads "unavailable — check manually" rather than blanking.
+    const catQ = kind === "option"
+      ? `catalyst=${encodeURIComponent(root)}&expiry=${encodeURIComponent(expiry)}&kind=option`
+      : `catalyst=${encodeURIComponent(root)}&kind=stock`;
+    fetch(`/api/flex-sync?${catQ}`, { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => setCat(j?.ok ? j : { ok: false, reason: j?.reason || "the catalyst lookup did not answer" }))
+      .catch(e => setCat({ ok: false, reason: String(e?.message || e) }));
     try {
       const a = await fetch(`/api/atr?tickers=${encodeURIComponent(root)}`, { credentials: "include" }).then(r => r.json());
       const hit = a?.[root];
@@ -1370,12 +1383,17 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
     delta: greek?.delta ?? null, mark: greek?.mark ?? null,
     expiry: kind === "option" ? expiry : null,
     nlv, bookDeltaNotional: book?.deltaNotional ?? 0,
-    catalysts: calendar, indicative: !!greek?.indicative, asOf: greek?.asOf ?? null,
+    // The lookup's macro list feeds the expiry check; a calendar handed in by the parent is the
+    // fallback, and neither being present reads as "not checked", never as "none".
+    catalysts: cat?.ok && Array.isArray(cat.macro) ? cat.macro : calendar, indicative: !!greek?.indicative, asOf: greek?.asOf ?? null,
     entered: Number(qty) > 0 ? Number(qty) : null,
-  }), [ready, kind, right, root, expiry, strike, px, greek, nlv, book, calendar, qty]);
+  }), [ready, kind, right, root, expiry, strike, px, greek, nlv, book, calendar, qty, cat]);
+
+  // "4 of 11 option entries were MISMATCH" — the monthly line the window exists for.
+  const review = useMemo(() => mismatchReview(runs), [runs]);
 
   const record = async () => {
-    const run = sizerRun(result);
+    const run = sizerRun(result, { window: cat?.ok ? cat.log : null });
     if (!run) return;
     const next = [...runs, run];
     setRuns(next);
@@ -1442,6 +1460,13 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
       )}
       {note && <div style={{ fontSize: 11.5, color: C.amber, marginTop: 4 }}>⚠ {note}</div>}
 
+      {review.n > 0 && (
+        <div style={{ marginTop: 7, paddingTop: 7, borderTop: "1px solid " + C.bdr, fontSize: 11.5, color: review.mismatch > 0 ? C.amber : C.muted, lineHeight: 1.55 }}>
+          <b style={{ fontSize: 10.5, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Catalyst review </b>
+          {review.note}
+          <div style={{ fontSize: 11, color: C.lbl }}>{review.outcome}</div>
+        </div>
+      )}
       {recon.n > 0 && (
         <div style={{ marginTop: 7, paddingTop: 7, borderTop: "1px solid " + C.bdr, fontSize: 11.5,
                       color: recon.exceeded > 0 ? C.amber : C.muted, lineHeight: 1.55 }}>
@@ -1524,14 +1549,18 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
               {result.deltaAdded != null && <div style={{ color: C.lbl }}>Adds {money(result.book.follows === "entered" ? result.enteredDelta : result.deltaAdded)} delta-notional</div>}
             </div>
           )}
-          {/* OPTIONAL, AND ALWAYS RENDERED. The prior design made "what happens before this
-              expires?" a required input; it is a flag joined against the P7 event calendar, and a
-              blank one reports as what it is. */}
-          {result.kind === "option" && result.catalysts && (
+          {/* THE CATALYST WINDOW. What is scheduled inside the life of the contract, the name's
+              own earnings against the expiry, and the read-across names — with the vendor's
+              confirmed/estimated flag on every date and the fetch time when it is a day old. A
+              classification (EVENT / TIGHT / MISMATCH / MACRO ONLY) with amber as its ceiling: it
+              reports, and the size is whatever it was. Before the lookup answers, or with no
+              lookup, the older one-line expiry check stands in. */}
+          {cat ? <CatalystBlock cat={cat} kind={result.kind} expiry={expiry} />
+            : result.kind === "option" && result.catalysts && (
             <div style={{ fontSize: 11.5, color: C.mid, marginTop: 5 }}>
               <span style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Catalyst before {expiry} </span>
               {!result.catalysts.checked
-                ? <span style={{ color: C.lbl }}>not checked — no calendar loaded</span>
+                ? <span style={{ color: C.lbl }}>{busy ? "looking up the window…" : "not checked — no calendar loaded"}</span>
                 : result.catalysts.none
                   ? <b style={{ color: C.amber }}>none scheduled</b>
                   : <b style={{ color: C.green }}>{result.catalysts.first || `${result.catalysts.n} scheduled`}</b>}
@@ -1544,6 +1573,61 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
         </div>
       )}
     </Card>
+  );
+}
+// The catalyst window's display. `cat` is api/flex-sync ?catalyst=… — lib/catalystFeed.js's answer.
+const CAT_COLOUR = { EVENT: C.green, TIGHT: C.amber, MISMATCH: C.amber, "MACRO ONLY": C.lbl, UNKNOWN: C.lbl };
+const hoursOld = (iso) => { const t = Date.parse(iso || ""); return Number.isFinite(t) ? (Date.now() - t) / 3600000 : null; };
+function CatalystBlock({ cat, kind, expiry }) {
+  if (!cat?.ok) {
+    return (
+      <div style={{ fontSize: 11.5, color: C.mid, marginTop: 5 }}>
+        <span style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Catalyst window </span>
+        <span style={{ color: C.amber }}>earnings date unavailable — check manually</span>
+        {cat?.reason && <span style={{ color: C.lbl }}> · {cat.reason}</span>}
+      </div>
+    );
+  }
+  const age = hoursOld(cat.feed?.fetchedAt);
+  const fetched = age != null && age > 24 ? ` · fetched ${new Date(cat.feed.fetchedAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : "";
+  const stale = cat.own?.stale ? " · feed error, last answer shown" : "";
+  if (kind !== "option" || !cat.window) {
+    // A stock: the next date only, no classification.
+    return (
+      <div style={{ fontSize: 11.5, color: C.mid, marginTop: 5, lineHeight: 1.55 }}>
+        <span style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Next earnings </span>
+        <b style={{ color: cat.own?.ok ? C.text : C.lbl }}>{cat.summary}</b>
+        <span style={{ color: C.lbl }}>{fetched}{stale}</span>
+        {cat.lines.map((l, i) => <div key={i} style={{ color: C.muted }}>{l.text}</div>)}
+      </div>
+    );
+  }
+  const inside = cat.lines.filter(l => l.where === "inside");
+  const after = cat.lines.filter(l => l.where === "after");
+  const line = (l, i) => (
+    <div key={i} style={{ display: "flex", gap: 8, color: l.kind === "earnings" ? C.text : l.kind === "read-across" ? C.mid : C.muted, fontWeight: l.kind === "earnings" ? 700 : 500 }}>
+      <span style={{ minWidth: 46, fontVariantNumeric: "tabular-nums" }}>{new Date(l.date + "T00:00:00Z").toLocaleString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}</span>
+      <span>{l.title}{l.kind === "read-across" ? " (read-across)" : ""}
+        {l.kind !== "macro" && l.status ? <span style={{ color: C.lbl, fontWeight: 500 }}> · {l.status}</span> : null}
+        {l.kind === "earnings" && l.where === "after" && cat.gapDays != null ? <span style={{ color: C.amber, fontWeight: 700 }}> +{cat.gapDays} days</span> : null}
+      </span>
+    </div>
+  );
+  return (
+    <div style={{ fontSize: 11.5, color: C.mid, marginTop: 5, lineHeight: 1.55 }}>
+      <div>
+        <span style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Catalyst window · to {expiry} +14d </span>
+        <b style={{ color: CAT_COLOUR[cat.class] || C.lbl }}>{cat.class}</b>
+        <span style={{ color: C.lbl }}> — {cat.why}{fetched}{stale}</span>
+      </div>
+      <div style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 3 }}>Inside</div>
+      {inside.length ? inside.map(line) : <div style={{ color: C.lbl }}>nothing scheduled</div>}
+      {after.length > 0 && <>
+        <div style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 3 }}>After expiry</div>
+        {after.map(line)}
+      </>}
+      {cat.feed?.source && <div style={{ fontSize: 10.5, color: C.lbl }}>earnings dates: {cat.feed.source}{cat.readAcrossKeys?.length ? ` · read-across from ${cat.readAcrossKeys.join(", ")}` : ""}</div>}
+    </div>
   );
 }
 const SzFld = ({ label, children }) => (

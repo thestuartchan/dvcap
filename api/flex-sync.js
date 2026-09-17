@@ -35,6 +35,7 @@ import { authorised as gate, refusalReason } from '../lib/apiauth.js';
 import { fetchCboeGreeks } from '../lib/cboe.js';
 import { parseOptionSymbol, contractKey, TREND_WINDOW } from '../lib/bookExposure.js';
 import { appendRun, SIZER_RUNS_KEY, MAX_RUNS } from '../lib/sizer.js';
+import { catalystLookup } from '../lib/catalystFeed.js';
 
 // The same optional secret the card endpoint uses, so the scheduler carries one key rather than
 // two. Unset leaves both open, which is the state the project starts in.
@@ -360,6 +361,24 @@ export default async function handler(req, res) {
       res.status(200).json(await sizerRuns(run || null));
     } catch (e) {
       console.error('sizer-runs', e);
+      res.status(200).json({ ok: false, reason: String(e?.message || e) });
+    }
+    return;
+  }
+  // ?catalyst=INTC&expiry=2026-10-02&kind=option — the position sizer's catalyst window: the macro
+  // calendar inside the contract's life, the name's own earnings date (confirmed/estimated, cached
+  // a day), and the read-across names. Information only; lib/catalyst.js. Here because the
+  // function count is at the cap, and gated because what is being sized is the book.
+  const catQ = String(req.query?.catalyst ?? '').trim().toUpperCase();
+  if (catQ) {
+    try {
+      if (!/^[A-Z0-9.^=-]{1,14}$/.test(catQ)) { res.status(200).json({ ok: false, reason: 'not a symbol' }); return; }
+      const expQ = String(req.query?.expiry ?? '').trim();
+      const kind = String(req.query?.kind ?? '') === 'stock' ? 'stock' : 'option';
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(200).json(await catalystLookup({ symbol: catQ, expiry: /^\d{4}-\d{2}-\d{2}$/.test(expQ) ? expQ : null, kind }));
+    } catch (e) {
+      console.error('catalyst', e);
       res.status(200).json({ ok: false, reason: String(e?.message || e) });
     }
     return;
