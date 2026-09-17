@@ -1429,9 +1429,9 @@
     },
     {
       "date": "2026-09-17",
-      "stagflation_p": 71,
-      "reflationary_p": 16,
-      "deflationary_p": 8,
+      "stagflation_p": 55,
+      "reflationary_p": 20,
+      "deflationary_p": 20,
       "inflationary_p": 5,
       "hawkish_repricing": "STAGFLATION",
       "live_regime": "stag",
@@ -1440,9 +1440,9 @@
       "hyg_chg": -0.19,
       "hyg_qqq_divergence": 0.46,
       "inputs": {
-        "weightedRecessionProb": 14.4,
+        "weightedRecessionProb": 15,
         "cpi": 334.131,
-        "kalshi2027": 23,
+        "kalshi2027": 25,
         "tape": {
           "gold": "up",
           "tlt": "down",
@@ -1460,11 +1460,11 @@
         "oas": 2.71,
         "tenY": 4.97,
         "twoY": 4.65,
-        "consensusAlive": 0.764,
+        "consensusAlive": 0.733,
         "regimeVintage": "decayed"
       },
       "source": "client",
-      "loggedAt": "2026-09-17T01:58:21.028Z"
+      "loggedAt": "2026-09-17T12:08:30.958Z"
     }
   ]
 }
