@@ -350,5 +350,20 @@ const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600000).toISOString();
   ok('every channel is a number', rgbOf('#6B21A8').split(',').every(v => Number.isFinite(+v)));
 }
 
+// ── A SINGLE NAME IS NOT AN INDEX ETF ────────────────────────────────────────
+// The custom read on the panel: the same sentences, plus one that says the thresholds were
+// calibrated on QQQ and SPY and a thinner, round-strike chain earns a wider flip zone.
+{
+  const row = { asOf: hoursAgo(1), spot: 110.5, gexUsd: 1.7e8, flipLevel: null, flipZoneLo: null, flipZoneHi: null, callWall: 110, putWall: 110 };
+  const single = gexRead({ row, byStrike: [], grid: null, now: NOW, live: true, kind: 'single-name' });
+  ok('a single name carries the caveat', single.lines.some(l => /Single-name chain/.test(l) && /walls carry more than the flip/.test(l)));
+  const wrapper = gexRead({ row, byStrike: [], grid: null, now: NOW, live: true, kind: 'single-name-etf' });
+  ok('and so does a single-name wrapper', wrapper.lines.some(l => /Single-name chain/.test(l)));
+  const etf = gexRead({ row, byStrike: [], grid: null, now: NOW, live: true, kind: 'etf' });
+  ok('an ETF does not', !etf.lines.some(l => /Single-name chain/.test(l)));
+  const book = gexRead({ row, byStrike: [], grid: null, now: NOW, live: true });
+  ok('nor the book pair, where kind is not passed', !book.lines.some(l => /Single-name chain/.test(l)));
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

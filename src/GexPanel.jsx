@@ -210,6 +210,14 @@ export function GexPanel() {
   const [symbol, setSymbol] = useState("QQQ");
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
+  // ── A CUSTOM NAME, ON DEMAND ───────────────────────────────────────────────
+  // The book pair (QQQ, SPY) is captured daily, pre-read, and sampled for OCC's roll. A name typed
+  // here is none of that: one settled-rung read (OCC open interest on CBOE's vol surface at the
+  // live spot) to plan a trade, nothing stored beyond a chain cache that expires, nothing on any
+  // brief. `custom` is the active typed root or null; the tabs clear it.
+  const [custom, setCustom] = useState(null);
+  const [customInput, setCustomInput] = useState("");
+  const [customBusy, setCustomBusy] = useState(false);
   // A LIVE RECOMPUTE IS NOT A SECOND OPINION. Open interest settles overnight and does not move
   // during the session, so this re-prices the SAME positioning at the current spot and time decay
   // — which is the question you are actually asking when you look at it mid-session. It writes
@@ -222,6 +230,7 @@ export function GexPanel() {
   // and every one of them was invisible.
   const [liveErr, setLiveErr] = useState(null);
   const refreshLive = async () => {
+    if (custom) { await lookUpCustom(custom); return; }
     setLiveBusy(true);
     setLiveErr(null);
     try {
@@ -293,15 +302,56 @@ export function GexPanel() {
   };
   useEffect(() => { setLive(null); setLiveErr(null); }, [symbol]);
 
+  const fetchStored = (sym) => fetch(`/api/gex?symbol=${encodeURIComponent(sym)}`, { credentials: "include" })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)));
   useEffect(() => {
     let cancelled = false;
     setData(null); setErr(null);
-    fetch(`/api/gex?symbol=${encodeURIComponent(symbol)}`, { credentials: "include" })
-      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+    fetchStored(symbol)
       .then(j => { if (!cancelled) setData(j); })
       .catch(e => { if (!cancelled) setErr(String(e.message || e)); });
     return () => { cancelled = true; };
   }, [symbol]);
+
+  // Back to the book pair. Clicking the tab already selected would not refire the effect above,
+  // and the custom read has overwritten what it loaded — so that case reloads by hand.
+  const pickBook = (s) => {
+    const wasCustom = custom != null;
+    setCustom(null);
+    if (s !== symbol) { setSymbol(s); return; }
+    if (!wasCustom) return;
+    setData(null); setErr(null); setLive(null); setLiveErr(null);
+    fetchStored(s).then(setData).catch(e => setErr(String(e.message || e)));
+  };
+
+  // The custom read. One call; the server resolves the spot the same pre/post-aware way the
+  // settled rung does for the pair, and refuses cleanly when OCC lists no such root.
+  const lookUpCustom = async (raw) => {
+    const sym = String(raw || "").trim().toUpperCase();
+    if (!sym) return;
+    setCustomBusy(true);
+    setCustom(sym); setLive(null); setLiveErr(null); setErr(null);
+    setData({ available: false, custom: true, symbol: sym, loading: true, series: [], days: 0 });
+    try {
+      const r = await fetch(`/api/gex?custom=${encodeURIComponent(sym)}`, { credentials: "include" });
+      const j = await r.json();
+      if (!j?.ok) {
+        setData({ available: false, custom: true, symbol: sym, kind: j?.kind ?? null, series: [], days: 0,
+                  reason: j?.reason || j?.why || j?.error || `no result came back for ${sym}` });
+      } else {
+        setData({ available: true, custom: true, symbol: sym, kind: j.kind ?? null, symbols: ["QQQ", "SPY"],
+                  latest: j.row, byStrike: j.byStrike || null, grid: j.grid || null, decay: j.decay || null,
+                  series: [], days: 0 });
+        setLive({ row: { ...j.row, asOf: j.at || new Date().toISOString() },
+                  byStrike: j.byStrike || null, grid: j.grid || null, decay: j.decay || null,
+                  mode: "settled", note: null, crossCheck: j.crossCheck ?? null,
+                  oi: j.oi ?? null, ivSrc: j.iv ?? null, spotSource: j.spotSource ?? null, contracts: j.contracts ?? null });
+      }
+    } catch (e) {
+      setData({ available: false, custom: true, symbol: sym, series: [], days: 0, reason: `the lookup could not be reached — ${String(e?.message || e)}` });
+    }
+    setCustomBusy(false);
+  };
 
   const latest = live?.row || data?.latest || null;
   const strikeSource = live?.byStrike || data?.byStrike || null;
@@ -309,8 +359,8 @@ export function GexPanel() {
   const decay = live?.decay || data?.decay || null;
   const fresh = ageOf(latest?.asOf || (latest?.date ? `${latest.date}T13:00:00Z` : null));
   const read = useMemo(
-    () => gexRead({ row: latest, byStrike: strikeSource || [], grid, live: !!live }),
-    [latest, strikeSource, grid, live]);
+    () => gexRead({ row: latest, byStrike: strikeSource || [], grid, live: !!live, kind: data?.custom ? data.kind : null }),
+    [latest, strikeSource, grid, live, data]);
 
   const strikeRows = useMemo(() => (strikeSource || []).map(r => ({
     strike: r.strike, net: r.netGexUsd, call: r.callGexUsd, put: r.putGexUsd == null ? null : -r.putGexUsd,
@@ -328,13 +378,34 @@ export function GexPanel() {
   const header = (
     <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
       <SLabel>🌀 Gamma exposure</SLabel>
-      <div style={{ display: "flex", gap: 5 }}>
-        {(data?.symbols || ["QQQ", "SPY"]).map(s => (
-          <button key={s} onClick={() => setSymbol(s)}
-            style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, padding: "3px 10px", borderRadius: 7,
-                     border: "1.5px solid " + (s === symbol ? C.blue : C.bdr),
-                     background: s === symbol ? C.blBg : C.surf, color: s === symbol ? C.blue : C.mid }}>{s}</button>
-        ))}
+      <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
+        {(data?.symbols || ["QQQ", "SPY"]).map(s => {
+          const on = !custom && s === symbol;
+          return (
+            <button key={s} onClick={() => pickBook(s)}
+              style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, padding: "3px 10px", borderRadius: 7,
+                       border: "1.5px solid " + (on ? C.blue : C.bdr),
+                       background: on ? C.blBg : C.surf, color: on ? C.blue : C.mid }}>{s}</button>
+          );
+        })}
+        {/* ANY OPTIONS ROOT, TO PLAN A TRADE. Enter runs it; the result is badged custom and is
+            not captured, not on the pre-read, and not sampled — the tabs are the book. */}
+        <input value={customInput} onChange={e => setCustomInput(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && !customBusy) lookUpCustom(customInput); }}
+          placeholder="INTC" aria-label="Custom ticker" title="Any US options root — one settled-book read, nothing stored"
+          style={{ width: 64, background: "transparent", border: "1.5px solid " + (custom ? C.blue : C.bdr), borderRadius: 7,
+                   padding: "3px 8px", fontSize: 12, fontWeight: 800, color: custom ? C.blue : C.text, textTransform: "uppercase" }} />
+        <button onClick={() => lookUpCustom(customInput)} disabled={customBusy || !customInput.trim()}
+          style={{ cursor: customBusy ? "wait" : "pointer", fontSize: 12, fontWeight: 800, padding: "3px 10px", borderRadius: 7,
+                   border: "1.5px solid " + C.bdr, background: C.surf, color: C.mid, opacity: customBusy || !customInput.trim() ? 0.6 : 1 }}>
+          {customBusy ? "…" : "Look up"}
+        </button>
+        {custom && (
+          <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: C.blue,
+                         background: C.blBg, border: "1px solid " + C.blue, borderRadius: 5, padding: "1px 7px" }}>
+            custom · {data?.kind === "single-name" || data?.kind === "single-name-etf" ? "single name" : data?.kind === "etf" ? "ETF" : custom}
+          </span>
+        )}
       </div>
       {latest && (
         <span style={{ fontSize: 11.5, fontWeight: 800,
@@ -385,6 +456,24 @@ export function GexPanel() {
 
   if (err) return <Card>{header}<div style={{ fontSize: 12.5, color: C.red, marginTop: 8 }}>Could not load: {err}</div></Card>;
   if (!data) return <Card>{header}<div style={{ fontSize: 12.5, color: C.muted, marginTop: 8 }}>Loading…</div></Card>;
+  if (data.custom && !data.available) {
+    // A REFUSAL IS AN ANSWER — the same rule as the live recompute. OCC listing no such root, a
+    // chain that failed the join, or a vol surface the guards would not price all say why.
+    return (
+      <Card>{header}
+        <div style={{ fontSize: 12.5, color: data.loading ? C.muted : C.amber, marginTop: 8, lineHeight: 1.6 }}>
+          {data.loading ? `Reading ${data.symbol}'s settled book — OCC open interest and CBOE's vol surface, a few seconds…`
+            : <><b>No map for {data.symbol}</b> — {data.reason}</>}
+        </div>
+        {!data.loading && (
+          <div style={{ fontSize: 11, color: C.lbl, marginTop: 5, lineHeight: 1.5 }}>
+            The root is the underlying's ticker as OCC lists it (letters only), not the contract. Index options
+            and non-US listings are not on this feed.
+          </div>
+        )}
+      </Card>
+    );
+  }
   if (!data.available) {
     return (
       <Card>{header}{liveErrCard}{repricedCard}
@@ -671,7 +760,19 @@ export function GexPanel() {
         )}
       </Card>
 
-      {/* 3 — the history, which is the reason any of this is stored */}
+      {/* 3 — the history, which is the reason any of this is stored. A custom name has none and
+          is not going to: it is read on demand and not captured, and saying so beats an empty
+          chart that reads as "not yet". */}
+      {data.custom ? (
+        <Card>
+          <SLabel>Net GEX and flip over time</SLabel>
+          <div style={{ fontSize: 12, color: C.mid, marginTop: 8, lineHeight: 1.55 }}>
+            No history for a custom name. {data.symbol} is read on demand from the settled book to plan a trade;
+            it is not captured daily, does not appear on the pre-read, and is not sampled for OCC's roll. The tabs
+            are the book pair and carry the series.
+          </div>
+        </Card>
+      ) : (
       <Card>
         <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
           <SLabel>Net GEX and flip over time</SLabel>
@@ -726,6 +827,7 @@ export function GexPanel() {
           convention-dependent and should not be compared across providers.
         </div>
       </Card>
+      )}
     </div>
   );
 }
