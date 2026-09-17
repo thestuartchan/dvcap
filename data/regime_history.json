@@ -1442,7 +1442,7 @@
       "inputs": {
         "weightedRecessionProb": 14.4,
         "cpi": 3.35302,
-        "kalshi2027": 26,
+        "kalshi2027": 27,
         "tape": {
           "gold": "up",
           "tlt": "down",
@@ -1457,14 +1457,14 @@
         "ladderSpread": 0.3,
         "u3": 4.1,
         "empPop": 59.1,
-        "oas": 2.76,
+        "oas": 2.7,
         "tenY": 5,
         "twoY": 4.67,
         "consensusAlive": 0.766,
         "regimeVintage": "decayed"
       },
       "source": "client+cron",
-      "loggedAt": "2026-09-17T13:46:33.153Z",
+      "loggedAt": "2026-09-17T17:17:19.191Z",
       "axes": {
         "growth": {
           "state": "split",
@@ -1478,7 +1478,7 @@
           "weekly": {
             "verdict": "EXPANDING",
             "lean": 1,
-            "usable": 3,
+            "usable": 4,
             "of": 4
           },
           "monthly": {
