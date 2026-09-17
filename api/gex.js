@@ -8,8 +8,11 @@
 //
 //   GET /api/gex?symbol=QQQ          read the stored series (default)
 //   GET /api/gex?snapshot=1[&dry=1]  capture today's chain — the cron target
+//   GET /api/gex?custom=INTC         one typed name, on demand, nothing stored (gated)
 import { kvConfigured, kvGetJson } from '../lib/kv.js';
-import { captureGex, readGex, settledGex, observeRoll, OCC_ROLL_LOG_KEY, OCC_HEALTH_KEY, GEX_SYMBOLS } from '../lib/gexStore.js';
+import { captureGex, readGex, settledGex, observeRoll, OCC_ROLL_LOG_KEY, OCC_HEALTH_KEY, GEX_SYMBOLS, CUSTOM_ROOT_RE } from '../lib/gexStore.js';
+import { instrumentKind } from '../lib/catalyst.js';
+import { authorised, refusalReason } from '../lib/apiauth.js';
 import { getQuotes } from '../lib/quotes.js';
 import { marketState } from '../lib/sessions.js';
 import { rollSummary, OCC_CONFIRM_MIN } from '../lib/occ.js';
@@ -99,6 +102,34 @@ export default async function handler(req, res) {
       summary: Object.fromEntries(syms.map(s => [s, rollSummary(log, { symbol: s, againstUtc: against })])),
       log,
     });
+  }
+
+  // GET /api/gex?custom=INTC[&spot=110.5] — ONE NAME, ON DEMAND, TO PLAN A TRADE. The settled rung
+  // (OCC open interest on CBOE's vol surface, repriced at the live spot) run over a typed root.
+  // Nothing is stored beyond a chain cache that expires: no series, no snapshot, no pre-read, no
+  // Discord, no roll or health bookkeeping — those describe the book pair. Gated, because which
+  // names are being planned is the book, and because an open relay to a 4.5MB CDN document is not
+  // something a public route should be.
+  const customQ = String(req.query?.custom || '').trim().toUpperCase();
+  if (customQ) {
+    if (!(await authorised(req))) return res.status(401).json({ ok: false, error: 'unauthorised', why: refusalReason(req) });
+    if (!CUSTOM_ROOT_RE.test(customQ)) return res.status(200).json({ ok: false, symbol: customQ, reason: 'not an options root — letters only, up to six (the underlying, not the contract)' });
+    const spotIn = Number(req.query?.spot);
+    let spot = Number.isFinite(spotIn) && spotIn > 0 ? spotIn : null;
+    if (spot == null) {
+      try {
+        const [q] = await getQuotes([customQ], { prepost: true });
+        const shut = marketState(customQ) !== 'open';
+        const px = (shut && q?.ext && !q.ext.stale && q.ext.price > 0) ? q.ext.price : q?.price;
+        spot = Number.isFinite(+px) && +px > 0 ? +px : null;
+      } catch { spot = null; }
+    }
+    try {
+      const out = await settledGex(customQ, { spot, record: false });
+      return res.status(200).json({ mode: 'custom', symbol: customQ, kind: instrumentKind(customQ), at: new Date().toISOString(), ...out });
+    } catch (e) {
+      return res.status(200).json({ ok: false, symbol: customQ, reason: String(e?.message || e) });
+    }
   }
 
   if (String(req.query?.settled || '') === '1') {

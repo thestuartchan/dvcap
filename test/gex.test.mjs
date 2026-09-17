@@ -6,6 +6,7 @@ import {
   contractGamma, gammaGrid, GEX_CONVENTIONS, CONTRACT_MULTIPLIER, heatCells, heatAlpha, HEAT_ROWS, HEAT_PCTL, HEAT_ALPHA_FLOOR } from '../lib/gex.js';
 import { gamma } from '../lib/blackscholes.js';
 import { wallAgreement } from '../lib/gexRead.js';
+import { CUSTOM_ROOT_RE } from '../lib/gexStore.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const ok = (n, c) => eq(n, !!c, true);
@@ -310,6 +311,13 @@ const PE = (k, oi, e, T, iv = 0.22) => ({ type: 'put', strike: k, oi, iv, T, exp
   ok('and is visibly weaker than a mid one', heatAlpha(1, 1e9) < heatAlpha(5e8, 1e9));
   ok('shading rises with size', heatAlpha(10, 100) < heatAlpha(50, 100) && heatAlpha(50, 100) < heatAlpha(90, 100));
   ok('and never exceeds one', heatAlpha(1e12, 100) <= 1);
+}
+
+// ── WHAT A TYPED ROOT MAY LOOK LIKE ──────────────────────────────────────────
+// The custom mode refuses before fetching: OCC wants the underlying's root, letters only.
+{
+  for (const good of ['INTC', 'NVDA', 'IWM', 'XLE', 'A', 'GOOGL']) ok(`${good} is a root`, CUSTOM_ROOT_RE.test(good));
+  for (const bad of ['', 'intc', 'BRK.B', 'INTC 2026-10-02 C115', '7709.HK', '^VIX', 'CL=F', 'ABCDEFG', 'QQQ,SPY']) ok(`${JSON.stringify(bad)} is not`, !CUSTOM_ROOT_RE.test(bad));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
