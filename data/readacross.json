@@ -1,0 +1,5 @@
+{
+  "_README": "Read-across for the sizer's catalyst window. KEY = the name whose earnings matter; VALUE = the tickers that should see it as a read-across. User-maintained, never inferred: a sector guess produces noise. A key is looked up on the earnings feed; a value is only matched against the symbol being sized.",
+  "MU":   ["000660.KS", "005930.KS", "7709.HK", "7709"],
+  "NVDA": ["AVGO", "ARM", "000660.KS", "AAPU", "TQQQ"]
+}
