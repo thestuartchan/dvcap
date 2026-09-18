@@ -75,7 +75,12 @@ export const TERMINAL = new Set(['success', 'failure', 'error']);
 // behind a CDN, so a matching sha proves the edge is current and a stale one proves nothing on its
 // own — `age` and the cache verdict travel with it so the difference is visible rather than
 // guessed at.
-export function verdict({ status, live, wantSha }) {
+// How long a commit can sit with NO deployment registered before that is the finding. Vercel
+// answers a push within a minute or two; a preview of a branch push registered eight minutes after
+// a merge that never got one is a missed webhook, not a queue.
+export const DROPPED_AFTER_MIN = 10;
+
+export function verdict({ status, live, wantSha, sinceMin = null }) {
   const short = (s) => String(s || '').slice(0, 7);
   const want = short(wantSha);
   const lines = [];
@@ -98,6 +103,19 @@ export function verdict({ status, live, wantSha }) {
     return { code: 0, lines };
   }
   if (status.state === 'none') {
+    // ── DROPPED IS NOT QUEUED ──
+    // 2026-09-18 20:22Z: a squash-merge landed on main; Vercel had built the data commit twenty
+    // minutes earlier and registered a PREVIEW of the branch eight minutes later, and never
+    // registered a production deployment for the merge at all. A checker waiting on it would wait
+    // to its timeout. Once the commit is older than DROPPED_AFTER_MIN with nothing registered and
+    // the site serving an older build, the push event was missed, and the remedy is a follow-up
+    // push to main — which is what the next merge or data commit is.
+    if (sinceMin != null && sinceMin >= DROPPED_AFTER_MIN && live?.sha && live.contains === false) {
+      lines.push(`✘ Vercel registered no deployment for ${want} in ${Math.round(sinceMin)} min — the push event was missed, not queued`);
+      lines.push(`  ${new URL(live.url).host} is serving ${short(live.sha)}${age}, which does not contain it.`);
+      lines.push('  A follow-up push to main re-triggers the build: the next merge or data commit carries this one with it.');
+      return { code: 2, lines };
+    }
     lines.push(`◌ no deployment reported for ${want} yet — queued, the webhook has not landed, or a later commit is being built instead.`);
     return { code: 2, lines };
   }
@@ -180,6 +198,18 @@ if (isMain) {
     if (!l) return null;
     return { ...l, contains: await contains(l.sha) };
   };
+  // When the commit landed, so "nothing registered" can be aged. Unknown on any error.
+  const committedAt = async () => {
+    try {
+      const url = `https://api.github.com/repos/${r.owner}/${r.repo}/commits/${sha}`;
+      let res = await fetch(url, { headers: auth });
+      if (res.status === 401 && auth !== base) { auth = base; res = await fetch(url, { headers: auth }); }
+      if (!res.ok) return null;
+      const j = await res.json();
+      const t = Date.parse(j?.commit?.committer?.date || '');
+      return Number.isFinite(t) ? t : null;
+    } catch { return null; }
+  };
 
   // A CHECK THAT CANNOT REACH ITS SOURCE EXITS 2, NOT 1 AND NEVER 0. "I could not find out" and
   // "the build failed" are different answers, and so are "I could not find out" and "it is fine".
@@ -189,18 +219,23 @@ if (isMain) {
     // POLLING IS OPT-IN. A single read is the honest default: "not yet" is a real answer and a
     // caller that wants to wait says so.
     let live = null;
+    const landed = await committedAt();
+    const sinceMin = () => landed == null ? null : (Date.now() - landed) / 60000;
     while (flag('wait') && !TERMINAL.has(status.state) && Date.now() < deadline) {
       // A later build that contains the wanted commit ends the wait — there will be no verdict
       // for the wanted sha itself.
       live = await liveWithContains();
       if (live?.contains === true) break;
+      // Nothing registered well after the push, with an older build live: waiting will not help.
+      if (status.state === 'none' && sinceMin() != null && sinceMin() >= DROPPED_AFTER_MIN && live?.contains === false) break;
       console.log(`  … ${status.state} — waiting`);
       await new Promise(r2 => setTimeout(r2, POLL_S * 1000));
       status = await getStatus();
     }
     if (!live || status.state === 'success') live = await liveWithContains();
     if (process.env.CHECK_DEPLOY_DEBUG) console.error(`  [debug] status=${status.state} live=${JSON.stringify(live)}`);
-    const v = verdict({ status, live: (status.state === 'success' || live?.contains === true) ? live : null, wantSha: sha });
+    const dropped = status.state === 'none' && live?.contains === false;
+    const v = verdict({ status, live: (status.state === 'success' || live?.contains === true || dropped) ? live : null, wantSha: sha, sinceMin: sinceMin() });
     for (const l of v.lines) console.log(l);
     process.exit(v.code);
   } catch (e) {
