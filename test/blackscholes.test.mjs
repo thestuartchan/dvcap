@@ -1,7 +1,7 @@
 // test/blackscholes.test.mjs — d1 and gamma against hand computations and a textbook figure.
 // Gamma is the whole basis of the GEX module, so it is checked against numbers derived outside
 // this codebase rather than against itself.
-import { d1, gamma, normPdf, yearsTo, YEAR_MS } from '../lib/blackscholes.js';
+import { d1, gamma, normPdf, yearsTo, YEAR_MS, normCdf, delta, price, impliedVol, modelledDelta } from '../lib/blackscholes.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const ok = (n, c) => eq(n, !!c, true);
@@ -91,6 +91,22 @@ const near = (n, g, w, tol) => { const good = g != null && Math.abs(g - w) <= to
   eq('a past expiry is null, not negative', yearsTo('2026-08-01', '2026-09-01T13:00:00Z'), null);
   eq('an unparseable date is null', yearsTo('not-a-date', '2026-09-01T13:00:00Z'), null);
   eq('the year is 365 days', YEAR_MS, 365 * 24 * 3600 * 1000);
+}
+
+// ── DELTA, IMPLIED VOL, AND THE MODELLED FALLBACK ────────────────────────────
+{
+  const T = 0.25;
+  near('N(0) is a half', normCdf(0), 0.5, 1e-7);
+  const c = delta({ S: 100, K: 100, T, r: 0.04, sigma: 0.3, right: 'C' });
+  const p = delta({ S: 100, K: 100, T, r: 0.04, sigma: 0.3, right: 'P' });
+  near('ATM call delta a little over a half', c, 0.579, 0.002);
+  near('put = call − e^(−qT)', c - p, 1, 1e-9);
+  const px = price({ S: 100, K: 100, T, r: 0.04, sigma: 0.3, right: 'C' });
+  near('the vol that reproduces the price is the vol', impliedVol({ S: 100, K: 100, T, r: 0.04, mark: px, right: 'C' }), 0.3, 1e-6);
+  eq('a mark below intrinsic has no vol', impliedVol({ S: 100, K: 80, T, mark: 5, right: 'C' }), null);
+  const m = modelledDelta({ S: 110.9, K: 115, expiry: '2026-10-02', mark: 2.4, right: 'C', now: '2026-09-17T14:00:00Z' });
+  ok('a modelled delta is labelled', m?.source === 'modelled' && m.delta > 0.2 && m.delta < 0.3);
+  eq('an expired contract has none', modelledDelta({ S: 110.9, K: 115, expiry: '2026-09-01', mark: 2.4, now: '2026-09-17T14:00:00Z' }), null);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
