@@ -32,7 +32,8 @@ import { stopWidth, ATR_STATUS } from "../lib/atr.js";
 import { preTradeGuards, guardStates } from "../lib/guards.js";
 import { riskCoverage, rowExposure, stopOf } from "../lib/exposure.js";
 import { bookExposure, parseOptionSymbol, contractKey } from "../lib/bookExposure.js";
-import { sizeTrade, sizerRun, reconcileRuns, mismatchReview, SIZER_LIMITS } from "../lib/sizer.js";
+import { sizeTrade, sizerRun, reconcileRuns, mismatchReview, capReview, SIZER_LIMITS } from "../lib/sizer.js";
+import { modelledDelta } from "../lib/blackscholes.js";
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
 import { companyName } from "../lib/companyNames.js";
 import { moveOnto } from "../lib/reorder.js";
@@ -1314,6 +1315,10 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
   const [expiry, setExpiry] = useState("");
   const [px, setPx] = useState(null);          // { price, atr, atrPct } for the underlying
   const [greek, setGreek] = useState(null);    // { delta, mark, asOf, indicative }
+  // A MARK YOU TYPE, for when the feed has no row for the contract. With a mark, a strike, an
+  // expiry and the spot, a Black-Scholes delta can be modelled from it — and is labelled modelled
+  // everywhere it appears, because it is not the exchange's reading.
+  const [markIn, setMarkIn] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);
   const [runs, setRuns] = useState([]);
@@ -1377,20 +1382,36 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
     setBusy(false);
   };
 
+  // THE DELTA, AND WHERE IT CAME FROM. The exchange's published delta when the feed has one;
+  // otherwise, with a mark (the feed's or a typed one), a modelled one — never silently.
+  const markEff = greek?.mark ?? (Number(markIn) > 0 ? Number(markIn) : null);
+  const modelled = useMemo(() => {
+    if (kind !== "option" || greek?.delta != null || !(markEff > 0) || !(px?.price > 0) || !(Number(strike) > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(expiry)) return null;
+    return modelledDelta({ S: px.price, K: Number(strike), expiry, mark: markEff, right });
+  }, [kind, greek, markEff, px, strike, expiry, right]);
+  const deltaEff = greek?.delta ?? modelled?.delta ?? null;
+  const deltaSource = greek?.delta != null ? "exchange" : modelled ? "modelled" : null;
+  // What the book already carries in this root — shares and options summed (lib/bookExposure.js).
+  const held = book?.byUnderlying?.[root] ?? null;
+
   const result = useMemo(() => (!ready || !px?.atr) ? null : sizeTrade({
     kind, symbol: kind === "option" ? `${root} ${expiry} ${right}${strike}` : root,
     price: px?.price, atr: px?.atr, atrPct: px?.atrPct,
-    delta: greek?.delta ?? null, mark: greek?.mark ?? null,
+    delta: deltaEff, mark: markEff, deltaSource,
     expiry: kind === "option" ? expiry : null,
     nlv, bookDeltaNotional: book?.deltaNotional ?? 0,
+    underlyingExposure: held ? held.deltaNotional : (book?.available ? 0 : null),
+    underlyingUnpriced: held?.unpriced ?? 0,
     // The lookup's macro list feeds the expiry check; a calendar handed in by the parent is the
     // fallback, and neither being present reads as "not checked", never as "none".
     catalysts: cat?.ok && Array.isArray(cat.macro) ? cat.macro : calendar, indicative: !!greek?.indicative, asOf: greek?.asOf ?? null,
     entered: Number(qty) > 0 ? Number(qty) : null,
-  }), [ready, kind, right, root, expiry, strike, px, greek, nlv, book, calendar, qty, cat]);
+  }), [ready, kind, right, root, expiry, strike, px, greek, nlv, book, calendar, qty, cat, deltaEff, markEff, deltaSource, held]);
 
-  // "4 of 11 option entries were MISMATCH" — the monthly line the window exists for.
+  // "4 of 11 option entries were MISMATCH" — the monthly line the window exists for — and
+  // "3 of 11 exceeded the single-name cap on delta-notional", the line the cap exists for.
   const review = useMemo(() => mismatchReview(runs), [runs]);
+  const capRv = useMemo(() => capReview(runs), [runs]);
 
   const record = async () => {
     const run = sizerRun(result, { window: cat?.ok ? cat.log : null });
@@ -1433,6 +1454,10 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
             button disabled with nothing on screen saying why. Every other date in this console is
             a picker; this one had no reason not to be. */}
         {kind === "option" && <SzFld label="Expiry"><input type="date" value={expiry} onChange={e => setExpiry(e.target.value)} style={SZ_IN} /></SzFld>}
+        {/* OPTIONAL. The feed's mark wins when it has one; this is for the contract it does not
+            carry, and a delta modelled from it is labelled as such. */}
+        {kind === "option" && <SzFld label="Mark (if no feed)"><input value={markIn} inputMode="decimal" onChange={e => setMarkIn(e.target.value)}
+          style={{ ...SZ_IN, minWidth: 74 }} placeholder="—" title="The option's price, for when the feed has no row — a delta is modelled from it" /></SzFld>}
         {/* LABEL, NOT CHILDREN. ui.jsx's Btn renders `{label}` and never touches `children`, so
             this shipped as an unlabelled, colourless pill — a button nobody could see, on the one
             control that makes the panel do anything. scripts/check-required-props.mjs now fails the
@@ -1454,17 +1479,19 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
         <div style={{ fontSize: 11.5, color: C.muted, marginTop: 5 }}>
           ATR(20) {px.atr.toFixed(2)}{px.atrPct != null ? ` (${px.atrPct.toFixed(2)}%)` : ""}
           {px.price != null ? ` · ${root} ${px.price.toFixed(2)}` : ""}
-          {greek?.delta != null ? ` · ${strike}${right === "P" ? "P" : "C"} δ ${greek.delta.toFixed(2)} · mark ${Number(greek.mark).toFixed(2)}` : ""}
+          {greek?.delta != null ? ` · ${strike}${right === "P" ? "P" : "C"} δ ${greek.delta.toFixed(2)} · mark ${Number(greek.mark).toFixed(2)}`
+            : modelled ? ` · ${strike}${right === "P" ? "P" : "C"} δ ${modelled.delta.toFixed(2)} (modelled, IV ${(modelled.sigma * 100).toFixed(0)}%) · mark ${Number(markEff).toFixed(2)}${greek?.mark != null ? "" : " typed"}` : ""}
           {result?.dte != null ? ` · ${result.dte} DTE` : ""}
         </div>
       )}
       {note && <div style={{ fontSize: 11.5, color: C.amber, marginTop: 4 }}>⚠ {note}</div>}
 
-      {review.n > 0 && (
-        <div style={{ marginTop: 7, paddingTop: 7, borderTop: "1px solid " + C.bdr, fontSize: 11.5, color: review.mismatch > 0 ? C.amber : C.muted, lineHeight: 1.55 }}>
-          <b style={{ fontSize: 10.5, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Catalyst review </b>
-          {review.note}
-          <div style={{ fontSize: 11, color: C.lbl }}>{review.outcome}</div>
+      {(review.n > 0 || capRv.n > 0) && (
+        <div style={{ marginTop: 7, paddingTop: 7, borderTop: "1px solid " + C.bdr, fontSize: 11.5, color: C.muted, lineHeight: 1.55 }}>
+          <b style={{ fontSize: 10.5, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Monthly review </b>
+          {capRv.n > 0 && <div style={{ color: capRv.past > 0 ? C.amber : C.muted }}>{capRv.note}</div>}
+          {review.n > 0 && <div style={{ color: review.mismatch > 0 ? C.amber : C.muted }}>{review.note}</div>}
+          {review.n > 0 && <div style={{ fontSize: 11, color: C.lbl }}>{review.outcome}</div>}
         </div>
       )}
       {recon.n > 0 && (
@@ -1532,6 +1559,41 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
             )}
             {result.enteredPremium != null && <span style={{ fontSize: 11.5, color: C.muted }}>{money(result.enteredPremium)} {result.kind === "option" ? "premium" : "notional"}</span>}
           </div>
+
+          {/* ── ONE UNDERLYING, SHARES AND OPTIONS TOGETHER ──────────────────────
+              The premium line says what this costs. This says what it CONTROLS, added to what the
+              book already holds in the same root, against the single-name cap — the test that used
+              to run for stocks only. The share-equivalent is the point: it translates premium into
+              the exposure actually being carried. Amber is the ceiling; the size stands. */}
+          {result.singleName && result.singleName.combined != null && (
+            <div style={{ fontSize: 11.5, color: C.mid, marginTop: 6, lineHeight: 1.6 }}>
+              <div style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                {root} exposure · single-name cap {result.singleName.capPct}%
+              </div>
+              {result.kind === "option" && (result.book.follows === "entered" ? result.enteredPremium : result.premium) != null && (
+                <div>premium <b>{money(result.book.follows === "entered" ? result.enteredPremium : result.premium)}</b>
+                  <span style={{ color: C.lbl }}> / {money(nlv * SIZER_LIMITS.optionPremiumPct / 100)}</span>
+                  <span style={{ color: (result.book.follows === "entered" ? result.enteredPremium : result.premium) <= nlv * SIZER_LIMITS.optionPremiumPct / 100 ? C.green : C.amber, fontWeight: 800 }}>
+                    {(result.book.follows === "entered" ? result.enteredPremium : result.premium) <= nlv * SIZER_LIMITS.optionPremiumPct / 100 ? " ✓" : " ⚠ above premium cap"}</span>
+                </div>
+              )}
+              <div>delta-notional <b style={{ color: result.singleName.past ? C.amber : C.text }}>{money(result.singleName.combined)}</b>
+                <span style={{ color: C.lbl }}> / {money(result.singleName.cap)} ({result.singleName.pct}% NLV)</span>
+                <span style={{ color: result.singleName.past ? C.amber : C.green, fontWeight: 800 }}>
+                  {result.singleName.past ? " ⚠ above single-name cap" : " ✓"}</span>
+              </div>
+              <div style={{ color: C.lbl }}>
+                └ {result.kind === "option"
+                    ? `${result.book.follows === "entered" ? result.entered : result.size} × ${Math.abs(result.delta ?? 0).toFixed(2)} delta ≈ ${Math.abs(result.singleName.addedShareEquivalent ?? 0).toLocaleString("en-US")} shares`
+                    : `${result.book.follows === "entered" ? result.entered : result.size} shares`}
+                {result.singleName.known && result.singleName.existing
+                  ? ` + ${money(result.singleName.existing)} already held${held?.shareEquivalent != null ? ` (≈ ${held.shareEquivalent.toLocaleString("en-US")} shares)` : ""}`
+                  : result.singleName.known ? " · nothing else held in this name" : " · book not loaded, held part unknown"}
+                {result.singleName.unpriced > 0 ? ` · ${result.singleName.unpriced} unpriced` : ""}
+                {result.kind === "option" ? ` · delta ${result.singleName.deltaSource || "unknown"}` : ""}
+              </div>
+            </div>
+          )}
 
           {/* THE BOOK CHECK, WHICH IS WHY THIS BELONGS ON THE PANEL. The calculator knows what is
               already held, so it answers "does this fit alongside it" — and it FOLLOWS THE ENTERED

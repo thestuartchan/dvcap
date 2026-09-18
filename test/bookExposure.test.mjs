@@ -1,5 +1,5 @@
 // test/bookExposure.test.mjs — what the book is carrying, in delta.
-import { bookExposure, positionExposure, parseOptionSymbol, contractKey, equityDelta, isCashLike, CASH_LIKE_ETF,
+import { bookExposure, positionExposure, parseOptionSymbol, contractKey, equityDelta, isCashLike, CASH_LIKE_ETF, byUnderlying,
          trendRead, EXPOSURE_LIMITS, LEVERAGED_ETF, TREND_MIN } from '../lib/bookExposure.js';
 import { pickCboeGreeks } from '../lib/cboe.js';
 
@@ -208,6 +208,26 @@ const book = bookExposure({ rows: ROWS, greeks: GREEKS, underlyings: SPOTS, nlv:
   eq('and the stamp, because a risk number without one cannot be checked', one.asOf, '2026-09-10T20:05:00Z');
   eq('a put keeps its negative delta', all.greeks['QQQ|2026-10-16|P|600'].delta, -0.03);
   eq('an empty payload yields nothing rather than a zero', pickCboeGreeks({ data: { options: [] } }), null);
+}
+
+// ── PER UNDERLYING: A COVERED CALL IS A REDUCTION ────────────────────────────
+{
+  const rows = [
+    { symbol: 'RKLB', qty: 200, livePrice: 40 },
+    { symbol: 'RKLB  261016C00045000', qty: -2, multiplier: 100, livePrice: 2.1, assetCategory: 'OPT' },
+    { symbol: 'INTC', qty: 30, livePrice: 110.9 },
+    { symbol: 'INTC  261002C00115000', qty: 6, multiplier: 100, livePrice: 3.7, assetCategory: 'OPT' },
+    { symbol: 'USFR', qty: 1000, livePrice: 50.4 },
+  ];
+  const greeks = { 'RKLB|2026-10-16|C|45': { delta: 0.5 }, 'INTC|2026-10-02|C|115': { delta: 0.42 } };
+  const b = bookExposure({ rows, greeks, underlyings: { RKLB: 40, INTC: 110.9 }, nlv: 206358, now: NOW });
+  const u = b.byUnderlying;
+  eq('RKLB: 200 shares less the written call', [u.RKLB.shares, u.RKLB.options, u.RKLB.deltaNotional], [8000, -4000, 4000]);
+  eq('…is 100 shares\' worth, under the shares alone', [u.RKLB.shareEquivalent, u.RKLB.shareEquivalent < 200], [100, true]);
+  eq('INTC: shares and calls are one number', [u.INTC.shares, u.INTC.options, u.INTC.deltaNotional], [3327, 27946.8, 31273.8]);
+  eq('…15.2% of NLV, 282 shares', [u.INTC.pctNlv, u.INTC.shareEquivalent], [15.2, 282]);
+  eq('the cash-like leg is not an underlying', u.USFR, undefined);
+  eq('unpriced lines are counted, not summed', byUnderlying([{ root: 'X', kind: 'option', unpriced: true, deltaNotional: null }]).X.unpriced, 1);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

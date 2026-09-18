@@ -1,5 +1,5 @@
 // test/sizer.test.mjs — the size, before the trade.
-import { sizeTrade, sizerRun, appendRun, reconcileRuns, catalystCheck, isZeroDteExpiry,
+import { sizeTrade, sizerRun, appendRun, reconcileRuns, catalystCheck, isZeroDteExpiry, capReview,
          SIZER_LIMITS, RULE_SETS, MAX_RUNS } from '../lib/sizer.js';
 
 let pass = 0, fail = 0;
@@ -361,6 +361,73 @@ const NLV = 202000;
                               [{ symbol: 'X', qty: 10, at: '2026-07-01T15:00:00Z' }]);
   eq('a followed month counts the follow', [clean.thisMonth.exceeded, clean.thisMonth.followed], [0, 1]);
   eq('and nothing matched means no months', reconcileRuns([run('2026-07-01T14:00:00Z', 'X', 10)], []).byMonth, []);
+}
+
+// ── THE SINGLE-NAME CAP, ON EXPOSURE ─────────────────────────────────────────
+// The premium cap sees what an option costs, not what it controls. The brief's live cases at NLV
+// $206,358 (cap $20,636): both passed every test that ran and both sat ~40% over the cap.
+{
+  const N = 206358;
+  const near = (n, g, w, tol) => ok(`${n} (${g} ≈ ${w})`, g != null && Math.abs(g - w) <= tol);
+  // XLE Jan15'27 55C ×5 at 64.40, delta 0.90: $28,980, 14.0%, amber.
+  const xle = sizeTrade({ kind: 'option', symbol: 'XLE 2027-01-15 C55', price: 64.40, atr: 1.2, delta: 0.90, mark: 10.4,
+    expiry: '2027-01-15', nlv: N, entered: 5, underlyingExposure: 0, now: NOW });
+  near('XLE ×5 carries $28,980 of delta-notional', xle.singleName.combined, 28980, 1);
+  eq('…14.0% of NLV, past the cap', [xle.singleName.pct, xle.singleName.past, xle.singleName.cap], [14.0, true, 20635.8]);
+  eq('…as 450 shares', xle.singleName.shareEquivalent, 450);
+  ok('…and the warning says so, with the number', xle.warnings.some(w => /28,980/.test(w) && /14% of NLV/.test(w) && /single-name cap/.test(w)));
+  ok('…while the size stands — the premium cap still binds', xle.size != null && xle.ok);
+  eq('the premium line itself passes', xle.enteredPremium <= N * 0.03, true);
+  // INTC Oct02'26 115C ×6 at 110.90, delta 0.42, PLUS 30 shares already held: aggregated, ~$31,200, 15.1%.
+  const held = 30 * 110.90;   // the shares' delta-notional, from the book
+  const intc = sizeTrade({ kind: 'option', symbol: 'INTC 2026-10-02 C115', price: 110.90, atr: 3.1, delta: 0.42, mark: 3.7,
+    expiry: '2026-10-02', nlv: N, entered: 6, underlyingExposure: held, now: NOW });
+  near('INTC ×6 plus 30 shares is ~$31,200 combined', intc.singleName.combined, 31274, 30);
+  // The brief says ~$31,200 and 15.1%; the exact sum is $31,273.80, which is 15.16% and rounds up.
+  eq('…15.2% of NLV, amber', [intc.singleName.pct, intc.singleName.past], [15.2, true]);
+  eq('…with the held part named', intc.singleName.existing, 3327);
+  ok('…and the warning names what was already held', intc.warnings.some(w => /3,327 of it already held/.test(w)));
+  // QQQ Oct16'26 730C ×3, delta ~0.22 at 712. THE BRIEF SAYS ~$4,700 AND 2.3%, CLEAR — that drops
+  // the contract multiplier. By the brief's own formula, 3 × 0.22 × 100 × 712 = $46,992, which is
+  // 22.8% of NLV: three QQQ calls at that delta control 66 shares, and the cap sees it. The
+  // arithmetic here is the formula's; the expectation in the brief is off by ten.
+  const qqq3 = sizeTrade({ kind: 'option', symbol: 'QQQ 2026-10-16 C730', price: 712, atr: 8.5, delta: 0.22, mark: 4.1,
+    expiry: '2026-10-16', nlv: N, entered: 3, underlyingExposure: 0, now: NOW });
+  near('QQQ ×3 at 0.22 delta is $46,992 by the formula, not $4,700', qqq3.singleName.combined, 46992, 1);
+  eq('…22.8% of NLV, past the cap', [qqq3.singleName.pct, qqq3.singleName.past, qqq3.singleName.shareEquivalent], [22.8, true, 66]);
+  // One contract is the clear case the brief's row describes.
+  const qqq = sizeTrade({ kind: 'option', symbol: 'QQQ 2026-10-16 C730', price: 712, atr: 8.5, delta: 0.22, mark: 4.1,
+    expiry: '2026-10-16', nlv: N, entered: 1, underlyingExposure: 0, now: NOW });
+  near('QQQ ×1 is $15,664', qqq.singleName.combined, 15664, 1);
+  eq('…7.6%, clear', [qqq.singleName.pct, qqq.singleName.past], [7.6, false]);
+  ok('…no single-name warning', !qqq.warnings.some(w => /single-name cap/.test(w)));
+  // Unknown book exposure is reported as unknown, not as zero.
+  const unk = sizeTrade({ kind: 'option', symbol: 'XLE 2027-01-15 C55', price: 64.40, atr: 1.2, delta: 0.90, mark: 10.4,
+    expiry: '2027-01-15', nlv: N, entered: 5, now: NOW });
+  eq('with no book, the held part is unknown and the added part is still tested', [unk.singleName.known, unk.singleName.existing, unk.singleName.past], [false, null, true]);
+  const unp = sizeTrade({ kind: 'option', symbol: 'XLE 2027-01-15 C55', price: 64.40, atr: 1.2, delta: 0.90, mark: 10.4,
+    expiry: '2027-01-15', nlv: N, entered: 1, underlyingUnpriced: 2, now: NOW });
+  ok('unpriced lines in the name are named', unp.notes.some(n => /2 lines in this name could not be priced/.test(n)));
+  // The delta source travels: exchange by default, modelled when said so, and the note says it.
+  eq('exchange by default', xle.singleName.deltaSource, 'exchange');
+  const mod = sizeTrade({ kind: 'option', symbol: 'XLE 2027-01-15 C55', price: 64.40, atr: 1.2, delta: 0.90, mark: 10.4,
+    expiry: '2027-01-15', nlv: N, deltaSource: 'modelled', now: NOW });
+  eq('modelled when the caller says so', mod.singleName.deltaSource, 'modelled');
+  ok('…and it is never silent', mod.notes.some(n => /delta is modelled/.test(n)));
+  // A stock is tested the same way, shares plus whatever options are held in it.
+  const stk = sizeTrade({ kind: 'stock', symbol: 'INTC', price: 110.90, atr: 3.1, nlv: N, entered: 100, underlyingExposure: 27947, now: NOW });
+  near('100 INTC shares on top of the calls', stk.singleName.combined, 39037, 1);
+  eq('…is past the cap too', [stk.singleName.past, stk.singleName.deltaSource], [true, 'shares']);
+  // The run carries it and the month counts it.
+  const run = sizerRun(xle, { at: '2026-09-17T14:00:00Z' });
+  eq('the run records the exposure at entry', [run.singleName.underlying_exposure, run.singleName.single_name_pct, run.singleName.delta_source, run.singleName.past_cap], [28980, 14.0, 'exchange', true]);
+  const runs = [run, sizerRun(qqq, { at: '2026-09-15T14:00:00Z' }), sizerRun(intc, { at: '2026-09-16T14:00:00Z' }),
+                sizerRun(mod, { at: '2026-09-14T14:00:00Z' }), sizerRun(stk, { at: '2026-09-14T15:00:00Z' }),
+                sizerRun(xle, { at: '2026-07-01T14:00:00Z' })];
+  const rv = capReview(runs, { now: new Date('2026-09-17T16:00:00Z') });
+  eq('the month counts option entries with a window', [rv.n, rv.past, rv.modelled], [4, 3, 1]);
+  eq('and says so', rv.note, '3 of 4 option entries in 30d exceeded the single-name cap on delta-notional · 1 on a modelled delta');
+  eq('nothing yet is silent', capReview([], { now: NOW }).note, null);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
