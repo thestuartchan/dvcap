@@ -248,6 +248,10 @@ export function GexPanel() {
       // two that reflects INTRADAY open-interest changes once the session is running, and a source
       // that is better before the open is not automatically better after it.
       let hit = null, j = null, via = "settled";
+      // THE SETTLED REASON IS KEPT. The fallback used to overwrite it with Yahoo's, so a CBOE
+      // timeout at 23:00Z read on screen as "open interest only 0% populated — Yahoo fills this
+      // in", which is the wrong source's excuse for the right source's failure.
+      let settledWhy = null;
       try {
         // NO SPOT PASSED. The panel used to fetch /api/prices and hand the result over, and that
         // route returns the REGULAR print with no extended-hours overlay — so pre-open it passed
@@ -261,8 +265,9 @@ export function GexPanel() {
         const rs = await fetch(`/api/gex?settled=1&symbol=${encodeURIComponent(symbol)}${q}`, { credentials: "include" });
         const js = await rs.json();
         const rowS = (js?.results || []).find(x => x.symbol === symbol);
-        if (rowS?.ok) hit = { ...rowS, mode: "settled" }; else j = js;
-      } catch { /* fall through to the snapshot below */ }
+        if (rowS?.ok) hit = { ...rowS, mode: "settled" };
+        else { j = js; settledWhy = rowS?.reason || js?.reason || js?.error || (rs.ok ? "no result came back" : `HTTP ${rs.status}`); }
+      } catch (e) { settledWhy = `could not be reached — ${String(e?.message || e)}`; }
 
       if (!hit) {
         via = "snapshot";
@@ -277,7 +282,10 @@ export function GexPanel() {
       // surface that collapses the gamma calculation, open interest not yet populated — and that
       // is the most useful thing the button can say when it cannot say a number.
       if (!hit) {
-        setLiveErr(j?.reason || `no result came back for ${symbol}`);
+        const yahooWhy = j?.reason || `no result came back for ${symbol}`;
+        setLiveErr(settledWhy
+          ? `settled book (OCC + CBOE): ${settledWhy}. Yahoo fallback: ${yahooWhy}`
+          : yahooWhy);
       }
       // The snapshot result carries headline figures; re-read the stored row for the rest and
       // overlay. A live read that silently dropped the walls would be a downgrade, not a refresh.
