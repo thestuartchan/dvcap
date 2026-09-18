@@ -1529,7 +1529,7 @@
       "inputs": {
         "weightedRecessionProb": 14.3,
         "cpi": 3.35302,
-        "kalshi2027": 22,
+        "kalshi2027": 23,
         "tape": {
           "gold": "up",
           "tlt": "up",
@@ -1575,10 +1575,10 @@
         },
         "inflation": {
           "state": "turning-hot",
-          "lean": 0,
+          "lean": -1,
           "market": {
-            "verdict": "HOT",
-            "lean": 1,
+            "verdict": "BETWEEN",
+            "lean": 0,
             "usable": 3,
             "of": 3
           },
@@ -1599,7 +1599,7 @@
         "quadrantRead": "between quadrants — the growth axis is flat"
       },
       "source": "client+cron",
-      "loggedAt": "2026-09-18T13:08:57.495Z"
+      "loggedAt": "2026-09-18T16:44:41.744Z"
     }
   ]
 }
