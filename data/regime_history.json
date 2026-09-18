@@ -1513,6 +1513,83 @@
         "quadrant": null,
         "quadrantRead": "between quadrants — the growth axis is flat"
       }
+    },
+    {
+      "date": "2026-09-18",
+      "stagflation_p": 65,
+      "reflationary_p": 17,
+      "deflationary_p": 13,
+      "inflationary_p": 5,
+      "hawkish_repricing": null,
+      "live_regime": "stag",
+      "view_regime": null,
+      "pinned": null,
+      "hyg_chg": null,
+      "hyg_qqq_divergence": null,
+      "inputs": {
+        "weightedRecessionProb": 14.3,
+        "cpi": 3.35302,
+        "kalshi2027": 27,
+        "tape": null,
+        "ladderSpread": null,
+        "u3": 4.1,
+        "empPop": 59.1,
+        "oas": 2.7,
+        "tenY": 5.01,
+        "twoY": 4.74,
+        "consensusAlive": 0.763,
+        "regimeVintage": "decayed"
+      },
+      "axes": {
+        "growth": {
+          "state": "split",
+          "lean": 0,
+          "market": {
+            "verdict": "CONTRACTING",
+            "lean": -1,
+            "usable": 5,
+            "of": 5
+          },
+          "weekly": {
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 4,
+            "of": 4
+          },
+          "monthly": {
+            "verdict": "MIXED",
+            "lean": 0,
+            "usable": 3,
+            "of": 4
+          }
+        },
+        "inflation": {
+          "state": "turning-hot",
+          "lean": 0,
+          "market": {
+            "verdict": "HOT",
+            "lean": 1,
+            "usable": 3,
+            "of": 3
+          },
+          "nowcast": {
+            "verdict": "BETWEEN",
+            "lean": 0,
+            "usable": 2,
+            "of": 2
+          },
+          "printed": {
+            "verdict": "COOLING",
+            "lean": -1,
+            "usable": 3,
+            "of": 3
+          }
+        },
+        "quadrant": null,
+        "quadrantRead": "between quadrants — the growth axis is flat"
+      },
+      "source": "cron",
+      "loggedAt": "2026-09-18T00:49:11.485Z"
     }
   ]
 }
