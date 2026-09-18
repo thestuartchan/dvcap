@@ -1520,24 +1520,34 @@
       "reflationary_p": 17,
       "deflationary_p": 13,
       "inflationary_p": 5,
-      "hawkish_repricing": null,
+      "hawkish_repricing": "DISINFLATIONARY_EASING",
       "live_regime": "stag",
-      "view_regime": null,
-      "pinned": null,
-      "hyg_chg": null,
-      "hyg_qqq_divergence": null,
+      "view_regime": "stag",
+      "pinned": false,
+      "hyg_chg": 0.34,
+      "hyg_qqq_divergence": -1.38,
       "inputs": {
-        "weightedRecessionProb": 14.3,
+        "weightedRecessionProb": 14.4,
         "cpi": 3.35302,
-        "kalshi2027": 27,
-        "tape": null,
-        "ladderSpread": null,
+        "kalshi2027": 26,
+        "tape": {
+          "gold": "up",
+          "tlt": "up",
+          "xlu": "up",
+          "xlp": "up",
+          "spy": "up",
+          "qqq": "up",
+          "iwm": "up",
+          "btc": "up",
+          "breakevenBp": -5
+        },
+        "ladderSpread": 2.55,
         "u3": 4.1,
         "empPop": 59.1,
         "oas": 2.7,
-        "tenY": 5.01,
-        "twoY": 4.74,
-        "consensusAlive": 0.763,
+        "tenY": 5,
+        "twoY": 4.67,
+        "consensusAlive": 0.761,
         "regimeVintage": "decayed"
       },
       "axes": {
@@ -1588,8 +1598,8 @@
         "quadrant": null,
         "quadrantRead": "between quadrants — the growth axis is flat"
       },
-      "source": "cron",
-      "loggedAt": "2026-09-18T00:49:13.638Z"
+      "source": "client+cron",
+      "loggedAt": "2026-09-18T04:58:07.230Z"
     }
   ]
 }
