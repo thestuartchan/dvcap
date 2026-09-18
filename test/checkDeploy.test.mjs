@@ -6,7 +6,7 @@
 // on GitHub as a commit status that nothing was reading. Forty minutes.
 //
 // The asserted behaviour here is mostly about what the check must NOT say.
-import { repoFromRemote, readStatus, verdict, TERMINAL } from '../scripts/check-deploy.mjs';
+import { repoFromRemote, readStatus, verdict, TERMINAL, DROPPED_AFTER_MIN } from '../scripts/check-deploy.mjs';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
@@ -77,6 +77,15 @@ const live = (sha, extra = {}) => ({ url: 'https://dvcap.vercel.app', sha, age: 
   ok('and it says which build is serving and that no verdict was issued', /is live inside a later build/.test(sup.lines[0]) && /no build verdict was issued/.test(sup.lines[1]));
   eq('a live sha that does NOT contain it is still pending', verdict({ status: readStatus({ state: 'pending', statuses: [] }), live: live(LATER, { contains: false }), wantSha: SHA }).code, 2);
   eq('and an unknown ancestry is still pending — never assumed', verdict({ status: readStatus({ state: 'pending', statuses: [] }), live: live(LATER, { contains: null }), wantSha: SHA }).code, 2);
+  // DROPPED IS NOT QUEUED. Nothing registered ten minutes after the push, an older build live.
+  const none = readStatus({ state: 'pending', statuses: [] });
+  const dropped = verdict({ status: none, live: live(LATER, { contains: false }), wantSha: SHA, sinceMin: 27 });
+  eq('nothing registered after ten minutes with an older build live is named as a missed push', dropped.code, 2);
+  ok('…and says so, with the remedy', /push event was missed/.test(dropped.lines[0]) && /follow-up push to main/.test(dropped.lines.join(' ')));
+  ok('three minutes in it is still queued', /queued/.test(verdict({ status: none, live: live(LATER, { contains: false }), wantSha: SHA, sinceMin: 3 }).lines[0]));
+  ok('and without a commit time it is still queued — never assumed', /queued/.test(verdict({ status: none, live: live(LATER, { contains: false }), wantSha: SHA }).lines[0]));
+  ok('a live build that DOES contain it is deployed, whatever the age', verdict({ status: none, live: live(LATER, { contains: true }), wantSha: SHA, sinceMin: 27 }).code === 0);
+  eq('DROPPED_AFTER_MIN is ten', DROPPED_AFTER_MIN, 10);
   eq('a successful build served as a later descendant is also 0', verdict({ status: readStatus({ state: 'success', statuses: [{ state: 'success' }] }), live: live(LATER, { contains: true }), wantSha: SHA }).code, 0);
   eq('but a successful build served as an unrelated sha is still 3', verdict({ status: readStatus({ state: 'success', statuses: [{ state: 'success' }] }), live: live(LATER, { contains: false }), wantSha: SHA }).code, 3);
   eq('still building is 2', verdict({ status: readStatus({ state: 'pending', statuses: [{ state: 'pending' }] }), live: null, wantSha: SHA }).code, 2);
