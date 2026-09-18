@@ -32,7 +32,7 @@ import { stopWidth, ATR_STATUS } from "../lib/atr.js";
 import { preTradeGuards, guardStates } from "../lib/guards.js";
 import { riskCoverage, rowExposure, stopOf } from "../lib/exposure.js";
 import { bookExposure, parseOptionSymbol, contractKey } from "../lib/bookExposure.js";
-import { sizeTrade, sizerRun, reconcileRuns, mismatchReview, capReview, SIZER_LIMITS } from "../lib/sizer.js";
+import { sizeTrade, sizerRun, reconcileRuns, mismatchReview, capReview, SIZER_LIMITS, SINGLE_NAME_EXEMPT } from "../lib/sizer.js";
 import { modelledDelta } from "../lib/blackscholes.js";
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
 import { companyName } from "../lib/companyNames.js";
@@ -1304,7 +1304,7 @@ function useBookExposure(rows, nlv) {
 // everything — size so that one ATR of adverse movement costs 1% of NLV — then the concentration
 // caps, then the smallest result. See lib/sizer.js for the worked example this was built from: the
 // QQQ line where both tests said five contracts and the position was twenty.
-function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] }) {
+function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], exempt = null }) {
   const [tkr, setTkr] = useState("");
   const [kind, setKind] = useState("option");
   // CALL OR PUT. The chain key was hard-coded to the call, so a put at the same strike was priced
@@ -1400,13 +1400,17 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
     delta: deltaEff, mark: markEff, deltaSource,
     expiry: kind === "option" ? expiry : null,
     nlv, bookDeltaNotional: book?.deltaNotional ?? 0,
-    underlyingExposure: held ? held.deltaNotional : (book?.available ? 0 : null),
+    // Two legs, each tested on its own; null when the book is not loaded, zero when it is and
+    // holds nothing in the name.
+    underlyingShares: held ? held.shares : (book?.available ? 0 : null),
+    underlyingOptions: held ? held.options : (book?.available ? 0 : null),
     underlyingUnpriced: held?.unpriced ?? 0,
+    exempt: Array.isArray(exempt) ? exempt : SINGLE_NAME_EXEMPT,
     // The lookup's macro list feeds the expiry check; a calendar handed in by the parent is the
     // fallback, and neither being present reads as "not checked", never as "none".
     catalysts: cat?.ok && Array.isArray(cat.macro) ? cat.macro : calendar, indicative: !!greek?.indicative, asOf: greek?.asOf ?? null,
     entered: Number(qty) > 0 ? Number(qty) : null,
-  }), [ready, kind, right, root, expiry, strike, px, greek, nlv, book, calendar, qty, cat, deltaEff, markEff, deltaSource, held]);
+  }), [ready, kind, right, root, expiry, strike, px, greek, nlv, book, calendar, qty, cat, deltaEff, markEff, deltaSource, held, exempt]);
 
   // "4 of 11 option entries were MISMATCH" — the monthly line the window exists for — and
   // "3 of 11 exceeded the single-name cap on delta-notional", the line the cap exists for.
@@ -1560,40 +1564,55 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [] })
             {result.enteredPremium != null && <span style={{ fontSize: 11.5, color: C.muted }}>{money(result.enteredPremium)} {result.kind === "option" ? "premium" : "notional"}</span>}
           </div>
 
-          {/* ── ONE UNDERLYING, SHARES AND OPTIONS TOGETHER ──────────────────────
-              The premium line says what this costs. This says what it CONTROLS, added to what the
-              book already holds in the same root, against the single-name cap — the test that used
-              to run for stocks only. The share-equivalent is the point: it translates premium into
-              the exposure actually being carried. Amber is the ceiling; the size stands. */}
-          {result.singleName && result.singleName.combined != null && (
-            <div style={{ fontSize: 11.5, color: C.mid, marginTop: 6, lineHeight: 1.6 }}>
-              <div style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>
-                {root} exposure · single-name cap {result.singleName.capPct}%
+          {/* ── ONE UNDERLYING, TWO LEGS ─────────────────────────────────────────
+              The premium line says what this costs. These say what it CONTROLS, per leg — the
+              shares held in the root, and the options with this trade added — each against the
+              single-name cap on its own, because the two are held for different reasons and answer
+              a drawdown in opposite ways. A combined figure is shown with no threshold. An exempt
+              index ETF is computed and shown, never flagged. Amber is the ceiling; the size stands. */}
+          {result.singleName && (result.singleName.shares.total != null || result.singleName.options.total != null) && (() => {
+            const sn = result.singleName;
+            const prem = result.book.follows === "entered" ? result.enteredPremium : result.premium;
+            const premCap = nlv * SIZER_LIMITS.optionPremiumPct / 100;
+            const n = result.book.follows === "entered" ? result.entered : result.size;
+            const legLine = (label, leg, isTraded) => leg.total == null ? null : (
+              <div key={label}>
+                <span style={{ display: "inline-block", minWidth: 62 }}>{label}</span>
+                <b style={{ color: leg.past ? C.amber : C.text }}>{money(leg.total)}</b>
+                <span style={{ color: C.lbl }}> ({leg.pct}% NLV){leg.over && !sn.exempt ? ` / ${money(sn.cap)} cap` : ""}</span>
+                <span style={{ color: leg.past ? C.amber : sn.exempt && leg.over ? C.lbl : C.green, fontWeight: 800 }}>
+                  {leg.past ? " ⚠ above single-name cap" : sn.exempt && leg.over ? " · exempt, not flagged" : " ✓"}</span>
+                {isTraded && leg.held ? <span style={{ color: C.lbl }}> · {money(leg.held)} of it already held</span> : null}
               </div>
-              {result.kind === "option" && (result.book.follows === "entered" ? result.enteredPremium : result.premium) != null && (
-                <div>premium <b>{money(result.book.follows === "entered" ? result.enteredPremium : result.premium)}</b>
-                  <span style={{ color: C.lbl }}> / {money(nlv * SIZER_LIMITS.optionPremiumPct / 100)}</span>
-                  <span style={{ color: (result.book.follows === "entered" ? result.enteredPremium : result.premium) <= nlv * SIZER_LIMITS.optionPremiumPct / 100 ? C.green : C.amber, fontWeight: 800 }}>
-                    {(result.book.follows === "entered" ? result.enteredPremium : result.premium) <= nlv * SIZER_LIMITS.optionPremiumPct / 100 ? " ✓" : " ⚠ above premium cap"}</span>
+            );
+            return (
+              <div style={{ fontSize: 11.5, color: C.mid, marginTop: 6, lineHeight: 1.6 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                  {root} exposure · single-name cap {sn.capPct}%
+                  {sn.exempt && <span style={{ marginLeft: 6, color: C.blue, background: C.blBg, border: "1px solid " + C.blue, borderRadius: 4, padding: "0 5px" }}>index ETF · exempt</span>}
                 </div>
-              )}
-              <div>delta-notional <b style={{ color: result.singleName.past ? C.amber : C.text }}>{money(result.singleName.combined)}</b>
-                <span style={{ color: C.lbl }}> / {money(result.singleName.cap)} ({result.singleName.pct}% NLV)</span>
-                <span style={{ color: result.singleName.past ? C.amber : C.green, fontWeight: 800 }}>
-                  {result.singleName.past ? " ⚠ above single-name cap" : " ✓"}</span>
+                {result.kind === "option" && prem != null && (
+                  <div><span style={{ display: "inline-block", minWidth: 62 }}>premium</span><b>{money(prem)}</b>
+                    <span style={{ color: C.lbl }}> / {money(premCap)}</span>
+                    <span style={{ color: prem <= premCap ? C.green : C.amber, fontWeight: 800 }}>{prem <= premCap ? " ✓" : " ⚠ above premium cap"}</span>
+                  </div>
+                )}
+                {legLine("options", sn.options, result.kind === "option")}
+                {result.kind === "option" && (
+                  <div style={{ color: C.lbl }}>
+                    └ {n} × {Math.abs(result.delta ?? 0).toFixed(2)} delta ≈ {Math.abs(sn.addedShareEquivalent ?? 0).toLocaleString("en-US")} shares
+                    {" · delta "}{sn.deltaSource || "unknown"}
+                  </div>
+                )}
+                {legLine("shares", sn.shares, result.kind !== "option")}
+                {sn.combined != null && sn.shares.total != null && sn.options.total != null && sn.shares.total !== 0 && sn.options.total !== 0 && (
+                  <div style={{ color: C.lbl }}><span style={{ display: "inline-block", minWidth: 62 }}>combined</span>{money(sn.combined)} ({sn.combinedPct}% NLV) · no threshold</div>
+                )}
+                {!sn.known && <div style={{ color: C.lbl }}>book not loaded — the held part of each leg is unknown</div>}
+                {sn.unpriced > 0 && <div style={{ color: C.lbl }}>{sn.unpriced} line{sn.unpriced === 1 ? "" : "s"} in this name unpriced</div>}
               </div>
-              <div style={{ color: C.lbl }}>
-                └ {result.kind === "option"
-                    ? `${result.book.follows === "entered" ? result.entered : result.size} × ${Math.abs(result.delta ?? 0).toFixed(2)} delta ≈ ${Math.abs(result.singleName.addedShareEquivalent ?? 0).toLocaleString("en-US")} shares`
-                    : `${result.book.follows === "entered" ? result.entered : result.size} shares`}
-                {result.singleName.known && result.singleName.existing
-                  ? ` + ${money(result.singleName.existing)} already held${held?.shareEquivalent != null ? ` (≈ ${held.shareEquivalent.toLocaleString("en-US")} shares)` : ""}`
-                  : result.singleName.known ? " · nothing else held in this name" : " · book not loaded, held part unknown"}
-                {result.singleName.unpriced > 0 ? ` · ${result.singleName.unpriced} unpriced` : ""}
-                {result.kind === "option" ? ` · delta ${result.singleName.deltaSource || "unknown"}` : ""}
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* THE BOOK CHECK, WHICH IS WHY THIS BELONGS ON THE PANEL. The calculator knows what is
               already held, so it answers "does this fit alongside it" — and it FOLLOWS THE ENTERED
@@ -3030,7 +3049,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           times, with one QQQ line carrying 2.37x on its own. Risk coverage above answers "what
           does a stop-out cost"; this answers "what am I carrying right now", and on this book the
           two differ by a factor of twelve. */}
-      <PositionSizer book={bookX.book} nlv={equityBase} fills={openingFills} />
+      <PositionSizer book={bookX.book} nlv={equityBase} fills={openingFills} exempt={settings.sizerExempt ?? null} />
       <ExposureTile book={bookX.book} err={bookX.err} />
 
       {/* ── P4 — RISK COVERAGE ──
@@ -3278,6 +3297,20 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
               style={{ padding: "5px 8px", border: "1.5px solid " + (settings.flexTradesFrom ? C.blue : C.aBdr), borderRadius: 7, fontSize: 12, background: C.surf, color: C.text }} />
             <div style={{ fontSize: 10.5, fontWeight: 600, color: settings.flexTradesFrom ? C.lbl : C.amber, marginTop: 2 }}>
               {settings.flexTradesFrom ? "statement fills adopted from this day" : "unset — statement fills are not ingested"}
+            </div>
+          </label>
+          {/* ── INDEX ETFs EXEMPT FROM THE SINGLE-NAME CAP ──
+              QQQ Oct16 730C ×3 carries ~42% of NLV in delta-notional on $2,268 of premium. Flagging
+              that on every index trade makes the flag noise; the portfolio delta target governs
+              those. Sector, thematic and single-country ETFs stay in — that is real concentration. */}
+          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}
+                 title="Roots the sizer's single-name cap does not flag. Their delta-notional is still computed and shown; the 1.0× portfolio delta target governs them. Comma-separated.">
+            Index ETFs exempt from the single-name cap<br />
+            <input value={Array.isArray(settings.sizerExempt) ? settings.sizerExempt.join(", ") : SINGLE_NAME_EXEMPT.join(", ")}
+              onChange={e => { const list = e.target.value.split(",").map(x => x.trim().toUpperCase()).filter(Boolean); setSettings(x => ({ ...x, sizerExempt: list })); touch(); }}
+              style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12, background: C.surf, color: C.text, minWidth: 160, textTransform: "uppercase" }} />
+            <div style={{ fontSize: 10.5, fontWeight: 600, color: C.lbl, marginTop: 2 }}>
+              shown, never flagged · sector and single-country ETFs keep the cap
             </div>
           </label>
           <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Default allocation (%)<br />

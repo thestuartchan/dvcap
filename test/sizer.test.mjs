@@ -1,5 +1,5 @@
 // test/sizer.test.mjs — the size, before the trade.
-import { sizeTrade, sizerRun, appendRun, reconcileRuns, catalystCheck, isZeroDteExpiry, capReview,
+import { sizeTrade, sizerRun, appendRun, reconcileRuns, catalystCheck, isZeroDteExpiry, capReview, isExempt,
          SIZER_LIMITS, RULE_SETS, MAX_RUNS } from '../lib/sizer.js';
 
 let pass = 0, fail = 0;
@@ -363,48 +363,48 @@ const NLV = 202000;
   eq('and nothing matched means no months', reconcileRuns([run('2026-07-01T14:00:00Z', 'X', 10)], []).byMonth, []);
 }
 
-// ── THE SINGLE-NAME CAP, ON EXPOSURE ─────────────────────────────────────────
+// ── THE SINGLE-NAME CAP, ON EXPOSURE — TWO LEGS, EACH ON ITS OWN ─────────────
 // The premium cap sees what an option costs, not what it controls. The brief's live cases at NLV
-// $206,358 (cap $20,636): both passed every test that ran and both sat ~40% over the cap.
+// $206,358 (cap $20,636). Shares and options in the same root are tested SEPARATELY: they are held
+// for different reasons and answer a drawdown in opposite ways, and one number hides which leg the
+// flag is about. Broad index ETFs (QQQ, SPY) are computed, shown, and never flagged.
 {
   const N = 206358;
   const near = (n, g, w, tol) => ok(`${n} (${g} ≈ ${w})`, g != null && Math.abs(g - w) <= tol);
-  // XLE Jan15'27 55C ×5 at 64.40, delta 0.90: $28,980, 14.0%, amber.
+  // XLE Jan15'27 55C ×5 at 64.40, delta 0.90: $28,980, 14.0%, amber — a sector ETF keeps the cap.
   const xle = sizeTrade({ kind: 'option', symbol: 'XLE 2027-01-15 C55', price: 64.40, atr: 1.2, delta: 0.90, mark: 10.4,
-    expiry: '2027-01-15', nlv: N, entered: 5, underlyingExposure: 0, now: NOW });
-  near('XLE ×5 carries $28,980 of delta-notional', xle.singleName.combined, 28980, 1);
-  eq('…14.0% of NLV, past the cap', [xle.singleName.pct, xle.singleName.past, xle.singleName.cap], [14.0, true, 20635.8]);
+    expiry: '2027-01-15', nlv: N, entered: 5, underlyingShares: 0, underlyingOptions: 0, now: NOW });
+  near('XLE ×5 carries $28,980 of delta-notional in options', xle.singleName.options.total, 28980, 1);
+  eq('…14.0% of NLV, past the cap, not exempt', [xle.singleName.pct, xle.singleName.past, xle.singleName.exempt, xle.singleName.cap], [14.0, true, false, 20635.8]);
   eq('…as 450 shares', xle.singleName.shareEquivalent, 450);
-  ok('…and the warning says so, with the number', xle.warnings.some(w => /28,980/.test(w) && /14% of NLV/.test(w) && /single-name cap/.test(w)));
-  ok('…while the size stands — the premium cap still binds', xle.size != null && xle.ok);
-  eq('the premium line itself passes', xle.enteredPremium <= N * 0.03, true);
-  // INTC Oct02'26 115C ×6 at 110.90, delta 0.42, PLUS 30 shares already held: aggregated, ~$31,200, 15.1%.
-  const held = 30 * 110.90;   // the shares' delta-notional, from the book
+  eq('…the shares leg is empty and clear', [xle.singleName.shares.total, xle.singleName.shares.past], [0, false]);
+  ok('…and the warning names the leg and the number', xle.warnings.some(w => /options would carry \$28,980/.test(w) && /14% of NLV/.test(w) && /single-name cap/.test(w)));
+  ok('…while the size stands', xle.size != null && xle.ok);
+  // INTC Oct02'26 115C ×6 at 110.90, delta 0.42, with 30 shares held: TWO LINES.
   const intc = sizeTrade({ kind: 'option', symbol: 'INTC 2026-10-02 C115', price: 110.90, atr: 3.1, delta: 0.42, mark: 3.7,
-    expiry: '2026-10-02', nlv: N, entered: 6, underlyingExposure: held, now: NOW });
-  near('INTC ×6 plus 30 shares is ~$31,200 combined', intc.singleName.combined, 31274, 30);
-  // The brief says ~$31,200 and 15.1%; the exact sum is $31,273.80, which is 15.16% and rounds up.
-  eq('…15.2% of NLV, amber', [intc.singleName.pct, intc.singleName.past], [15.2, true]);
-  eq('…with the held part named', intc.singleName.existing, 3327);
-  ok('…and the warning names what was already held', intc.warnings.some(w => /3,327 of it already held/.test(w)));
-  // QQQ Oct16'26 730C ×3, delta ~0.22 at 712. THE BRIEF SAYS ~$4,700 AND 2.3%, CLEAR — that drops
-  // the contract multiplier. By the brief's own formula, 3 × 0.22 × 100 × 712 = $46,992, which is
-  // 22.8% of NLV: three QQQ calls at that delta control 66 shares, and the cap sees it. The
-  // arithmetic here is the formula's; the expectation in the brief is off by ten.
-  const qqq3 = sizeTrade({ kind: 'option', symbol: 'QQQ 2026-10-16 C730', price: 712, atr: 8.5, delta: 0.22, mark: 4.1,
-    expiry: '2026-10-16', nlv: N, entered: 3, underlyingExposure: 0, now: NOW });
-  near('QQQ ×3 at 0.22 delta is $46,992 by the formula, not $4,700', qqq3.singleName.combined, 46992, 1);
-  eq('…22.8% of NLV, past the cap', [qqq3.singleName.pct, qqq3.singleName.past, qqq3.singleName.shareEquivalent], [22.8, true, 66]);
-  // One contract is the clear case the brief's row describes.
-  const qqq = sizeTrade({ kind: 'option', symbol: 'QQQ 2026-10-16 C730', price: 712, atr: 8.5, delta: 0.22, mark: 4.1,
-    expiry: '2026-10-16', nlv: N, entered: 1, underlyingExposure: 0, now: NOW });
-  near('QQQ ×1 is $15,664', qqq.singleName.combined, 15664, 1);
-  eq('…7.6%, clear', [qqq.singleName.pct, qqq.singleName.past], [7.6, false]);
+    expiry: '2026-10-02', nlv: N, entered: 6, underlyingShares: 30 * 110.90, underlyingOptions: 0, now: NOW });
+  near('INTC options: ×6 is ~$27,900', intc.singleName.options.total, 27947, 1);
+  eq('…13.5%, amber', [intc.singleName.options.pct, intc.singleName.options.past], [13.5, true]);
+  eq('INTC shares: the 30 held, $3,327', [intc.singleName.shares.total, intc.singleName.shares.pct, intc.singleName.shares.past], [3327, 1.6, false]);
+  eq('the flag is about the options leg', [intc.singleName.leg, intc.singleName.past, intc.singleName.pct], ['options', true, 13.5]);
+  near('the combined figure is display only', intc.singleName.combined, 31274, 1);
+  ok('…and the warning does not fold the shares in', intc.warnings.some(w => /options would carry \$27,947/.test(w)) && !intc.warnings.some(w => /31,27/.test(w)));
+  // QQQ Oct16'26 730C ×3 at 718.66, delta 0.40: $86,240, 41.8% of NLV — shown, never flagged.
+  const qqq = sizeTrade({ kind: 'option', symbol: 'QQQ 2026-10-16 C730', price: 718.66, atr: 8.5, delta: 0.40, mark: 7.56,
+    expiry: '2026-10-16', nlv: N, entered: 3, underlyingShares: 0, underlyingOptions: 0, now: NOW });
+  near('QQQ ×3 at 0.40 delta is $86,240', qqq.singleName.options.total, 86239, 2);
+  eq('…41.8% of NLV, over the number, exempt, NOT flagged', [qqq.singleName.pct, qqq.singleName.over, qqq.singleName.exempt, qqq.singleName.past], [41.8, true, true, false]);
   ok('…no single-name warning', !qqq.warnings.some(w => /single-name cap/.test(w)));
+  ok('…but a note says it is exempt and what governs', qqq.notes.some(n => /QQQ is on the index-ETF exempt list/.test(n) && /portfolio delta target governs/.test(n)));
+  eq('SPY is exempt by default too; XLE, SMH, 7709 are not', [isExempt('SPY 2026-10-16 C650'), isExempt('XLE'), isExempt('SMH'), isExempt('7709')], [true, false, false, false]);
+  eq('the list is editable', [isExempt('IWM', ['QQQ', 'SPY', 'iwm']), isExempt('QQQ', [])], [true, false]);
+  const qqqStrict = sizeTrade({ kind: 'option', symbol: 'QQQ 2026-10-16 C730', price: 718.66, atr: 8.5, delta: 0.40, mark: 7.56,
+    expiry: '2026-10-16', nlv: N, entered: 3, underlyingShares: 0, underlyingOptions: 0, exempt: [], now: NOW });
+  eq('…and with QQQ off the list the same trade flags', qqqStrict.singleName.past, true);
   // Unknown book exposure is reported as unknown, not as zero.
   const unk = sizeTrade({ kind: 'option', symbol: 'XLE 2027-01-15 C55', price: 64.40, atr: 1.2, delta: 0.90, mark: 10.4,
     expiry: '2027-01-15', nlv: N, entered: 5, now: NOW });
-  eq('with no book, the held part is unknown and the added part is still tested', [unk.singleName.known, unk.singleName.existing, unk.singleName.past], [false, null, true]);
+  eq('with no book, held is unknown and the added leg is still tested', [unk.singleName.known, unk.singleName.options.held, unk.singleName.shares.total, unk.singleName.past], [false, null, null, true]);
   const unp = sizeTrade({ kind: 'option', symbol: 'XLE 2027-01-15 C55', price: 64.40, atr: 1.2, delta: 0.90, mark: 10.4,
     expiry: '2027-01-15', nlv: N, entered: 1, underlyingUnpriced: 2, now: NOW });
   ok('unpriced lines in the name are named', unp.notes.some(n => /2 lines in this name could not be priced/.test(n)));
@@ -414,19 +414,23 @@ const NLV = 202000;
     expiry: '2027-01-15', nlv: N, deltaSource: 'modelled', now: NOW });
   eq('modelled when the caller says so', mod.singleName.deltaSource, 'modelled');
   ok('…and it is never silent', mod.notes.some(n => /delta is modelled/.test(n)));
-  // A stock is tested the same way, shares plus whatever options are held in it.
-  const stk = sizeTrade({ kind: 'stock', symbol: 'INTC', price: 110.90, atr: 3.1, nlv: N, entered: 100, underlyingExposure: 27947, now: NOW });
-  near('100 INTC shares on top of the calls', stk.singleName.combined, 39037, 1);
-  eq('…is past the cap too', [stk.singleName.past, stk.singleName.deltaSource], [true, 'shares']);
-  // The run carries it and the month counts it.
+  // A stock trade is the shares leg; options already held in the name are the other leg, noted.
+  const stk = sizeTrade({ kind: 'stock', symbol: 'INTC', price: 110.90, atr: 3.1, nlv: N, entered: 100, underlyingShares: 3327, underlyingOptions: 27947, now: NOW });
+  near('100 INTC shares on top of 30', stk.singleName.shares.total, 14417, 1);
+  eq('…the shares leg is clear', [stk.singleName.leg, stk.singleName.past, stk.singleName.deltaSource], ['shares', false, 'shares']);
+  ok('…and the options already over the cap are noted, not folded in', stk.notes.some(n => /INTC options already held carry \$27,947/.test(n)));
+  // The run carries it and the month counts it, exempt lines apart.
   const run = sizerRun(xle, { at: '2026-09-17T14:00:00Z' });
-  eq('the run records the exposure at entry', [run.singleName.underlying_exposure, run.singleName.single_name_pct, run.singleName.delta_source, run.singleName.past_cap], [28980, 14.0, 'exchange', true]);
+  eq('the run records the traded leg, both legs, and the exempt flag',
+     [run.singleName.underlying_exposure, run.singleName.single_name_pct, run.singleName.leg, run.singleName.delta_source, run.singleName.past_cap, run.singleName.etf_exempt],
+     [28980, 14.0, 'options', 'exchange', true, false]);
+  eq('an exempt run says so', [sizerRun(qqq).singleName.etf_exempt, sizerRun(qqq).singleName.past_cap, sizerRun(qqq).singleName.over_cap], [true, false, true]);
   const runs = [run, sizerRun(qqq, { at: '2026-09-15T14:00:00Z' }), sizerRun(intc, { at: '2026-09-16T14:00:00Z' }),
                 sizerRun(mod, { at: '2026-09-14T14:00:00Z' }), sizerRun(stk, { at: '2026-09-14T15:00:00Z' }),
                 sizerRun(xle, { at: '2026-07-01T14:00:00Z' })];
   const rv = capReview(runs, { now: new Date('2026-09-17T16:00:00Z') });
-  eq('the month counts option entries with a window', [rv.n, rv.past, rv.modelled], [4, 3, 1]);
-  eq('and says so', rv.note, '3 of 4 option entries in 30d exceeded the single-name cap on delta-notional · 1 on a modelled delta');
+  eq('the month counts option entries, exempt ones apart', [rv.n, rv.counted, rv.past, rv.exempt, rv.modelled], [4, 3, 3, 1, 1]);
+  eq('and says so', rv.note, '3 of 3 option entries in 30d exceeded the single-name cap on delta-notional · 1 on exempt index ETFs, not counted · 1 on a modelled delta');
   eq('nothing yet is silent', capReview([], { now: NOW }).note, null);
 }
 
