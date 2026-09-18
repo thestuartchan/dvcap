@@ -3781,9 +3781,19 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
               ...g.rows.map(r => {
               const days = daysBetween(r.derived.firstDate, r.derived.lastDate);
               const d = r.derived;
+              // ── THE SAME EDITOR THE TABLE OPENS ──────────────────────────────
+              // The desktop table has opened a closed row in place since #140; these cards, which
+              // are what a phone shows, never did — so on a phone the archive could be read and
+              // not corrected, and the one place that could supply a missing stop was closed
+              // from the device it is most often looked at on. Tap the card; the editor is the
+              // one the open list uses, with nothing archive-specific about it.
+              const open = expanded === r.id;
               return (
-                <div key={r.id} style={{ border: "1px solid " + C.bdr, borderLeft: "4px solid " + (d.realized >= 0 ? C.green : C.red), borderRadius: 9, padding: "9px 11px", marginBottom: 7 }}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap" }}>
+                <div key={r.id} style={{ border: "1px solid " + C.bdr, borderLeft: "4px solid " + (d.realized >= 0 ? C.green : C.red), borderRadius: 9, padding: "9px 11px", marginBottom: 7,
+                                         background: open ? C.bg : undefined }}>
+                  <div onClick={() => setExpanded(open ? null : r.id)} title={r.thesis || "Tap to edit"}
+                       style={{ display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap", cursor: "pointer" }}>
+                    {caret(open)}
                     <b style={{ fontSize: 13.5 }}>{r.symbol}</b>
                     {ccyChip(r.currency)}
                     {d.multiplier > 1 ? <span style={{ fontWeight: 700, color: C.amber, fontSize: 11 }}>×{d.multiplier}</span> : null}
@@ -3793,9 +3803,14 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
                       <b style={{ fontSize: 12.5, color: pnlCol(d.realizedPct) }}>{d.realizedPct == null ? "" : (d.realizedPct > 0 ? "+" : "") + d.realizedPct + "%"}</b>
                     </span>
                   </div>
-                  <div style={{ fontSize: 11.5, color: C.lbl, marginTop: 3 }}>
+                  <div onClick={() => setExpanded(open ? null : r.id)} style={{ fontSize: 11.5, color: C.lbl, marginTop: 3, cursor: "pointer" }}>
                     {d.firstDate || "?"} → {d.lastDate || "?"}{days == null ? "" : ` · ${days}d`} · {d.bought} @ {fmtPrice(d.avgEntry, { maxDp: priceMaxDp(r.symbol) })} → {fmtPrice(d.avgExit, { maxDp: priceMaxDp(r.symbol) })}
                   </div>
+                  {open && (
+                    <div style={{ marginTop: 8 }}>
+                      <PositionRow r={r} mode="closed" ctx={ctx} />
+                    </div>
+                  )}
                 </div>
               );
             })])];
