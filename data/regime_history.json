@@ -1527,9 +1527,9 @@
       "hyg_chg": 0.34,
       "hyg_qqq_divergence": -1.38,
       "inputs": {
-        "weightedRecessionProb": 14.4,
+        "weightedRecessionProb": 14.3,
         "cpi": 3.35302,
-        "kalshi2027": 26,
+        "kalshi2027": 22,
         "tape": {
           "gold": "up",
           "tlt": "up",
@@ -1545,9 +1545,9 @@
         "u3": 4.1,
         "empPop": 59.1,
         "oas": 2.7,
-        "tenY": 5,
-        "twoY": 4.67,
-        "consensusAlive": 0.761,
+        "tenY": 5.01,
+        "twoY": 4.74,
+        "consensusAlive": 0.763,
         "regimeVintage": "decayed"
       },
       "axes": {
@@ -1575,10 +1575,10 @@
         },
         "inflation": {
           "state": "turning-hot",
-          "lean": 0,
+          "lean": -1,
           "market": {
-            "verdict": "HOT",
-            "lean": 1,
+            "verdict": "BETWEEN",
+            "lean": 0,
             "usable": 3,
             "of": 3
           },
@@ -1599,7 +1599,7 @@
         "quadrantRead": "between quadrants — the growth axis is flat"
       },
       "source": "client+cron",
-      "loggedAt": "2026-09-18T04:58:07.230Z"
+      "loggedAt": "2026-09-18T12:12:17.953Z"
     }
   ]
 }
