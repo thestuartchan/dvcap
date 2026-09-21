@@ -1681,9 +1681,9 @@
     },
     {
       "date": "2026-09-21",
-      "stagflation_p": 55,
-      "reflationary_p": 20,
-      "deflationary_p": 20,
+      "stagflation_p": 65,
+      "reflationary_p": 17,
+      "deflationary_p": 13,
       "inflationary_p": 5,
       "hawkish_repricing": "STAGFLATION",
       "live_regime": "stag",
@@ -1692,9 +1692,9 @@
       "hyg_chg": -0.24,
       "hyg_qqq_divergence": -0.87,
       "inputs": {
-        "weightedRecessionProb": 15,
-        "cpi": 334.131,
-        "kalshi2027": 25,
+        "weightedRecessionProb": 14.3,
+        "cpi": 3.35302,
+        "kalshi2027": 26,
         "tape": {
           "gold": "up",
           "tlt": "down",
@@ -1709,16 +1709,16 @@
         "ladderSpread": 2.45,
         "u3": 4.1,
         "empPop": 59.1,
-        "oas": 2.7,
+        "oas": 2.68,
         "tenY": 4.94,
         "twoY": 4.67,
-        "consensusAlive": 0.712,
+        "consensusAlive": 0.75,
         "regimeVintage": "decayed"
       },
       "axes": {
         "growth": {
-          "state": "split",
-          "lean": 0,
+          "state": "turning-down",
+          "lean": 1,
           "market": {
             "verdict": "CONTRACTING",
             "lean": -1,
@@ -1732,8 +1732,8 @@
             "of": 4
           },
           "monthly": {
-            "verdict": "MIXED",
-            "lean": 0,
+            "verdict": "EXPANDING",
+            "lean": 1,
             "usable": 3,
             "of": 4
           }
@@ -1760,11 +1760,11 @@
             "of": 3
           }
         },
-        "quadrant": null,
-        "quadrantRead": "between quadrants — the growth axis is flat"
+        "quadrant": "ref",
+        "quadrantRead": "growth firm, inflation cool"
       },
       "source": "client+cron",
-      "loggedAt": "2026-09-21T09:54:24.148Z"
+      "loggedAt": "2026-09-21T15:19:28.709Z"
     }
   ]
 }
