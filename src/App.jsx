@@ -4835,7 +4835,10 @@ function SouthboundPanel() {
   const [msg, setMsg] = useState(null);
   useEffect(() => {
     fetch("/api/manual-entry").then(r => r.json()).then(j => setSeries(j.southbound?.series || [])).catch(() => {});
-    fetch("/api/indicators").then(r => r.json()).then(j => setSmicAH(j.smicAH || null)).catch(() => {});
+    // ONE FIELD, NOT THE ROUTE. This fetched /api/indicators whole — a second full FRED burst in
+    // the same page load as the Macro tab's own, which is what tipped the key over its minute
+    // budget on 2026-09-21. ?smic=1 answers with the SMIC feed alone and touches FRED not at all.
+    fetch("/api/indicators?smic=1").then(r => r.json()).then(j => setSmicAH(j.smicAH || null)).catch(() => {});
   }, []);
 
   const ahOk = smicAH?.premium != null;           // auto feed live?
