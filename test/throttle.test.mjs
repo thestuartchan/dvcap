@@ -122,13 +122,16 @@ function harness() {
 
   ok('the FRED gate is built in lib/fred.js', /export const fredGate = limiter\(/.test(fredSrc));
   ok('from the shared limiter', /import \{[^}]*limiter[^}]*\} from '\.\/throttle\.js'/.test(fredSrc));
-  ok('and indicators shares that one instead of building a second',
-     /import \{[^}]*fredGate[^}]*\} from '\.\.\/lib\/fred\.js'/.test(ind));
+  // 2026-09-21: the fetch, the retry AND the cache moved into lib/fred.js (fredJsonEx), because a
+  // gate bounds one invocation and a page load is several. indicators.js now owns no FRED request
+  // at all — it hands URLs to fredJsonEx — so the thing to assert is that nothing in the route
+  // reaches fetch, a gate, or a backoff on its own.
+  ok('and indicators draws on it through fredJsonEx instead of building a second',
+     /import \{[^}]*fredJsonEx[^}]*\} from '\.\.\/lib\/fred\.js'/.test(ind) && /await fredJsonEx\(/.test(ind));
   eq('indicators builds no limiter of its own', (ind.match(/limiter\(/g) || []).length, 0);
-
-  ok('indicators still gates its FRED requests', /fredGate\(\(\) => fetch\(/.test(ind));
-  ok('and backs off between tries', /sleep\(backoffMs\(/.test(ind));
-  ok('so does lib/fred.js', /sleep\(backoffMs\(/.test(fredSrc));
+  eq('and calls no gate of its own — the gate is inside the fetch it delegates to', (ind.match(/fredGate\(/g) || []).length, 0);
+  eq('and no backoff of its own', (ind.match(/backoffMs\(/g) || []).length, 0);
+  ok('lib/fred.js backs off between tries', /sleep\(backoffMs\(/.test(fredSrc));
   ok('and it retries rather than treating one 429 as fatal', /tries = 3/.test(fredSrc));
   // A 400 means the request is wrong and a retry fails identically; only 429/5xx are worth another.
   ok('but does not retry a bad request', /status !== 429 && r\.status < 500/.test(fredSrc));
@@ -136,11 +139,16 @@ function harness() {
   // fredLabor called fetch directly and so never retried, while the panel said it had.
   eq('no FRED request is made outside fredFetch',
      (ind.match(/await fetch\(`https:\/\/api\.stlouisfed/g) || []).length, 0);
-  // The same rule on the library side. ONE fetch call in the whole file, and it is the one inside
-  // fredJson — so a new reader cannot quietly reintroduce an ungated request, which is exactly how
-  // this file came to have four of them.
-  eq('lib/fred.js calls fetch exactly once', (fredSrc.match(/fetch\(/g) || []).length, 1);
-  ok('and that one call is gated', /fredGate\(\(\) => fetch\(/.test(fredSrc));
+  eq('and none at all, gated or not', (ind.match(/\bfetch\(/g) || []).length - (ind.match(/\bfetch\((?!`https:\/\/api\.stlouisfed)/g) || []).length, 0);
+  // The same rule on the library side. ONE network call in the whole file, and it is the one inside
+  // fredJsonEx — through `fetcher`, which defaults to fetch and is injectable so the cache is
+  // testable without the network — so a new reader cannot quietly reintroduce an ungated request,
+  // which is exactly how this file came to have four of them.
+  eq('lib/fred.js makes exactly one network call', (fredSrc.match(/fetcher\(/g) || []).length, 1);
+  eq('and never calls fetch directly', (fredSrc.match(/\bfetch\(/g) || []).length, 0);
+  ok('the injectable defaults to fetch', /fetcher = fetch\b/.test(fredSrc));
+  ok('and that one call is gated', /fredGate\(\(\) => fetcher\(/.test(fredSrc));
+  ok('and cached under a key that carries no api key', /fredCacheKey/.test(fredSrc) && /api_key=\[\^&\]\*/.test(fredSrc));
   // Every exported reader routes through fredJson. Counted against the readers rather than every
   // export, since fredJson is itself exported and is the thing being routed to.
   {
