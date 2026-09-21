@@ -1681,9 +1681,9 @@
     },
     {
       "date": "2026-09-21",
-      "stagflation_p": 71,
-      "reflationary_p": 16,
-      "deflationary_p": 8,
+      "stagflation_p": 55,
+      "reflationary_p": 20,
+      "deflationary_p": 20,
       "inflationary_p": 5,
       "hawkish_repricing": "STAGFLATION",
       "live_regime": "stag",
@@ -1692,9 +1692,9 @@
       "hyg_chg": -0.24,
       "hyg_qqq_divergence": -0.87,
       "inputs": {
-        "weightedRecessionProb": 14.3,
+        "weightedRecessionProb": 15,
         "cpi": 334.131,
-        "kalshi2027": 22,
+        "kalshi2027": 25,
         "tape": {
           "gold": "up",
           "tlt": "down",
@@ -1712,7 +1712,7 @@
         "oas": 2.7,
         "tenY": 4.94,
         "twoY": 4.67,
-        "consensusAlive": 0.75,
+        "consensusAlive": 0.712,
         "regimeVintage": "decayed"
       },
       "axes": {
@@ -1764,7 +1764,7 @@
         "quadrantRead": "between quadrants — the growth axis is flat"
       },
       "source": "client+cron",
-      "loggedAt": "2026-09-21T03:41:03.674Z"
+      "loggedAt": "2026-09-21T09:54:24.148Z"
     }
   ]
 }
