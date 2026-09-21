@@ -4,8 +4,7 @@ import { INFLATION_SERIES } from "../lib/inflationAxis.js";
 import { kvGetJson, kvSetJson, kvConfigured } from "../lib/kv.js";
 import { zqMovesPriced } from "../lib/fedpath.js";
 import { fetchSmicAHPremium } from "../lib/smicah.js";
-import { backoffMs, sleep } from '../lib/throttle.js';
-import { fredGate } from '../lib/fred.js';
+import { fredJsonEx } from '../lib/fred.js';
 import { fetchIsharesSecYield } from '../lib/fundYield.js';
 
 export default async function handler(req, res) {
@@ -13,6 +12,17 @@ export default async function handler(req, res) {
 
   if (!FRED_KEY) {
     return res.status(500).json({ error: "FRED_API_KEY not configured" });
+  }
+
+  // ?smic=1 — the Southbound panel's one field, without the other sixty fetches. The panel used to
+  // request the whole route for it, which was a second full FRED burst inside the same page load.
+  if (String(req.query?.smic ?? '') === '1') {
+    try {
+      res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
+      return res.status(200).json({ smicAH: await fetchSmicAHPremium() });
+    } catch (e) {
+      return res.status(200).json({ smicAH: null, error: String(e?.message || e) });
+    }
   }
 
   // ── A FAILED FETCH IS NOT AN EMPTY SERIES ───────────────────────────────────
@@ -43,22 +53,16 @@ export default async function handler(req, res) {
   // Three tries, backing OFF rather than re-colliding. The old fixed 400ms was the burst again in
   // miniature: everything throttled together waited the same interval and retried together. Full
   // jitter spreads them across the window instead.
+  // THE FETCH, THE RETRY AND THE CACHE all live in lib/fred.js now, so this route and lib/quotes.js
+  // draw on one store as well as one gate. A body served from the last good copy after a failed
+  // fetch is recorded in `feedStale` — data on the tile, and a note that it is a quarter-hour or
+  // more old — while a body that could not be had at all is a feed error as before.
+  const feedStale = [];
   async function fredFetch(url, label, tries = 3) {
-    let last = null;
-    for (let i = 0; i < tries; i++) {
-      try {
-        const r = await fredGate(() => fetch(url));
-        if (r.ok) return await r.json();
-        last = `HTTP ${r.status}`;
-        // 429 and 5xx are worth another ask; a 400 means the request itself is wrong and a retry
-        // will fail identically.
-        if (r.status !== 429 && r.status < 500) break;
-      } catch (e) { last = String(e?.message || e); }
-      if (i + 1 < tries) await sleep(backoffMs(i));
-    }
-    feedErrors.push({ series: label, error: last });
-    console.error("FRED fetch failed (" + label + "):", last);
-    return null;
+    const { body, error, source } = await fredJsonEx(url, label, { tries });
+    if (body && source === 'stale') feedStale.push({ series: label, error });
+    if (!body) feedErrors.push({ series: label, error });
+    return body;
   }
 
   async function fredPc1History(seriesId, limit = 25) {
@@ -714,9 +718,11 @@ export default async function handler(req, res) {
   async function fetchNyFedYieldCurve() {
     try {
       const url = `https://api.stlouisfed.org/fred/series/observations?series_id=T10Y3M&sort_order=desc&limit=90&api_key=${FRED_KEY}&file_type=json`;
-      const r = await fetch(url);
-      if (!r.ok) { console.error("NY Fed spread status", r.status); return null; }
-      const obs = (await r.json())?.observations || [];
+      // Through the gate and the cache like every other FRED call here; this one went to fetch
+      // directly and was the one request per load that no limiter ever saw.
+      const j = await fredFetch(url, 'T10Y3M (yield curve)');
+      if (!j) return null;
+      const obs = j?.observations || [];
       const valid = obs.filter(o => o.value !== "." && o.value !== "" && o.value !== "NA")
         .map(o => ({ date: o.date, value: parseFloat(o.value) }))
         .filter(o => Number.isFinite(o.value));
@@ -991,6 +997,8 @@ export default async function handler(req, res) {
       // tile with no number is then distinguishable from a tile whose fetch failed, and the UI
       // says which. Empty on a clean fetch, so `feedErrors.length` is the whole test.
       feedErrors,
+      // Served from the last good copy after a failed fetch: present, and older than the window.
+      feedStale,
       smicAH: smicAHFeed,   // SMIC A/H premium — mainland-sentiment gauge for the Southbound panel
       sanity,  // { metric: "out-of-band" } for any value outside its plausible band
     };
