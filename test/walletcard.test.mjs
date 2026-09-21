@@ -533,6 +533,19 @@ const row = (o = {}) => ({
   eq('two of a name: the swapped-for one is kept', publishable([real, plainTwin, eth]).map(r => r.price), [0.5906, 2636.4]);
   eq('two of a name and no way to tell: neither', publishable([{ ...real, acquired: null }, plainTwin, eth]).map(r => r.coin), ['ETH']);
   eq('but a verified one always wins', publishable([{ ...real, verified: true, acquired: null }, plainTwin, eth]).map(r => r.price), [0.5906, 2636.4]);
+  // ── THE SECOND MORNING ─────────────────────────────────────────────────────
+  // The snapshot written the day before carried no provenance: two plain rows of one name, which
+  // the gate keeps neither of. That must not turn a holding the wallet had all along into a buy.
+  const legacyReal = { coin: 'PONS', chain: RH, total: 4000, price: 0.5906 };
+  const legacyTwin = { coin: 'PONS\u200b', chain: RH, total: 900, price: 0.5782 };
+  const legacyEth = { coin: 'ETH', chain: RH, total: 0.02, price: 2622.4 };
+  eq('a name held yesterday under indistinguishable rows is not bought today', diffHoldings([legacyReal, legacyTwin, legacyEth], [real, eth, twinSpaced]), []);
+  eq('…and a real top-up of it is still an add', diffHoldings([legacyReal, legacyTwin, legacyEth], [{ ...real, total: 4400 }, eth, twinSpaced]).map(e => e.kind), ['added']);
+  eq('…while the gate still lists it once', publishable([real, eth, twinSpaced]).map(r => r.coin), ['PONS', 'ETH']);
+  // The mirror: a holding the gate cannot resolve today was not sold.
+  eq('a name still held under unresolvable rows is not sold', diffHoldings([real, eth], [{ ...real, acquired: null }, plainTwin, eth]), []);
+  eq('but one that is really gone is', diffHoldings([real, eth], [eth]).map(e => e.kind), ['sold']);
+
   // The whole card, end to end: nothing about the twin anywhere in the payload.
   const card = buildWalletCard(diffHoldings(before, [real, eth, twinCyrillic]),
     publishable([real, eth, twinCyrillic]).map(r => walletPublicView(r, r.chain)));
