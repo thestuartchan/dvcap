@@ -1694,7 +1694,7 @@
       "inputs": {
         "weightedRecessionProb": 14.3,
         "cpi": 3.35302,
-        "kalshi2027": 26,
+        "kalshi2027": 21,
         "tape": {
           "gold": "up",
           "tlt": "down",
@@ -1764,7 +1764,7 @@
         "quadrantRead": "growth firm, inflation cool"
       },
       "source": "client+cron",
-      "loggedAt": "2026-09-21T15:19:28.709Z"
+      "loggedAt": "2026-09-21T18:20:21.244Z"
     }
   ]
 }
