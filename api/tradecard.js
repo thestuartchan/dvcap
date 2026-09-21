@@ -20,7 +20,7 @@ import { upsertCard, post, remove, webhookFromEnv, walletWebhookFromEnv, mention
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
 import { fetchWallets } from '../lib/wallet.js';
 import { fetchSpotContext, fetchHyperliquid, fetchHlAccount, fetchHlSpot, fetchHlOrders } from '../lib/hyperliquid.js';
-import { diffHoldings, walletPublicView, buildWalletCard, mergePending, perpPublicView } from '../lib/walletcard.js';
+import { diffHoldings, walletPublicView, buildWalletCard, mergePending, perpPublicView, publishable } from '../lib/walletcard.js';
 
 // A row's symbol is what you call it; the quote feed may call it something else. Mirrors the tab's
 // own resolution — Yahoo has no MNQ, and its MGC is an unrelated stock.
@@ -211,9 +211,13 @@ export async function refreshWallet({ post = false, clock = new Date() } = {}) {
   const now = w.chains.filter(c => c.ok).flatMap(c =>
     // `thin` rides along: a price from a market with no volume in it is not the same fact as a
     // price from a real one, and the card was publishing both with identical authority.
-    c.rows.map(r => ({ coin: r.coin, chain: c.chain, total: r.total, price: r.price, thin: !!r.thin })));
+    // …and so do the three facts lib/walletcard.js `publishable` reads: whether the contract is
+    // vouched for, whether the price is a pool's, and whether the wallet swapped for it. Without
+    // them an airdropped lookalike is a holding and its arrival is a buy (2026-09-21, PONS).
+    c.rows.map(r => ({ coin: r.coin, chain: c.chain, total: r.total, price: r.price, thin: !!r.thin,
+                       verified: !!r.verified, viaPool: !!r.viaPool, acquired: r.acquired ?? null, native: !!r.native })));
   if (hlSpot.ok) {
-    for (const r of hlSpot.rows) now.push({ coin: r.coin, chain: 'Hyperliquid', total: r.total, price: r.price, thin: !!r.thin });
+    for (const r of hlSpot.rows) now.push({ coin: r.coin, chain: 'Hyperliquid', total: r.total, price: r.price, thin: !!r.thin, verified: true, viaPool: false, acquired: null });
   }
 
   // PERPS ARE NOT DIFFED. A position is not a balance that went up or down — it has a direction, an
@@ -262,7 +266,7 @@ export async function refreshWallet({ post = false, clock = new Date() } = {}) {
              due: `${PUBLISH_HOUR_UTC}:00Z`, lastPosted };
   }
 
-  const holdings = now.filter(r => r.price != null).map(r => walletPublicView(r, r.chain));
+  const holdings = publishable(now).filter(r => r.price != null).map(r => walletPublicView(r, r.chain));
   const card = buildWalletCard(pending, holdings, { perps });
   const r = await fetch(hook, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },

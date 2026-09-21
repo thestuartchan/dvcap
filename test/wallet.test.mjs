@@ -376,8 +376,9 @@ const HOLDER = '0x000000000000000000000000000000000000dEaD';
     ['BOUGHT', { price: 0.7, volume: 5e5, viaPool: 'USDG', verified: false }],
     ['DROPPED', { price: 0.7, volume: 5e5, viaPool: 'USDG', verified: false }],
   ]);
-  const bal = (coin, total, acquired) => ({ coin, total, hold: 0, free: total, entryNtl: 0, ...(acquired ? { acquired: true } : {}) });
-  const h = spotHoldings([bal('REAL', 1.1), bal('BOUGHT', 1070, true), bal('DROPPED', 1070)], prices);
+  // Tri-state from lib/wallet.js: true swapped for, false checked and not, absent never checked.
+  const bal = (coin, total, acquired) => ({ coin, total, hold: 0, free: total, entryNtl: 0, ...(acquired == null ? {} : { acquired: !!acquired }) });
+  const h = spotHoldings([bal('REAL', 1.1), bal('BOUGHT', 1070, true), bal('DROPPED', 1070, false)], prices);
 
   eq('a swapped token counts, however its contract looks', h.total, 760);
   eq('and only the unsolicited one is held out', h.unverified.coins, ['DROPPED']);
@@ -385,6 +386,9 @@ const HOLDER = '0x000000000000000000000000000000000000dEaD';
   eq('the swapped token sorts as an ordinary holding', h.rows.map(r => r.coin), ['BOUGHT', 'REAL', 'DROPPED']);
   ok('and carries the flag the card reads', h.rows.find(r => r.coin === 'BOUGHT').acquired === true);
   ok('while the dropped one does not', h.rows.find(r => r.coin === 'DROPPED').acquired === false);
+  // NEVER CHECKED IS ITS OWN ANSWER. The public card hides `acquired === false`; a row the chain
+  // was never asked about must not be hidden as though it had been.
+  eq('a token never checked is null, not false', spotHoldings([bal('UNKNOWN', 1070)], prices).rows[0].acquired, null);
 
   // The verdict is about PROVENANCE, not quality. This must not become a goodness test.
   const scam = spotHoldings([bal('SCAM', 100, true)],
