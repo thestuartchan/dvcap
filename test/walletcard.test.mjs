@@ -7,7 +7,7 @@
 // are distinctive digit strings, asserted to appear nowhere in the serialised output.
 import { chainMark, headerMark, WALLET_MARK } from '../lib/chains.js';
 import { classifyTrigger, parseTriggerOrders } from '../lib/hyperliquid.js';
-import { walletPublicView, diffHoldings, buildWalletCard, eventLine, holdingLine, groupedHoldingLine, mergePending, MIN_CHAIN_HOLDINGS,
+import { walletPublicView, diffHoldings, buildWalletCard, eventLine, holdingLine, groupedHoldingLine, mergePending, MIN_CHAIN_HOLDINGS, publishable, symbolKey, isPlainSymbol, isUnsolicited,
          HIDDEN_SYMBOLS, hiddenSymbols,
          perpPublicView, perpLine, PERP_PUBLIC_FIELDS,
          WALLET_PUBLIC_FIELDS, EVENT_PUBLIC_FIELDS, MIN_NOTIONAL_USD } from '../lib/walletcard.js';
@@ -493,6 +493,53 @@ const row = (o = {}) => ({
   ok('and still no custom emoji, which would print as text', !/<:/.test(c.title));
   eq('the mark is a parameter', buildWalletCard([], [], { titleMark: '🧾', env: {} }).embeds[0].title, '🧾 Daily Summary');
   eq('and can be turned off', buildWalletCard([], [], { titleMark: '', env: {} }).embeds[0].title, 'Daily Summary');
+}
+
+// ── A NAME THAT LOOKS LIKE ANOTHER, AND A TOKEN NOBODY ASKED FOR ────────────
+// 2026-09-21: "🟢 Bought PONS" on a day nothing was bought, and PONS listed twice at two prices — a
+// second contract wearing the name. Identity is the normalised symbol; what arrived unbidden is
+// neither announced nor listed; one symbol per chain.
+{
+  const RH = 'Robinhood Chain';
+  const real = { coin: 'PONS', chain: RH, total: 4000, price: 0.5906, viaPool: 'WETH', verified: false, acquired: true };
+  const twinCyrillic = { coin: 'P\u041eNS', chain: RH, total: 900, price: 0.5782, viaPool: 'WETH', verified: false, acquired: false };
+  const twinFullwidth = { coin: '\uff30\uff2f\uff2e\uff33', chain: RH, total: 900, price: 0.5782, viaPool: 'WETH', verified: false, acquired: false };
+  const twinSpaced = { coin: 'PONS\u200b', chain: RH, total: 900, price: 0.5782, viaPool: 'WETH', verified: false, acquired: false };
+  const eth = { coin: 'ETH', chain: RH, total: 0.02, price: 2636.4, native: true, verified: true, acquired: null };
+  const before = [real, eth];
+
+  eq('fullwidth and zero-width fold to the plain symbol', [symbolKey(twinFullwidth.coin), symbolKey(twinSpaced.coin), symbolKey(' pons ')], ['PONS', 'PONS', 'PONS']);
+  eq('a Cyrillic О does not fold, so the name is not plain', [isPlainSymbol(twinCyrillic.coin), isPlainSymbol('PONS'), isPlainSymbol('USDT0'), isPlainSymbol('')], [false, true, true, false]);
+  eq('unbidden = pool-priced, unvouched, and the chain says nothing was given up', [isUnsolicited(twinCyrillic), isUnsolicited(real), isUnsolicited({ ...real, acquired: null }), isUnsolicited({ ...twinCyrillic, verified: true })], [true, false, false, false]);
+
+  for (const [name, twin] of [['Cyrillic', twinCyrillic], ['fullwidth', twinFullwidth], ['zero-width', twinSpaced]]) {
+    const after = [real, eth, twin];
+    eq(`a ${name} twin arriving is not a buy`, diffHoldings(before, after), []);
+    eq(`and the ${name} twin is not listed`, publishable(after).map(r => r.coin), ['PONS', 'ETH']);
+  }
+  // The airdrop with an honest name is still an airdrop.
+  const airdrop = { coin: 'FREEMONEY', chain: RH, total: 1e6, price: 0.001, viaPool: 'WETH', verified: false, acquired: false };
+  eq('an unbidden token is not a buy', diffHoldings(before, [real, eth, airdrop]), []);
+  eq('nor a holding', publishable([real, eth, airdrop]).map(r => r.coin), ['PONS', 'ETH']);
+  // …and hiding it is not a sale.
+  eq('and its later disappearance is not a sale', diffHoldings([real, eth, airdrop], before), []);
+  // A token the wallet DID swap for, unvouched and pool-priced, is a real buy — that is PONS itself.
+  eq('a swapped-for unvouched token is a buy', diffHoldings([eth], before).map(e => `${e.kind} ${e.symbol}`), ['bought PONS']);
+  // Unknown acquisition keeps the row: a bad transfer-history day must not hide the book.
+  const unknown = { ...real, acquired: null };
+  eq('unknown acquisition keeps the holding', publishable([unknown, eth]).map(r => r.coin), ['PONS', 'ETH']);
+  // Two plain PONS on one chain: verified wins, else swapped-for, else neither.
+  const plainTwin = { ...real, coin: 'PONS', total: 900, price: 0.5782, acquired: null };
+  eq('two of a name: the swapped-for one is kept', publishable([real, plainTwin, eth]).map(r => r.price), [0.5906, 2636.4]);
+  eq('two of a name and no way to tell: neither', publishable([{ ...real, acquired: null }, plainTwin, eth]).map(r => r.coin), ['ETH']);
+  eq('but a verified one always wins', publishable([{ ...real, verified: true, acquired: null }, plainTwin, eth]).map(r => r.price), [0.5906, 2636.4]);
+  // The whole card, end to end: nothing about the twin anywhere in the payload.
+  const card = buildWalletCard(diffHoldings(before, [real, eth, twinCyrillic]),
+    publishable([real, eth, twinCyrillic]).map(r => walletPublicView(r, r.chain)));
+  const desc = card.embeds[0].description;
+  ok('the card says no changes', /No changes today/.test(desc));
+  eq('and lists PONS once', (desc.match(/PONS/g) || []).length, 1);
+  ok('and never the twin', !desc.includes('\u041e') && !desc.includes('0.5782'));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
