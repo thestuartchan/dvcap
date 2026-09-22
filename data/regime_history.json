@@ -1803,7 +1803,7 @@
         "regimeVintage": "decayed"
       },
       "source": "client+cron",
-      "loggedAt": "2026-09-22T17:19:13.890Z",
+      "loggedAt": "2026-09-22T17:19:15.340Z",
       "axes": {
         "growth": {
           "state": "turning-down",
