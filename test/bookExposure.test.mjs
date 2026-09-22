@@ -255,5 +255,27 @@ const book = bookExposure({ rows: ROWS, greeks: GREEKS, underlyings: SPOTS, nlv:
   eq('…and byUnderlying files it under GC', [noGreeks.byUnderlying.GC.deltaNotional, noGreeks.byUnderlying.GC.shares, noGreeks.byUnderlying.MGC], [88040, 88040, undefined]);
 }
 
+// ── THE TWO BUCKETS, AND 7709.HK AT ITS FACTOR ───────────────────────────────
+{
+  const rows = [
+    { symbol: 'INTC', qty: 100, livePrice: 110.9, derived: { firstDate: '2026-08-01' } },
+    { symbol: '7709.HK', qty: 800, livePrice: 39.6, derived: { firstDate: '2026-09-21' } },      // 2× — a swing trade, session 2
+    { symbol: 'TQQQ', qty: 100, livePrice: 73, derived: { firstDate: '2026-09-15' } },            // swing, but open since the 15th: session 6
+    { symbol: 'MNQ', qty: 1, multiplier: 2, livePrice: 30227, derived: { firstDate: '2026-09-22' } }, // index future, session 1
+    { symbol: 'MGC', qty: 2, multiplier: 10, livePrice: 4402, derived: { firstDate: '2026-09-10' } },  // gold: the position book
+  ];
+  const now = new Date('2026-09-22T20:00:00Z');
+  const b = bookExposure({ rows, greeks: {}, underlyings: { INTC: 110.9, '7709.HK': 39.6, TQQQ: 73, MNQ: 30227, MGC: 4402 }, nlv: 220000, now });
+  const line = (sym) => b.lines.find(l => l.symbol === sym);
+  eq('7709.HK ×800 is counted at 2× its market value', [line('7709.HK').delta, line('7709.HK').deltaNotional, line('7709.HK').bucket, line('7709.HK').sessionsHeld], [2, 63360, 'swing', 2]);
+  eq('TQQQ open since the 15th is session 6: re-classified into the position book', [line('TQQQ').bucket, line('TQQQ').reclassified, line('TQQQ').sessionsHeld], ['position', true, 6]);
+  eq('an index future held overnight is a swing trade', [line('MNQ').bucket, line('MNQ').deltaNotional], ['swing', 60454]);
+  eq('gold and shares are the position book', [line('MGC').bucket, line('INTC').bucket], ['position', 'position']);
+  eq('the buckets sum: position = INTC + MGC + TQQQ, swing = 7709 + MNQ', [b.buckets.positionUsd, b.buckets.swingUsd], [11090 + 88040 + 21900, 63360 + 60454]);
+  ok('…and the reclassification is listed for the panel and the log', b.buckets.reclassified.length === 1 && b.buckets.reclassified[0].symbol === 'TQQQ');
+  const b2 = bookExposure({ rows: rows.map(r => r.symbol === 'TQQQ' ? { ...r, bucket: 'position' } : r), greeks: {}, underlyings: { INTC: 110.9, '7709.HK': 39.6, TQQQ: 73, MNQ: 30227, MGC: 4402 }, nlv: 220000, now });
+  eq('a row that says position is the position book and not a reclassification', [b2.lines.find(l => l.symbol === 'TQQQ').bucket, b2.buckets.reclassified.length], ['position', 0]);
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

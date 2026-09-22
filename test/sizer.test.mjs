@@ -1,5 +1,5 @@
 // test/sizer.test.mjs — the size, before the trade.
-import { sizeTrade, sizerRun, appendRun, reconcileRuns, catalystCheck, isZeroDteExpiry, capReview, isExempt, sizeFuture, futuresReview,
+import { sizeTrade, sizerRun, appendRun, reconcileRuns, catalystCheck, isZeroDteExpiry, capReview, isExempt, sizeFuture, futuresReview, leveragedReview,
          SIZER_LIMITS, RULE_SETS, MAX_RUNS } from '../lib/sizer.js';
 
 let pass = 0, fail = 0;
@@ -485,6 +485,57 @@ const NLV = 202000;
   const recon = reconcileRuns([run], fills);
   eq('a 3-lot fill against a 2-lot suggestion is 1 of 1 exceeded', [futuresReview(recon, { now: new Date('2026-09-23T00:00:00Z') }).note], ['1 of 1 futures entry in 30d exceeded the suggested contract count']);
   eq('no futures runs, no line', futuresReview(reconcileRuns([], [])).note, null);
+}
+
+// ── A LEVERAGED ETF'S EXPOSURE IS ITS COST TIMES ITS FACTOR ──────────────────
+// 22 Sep 2026: TQQQ as a Stock sized 291 shares — $21k of cost, $64k of index delta, through
+// the 1.5× ceiling with a tick. NLV $220,000: cap $22,000, target 1.0×, ceiling 1.5×.
+{
+  const N = 220000, NOW3 = new Date('2026-09-22T14:00:00Z');
+  const base = { kind: 'stock', price: 73, atr: 2.9, nlv: N, underlying: 'QQQ', underlyingPrice: 729, reset: 'daily', underlyingShares: 0, underlyingOptions: 0, now: NOW3 };
+  const t = sizeTrade({ ...base, symbol: 'TQQQ', leverage: 3, bookDeltaNotional: 1.38 * N });
+  eq('TQQQ: the cap divides by price × 3 and governs — 100 shares', [t.tests[1].size, t.tests[1].detail, t.binding, t.size], [100, '$22,000 ÷ ($73.00 × 3)', 'Concentration cap (10%)', 100]);
+  eq('…cost $7,300, delta-notional $21,900, ≈ 30 QQQ shares of delta', [t.leverage.cost, t.leverage.deltaNotional, t.leverage.underlyingShares], [7300, 21900, 30]);
+  eq('…book 1.38× → 1.48×, inside the ceiling', [t.book.before, t.book.after, t.pastCeiling], [1.38, 1.48, false]);
+  eq('…a swing trade by default, with the daily-reset note', [t.bucket.used, t.bucket.byDefault, t.leverage.reset], ['swing', 'swing', 'daily']);
+  ok('…', t.notes.some(n => /daily reset — path-dependent/.test(n) && /sized as a trade, not a position/.test(n)));
+  // The old suggestion, entered: the panel says what it is and still does not block.
+  const t291 = sizeTrade({ ...base, symbol: 'TQQQ', leverage: 3, bookDeltaNotional: 1.38 * N, entered: 291 });
+  eq('291 TQQQ: $63,729 of delta-notional, 29% of NLV, above the cap', [t291.leverage.deltaNotional, t291.singleName.pct, t291.singleName.past], [63729, 29, true]);
+  eq('…and the book goes to 1.67×, past the ceiling — reported, not refused', [t291.book.after, t291.pastCeiling, t291.ok, t291.size], [1.67, true, true, 100]);
+  // The inverse: negative delta, the book goes DOWN, and the hedge line says what reaches target.
+  const sq = sizeTrade({ ...base, symbol: 'SQQQ', price: 13, atr: 0.6, leverage: -3, bookDeltaNotional: 1.38 * N });
+  ok('SQQQ moves the book down', sq.perUnitDelta < 0 && sq.book.after < sq.book.before);
+  eq('…to bring the book from 1.38× to 1.0×: $83,600 of SQQQ, 2,143 shares', [sq.leverage.hedgeToTarget.fromX, sq.leverage.hedgeToTarget.toX, sq.leverage.hedgeToTarget.usd, sq.leverage.hedgeToTarget.shares], [1.38, 1, 83600, 2143]);
+  ok('…with the drag note', sq.notes.some(n => /volatility drag/.test(n) && /QQQ puts/.test(n)));
+  // QQQ itself: leverage 1, exempt, untouched.
+  const q = sizeTrade({ ...base, symbol: 'QQQ', price: 729, atr: 9.3, leverage: 1, underlying: null, bookDeltaNotional: 0 });
+  eq('QQQ is unchanged: factor 1, position book, no note', [q.leverage.factor, q.bucket.used, q.tests[1].detail, q.notes.some(n => /daily reset/.test(n))], [1, 'position', '$22,000 ÷ $729.00', false]);
+  // An unknown ticker that reads leveraged: sized at 1 with the prompt.
+  const x = sizeTrade({ ...base, symbol: 'XYZL', price: 20, atr: 1, name: 'XYZ 2X Daily Bull', leverage: null, underlying: null });
+  eq('an unknown leveraged-looking name is sized at 1 and asked about', [x.leverage.factor, x.leverage.looksLeveraged], [1, true]);
+  ok('…', x.notes.some(n => /looks leveraged/.test(n) && /set the factor/.test(n)));
+  // A derived ATR is labelled.
+  const d = sizeTrade({ ...base, symbol: 'SOXL', price: 40, atr: 2.4, leverage: 3, underlying: 'SOXX', underlyingPrice: 260, atrSource: 'derived' });
+  ok('a derived ATR is labelled on the test', /derived: underlying ATR × \|factor\|/.test(d.tests[0].detail) && d.leverage.atrSource === 'derived');
+  // The swing bucket: over, and compliant.
+  const over = sizeTrade({ ...base, symbol: 'TQQQ', leverage: 3, bookDeltaNotional: 1.38 * N, positionBookUsd: 1.38 * N, swingUsedUsd: 0 });
+  eq('position book at 1.38×: swing room −$39,600, the trade sizes to 0 in swing', [over.bucket.room.roomUsd, over.bucket.fit, over.size, over.binding], [-39600, 0, 0, 'Swing room (0.3× reserved)']);
+  ok('…with the message, and no block', over.ok && over.warnings.some(w => /position book is using it/.test(w) && /cannot be sized into swing until the position book is ≤ 1\.2×/.test(w)));
+  const fine = sizeTrade({ ...base, symbol: 'TQQQ', leverage: 3, bookDeltaNotional: 1.18 * N, positionBookUsd: 1.18 * N, swingUsedUsd: 0 });
+  eq('position book at 1.18×: $66,000 of room, 301 TQQQ would fit, the cap still governs at 100', [fine.bucket.room.roomUsd, fine.bucket.fit, fine.size, fine.binding], [66000, 301, 100, 'Concentration cap (10%)']);
+  const mnqUsed = sizeTrade({ ...base, symbol: 'TQQQ', leverage: 3, bookDeltaNotional: 1.18 * N + 60454, positionBookUsd: 1.18 * N, swingUsedUsd: 60454 });
+  eq('one MNQ overnight uses $60,454 of the room: $5,546 left, 25 TQQQ', [mnqUsed.bucket.room.roomUsd, mnqUsed.bucket.fit, mnqUsed.size], [5546, 25, 25]);
+  const held = sizeTrade({ ...base, symbol: 'TQQQ', leverage: 3, bookDeltaNotional: 1.38 * N, positionBookUsd: 1.38 * N, swingUsedUsd: 0, holdBeyond: true });
+  eq('a hold-beyond-3-sessions intent moves it to the position book, where the room test does not apply', [held.bucket.used, held.bucket.fit, held.size], ['position', null, 100]);
+  // The run carries the read, and the month counts it.
+  const run = sizerRun(t291, { at: '2026-09-22T14:05:00Z' });
+  eq('the run records the factor, the signed exposure, the underlying shares, the reset and the bucket', [run.leverage.leverage_factor, run.leverage.delta_notional_signed, run.leverage.underlying_equiv_shares, run.leverage.reset, run.bucket], [3, 63729, 87, 'daily', 'swing']);
+  const rv = leveragedReview([run, sizerRun(sq, { at: '2026-09-20T14:00:00Z' }), sizerRun(q, { at: '2026-09-21T14:00:00Z' })],
+    [{ symbol: 'TQQQ', firstDate: '2026-09-22', lastDate: '2026-09-24' }, { symbol: 'SQQQ', firstDate: '2026-09-20', lastDate: null }], { now: new Date('2026-09-25T00:00:00Z') });
+  eq('the month: 2 leveraged entries, 1 over the cap, average hold measured in sessions (3 and 6)', [rv.n, rv.exceeded, rv.measured, rv.avgHold], [2, 1, 2, 4.5]);
+  ok('…and says so', /2 leveraged-ETF entries in 30d; 1 exceeded the cap on delta-notional; average hold 4\.5 sessions/.test(rv.note));
+  eq('nothing yet is silent', leveragedReview([], []).note, null);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
