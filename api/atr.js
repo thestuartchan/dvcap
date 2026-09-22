@@ -11,11 +11,69 @@
 // month later, which is exactly the month the new contract is being sized in.
 import { yahooDailyOHLCDetailed } from '../lib/yahoo.js';
 import { atrSummary, ATR_PERIOD } from '../lib/atr.js';
+import { FAMILIES, MULTIPLIER, familyOf, parentFamily, isIndexFamily, contractMonths, frontMonth } from '../lib/futuresContracts.js';
+import { kvGetJson, kvSetJsonEx, kvConfigured } from '../lib/kv.js';
+import holidays from '../data/holidays.json' with { type: 'json' };
+
+// ── ?future=CL — A CONTRACT FAMILY, RESOLVED ─────────────────────────────────
+// The months still trading, each with the feed's last close, the exchange's last trading day and
+// the roll-by; the front month named rather than assumed; the ATR off the continuous contract.
+// Cached ten minutes per family, because it is six feed calls and the answer does not move faster.
+// The feed has no expiry metadata for a dated month, so the dates come from the exchange rules in
+// lib/futuresContracts.js, each tested against a known contract.
+const FUTURE_KEY = (fam) => `dvcap:futures:v1:${fam}`;
+const FUTURE_TTL_S = 10 * 60;
+async function resolveFuture(raw, p) {
+  const fam = familyOf(raw);
+  if (!fam) {
+    // Not a known family: say what the feed makes of it, and let the caller set a multiplier.
+    const d = await yahooDailyOHLCDetailed(String(raw).toUpperCase(), '1y').catch(() => null);
+    return { ok: false, reason: 'unknown futures family — set the contract multiplier by hand', symbol: String(raw).toUpperCase(),
+             name: d?.name ?? null, quoteType: d?.quoteType ?? null, atr: d?.ok ? atrSummary(d.bars, p) : null };
+  }
+  if (kvConfigured()) {
+    try { const c = await kvGetJson(FUTURE_KEY(fam)); if (c?.at && Date.now() - Date.parse(c.at) < FUTURE_TTL_S * 1000) return { ...c, cache: 'kv' }; } catch { /* a miss */ }
+  }
+  const info = FAMILIES[fam];
+  const today = new Date().toISOString().slice(0, 10);
+  const months = contractMonths(fam, { today, count: 5, holidays: holidays.US?.closed || [] });
+  const priced = [];
+  for (const m of months) {
+    if (!m.symbol) { priced.push({ ...m, price: null }); continue; }
+    const d = await yahooDailyOHLCDetailed(m.symbol, '5d').catch(() => null);
+    priced.push({ ...m, price: d?.ok ? d.bars.at(-1)?.close ?? null : null, priceDate: d?.ok ? d.bars.at(-1)?.date ?? null : null, name: d?.name ?? null });
+    await new Promise(r => setTimeout(r, 120));
+  }
+  // The ATR off the continuous front contract, which is what the sizer's range is measured on.
+  const contSym = `${info.alias || fam}=F`;
+  const cont = await yahooDailyOHLCDetailed(contSym, '1y').catch(() => null);
+  const atr = cont?.ok ? atrSummary(cont.bars, p) : null;
+  const front = frontMonth(priced.filter(m => m.price != null)) || frontMonth(priced);
+  const out = {
+    ok: true, family: fam, parent: parentFamily(fam), label: info.label, unit: info.unit, multiplier: MULTIPLIER[fam] ?? null,
+    micro: info.micro ? { family: info.micro, multiplier: MULTIPLIER[info.micro] ?? null } : null,
+    physical: !!info.physical, index: isIndexFamily(fam), exchange: info.exchange || FAMILIES[info.alias]?.exchange || null, note: info.note ?? null,
+    months: priced, front, continuous: contSym, name: cont?.name ?? null,
+    atr: atr ? { ...atr, name: cont?.name ?? null, quoteType: cont?.quoteType ?? null } : null,
+    at: new Date().toISOString(),
+  };
+  if (kvConfigured()) { try { await kvSetJsonEx(FUTURE_KEY(fam), out, FUTURE_TTL_S); } catch { /* uncached is slower, not wrong */ } }
+  return out;
+}
 
 const MAX_SYMBOLS = 24;   // the console asks for its open rows, not a universe
 
 export default async function handler(req, res) {
-  const { tickers, period } = req.query || {};
+  const { tickers, period, future } = req.query || {};
+  if (future) {
+    const p0 = Number.isFinite(+period) && +period > 1 ? Math.trunc(+period) : ATR_PERIOD;
+    try {
+      res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
+      return res.status(200).json(await resolveFuture(String(future).trim(), p0));
+    } catch (e) {
+      return res.status(200).json({ ok: false, reason: String(e?.message || e) });
+    }
+  }
   if (!tickers) return res.status(400).json({ error: 'Missing tickers' });
   const list = [...new Set(String(tickers).split(',').map(t => t.trim()).filter(Boolean))].slice(0, MAX_SYMBOLS);
   const p = Number.isFinite(+period) && +period > 1 ? Math.trunc(+period) : ATR_PERIOD;

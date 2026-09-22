@@ -10,7 +10,7 @@
 // The contract with App.jsx is the TradeConsole props below: live regime and its qualifiers, the
 // price feed, and the regime history. Everything else is derived here or imported from lib/.
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { Fragment, useState, useEffect, useMemo, useCallback } from "react";
 import { FUTURES_MULTIPLIER, multiplierFor, backfillMultipliers, quoteConvention, looksMisquoted, isUnambiguousFuture } from '../lib/futures.js';
 import { cryptoSymbolCheck, cryptoQuoteSymbol, isSpotCrypto, assetClassGroups, priceMaxDp } from '../lib/crypto.js';
 import { fundingRead, basisRead, isHlPerp, hlPerpCoin, estimateLiquidation, liquidationVsStop } from '../lib/hyperliquid.js';
@@ -32,7 +32,7 @@ import { stopWidth, ATR_STATUS } from "../lib/atr.js";
 import { preTradeGuards, guardStates } from "../lib/guards.js";
 import { riskCoverage, rowExposure, stopOf } from "../lib/exposure.js";
 import { bookExposure, parseOptionSymbol, contractKey } from "../lib/bookExposure.js";
-import { sizeTrade, sizerRun, reconcileRuns, mismatchReview, capReview, SIZER_LIMITS, SINGLE_NAME_EXEMPT } from "../lib/sizer.js";
+import { sizeTrade, sizeFuture, sizerRun, reconcileRuns, mismatchReview, capReview, futuresReview, SIZER_LIMITS, SINGLE_NAME_EXEMPT } from "../lib/sizer.js";
 import { modelledDelta } from "../lib/blackscholes.js";
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
 import { companyName } from "../lib/companyNames.js";
@@ -1321,6 +1321,14 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
   // expiry and the spot, a Black-Scholes delta can be modelled from it — and is labelled modelled
   // everywhere it appears, because it is not the exchange's reading.
   const [markIn, setMarkIn] = useState("");
+  // ── A FUTURE ─────────────────────────────────────────────────────────────
+  // The resolved family from /api/atr?future=: its months with prices and last trading dates, the
+  // front month named, the multiplier, the micro sibling. `monthCode` is the month being sized —
+  // defaulted to the front and always printed, never silent. `multIn` is the multiplier typed for
+  // a family the table does not know; the sizer refuses to assume one.
+  const [fut, setFut] = useState(null);
+  const [monthCode, setMonthCode] = useState("");
+  const [multIn, setMultIn] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);
   const [runs, setRuns] = useState([]);
@@ -1349,11 +1357,30 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
   const recon = useMemo(() => reconcileRuns(runs, fills), [runs, fills]);
 
   const root = tkr.trim().toUpperCase();
-  const ready = !!root && (kind === "stock" || (Number(strike) > 0 && /^\d{4}-\d{2}-\d{2}$/.test(expiry)));
+  const ready = !!root && (kind === "stock" || kind === "future" || (Number(strike) > 0 && /^\d{4}-\d{2}-\d{2}$/.test(expiry)));
 
   const look = async () => {
     if (!ready) return;
     setBusy(true); setNote(null); setCat(null);
+    if (kind === "future") {
+      // A future has a roll, not earnings: no catalyst lookup. The family, its months and the ATR
+      // off the continuous contract come from one call.
+      setFut(null); setPx(null); setGreek(null);
+      try {
+        const f = await fetch(`/api/atr?future=${encodeURIComponent(root)}`, { credentials: "include" }).then(r => r.json());
+        setFut(f);
+        if (f?.ok) {
+          setMonthCode(f.front?.code || f.months?.[0]?.code || "");
+          setPx({ atr: f.atr?.atr ?? null, atrPct: f.atr?.atrPct ?? null, price: f.front?.price ?? f.atr?.lastClose ?? null, name: f.name ?? f.atr?.name ?? null, quoteType: "FUTURE" });
+          if (f.atr?.atr == null) setNote(`no ATR for ${f.continuous} — the continuous contract did not answer`);
+        } else {
+          setPx(f?.atr?.atr != null ? { atr: f.atr.atr, atrPct: f.atr.atrPct, price: f.atr.lastClose ?? null, name: f.name ?? null, quoteType: f.quoteType ?? null } : null);
+          setNote(`${f?.reason || "the future did not resolve"}${f?.name ? ` (the feed calls ${root} "${f.name}")` : ""}`);
+        }
+      } catch (e) { setNote(String(e?.message || e)); }
+      setBusy(false);
+      return;
+    }
     // The window is fetched alongside the price, not after it — a slow earnings feed must not hold
     // up the size, and a failed one reads "unavailable — check manually" rather than blanking.
     const catQ = kind === "option"
@@ -1400,7 +1427,26 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
   // What the book already carries in this root — shares and options summed (lib/bookExposure.js).
   const held = book?.byUnderlying?.[root] ?? null;
 
-  const result = useMemo(() => (!ready || !px?.atr) ? null : sizeTrade({
+  // The month being sized, and the future's whole answer (both contracts, the three lines).
+  const month = useMemo(() => (fut?.ok ? (fut.months || []).find(m => m.code === monthCode) || fut.front || null : null), [fut, monthCode]);
+  const heldFut = fut?.ok ? (book?.byUnderlying?.[fut.parent] ?? null) : null;
+  const futRes = useMemo(() => {
+    if (kind !== "future" || !ready || !px?.atr) return null;
+    const fam = fut?.ok ? fut.family : root;
+    const mult = fut?.ok ? fut.multiplier : (Number(multIn) > 0 ? Number(multIn) : null);
+    return sizeFuture({
+      family: fam, month, front: fut?.ok ? fut.front : null,
+      price: month?.price ?? px.price, atr: px.atr, atrPct: px.atrPct, nlv, multiplier: mult,
+      entered: Number(qty) > 0 ? Number(qty) : null,
+      bookDeltaNotional: book?.deltaNotional ?? 0,
+      underlyingShares: heldFut ? heldFut.shares : (book?.available ? 0 : null),
+      underlyingOptions: heldFut ? heldFut.options : (book?.available ? 0 : null),
+      underlyingUnpriced: heldFut?.unpriced ?? 0,
+      exempt: Array.isArray(exempt) ? exempt : SINGLE_NAME_EXEMPT,
+    });
+  }, [kind, ready, px, fut, root, multIn, month, nlv, qty, book, heldFut, exempt]);
+
+  const result = useMemo(() => kind === "future" ? (futRes?.ok ? futRes.chosen : (futRes ? { ok: false, why: futRes.why } : null)) : (!ready || !px?.atr) ? null : sizeTrade({
     kind, symbol: kind === "option" ? `${root} ${expiry} ${right}${strike}` : root,
     price: px?.price, atr: px?.atr, atrPct: px?.atrPct,
     delta: deltaEff, mark: markEff, deltaSource,
@@ -1416,15 +1462,16 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
     // fallback, and neither being present reads as "not checked", never as "none".
     catalysts: cat?.ok && Array.isArray(cat.macro) ? cat.macro : calendar, indicative: !!greek?.indicative, asOf: greek?.asOf ?? null,
     entered: Number(qty) > 0 ? Number(qty) : null,
-  }), [ready, kind, right, root, expiry, strike, px, greek, nlv, book, calendar, qty, cat, deltaEff, markEff, deltaSource, held, exempt]);
+  }), [ready, kind, right, root, expiry, strike, px, greek, nlv, book, calendar, qty, cat, deltaEff, markEff, deltaSource, held, exempt, futRes]);
 
   // "4 of 11 option entries were MISMATCH" — the monthly line the window exists for — and
   // "3 of 11 exceeded the single-name cap on delta-notional", the line the cap exists for.
   const review = useMemo(() => mismatchReview(runs), [runs]);
   const capRv = useMemo(() => capReview(runs), [runs]);
+  const futRv = useMemo(() => futuresReview(recon), [recon]);
 
   const record = async () => {
-    const run = sizerRun(result, { window: cat?.ok ? cat.log : null });
+    const run = sizerRun(result, { window: cat?.ok ? cat.log : null, future: kind === "future" && futRes?.ok ? futRes : null });
     if (!run) return;
     const next = [...runs, run];
     setRuns(next);
@@ -1450,7 +1497,7 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
           style={{ ...SZ_IN, textTransform: "uppercase" }} placeholder="QQQ" /></SzFld>
         <SzFld label="Type">
           <select value={kind} onChange={e => setKind(e.target.value)} style={SZ_IN}>
-            <option value="stock">Stock</option><option value="option">Option</option>
+            <option value="stock">Stock</option><option value="option">Option</option><option value="future">Future</option>
           </select>
         </SzFld>
         {kind === "option" && <SzFld label="Right">
@@ -1464,6 +1511,23 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
             button disabled with nothing on screen saying why. Every other date in this console is
             a picker; this one had no reason not to be. */}
         {kind === "option" && <SzFld label="Expiry"><input type="date" value={expiry} onChange={e => setExpiry(e.target.value)} style={SZ_IN} /></SzFld>}
+        {/* THE MONTH, CHOSEN OR AT LEAST PRINTED. Which month is sized changes the notional, the cap
+            and the carry — Dec was $3.16 under Nov on 22 Sep. Defaults to the front; never silent. */}
+        {kind === "future" && fut?.ok && (fut.months || []).length > 0 && (
+          <SzFld label="Contract month">
+            <select value={monthCode} onChange={e => setMonthCode(e.target.value)} style={SZ_IN}>
+              {fut.months.map(m => (
+                <option key={m.code} value={m.code} disabled={(m.days ?? 0) < 1}>
+                  {m.label} ({m.code}){m.price != null ? ` · ${m.price.toFixed(2)}` : ""} · stops {m.lastTrade}{(m.days ?? 0) < 1 ? " · last day" : ` · ${m.days}d`}
+                </option>
+              ))}
+            </select>
+          </SzFld>
+        )}
+        {kind === "future" && fut && !fut.ok && (
+          <SzFld label="Multiplier (unknown family)"><input value={multIn} inputMode="decimal" onChange={e => setMultIn(e.target.value)}
+            style={{ ...SZ_IN, minWidth: 90 }} placeholder="e.g. 1000" title="Units of the underlying per contract. The table does not know this family and the sizer will not assume 1." /></SzFld>
+        )}
         {/* OPTIONAL. The feed's mark wins when it has one; this is for the contract it does not
             carry, and a delta modelled from it is labelled as such. */}
         {kind === "option" && <SzFld label="Mark (if no feed)"><input value={markIn} inputMode="decimal" onChange={e => setMarkIn(e.target.value)}
@@ -1497,9 +1561,15 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
           {resolvedLabel(px)}
         </div>
       )}
+      {kind === "future" && fut?.ok && month && (
+        <div style={{ fontSize: 11.5, color: C.text, marginTop: 5, fontWeight: 700 }}>
+          {fut.family} · sizing <b>{month.label} ({month.code})</b> · stops {month.lastTrade} · {month.days}d
+          <span style={{ color: C.lbl, fontWeight: 500 }}> · {fut.label} · {fut.multiplier?.toLocaleString("en-US")} {fut.unit} per contract{fut.micro ? ` · micro ${fut.micro.family} ${fut.micro.multiplier?.toLocaleString("en-US")}` : ""}{fut.note ? ` · ${fut.note}` : ""}</span>
+        </div>
+      )}
       {px?.atr != null && (
         <div style={{ fontSize: 11.5, color: C.muted, marginTop: 5 }}>
-          ATR(20) {px.atr.toFixed(2)}{px.atrPct != null ? ` (${px.atrPct.toFixed(2)}%)` : ""}
+          ATR(20){kind === "future" ? " realised" : ""} {px.atr.toFixed(2)}{px.atrPct != null ? ` (${px.atrPct.toFixed(2)}%)` : ""}{kind === "future" && px.atr != null && futRes?.ok ? ` · $${Math.round(px.atr * (futRes.chosen.multiplier || 0)).toLocaleString("en-US")} per ${futRes.chosen.symbol?.split(" ")[0]} contract` : ""}
           {px.price != null ? ` · ${root} ${px.price.toFixed(2)}` : ""}
           {greek?.delta != null ? ` · ${strike}${right === "P" ? "P" : "C"} δ ${greek.delta.toFixed(2)} · mark ${Number(greek.mark).toFixed(2)}`
             : modelled ? ` · ${strike}${right === "P" ? "P" : "C"} δ ${modelled.delta.toFixed(2)} (modelled, IV ${(modelled.sigma * 100).toFixed(0)}%) · mark ${Number(markEff).toFixed(2)}${greek?.mark != null ? "" : " typed"}` : ""}
@@ -1507,11 +1577,13 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
         </div>
       )}
       {note && <div style={{ fontSize: 11.5, color: C.amber, marginTop: 4 }}>⚠ {note}</div>}
+      {result && result.ok === false && result.why && <div style={{ fontSize: 11.5, color: C.amber, marginTop: 4 }}>⚠ {result.why}</div>}
 
-      {(review.n > 0 || capRv.n > 0) && (
+      {(review.n > 0 || capRv.n > 0 || futRv.n > 0) && (
         <div style={{ marginTop: 7, paddingTop: 7, borderTop: "1px solid " + C.bdr, fontSize: 11.5, color: C.muted, lineHeight: 1.55 }}>
           <b style={{ fontSize: 10.5, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Monthly review </b>
           {capRv.n > 0 && <div style={{ color: capRv.past > 0 ? C.amber : C.muted }}>{capRv.note}</div>}
+          {futRv.n > 0 && <div style={{ color: futRv.exceeded > 0 ? C.amber : C.muted }}>{futRv.note}</div>}
           {review.n > 0 && <div style={{ color: review.mismatch > 0 ? C.amber : C.muted }}>{review.note}</div>}
           {review.n > 0 && <div style={{ fontSize: 11, color: C.lbl }}>{review.outcome}</div>}
         </div>
@@ -1541,10 +1613,32 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
           {/* BOTH TESTS, ALWAYS, AND WHICH ONE BINDS. For volatile single names the concentration
               cap usually wins; for options they often agree. Hiding the losing one removes the
               only part of this that teaches anything. */}
-          {result.tests.map((t, i) => (
+          {/* A FUTURE THAT FLOORED TO ZERO SHOWS BOTH CONTRACTS. "CL: below one contract" is the
+              answer for CL and not the end of the question; the micro's two tests sit beside it. */}
+          {result.kind === "future" && futRes?.microUsed && (
+            <div style={{ fontSize: 11.5, color: C.mid, marginBottom: 4, lineHeight: 1.6 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "150px 1fr 1fr", gap: 6, fontSize: 11 }}>
+                <span />
+                <b style={{ color: C.lbl }}>{futRes.family} ({futRes.multiplier?.toLocaleString("en-US")} {futRes.unit})</b>
+                <b style={{ color: C.text }}>{futRes.micro.symbol?.split(" ")[0]} ({futRes.micro.multiplier?.toLocaleString("en-US")} {futRes.unit})</b>
+                {futRes.main.tests.map((t, i) => (
+                  <Fragment key={i}>
+                    <span style={{ color: C.muted }}>{t.name}</span>
+                    <span style={{ color: C.muted }}>{t.size ?? "—"} <span style={{ color: C.lbl }}>({t.detail})</span></span>
+                    <span style={{ color: futRes.micro.tests[i]?.binds ? C.text : C.muted, fontWeight: futRes.micro.tests[i]?.binds ? 800 : 500 }}>
+                      {futRes.micro.tests[i]?.binds ? "→ " : ""}{futRes.micro.tests[i]?.size ?? "—"} <span style={{ color: C.lbl, fontWeight: 500 }}>({futRes.micro.tests[i]?.detail})</span></span>
+                  </Fragment>
+                ))}
+                <span />
+                <b style={{ color: C.amber }}>below one contract</b>
+                <b style={{ color: C.green }}>{futRes.micro.size} {futRes.micro.symbol?.split(" ")[0]} · {money(futRes.notional)}{nlv > 0 ? ` (${((futRes.notional / nlv) * 100).toFixed(1)}% NLV)` : ""}</b>
+              </div>
+            </div>
+          )}
+          {!(result.kind === "future" && futRes?.microUsed) && result.tests.map((t, i) => (
             <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 12,
                                   color: t.binds ? C.text : C.muted, fontWeight: t.binds ? 800 : 600 }}>
-              <span style={{ minWidth: 190 }}>{t.binds ? "→ " : "   "}{t.name}</span>
+              <span style={{ minWidth: 190 }}>{t.binds ? "→ " : "   "}{t.name}{t.exempt ? " · exempt" : ""}</span>
               <b style={{ fontVariantNumeric: "tabular-nums" }}>{t.size == null ? "—" : `${t.size}`}</b>
               <span style={{ fontSize: 11, color: C.lbl }}>{t.detail}</span>
             </div>
@@ -1558,7 +1652,7 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
                 attached and takes no action. */}
             <span style={{ fontSize: 11, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>→ Suggested</span>
             <b style={{ fontSize: 22, color: result.belowOne ? C.amber : C.green }}>
-              {result.size}{result.kind === "option" ? " contracts" : " shares"}
+              {result.size}{result.kind === "option" ? " contracts" : result.kind === "future" ? ` ${result.symbol?.split(" ")[0] || ""} contract${result.size === 1 ? "" : "s"}` : " shares"}
             </b>
             {result.premium != null && <span style={{ fontSize: 12, color: C.muted }}>{money(result.premium)} {result.kind === "option" ? "premium" : "notional"}</span>}
             {result.indicative && <span style={{ fontSize: 11, fontWeight: 800, color: C.amber }}>INDICATIVE</span>}
@@ -1632,6 +1726,30 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
             );
           })()}
 
+          {/* ── WHAT A SHARE HAS NO EQUIVALENT OF ─────────────────────────────────
+              Term structure against the front month, the gap test at the size, and the roll — none
+              with a threshold, none blocking. The roll line stands where the earnings lookup does
+              for a single name: a future has an expiry, not a report. */}
+          {result.kind === "future" && futRes?.ok && (
+            <div style={{ fontSize: 11.5, color: C.mid, marginTop: 6, lineHeight: 1.6 }}>
+              {futRes.term && (
+                <div><span style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4, display: "inline-block", minWidth: 110 }}>Term structure</span>
+                  {futRes.term.text}<span style={{ color: C.lbl }}> · {futRes.term.carry}</span></div>
+              )}
+              {!futRes.term && futRes.front && month && futRes.front.code === month.code && (
+                <div><span style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4, display: "inline-block", minWidth: 110 }}>Term structure</span>
+                  <span style={{ color: C.lbl }}>sizing the front month — pick a later one to see the spread and the carry</span></div>
+              )}
+              <div><span style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4, display: "inline-block", minWidth: 110 }}>Gap test</span>
+                at {futRes.contracts} contract{futRes.contracts === 1 ? "" : "s"}: 5% day ±{money(futRes.gap.five.usd)}{futRes.gap.five.pctNlv != null ? ` (${futRes.gap.five.pctNlv}% NLV)` : ""} · 10% day ±{money(futRes.gap.ten.usd)}{futRes.gap.ten.pctNlv != null ? ` (${futRes.gap.ten.pctNlv}% NLV)` : ""}</div>
+              {futRes.roll && (
+                <div style={{ color: futRes.roll.amber ? C.amber : C.mid }}><span style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4, display: "inline-block", minWidth: 110 }}>Roll</span>
+                  {futRes.roll.amber ? "⚠ " : ""}{futRes.roll.text}</div>
+              )}
+              {futRes.notes.map((n, i) => <div key={i} style={{ color: C.lbl }}>· {n}</div>)}
+            </div>
+          )}
+
           {/* THE BOOK CHECK, WHICH IS WHY THIS BELONGS ON THE PANEL. The calculator knows what is
               already held, so it answers "does this fit alongside it" — and it FOLLOWS THE ENTERED
               SIZE where there is one, because "what will I be holding if I do what I just typed" is
@@ -1654,7 +1772,7 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
               classification (EVENT / TIGHT / MISMATCH / MACRO ONLY) with amber as its ceiling: it
               reports, and the size is whatever it was. Before the lookup answers, or with no
               lookup, the older one-line expiry check stands in. */}
-          {cat ? <CatalystBlock cat={cat} kind={result.kind} expiry={expiry} />
+          {result.kind === "future" ? null : cat ? <CatalystBlock cat={cat} kind={result.kind} expiry={expiry} />
             : result.kind === "option" && result.catalysts && (
             <div style={{ fontSize: 11.5, color: C.mid, marginTop: 5 }}>
               <span style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Catalyst before {expiry} </span>
@@ -1762,7 +1880,7 @@ function ExposureTile({ book, err }) {
         {/* AS-OF ON EVERY READING. These are 15-minute delayed exchange greeks, and a risk number
             without its timestamp is one nobody can check against their own screen. */}
         <span style={{ marginLeft: "auto", fontSize: 11, color: C.lbl, fontWeight: 700 }}>
-          {book.asOf ? `as of ${String(book.asOf).slice(11, 16)}Z` : "awaiting greeks"}
+          {book.asOf ? `greeks pulled ${String(book.asOf).slice(0, 10)} ${String(book.asOf).slice(11, 16)}Z` : book.optionLines > 0 ? "awaiting greeks" : "no options open"}
         </span>
       </div>
       <div style={{ display: "flex", gap: 22, flexWrap: "wrap", marginTop: 9 }}>
@@ -1770,14 +1888,16 @@ function ExposureTile({ book, err }) {
           sub={book.ratio == null ? null : `${book.ratio}× NLV`} breach={over} />
         <XpoStat label="Premium at risk" value={money(book.premium)}
           sub={book.premiumPct == null ? null : `${book.premiumPct}% NLV`} />
-        <XpoStat label="Theta/day" value={money(book.theta)} col={thetaOver ? C.amber : C.mid}
-          sub={book.thetaPct == null ? null : `${book.thetaPct}% NLV`} breach={thetaOver} />
+        {/* AWAITING IS NOT ZERO. With an option open and no greek in yet, "$0" reads as no decay.
+            The number is unknown until the exchange's theta lands, and the tile says so. */}
+        <XpoStat label="Theta/day" value={book.greeksPending ? "awaiting" : money(book.theta)} col={thetaOver ? C.amber : C.mid}
+          sub={book.greeksPending ? `${book.optionLines} option line${book.optionLines === 1 ? "" : "s"} unpriced` : book.thetaPct == null ? null : `${book.thetaPct}% NLV`} breach={thetaOver} />
         {/* COLOURED OFF THE VOL ESTIMATE, not the delta multiple — the same delta-notional is twice
             as risky when underlying vol doubles, so a fixed multiple is wrong across regimes. */}
         <XpoStat label="Est. book vol" value={book.bookVol == null ? "—" : `~${Math.round(book.bookVol * 100)}%`}
           col={volOver ? C.red : C.green} breach={volOver}
           sub={book.oneSd == null ? `target ${Math.round(L.volTargetLo * 100)}–${Math.round(L.volTargetHi * 100)}%` : `1sd ±${money(book.oneSd)}`} />
-        <XpoStat label="Vega" value={money(book.vega)} sub="per vol point" />
+        <XpoStat label="Vega" value={book.greeksPending ? "awaiting" : money(book.vega)} sub="per vol point" />
       </div>
       {book.cashLegs?.value > 0 && (
         <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6 }}>

@@ -1,5 +1,5 @@
 // test/sizer.test.mjs — the size, before the trade.
-import { sizeTrade, sizerRun, appendRun, reconcileRuns, catalystCheck, isZeroDteExpiry, capReview, isExempt,
+import { sizeTrade, sizerRun, appendRun, reconcileRuns, catalystCheck, isZeroDteExpiry, capReview, isExempt, sizeFuture, futuresReview,
          SIZER_LIMITS, RULE_SETS, MAX_RUNS } from '../lib/sizer.js';
 
 let pass = 0, fail = 0;
@@ -432,6 +432,59 @@ const NLV = 202000;
   eq('the month counts option entries, exempt ones apart', [rv.n, rv.counted, rv.past, rv.exempt, rv.modelled], [4, 3, 3, 1, 1]);
   eq('and says so', rv.note, '3 of 3 option entries in 30d exceeded the single-name cap on delta-notional · 1 on exempt index ETFs, not counted · 1 on a modelled delta');
   eq('nothing yet is silent', capReview([], { now: NOW }).note, null);
+}
+
+// ── A FUTURE IS A CONTRACT, NOT A SHARE ──────────────────────────────────────
+// 22 Sep 2026: CL=F typed as a Stock sized "229 shares" — 229 barrels. The brief's table, at NLV
+// $212,000: risk $2,120, cap $21,200.
+{
+  const N = 212000, NOW2 = new Date('2026-09-22T14:00:00Z');
+  const near = (n, g, w, tol) => ok(`${n} (${g} ≈ ${w})`, g != null && Math.abs(g - w) <= tol);
+  const nov = { label: 'Nov-26', code: 'CLX26', y: 2026, m: 11, price: 92.27, lastTrade: '2026-10-20', days: 28, rollBy: '2026-10-15' };
+  const dec = { label: 'Dec-26', code: 'CLZ26', y: 2026, m: 12, price: 89.04, lastTrade: '2026-11-20', days: 59, rollBy: '2026-11-17' };
+  const r = sizeFuture({ family: 'CL=F', month: dec, front: nov, price: 89.04, atr: 4.57, nlv: N, now: NOW2, underlyingShares: 0, underlyingOptions: 0 });
+  eq('CL Dec-26: ATR 0, cap 0 — below one contract', [r.main.tests.map(t => t.size), r.main.size, r.belowOne], [[0, 0], 0, true]);
+  ok('…and says so with the numbers', r.main.warnings.some(w => /CL: below one contract/.test(w) && /\$89,040/.test(w) && /\$4,570 per ATR/.test(w)));
+  eq('MCL re-run: ATR 4, cap 2 → 2 MCL', [r.micro.tests.map(t => t.size), r.micro.size, r.microUsed, r.chosen.symbol], [[4, 2], 2, true, 'MCL Dec-26']);
+  eq('…$17,808 of notional, 8.4% of NLV, under the cap', [r.notional, r.chosen.singleName.pct, r.chosen.singleName.past], [17808, 8.4, false]);
+  eq('the concentration cap binds the micro', r.micro.binding, 'Concentration cap (10%)');
+  eq('term structure: Nov over Dec, backwardation, −$3.23, −3.5%/mo', [r.term.spread, r.term.pctPerMonth, r.term.shape], [-3.23, -3.5, 'backwardation']);
+  ok('…written with the sign and the carry', /−\$3\.23 \(−3\.5%\/mo\) backwardation/.test(r.term.text) && /long earns convergence/.test(r.term.carry));
+  eq('gap test at 2 MCL: a 10% day is $1,781', [r.gap.ten.usd, r.gap.ten.pctNlv, r.gap.five.usd], [1780.8, 0.84, 890.4]);
+  ok('roll: 20 Nov, physical, roll by 17 Nov', r.roll.lastTrade === '2026-11-20' && r.roll.physical && r.roll.rollBy === '2026-11-17' && !r.roll.amber);
+  ok('the micro is explained', r.notes.some(n => /micro MCL \(100 bbl\) is shown instead/.test(n)));
+  // The run carries the future's record, keyed by the family that was sized.
+  const run = sizerRun(r.chosen, { at: '2026-09-22T14:05:00Z', future: r });
+  eq('the run is keyed by the micro family', run.symbol, 'MCL');
+  eq('and records the contract, the month, the multiplier and the lines',
+     [run.future.family, run.future.parent, run.future.contract_month, run.future.last_trade_date, run.future.multiplier, run.future.contracts_suggested, run.future.micro_used, run.future.term_spread_usd, run.future.gap_10pct_usd, run.future.atr_source, run.future.physical],
+     ['MCL', 'CL', 'Dec-26', '2026-11-20', 100, 2, true, -3.23, 1780.8, 'realised', true]);
+  // Six days to last trade: amber, still sized.
+  const soon = sizeFuture({ family: 'MCL', month: { ...dec, lastTrade: '2026-09-28', days: 6, rollBy: '2026-09-23' }, price: 89.04, atr: 4.57, nlv: N, now: NOW2 });
+  ok('six days out: the roll line is amber and the size stands', soon.roll.amber && soon.main.size === 2);
+  // MNQ at 30,227 × 2 = $60,454 a contract, 28.5% of NLV: index-exempt, the ATR test governs.
+  // ATR 700 × 2 = $1,400 a contract against a $2,120 budget: the ATR test gives one.
+  const nq = sizeFuture({ family: 'MNQ', month: { label: 'Dec-26', code: 'MNQZ26', y: 2026, m: 12, price: 30227, lastTrade: '2026-12-18', days: 87, rollBy: null }, price: 30227, atr: 700, nlv: N, now: NOW2, underlyingShares: 0, underlyingOptions: 0 });
+  eq('MNQ: the cap is shown and does not govern; the ATR test gives 1', [nq.main.tests.find(t => /Concentration/.test(t.name)).exempt, nq.main.tests.find(t => /Concentration/.test(t.name)).size, nq.main.binding, nq.main.size], [true, 0, 'ATR test', 1]);
+  near('…$60,454 of notional for one contract', nq.notional, 60454, 1);
+  eq('…28.5% of NLV, exempt, not flagged', [nq.chosen.singleName.pct, nq.chosen.singleName.exempt, nq.chosen.singleName.past], [28.5, true, false]);
+  ok('…and cash-settled on the roll line', /cash-settled/.test(nq.roll.text));
+  const nqBig = sizeFuture({ family: 'MNQ', price: 30227, atr: 1200, nlv: N, now: NOW2 });
+  ok('MNQ with the ATR test below one: no micro exists, and it says so', nqBig.belowOne && nqBig.noMicro && nqBig.notes.some(n => /no micro exists/.test(n)));
+  // Refusals: a spread, an unknown family.
+  ok('a calendar spread is refused, not sized one leg at a time', /spreads not supported yet/.test(sizeFuture({ family: 'COIL Z6-Z7', price: 80, atr: 2, nlv: N }).why));
+  ok('an unknown family asks for a multiplier and never assumes one', /set the contract multiplier for ZZZ/.test(sizeFuture({ family: 'ZZZ', price: 80, atr: 2, nlv: N }).why));
+  eq('…and sizes once given one', sizeFuture({ family: 'ZZZ', multiplier: 10, price: 80, atr: 2, nlv: N }).main.size, 26);
+  // Aggregation: MCL held counts against CL's cap, and the futures leg is the linear leg.
+  const agg = sizeFuture({ family: 'MCL', month: dec, price: 89.04, atr: 4.57, nlv: N, now: NOW2, underlyingShares: 17808, underlyingOptions: 0, entered: 1 });
+  eq('one more MCL on top of two held: $26,712, 12.6%, past the cap', [agg.chosen.singleName.shares.total, agg.chosen.singleName.pct, agg.chosen.singleName.past, agg.chosen.singleName.root], [26712, 12.6, true, 'CL']);
+  // Stocks and options are untouched.
+  eq('a stock still sizes in shares with no multiplier', sizeTrade({ kind: 'stock', symbol: 'INTC', price: 110.9, atr: 3.1, nlv: N, now: NOW2 }).multiplier, null);
+  // The monthly line.
+  const fills = [{ symbol: 'MCL', qty: 3, at: '2026-09-22T15:00:00Z' }];
+  const recon = reconcileRuns([run], fills);
+  eq('a 3-lot fill against a 2-lot suggestion is 1 of 1 exceeded', [futuresReview(recon, { now: new Date('2026-09-23T00:00:00Z') }).note], ['1 of 1 futures entry in 30d exceeded the suggested contract count']);
+  eq('no futures runs, no line', futuresReview(reconcileRuns([], [])).note, null);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
