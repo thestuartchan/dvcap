@@ -230,5 +230,30 @@ const book = bookExposure({ rows: ROWS, greeks: GREEKS, underlyings: SPOTS, nlv:
   eq('unpriced lines are counted, not summed', byUnderlying([{ root: 'X', kind: 'option', unpriced: true, deltaNotional: null }]).X.unpriced, 1);
 }
 
+// ── TWO BUGS ON THE EXPOSURE TILE, 22 SEP 2026 ───────────────────────────────
+// A: PREMIUM AT RISK $398,338 (187.9% of NLV) with one open option worth ~$5,200 — every share
+//    and futures line's market value was being summed as premium.
+// B: THETA/DAY $0 with an open long call and the greeks not yet in — an empty sum read as no decay.
+{
+  const rows = [
+    { symbol: 'XLE   270115C00055000', qty: 5, multiplier: 100, livePrice: 10.41, assetCategory: 'OPT' },
+    { symbol: 'INTC', qty: 30, livePrice: 110.9 },
+    { symbol: '0008.HK', qty: 20000, livePrice: 3.96 },
+    { symbol: 'MGC', qty: 2, multiplier: 10, livePrice: 4402 },
+    { symbol: 'USFR', qty: 2100, livePrice: 50.4 },
+  ];
+  const noGreeks = bookExposure({ rows, greeks: {}, underlyings: { XLE: 64.4, INTC: 110.9, '0008.HK': 3.96, MGC: 4402 }, nlv: 212000, now: NOW });
+  eq('A: premium at risk is the option alone — $5,205, 2.5% of NLV', [noGreeks.premium, noGreeks.premiumPct], [5205, 2.5]);
+  eq('B: with an option open and no greek in, theta and vega are unknown, not zero', [noGreeks.theta, noGreeks.vega, noGreeks.greeksPending, noGreeks.optionLines], [null, null, true, 1]);
+  const withGreeks = bookExposure({ rows, greeks: { 'XLE|2027-01-15|C|55': { delta: 0.9, theta: -0.0123, vega: 0.21 } }, underlyings: { XLE: 64.4, INTC: 110.9, '0008.HK': 3.96, MGC: 4402 }, nlv: 212000, now: NOW });
+  eq('…and are summed once it arrives', [withGreeks.theta, withGreeks.vega, withGreeks.greeksPending], [-6.15, 105, false]);
+  const noOptions = bookExposure({ rows: rows.filter(r => !r.assetCategory), greeks: {}, underlyings: { INTC: 110.9, '0008.HK': 3.96, MGC: 4402 }, nlv: 212000, now: NOW });
+  eq('a book with no options has zero premium and zero theta, honestly', [noOptions.premium, noOptions.theta, noOptions.greeksPending], [0, 0, false]);
+  // A futures row is a future, rooted at its family's parent, so MGC and GC are one underlying.
+  const mgc = noGreeks.lines.find(l => l.symbol === 'MGC');
+  eq('MGC is a future rooted at GC, with its delta-notional at the multiplier', [mgc.kind, mgc.root, mgc.deltaNotional, mgc.premium], ['future', 'GC', 88040, null]);
+  eq('…and byUnderlying files it under GC', [noGreeks.byUnderlying.GC.deltaNotional, noGreeks.byUnderlying.GC.shares, noGreeks.byUnderlying.MGC], [88040, 88040, undefined]);
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
