@@ -2,66 +2,66 @@
   "_README": "Korea manual-entry store (KOFIA margin loans / deposits / CMA / KOSPI / KR 3Y yields + CSOP 7709 units). Written by api/korea-save.js (dashboard paste → GitHub commit); read server-side by the Pre-Read and dashboard. `latest` = current value per field (raw units: 백만원 for currency, % for yields, points for KOSPI, integer for 7709 units) + its own asOf. `history` = append-only snapshots for the trend view. Do not hand-edit unless fixing a bad save.",
   "latest": {
     "units7709": {
-      "value": 833000000,
-      "asOf": "2026-09-21",
-      "delta": 0
+      "value": 831500000,
+      "asOf": "2026-09-22",
+      "delta": -1500000
     },
     "kospi": {
-      "value": 7007.72,
+      "value": 7017.91,
       "unit": "P",
-      "asOf": "2026-09-21",
-      "delta": 113.49,
-      "pct": 1.65
+      "asOf": "2026-09-22",
+      "delta": 10.19,
+      "pct": 0.15
     },
     "deposits": {
-      "value": 98334648,
+      "value": 98138613,
       "unit": "백만원",
-      "asOf": "2026-09-18",
-      "delta": 843575,
-      "pct": 0.87
+      "asOf": "2026-09-21",
+      "delta": -196035,
+      "pct": -0.2
     },
     "marginLoans": {
-      "value": 32914624,
+      "value": 33055486,
       "unit": "백만원",
-      "asOf": "2026-09-18",
-      "delta": -158393,
-      "pct": -0.48
+      "asOf": "2026-09-21",
+      "delta": 140862,
+      "pct": 0.43
     },
     "cma": {
-      "value": 102480283,
+      "value": 103071645,
       "unit": "백만원",
-      "asOf": "2026-09-18",
-      "delta": 217675,
-      "pct": 0.21
+      "asOf": "2026-09-21",
+      "delta": 591363,
+      "pct": 0.58
     },
     "kr3yGovt": {
-      "value": 4.056,
+      "value": 4.04,
       "unit": "%",
-      "asOf": "2026-09-21",
-      "delta": 0.021,
-      "pct": 0.52
+      "asOf": "2026-09-22",
+      "delta": -0.016,
+      "pct": -0.39
     },
     "kr3yCorp": {
-      "value": 4.724,
+      "value": 4.713,
       "unit": "%",
-      "asOf": "2026-09-21",
-      "delta": 0.018,
-      "pct": 0.38
+      "asOf": "2026-09-22",
+      "delta": -0.011,
+      "pct": -0.23
     },
     "instNet": {
-      "value": 1510,
+      "value": -129,
       "unit": "십억원",
-      "asOf": "2026-09-21"
+      "asOf": "2026-09-23"
     },
     "foreignNet": {
-      "value": 7,
+      "value": 48,
       "unit": "십억원",
-      "asOf": "2026-09-21"
+      "asOf": "2026-09-23"
     },
     "retailNet": {
-      "value": -3175,
+      "value": -1563,
       "unit": "십억원",
-      "asOf": "2026-09-21"
+      "asOf": "2026-09-23"
     }
   },
   "history": [
@@ -2196,6 +2196,49 @@
         "value": 4.724,
         "asOf": "2026-09-21"
       }
+    },
+    {
+      "savedAt": "2026-09-22T17:40:22.402Z",
+      "kospi": {
+        "value": 7017.91,
+        "asOf": "2026-09-22"
+      },
+      "deposits": {
+        "value": 98138613,
+        "asOf": "2026-09-21"
+      },
+      "marginLoans": {
+        "value": 33055486,
+        "asOf": "2026-09-21"
+      },
+      "cma": {
+        "value": 103071645,
+        "asOf": "2026-09-21"
+      },
+      "kr3yGovt": {
+        "value": 4.04,
+        "asOf": "2026-09-22"
+      },
+      "kr3yCorp": {
+        "value": 4.713,
+        "asOf": "2026-09-22"
+      },
+      "instNet": {
+        "value": -129,
+        "asOf": "2026-09-23"
+      },
+      "foreignNet": {
+        "value": 48,
+        "asOf": "2026-09-23"
+      },
+      "retailNet": {
+        "value": -1563,
+        "asOf": "2026-09-23"
+      },
+      "units7709": {
+        "value": 831500000,
+        "asOf": "2026-09-22"
+      }
     }
   ],
   "series": {
@@ -2437,6 +2480,13 @@
         "unit": "백만원",
         "delta": -158393,
         "pct": -0.48
+      },
+      {
+        "date": "2026-09-21",
+        "value": 33055486,
+        "unit": "백만원",
+        "delta": 140862,
+        "pct": 0.43
       }
     ],
     "deposits": [
@@ -2677,6 +2727,13 @@
         "unit": "백만원",
         "delta": 843575,
         "pct": 0.87
+      },
+      {
+        "date": "2026-09-21",
+        "value": 98138613,
+        "unit": "백만원",
+        "delta": -196035,
+        "pct": -0.2
       }
     ],
     "cma": [
@@ -2917,6 +2974,13 @@
         "unit": "백만원",
         "delta": 217675,
         "pct": 0.21
+      },
+      {
+        "date": "2026-09-21",
+        "value": 103071645,
+        "unit": "백만원",
+        "delta": 591363,
+        "pct": 0.58
       }
     ],
     "kospi": [
@@ -3157,6 +3221,13 @@
         "unit": "P",
         "delta": 113.49,
         "pct": 1.65
+      },
+      {
+        "date": "2026-09-22",
+        "value": 7017.91,
+        "unit": "P",
+        "delta": 10.19,
+        "pct": 0.15
       }
     ],
     "kr3yGovt": [
@@ -3397,6 +3468,13 @@
         "unit": "%",
         "delta": 0.021,
         "pct": 0.52
+      },
+      {
+        "date": "2026-09-22",
+        "value": 4.04,
+        "unit": "%",
+        "delta": -0.016,
+        "pct": -0.39
       }
     ],
     "kr3yCorp": [
@@ -3637,6 +3715,13 @@
         "unit": "%",
         "delta": 0.018,
         "pct": 0.38
+      },
+      {
+        "date": "2026-09-22",
+        "value": 4.713,
+        "unit": "%",
+        "delta": -0.011,
+        "pct": -0.23
       }
     ],
     "units7709": [
@@ -3818,6 +3903,13 @@
       {
         "date": "2026-09-21",
         "value": 833000000,
+        "unit": "units",
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-09-22",
+        "value": 831500000,
         "unit": "units",
         "delta": null,
         "pct": null
@@ -4068,6 +4160,13 @@
         "unit": "십억원",
         "delta": null,
         "pct": null
+      },
+      {
+        "date": "2026-09-23",
+        "value": 48,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
       }
     ],
     "instNet": [
@@ -4315,6 +4414,13 @@
         "unit": "십억원",
         "delta": null,
         "pct": null
+      },
+      {
+        "date": "2026-09-23",
+        "value": -129,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
       }
     ],
     "retailNet": [
@@ -4545,6 +4651,13 @@
       {
         "date": "2026-09-21",
         "value": -3175,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-09-23",
+        "value": -1563,
         "unit": "십억원",
         "delta": null,
         "pct": null
