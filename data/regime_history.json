@@ -1781,7 +1781,7 @@
       "inputs": {
         "weightedRecessionProb": 14.3,
         "cpi": 3.35302,
-        "kalshi2027": 24,
+        "kalshi2027": 22,
         "tape": {
           "gold": "down",
           "tlt": "up",
@@ -1802,8 +1802,56 @@
         "consensusAlive": 0.753,
         "regimeVintage": "decayed"
       },
-      "source": "client",
-      "loggedAt": "2026-09-22T00:15:58.588Z"
+      "source": "client+cron",
+      "loggedAt": "2026-09-22T01:14:47.165Z",
+      "axes": {
+        "growth": {
+          "state": "turning-down",
+          "lean": 1,
+          "market": {
+            "verdict": "CONTRACTING",
+            "lean": -1,
+            "usable": 5,
+            "of": 5
+          },
+          "weekly": {
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 4,
+            "of": 4
+          },
+          "monthly": {
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 3,
+            "of": 4
+          }
+        },
+        "inflation": {
+          "state": "turning-hot",
+          "lean": -1,
+          "market": {
+            "verdict": "BETWEEN",
+            "lean": 0,
+            "usable": 3,
+            "of": 3
+          },
+          "nowcast": {
+            "verdict": "BETWEEN",
+            "lean": 0,
+            "usable": 2,
+            "of": 2
+          },
+          "printed": {
+            "verdict": "COOLING",
+            "lean": -1,
+            "usable": 3,
+            "of": 3
+          }
+        },
+        "quadrant": "ref",
+        "quadrantRead": "growth firm, inflation cool"
+      }
     }
   ]
 }
