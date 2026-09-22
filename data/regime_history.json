@@ -1781,7 +1781,7 @@
       "inputs": {
         "weightedRecessionProb": 14.3,
         "cpi": 3.35302,
-        "kalshi2027": 22,
+        "kalshi2027": 23,
         "tape": {
           "gold": "down",
           "tlt": "up",
@@ -1803,7 +1803,7 @@
         "regimeVintage": "decayed"
       },
       "source": "client+cron",
-      "loggedAt": "2026-09-22T14:33:14.447Z",
+      "loggedAt": "2026-09-22T17:19:12.124Z",
       "axes": {
         "growth": {
           "state": "turning-down",
