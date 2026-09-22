@@ -36,6 +36,7 @@ import { sizeTrade, sizerRun, reconcileRuns, mismatchReview, capReview, SIZER_LI
 import { modelledDelta } from "../lib/blackscholes.js";
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
 import { companyName } from "../lib/companyNames.js";
+import { tickerHint, resolvedLabel } from "../lib/tickerHints.js";
 import { moveOnto } from "../lib/reorder.js";
 
 // Shown in the sizing note; kept a constant so the copy and the cap cannot drift apart.
@@ -478,10 +479,11 @@ const {
               a label so the row never says the same thing twice. No entry means no name and a bare
               ticker, exactly as before: a guessed name would be worse than none. Muted and last in
               the identity group, because the ticker is still what you scan for. */}
-          {!r.trade && companyName(r.symbol)
+          {!r.trade && (companyName(r.symbol) || ctx.atrFor?.(quoteSym(r))?.detail?.name)
             ? <span style={{ fontSize: 11.5, color: C.muted, fontWeight: 500, whiteSpace: "nowrap",
                              overflow: "hidden", textOverflow: "ellipsis", maxWidth: 190 }}
-                    title={companyName(r.symbol)}>{companyName(r.symbol)}</span> : null}
+                    title={companyName(r.symbol) || `${ctx.atrFor(quoteSym(r)).detail.name} — what the feed resolves ${quoteSym(r)} to`}>
+                {companyName(r.symbol) || ctx.atrFor(quoteSym(r)).detail.name}</span> : null}
           {d.multiplier > 1 ? chip(`×${d.multiplier}`, C.amber, C.aBg, C.aBdr) : null}
           {/* SHORT IS MARKED, LONG IS NOT. Every number on a short row is the mirror of the one a
               reader expects — the stop is above, the target below, and a falling price is a gain —
@@ -1364,8 +1366,12 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
     try {
       const a = await fetch(`/api/atr?tickers=${encodeURIComponent(root)}`, { credentials: "include" }).then(r => r.json());
       const hit = a?.[root];
-      if (!hit || hit.status !== "ok") { setNote(`no ATR for ${root} — ${hit?.status || "not returned"}`); setPx(null); }
-      else setPx({ atr: hit.atr, atrPct: hit.atrPct, price: null });
+      if (!hit || hit.status !== "ok") { setNote(`no ATR for ${root} — ${hit?.status || "not returned"}${hit?.name ? ` (the feed resolves it to ${hit.name})` : ""}`); setPx(null); }
+      // THE PRICE IS THE LAST CLOSE until a live spot arrives with the greeks. The stock sizer
+      // had none, so its concentration cap said "no price" on every stock. And THE NAME rides
+      // along: the sizer answered 10,298 shares of W&T Offshore for a WTI that meant crude, and
+      // nothing on the screen said which WTI it had priced.
+      else setPx({ atr: hit.atr, atrPct: hit.atrPct, price: hit.lastClose ?? null, name: hit.name ?? null, quoteType: hit.quoteType ?? null });
       if (kind === "option") {
         const key = `${root}|${expiry}|${right}|${Number(strike)}`;
         const g = await fetch(`/api/flex-sync?greeks=${encodeURIComponent(key)}`, { credentials: "include" }).then(r => r.json());
@@ -1477,6 +1483,18 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
                   kind === "option" && !(Number(strike) > 0) ? "a strike" : null,
                   kind === "option" && !/^\d{4}-\d{2}-\d{2}$/.test(expiry) ? "an expiry date" : null]
                  .filter(Boolean).join(" · ")}.
+        </div>
+      )}
+      {/* WHICH INSTRUMENT. Before the lookup, the map of tickers people type meaning something
+          else; after it, the name the feed actually resolved. Both, because the second is only as
+          good as the feed's metadata and the first is only as good as the map. */}
+      {tickerHint(root) && (
+        <div style={{ fontSize: 11.5, color: C.amber, marginTop: 5, lineHeight: 1.5 }}>⚠ {tickerHint(root).text}</div>
+      )}
+      {px?.name && (
+        <div style={{ fontSize: 11.5, color: C.mid, marginTop: 4 }}>
+          <span style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Resolves to </span>
+          {resolvedLabel(px)}
         </div>
       )}
       {px?.atr != null && (
@@ -2797,6 +2815,8 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
     prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel,
     openFill, delFill, fillFor, setFillFor, saveFill, declineFill, sizeOpen, setSizeOpen, justMoved: moved?.id ?? null, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip, kindCol, money, pnlCol,
     equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
+    // So a row can show the name the feed resolved its symbol to when the static map has none.
+    atrFor,
     rollCandidates, guardPanel, coverage,
     // Real Hyperliquid positions, keyed by coin, when HYPERLIQUID_ADDRESS is configured. Null
     // otherwise, which is the ordinary case — the liquidation read falls back to its estimate and
@@ -3377,9 +3397,12 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           <Btn onClick={() => addRow()} color="#fff" bgColor={C.blue} label="+ Add" />
           <span style={{ fontSize: 11.5, color: C.muted }}>starts as a watched setup — add levels and a stop before it becomes a position</span>
         </div>
+        {tickerHint(addSym) && (
+          <div style={{ fontSize: 11.5, color: C.amber, marginTop: 6, lineHeight: 1.5 }}>⚠ {tickerHint(addSym).text} Type the one you mean, or add the row and set <i>Quote as</i>.</div>
+        )}
         {symHint && (
           <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
-            How the feed spells it — <b>US</b> QQQ · <b>Hong Kong</b> 0981.HK (zero-padded code) · <b>Europe</b> ASML.AS, SHEL.L, MC.PA, SAP.DE (exchange suffix) · <b>crypto</b> BTC-USD, ETH-USD (a bare BTC is a security ticker) · <b>futures</b> MNQ, MGC (=F is added) · a name the feed does not know can be priced off another with <i>Quote as</i> in the row.
+            How the feed spells it — <b>US</b> QQQ · <b>Hong Kong</b> 0981.HK (zero-padded code) · <b>Europe</b> ASML.AS, SHEL.L, MC.PA, SAP.DE (exchange suffix) · <b>crypto</b> BTC-USD, ETH-USD (a bare BTC is a security ticker) · <b>futures</b> MNQ, MGC (=F is added) · <b>commodities and indices</b> CL=F, GC=F, ^VIX, ^GSPC — a bare WTI, GOLD or BTC is a listed security · a name the feed does not know can be priced off another with <i>Quote as</i> in the row.
           </div>
         )}
       </Card>
