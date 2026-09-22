@@ -32,9 +32,12 @@ export default async function handler(req, res) {
       // EVERY SYMBOL GETS A KEY. Omitting it made "we could not reach Yahoo", "Yahoo has never
       // heard of this ticker" and "this listed three weeks ago" identical to the client, which
       // then had one sentence for all three. A status is always present; `atr` may be null.
+      // The resolved name rides on every answer, ok or not: the thing to know about a wrong
+      // instrument is its name, and a short history is the case where nothing else says it.
+      const who = { name: d.name ?? null, quoteType: d.quoteType ?? null, exchange: d.exchange ?? null };
       out[sym] = s.atr != null
-        ? { status: 'ok', ...s }
-        : { status: 'short-history', bars: d.bars.length, needed: p + 1, period: p };
+        ? { status: 'ok', ...s, ...who }
+        : { status: 'short-history', bars: d.bars.length, needed: p + 1, period: p, ...who };
     } catch (e) {
       out[sym] = { status: 'fetch-failed', error: String(e?.name || e).slice(0, 60) };
     }
