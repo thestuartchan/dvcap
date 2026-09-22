@@ -32,7 +32,8 @@ import { stopWidth, ATR_STATUS } from "../lib/atr.js";
 import { preTradeGuards, guardStates } from "../lib/guards.js";
 import { riskCoverage, rowExposure, stopOf } from "../lib/exposure.js";
 import { bookExposure, parseOptionSymbol, contractKey } from "../lib/bookExposure.js";
-import { sizeTrade, sizeFuture, sizerRun, reconcileRuns, mismatchReview, capReview, futuresReview, SIZER_LIMITS, SINGLE_NAME_EXEMPT } from "../lib/sizer.js";
+import { sizeTrade, sizeFuture, sizerRun, reconcileRuns, mismatchReview, capReview, futuresReview, leveragedReview, SIZER_LIMITS, SINGLE_NAME_EXEMPT } from "../lib/sizer.js";
+import { leverageFor, SWING, roomInWrappers } from "../lib/leverage.js";
 import { modelledDelta } from "../lib/blackscholes.js";
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
 import { companyName } from "../lib/companyNames.js";
@@ -1306,7 +1307,7 @@ function useBookExposure(rows, nlv) {
 // everything — size so that one ATR of adverse movement costs 1% of NLV — then the concentration
 // caps, then the smallest result. See lib/sizer.js for the worked example this was built from: the
 // QQQ line where both tests said five contracts and the position was twenty.
-function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], exempt = null }) {
+function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], exempt = null, holds = [] }) {
   const [tkr, setTkr] = useState("");
   const [kind, setKind] = useState("option");
   // CALL OR PUT. The chain key was hard-coded to the call, so a put at the same strike was priced
@@ -1329,6 +1330,15 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
   const [fut, setFut] = useState(null);
   const [monthCode, setMonthCode] = useState("");
   const [multIn, setMultIn] = useState("");
+  // ── A LEVERAGED OR INVERSE ETF ────────────────────────────────────────────
+  // The factor from lib/leverage.js, or one typed here for a name the table does not know. The
+  // underlying's quote turns exposure into shares of what it tracks and stands in for a missing
+  // ATR (derived, labelled). `holdBeyond` moves the trade from the swing bucket to the position
+  // book. MNQ's front price is fetched so swing room can be printed in every wrapper traded.
+  const [levIn, setLevIn] = useState("");
+  const [holdBeyond, setHoldBeyond] = useState(false);
+  const [under, setUnder] = useState(null);
+  const [mnqPx, setMnqPx] = useState(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);
   const [runs, setRuns] = useState([]);
@@ -1399,6 +1409,22 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
       // along: the sizer answered 10,298 shares of W&T Offshore for a WTI that meant crude, and
       // nothing on the screen said which WTI it had priced.
       else setPx({ atr: hit.atr, atrPct: hit.atrPct, price: hit.lastClose ?? null, name: hit.name ?? null, quoteType: hit.quoteType ?? null });
+      // A leveraged ETF's underlying, for the share-equivalent and a derived ATR; and MNQ's front,
+      // so the swing room reads in contracts too. Both best-effort; the size never waits on them.
+      setUnder(null);
+      if (kind === "stock") {
+        const lv = leverageFor(root);
+        const uSym = lv.known && lv.underlying && !/\s/.test(lv.underlying) ? lv.underlying : null;
+        if (uSym) {
+          fetch(`/api/atr?tickers=${encodeURIComponent(uSym)}`, { credentials: "include" }).then(r => r.json())
+            .then(u => { const h = u?.[uSym]; if (h?.status === "ok") setUnder({ symbol: uSym, atr: h.atr, price: h.lastClose ?? null }); })
+            .catch(() => { /* the share-equivalent is a nicety */ });
+        }
+        if (lv.known && mnqPx == null) {
+          fetch(`/api/atr?future=MNQ`, { credentials: "include" }).then(r => r.json())
+            .then(f => { if (f?.ok && f.front?.price) setMnqPx(f.front.price); }).catch(() => { /* wrappers line is a nicety */ });
+        }
+      }
       if (kind === "option") {
         const key = `${root}|${expiry}|${right}|${Number(strike)}`;
         const g = await fetch(`/api/flex-sync?greeks=${encodeURIComponent(key)}`, { credentials: "include" }).then(r => r.json());
@@ -1426,6 +1452,13 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
   const deltaSource = greek?.delta != null ? "exchange" : modelled ? "modelled" : null;
   // What the book already carries in this root — shares and options summed (lib/bookExposure.js).
   const held = book?.byUnderlying?.[root] ?? null;
+  // DERIVED, AND SAID SO. When the ETF's own ATR did not come back but the underlying's did, the
+  // range is the underlying's × |factor|, labelled on the test.
+  const lvHere = kind === "stock" ? leverageFor(root) : null;
+  const pxEff = useMemo(() => {
+    if (!px || px.atr != null || !under?.atr || !lvHere?.known) return px;
+    return { ...px, atr: +(under.atr * Math.abs(lvHere.factor)).toFixed(4), atrPct: px.price ? +((under.atr * Math.abs(lvHere.factor) / px.price) * 100).toFixed(3) : null, derived: true };
+  }, [px, under, lvHere]);
 
   // The month being sized, and the future's whole answer (both contracts, the three lines).
   const month = useMemo(() => (fut?.ok ? (fut.months || []).find(m => m.code === monthCode) || fut.front || null : null), [fut, monthCode]);
@@ -1446,9 +1479,9 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
     });
   }, [kind, ready, px, fut, root, multIn, month, nlv, qty, book, heldFut, exempt]);
 
-  const result = useMemo(() => kind === "future" ? (futRes?.ok ? futRes.chosen : (futRes ? { ok: false, why: futRes.why } : null)) : (!ready || !px?.atr) ? null : sizeTrade({
+  const result = useMemo(() => kind === "future" ? (futRes?.ok ? futRes.chosen : (futRes ? { ok: false, why: futRes.why } : null)) : (!ready || !pxEff?.atr) ? null : sizeTrade({
     kind, symbol: kind === "option" ? `${root} ${expiry} ${right}${strike}` : root,
-    price: px?.price, atr: px?.atr, atrPct: px?.atrPct,
+    price: pxEff?.price, atr: pxEff?.atr, atrPct: pxEff?.atrPct, atrSource: pxEff?.derived ? "derived" : "own",
     delta: deltaEff, mark: markEff, deltaSource,
     expiry: kind === "option" ? expiry : null,
     nlv, bookDeltaNotional: book?.deltaNotional ?? 0,
@@ -1462,13 +1495,23 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
     // fallback, and neither being present reads as "not checked", never as "none".
     catalysts: cat?.ok && Array.isArray(cat.macro) ? cat.macro : calendar, indicative: !!greek?.indicative, asOf: greek?.asOf ?? null,
     entered: Number(qty) > 0 ? Number(qty) : null,
-  }), [ready, kind, right, root, expiry, strike, px, greek, nlv, book, calendar, qty, cat, deltaEff, markEff, deltaSource, held, exempt, futRes]);
+    // The factor: typed if typed, else the table's, else 1. A missing ETF ATR falls back to the
+    // underlying's × |factor| and is labelled derived. The bucket follows the hold intent.
+    ...(kind === "stock" ? (() => {
+      const lv = leverageFor(root);
+      const factor = Number(levIn) !== 0 && Number.isFinite(Number(levIn)) && levIn !== "" ? Number(levIn) : lv.factor;
+      return { leverage: factor, underlying: lv.underlying, reset: lv.reset, underlyingPrice: under?.price ?? null, name: px?.name ?? null,
+               bucket: holdBeyond ? "position" : null, holdBeyond,
+               positionBookUsd: book?.buckets?.positionUsd ?? null, swingUsedUsd: book?.buckets?.swingUsd ?? null };
+    })() : {}),
+  }), [ready, kind, right, root, expiry, strike, px, pxEff, greek, nlv, book, calendar, qty, cat, deltaEff, markEff, deltaSource, held, exempt, futRes, levIn, under, holdBeyond]);
 
   // "4 of 11 option entries were MISMATCH" — the monthly line the window exists for — and
   // "3 of 11 exceeded the single-name cap on delta-notional", the line the cap exists for.
   const review = useMemo(() => mismatchReview(runs), [runs]);
   const capRv = useMemo(() => capReview(runs), [runs]);
   const futRv = useMemo(() => futuresReview(recon), [recon]);
+  const levRv = useMemo(() => leveragedReview(runs, holds), [runs, holds]);
 
   const record = async () => {
     const run = sizerRun(result, { window: cat?.ok ? cat.log : null, future: kind === "future" && futRes?.ok ? futRes : null });
@@ -1567,6 +1610,23 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
           <span style={{ color: C.lbl, fontWeight: 500 }}> · {fut.label} · {fut.multiplier?.toLocaleString("en-US")} {fut.unit} per contract{fut.micro ? ` · micro ${fut.micro.family} ${fut.micro.multiplier?.toLocaleString("en-US")}` : ""}{fut.note ? ` · ${fut.note}` : ""}</span>
         </div>
       )}
+      {/* THE FACTOR, STATED, WITH THE CONTROLS THAT CHANGE IT: a typed factor for a name the table
+          does not know (or reads as leveraged), and the hold intent that moves a swing trade into
+          the position book. */}
+      {kind === "stock" && result?.leverage && (result.leverage.leveraged || result.leverage.looksLeveraged || levIn !== "") && (
+        <div style={{ fontSize: 11.5, color: C.mid, marginTop: 5, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <b style={{ color: result.leverage.leveraged ? C.amber : C.mid }}>
+            {root} · leverage {result.leverage.factor > 0 ? "" : "−"}{Math.abs(result.leverage.factor)}×{result.leverage.underlying ? ` ${result.leverage.underlying}` : ""}{result.leverage.reset === "daily" ? " (daily reset)" : ""}
+          </b>
+          <label style={{ display: "inline-flex", gap: 5, alignItems: "center", fontSize: 11, color: C.lbl }}>factor
+            <input value={levIn} inputMode="decimal" onChange={e => setLevIn(e.target.value)} placeholder={String(lvHere?.factor ?? 1)}
+              style={{ ...SZ_IN, minWidth: 54, width: 60, padding: "2px 6px", fontSize: 12 }} title="Signed daily factor: 3 for TQQQ, −3 for SQQQ. Blank uses the table." /></label>
+          <label style={{ display: "inline-flex", gap: 5, alignItems: "center", fontSize: 11, color: C.lbl }}>
+            <input type="checkbox" checked={holdBeyond} onChange={e => setHoldBeyond(e.target.checked)} /> hold &gt; {SWING.maxSessions} sessions (position book)
+          </label>
+          {pxEff?.derived && <span style={{ color: C.amber }}>ATR derived from {under?.symbol} × {Math.abs(result.leverage.factor)}</span>}
+        </div>
+      )}
       {px?.atr != null && (
         <div style={{ fontSize: 11.5, color: C.muted, marginTop: 5 }}>
           ATR(20){kind === "future" ? " realised" : ""} {px.atr.toFixed(2)}{px.atrPct != null ? ` (${px.atrPct.toFixed(2)}%)` : ""}{kind === "future" && px.atr != null && futRes?.ok ? ` · $${Math.round(px.atr * (futRes.chosen.multiplier || 0)).toLocaleString("en-US")} per ${futRes.chosen.symbol?.split(" ")[0]} contract` : ""}
@@ -1579,11 +1639,12 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
       {note && <div style={{ fontSize: 11.5, color: C.amber, marginTop: 4 }}>⚠ {note}</div>}
       {result && result.ok === false && result.why && <div style={{ fontSize: 11.5, color: C.amber, marginTop: 4 }}>⚠ {result.why}</div>}
 
-      {(review.n > 0 || capRv.n > 0 || futRv.n > 0) && (
+      {(review.n > 0 || capRv.n > 0 || futRv.n > 0 || levRv.n > 0) && (
         <div style={{ marginTop: 7, paddingTop: 7, borderTop: "1px solid " + C.bdr, fontSize: 11.5, color: C.muted, lineHeight: 1.55 }}>
           <b style={{ fontSize: 10.5, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Monthly review </b>
           {capRv.n > 0 && <div style={{ color: capRv.past > 0 ? C.amber : C.muted }}>{capRv.note}</div>}
           {futRv.n > 0 && <div style={{ color: futRv.exceeded > 0 ? C.amber : C.muted }}>{futRv.note}</div>}
+          {levRv.n > 0 && <div style={{ color: levRv.exceeded > 0 ? C.amber : C.muted }}>{levRv.note}</div>}
           {review.n > 0 && <div style={{ color: review.mismatch > 0 ? C.amber : C.muted }}>{review.note}</div>}
           {review.n > 0 && <div style={{ fontSize: 11, color: C.lbl }}>{review.outcome}</div>}
         </div>
@@ -1676,6 +1737,22 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
             {result.enteredPremium != null && <span style={{ fontSize: 11.5, color: C.muted }}>{money(result.enteredPremium)} {result.kind === "option" ? "premium" : "notional"}</span>}
           </div>
 
+          {/* ── COST IS NOT EXPOSURE. What the shares cost, what they control, and in shares of the
+              underlying — the line the 291-share TQQQ suggestion never printed. For an inverse
+              product, what size brings the book to target: the question a hedge is for. */}
+          {result.kind === "stock" && result.leverage?.leveraged && (
+            <div style={{ fontSize: 11.5, color: C.mid, marginTop: 6, lineHeight: 1.6 }}>
+              <div>cost <b>{money(result.leverage.cost)}</b> · delta-notional <b style={{ color: result.leverage.factor < 0 ? C.purple : C.text }}>{money(result.leverage.deltaNotional)}</b>
+                {nlv > 0 && result.leverage.deltaNotional != null ? <span style={{ color: C.lbl }}> ({((result.leverage.deltaNotional / nlv) * 100).toFixed(1)}% NLV)</span> : null}
+                {result.leverage.underlyingShares != null ? <span style={{ color: C.lbl }}> ≈ {Math.abs(result.leverage.underlyingShares).toLocaleString("en-US")} {result.leverage.underlying} shares of delta{result.leverage.factor < 0 ? " (short)" : ""}</span> : null}
+              </div>
+              {result.leverage.hedgeToTarget && (
+                <div style={{ color: C.text }}>to bring book delta from <b>{result.leverage.hedgeToTarget.fromX}×</b> to <b>{result.leverage.hedgeToTarget.toX}×</b>: {money(result.leverage.hedgeToTarget.usd)} of {root} (~{result.leverage.hedgeToTarget.shares.toLocaleString("en-US")} shares)
+                  <span style={{ color: C.lbl }}> — info only</span></div>
+              )}
+            </div>
+          )}
+
           {/* ── ONE UNDERLYING, TWO LEGS ─────────────────────────────────────────
               The premium line says what this costs. These say what it CONTROLS, per leg — the
               shares held in the root, and the options with this trade added — each against the
@@ -1764,6 +1841,29 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
                   ? <span style={{ color: C.lbl }}> · {result.book.atSuggested}× at the suggested size</span> : null}
               </div>
               {result.deltaAdded != null && <div style={{ color: C.lbl }}>Adds {money(result.book.follows === "entered" ? result.enteredDelta : result.deltaAdded)} delta-notional</div>}
+              {/* ── TWO BUDGETS AGAINST THE ONE CEILING ──
+                  The position book to 1.2×, the swing bucket to 0.3×, reserved. A position book
+                  over its limit shows the swing room negative and says so; a compliant one prints
+                  the room in every wrapper the account trades. */}
+              {result.bucket?.room && (
+                <div style={{ marginTop: 4, paddingTop: 4, borderTop: "1px solid " + C.bdr }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                    this trade · {result.bucket.used} bucket{result.bucket.used !== result.bucket.byDefault ? ` (default ${result.bucket.byDefault})` : ""}
+                  </div>
+                  <div>position book <b style={{ color: result.bucket.room.positionOverUsd > 0 ? C.amber : C.green }}>{result.bucket.room.positionX}× NLV</b>
+                    <span style={{ color: C.lbl }}> · limit {result.bucket.room.positionLimit}×</span>
+                    {result.bucket.room.positionOverUsd > 0 ? <b style={{ color: C.amber }}> ⚠ over by {money(result.bucket.room.positionOverUsd)}</b> : <b style={{ color: C.green }}> ✓</b>}</div>
+                  <div>swing room <b style={{ color: result.bucket.room.negative ? C.amber : C.green }}>{result.bucket.room.negative ? "−" : ""}{money(Math.abs(result.bucket.room.roomUsd))}</b>
+                    <span style={{ color: C.lbl }}> ({result.bucket.room.swingLimit}× = {money(result.bucket.room.reservedUsd)} reserved{result.bucket.room.swingUsd > 0 ? `; ${money(result.bucket.room.swingUsd)} in use` : ""}{result.bucket.room.negative ? "; position book is using it" : ""})</span></div>
+                  {result.bucket.room.negative && result.bucket.used === "swing" && (
+                    <div style={{ color: C.amber }}>→ this trade cannot be sized into swing until the position book is ≤ {result.bucket.room.positionLimit}×</div>
+                  )}
+                  {!result.bucket.room.negative && roomInWrappers(result.bucket.room.roomUsd, { tqqq: root === "TQQQ" ? pxEff?.price : null, qqq: under?.symbol === "QQQ" ? under.price : null, mnq: mnqPx }).length > 0 && (
+                    <div style={{ color: C.lbl }}>≈ {roomInWrappers(result.bucket.room.roomUsd, { tqqq: root === "TQQQ" ? pxEff?.price : null, qqq: under?.symbol === "QQQ" ? under.price : null, mnq: mnqPx })
+                      .map(w => w.symbol === "TQQQ" ? `${money(w.usd)} TQQQ (~${w.units} sh)` : `${w.units} ${w.symbol} ${w.unit}`).join(" ≈ ")}</div>
+                  )}
+                </div>
+              )}
             </div>
           )}
           {/* THE CATALYST WINDOW. What is scheduled inside the life of the contract, the name's
@@ -1905,6 +2005,26 @@ function ExposureTile({ book, err }) {
         </div>
       )}
 
+      {/* ── POSITION BOOK AND SWING BUCKET ──
+          Two budgets against the one ceiling: views to 1.2×, one-to-three-session trades to 0.3×,
+          reserved. Over is said in dollars; a swing trade past its third session is named as moved. */}
+      {book.buckets && (
+        <div style={XPO_ROW}>
+          <span style={{ fontSize: 11, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Position book</span>
+          <b style={{ fontSize: 12.5, color: book.buckets.positionOverUsd > 0 ? C.amber : C.green }}>{book.buckets.positionX}× NLV</b>
+          <span style={{ fontSize: 11.5, color: C.muted }}>limit {book.buckets.positionLimit}×{book.buckets.positionOverUsd > 0 ? ` · ⚠ over by ${money(book.buckets.positionOverUsd)}` : " · ✓"}</span>
+          <span style={{ fontSize: 11, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4, marginLeft: 8 }}>Swing room</span>
+          <b style={{ fontSize: 12.5, color: book.buckets.negative ? C.amber : C.green }}>{book.buckets.negative ? "−" : ""}{money(Math.abs(book.buckets.roomUsd))}</b>
+          <span style={{ fontSize: 11.5, color: C.muted }}>
+            {book.buckets.negative ? "position book is using it" : `${money(book.buckets.reservedUsd)} reserved${book.buckets.swingUsd > 0 ? ` · ${money(book.buckets.swingUsd)} in use (${book.buckets.swingLines.map(l => l.symbol.trim()).join(", ")})` : ""}`}
+          </span>
+          {book.buckets.reclassified.length > 0 && (
+            <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>
+              {book.buckets.reclassified.map(r => `${r.symbol.trim()} · session ${r.sessionsHeld} · moved to the position book`).join(" · ")}
+            </span>
+          )}
+        </div>
+      )}
       <div style={XPO_ROW}>
         <span style={{ fontSize: 11, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>State</span>
         {/* ⚠ AND NOT ⛔, EVERYWHERE A LIMIT IS EVALUATED. This tile takes no action and never did —
@@ -2850,6 +2970,25 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   // to it, and two separate totals on one panel would let it refuse a trade against a number it
   // is not showing.
   const bookX = useBookExposure(exposureRows, equityBase);
+  // ── A SWING TRADE ON ITS FOURTH SESSION IS MOVED, AND THE LOG SAYS SO ──
+  // Applied first (lib/bookExposure.js re-classifies it), told after: one note per symbol per
+  // day into the decision log, fire-and-forget, remembered in settings so a reload does not
+  // write it twice.
+  const reclassified = bookX.book?.buckets?.reclassified;
+  useEffect(() => {
+    if (!Array.isArray(reclassified) || !reclassified.length) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const noted = settings.swingNotes || {};
+    const fresh = reclassified.filter(r => noted[r.symbol] !== today);
+    if (!fresh.length) return;
+    setSettings(x => ({ ...x, swingNotes: { ...(x.swingNotes || {}), ...Object.fromEntries(fresh.map(r => [r.symbol, today])) } }));
+    touch();
+    for (const r of fresh) {
+      fetch("/api/manual-entry", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: { at: new Date().toISOString(), symbol: r.symbol, action: "reclassified", intent: `swing → position book (session ${r.sessionsHeld})` } }) })
+        .catch(() => { /* the panel already says it */ });
+    }
+  }, [reclassified]);   // eslint-disable-line
   // OPENING fills only, flattened, for the sizer's intended-vs-actual reconciliation. A closing
   // fill has no suggested size to have overridden — the same filter lib/decisions.js applies, and
   // for the same reason: a sell is an open on a short and an exit on a long.
@@ -2859,6 +2998,9 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
       .filter(f => f?.side === opens && Number(f.qty) > 0 && (f.at || f.date))
       .map(f => ({ symbol: r.symbol, qty: Number(f.qty), at: f.at || `${f.date}T00:00:00Z` }));
   }), [derivedRows]);
+  // How long each position was held, for the leveraged-ETF monthly line.
+  const holds = useMemo(() => derivedRows.map(r => ({ symbol: r.symbol, firstDate: r.derived?.firstDate ?? null,
+    lastDate: r.derived?.status === "closed" ? (r.derived?.lastDate ?? null) : null })), [derivedRows]);
   const coverage = useMemo(
     () => riskCoverage(exposureRows, { equityBase, rates: fxRates, base: baseCcy }),
     [exposureRows, equityBase, fxRates, baseCcy]);
@@ -3189,7 +3331,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           times, with one QQQ line carrying 2.37x on its own. Risk coverage above answers "what
           does a stop-out cost"; this answers "what am I carrying right now", and on this book the
           two differ by a factor of twelve. */}
-      <PositionSizer book={bookX.book} nlv={equityBase} fills={openingFills} exempt={settings.sizerExempt ?? null} />
+      <PositionSizer book={bookX.book} nlv={equityBase} fills={openingFills} exempt={settings.sizerExempt ?? null} holds={holds} />
       <ExposureTile book={bookX.book} err={bookX.err} />
 
       {/* ── P4 — RISK COVERAGE ──
