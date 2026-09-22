@@ -1775,9 +1775,9 @@
       "hawkish_repricing": "INSUFFICIENT_DATA",
       "live_regime": "stag",
       "view_regime": "stag",
-      "pinned": false,
-      "hyg_chg": 0.19,
-      "hyg_qqq_divergence": -2.58,
+      "pinned": true,
+      "hyg_chg": 0.04,
+      "hyg_qqq_divergence": 0.38,
       "inputs": {
         "weightedRecessionProb": 14.3,
         "cpi": 3.35302,
@@ -1785,15 +1785,15 @@
         "tape": {
           "gold": "down",
           "tlt": "up",
-          "xlu": "down",
+          "xlu": "up",
           "xlp": "down",
-          "spy": "up",
-          "qqq": "up",
+          "spy": "down",
+          "qqq": "down",
           "iwm": "up",
           "btc": "up",
-          "breakevenBp": 1
+          "breakevenBp": -2
         },
-        "ladderSpread": 3.83,
+        "ladderSpread": 0.58,
         "u3": 4.1,
         "empPop": 59.1,
         "oas": 2.68,
@@ -1803,7 +1803,7 @@
         "regimeVintage": "decayed"
       },
       "source": "client+cron",
-      "loggedAt": "2026-09-22T13:39:34.194Z",
+      "loggedAt": "2026-09-22T14:33:14.447Z",
       "axes": {
         "growth": {
           "state": "turning-down",
