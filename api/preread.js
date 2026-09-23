@@ -8,7 +8,7 @@ import { assembleRegion } from '../lib/assemble.js';
 import { getQuotes } from '../lib/quotes.js';
 import { weekHighlights } from '../lib/calendar.js';
 import { auctionEvents } from '../lib/auctions.js';
-import { postLong, postImages } from '../lib/discord.js';
+import { postLong } from '../lib/discord.js';
 import { marketState, localHour, localMinutesOfDay, localDateIn, isWeekendIn, localWeekday, closedExchanges, halfDayLabels, freshness, freshnessText, sessionCloseMin, sessionCountdown } from '../lib/sessions.js';
 import { kvGetJson, kvSetJson, kvConfigured } from '../lib/kv.js';
 import { coreSpread } from '../lib/inflation.js';
@@ -1064,21 +1064,20 @@ async function runRegion(region, req) {
         // the brief would have fitted, because the map and the macro half are read at different
         // moments. It is a minimum part count, never a maximum — a forced part still over the cap
         // is split again underneath it.
-        // ── THE PICTURE FIRST, THEN THE WORDS ────────────────────────────────
-        // One PNG per instrument (lib/gexImage.js), posted as one message ahead of the brief so
-        // the ladder is the first thing on screen and the map text follows it. A picture that
-        // fails to render costs nothing: the brief goes out exactly as before, and the failure is
-        // named on the response.
-        let image = null;
+        // ── THE PICTURES INSIDE THE MAP CARD ─────────────────────────────────
+        // One PNG per instrument (lib/gexImage.js), attached to the part of the brief that carries
+        // TODAY'S MAP: that message is a text card followed by a picture card per instrument. A
+        // picture that fails to render costs nothing — the brief goes out exactly as before — and
+        // the failure is named on the response.
+        let image = null, files = [];
         if (region === 'us' && blocks.gexRows?.length && blocks.gexTense !== 'closed') {
           try {
-            const files = await ladderImages(blocks.gexRows, { today: new Date().toISOString().slice(0, 10), vintage: gexVintageLabel(blocks.gexVintage) });
-            const id = files.length ? await postImages(process.env.DISCORD_WEBHOOK, { content: `${MAP_HEAD} · ${files.map(f => f.name).join(' · ')}`, files }) : null;
-            image = { ok: id != null, id, files: files.map(f => ({ name: f.filename, bytes: f.bytes.length })) };
+            files = await ladderImages(blocks.gexRows, { today: new Date().toISOString().slice(0, 10), vintage: gexVintageLabel(blocks.gexVintage) });
+            image = { rendered: files.map(f => ({ name: f.filename, bytes: f.bytes.length })) };
           } catch (e) { image = { ok: false, error: String(e?.message || e) }; }
         }
-        posted = await postLong(process.env.DISCORD_WEBHOOK, message, { label: R.label, breakAfter: [MAP_HEAD] });
-        if (image) posted = { ...posted, image };
+        posted = await postLong(process.env.DISCORD_WEBHOOK, message, { label: R.label, breakAfter: [MAP_HEAD], filesFor: files.length ? { marker: MAP_HEAD, files } : null });
+        if (image) posted = { ...posted, image: { ...image, attached: posted.results?.find(r => r.pictures != null)?.pictures ?? 0 } };
       } catch (e) {
         posted = { ok: false, error: String(e?.message || e) };
       }

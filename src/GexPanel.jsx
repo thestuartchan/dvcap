@@ -732,13 +732,13 @@ export function GexPanel() {
                         </div>
                         {heat.expiries.map(e => {
                           const v = heat.at.get(`${e}|${k}`);
-                          // THE COLUMN'S HEAVIEST CELL, RINGED. One per expiry, whatever its sign:
-                          // the fill goes to full strength and a two-pixel ring in the sign's own
-                          // colour marks it, so the day's level is found first and its sign read
-                          // from the ring rather than from a shade the scale compresses on purpose.
+                          // THE COLUMN'S HEAVIEST CELL, RINGED IN AMBER. One per expiry, whatever
+                          // its sign. The ring is one colour on purpose: a ring in the sign's own
+                          // colour asked the eye to tell a green ring from a green fill, and it
+                          // could not. Amber says "this one"; the fill, at full strength, and the
+                          // ▲/▼ say which way.
                           const isMax = heat.colMax?.get(e) === k;
                           const a = isMax ? 1 : heatAlpha(v, heat.cap);
-                          const tone = v > 0 ? C.green : C.purple;
                           return (
                             <div key={e} title={`${e} · ${fmtNum(k, 0)} · ${fmtUsd(v ?? 0)}${isMax ? " · the heaviest level in this expiry" : ""}`}
                               style={{ height: 24, borderRadius: 3,
@@ -746,8 +746,8 @@ export function GexPanel() {
                                        background: a === 0 ? C.bg
                                          : `rgba(${v > 0 ? HEAT_POS : HEAT_NEG},${a})`,
                                        border: "1px solid " + (isSpot ? C.blBdr : "transparent"),
-                                       outline: isMax ? `2px solid ${tone}` : "none", outlineOffset: -1,
-                                       boxShadow: isMax ? `0 0 0 2px ${C.surf}, 0 0 0 3px ${tone}` : "none",
+                                       outline: isMax ? `2px solid ${C.amber}` : "none", outlineOffset: -1,
+                                       boxShadow: isMax ? `0 0 0 2px ${C.surf}, 0 0 0 4px ${C.amber}` : "none",
                                        display: "flex", alignItems: "center", justifyContent: "center",
                                        overflow: "hidden" }}>
                               {/* THE FIGURE, NOT ONLY THE SHADE. Colour answers "where" at a glance
@@ -772,9 +772,9 @@ export function GexPanel() {
                 A strike coloured across several columns is a level the whole book agrees on. One
                 bright cell in the nearest expiry with nothing behind it is that expiry's positioning
                 and it stops existing when the contract does. ◂ marks spot; · marks the flip zone; + marks a
-                strike kept because a tile is about it (the ranking alone would have dropped it). The ringed
-                cell in each column is that expiry's heaviest level, ▲ positive gamma, ▼ negative — one per
-                column, whatever its sign.
+                strike kept because a tile is about it (the ranking alone would have dropped it). The amber
+                ring in each column marks that expiry's heaviest level, one per column whatever its sign; the
+                fill and ▲/▼ say whether it is positive or negative gamma.
                 Shading is compressed — capped at the 90th percentile and square-rooted — so one huge
                 cell cannot blank the rest, which means two cells of similar colour can differ
                 several-fold. The figure in each is the exact one; hover for full precision.
