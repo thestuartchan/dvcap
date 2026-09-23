@@ -43,20 +43,18 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
   const out = renderGexSection(rows, { rung: 'repriced', from: '2026-09-08', asOf: '2026-09-08T22:00:00Z' });
   const lines = out.split('\n');
   const at = (t) => lines.findIndex(l => l.includes(t));
-  ok('the ladder is fenced, or the labels do not line up', out.includes('```'));
-  ok('the heading is outside the fence so the bold renders', at('__**QQQ**') < at('```'));
+  // The ladder itself is the picture now (lib/gexImage.js); the text is a heading and bullets.
+  ok('no fence — the fenced ladder wrapped on a phone', !out.includes('```'));
   ok('no horizontal map survives', !/·····|`P` put|`C` call/.test(out));
   ok('QQQ before SPY', at('__**QQQ**') < at('__**SPY**'));
-  for (const label of ['above', 'spot', 'below', 'pin']) {
-    const first = lines.findIndex(l => l.startsWith(label)), second = lines.findIndex((l, i) => l.startsWith(label) && i > first);
-    ok(`${label} appears under each instrument`, first > at('__**QQQ**') && first < at('__**SPY**') && second > at('__**SPY**'));
+  {
+    const first = lines.findIndex(l => l.startsWith('• **pin**')), second = lines.findIndex((l, i) => l.startsWith('• **pin**') && i > first);
+    ok('pin appears under each instrument', first > at('__**QQQ**') && first < at('__**SPY**') && second > at('__**SPY**'));
   }
-  // The legacy rows carry no per-strike table, so the put side is the heaviest put strike — and
-  // it is never called a wall.
+  ok('the levels are not in the text', !/^(above|below|spot)\s/m.test(out));
   ok('the put side is never called a wall', !/put wall/.test(out));
-  ok('legacy rows still print both levels', /above {2}720\.00 \(call wall\)/.test(out) && /below {2}700\.00 \(heaviest put strike\)/.test(out));
-  ok('the pin is on its own line', /pin {4}717–719 \(23\.7% expires today\)/.test(out));
-  ok('and its absence is said', /pin {4}none today \(3\.6% expires\)/.test(out));
+  ok('the pin is a bullet', /• \*\*pin\*\* 717–719 \(23\.7% expires today\)/.test(out));
+  ok('and its absence is said', /• \*\*pin\*\* none today \(3\.6% expires\)/.test(out));
   ok('the rung is labelled', /one settlement behind/.test(out));
   ok('with the date it came from', /2026-09-08/.test(out));
 
@@ -73,7 +71,7 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
   ok('it reports where price finished instead', /closed below its pivot/.test(closed));
   ok('and says the expiry is gone', /expiry is gone/.test(closed));
   ok('and that settlement will move it', /overnight settlement/.test(closed));
-  ok('the heading survives the tense change, the ladder does not', /__\*\*QQQ\*\*/.test(closed) && !/```/.test(closed));
+  ok('the heading survives the tense change, the bullets do not', /__\*\*QQQ\*\*/.test(closed) && !/• \*\*pin/.test(closed));
 
   eq('an expired pin is never pinned', pinOf(
     { expiries: [{ expiry: '2026-09-09', shareOfAbs: 35, peakPutStrike: 716, peakCallStrike: 717 }] },
@@ -407,7 +405,7 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
     const withIv = renderGexSection(rows, { rung: 'repriced' });
     // It belongs to ITS instrument's block now, so it carries no symbol of its own — the heading
     // above it does. The symbol prefix was what made the line unreadable with two indices in it.
-    ok('the band renders on the pin line', /pin {4}none today · priced for ±9\.81 \(±1\.37%\)/.test(withIv));
+    ok('the band renders on the pin line', /• \*\*pin\*\* none today · priced for ±9\.81 \(±1\.37%\)/.test(withIv));
     ok('under the instrument it belongs to', withIv.indexOf('**QQQ**') < withIv.indexOf('priced for'));
     // A BAND IS NOT A BOUNDARY. Roughly one day in three finishes outside it, and the line says so
     // rather than letting the number read as a limit — ONCE, above the blocks, not repeated under

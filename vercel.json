@@ -8,5 +8,10 @@
       "path": "/api/preread?region=us&post=1&cron=1",
       "schedule": "42 12 * * 1-5"
     }
-  ]
+  ],
+  "functions": {
+    "api/preread.js": {
+      "includeFiles": "data/render/**"
+    }
+  }
 }

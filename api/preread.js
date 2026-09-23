@@ -8,7 +8,7 @@ import { assembleRegion } from '../lib/assemble.js';
 import { getQuotes } from '../lib/quotes.js';
 import { weekHighlights } from '../lib/calendar.js';
 import { auctionEvents } from '../lib/auctions.js';
-import { postLong } from '../lib/discord.js';
+import { postLong, postImages } from '../lib/discord.js';
 import { marketState, localHour, localMinutesOfDay, localDateIn, isWeekendIn, localWeekday, closedExchanges, halfDayLabels, freshness, freshnessText, sessionCloseMin, sessionCountdown } from '../lib/sessions.js';
 import { kvGetJson, kvSetJson, kvConfigured } from '../lib/kv.js';
 import { coreSpread } from '../lib/inflation.js';
@@ -36,6 +36,7 @@ const wallAgreementBoth = (grid, callWall, putWall) => {
   } catch { return null; }
 };
 import { watchlist } from '../lib/watchlist.js';
+import { ladderImages, ladderSvg, renderPng } from '../lib/gexImage.js';
 import { setups, setupCandidates, renderSetups, extendedLine } from '../lib/watchSetup.js';
 import { earningsCached } from '../lib/catalystFeed.js';
 import { WATCH_UNIVERSE } from '../data/watchUniverse.js';
@@ -712,6 +713,9 @@ async function gexBlock(liveSpot, tense = 'preview', opts = {}) {
       ? { support: r.levels.support?.strike ?? null, trapdoorNear: r.levels.trapdoor?.near?.strike ?? null, callWall: r.callWall }
       : { putWall: r.putWall, callWall: r.callWall }])),
     spot: Object.fromEntries(rows.map(r => [r.name, r.spot])),
+    // The rows themselves, for the picture. Not serialised anywhere — they carry the per-strike
+    // table and the grid.
+    rows, vintage: vint,
   };
 }
 
@@ -983,7 +987,10 @@ async function runRegion(region, req) {
       const g = await gexBlock(liveSpot, tense, { publishing: req.query.post === '1' });
       blocks.gexLines = g?.text || null;
       blocks.gexTense = tense;
+      blocks.gexTense = tense;
       blocks.gexDiag = g?.diag || null;
+      blocks.gexRows = g?.rows || null;
+      blocks.gexVintage = g?.vintage || null;
       // Walls and spot go into the snapshot so tomorrow's brief can say a level moved. A reader
       // placing against yesterday's put wall needs to know before they place, not after.
       if (g?.walls) { blocks.snap.walls = g.walls; blocks.snap.spot = g.spot; }
@@ -1057,7 +1064,21 @@ async function runRegion(region, req) {
         // the brief would have fitted, because the map and the macro half are read at different
         // moments. It is a minimum part count, never a maximum — a forced part still over the cap
         // is split again underneath it.
+        // ── THE PICTURE FIRST, THEN THE WORDS ────────────────────────────────
+        // One PNG per instrument (lib/gexImage.js), posted as one message ahead of the brief so
+        // the ladder is the first thing on screen and the map text follows it. A picture that
+        // fails to render costs nothing: the brief goes out exactly as before, and the failure is
+        // named on the response.
+        let image = null;
+        if (region === 'us' && blocks.gexRows?.length && blocks.gexTense !== 'closed') {
+          try {
+            const files = await ladderImages(blocks.gexRows, { today: new Date().toISOString().slice(0, 10), vintage: gexVintageLabel(blocks.gexVintage) });
+            const id = files.length ? await postImages(process.env.DISCORD_WEBHOOK, { content: `${MAP_HEAD} · ${files.map(f => f.name).join(' · ')}`, files }) : null;
+            image = { ok: id != null, id, files: files.map(f => ({ name: f.filename, bytes: f.bytes.length })) };
+          } catch (e) { image = { ok: false, error: String(e?.message || e) }; }
+        }
         posted = await postLong(process.env.DISCORD_WEBHOOK, message, { label: R.label, breakAfter: [MAP_HEAD] });
+        if (image) posted = { ...posted, image };
       } catch (e) {
         posted = { ok: false, error: String(e?.message || e) };
       }
@@ -1078,7 +1099,17 @@ async function runRegion(region, req) {
     } catch { /* the brief matters more than the bookkeeping */ }
   }
 
-  return { status: 200, body: { region, message, regime, posted, previous, gex: blocks.gexDiag || null, generatedAt: new Date().toISOString() } };
+  return { status: 200, body: { region, message, regime, posted, previous, gex: blocks.gexDiag || null, generatedAt: new Date().toISOString() },
+           // Off the body: for ?image=1, which answers with the PNG rather than the JSON.
+           rows: blocks.gexRows || null, vintage: gexVintageLabel(blocks.gexVintage) };
+}
+
+// The footer's vintage in a few words, for the picture's caption.
+function gexVintageLabel(v) {
+  if (!v?.rung) return null;
+  return v.rung === 'occ' ? `OCC settled open interest at ${v.spotSource === 'CBOE' ? "CBOE's spot" : 'the live spot'}${v.asOf ? ` · ${v.asOf.slice(11, 16)}Z` : ''}`
+    : v.rung === 'repriced' ? `the ${v.from || 'last'} close, repriced at the live spot`
+    : `the ${v.from || 'last'} capture as taken`;
 }
 
 // ── ALL MODE, AND WHY IT EXISTS ──────────────────────────────────────────────
@@ -1139,6 +1170,18 @@ export default async function handler(req, res) {
   const r = req.query.all === '1'
     ? await runAll(req)
     : await runRegion((req.query.region || 'asia').toLowerCase(), req);
+  // ?image=1 — the ladder picture for the first instrument (or ?symbol=SPY), as a PNG, so the
+  // drawing can be checked in a browser without posting. Market data only; never a post.
+  if (req.query.image === '1' && req.query.all !== '1') {
+    const want = String(req.query.symbol || '').toUpperCase();
+    const row = (r.rows || []).find(x => !want || x.name === want) || null;
+    const svg = row ? ladderSvg(row, { today: new Date().toISOString().slice(0, 10), vintage: r.vintage }) : null;
+    if (!svg) return res.status(404).json({ error: 'no option book to draw' });
+    if (req.query.svg === '1') { res.setHeader('Content-Type', 'image/svg+xml'); return res.status(200).send(svg); }
+    const png = await renderPng(svg);
+    res.setHeader('Content-Type', 'image/png');
+    return res.status(200).send(Buffer.from(png));
+  }
   // Only the scheduled runs log; a browser hitting the route to read a brief does not commit.
   if (req.query.cron === '1') r.body = { ...(r.body || {}), regimeLog: await logRegime(req) };
   res.status(r.status).json(r.body);
