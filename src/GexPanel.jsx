@@ -14,6 +14,7 @@ import { C } from "./theme.js";
 import { Card, SLabel } from "./ui.jsx";
 import { gexRead, ageOf } from "../lib/gexRead.js";
 import { heatCells, heatAlpha } from "../lib/gex.js";
+import { levelsOf, mustShow, rateLine, rateFarOut } from "../lib/gexLevels.js";
 
 const fmtUsd = (v) => {
   if (v == null || !Number.isFinite(+v)) return "—";
@@ -366,9 +367,18 @@ export function GexPanel() {
   const grid = live?.grid || data?.grid || null;
   const decay = live?.decay || data?.decay || null;
   const fresh = ageOf(latest?.asOf || (latest?.date ? `${latest.date}T13:00:00Z` : null));
+  // ── THE THREE DOWNSIDE OBJECTS ──
+  // Computed server-side on every path and carried on the response; recomputed here only when a
+  // row arrived without them (a build from before the split), so the tiles never go blank.
+  const lv = useMemo(() => {
+    const got = live?.levels || data?.levels || null;
+    if (got) return got;
+    if (!latest?.spot || !strikeSource?.length) return null;
+    return levelsOf({ byStrike: strikeSource, grid, spot: latest.spot, atr: latest.atr ?? null, callWall: latest.callWall });
+  }, [live, data, latest, strikeSource, grid]);
   const read = useMemo(
-    () => gexRead({ row: latest, byStrike: strikeSource || [], grid, live: !!live, kind: data?.custom ? data.kind : null }),
-    [latest, strikeSource, grid, live, data]);
+    () => gexRead({ row: latest, byStrike: strikeSource || [], grid, live: !!live, kind: data?.custom ? data.kind : null, levels: lv }),
+    [latest, strikeSource, grid, live, data, lv]);
 
   const strikeRows = useMemo(() => (strikeSource || []).map(r => ({
     strike: r.strike, net: r.netGexUsd, call: r.callGexUsd, put: r.putGexUsd == null ? null : -r.putGexUsd,
@@ -376,7 +386,13 @@ export function GexPanel() {
 
   // The shaping — which strikes are worth pixels and how the colour scale is capped — is in
   // lib/gex.js, where it is tested. The panel only draws what comes back.
-  const heat = useMemo(() => heatCells(grid), [grid]);
+  // Per-column ranking, plus the strikes the tiles are about: the flip-zone edges, the trapdoor,
+  // the support, the call wall and the pin box can never be dropped from the table.
+  const heat = useMemo(() => {
+    const m = mustShow(lv, { flipZoneLo: latest?.flipZoneLo, flipZoneHi: latest?.flipZoneHi });
+    return heatCells(grid, { must: m.strikes, flipZone: m.flipZone });
+  }, [grid, lv, latest]);
+  const rateOut = !!latest && (latest.rateStatus === "unavailable" || !(+latest.rate > 0));
 
   const seriesRows = useMemo(() => (data?.series || []).map(r => ({
     date: r.date, gex: r.gexUsd, flip: r.flipLevel, spot: r.spot,
@@ -541,10 +557,25 @@ export function GexPanel() {
             color={latest.flipFragile ? C.amber : C.text}
             sub={latest.flipLevel == null ? latest.flipReason
               : latest.spot ? `${latest.flipLevel > latest.spot ? "+" : ""}${fmtNum(latest.flipLevel - latest.spot)} from spot` : null} />
+          {/* ── THE CALL WALL, QUALIFIED; THE PUT SIDE, SPLIT ──
+              "Put wall" was wrong on four boards running (lib/gexLevels.js has the table). A
+              positive node above spot is a ceiling; below spot it is a magnet. The put side is
+              three tiles that never share a word: support (green, the wall), trapdoor (purple,
+              where a fall accelerates), pin box (grey, where price is being held). */}
           <Stat label="Call wall" value={fmtNum(latest.callWall)} color={C.green}
-            sub={latest.callWall && latest.spot ? `${fmtNum(((latest.callWall / latest.spot) - 1) * 100, 1)}%` : null} />
-          <Stat label="Put wall" value={fmtNum(latest.putWall)} color={C.purple}
-            sub={latest.putWall && latest.spot ? `${fmtNum(((latest.putWall / latest.spot) - 1) * 100, 1)}%` : null} />
+            sub={lv?.callWall?.kind
+              ? `${lv.callWall.kind} (${lv.callWall.kind === "ceiling" ? "above" : "below"} spot${lv.callWall.inPin ? ", inside the pin band" : ""})${latest.spot ? ` · ${fmtNum(((latest.callWall / latest.spot) - 1) * 100, 1)}%` : ""}`
+              : (latest.callWall && latest.spot ? `${fmtNum(((latest.callWall / latest.spot) - 1) * 100, 1)}%` : null)} />
+          <Stat label="Put support" value={lv?.support?.strike != null ? fmtNum(lv.support.strike) : "none"}
+            color={lv?.support?.strike != null ? C.green : C.muted}
+            sub={lv ? lv.text.support : "needs the per-strike rows"} />
+          <Stat label="Trapdoor"
+            value={lv?.trapdoor?.near ? fmtNum(lv.trapdoor.near.strike) : lv?.trapdoor?.deep ? fmtNum(lv.trapdoor.deep.strike) : "—"}
+            color={C.purple}
+            sub={lv ? lv.text.trapdoor : null} />
+          <Stat label="Pin box" value={lv?.pin?.pinned ? `${fmtNum(lv.pin.lo, 0)}–${fmtNum(lv.pin.hi, 0)}` : "none"}
+            color={C.muted}
+            sub={lv ? lv.text.pin : null} />
           <Stat label="OI-wtd IV" value={latest.oiWeightedIv == null ? "—" : `${fmtNum(latest.oiWeightedIv * 100, 1)}%`}
             sub={`${(latest.callOi ?? 0).toLocaleString()}c / ${(latest.putOi ?? 0).toLocaleString()}p`} />
         </div>
@@ -591,7 +622,7 @@ export function GexPanel() {
           Both dealer sign conventions are stored. They are exact reflections of one another, so they
           agree on the flip by construction and only the SIGN of net GEX differs — the level and the
           walls are the actionable outputs, and absolute GEX is not comparable across sources.
-          {latest.rateSource ? ` Risk-free rate ${(latest.rate * 100).toFixed(2)}% (${latest.rateSource}).` : " No risk-free rate on this row."}
+          {rateLine(latest)}
           {latest.partial ? " ⚠ Some expiries failed to fetch — this row is partial." : ""}
         </div>
       </Card>
@@ -624,8 +655,12 @@ export function GexPanel() {
               // WHICH wall, not merely that one matched. This said "✓ matches headline" on the
               // strength of either wall while the summary line above counted only expiries
               // matching BOTH — so on 2026-09-09 the same card read "0 of 6" and badged a row.
-              const mC = e.peakCallStrike === latest.callWall, mP = e.peakPutStrike === latest.putWall;
-              const agrees = mC && mP ? "both walls" : mC ? "call wall" : mP ? "put wall" : null;
+              // The put side's badge names the OBJECT: an expiry whose negative peak is the
+              // trapdoor owns the trapdoor; one whose positive peak is the support owns the support.
+              const mC = e.peakCallStrike === latest.callWall;
+              const mT = lv?.trapdoor && (e.peakPutStrike === lv.trapdoor.near?.strike || e.peakPutStrike === lv.trapdoor.deep?.strike);
+              const mS = lv?.support?.strike != null && e.peakCallStrike === lv.support.strike;
+              const agrees = [mC ? "call wall" : null, mS ? "support" : null, mT ? "trapdoor" : null].filter(Boolean).join(" + ") || null;
               return (
                 // A rule between rows, because on a phone these wrap onto two or three lines each
                 // and a continuation line then sits directly above the NEXT expiry's date. Without
@@ -662,7 +697,9 @@ export function GexPanel() {
               <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
                 <SLabel>Strike × expiry</SLabel>
                 <span style={{ fontSize: 11.5, color: C.muted }}>
-                  the {heat.shown} heaviest of {heat.total} strikes · green = positive gamma, purple = negative
+                  each expiry's {heat.perColumn} heaviest strikes, {heat.shown} of {heat.total}
+                  {heat.added?.length ? ` · plus the flip-zone edges and the level strikes (${heat.added.length} forced in)` : " · the flip-zone edges and the level strikes are always kept"}
+                  {" "}· green = positive gamma, purple = negative
                 </span>
               </div>
               {/* Scrolls on its own rather than widening the page — the strike column is pinned so a
@@ -672,9 +709,10 @@ export function GexPanel() {
                               gap: 2, minWidth: 56 + heat.expiries.length * 68 }}>
                   <div style={{ position: "sticky", left: 0, background: C.surf, zIndex: 1 }} />
                   {heat.expiries.map(e => (
-                    <div key={e} style={{ fontSize: 9.5, fontWeight: 800, color: C.lbl, textAlign: "center",
-                                          letterSpacing: 0.2, paddingBottom: 2 }}>
-                      {e.slice(5)}
+                    <div key={e} title={rateOut && rateFarOut(e) ? "priced with no risk-free rate" : undefined}
+                         style={{ fontSize: 9.5, fontWeight: 800, color: C.lbl, textAlign: "center",
+                                  letterSpacing: 0.2, paddingBottom: 2, opacity: rateOut && rateFarOut(e) ? 0.4 : 1 }}>
+                      {e.slice(5)}{rateOut && rateFarOut(e) ? " r?" : ""}
                     </div>
                   ))}
                   {heat.strikes.map(k => {
@@ -683,13 +721,14 @@ export function GexPanel() {
                     const isSpot = latest?.spot != null && Math.abs(k - latest.spot) <= 2.5;
                     const inZone = latest?.flipZoneLo != null && latest?.flipZoneHi != null
                       && k >= latest.flipZoneLo - 2.5 && k <= latest.flipZoneHi + 2.5;
+                    const isForced = heat.added?.includes(k);
                     return (
                       <Fragment key={k}>
                         <div style={{ position: "sticky", left: 0, background: C.surf, zIndex: 1,
                                       fontSize: 10, fontWeight: 800, textAlign: "right", paddingRight: 6,
                                       lineHeight: "20px",
                                       color: isSpot ? C.blue : inZone ? C.amber : C.lbl }}>
-                          {fmtNum(k, 0)}{isSpot ? " ◂" : inZone ? " ·" : ""}
+                          {fmtNum(k, 0)}{isSpot ? " ◂" : inZone ? " ·" : isForced ? " +" : ""}
                         </div>
                         {heat.expiries.map(e => {
                           const v = heat.at.get(`${e}|${k}`);
@@ -697,6 +736,7 @@ export function GexPanel() {
                           return (
                             <div key={e} title={`${e} · ${fmtNum(k, 0)} · ${fmtUsd(v ?? 0)}`}
                               style={{ height: 20, borderRadius: 3,
+                                       opacity: rateOut && rateFarOut(e) ? 0.4 : 1,
                                        background: a === 0 ? C.bg
                                          : `rgba(${v > 0 ? HEAT_POS : HEAT_NEG},${a})`,
                                        border: "1px solid " + (isSpot ? C.blBdr : "transparent"),
@@ -723,7 +763,8 @@ export function GexPanel() {
               <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 7, lineHeight: 1.5 }}>
                 A strike coloured across several columns is a level the whole book agrees on. One
                 bright cell in the nearest expiry with nothing behind it is that expiry's positioning
-                and it stops existing when the contract does. ◂ marks spot; · marks the flip zone.
+                and it stops existing when the contract does. ◂ marks spot; · marks the flip zone; + marks a
+                strike kept because a tile is about it (the ranking alone would have dropped it).
                 Shading is compressed — capped at the 90th percentile and square-rooted — so one huge
                 cell cannot blank the rest, which means two cells of similar colour can differ
                 several-fold. The figure in each is the exact one; hover for full precision.

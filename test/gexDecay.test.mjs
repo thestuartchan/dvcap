@@ -49,7 +49,10 @@ const c = (expiry, type, strike, oi, iv = 0.22) => ({ expiry, type, strike, oi, 
   eq('the call wall does not either', d.after.callWall, 730);
 
   ok('the lines name the replacement level',
-     d.lines.some(l => /put wall at 710/.test(l) && /\*\*700\*\*/.test(l)));
+     d.lines.some(l => /put-heavy strike at 710/.test(l) && /\*\*700\*\*/.test(l)));
+  // "PUT WALL" IS NOT A PHRASE THE DECAY TILE USES. The heaviest put-side strike can be the
+  // trapdoor; the wall on that side is put support, which lib/gexLevels.js qualifies.
+  ok('and it never says "put wall"', !d.lines.some(l => /put wall/i.test(l)));
   ok('and say how much of the book goes', d.lines.some(l => /36\.7% of the gamma in the expiries read expires at today's close/.test(l)));
   // THE DENOMINATOR IS NAMED. This read covers six expiries of roughly twenty (lib/occ.js), so a
   // share of it is not a share of the whole listed book — and a smaller denominator rounds the
