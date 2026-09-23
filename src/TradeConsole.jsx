@@ -36,6 +36,9 @@ import { sizeTrade, sizeFuture, sizerRun, reconcileRuns, mismatchReview, capRevi
 import { leverageFor, SWING, roomInWrappers } from "../lib/leverage.js";
 import { modelledDelta } from "../lib/blackscholes.js";
 import { stateOf, byState, afterFill, thesisOk, archivePatch, restorePatch, hoursToArchive, TABS } from "../lib/lifecycle.js";
+import { parseCommand, resolveCandidates, commandRow, commandSummary } from "../lib/commandBar.js";
+import { actionItems } from "../lib/actions.js";
+import { useRef } from "react";
 import { isDerivativeRow, underlyingOf, legLabel, optionDerived, exposureLines, optionRow, optionLevelVocab, hardDateCheck, defaultHardDate,
          markOf, spreadShape, INSTRUMENTS, INSTRUMENT_LABEL, LEG_RIGHTS, LEG_SIDES, MAX_LEGS, expiryLabel } from "../lib/instruments.js";
 // A stable empty object for memo dependencies: a fresh `{}` on every render would recompute the
@@ -196,7 +199,7 @@ const EntryRow = ({ ctx, row }) => {
             <option value={openSide}>{fv.openShort}</option>
             <option value={closeSideFor(r.side)}>{fv.closeShort}</option>
           </select></label>
-        <label style={{ fontSize: 10.5, color: C.lbl, fontWeight: 700 }}>Qty<br />{nInput(mine?.qty ?? "", v => draftFill(r, { qty: v }), d.qty > 0 && !isOpening ? String(d.qty) : "qty", 78)}</label>
+        <label data-entry="qty" style={{ fontSize: 10.5, color: C.lbl, fontWeight: 700 }}>Qty<br />{nInput(mine?.qty ?? "", v => draftFill(r, { qty: v }), d.qty > 0 && !isOpening ? String(d.qty) : "qty", 78)}</label>
         <label style={{ fontSize: 10.5, color: C.lbl, fontWeight: 700 }}>{r.opt ? "Combo price" : "Price"}<br />{nInput(mine?.price ?? "", v => draftFill(r, { price: v }), ctx.priceOf(r) != null ? String(ctx.priceOf(r)) : "price", 92)}</label>
         <label style={{ fontSize: 10.5, color: C.lbl, fontWeight: 700 }}>Date<br />
           <input type="date" value={mine?.date ?? ctx.todayISO} onChange={e => draftFill(r, { date: e.target.value })} style={{ ...IN, padding: "4px 7px" }} /></label>
@@ -483,7 +486,7 @@ const {
                 {companyName(r.symbol) || ctx.atrFor(quoteSym(r)).detail.name}</span> : null}
           {/* THE CONTRACT, in words, beside the underlying: "Nov20'26 17/20 C · vertical". The
               ×100 chip is folded into it — an option row says it is an option. */}
-          {o ? chip(`${o.label} · ${o.shape}`, C.blue, C.blBg, C.blBdr) : d.multiplier > 1 ? chip(`×${d.multiplier}`, C.amber, C.aBg, C.aBdr) : null}
+          {o ? (o.legs.length ? chip(`${o.label} · ${o.shape}`, C.blue, C.blBg, C.blBdr) : chip(`${o.instrument} · legs to fill in`, C.amber, C.aBg, C.aBdr)) : d.multiplier > 1 ? chip(`×${d.multiplier}`, C.amber, C.aBg, C.aBdr) : null}
           {/* SHORT IS MARKED, LONG IS NOT. Every number on a short row is the mirror of the one a
               reader expects — the stop is above, the target below, and a falling price is a gain —
               so the row says which it is rather than leaving the reader to infer it from levels
@@ -1261,7 +1264,7 @@ const ContractPanel = ({ r, ctx }) => {
   const { upd, money, bookX, underlyingPriceOf } = ctx;
   const o = r.opt;
   if (!o) return null;
-  const legs = (r.legs && r.legs.length) ? r.legs : o.legs;
+  const legs = (r.legs && r.legs.length) ? r.legs : (o.legs.length ? o.legs : [blankLeg()]);
   const setLegs = (L) => upd(r.id, { legs: L, ...(L.length > 1 ? { instrument: "spread" } : { instrument: "option" }) });
   const hd = hardDateCheck(r.hardDate ?? o.hardDate, o.legs);
   const grp = bookX?.book?.byUnderlying?.[o.underlying];
@@ -1272,7 +1275,7 @@ const ContractPanel = ({ r, ctx }) => {
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
         <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>Contract</span>
         <b style={{ fontSize: 12.5, color: C.text }}>{r.symbol} {o.label}</b>
-        <span style={{ fontSize: 11.5, color: C.lbl }}>{o.shape} · ×{o.multiplier} · fills are at the combo price</span>
+        <span style={{ fontSize: 11.5, color: C.lbl }}>{o.legs.length ? o.shape : "legs to fill in"} · ×{o.multiplier} · fills are at the combo price</span>
       </div>
       <LegTable legs={legs} setLegs={setLegs} compact />
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
@@ -1280,7 +1283,7 @@ const ContractPanel = ({ r, ctx }) => {
           <input type="date" value={r.hardDate || o.hardDate || ""} max={o.hardDateLimit || undefined} onChange={e => upd(r.id, { hardDate: e.target.value || null })}
             style={{ padding: "5px 8px", border: "1.5px solid " + (hd.ok ? (o.hardDateReached ? C.red : C.bdr) : C.red), borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} />
           <span style={{ display: "block", fontWeight: 500, color: hd.ok ? (o.hardDateReached ? C.red : C.muted) : C.red, fontSize: 10.5, marginTop: 2, maxWidth: 240, lineHeight: 1.4 }}>
-            {!hd.ok ? `⚠ ${hd.reason}` : o.hardDateReached ? "⏰ reached — decide today" : o.hardDateDefault ? `expiry − 7 days · no later than ${o.hardDateLimit}` : `set by you · no later than ${o.hardDateLimit}`}
+            {!hd.ok ? `⚠ ${hd.reason}` : !o.legs.length ? "set once a leg has an expiry — defaults to expiry − 7 days" : o.hardDateReached ? "⏰ reached — decide today" : o.hardDateDefault ? `expiry − 7 days · no later than ${o.hardDateLimit}` : `set by you · no later than ${o.hardDateLimit}`}
           </span>
         </label>
         <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Mark if no feed <span style={{ fontWeight: 400, color: C.muted }}>(combo)</span><br />
@@ -2404,16 +2407,20 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   const [saveMsg, setSaveMsg]   = useState(null);
   const [kvOn, setKvOn]         = useState(null);
   const [expanded, setExpanded] = useState(null);
-  const [addSym, setAddSym]     = useState("");
+  // ── THE COMMAND BAR ── one line: TICKER · direction · instrument · [qty @ price]. Parsed as it is
+  // typed (lib/commandBar.js); the pills beside it rewrite the same line.
+  const [cmd, setCmd]           = useState("");
+  const parsed = useMemo(() => parseCommand(cmd), [cmd]);
+  const addSym = parsed.symbol || "";
+  const addKind = parsed.instrument || "shares";
+  const addSide = parsed.side || DEFAULT_SIDE;
   const [symHint, setSymHint]   = useState(false);   // the ticker-spelling pointer beside the add field
-  const [addSide, setAddSide]   = useState(DEFAULT_SIDE);
-  // ── ADD A TRADE: the instrument, and for an option or spread its legs and first fill ──
-  const [addKind, setAddKind]   = useState("shares");
   const [addLegs, setAddLegs]   = useState([blankLeg()]);
-  const [addNet, setAddNet]     = useState("");
-  const [addQty, setAddQty]     = useState("");
   const [addDate, setAddDate]   = useState(() => new Date().toISOString().slice(0, 10));
   const [addErr, setAddErr]     = useState(null);
+  // What the feed resolved the typed ticker to — name, and the feed symbol (7709 → 7709.HK).
+  const [resolved, setResolved] = useState(null);
+  const cmdRef = useRef(null);
   // The chain the underlying trades — expiries and their strikes — for the leg table's pre-fill.
   // From the exchange feed (lib/cboe.js pickCboeIndex): IBKR is read through Flex here, which is
   // a statement and carries no chain.
@@ -2657,6 +2664,37 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
 
   // The chain for the underlying being added, fetched once the ticker settles. Best-effort: the
   // leg table works without it, the datalists are simply empty.
+  // ── RESOLVE THE TICKER, THE WAY THE SIZER DOES ── through the quote feed, which reports the name
+  // it settled on; a bare exchange code is tried with its suffixes (lib/commandBar.js
+  // resolveCandidates) and the first that answers wins. Best-effort and never blocking: Add works
+  // on the typed symbol if the feed says nothing.
+  useEffect(() => {
+    const sym = addSym.trim().toUpperCase();
+    if (!sym || parsed.instrument === "option" || parsed.instrument === "spread") return undefined;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const cands = resolveCandidates(sym);
+      const tried = [];
+      for (const c of cands) {
+        try {
+          if (c.future) {
+            const f = await fetch(`/api/atr?future=${encodeURIComponent(c.symbol)}`, { credentials: "include" }).then(r => r.json());
+            if (cancelled) return;
+            if (f?.ok) { setResolved({ for: sym, symbol: c.symbol, name: f.name || f.atr?.name || null, quoteType: "FUTURE", why: c.why, front: f.front?.code || null }); return; }
+            tried.push(c.symbol);
+            continue;
+          }
+          const a = await fetch(`/api/atr?tickers=${encodeURIComponent(c.symbol)}`, { credentials: "include" }).then(r => r.json());
+          if (cancelled) return;
+          const hit = a?.[c.symbol];
+          if (hit && (hit.status === "ok" || hit.name)) { setResolved({ for: sym, symbol: c.symbol, name: hit.name || null, quoteType: hit.quoteType || null, why: c.why, price: hit.lastClose ?? null }); return; }
+          tried.push(c.symbol);
+        } catch { tried.push(c.symbol); }
+      }
+      if (!cancelled) setResolved({ for: sym, symbol: sym, unresolved: true, tried });
+    }, 500);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [addSym, parsed.instrument]);
   useEffect(() => {
     if (addKind !== "option" && addKind !== "spread") return undefined;
     const sym = addSym.trim().toUpperCase();
@@ -2891,35 +2929,61 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
     }
   }, [hits, settings.alertsEnabled]);
 
+  // ── KEYBOARD ──
+  // n · new trade (the command bar) — f · the selected card's entry row — ← → · the tabs —
+  // Esc · clear the draft and fold the card. Enter is the entry row's own. Nothing fires while
+  // typing in a field, except Esc, which is what you press to stop typing.
+  const expandedRef = useRef(expanded); expandedRef.current = expanded;
+  const tabRef = useRef(bookTab); tabRef.current = bookTab;
+  useEffect(() => {
+    const onKey = (e) => {
+      const t = e.target;
+      const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
+      if (e.key === "Escape") { setFillFor(null); if (typing) t.blur(); else setExpanded(null); return; }
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "n") { e.preventDefault(); cmdRef.current?.focus(); cmdRef.current?.scrollIntoView({ block: "center" }); return; }
+      if (e.key === "f") {
+        const id = expandedRef.current; if (!id) return;
+        const el = document.querySelector(`[data-row="${String(id).replace(/"/g, '\\"')}"] label[data-entry="qty"] input`);
+        if (el) { e.preventDefault(); el.focus(); el.scrollIntoView({ block: "center" }); }
+        return;
+      }
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        const i = TABS.findIndex(x => x.id === tabRef.current);
+        const n = (i + (e.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length;
+        setBookTab(TABS[n].id);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);   // eslint-disable-line
+
   // ── mutations ──
-  const addRow = (side = addSide) => {
-    const sym = addSym.trim().toUpperCase();
-    if (!sym) return;
+  // ── ADD, FROM THE COMMAND LINE ──
+  // With a fill the card is created OPEN; without, WATCHING. An option or spread takes its legs
+  // from the table; typed with none, it is created WATCHING with the empty table open on the card,
+  // which is the brief's "SOFI long spread" case.
+  const addRow = () => {
     setAddErr(null);
-    // ── AN OPTION OR A SPREAD ──
-    // Built by lib/instruments.js optionRow: the underlying, the legs, the option multiplier, the
-    // default hard date, and — when a net price and a quantity were typed — the first fill at the
-    // combo price. Anything it refuses is said here, and no half-row is created.
+    if (parsed.error) { setAddErr(parsed.error); return; }
+    const sym = (resolved?.for === addSym && !resolved.unresolved ? resolved.symbol : addSym).toUpperCase();
+    let made;
     if (addKind === "option" || addKind === "spread") {
-      const made = optionRow({ underlying: sym, legs: addLegs, side, qty: addQty === "" ? null : addQty, price: addNet === "" ? null : addNet, date: addDate });
-      if (made.error) { setAddErr(made.error); return; }
-      setRows(p => [...p, made.row]);
-      setAddSym(""); setAddSide(DEFAULT_SIDE); setAddLegs([blankLeg()]); setAddNet(""); setAddQty(""); setExpanded(made.row.id); touch();
-      return;
+      const typed = addLegs.filter(l => l.strike !== "" || l.expiry !== "");
+      if (!typed.length) {
+        const id = `${sym}-${Math.random().toString(36).slice(2, 8)}`;
+        made = { row: { id, symbol: sym, underlying: sym, instrument: addKind, legs: [], side: sideOf(addSide) ?? DEFAULT_SIDE, currency: "USD", thesis: "", levels: [], fills: [], tags: [], multiplier: 100 }, opensAs: "WATCHING" };
+      } else {
+        made = optionRow({ underlying: sym, legs: addLegs, side: addSide, qty: parsed.qty, price: parsed.price, date: addDate });
+        if (!made.error) made.opensAs = made.row.fills.length ? "OPEN" : "WATCHING";
+      }
+    } else {
+      made = commandRow(parsed, { resolved: resolved?.for === addSym && !resolved.unresolved ? resolved : null, date: addDate });
     }
-    const id = `${sym}-${Math.random().toString(36).slice(2, 8)}`;
-    // THE CONTRACT SIZE IS SET WHEN THE TRADE IS SET UP, not remembered later. A futures row whose
-    // multiplier is filled in afterwards is a row that computed every money figure at x1 until
-    // somebody noticed — MGC ran a month that way. A known root arrives already margined and
-    // already sized; anything else is a share at x1, which is correct rather than assumed.
-    const known = multiplierFor(sym, { margined: looksLikeFuture(sym) });
-    // DIRECTION IS SET AT SETUP, for the same reason the multiplier is: a row whose side is filled
-    // in afterwards is a row that computed every P&L, R and level breach the wrong way round until
-    // somebody noticed. It is one click here and unrecoverable later.
-    setRows(p => [...p, { id, symbol: sym, side: sideOf(side) ?? DEFAULT_SIDE, currency: "USD", thesis: "", levels: [], fills: [], tags: [],
-      instrument: addKind === "future" ? "future" : "shares",
-      ...(known.source === "table" ? { multiplier: known.multiplier, margined: true } : addKind === "future" ? { margined: true } : {}) }]);
-    setAddSym(""); setAddSide(DEFAULT_SIDE); setExpanded(id); touch();
+    if (made.error) { setAddErr(made.error); return; }
+    setRows(p => [...p, made.row]);
+    setCmd(""); setAddLegs([blankLeg()]); setExpanded(made.row.id); touch();
+    setBookTab(made.opensAs === "OPEN" ? "OPEN" : "WATCHING");
   };
   const upd = (id, patch) => { setRows(p => p.map(r => r.id === id ? { ...r, ...patch } : r)); touch(); };
   // Accept the broker's cost basis on one row. The server does the recording (it holds the
@@ -3447,36 +3511,113 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
         </div>
       )}
 
+      {/* ── THE COMMAND BAR ──
+          One row at the top of the console: TICKER · direction · instrument · [qty @ price] · Add.
+          Typed as one line or set from the pills, which rewrite the same line. With a fill the card
+          is created OPEN, in one action; without, WATCHING. Press n anywhere to get here. */}
+      <Card>
+        <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
+          <SLabel>Add a trade</SLabel>
+          <input ref={cmdRef} value={cmd} onChange={e => { setCmd(e.target.value); setAddErr(null); }}
+            onKeyDown={e => { if (e.key === "Enter") addRow(); if (e.key === "Escape") { setCmd(""); e.target.blur(); } }}
+            placeholder="TICKER · long/short · shares/option/spread/future · qty @ price"
+            style={{ flex: "1 1 340px", minWidth: 220, padding: "7px 11px", border: "1.5px solid " + (parsed.error && cmd ? C.aBdr : C.bdr), borderRadius: 8, fontSize: 13.5, background: C.surf, color: C.text }} />
+          <button onClick={() => setSymHint(h => !h)} aria-label="How to write the ticker"
+            title="US: QQQ · Hong Kong: 0981.HK or just 981 · Korea: 005930 · Europe: ASML.AS, SHEL.L · crypto: BTC-USD · futures: MNQ, MGC, COIL · a contract: QQQ Oct16'26 730C"
+            style={{ cursor: "pointer", width: 22, height: 22, borderRadius: 999, border: "1.5px solid " + (symHint ? C.blue : C.bdr), background: C.surf, color: symHint ? C.blue : C.muted, fontSize: 12, fontWeight: 800 }}>?</button>
+          <Btn onClick={addRow} color={C.onFill} bgColor={C.blue} label="+ Add" />
+        </div>
+        {/* The pills: what the line says, and a way to change it without retyping. */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8, fontSize: 12 }}>
+          {(() => {
+            const rewrite = ({ side = addSide, kind = addKind }) => {
+              const fill = parsed.qty != null && parsed.price != null ? ` ${parsed.qty} @ ${parsed.price}` : "";
+              setCmd(`${addSym || ""} ${side} ${kind}${fill}`.trim());
+            };
+            return (<>
+              <span style={{ display: "inline-flex", border: "1.5px solid " + C.bdr, borderRadius: 8, overflow: "hidden" }}>
+                {SIDES.map(sd => (
+                  <button key={sd} onClick={() => rewrite({ side: sd })} disabled={!addSym}
+                    style={{ cursor: addSym ? "pointer" : "default", padding: "4px 10px", fontSize: 11.5, fontWeight: 800, border: "none",
+                             background: addSide === sd ? (sd === "short" ? C.blue : C.green) : C.surf, color: addSide === sd ? C.onFill : C.mid }}>
+                    {SIDE_LABEL[sd]}
+                  </button>
+                ))}
+              </span>
+              <span style={{ display: "inline-flex", border: "1.5px solid " + C.bdr, borderRadius: 8, overflow: "hidden" }}>
+                {INSTRUMENTS.map(k => (
+                  <button key={k} onClick={() => rewrite({ kind: k })} disabled={!addSym}
+                    style={{ cursor: addSym ? "pointer" : "default", padding: "4px 10px", fontSize: 11.5, fontWeight: 700, border: "none",
+                             background: addKind === k ? C.blBg : C.surf, color: addKind === k ? C.blue : C.mid }}>
+                    {INSTRUMENT_LABEL[k]}
+                  </button>
+                ))}
+              </span>
+              <label style={{ fontSize: 11, color: C.lbl, fontWeight: 700, display: "inline-flex", gap: 5, alignItems: "center" }}>fill date
+                <input type="date" value={addDate} onChange={e => setAddDate(e.target.value)} style={{ padding: "3px 6px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 11.5, background: C.surf, color: C.text }} />
+              </label>
+            </>);
+          })()}
+          <span style={{ color: parsed.error && cmd ? C.amber : C.muted, fontWeight: parsed.error && cmd ? 700 : 500 }}>
+            {!cmd ? "e.g. SOFI long shares 500 @ 16.675 — with a fill the card opens as OPEN; without, as WATCHING"
+              : parsed.error ? `⚠ ${parsed.error}`
+              : commandSummary(parsed)}
+          </span>
+        </div>
+        {/* What the feed resolved the ticker to — the name, so a number computed on the wrong
+            instrument cannot look like one computed on the right one. */}
+        {addSym && addKind !== "option" && addKind !== "spread" && resolved?.for === addSym && (
+          <div style={{ marginTop: 5, fontSize: 11.5, color: resolved.unresolved ? C.amber : C.mid, lineHeight: 1.5 }}>
+            {resolved.unresolved
+              ? <>⚠ the feed has no quote for <b>{resolved.for}</b>{resolved.tried?.length ? ` (tried ${resolved.tried.join(", ")})` : ""} — it will be added as typed; set <i>Quote as</i> on the card if the feed calls it something else</>
+              : <>resolves to <b>{resolved.symbol}</b>{resolved.name ? ` · ${resolvedLabel(resolved)}` : ""}{resolved.symbol !== resolved.for ? <span style={{ color: C.lbl }}> · {resolved.why}</span> : null}{resolved.front ? <span style={{ color: C.lbl }}> · front {resolved.front}</span> : null}</>}
+          </div>
+        )}
+        {tickerHint(addSym) && (
+          <div style={{ fontSize: 11.5, color: C.amber, marginTop: 5, lineHeight: 1.5 }}>⚠ {tickerHint(addSym).text} Type the one you mean, or add the row and set <i>Quote as</i>.</div>
+        )}
+        {symHint && (
+          <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
+            How the feed spells it — <b>US</b> QQQ · <b>Hong Kong</b> 0981.HK, or just 981 · <b>Korea</b> 005930 · <b>Europe</b> ASML.AS, SHEL.L, MC.PA, SAP.DE · <b>crypto</b> BTC-USD, ETH-USD · <b>futures</b> MNQ, MGC, COIL · <b>a contract</b> QQQ Oct16'26 730C. Words after the ticker: long/short · shares/option/spread/future · qty @ price.
+          </div>
+        )}
+        {(addKind === "option" || addKind === "spread") && (
+          <div style={{ marginTop: 10 }}>
+            <LegTable legs={addLegs} setLegs={setAddLegs} chain={chain?.symbol === addSym.trim().toUpperCase() ? chain : null} max={addKind === "option" ? 1 : MAX_LEGS} />
+            <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
+              {addLegs.some(l => l.expiry) ? <>Hard exit date defaults to <b>{defaultHardDate(addLegs) || "—"}</b> (expiry − 7 days), editable on the card.</> : "Leave the table empty and the card opens WATCHING with it, to fill in there."}
+              {" "}A first fill is the line's <b>qty @ price</b>, at the <b>combo price</b>; the card is valued at the live combo mark.
+            </div>
+          </div>
+        )}
+        {addErr && <div style={{ fontSize: 12, color: C.red, fontWeight: 700, marginTop: 6 }}>⚠ {addErr}</div>}
+      </Card>
+
       {/* ── ACTION REQUIRED ──
-          One line per item that needs a decision today: a hard exit date reached, a contract past
-          expiry, a level hit. Empty when nothing needs doing — it never shows decoration. Step 4 of
-          the console brief extends this with stops inside an ATR and short-dated options; this is
-          the strip it extends. */}
+          One line per item that needs a decision today, sorted by urgency (lib/actions.js): a
+          contract past expiry, a hard exit date reached, a level hit, a stop inside an ATR, an
+          option under seven days, a swing trade past its window. Absent when there is nothing —
+          never "nothing to do". At the top, under the command bar, so it is the first thing read;
+          click a line to open its card on its tab. */}
       {(() => {
-        const items = [];
-        for (const r of derivedRows) {
-          if (r.derived.status === "closed") continue;
-          const name = r.opt ? `${r.symbol} ${r.opt.label}` : r.symbol;
-          if (r.opt?.expired) items.push({ id: r.id, rank: 0, col: C.red, text: `${name} · past expiry ${r.opt.expiry} with ${r.derived.qty} still open` });
-          else if (r.opt?.hardDateReached) items.push({ id: r.id, rank: 1, col: C.red, text: `${name} · hard exit date ${r.opt.hardDate} reached` });
-        }
-        for (const h of hits) {
-          const r = h.position;
-          const name = r.opt ? `${r.symbol} ${r.opt.label}` : r.symbol;
-          const what = h.level.on === "underlying" ? "underlying" : r.opt ? "combo mark" : "price";
-          items.push({ id: r.id, rank: 2, col: C.amber, text: `${name} · ${h.level.kind} level ${h.level.at}${h.level.to ? "–" + h.level.to : ""} hit — ${what} ${h.price}` });
-        }
+        const items = actionItems({
+          rows: derivedRows, hits, today: todayISO,
+          swingLines: bookX.book?.buckets?.swingLines || [],
+          atrOf: (r) => atrFor(quoteSym(r)).atr,
+          priceOf,
+        });
         if (!items.length) return null;
-        items.sort((a, b) => a.rank - b.rank);
-        const worst = items[0].col;
+        const worst = items[0].tone;
+        const col = (t) => (t === "danger" ? C.red : C.amber);
         return (
-          <div style={{ padding: "9px 13px", borderRadius: 10, background: worst === C.red ? C.rBg : C.aBg, border: "1.5px solid " + (worst === C.red ? C.rBdr : C.aBdr) }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: worst === C.red ? C.red : C.amber, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>
+          <div style={{ padding: "9px 13px", borderRadius: 10, background: worst === "danger" ? C.rBg : C.aBg, border: "1.5px solid " + (worst === "danger" ? C.rBdr : C.aBdr) }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: col(worst), textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>
               Action required · {items.length}
             </div>
             {items.map((it, i) => (
-              <div key={i} onClick={() => setExpanded(it.id)} style={{ fontSize: 12.5, color: it.col, fontWeight: 700, cursor: "pointer", lineHeight: 1.6 }}>
-                {it.rank === 2 ? "⚡" : "⏰"} {it.text}
+              <div key={i} onClick={() => { setBookTab(derivedRows.find(r => r.id === it.id)?.state || bookTab); setExpanded(it.id); }}
+                   style={{ fontSize: 12.5, color: col(it.tone), fontWeight: 700, cursor: "pointer", lineHeight: 1.6 }}>
+                {it.kind === "alert" ? "⚡" : it.kind === "stop-near" ? "▲" : it.kind === "swing" ? "↻" : "⏰"} {it.text}
               </div>
             ))}
           </div>
@@ -3974,83 +4115,6 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>Credit-DANGER caps the multiplier at {CREDIT_DANGER_CAP_LABEL}; a contested or pinned≠live regime applies a further ×0.7.</div>
         </div>
         </>)}
-      </Card>
-
-      {/* ── ADD A SETUP ──
-          Sits here, not in the top toolbar, because this is where the decision is made: equity,
-          risk % and the regime multiplier are read directly above, and the list a new ticker joins
-          is directly below. The toolbar keeps the account-level chrome — base currency, alerts,
-          sync state and the save button — which is status you want pinned at the top of the tab
-          rather than buried under the book. */}
-      <Card>
-        <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
-          <SLabel>Add a trade</SLabel>
-          {/* THE INSTRUMENT, chosen first. Shares and futures are one ticker; an option or a spread
-              is an underlying and a leg table, and the row that results is valued at its combo mark
-              rather than at the underlying's quote. */}
-          <select value={addKind} onChange={e => { setAddKind(e.target.value); setAddErr(null); }}
-            style={{ padding: "6px 8px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 12.5, background: C.surf, color: C.text, fontWeight: 700 }}>
-            {INSTRUMENTS.map(k => <option key={k} value={k}>{INSTRUMENT_LABEL[k]}</option>)}
-          </select>
-          <input value={addSym} onChange={e => setAddSym(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addRow(); }} placeholder={addKind === "option" || addKind === "spread" ? "Underlying" : "Ticker"}
-            style={{ width: 180, padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 13, background: C.surf, color: C.text, textTransform: "uppercase" }} />
-          {/* A pointer on how the feed spells things, because the feed's spelling is not always
-              yours: a bare US ticker is fine, Hong Kong wants the zero-padded code with .HK, a
-              European listing wants its exchange suffix, and a coin wants its -USD pair (a bare
-              BTC is a security ticker and is left alone). Small, and a click away rather than
-              always on — the title covers the desktop hover, the toggle covers touch. */}
-          <button onClick={() => setSymHint(h => !h)} aria-label="How to write the ticker"
-            title="US: QQQ · Hong Kong: 0981.HK · Europe: ASML.AS, SHEL.L, MC.PA, SAP.DE · crypto: BTC-USD, ETH-USD · futures: MNQ, MGC (=F is added) · if the feed calls it something else, set Quote as in the row."
-            style={{ cursor: "pointer", width: 22, height: 22, borderRadius: 999, border: "1.5px solid " + (symHint ? C.blue : C.bdr), background: C.surf, color: symHint ? C.blue : C.muted, fontSize: 11.5, fontWeight: 900, padding: 0, lineHeight: 1 }}>?</button>
-          {/* Direction, chosen before the row exists. Defaulting silently to long is what the
-              console did for its whole life, and it is fine as a DEFAULT — it is not fine as the
-              only option. */}
-          <div style={{ display: "inline-flex", border: "1.5px solid " + C.bdr, borderRadius: 8, overflow: "hidden" }}>
-            {SIDES.map(sd => (
-              <button key={sd} onClick={() => setAddSide(sd)}
-                style={{ cursor: "pointer", padding: "6px 12px", fontSize: 12, fontWeight: 800, border: "none",
-                         background: addSide === sd ? (sd === "short" ? C.blue : C.green) : C.surf,
-                         color: addSide === sd ? C.onFill : C.mid }}>
-                {SIDE_LABEL[sd]}
-              </button>
-            ))}
-          </div>
-          <Btn onClick={() => addRow()} color={C.onFill} bgColor={C.blue} label="+ Add" />
-          <span style={{ fontSize: 11.5, color: C.muted }}>
-            {addKind === "option" || addKind === "spread"
-              ? "with a net price and quantity it opens as a position; without them it is a watched setup"
-              : "starts as a watched setup — add levels and a stop before it becomes a position"}
-          </span>
-        </div>
-        {(addKind === "option" || addKind === "spread") && (
-          <div style={{ marginTop: 10 }}>
-            <LegTable legs={addLegs} setLegs={setAddLegs} chain={chain?.symbol === addSym.trim().toUpperCase() ? chain : null} max={addKind === "option" ? 1 : MAX_LEGS} />
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
-              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Net price <span style={{ fontWeight: 400, color: C.muted }}>(combo, per share; debit positive)</span><br />
-                <input value={addNet} inputMode="decimal" onChange={e => setAddNet(e.target.value)} placeholder="e.g. 0.85"
-                  style={{ width: 110, padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
-              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Quantity <span style={{ fontWeight: 400, color: C.muted }}>(contracts)</span><br />
-                <input value={addQty} inputMode="decimal" onChange={e => setAddQty(e.target.value)} placeholder="e.g. 15"
-                  style={{ width: 90, padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
-              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Fill date<br />
-                <input type="date" value={addDate} onChange={e => setAddDate(e.target.value)}
-                  style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
-              <span style={{ fontSize: 11.5, color: C.muted, lineHeight: 1.5, flex: "1 1 220px" }}>
-                {addLegs.some(l => l.expiry) ? <>Hard exit date defaults to <b>{defaultHardDate(addLegs) || "—"}</b> (expiry − 7 days), editable on the row.</> : "Every option row carries a hard exit date; it defaults to expiry − 7 days."}
-                {" "}Fills are at the <b>combo price</b>; the row is valued at the live combo mark.
-              </span>
-            </div>
-            {addErr && <div style={{ fontSize: 12, color: C.red, fontWeight: 700, marginTop: 6 }}>⚠ {addErr}</div>}
-          </div>
-        )}
-        {tickerHint(addSym) && (
-          <div style={{ fontSize: 11.5, color: C.amber, marginTop: 6, lineHeight: 1.5 }}>⚠ {tickerHint(addSym).text} Type the one you mean, or add the row and set <i>Quote as</i>.</div>
-        )}
-        {symHint && (
-          <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
-            How the feed spells it — <b>US</b> QQQ · <b>Hong Kong</b> 0981.HK (zero-padded code) · <b>Europe</b> ASML.AS, SHEL.L, MC.PA, SAP.DE (exchange suffix) · <b>crypto</b> BTC-USD, ETH-USD (a bare BTC is a security ticker) · <b>futures</b> MNQ, MGC (=F is added) · <b>commodities and indices</b> CL=F, GC=F, ^VIX, ^GSPC — a bare WTI, GOLD or BTC is a listed security · a name the feed does not know can be priced off another with <i>Quote as</i> in the row.
-          </div>
-        )}
       </Card>
 
       {/* ── THE FOUR TABS ── Watching · Open · Closed · Archive. One state on screen at a time, each
