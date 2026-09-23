@@ -2,7 +2,8 @@
 // with the bundled engine and fonts, into a real PNG.
 import { ladderSvg, renderPng, ladderImages, wrap, IMAGE_W, IMAGE_H, INK, FONT } from '../lib/gexImage.js';
 import { levelsOf } from '../lib/gexLevels.js';
-import { imagePayload } from '../lib/discord.js';
+import { imagePayload, cardsPayload, EMBEDS_MAX } from '../lib/discord.js';
+import { renderGexParts, mapCards } from '../lib/gexBrief.js';
 import { readFileSync, existsSync } from 'node:fs';
 
 let pass = 0, fail = 0;
@@ -43,7 +44,7 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
   ok('the heading names the instrument and spot', /QQQ 746\.06/.test(svg));
   ok('and the regime', /positive gamma, moves damp/.test(svg));
   ok('spot is drawn, its number on the axis in the line\'s blue', new RegExp(`stroke="${INK.spot}"`).test(svg) && new RegExp(`fill="${INK.spot}">746\\.06<`).test(svg));
-  ok('set in the friendlier face', new RegExp(`font-family="${FONT}"`).test(svg) && FONT === 'Nunito');
+  ok('set in Inter', new RegExp(`font-family="${FONT}"`).test(svg) && FONT === 'Inter');
   ok('the flip zone is a band', /flip zone 712\.76–740\.80/.test(svg));
   ok('the pivot after today is dashed', /stroke-dasharray/.test(svg) && /pivot after today 733\.96/.test(svg));
   ok('positive bars are green, negative purple', new RegExp(`fill="${INK.pos}"`).test(svg) && new RegExp(`fill="${INK.neg}"`).test(svg));
@@ -97,7 +98,7 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
 // ── THE RASTER ───────────────────────────────────────────────────────────────
 {
   ok('the engine is bundled', existsSync(new URL('../data/render/resvg.wasm', import.meta.url)));
-  ok('and the fonts, with their licence', existsSync(new URL('../data/render/Nunito_400Regular.ttf', import.meta.url)) && existsSync(new URL('../data/render/Nunito_700Bold.ttf', import.meta.url)) && /SIL Open Font License/.test(readFileSync(new URL('../data/render/OFL.txt', import.meta.url), 'utf8')) && /Nunito/.test(readFileSync(new URL('../data/render/OFL.txt', import.meta.url), 'utf8')));
+  ok('and the fonts, with their licence', existsSync(new URL('../data/render/Inter_400Regular.ttf', import.meta.url)) && existsSync(new URL('../data/render/Inter_700Bold.ttf', import.meta.url)) && /SIL Open Font License/.test(readFileSync(new URL('../data/render/OFL.txt', import.meta.url), 'utf8')) && /Inter/.test(readFileSync(new URL('../data/render/OFL.txt', import.meta.url), 'utf8')));
   const png = await renderPng(ladderSvg(row, { today: '2026-09-23' }));
   ok('a PNG comes back', png && png.length > 10000 && png[0] === 0x89 && png[1] === 0x50 && png[2] === 0x4e && png[3] === 0x47);
   // Width and height from the IHDR chunk: 820 wide, portrait.
@@ -112,10 +113,31 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
   eq('the multipart payload puts the pictures inside the card', imagePayload(files, { description: 'the map' }),
      { embeds: [{ description: 'the map' }, { image: { url: 'attachment://QQQ-ladder.png' } }, { image: { url: 'attachment://SPY-ladder.png' } }],
        attachments: [{ id: 0, filename: 'QQQ-ladder.png' }, { id: 1, filename: 'SPY-ladder.png' }] });
+  // ── EACH PICTURE ABOVE ITS READ ──
+  // Discord draws an embed's picture under its text, so the order "QQQ map, QQQ read, SPY map,
+  // SPY read" is three cards: heading + QQQ picture, QQQ read + SPY picture, SPY read + footer.
+  {
+    const parts = renderGexParts([row, { ...row, name: 'SPY' }], { rung: 'occ', asOf: '2026-09-23T12:00:00Z', today: '2026-09-23' });
+    eq('the section comes apart into caveat, one text per instrument, footer', [!!parts.caveat, parts.instruments.map(i => i.name), /settled open interest/.test(parts.footer)], [true, ['QQQ', 'SPY'], true]);
+    const cards = mapCards(parts, files, { head: '⚡ **TODAY\'S MAP**' });
+    eq('three cards', cards.length, 3);
+    ok('card 1: the heading and caveat, with QQQ\'s picture under it', cards[0].description.startsWith('⚡ **TODAY\'S MAP**\n_±band') && cards[0].filename === 'QQQ-ladder.png');
+    ok('card 2: QQQ\'s read, with SPY\'s picture under it', cards[1].description.startsWith('__**QQQ**') && /• \*\*stack\*\*/.test(cards[1].description) && cards[1].filename === 'SPY-ladder.png');
+    ok('card 3: SPY\'s read and the footer, no picture', cards[2].description.startsWith('__**SPY**') && /settled open interest/.test(cards[2].description) && !cards[2].filename);
+    // An instrument without a picture keeps its read in the running text.
+    const one = mapCards(parts, [files[0]], { head: 'H' });
+    eq('with one picture, two cards, the second carrying both reads', [one.length, /__\*\*QQQ\*\*[^]*__\*\*SPY\*\*/.test(one[1].description)], [2, true]);
+    const cp = cardsPayload(cards, files);
+    eq('the payload: three embeds, pictures on the first two, two attachments in order',
+       [cp.embeds.length, cp.embeds[0].image?.url, cp.embeds[1].image?.url, cp.embeds[2].image, cp.attachments],
+       [3, 'attachment://QQQ-ladder.png', 'attachment://SPY-ladder.png', undefined, [{ id: 0, filename: 'QQQ-ladder.png' }, { id: 1, filename: 'SPY-ladder.png' }]]);
+    ok('the cards fit Discord\'s limits', cp.embeds.length <= EMBEDS_MAX && cp.embeds.reduce((a, e) => a + (e.description?.length || 0), 0) <= 6000);
+    eq('a card naming a file that is not attached shows no picture', cardsPayload([{ description: 'x', filename: 'nope.png' }], files).embeds[0].image, undefined);
+  }
   // The pre-read hands the files to the part that carries the map, and the dry run can hand the
   // picture back.
   const src = readFileSync('api/preread.js', 'utf8');
-  ok('the pictures ride on the map part', /filesFor: files\.length \? \{ marker: MAP_HEAD, files \} : null/.test(src));
+  ok('the pictures ride on the map part, as cards', /filesFor: files\.length \? \{ marker: MAP_HEAD, files, cards \} : null/.test(src) && /mapCards\(blocks\.gexParts, files, \{ head: MAP_HEAD \}\)/.test(src));
   ok('a failed picture never blocks the brief', /image = \{ ok: false, error: String\(e\?\.message \|\| e\) \}/.test(src));
   const dsc = readFileSync('lib/discord.js', 'utf8');
   ok('and a part whose pictures fail to attach still posts its words', /if \(id == null\) id = await post\(webhook, \{ embeds: \[\{ description: body\.slice\(0, limit\) \}\] \}\);/.test(dsc));

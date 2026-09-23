@@ -19,7 +19,7 @@ const PREREAD_LAST_KEY = 'dvcap:preread:last:v1';
 import { kofiaStoredLine, koreaFlowRead, koreaFlowImplication } from '../lib/kofia.js';
 import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
 import { readGex, repriceStored, settledGex, GEX_SYMBOLS } from '../lib/gexStore.js';
-import { renderGexSection, pinOf, RUNGS } from '../lib/gexBrief.js';
+import { renderGexSection, renderGexParts, mapCards, pinOf, RUNGS } from '../lib/gexBrief.js';
 import { wallAgreement } from '../lib/gexRead.js';
 import { regimeSnapshot, regimeLogRow } from '../lib/regimeEngine.js';
 import { writeRegimeRow, logConfigured } from '../lib/regimeLog.js';
@@ -708,6 +708,7 @@ async function gexBlock(liveSpot, tense = 'preview', opts = {}) {
   if (!rows.length) return null;
   return {
     text: renderGexSection(rows, { ...vint, tense, today: new Date().toISOString().slice(0, 10) }),
+    parts: renderGexParts(rows, { ...vint, tense, today: new Date().toISOString().slice(0, 10) }),
     diag: { rung: vint.rung, bySymbol: rungOf, fellBack: why },
     walls: Object.fromEntries(rows.map(r => [r.name, r.levels
       ? { support: r.levels.support?.strike ?? null, trapdoorNear: r.levels.trapdoor?.near?.strike ?? null, callWall: r.callWall }
@@ -990,6 +991,7 @@ async function runRegion(region, req) {
       blocks.gexTense = tense;
       blocks.gexDiag = g?.diag || null;
       blocks.gexRows = g?.rows || null;
+      blocks.gexParts = g?.parts || null;
       blocks.gexVintage = g?.vintage || null;
       // Walls and spot go into the snapshot so tomorrow's brief can say a level moved. A reader
       // placing against yesterday's put wall needs to know before they place, not after.
@@ -1076,7 +1078,10 @@ async function runRegion(region, req) {
             image = { rendered: files.map(f => ({ name: f.filename, bytes: f.bytes.length })) };
           } catch (e) { image = { ok: false, error: String(e?.message || e) }; }
         }
-        posted = await postLong(process.env.DISCORD_WEBHOOK, message, { label: R.label, breakAfter: [MAP_HEAD], filesFor: files.length ? { marker: MAP_HEAD, files } : null });
+        // Each instrument's picture directly above its read: card 1 is the heading with QQQ's
+        // ladder under it, card 2 is QQQ's read with SPY's ladder under it, card 3 is SPY's read.
+        const cards = files.length && blocks.gexParts ? mapCards(blocks.gexParts, files, { head: MAP_HEAD }) : null;
+        posted = await postLong(process.env.DISCORD_WEBHOOK, message, { label: R.label, breakAfter: [MAP_HEAD], filesFor: files.length ? { marker: MAP_HEAD, files, cards } : null });
         if (image) posted = { ...posted, image: { ...image, attached: posted.results?.find(r => r.pictures != null)?.pictures ?? 0 } };
       } catch (e) {
         posted = { ok: false, error: String(e?.message || e) };
