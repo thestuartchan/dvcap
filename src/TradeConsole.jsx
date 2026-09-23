@@ -35,6 +35,7 @@ import { bookExposure, parseOptionSymbol, contractKey } from "../lib/bookExposur
 import { sizeTrade, sizeFuture, sizerRun, reconcileRuns, mismatchReview, capReview, futuresReview, leveragedReview, SIZER_LIMITS, SINGLE_NAME_EXEMPT } from "../lib/sizer.js";
 import { leverageFor, SWING, roomInWrappers } from "../lib/leverage.js";
 import { modelledDelta } from "../lib/blackscholes.js";
+import { stateOf, byState, afterFill, thesisOk, archivePatch, restorePatch, hoursToArchive, TABS } from "../lib/lifecycle.js";
 import { isDerivativeRow, underlyingOf, legLabel, optionDerived, exposureLines, optionRow, optionLevelVocab, hardDateCheck, defaultHardDate,
          markOf, spreadShape, INSTRUMENTS, INSTRUMENT_LABEL, LEG_RIGHTS, LEG_SIDES, MAX_LEGS, expiryLabel } from "../lib/instruments.js";
 // A stable empty object for memo dependencies: a fresh `{}` on every render would recompute the
@@ -121,134 +122,118 @@ const GuardRow = ({ g }) => {
   );
 };
 
-const FillForm = ({ ctx, symbol, row }) => {
-  const { fillFor, setFillFor, saveFill, declineFill, nInput, guardPanel } = ctx;
-  if (!fillFor) return null;
-  // THE PRE-TRADE PANEL. Everything else on this screen measures a position; this names an act, at
-  // the moment it is about to happen. It does not block and it does not disable the button — a
-  // warning that stops you is a warning you learn to click through without reading. The point is
-  // not to prevent the trade but to make sure it is taken on purpose, and to record which of these
-  // were lit when it was, so that later the log can say whether any of them were worth heeding.
-  const adding = row ? addToLoser({
-    derived: row.derived, pct: row.pnl?.unrealizedPct,
-    side: fillFor.side, fillPrice: fillFor.price,
-  }) : null;
-  const oversell = row ? oversellSplit(row.derived, { side: fillFor.side, qty: +fillFor.qty }) : null;
+// ── THE ENTRY ROW ─────────────────────────────────────────────────────────────
+// The always-present line at the bottom of a card's fills: side · qty · price · date · [Enter].
+// It replaces the Bought / Sold buttons and the pop-up Record panel (console rework, Step 3): the
+// control that records what happened no longer moves, and recording a fill appends a row above it
+// and leaves it where it was, cleared.
+//
+// One draft at a time, held in the console's `fillFor` — the same object the pre-trade panel, the
+// add-to-loser banner, the oversell check and the decision log already read — so typing into the
+// row lights the guards for THIS row exactly as the form did, and nothing about what gets logged
+// changed. The row of any other card shows blank until it is typed into.
+//
+// THE THESIS IS REQUIRED. Enter with no thesis (lib/lifecycle.js thesisOk) does not record: the
+// draft stays in the boxes and a one-line prompt opens above them. Nothing typed is lost.
+const EntryRow = ({ ctx, row }) => {
+  const r = row;
+  const { fillFor, draftFill, saveFill, declineFill, setFillFor, guardPanel, upd, nInput } = ctx;
+  const mine = fillFor?.rowId === r.id ? fillFor : null;
+  const d = r.derived;
+  const fv = fillVerb(r.side);
+  const openSide = openSideFor(r.side);
+  const side = mine?.side ?? openSide;
+  const isOpening = side === openSide;
+  const stop = (r.levels || []).find(l => l.kind === "stop" && l.at != null);
+  const adding = mine && isOpening ? addToLoser({ derived: d, pct: r.pnl?.unrealizedPct, side, fillPrice: mine.price }) : null;
+  const oversell = mine ? oversellSplit(d, { side, qty: +mine.qty }) : null;
+  const onKey = (e) => { if (e.key === "Enter") { e.preventDefault(); saveFill(); } if (e.key === "Escape") setFillFor(null); };
+  const IN = { padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text };
+  const needThesis = !!mine?.needThesis && !thesisOk(r.thesis);
   return (
-
-      <div style={{ marginTop: 10, padding: "11px 12px", borderRadius: 9, background: C.bg, border: "1.5px solid " + (fillFor.side === "buy" ? C.green : C.blue) }}>
-        <SLabel>
-          {fillFor.intent === "stopped" ? "Stopped out"
-            : `Record a ${fillFor.intent === "sell" ? fillVerb(row?.side).closeShort : fillVerb(row?.side).openShort}`}
-          {" — "}{symbol}
-        </SLabel>
-        {adding && (
-          <div style={{ marginTop: 9, padding: "9px 11px", borderRadius: 8, background: C.aBg, border: "1.5px solid " + C.amber }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: C.amber }}>
-              ⚠ This is add #{adding.addNumber} to a position that is down {Math.abs(adding.drawdownPct)}%
-              {adding.worseThanAverage === true && <span style={{ fontWeight: 700 }}> — {adding.adverseSide} your {adding.avgCost?.toFixed(2)} average</span>}
-            </div>
-            <div style={{ fontSize: 11.5, color: C.mid, marginTop: 4, lineHeight: 1.55 }}>
-              {adding.evidence.line}{" "}
-              <span style={{ color: C.lbl }}>
-                From {adding.evidence.window}, reviewed {adding.evidence.asOf}. It is the strongest pattern in your record
-                and it is the only one visible before the order rather than after it. Nothing here stops you — record the
-                fill if that is the trade.
-              </span>
-            </div>
-          </div>
-        )}
-        {/* The other seven. Rendered BELOW the add-to-loser banner rather than folded into it,
-            because that one carries evidence and the rest carry state — and above the inputs,
-            because a panel under the Record button is a panel read after the decision. */}
-        {guardPanel && (
-          <div style={{ marginTop: 9, padding: "8px 9px", borderRadius: 8, background: C.surf, border: "1px solid " + C.bdr }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 5, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, color: C.lbl, textTransform: "uppercase" }}>Before you record this</span>
-              <span style={{ fontSize: 10.5, fontWeight: 800,
-                             color: guardPanel.worst === "red" ? C.red : guardPanel.worst === "amber" ? C.amber : C.muted }}>
-                {guardPanel.red ? `${guardPanel.red} flagged` : guardPanel.amber ? `${guardPanel.amber} worth a look` : "nothing flagged"}
-                {guardPanel.unknown ? ` · ${guardPanel.unknown} unknown` : ""}
-              </span>
-              <span style={{ marginLeft: "auto", fontSize: 10, color: C.muted }}>advisory — none of this blocks the fill</span>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              {/* The panel only exists for an OPENING fill now, so `adding` is non-null whenever the
-                  addToLoser guard is red — the filter that used to hide the generic row is what let
-                  a cover show one. Kept as a guard against the two drifting apart again. */}
-              {guardPanel.guards.filter(g => g.id !== "addToLoser" || !adding).map(g => <GuardRow key={g.id} g={g} />)}
-            </div>
-          </div>
-        )}
-        <div style={{ marginTop: 9, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Side<br />
-            <select value={fillFor.side} onChange={e => setFillFor(f => ({ ...f, side: e.target.value }))} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
-              <option value="buy">buy</option><option value="sell">sell</option>
-            </select></label>
-          <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Quantity <span style={{ fontWeight: 400, color: C.muted }}>(your position size)</span><br />{nInput(fillFor.qty, v => setFillFor(f => ({ ...f, qty: v })), "shares")}</label>
-          <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>{row?.opt ? <>Combo price <span style={{ fontWeight: 400, color: C.muted }}>(net, per share)</span></> : "Price"}<br />{nInput(fillFor.price, v => setFillFor(f => ({ ...f, price: v })), "")}</label>
-          <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Date<br />
-            <input type="date" value={fillFor.date} onChange={e => setFillFor(f => ({ ...f, date: e.target.value }))} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
-          {fillFor.side === "buy" && (
-            /* DECLARED, NOT INFERRED. A fill cannot say whether you meant to hold it, and the edge
-               is not demonstrated in either bucket — so entering as a swing and closing the same
-               session is the most likely way a process quietly becomes a different one. One click,
-               and it is the only thing on this form that asks for anything. */
-            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Holding this as<br />
-              <span style={{ display: "flex", gap: 5, marginTop: 2 }}>
-                {["swing", "intraday"].map(k => (
-                  <button key={k} onClick={() => setFillFor(f => ({ ...f, hold: f.hold === k ? null : k }))}
-                    style={{ cursor: "pointer", padding: "5px 10px", borderRadius: 7, fontSize: 12, fontWeight: 700,
-                      border: "1.5px solid " + (fillFor.hold === k ? C.blue : C.bdr),
-                      background: fillFor.hold === k ? C.blBg : C.surf, color: fillFor.hold === k ? C.blue : C.mid }}>{k}</button>
-                ))}
-              </span></label>
-          )}
-          <label style={{ flex: "1 1 200px", fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Note<br />
-            <input value={fillFor.note} onChange={e => setFillFor(f => ({ ...f, note: e.target.value }))} placeholder="optional"
-              style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
+    <div onKeyDown={onKey} style={{ marginTop: 6, padding: "9px 11px", borderRadius: 9, background: mine ? C.bg : "transparent",
+                                    border: "1.5px " + (mine ? "solid " + (isOpening ? C.green : C.blue) : "dashed " + C.bdr) }}>
+      {needThesis && (
+        <div style={{ marginBottom: 8, padding: "8px 10px", borderRadius: 8, background: C.aBg, border: "1.5px solid " + C.amber }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: C.amber }}>One line on why, before this is recorded.</div>
+          <div style={{ fontSize: 11.5, color: C.mid, marginTop: 2, lineHeight: 1.5 }}>The monthly review reads the thesis, and a trade with no stated reason cannot be reviewed against anything. Your fill is still in the boxes below.</div>
+          <input autoFocus value={r.thesis || ""} onChange={e => upd(r.id, { thesis: e.target.value })} placeholder="e.g. accumulate on a pullback to the 200-day"
+            onKeyDown={e => { if (e.key === "Enter" && thesisOk(e.target.value)) { e.preventDefault(); saveFill(); } }}
+            style={{ ...IN, width: "100%", boxSizing: "border-box", marginTop: 6, borderColor: thesisOk(r.thesis) ? C.green : C.aBdr }} />
         </div>
-        <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <Btn onClick={saveFill} color={C.onFill} bgColor={fillFor.side === "buy" ? C.green : C.blue} label="Record fill" />
-          {/* Distinct from Cancel, which means "I mis-clicked". This one means "I looked and chose
-              not to", and it is the only action in this console that produces evidence a guard
-              worked rather than evidence one was ignored. */}
-          {fillFor.side === "buy" && (
-            <Btn onClick={declineFill} color={C.amber} bgColor={C.aBg} label="Decided against it" />
-          )}
-          <Btn onClick={() => setFillFor(null)} color={C.mid} bgColor={C.bg} label="Cancel" />
-          {/* ── SAID BEFORE IT HAPPENS, NOT AFTER ─────────────────────────────
-              Closing more than is open splits into two rows, and a split that arrives as a
-              surprise is worse than the clamp it replaced. The sentence is here, under the size
-              box, while the number can still be corrected — most oversells typed into this form
-              really are typos. */}
-          {oversell && (
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.amber, flexBasis: "100%" }}>
-              ⚠ That is more than the {oversell.closeQty} open. Recording it closes this row and
-              opens a {SIDE_LABEL[oversell.side]} row for the other {oversell.excessQty} — correct
-              the size if that is not what happened.
+      )}
+      {adding && (
+        <div style={{ marginBottom: 8, padding: "8px 10px", borderRadius: 8, background: C.aBg, border: "1.5px solid " + C.amber }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: C.amber }}>
+            ⚠ This is add #{adding.addNumber} to a position that is down {Math.abs(adding.drawdownPct)}%
+            {adding.worseThanAverage === true && <span style={{ fontWeight: 700 }}> — {adding.adverseSide} your {adding.avgCost?.toFixed(2)} average</span>}
+          </div>
+          <div style={{ fontSize: 11.5, color: C.mid, marginTop: 3, lineHeight: 1.5 }}>
+            {adding.evidence.line}{" "}
+            <span style={{ color: C.lbl }}>From {adding.evidence.window}, reviewed {adding.evidence.asOf}. Nothing here stops you — record the fill if that is the trade.</span>
+          </div>
+        </div>
+      )}
+      {mine && guardPanel && (
+        <div style={{ marginBottom: 8, padding: "7px 9px", borderRadius: 8, background: C.surf, border: "1px solid " + C.bdr }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, color: C.lbl, textTransform: "uppercase" }}>Before you record this</span>
+            <span style={{ fontSize: 10.5, fontWeight: 800, color: guardPanel.worst === "red" ? C.red : guardPanel.worst === "amber" ? C.amber : C.muted }}>
+              {guardPanel.red ? `${guardPanel.red} flagged` : guardPanel.amber ? `${guardPanel.amber} worth a look` : "nothing flagged"}
+              {guardPanel.unknown ? ` · ${guardPanel.unknown} unknown` : ""}
             </span>
-          )}
-          {/* Name the drift, since that is what a stop-out is actually about. */}
-          {fillFor.intent === "stopped" && fillFor.stopAt != null && Number.isFinite(+fillFor.price) && +fillFor.price !== +fillFor.stopAt && (() => {
-            const slip = ((+fillFor.price - +fillFor.stopAt) / +fillFor.stopAt) * 100;
-            return <span style={{ fontSize: 11.5, fontWeight: 800, color: slip < 0 ? C.red : C.green }}>
-              {slip < 0 ? "▼" : "▲"} {Math.abs(slip).toFixed(2)}% {slip < 0 ? "worse than" : "better than"} your {fillFor.stopAt} stop
-            </span>;
-          })()}
-          <span style={{ fontSize: 11, color: C.lbl }}>
-            {/* Every field here is free. The prefill exists to save typing, and saying so matters:
-                a form that opens with a level's price in it looks like it is recording THAT level,
-                when the whole point is that you fill where you fill. */}
-            <b>Nothing here is fixed</b> — change the price, size, side or date freely; a prefill is
-            only a starting point.{" "}
-            {fillFor.intent === "stopped"
-              ? "This one starts as the whole position at your stop, because that is the usual case — but a stop is a trigger, not a fill price, and gaps and slippage mean the real one is usually worse. Type what you actually got."
-              : "Selling part keeps the position open and books realised P&L at your average cost; selling all of it moves the row to Archive."}
-          </span>
+            <span style={{ marginLeft: "auto", fontSize: 10, color: C.muted }}>advisory — none of this blocks the fill</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {guardPanel.guards.filter(g => g.id !== "addToLoser" || !adding).map(g => <GuardRow key={g.id} g={g} />)}
+          </div>
         </div>
+      )}
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <label style={{ fontSize: 10.5, color: C.lbl, fontWeight: 700 }}>Side<br />
+          <select value={side} onChange={e => draftFill(r, { side: e.target.value, intent: e.target.value === openSide ? "buy" : "sell" })}
+            style={{ ...IN, fontWeight: 800, color: isOpening ? C.green : C.blue, width: 96 }}>
+            <option value={openSide}>{fv.openShort}</option>
+            <option value={closeSideFor(r.side)}>{fv.closeShort}</option>
+          </select></label>
+        <label style={{ fontSize: 10.5, color: C.lbl, fontWeight: 700 }}>Qty<br />{nInput(mine?.qty ?? "", v => draftFill(r, { qty: v }), d.qty > 0 && !isOpening ? String(d.qty) : "qty", 78)}</label>
+        <label style={{ fontSize: 10.5, color: C.lbl, fontWeight: 700 }}>{r.opt ? "Combo price" : "Price"}<br />{nInput(mine?.price ?? "", v => draftFill(r, { price: v }), ctx.priceOf(r) != null ? String(ctx.priceOf(r)) : "price", 92)}</label>
+        <label style={{ fontSize: 10.5, color: C.lbl, fontWeight: 700 }}>Date<br />
+          <input type="date" value={mine?.date ?? ctx.todayISO} onChange={e => draftFill(r, { date: e.target.value })} style={{ ...IN, padding: "4px 7px" }} /></label>
+        <label style={{ fontSize: 10.5, color: C.lbl, fontWeight: 700, flex: "1 1 120px", minWidth: 100 }}>Note<br />
+          <input value={mine?.note ?? ""} onChange={e => draftFill(r, { note: e.target.value })} placeholder="optional" style={{ ...IN, width: "100%", boxSizing: "border-box" }} /></label>
+        {isOpening && mine && (
+          <label style={{ fontSize: 10.5, color: C.lbl, fontWeight: 700 }}>Holding as<br />
+            <span style={{ display: "flex", gap: 4, marginTop: 2 }}>
+              {["swing", "intraday"].map(k => (
+                <button key={k} onClick={() => draftFill(r, { hold: mine.hold === k ? null : k })}
+                  style={{ cursor: "pointer", padding: "5px 9px", borderRadius: 7, fontSize: 11.5, fontWeight: 700,
+                           border: "1.5px solid " + (mine.hold === k ? C.blue : C.bdr), background: mine.hold === k ? C.blBg : C.surf, color: mine.hold === k ? C.blue : C.mid }}>{k}</button>
+              ))}
+            </span></label>
+        )}
+        <Btn onClick={saveFill} disabled={!mine} color={C.onFill} bgColor={isOpening ? C.green : C.blue} label={`Enter ↵ ${isOpening ? fv.openShort : fv.closeShort}`} />
+        {mine && isOpening && <Btn onClick={declineFill} color={C.amber} bgColor={C.aBg} label="Decided against it" />}
+        {mine && <button onClick={() => setFillFor(null)} title="clear (Esc)" style={{ cursor: "pointer", background: "none", border: "none", color: C.muted, fontWeight: 700, fontSize: 12 }}>clear</button>}
+        {!mine && stop && d.qty > 0 && (
+          <button onClick={() => draftFill(r, { side: closeSideFor(r.side), intent: "stopped", qty: String(d.qty), price: String(stop.at), note: "stopped out", stopAt: stop.at })}
+            title="Prefill the whole position at your stop — then correct the price to the real fill"
+            style={{ cursor: "pointer", background: "none", border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 9px", color: C.red, fontWeight: 700, fontSize: 11.5 }}>🛑 stopped out</button>
+        )}
       </div>
-    
+      <div style={{ marginTop: 5, fontSize: 11, color: C.lbl, lineHeight: 1.5 }}>
+        {oversell ? (
+          <span style={{ fontWeight: 700, color: C.amber }}>⚠ That is more than the {oversell.closeQty} open. Recording it closes this row and opens a {SIDE_LABEL[oversell.side]} row for the other {oversell.excessQty}.</span>
+        ) : mine?.intent === "stopped" && mine.stopAt != null && Number.isFinite(+mine.price) && +mine.price !== +mine.stopAt ? (() => {
+          const slip = ((+mine.price - +mine.stopAt) / +mine.stopAt) * 100;
+          return <span style={{ fontWeight: 800, color: slip < 0 ? C.red : C.green }}>{slip < 0 ? "▼" : "▲"} {Math.abs(slip).toFixed(2)}% {slip < 0 ? "worse than" : "better than"} your {mine.stopAt} stop</span>;
+        })() : mine ? (
+          <span>Enter records it. {isOpening ? `The first ${fv.openShort.toLowerCase()} moves this card to OPEN by itself.` : "Closing part keeps the card OPEN and books realised P&L at your average; closing all of it moves the card to CLOSED."}</span>
+        ) : (
+          <span>Type here to record a fill — nothing is prefilled, and nothing is ordered.</span>
+        )}
+      </div>
+    </div>
   );
 };
 
@@ -371,7 +356,7 @@ const echoesDate = (label, iso) => {
 const PositionRow = ({ r, mode, ctx, reorder = false, prevId = null, nextId = null, idx = 0, dragIdx = -1 }) => {
 const {
   prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel,
-  openFill, delFill, fillFor, sizeOpen, setSizeOpen, justMoved, drafts, setDraft, clearDraft, chip, ccyChip, fitChip,
+  delFill, sizeOpen, setSizeOpen, justMoved, drafts, setDraft, clearDraft, chip, ccyChip, fitChip,
   kindCol, money, pnlCol,
   equityBase, baseCcy, fxRates, baseRisk, targetPct, numOrNull,
   livePositions,
@@ -505,6 +490,15 @@ const {
               that look upside down. Long stays unmarked because it is the overwhelming majority
               and a chip on every row is a chip nobody reads. */}
           {isShort(r.side) ? chip("SHORT", C.blue, C.blBg, C.blBdr) : null}
+          {/* THE STATE, as a pill — where the trade IS in its life, derived from the fills and never
+              confirmed. WATCHING → OPEN → CLOSED → ARCHIVED (lib/lifecycle.js). */}
+          {(() => {
+            const st = r.state || "WATCHING";
+            const look = st === "OPEN" ? [C.blue, C.blBg, C.blBdr] : st === "CLOSED" ? [C.green, C.gBg, C.gBdr] : st === "ARCHIVED" ? [C.mid, C.bg, C.bdrMd] : [C.muted, C.bg, C.bdr];
+            const hrs = st === "CLOSED" ? hoursToArchive(r) : null;
+            return <span title={st === "CLOSED" && hrs != null ? `archives itself in ${hrs}h` : st === "ARCHIVED" ? "read-only — Restore brings it back to CLOSED" : undefined}
+              style={{ background: look[1], color: look[0], border: "1.5px solid " + look[2], borderRadius: 6, padding: "1px 8px", fontSize: 10.5, fontWeight: 900, letterSpacing: 0.6, whiteSpace: "nowrap" }}>{st}</span>;
+          })()}
           {/* AN FX CONTRACT IS QUOTED THE OTHER WAY UP. A yen future prints 0.00641 while USD/JPY
               — the number anyone says out loud — is 156. Reciprocals, ~24,000x apart, and a fill
               entered in the wrong one is wrong by that factor AND in the wrong direction. The row
@@ -612,6 +606,17 @@ const {
         </span>
         )}
 
+        {(mode === "closed" || mode === "archived") && (
+          <>
+            <Div />
+            <span style={{ display: "inline-flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", minWidth: 0 }} title="Frozen at the close — nothing here moves with the tape">
+              <span style={{ fontSize: 11.5, color: C.lbl, whiteSpace: "nowrap" }}>{d.firstDate || "?"} → {d.lastDate || "?"}{daysBetween(d.firstDate, d.lastDate) != null ? ` · ${daysBetween(d.firstDate, d.lastDate)}d` : ""}</span>
+              <span style={{ fontSize: 12, color: C.lbl, whiteSpace: "nowrap" }}>{d.bought} @ {fmtPrice(d.avgEntry, { maxDp: priceMaxDp(r.symbol) })} → {fmtPrice(d.avgExit, { maxDp: priceMaxDp(r.symbol) })}</span>
+              <b style={{ fontSize: 13, color: pnlCol(d.realized) }}>{(d.realized > 0 ? "+" : "") + money(d.realized, r.currency)}</b>
+              <b style={{ fontSize: 12.5, color: pnlCol(d.realizedPct) }}>{d.realizedPct == null ? "" : (d.realizedPct > 0 ? "+" : "") + d.realizedPct + "%"}</b>
+            </span>
+          </>
+        )}
         {mode === "open" && (
           <>
             <Div />
@@ -624,10 +629,18 @@ const {
                   "Aug 18 · since 2026-08-18". */}
               {d.firstDate && !echoesDate(r.trade, d.firstDate) && heldFor(d.firstDate)
                 ? <span style={{ fontSize: 11.5, color: C.lbl, whiteSpace: "nowrap" }}>held {heldFor(d.firstDate)}</span> : null}
-              <span style={{ fontSize: 12, color: C.lbl, whiteSpace: "nowrap" }}>{d.qty} @ {d.avgCost?.toFixed(2)}</span>
+              <span style={{ fontSize: 12, color: C.lbl, whiteSpace: "nowrap" }}>{d.qty} @ {fmtPrice(d.avgCost, { maxDp: priceMaxDp(r.symbol) })}</span>
+              {p.marketValue != null && <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }} title="Market value at the last price">mkt {money(p.marketValue, r.currency)}</span>}
               <b style={{ fontSize: 13, color: pnlCol(p.total) }}>{p.total == null ? "—" : (p.total > 0 ? "+" : "") + money(p.total, r.currency)}</b>
               <b style={{ fontSize: 12.5, color: pnlCol(p.totalPct) }}>{p.totalPct == null ? "" : (p.totalPct > 0 ? "+" : "") + p.totalPct + "%"}</b>
+              {d.partiallyRealised && p.unrealized != null && <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }} title="Unrealised on what is still open, and realised on what was sold">unreal {(p.unrealized > 0 ? "+" : "") + money(p.unrealized, r.currency)} · real {(d.realized > 0 ? "+" : "") + money(d.realized, r.currency)}</span>}
               {weightPct != null && <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }}>{weightPct}% of equity</span>}
+              {(() => {
+                // Delta-notional: the option block's for a contract, the exposure book's line for shares.
+                const dn = r.opt ? r.opt.deltaNotional : (ctx.bookX?.book?.lines || []).find(l => l.symbol === r.symbol && l.kind !== "option")?.deltaNotional ?? null;
+                const pct = r.opt ? r.opt.pctNlv : (dn != null && equityBase > 0 ? +((dn / equityBase) * 100).toFixed(1) : null);
+                return dn != null ? <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }} title="Delta-notional — what this line is carrying in the underlying">Δ {money(dn, r.currency)}{pct != null ? ` (${pct}% NLV)` : ""}</span> : null;
+              })()}
               {r.margined && mvBase != null && <span style={{ fontSize: 11, color: C.amber, whiteSpace: "nowrap" }} title="Notional controlled, not capital committed. A futures position is held on margin, so this is not a share of the book.">{money(mvBase, baseCcy)} notional</span>}
             </span>
             {d.partiallyRealised && chip(`incl. realised ${money(d.realized, r.currency)}`, C.green, C.gBg, P.green200)}
@@ -647,17 +660,11 @@ const {
         </span>
         {/* The actions that answer "how do I record what I did" — on the row, not hidden. */}
         <span className="dvcap-row-actions" style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", flexShrink: 0, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
-          {mode === "setup" && (
-            <Btn onClick={() => { setExpanded(r.id); openFill(r, "buy"); }} color={C.onFill} bgColor={C.green} label={`✓ I ${fillVerb(r.side).open.toLowerCase()}`} />
-          )}
-          {mode === "open" && (
-            <>
-              <Btn onClick={() => { setExpanded(r.id); openFill(r, "buy"); }} color={C.onFill} bgColor={C.green} label={`＋ ${fillVerb(r.side).open}`} />
-              <Btn onClick={() => { setExpanded(r.id); openFill(r, "sell"); }} color={C.onFill} bgColor={C.blue} label={`－ ${fillVerb(r.side).close}`} />
-              {stopLevel && <Btn onClick={() => { setExpanded(r.id); openFill(r, "stopped"); }} color={C.red} bgColor={C.surf} label="🛑 Stopped out" />}
-            </>
-          )}
-          <span style={{ color: C.lbl, fontSize: 12, cursor: "pointer" }} onClick={() => setExpanded(open ? null : r.id)}>{open ? "▲ less" : "▼ edit"}</span>
+          {/* NO BOUGHT / SOLD BUTTONS. Recording happens in the card's own entry row, which is
+              always there at the bottom of its fills — one control, one place. */}
+          {mode === "archived" && <Btn onClick={() => ctx.restoreRow(r.id)} color={C.blue} bgColor={C.surf} label="↩ Restore" />}
+          {mode === "closed" && <Btn onClick={() => ctx.archiveRow(r.id)} color={C.mid} bgColor={C.surf} label="Archive now" />}
+          <span style={{ color: C.lbl, fontSize: 12, cursor: "pointer" }} onClick={() => setExpanded(open ? null : r.id)}>{open ? "▲ less" : mode === "archived" ? "▼ view" : mode === "setup" ? "▼ record a fill" : "▼ edit"}</span>
         </span>
       </div>
 
@@ -677,22 +684,42 @@ const {
 
       {open && (
         <div className="dvcap-expand" onClick={e => e.stopPropagation()} style={{ padding: 12, borderTop: "1px solid " + C.bdr, background: C.surf }}>
+        {/* READ-ONLY when archived: a disabled fieldset switches off every input and button
+            inside it at once, so the archive is the same card and not a second, cut-down one.
+            Restore sits in the header, outside it. */}
+        <fieldset disabled={mode === "archived"} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, opacity: mode === "archived" ? 0.9 : 1 }}>
+          {mode === "archived" && (
+            <div style={{ marginBottom: 10, fontSize: 11.5, color: C.mid, padding: "6px 10px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8 }}>
+              Archived — read-only. <b>↩ Restore</b> in the header brings it back to CLOSED, where it can be corrected.
+            </div>
+          )}
+          {/* ── 1. THESIS AND LABEL ── first, because it is required before a fill can be recorded. */}
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
+            <label style={{ flex: "1 1 280px", fontSize: 11.5, color: thesisOk(r.thesis) ? C.lbl : C.amber, fontWeight: 700 }}>
+              Thesis {thesisOk(r.thesis) ? <span style={{ fontWeight: 400, color: C.muted }}>— why you are in, or watching</span> : <span style={{ fontWeight: 700 }}>— required before a fill is recorded (one line)</span>}<br />
+              <input value={r.thesis || ""} onChange={e => upd(r.id, { thesis: e.target.value })} placeholder="e.g. accumulate on a pullback to the 200dma"
+                style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", border: "1.5px solid " + (thesisOk(r.thesis) ? C.bdr : C.aBdr), borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Trade label<br />
+              <input value={r.trade || ""} onChange={e => upd(r.id, { trade: e.target.value })} placeholder="e.g. Aug 18 entry"
+                style={{ width: 120, padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
+          </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
             {/* DIRECTION, EDITABLE — because a mislabelled row has to be FIXABLE. The geometry
                 check on the header only reports; this is the control that acts on it. Changing it
                 re-derives the whole row (open/close mapping, P&L sign, which way every level
                 breaches), so a row corrected here is corrected everywhere at once. */}
             <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Direction<br />
-              <select value={sideOf(r.side) ?? DEFAULT_SIDE} onChange={e => upd(r.id, { side: e.target.value })}
+              <select value={sideOf(r.side) ?? DEFAULT_SIDE} onChange={e => {
+                  const n = (r.fills || []).length;
+                  // With fills recorded the flip re-reads every one of them as its opposite leg —
+                  // asked as a question, since a red note under a select that has already changed
+                  // is a warning read after the fact.
+                  if (n && typeof window !== "undefined" && !window.confirm(`Flip this ${SIDE_LABEL[sideOf(r.side) ?? DEFAULT_SIDE]} row to ${SIDE_LABEL[e.target.value]}?\n\n${n} fill${n === 1 ? "" : "s"} recorded — each will be re-read as its opposite leg (a buy becomes a cover, a sell becomes a short). Only do this if the row was labelled the wrong way round.`)) return;
+                  upd(r.id, { side: e.target.value });
+                }}
                 style={{ padding: "5px 8px", border: "1.5px solid " + ((r.fills || []).length && isShort(r.side) ? C.blBdr : C.bdr), borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text, fontWeight: 800 }}>
                 {SIDES.map(sd => <option key={sd} value={sd}>{SIDE_LABEL[sd]}</option>)}
               </select>
-              {(r.fills || []).length > 0 && (
-                <div style={{ fontSize: 10.5, color: C.amber, fontWeight: 700, marginTop: 3, maxWidth: 220 }}>
-                  ⚠ {(r.fills || []).length} fill{(r.fills || []).length === 1 ? "" : "s"} recorded — flipping this
-                  re-reads every one of them as its opposite leg
-                </div>
-              )}
             </label>
             {/* LEVERAGE, and only where it means something. On a perp the exchange closes the
                 position before any stop does, so the liquidation price is the real invalidation
@@ -762,9 +789,6 @@ const {
                 placeholder="not acknowledged"
                 style={{ width: 110, padding: "5px 9px", border: "1.5px solid " + (r.costBasisAck ? C.blue : C.bdr), borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} />
             </label>
-            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Trade label<br />
-              <input value={r.trade || ""} onChange={e => upd(r.id, { trade: e.target.value })} placeholder="e.g. Aug 18 entry"
-                style={{ width: 120, padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
             {/* ── ROLLED FROM ──
                 A futures roll is one continuous trade the broker has to book as two contracts.
                 Declared, never inferred: "sold one and bought another the same day" is also what
@@ -785,9 +809,6 @@ const {
                 </span>
               </label>
             )}
-            <label style={{ flex: "1 1 240px", fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Thesis / why you are watching<br />
-              <input value={r.thesis || ""} onChange={e => upd(r.id, { thesis: e.target.value })} placeholder="e.g. accumulate on a pullback to the 200dma"
-                style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
           </div>
 
           {o && <ContractPanel r={r} ctx={ctx} />}
@@ -802,7 +823,7 @@ const {
               <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>Levels</span>
               <span style={{ fontSize: 11.5, color: C.lbl }}>
                 price alerts — <b>nothing is ordered and nothing is recorded.</b> When price reaches one the row flags and,
-                if notifications are on, your browser tells you. Recording an actual trade is <b style={{ color: C.green }}>Bought</b> / <b style={{ color: C.blue }}>Sold</b>.
+                if notifications are on, your browser tells you. Recording an actual trade is the <b>entry row under Fills</b>.
               </span>
             </div>
 
@@ -862,7 +883,7 @@ const {
                         card, which is what made the two feel like the same thing or unrelated
                         things depending on where you looked. Selling needs something to sell. */}
                     {hit && (l.kind === "buy" || d.qty > 0) && (
-                      <button onClick={() => { setExpanded(r.id); openFill(r, l.kind === "sell" ? "sell" : l.kind === "stop" ? "stopped" : "buy"); }}
+                      <button onClick={() => { setExpanded(r.id); ctx.draftFill(r, l.kind === "buy" ? { side: openSideFor(r.side), intent: "buy", price: String(l.at) } : { side: closeSideFor(r.side), intent: l.kind === "stop" ? "stopped" : "sell", price: String(l.at), qty: String(d.qty || ""), stopAt: l.kind === "stop" ? l.at : null }); }}
                         style={{ marginLeft: 8, cursor: "pointer", background: kindCol(l.kind), color: C.onFill, border: "none", borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 800 }}>
                         record a fill
                       </button>
@@ -943,6 +964,49 @@ const {
               </span>
             </div>
           </div>
+
+          {/* fills */}
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, margin: "12px 0 5px" }}>
+            Fills {d.nFills > 0 && <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0, color: C.lbl }}>· {d.bought} {fv.opened} · {d.sold} {fv.closed} · avg {d.avgCost?.toFixed(2) ?? "—"}</span>}
+          </div>
+          {(d.fills || []).map(f => (
+            <div key={f.id} style={{ display: "flex", gap: 7, alignItems: "center", fontSize: 12, color: C.mid, marginBottom: 4, flexWrap: "wrap" }}>
+              {/* GREEN OPENS, BLUE CLOSES — the same pairing the two buttons above use. Keyed off
+                  buy/sell it was inverted on a short: the sell that opened the position showed in
+                  the closing colour under a word ("sell") the rest of the row never uses. */}
+              <b style={{ color: f.side === openSideFor(r.side) ? C.green : C.blue, minWidth: 38 }}
+                 title={f.side}>{f.side === openSideFor(r.side) ? fv.openShort : fv.closeShort}</b>
+              {/* WHERE THIS FILL CAME FROM. A number you typed and a number the broker reported are
+                  not the same kind of fact, and once the statement starts writing fills the
+                  difference stops being obvious. The id is the broker's own, which is also what
+                  stops the same trade being recorded twice. */}
+              {f.tradeId && <span title={`recorded from the IBKR statement — trade ${f.tradeId}`} style={{ fontSize: 10, fontWeight: 800, color: C.blue, border: "1px solid " + C.bdr, borderRadius: 5, padding: "1px 5px", background: C.surf }}>IBKR</span>}
+              <NumCommit dk={`fq:${f.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={f.qty} placeholder="qty" width={78}
+                onCommit={q => { if (q != null && q > 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, qty: q } : x) }); }} />
+              <span style={{ color: C.lbl }}>@</span>
+              <NumCommit dk={`fp:${f.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={f.price} placeholder="price" width={92}
+                onCommit={p => { if (p != null && p >= 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, price: p } : x) }); }} />
+              <input type="date" value={f.date || ""} onChange={e => upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, date: e.target.value } : x) })}
+                style={{ padding: "4px 7px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 11.5, background: C.surf, color: C.text }} />
+              {f.note && <span style={{ color: C.muted, fontSize: 11.5 }}>{f.note}</span>}
+              <button onClick={() => delFill(r.id, f.id)} title="delete this fill" style={{ cursor: "pointer", background: "none", border: "none", color: C.red, fontWeight: 800 }}>✕</button>
+            </div>
+          ))}
+          {(d.incomplete || []).map(f => (
+            <div key={f.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12, marginTop: 5, padding: "7px 9px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 7 }}>
+              <b style={{ color: C.amber }}>⚠ quantity needed</b>
+              <span style={{ color: C.mid }}>{f.side === openSideFor(r.side) ? fv.openShort : fv.closeShort} @ {f.price}{f.date ? ` · ${f.date}` : ""}</span>
+              <span style={{ color: C.lbl }}>how many?</span>
+              <NumCommit dk={`q:${f.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value="" placeholder="qty" width={90}
+                title="Type the full quantity, then press Enter or click away."
+                onCommit={q => { if (q != null && q > 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, qty: q } : x) }); }} />
+              <span style={{ color: C.muted, fontSize: 11 }}>press Enter or click away to save — the price was imported, the size was not</span>
+            </div>
+          ))}
+          {d.warnings?.map((w, i) => <div key={i} style={{ fontSize: 11.5, color: C.amber, fontWeight: 700, marginTop: 4 }}>⚠ {w}</div>)}
+
+          {/* ── THE ENTRY ROW ── always here, at the bottom of the fills. */}
+          {mode !== "archived" && <EntryRow ctx={ctx} row={r} />}
 
           {/* ── SIZE SUGGESTION, folded away ──
               It is a calculator, not a control: it reads nothing, changes nothing and is never
@@ -1045,60 +1109,6 @@ const {
             )}
           </div>
 
-          {/* fills */}
-          <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, margin: "12px 0 5px" }}>
-            Fills {d.nFills > 0 && <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0, color: C.lbl }}>· {d.bought} {fv.opened} · {d.sold} {fv.closed} · avg {d.avgCost?.toFixed(2) ?? "—"}</span>}
-          </div>
-          {(d.fills || []).map(f => (
-            <div key={f.id} style={{ display: "flex", gap: 7, alignItems: "center", fontSize: 12, color: C.mid, marginBottom: 4, flexWrap: "wrap" }}>
-              {/* GREEN OPENS, BLUE CLOSES — the same pairing the two buttons above use. Keyed off
-                  buy/sell it was inverted on a short: the sell that opened the position showed in
-                  the closing colour under a word ("sell") the rest of the row never uses. */}
-              <b style={{ color: f.side === openSideFor(r.side) ? C.green : C.blue, minWidth: 38 }}
-                 title={f.side}>{f.side === openSideFor(r.side) ? fv.openShort : fv.closeShort}</b>
-              {/* WHERE THIS FILL CAME FROM. A number you typed and a number the broker reported are
-                  not the same kind of fact, and once the statement starts writing fills the
-                  difference stops being obvious. The id is the broker's own, which is also what
-                  stops the same trade being recorded twice. */}
-              {f.tradeId && <span title={`recorded from the IBKR statement — trade ${f.tradeId}`} style={{ fontSize: 10, fontWeight: 800, color: C.blue, border: "1px solid " + C.bdr, borderRadius: 5, padding: "1px 5px", background: C.surf }}>IBKR</span>}
-              <NumCommit dk={`fq:${f.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={f.qty} placeholder="qty" width={78}
-                onCommit={q => { if (q != null && q > 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, qty: q } : x) }); }} />
-              <span style={{ color: C.lbl }}>@</span>
-              <NumCommit dk={`fp:${f.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={f.price} placeholder="price" width={92}
-                onCommit={p => { if (p != null && p >= 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, price: p } : x) }); }} />
-              <input type="date" value={f.date || ""} onChange={e => upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, date: e.target.value } : x) })}
-                style={{ padding: "4px 7px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 11.5, background: C.surf, color: C.text }} />
-              {f.note && <span style={{ color: C.muted, fontSize: 11.5 }}>{f.note}</span>}
-              <button onClick={() => delFill(r.id, f.id)} title="delete this fill" style={{ cursor: "pointer", background: "none", border: "none", color: C.red, fontWeight: 800 }}>✕</button>
-            </div>
-          ))}
-          {(d.incomplete || []).map(f => (
-            <div key={f.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12, marginTop: 5, padding: "7px 9px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 7 }}>
-              <b style={{ color: C.amber }}>⚠ quantity needed</b>
-              <span style={{ color: C.mid }}>{f.side === openSideFor(r.side) ? fv.openShort : fv.closeShort} @ {f.price}{f.date ? ` · ${f.date}` : ""}</span>
-              <span style={{ color: C.lbl }}>how many?</span>
-              <NumCommit dk={`q:${f.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value="" placeholder="qty" width={90}
-                title="Type the full quantity, then press Enter or click away."
-                onCommit={q => { if (q != null && q > 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, qty: q } : x) }); }} />
-              <span style={{ color: C.muted, fontSize: 11 }}>press Enter or click away to save — the price was imported, the size was not</span>
-            </div>
-          ))}
-          {d.warnings?.map((w, i) => <div key={i} style={{ fontSize: 11.5, color: C.amber, fontWeight: 700, marginTop: 4 }}>⚠ {w}</div>)}
-          <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-            {/* The buy/sell pair lives in the row header, where it is reachable without expanding
-                anything. Repeating it here gave two controls for one action and made the pair down
-                here look like a different, more permanent kind of recording. */}
-            <Btn onClick={() => del(r.id)} color={C.red} bgColor={C.surf} label="✕ Remove this trade" />
-          </div>
-
-          {/* ── THE FILL FORM ──
-              It had never been rendered. FillForm was written, wired into ctx and given a save
-              handler, but no JSX ever mounted it, so every Bought / Sold / record-a-fill button set
-              state that nothing displayed and appeared to do nothing at all. Guards did not catch it
-              because an unmounted component is not an undefined reference — scripts/check-dead-
-              components.mjs now looks for exactly this. It renders inside the row it belongs to, so
-              the form appears where the button was pressed. */}
-          {fillFor?.rowId === r.id && <FillForm ctx={ctx} symbol={r.symbol} row={r} />}
 
           {/* ── TIDYING ──
               Two things the broker's fill stream gets wrong for a human reader, offered only when
@@ -1176,6 +1186,10 @@ const {
               )}
             </div>
           )}
+          <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+            <Btn onClick={() => del(r.id)} color={C.red} bgColor={C.surf} label="✕ Remove this trade" />
+          </div>
+        </fieldset>
           {fit.where && <div style={{ marginTop: 8, fontSize: 12, color: C.mid }}><b style={{ color: fit.fit === "tailwind" ? C.green : C.red }}>{fit.fit === "tailwind" ? "Regime tailwind" : "Fights the regime"}:</b> {liveRegime?.label} {fit.fit === "tailwind" ? "favours" : "disfavours"} “{fit.where}”.</div>}
         </div>
       )}
@@ -2432,7 +2446,11 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
     return [v, setV];
   };
 
-  const [showArchive, setShowArchive] = useRemembered("archive", false);
+  // ── THE FOUR TABS ── which state of the book is on screen. Remembered per browser.
+  const [bookTab, setBookTabRaw] = useRemembered("bookTab", "OPEN");
+  const setBookTab = (t) => setBookTabRaw(TABS.some(x => x.id === t) ? t : "OPEN");
+  // A deleted fill, held for undo. One at a time — the toast is the whole of the mechanism.
+  const [undo, setUndo] = useState(null);
   const [showPortfolio, setShowPortfolio] = useRemembered("portfolio", true);
   const [showSizing, setShowSizing] = useRemembered("sizing", false);
   // ── AN EXPLAINER IS FOR THE FIRST WEEK, NOT THE HUNDREDTH ─────────────────────────
@@ -2726,6 +2744,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
     if (isDerivativeRow(r) && lv?.on !== "underlying") return markOf(r, { greeks: feedGreeks }).value;
     return underlyingPriceOf(r);
   };
+  const nowMs = Date.now();
   const derivedRows = useMemo(() => baseRows.map(r => {
     const pnl = positionPnl(r.derived, priceOf(r));
     // ONE SUGGESTION, computed here rather than inside the row. The row renders it and the decision
@@ -2760,11 +2779,14 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
       ? optionDerived(r, { greeks: feedGreeks, nlv: equityBase, today: todayISO,
           spots: feedSpots[root] != null ? feedSpots : { ...feedSpots, [root]: underlyingPriceOf(r) } })
       : null;
-    return { ...r, pnl, sug, sizeMode: mode, stopLevel: stopLevel || null, opt };
-  }), [baseRows, prices, feedGreeks, feedSpots, equityBase, baseRisk, targetPct, baseCcy, mergedSizing, liveRegime?.id, creditDanger, contested, regimeDiverged]);   // eslint-disable-line
+    // WATCHING → OPEN → CLOSED → ARCHIVED, from the fills and the close stamp (lib/lifecycle.js).
+    const state = stateOf(r, { now: nowMs });
+    return { ...r, pnl, sug, sizeMode: mode, stopLevel: stopLevel || null, opt, state };
+  }), [baseRows, prices, feedGreeks, feedSpots, equityBase, baseRisk, targetPct, baseCcy, mergedSizing, liveRegime?.id, creditDanger, contested, regimeDiverged, todayISO]);   // eslint-disable-line
 
-  const setups   = derivedRows.filter(r => r.derived.status === "setup");
-  const openPos  = derivedRows.filter(r => r.derived.status === "open");
+  const tabs     = useMemo(() => byState(derivedRows, { now: nowMs }), [derivedRows]);   // eslint-disable-line
+  const setups   = tabs.WATCHING;
+  const openPos  = tabs.OPEN;
   // A rolled-out contract is not a closed trade — it was replaced, and its P&L now sits inside the
   // position that replaced it. Listing it in the archive would count the same gain twice.
   const archived = derivedRows.filter(r => r.derived.status === "closed" && !r.derived.rolledInto);
@@ -2991,33 +3013,18 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   };
   // One entry point for every "record what I did" action. "stopped" is a SELL of the whole
   // position prefilled at the stop price — it is the most common exit and had no obvious path.
-  const openFill = (r, intent) => {
-    const d = derivePosition(r.fills || [], { side: r.side });
-    const stop = (r.levels || []).find(l => l.kind === "stop");
-    const live = priceOf(r);
-    setFillFor({
-      rowId: r.id,
-      // The three intents are OPEN, CLOSE and STOPPED — they were merely NAMED buy/sell, and then
-      // used as the fill side itself. On a short that records every fill as its own opposite: the
-      // opening sell stored as a buy, the cover as a sell. The row would then read as a long
-      // pointing the wrong way, from the one screen where the data actually enters the system.
-      side: intent === "buy" ? openSideFor(r.side) : closeSideFor(r.side),
-      intent,
-      qty: intent === "stopped" ? (d.qty || "") : "",
-      price: intent === "stopped" ? (stop?.at ?? live ?? "") : (live ?? ""),
-      date: new Date().toISOString().slice(0, 10),
-      note: intent === "stopped" ? "stopped out" : "",
-      // Kept so the form can report slippage against it. A stop triggers a sale; it does not price
-      // one, and on a gap the difference is the whole story of the trade.
-      stopAt: intent === "stopped" ? (stop?.at ?? null) : null,
-    });
-  };
-
+  // The entry row's draft. Typing into a card's row makes it THE draft — the pre-trade panel and
+  // the decision log read the same object the form used to write.
+  const draftFill = (r, patch) => setFillFor(f => (f?.rowId === r.id
+    ? { ...f, ...patch }
+    : { rowId: r.id, side: openSideFor(r.side), intent: "buy", qty: "", price: "", date: new Date().toISOString().slice(0, 10), note: "", hold: null, stopAt: null, ...patch }));
   const saveFill = () => {
     const f = fillFor; if (!f) return;
     const qty = +f.qty, price = +f.price;
     if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(price)) { setSaveMsg("A fill needs a positive quantity and a price."); setTimeout(() => setSaveMsg(null), 4000); return; }
     const r = rows.find(x => x.id === f.rowId); if (!r) return;
+    // ── THE THESIS FIRST ── held, not lost: the draft stays in the boxes and the prompt opens.
+    if (!thesisOk(r.thesis)) { setFillFor(x => ({ ...x, needThesis: true })); setExpanded(r.id); return; }
     // ── CLOSING MORE THAN IS OPEN OPENS THE OTHER WAY ─────────────────────────
     // The fill engine clamps an oversell and warns, which is right for a typo and wrong for what
     // actually happened on AAPU 2026-09-11: a 300-share exit went out as 400 and was bought back
@@ -3065,7 +3072,8 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
       }).catch(() => { /* the fill is recorded either way */ });
     } catch { /* never let logging break the thing being logged */ }
 
-    upd(f.rowId, { fills });
+    // The close stamp (24h to the archive) and any hand decision, from what the fill did.
+    upd(f.rowId, { fills, ...afterFill(before, after) });
     if (split) {
       // A NEW ROW, NOT A NEGATIVE QUANTITY. The excess is its own trade with its own direction, and
       // it inherits nothing from this one but the ticker and the contract size — no thesis, no
@@ -3088,9 +3096,14 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
         id: f.rowId, symbol: r.symbol, to: after.status, currency: r.currency,
         realized: after.realized, realizedPct: after.realizedPct,
       });
-      if (after.status === "closed") setShowArchive(true);   // land where the row went
+      // Follow the card to its new tab, so it does not simply vanish from the one you were on.
+      setBookTab(after.status === "closed" ? "CLOSED" : after.status === "open" ? "OPEN" : "WATCHING");
+      setExpanded(f.rowId);
     }
   };
+  // Archive by hand, or bring an archived card back — to CLOSED, never to OPEN.
+  const archiveRow = (id) => { upd(id, archivePatch()); setBookTab("ARCHIVED"); };
+  const restoreRow = (id) => { upd(id, restorePatch()); setBookTab("CLOSED"); setExpanded(id); };
   // ── THE TRADE NOT TAKEN ──
   // A log of executions can measure how often a guard was ignored but never how often one worked,
   // because the trade you talked yourself out of leaves no trace anywhere else in this system.
@@ -3119,10 +3132,36 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
     setTimeout(() => setSaveMsg(null), 5000);
   };
 
+  // Delete a fill, with undo. The fill is kept in the toast for twelve seconds; putting it back is
+  // one click, and the row's state follows the fills either way (deleting the closing fill reopens
+  // the card, undoing that closes it again).
   const delFill = (rowId, fid) => {
     const r = rows.find(x => x.id === rowId); if (!r) return;
-    upd(rowId, { fills: (r.fills || []).filter(f => f.id !== fid) });
+    const fill = (r.fills || []).find(f => f.id === fid); if (!fill) return;
+    const before = derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side });
+    const fills = (r.fills || []).filter(f => f.id !== fid);
+    const after = derivePosition(fills, { multiplier: r.multiplier, side: r.side });
+    upd(rowId, { fills, ...afterFill(before, after) });
+    setUndo({ rowId, fill, symbol: r.symbol, at: Date.now() });
+    // Follow the card: deleting the closing fill reopens it, and a card that moves tabs without
+    // you is a card that looks deleted.
+    if (after.status !== before.status) { setBookTab(after.status === "closed" ? "CLOSED" : after.status === "open" ? "OPEN" : "WATCHING"); setExpanded(rowId); }
   };
+  const undoDel = () => {
+    const u = undo; if (!u) return;
+    const r = rows.find(x => x.id === u.rowId); if (!r) { setUndo(null); return; }
+    const fills = [...(r.fills || []), u.fill];
+    const before = derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side });
+    const after = derivePosition(fills, { multiplier: r.multiplier, side: r.side });
+    upd(u.rowId, { fills, ...afterFill(before, after) });
+    setUndo(null);
+    if (after.status !== before.status) { setBookTab(after.status === "closed" ? "CLOSED" : after.status === "open" ? "OPEN" : "WATCHING"); setExpanded(u.rowId); }
+  };
+  useEffect(() => {
+    if (!undo) return undefined;
+    const t = setTimeout(() => setUndo(null), 12000);
+    return () => clearTimeout(t);
+  }, [undo]);
 
   const saveCloud = async () => {
     setSaving(true); setSaveMsg(null);
@@ -3340,7 +3379,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
 
   const ctx = {
     prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel,
-    openFill, delFill, fillFor, setFillFor, saveFill, declineFill, sizeOpen, setSizeOpen, justMoved: moved?.id ?? null, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip, kindCol, money, pnlCol,
+    delFill, draftFill, fillFor, setFillFor, saveFill, declineFill, archiveRow, restoreRow, sizeOpen, setSizeOpen, justMoved: moved?.id ?? null, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip, kindCol, money, pnlCol,
     equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
     // So a row can show the name the feed resolved its symbol to when the static map has none.
     atrFor,
@@ -3375,6 +3414,15 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
 
       {/* ── SECTION CHANGE ──
           Says where the row went, and what it booked on the way. */}
+      {undo && (
+        <div className="dvcap-toast" style={{ position: "sticky", top: 8, zIndex: 22, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "9px 13px", borderRadius: 10,
+          boxShadow: "0 2px 10px rgba(0,0,0,0.08)", background: C.aBg, border: "1.5px solid " + C.aBdr }}>
+          <b style={{ fontSize: 13, color: C.amber }}>Fill deleted</b>
+          <span style={{ fontSize: 12.5, color: C.mid }}>{undo.symbol} · {undo.fill.side} {undo.fill.qty} @ {undo.fill.price}{undo.fill.date ? ` · ${undo.fill.date}` : ""}</span>
+          <Btn onClick={undoDel} color={C.onFill} bgColor={C.amber} label="Undo" />
+          <button onClick={() => setUndo(null)} title="dismiss" style={{ marginLeft: "auto", cursor: "pointer", background: C.surf, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "2px 9px", color: C.mid, fontWeight: 800, fontSize: 12 }}>✕</button>
+        </div>
+      )}
       {moved && (
         // STICKY, and it stays until dismissed. Rendered as an ordinary block at the top of the tab
         // it appeared above wherever you were standing — you record a fill from the row, which is
@@ -3385,13 +3433,13 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
         <div className="dvcap-toast" style={{ position: "sticky", top: 8, zIndex: 21, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "9px 13px", borderRadius: 10, boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
           background: moved.to === "closed" ? C.gBg : C.blBg, border: "1.5px solid " + (moved.to === "closed" ? P.green200 : C.blBdr) }}>
           <b style={{ fontSize: 13, color: moved.to === "closed" ? C.green : C.blue }}>
-            {moved.symbol} {moved.to === "closed" ? "closed out" : moved.to === "open" ? "is now an open position" : "is back to a setup"}
+            {moved.symbol} {moved.to === "closed" ? "→ CLOSED" : moved.to === "open" ? "→ OPEN" : "→ WATCHING"}
           </b>
           {moved.to === "closed" && (
             <span style={{ fontSize: 12.5, color: C.mid }}>
               Realised <b style={{ color: pnlCol(moved.realized) }}>{(moved.realized > 0 ? "+" : "") + fmtCcy(moved.realized, moved.currency)}</b>
               {moved.realizedPct != null && <b style={{ color: pnlCol(moved.realizedPct) }}> {(moved.realizedPct > 0 ? "+" : "") + moved.realizedPct}%</b>}
-              {" — moved to the archive below, nothing was deleted."}
+              {" — in the Closed tab for 24 hours, then the Archive. Nothing was deleted."}
             </span>
           )}
           <button onClick={() => setMoved(null)} title="dismiss"
@@ -4005,13 +4053,29 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
         )}
       </Card>
 
+      {/* ── THE FOUR TABS ── Watching · Open · Closed · Archive. One state on screen at a time, each
+          card carrying its pill; a card that changes state moves tabs and the toast says where. */}
+      <div className="mwd-tabrow" style={{ display: "flex", gap: 0, overflowX: "auto", borderBottom: "2px solid " + C.bdr }}>
+        {TABS.map(t => {
+          const on = bookTab === t.id;
+          const n = tabs[t.id].length;
+          return (
+            <button key={t.id} onClick={() => setBookTab(t.id)} style={{
+              background: "none", border: "none", borderBottom: "3px solid " + (on ? C.blue : "transparent"), marginBottom: -2,
+              color: on ? C.blue : C.muted, padding: "8px 14px", fontSize: 14, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+              {t.label} <span style={{ fontSize: 11.5, fontWeight: 700, color: on ? C.blue : C.lbl, opacity: 0.8 }}>{n}</span>
+            </button>
+          );
+        })}
+      </div>
       {/* Setups have no size to sort by and no rule worth keeping, so they are simply in your
           order, always. */}
-      <Section title="Setups — waiting" note="no position yet; levels are being watched" list={setups} mode="setup" ctx={ctx} reorder />
+      {bookTab === "WATCHING" && <Section title="Watching" note="no position yet; levels are being watched · record the first fill inside the card" list={setups} mode="setup" ctx={ctx} reorder />}
+      {bookTab === "CLOSED" && <Section title="Closed" note="flat within the last 24 hours · realised P&L frozen · archives itself after a day, or now" list={tabs.CLOSED} mode="closed" ctx={ctx} />}
       {/* Biggest first. Import order is meaningless, and the position that most deserves a second
           look each morning is the one carrying the most of the book. Rows whose market value cannot
           be converted sort last rather than to the top as a zero. */}
-      <Section title="Open positions" note="spot / swing holds, scaled in and out · options and spreads under their underlying"
+      {bookTab === "OPEN" && <Section title="Open" note="spot / swing holds, scaled in and out · options and spreads under their underlying"
         list={groupAdjacent(openSort === "manual" ? openPos : [...openPos].sort((a, b) => (convert(b.pnl.marketValue, b.currency || "USD", baseCcy, fxRates) ?? -1) - (convert(a.pnl.marketValue, a.currency || "USD", baseCcy, fxRates) ?? -1)), underlyingOf)}
         mode="open" ctx={ctx} reorder={openSort === "manual"} sort={{ value: openSort, set: setOpenSort }}
         groupOf={underlyingOf}
@@ -4028,7 +4092,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
               </> : <span style={{ color: C.lbl }}>combined delta-notional awaits the greeks feed</span>}
             </div>
           );
-        }} />
+        }} />}
 
       {/* ── THE PERP BOOK, AS THE VENUE HAS IT ─────────────────────────────────────────────────
           The address was configured and nothing appeared, because live positions only rendered
@@ -4195,8 +4259,10 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
       </Card>
       )}
 
-      {/* archive: brief, with the performance summary */}
-      <Card>
+      {/* ── THE ARCHIVE TAB ── the record, with its performance summary and period subtotals.
+          The rows are THE SAME CARD, read-only, inside the period bands — no table, no second
+          layout for a phone. */}
+      {bookTab === "ARCHIVED" && <Card>
         <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
           <SLabel>Archive — closed</SLabel>
           <span style={{ fontSize: 12, color: C.muted }}>{archived.length}</span>
@@ -4207,14 +4273,14 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
             <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>REALISED </span><b style={{ color: pnlCol(archiveStats.realized) }}>{fmtCcy(archiveStats.realized, baseCcy)}</b></span>
             <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>AVG RETURN </span><b style={{ color: pnlCol(archiveStats.avgPct) }}>{archiveStats.avgPct == null ? "—" : (archiveStats.avgPct > 0 ? "+" : "") + archiveStats.avgPct + "%"}</b></span>
             <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>WIN RATE </span><b style={{ color: C.text }}>{archiveStats.winRate == null ? "—" : archiveStats.winRate + "%"}</b></span>
-            <button onClick={() => setShowArchive(v => !v)} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{showArchive ? "Hide" : "Show"}</button>
+
           </div>
         </div>
         {/* GRAIN AND WINDOW. Sixty monthly headers is itself a long list once the book is five
             years old, so the grain coarsens on request. The window is counted in PERIODS rather
             than trades: "the last 20" lands mid-month, and a header reading "August · 9 trades ·
             +$1,240" above four rows is a subtotal contradicting what sits under it. */}
-        {showArchive && periods.length > 0 && (
+        {periods.length > 0 && (
           <div style={{ marginTop: 9, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", fontSize: 11.5 }}>
             <span style={{ color: C.lbl, fontWeight: 700, letterSpacing: 0.5 }}>GROUP BY</span>
             {GRAINS.map(g => (
@@ -4275,120 +4341,11 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           </div>
         )}
 
-        {showArchive && archived.length > 0 && (
-          <div className="dvcap-wide-only" style={{ marginTop: 12, overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 520 }}>
-              <thead><tr>{["Trade", "Held", "Size", "Entry", "Exit", "Realised", "Return"].map(h => (
-                <th key={h} style={{ textAlign: "left", color: C.mid, padding: "6px 10px", borderBottom: "1.5px solid " + C.bdr, fontWeight: 700, fontSize: 11.5 }}>{h}</th>))}</tr></thead>
-              <tbody>
-                {shownPeriods.flatMap(p => {
-                  const st = p.stats;
-                  /* THE HEADER IS THE POINT. Every period is listed whether or not its rows are
-                     rendered, so the shape of a whole history reads as one informative line each —
-                     "August 2026 · 9 trades · 6↑ 3↓ · 67% · +$1,240" — and five years is sixty
-                     lines rather than a thousand rows. Click to open one. */
-                  const head = (
-                    <tr key={`p-${p.key}`} onClick={() => setPeriodOpen(o => ({ ...o, [p.key]: !p.shown }))}
-                        style={{ cursor: "pointer" }} title={p.shown ? "Collapse" : "Expand"}>
-                      {/* A BAND, NOT A ROW. Every line in this table looked the same weight, so the
-                          month headers had to be read to be found. Tinted ground, a heavier rule
-                          above, and a left stripe carrying the month's sign — the same stripe the
-                          narrow cards already use on each trade, so a green month and a green trade
-                          mean the same thing at two zoom levels. */}
-                      <td colSpan={4} style={{ padding: "13px 12px 11px", background: C.bg,
-                            borderTop: "1.5px solid " + C.bdrMd, borderBottom: "1px solid " + C.bdr,
-                            borderLeft: "4px solid " + (st.realised >= 0 ? C.green : C.red) }}>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
-                          {caret(p.shown)}
-                          <b style={{ fontSize: 13.5, color: C.text, letterSpacing: -0.1 }}>{p.label}</b>
-                          <span style={{ fontSize: 11.5, color: C.muted }}>{st.count} trade{st.count === 1 ? "" : "s"}</span>
-                          {st.winRate != null && <>
-                            {winBar(st.wins, st.losses)}
-                            <span style={{ fontSize: 11.5, color: C.lbl, fontVariantNumeric: "tabular-nums" }}>
-                              {st.wins}↑ {st.losses}↓ · {st.winRate}%</span>
-                          </>}
-                        </span>
-                      </td>
-                      <td colSpan={3} style={{ padding: "13px 12px 11px", background: C.bg,
-                            borderTop: "1.5px solid " + C.bdrMd, borderBottom: "1px solid " + C.bdr,
-                            fontSize: 14, fontWeight: 800, textAlign: "right",
-                            fontVariantNumeric: "tabular-nums", color: pnlCol(st.realised) }}>
-                        {(st.realised > 0 ? "+" : "") + money(st.realised, baseCcy)}
-                        {st.unconverted ? <span style={{ fontWeight: 600, fontSize: 11.5, color: C.amber, marginLeft: 6 }}> · {st.unconverted} unconverted</span> : null}
-                      </td>
-                    </tr>
-                  );
-                  if (!p.shown) return [head];
-                  return [head, ...assetClassGroups(p.rows, { sort: byClose }).flatMap(g => [
-                  ...(g.label ? [(
-                    <tr key={`h-${p.key}-${g.label}`}>
-                      <td colSpan={7} style={{ padding: "10px 10px 4px", fontSize: 11, fontWeight: 800,
-                                               letterSpacing: 0.5, textTransform: "uppercase", color: C.muted }}>
-                        {g.label} · {g.rows.length}
-                      </td>
-                    </tr>)] : []),
-                  ...g.rows.map(r => {
-                  const td = { padding: "6px 10px", borderBottom: "1px solid " + C.bdr };
-                  const days = daysBetween(r.derived.firstDate, r.derived.lastDate);
-                  const line = (
-                    <tr key={r.id} title={r.thesis || "Open to edit"}
-                        onClick={() => setExpanded(expanded === r.id ? null : r.id)}
-                        style={{ cursor: "pointer", background: expanded === r.id ? C.bg : undefined }}>
-                      <td style={{ ...td, fontWeight: 700 }}>{caret(expanded === r.id)} {r.symbol}{r.opt ? <span style={{ fontSize: 11, color: C.blue, fontWeight: 700 }}> {r.opt.label}</span> : null} {ccyChip(r.currency)}
-                        {r.derived.multiplier > 1 ? <span style={{ fontWeight: 700, color: C.amber, fontSize: 11 }}> ×{r.derived.multiplier}</span> : null}
-                        {r.trade ? <span style={{ fontWeight: 600, color: C.lbl, fontSize: 11.5 }}> · {r.trade}</span> : null}</td>
-                      <td style={{ ...td, color: C.lbl, whiteSpace: "nowrap" }}>
-                        {r.derived.firstDate || "?"} → {r.derived.lastDate || "?"}{days == null ? "" : ` · ${days}d`}</td>
-                      <td style={td}>{r.derived.bought}</td>
-                      <td style={td}>{fmtPrice(r.derived.avgEntry, { maxDp: priceMaxDp(r.symbol) })}</td>
-                      <td style={td}>{fmtPrice(r.derived.avgExit, { maxDp: priceMaxDp(r.symbol) })}</td>
-                      <td style={{ ...td, fontWeight: 700, color: pnlCol(r.derived.realized) }}>{money(r.derived.realized, r.currency)}</td>
-                      <td style={{ ...td, color: pnlCol(r.derived.realizedPct) }}>{r.derived.realizedPct == null ? "—" : (r.derived.realizedPct > 0 ? "+" : "") + r.derived.realizedPct + "%"}</td>
-                    </tr>
-                  );
-                  // ── THE ARCHIVE IS NOT A DIFFERENT STORE ─────────────────────
-                  // It never was — `archived` is a FILTER over the same rows, so an archived trade
-                  // was always as editable as an open one and there was simply no way in. The cost
-                  // of that was specific: R is (exit − entry) ÷ (entry − stop), so a trade closed
-                  // without a stop recorded on it prints no R on the console, none in the Discord
-                  // closed card, and nowhere else either — and the one place that could supply the
-                  // missing stop was the one place that would not let you.
-                  //
-                  // The same editor, opened in place. Nothing here is archive-specific, which is
-                  // the point: a closed row that needs a correction needs the same controls the
-                  // open one has, and a second cut-down editor would be a second set of rules.
-                  const editor = expanded === r.id ? (
-                    <tr key={`${r.id}-edit`}>
-                      <td colSpan={7} style={{ padding: "0 0 12px" }}>
-                        <PositionRow r={r} mode="closed" ctx={ctx} />
-                      </td>
-                    </tr>
-                  ) : null;
-                  return editor ? [line, editor] : line;
-                }).flat()])];
-                })}
-              </tbody>
-              {/* Totals are in the BASE currency, so a row whose FX rate is missing is left out and
-                  counted rather than added at face value in the wrong currency. */}
-              <tfoot><tr>
-                <td colSpan={5} style={{ padding: "8px 10px", borderTop: "1.5px solid " + C.bdr, color: C.mid, fontWeight: 700 }}>
-                  {archiveStats.counted} closed trade{archiveStats.counted === 1 ? "" : "s"} in {baseCcy} · {archiveStats.wins} up / {archiveStats.losses} down
-                  {archiveStats.unconverted ? ` · ${archiveStats.unconverted} excluded (no FX rate)` : ""}
-                </td>
-                <td colSpan={2} style={{ padding: "8px 10px", borderTop: "1.5px solid " + C.bdr, fontWeight: 800, color: pnlCol(archiveStats.realized) }}>
-                  {(archiveStats.realized > 0 ? "+" : "") + money(archiveStats.realized, baseCcy)}
-                </td>
-              </tr></tfoot>
-            </table>
-          </div>
-        )}
-
-        {/* The same rows, laid out for a phone. Seven columns do not fit on one, and the four that
-            fell off the right were the ones carrying the result. */}
-        {showArchive && archived.length > 0 && (
-          <div className="dvcap-narrow-only" style={{ marginTop: 12 }}>
+        {tabs.ARCHIVED.length > 0 && (
+          <div style={{ marginTop: 12 }}>
             {shownPeriods.flatMap(p => {
               const st = p.stats;
+              const rowsHere = p.rows.filter(r => r.state === "ARCHIVED");
               const head = (
                 <div key={`p-${p.key}`} onClick={() => setPeriodOpen(o => ({ ...o, [p.key]: !p.shown }))}
                      style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
@@ -4397,67 +4354,36 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
                               borderRadius: 9, padding: "9px 11px", margin: "16px 0 8px" }}>
                   {caret(p.shown)}
                   <b style={{ fontSize: 13, color: C.text }}>{p.label}</b>
-                  <span style={{ fontSize: 11.5, color: C.muted }}>{st.count}</span>
+                  <span style={{ fontSize: 11.5, color: C.muted }}>{st.count} trade{st.count === 1 ? "" : "s"}{rowsHere.length < p.rows.length ? ` · ${p.rows.length - rowsHere.length} still in Closed` : ""}</span>
                   {st.winRate != null && <>
                     {winBar(st.wins, st.losses, 34)}
-                    <span style={{ fontSize: 11.5, color: C.lbl, fontVariantNumeric: "tabular-nums" }}>{st.wins}↑ {st.losses}↓</span>
+                    <span style={{ fontSize: 11.5, color: C.lbl, fontVariantNumeric: "tabular-nums" }}>{st.wins}↑ {st.losses}↓ · {st.winRate}%</span>
                   </>}
                   <b style={{ marginLeft: "auto", fontSize: 13.5, fontVariantNumeric: "tabular-nums", color: pnlCol(st.realised) }}>
                     {(st.realised > 0 ? "+" : "") + money(st.realised, baseCcy)}
+                    {st.unconverted ? <span style={{ fontWeight: 600, fontSize: 11.5, color: C.amber, marginLeft: 6 }}> · {st.unconverted} unconverted</span> : null}
                   </b>
                 </div>
               );
               if (!p.shown) return [head];
-              return [head, ...assetClassGroups(p.rows, { sort: byClose }).flatMap(g => [
-              ...(g.label ? [(
-                <div key={`h-${p.key}-${g.label}`} style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5,
-                     textTransform: "uppercase", color: C.muted, margin: "12px 0 6px" }}>
-                  {g.label} · {g.rows.length}
-                </div>)] : []),
-              ...g.rows.map(r => {
-              const days = daysBetween(r.derived.firstDate, r.derived.lastDate);
-              const d = r.derived;
-              // ── THE SAME EDITOR THE TABLE OPENS ──────────────────────────────
-              // The desktop table has opened a closed row in place since #140; these cards, which
-              // are what a phone shows, never did — so on a phone the archive could be read and
-              // not corrected, and the one place that could supply a missing stop was closed
-              // from the device it is most often looked at on. Tap the card; the editor is the
-              // one the open list uses, with nothing archive-specific about it.
-              const open = expanded === r.id;
-              return (
-                <div key={r.id} style={{ border: "1px solid " + C.bdr, borderLeft: "4px solid " + (d.realized >= 0 ? C.green : C.red), borderRadius: 9, padding: "9px 11px", marginBottom: 7,
-                                         background: open ? C.bg : undefined }}>
-                  <div onClick={() => setExpanded(open ? null : r.id)} title={r.thesis || "Tap to edit"}
-                       style={{ display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap", cursor: "pointer" }}>
-                    {caret(open)}
-                    <b style={{ fontSize: 13.5 }}>{r.symbol}</b>{r.opt ? <span style={{ fontSize: 11, color: C.blue, fontWeight: 700 }}> {r.opt.label}</span> : null}
-                    {ccyChip(r.currency)}
-                    {d.multiplier > 1 ? <span style={{ fontWeight: 700, color: C.amber, fontSize: 11 }}>×{d.multiplier}</span> : null}
-                    {r.trade ? <span style={{ fontSize: 11.5, color: C.lbl }}>{r.trade}</span> : null}
-                    <span style={{ marginLeft: "auto", display: "inline-flex", gap: 7, alignItems: "baseline" }}>
-                      <b style={{ fontSize: 13, color: pnlCol(d.realized) }}>{(d.realized > 0 ? "+" : "") + money(d.realized, r.currency)}</b>
-                      <b style={{ fontSize: 12.5, color: pnlCol(d.realizedPct) }}>{d.realizedPct == null ? "" : (d.realizedPct > 0 ? "+" : "") + d.realizedPct + "%"}</b>
-                    </span>
-                  </div>
-                  <div onClick={() => setExpanded(open ? null : r.id)} style={{ fontSize: 11.5, color: C.lbl, marginTop: 3, cursor: "pointer" }}>
-                    {d.firstDate || "?"} → {d.lastDate || "?"}{days == null ? "" : ` · ${days}d`} · {d.bought} @ {fmtPrice(d.avgEntry, { maxDp: priceMaxDp(r.symbol) })} → {fmtPrice(d.avgExit, { maxDp: priceMaxDp(r.symbol) })}
-                  </div>
-                  {open && (
-                    <div style={{ marginTop: 8 }}>
-                      <PositionRow r={r} mode="closed" ctx={ctx} />
-                    </div>
-                  )}
-                </div>
-              );
-            })])];
+              return [head, ...assetClassGroups(rowsHere, { sort: byClose }).flatMap(g => [
+                ...(g.label ? [(
+                  <div key={`h-${p.key}-${g.label}`} style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: C.muted, margin: "12px 0 6px" }}>
+                    {g.label} · {g.rows.length}
+                  </div>)] : []),
+                <div key={`l-${p.key}-${g.label || "all"}`} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {g.rows.map(r => <PositionRow key={r.id} r={r} mode="archived" ctx={ctx} />)}
+                </div>])];
             })}
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.mid, marginTop: 8 }}>
-              {archiveStats.counted} closed in {baseCcy} · {archiveStats.wins} up / {archiveStats.losses} down
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.mid, marginTop: 10 }}>
+              {archiveStats.counted} closed trade{archiveStats.counted === 1 ? "" : "s"} in {baseCcy} · {archiveStats.wins} up / {archiveStats.losses} down
+              {archiveStats.unconverted ? ` · ${archiveStats.unconverted} excluded (no FX rate)` : ""}
               <b style={{ color: pnlCol(archiveStats.realized), marginLeft: 8 }}>{(archiveStats.realized > 0 ? "+" : "") + money(archiveStats.realized, baseCcy)}</b>
             </div>
           </div>
         )}
-      </Card>
+        {tabs.ARCHIVED.length === 0 && <div style={{ fontSize: 12.5, color: C.muted, fontStyle: "italic", marginTop: 8 }}>Nothing archived yet — a closed card lands here a day after it goes flat.</div>}
+      </Card>}
 
 
       {/* ── UNDER THE ARCHIVE, NOT ABOVE THE BOOK ──
