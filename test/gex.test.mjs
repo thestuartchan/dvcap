@@ -291,6 +291,16 @@ const PE = (k, oi, e, T, iv = 0.22) => ({ type: 'put', strike: k, oi, iv, T, exp
   ok('strikes come back high to low', h.strikes.every((k, i, a) => i === 0 || a[i - 1] > k));
 }
 {
+  // THE COLUMN'S HEAVIEST CELL, one per expiry, by size whatever the sign.
+  {
+    const h = heatCells({ cells: [
+      { expiry: 'a', strike: 700, netGexUsd: 5e6 }, { expiry: 'a', strike: 705, netGexUsd: -9e6 }, { expiry: 'a', strike: 710, netGexUsd: 8e6 },
+      { expiry: 'b', strike: 700, netGexUsd: 3e6 }, { expiry: 'b', strike: 705, netGexUsd: 1e6 },
+      { expiry: 'c', strike: 700, netGexUsd: 0 },
+    ], expiries: [{ expiry: 'a' }, { expiry: 'b' }, { expiry: 'c' }] });
+    eq('the heaviest cell per column, sign ignored for the choice', [h.colMax.get('a'), h.colMax.get('b')], [705, 700]);
+    eq('a column with nothing in it has no maximum', h.colMax.has('c'), false);
+  }
   eq('no grid returns null rather than an empty shell', heatCells(null), null);
   eq('no cells too', heatCells({ cells: [], expiries: [{ expiry: 'x' }] }), null);
   eq('cells with no expiry rows too', heatCells({ cells: [{ expiry: 'x', strike: 1, netGexUsd: 5 }], expiries: [] }), null);
