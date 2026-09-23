@@ -264,7 +264,6 @@ for (const region of REGIONS) {
     ['🕐', 'the half-day banner — needs an exchange on an early-close session on the capture date'],
     ['🟢', 'a wire that stopped being true — needs two briefs, and SINCE has no prior snapshot here'],
     ['🔄', 'the same: the delta section renders nothing without a previous delivered brief'],
-    ['📏', 'the expected range — lives in the GEX map, which needs the option book from KV'],
     ['⚡', 'the GEX map itself, for the same reason'],
     ['⚪', 'a market shut for a weekend or holiday on the capture date'],
     ['👀', 'the watchlist heading — the fixtures carry no cross-region quote batch'],

@@ -3,7 +3,7 @@
 // The map and the watchlist are what a day trade is actually placed against, and both have a way
 // of failing that looks like working: a map whose two rows are on different scales, and a
 // watchlist that quietly reaches into the book. Both are tested for here rather than trusted.
-import { mapRow, pinOf, renderGexSection, MAP_W, PIN_MIN_SHARE, PIN_NEAR_PCT, SPACER, SUB_RULE } from '../lib/gexBrief.js';
+import { pinOf, renderGexSection, PIN_MIN_SHARE, PIN_NEAR_PCT, SPACER, SUB_RULE } from '../lib/gexBrief.js';
 import { watchlist, corroborate, renderWatchlist, WATCH_MAX, WATCH_MIN_PCT } from '../lib/watchlist.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -14,35 +14,6 @@ const near = (n, g, w, tol) => { const good = Number.isFinite(+g) && Math.abs(+g
 // The real board of 2026-09-09.
 const QQQ = { name: 'QQQ', spot: 718.36, putWall: 700, callWall: 720, flipLevel: 718.83 };
 const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel: 769.60 };
-
-// ── the map ──────────────────────────────────────────────────────────────────
-{
-  const q = mapRow('QQQ', QQQ), s = mapRow('SPY', SPY);
-  // ONE SCALE. Both rows are percent-of-their-own-spot with price centred, so the same column is
-  // the same distance on both. Normalising each to its own zone made them look comparable when
-  // QQQ's walls span 2.8% and SPY's 1.3%.
-  eq('both rows are the same width', [q.length, s.length], [MAP_W + 4, MAP_W + 4]);
-  eq('and price is in the same column on both', q.indexOf('^'), s.indexOf('^'));
-
-  // The marker has to break the dot run, which is why it is not a round glyph.
-  ok('price is marked with a caret', q.includes('^'));
-  // MEASURE INSIDE THE TRACK, NOT THE WHOLE ROW. indexOf('P') on "SPY ····P···" finds the P in
-  // the TICKER, which made the put-wall assertion measure the label. The ticker prefix is four
-  // characters and every mark lives after it.
-  const track = (row) => row.slice(4);
-  const [qt, st] = [track(q), track(s)];
-  ok('QQQ shows its put wall far left', qt.indexOf('P') < qt.indexOf('^') - 10);
-  ok('while SPY\'s sits right under price', st.indexOf('^') - st.indexOf('P') <= 2);
-  // The asymmetry the section exists to show: QQQ's pivot and ceiling are on top of price, SPY's
-  // are a long way right.
-  ok('QQQ pivot is adjacent to price', qt.indexOf('|') - qt.indexOf('^') === 1);
-  ok('SPY pivot is far from price', st.indexOf('|') - st.indexOf('^') > 4);
-
-  // Mobile code blocks scroll rather than wrap, so width is a hard constraint.
-  ok('the row fits a phone without scrolling', q.length <= 42);
-  eq('no spot, no row', mapRow('X', { spot: 0 }), null);
-  eq('a missing wall simply is not drawn', (mapRow('X', { spot: 100, callWall: 101 }).match(/P/g) || []).length, 0);
-}
 
 // ── the pin ──────────────────────────────────────────────────────────────────
 // Its ABSENCE is the finding. An index with nothing expiring near spot is free to trend, which
@@ -62,33 +33,47 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
 }
 
 // ── the section ──────────────────────────────────────────────────────────────
+// A LADDER PER INSTRUMENT, NOT A MAP. The horizontal map put 743, 745 and 746 in one cell and the
+// prose under it said everything twice. Each instrument is a heading and a fenced ladder now.
 {
   const rows = [
-    { ...QQQ, pin: { pinned: true, share: 23.7, band: '717–719' } },
+    { ...QQQ, iv: 0.2175, pin: { pinned: true, share: 23.7, band: '717–719' } },
     { ...SPY, pin: { pinned: false, share: 3.6, band: null } },
   ];
   const out = renderGexSection(rows, { rung: 'repriced', from: '2026-09-08', asOf: '2026-09-08T22:00:00Z' });
-  ok('the map is fenced, or the alignment collapses', out.includes('```'));
-  ok('the numbers are printed too, so the picture is never load-bearing', /put wall 700\.00/.test(out));
-  // The best line on the board, and it only exists as a comparison.
-  ok('anchored vs not is stated as one claim', /QQQ is anchored, SPY is not/.test(out));
-  ok('and it says what that means', /free to trend/.test(out));
-  // The vintage must never be silent — a repriced book is not a live one.
+  const lines = out.split('\n');
+  const at = (t) => lines.findIndex(l => l.includes(t));
+  ok('the ladder is fenced, or the labels do not line up', out.includes('```'));
+  ok('the heading is outside the fence so the bold renders', at('__**QQQ**') < at('```'));
+  ok('no horizontal map survives', !/·····|`P` put|`C` call/.test(out));
+  ok('QQQ before SPY', at('__**QQQ**') < at('__**SPY**'));
+  for (const label of ['above', 'spot', 'below', 'pin']) {
+    const first = lines.findIndex(l => l.startsWith(label)), second = lines.findIndex((l, i) => l.startsWith(label) && i > first);
+    ok(`${label} appears under each instrument`, first > at('__**QQQ**') && first < at('__**SPY**') && second > at('__**SPY**'));
+  }
+  // The legacy rows carry no per-strike table, so the put side is the heaviest put strike — and
+  // it is never called a wall.
+  ok('the put side is never called a wall', !/put wall/.test(out));
+  ok('legacy rows still print both levels', /above {2}720\.00 \(call wall\)/.test(out) && /below {2}700\.00 \(heaviest put strike\)/.test(out));
+  ok('the pin is on its own line', /pin {4}717–719 \(23\.7% expires today\)/.test(out));
+  ok('and its absence is said', /pin {4}none today \(3\.6% expires\)/.test(out));
   ok('the rung is labelled', /one settlement behind/.test(out));
   ok('with the date it came from', /2026-09-08/.test(out));
 
+  // ── AIR ────────────────────────────────────────────────────────────────────
+  eq('the spacer is a zero-width space, not an empty line', SPACER, '​');
+  ok('the section breathes', lines.filter(l => l === SPACER).length >= 3);
+  ok('and the instruments are divided from each other', lines.includes(SUB_RULE));
+  ok('with the divider between them, not before the first', lines.indexOf(SUB_RULE) > at('__**QQQ**') && lines.indexOf(SUB_RULE) < at('__**SPY**'));
+  ok('the sub-rule is lighter than the brief\'s section rule', !SUB_RULE.includes('─'));
+
   // ── TENSE ──────────────────────────────────────────────────────────────────
-  // The Asia brief fires at 23:13 UTC against a US close of 20:00 and printed "35% of QQQ's book
-  // expires today ... which holds it there until the last hour" — present tense, under a heading
-  // saying "today", about options that had expired three hours earlier.
   const closed = renderGexSection(rows, { rung: 'stored', from: '2026-09-09', tense: 'closed' });
   ok('a finished session makes no claim about a pin', !/expires today/.test(closed));
-  ok('nor about holding anything', !/holds it there|free to trend/.test(closed));
   ok('it reports where price finished instead', /closed below its pivot/.test(closed));
   ok('and says the expiry is gone', /expiry is gone/.test(closed));
   ok('and that settlement will move it', /overnight settlement/.test(closed));
-  // The map itself still renders — where the US finished IS the handoff the next session opens on.
-  ok('the map survives the tense change', closed.includes('```'));
+  ok('the heading survives the tense change, the ladder does not', /__\*\*QQQ\*\*/.test(closed) && !/```/.test(closed));
 
   eq('an expired pin is never pinned', pinOf(
     { expiries: [{ expiry: '2026-09-09', shareOfAbs: 35, peakPutStrike: 716, peakCallStrike: 717 }] },
@@ -97,49 +82,10 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
     { expiries: [{ expiry: '2026-09-09', shareOfAbs: 35, peakPutStrike: 716, peakCallStrike: 717 }] },
     { spot: 716.27, today: '2026-09-09', expired: false }).pinned);
 
-  // ── GROUPED BY INSTRUMENT ──────────────────────────────────────────────────
-  // It used to run five loops over the symbols, so everything QQQ's book was saying was scattered
-  // across four headings interleaved with four SPY ones. Nobody trades both at once.
-  {
-    const g = renderGexSection(
-      [{ ...QQQ, iv: 0.2175, decay: { lines: ['62% of the book expires today'] }, pin: { pinned: true, share: 23.7, band: '717–719' } },
-       { ...SPY, iv: 0.13, decay: { lines: ['11% of the book expires today'] }, pin: { pinned: false, share: 3.6, band: null } }],
-      { rung: 'repriced', from: '2026-09-08' });
-    const lines = g.split('\n');
-    const at = (t) => lines.findIndex(l => l.includes(t));
-    // EVERY QQQ LINE BEFORE EVERY SPY LINE. This is the whole request, and it is an ordering
-    // claim — one that the old five-loop shape could not satisfy no matter how it was worded.
-    ok('the instrument headings are the divisions now', at('__**QQQ**') >= 0 && at('__**SPY**') > at('__**QQQ**'));
-    const qHead = at('__**QQQ**'), sHead = at('__**SPY**');
-    for (const sub of ['**levels that are real**', '**what kind of day**', '**what expires**']) {
-      const first = lines.findIndex(l => l === sub), second = lines.findIndex((l, i) => l === sub && i > first);
-      ok(`${sub} appears under each instrument`, first > qHead && first < sHead && second > sHead);
-    }
-    // And the sub-headings no longer carry the symbol — the block above them does.
-    ok('no symbol-prefixed sub-headings survive', !/QQQ — levels that are real|SPY — what kind of day/.test(g));
-    // THE CROSS-INSTRUMENT CLAIMS STAY OUTSIDE THE BLOCKS, because neither row can make them.
-    ok('the map is still one comparison at the top', at('```') < qHead);
-    ok('and what is anchored against what is still one claim at the bottom', at('is anchored, SPY is not') > sHead);
-
-    // ── AIR ────────────────────────────────────────────────────────────────────
-    // Discord collapses bare consecutive newlines, so the spacing has to be a line with content
-    // that renders as nothing. A zero-width space is that line.
-    eq('the spacer is a zero-width space, not an empty line', SPACER, '​');
-    ok('the section breathes', lines.filter(l => l === SPACER).length >= 8);
-    ok('and the instruments are divided from each other', lines.includes(SUB_RULE));
-    ok('with the divider between them, not before the first', lines.indexOf(SUB_RULE) > qHead && lines.indexOf(SUB_RULE) < sHead);
-    // The sub-rule must not be mistakeable for the brief's own section rule, or splitForDiscord
-    // would break a message in the middle of the map.
-    ok('the sub-rule is lighter than the brief\'s section rule', !SUB_RULE.includes('─'));
-  }
-
   const asTaken = renderGexSection(rows, { rung: 'stored', from: '2026-09-08' });
   ok('an unrepriced read says the pivot is not now\'s', /not repriced/.test(asTaken));
   eq('nothing stored renders nothing', renderGexSection(rows, { rung: 'none' }), null);
   eq('and no rows likewise', renderGexSection([], { rung: 'repriced' }), null);
-  // Both loose: the absence is still reported rather than left as a gap.
-  const loose = renderGexSection(rows.map(r => ({ ...r, pin: { pinned: false } })), { rung: 'repriced' });
-  ok('nothing anchored is itself said out loud', /Nothing is anchored today/.test(loose));
 }
 
 // ── the watchlist ────────────────────────────────────────────────────────────
@@ -461,16 +407,15 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
     const withIv = renderGexSection(rows, { rung: 'repriced' });
     // It belongs to ITS instrument's block now, so it carries no symbol of its own — the heading
     // above it does. The symbol prefix was what made the line unreadable with two indices in it.
-    ok('the band renders with the levels', /Priced for\*\* ±9\.81 \(±1\.37%\)/.test(withIv));
-    ok('under the instrument it belongs to', withIv.indexOf('**QQQ**') < withIv.indexOf('Priced for'));
-    ok('and carries no symbol of its own', !/Priced for\*\* \*\*QQQ/.test(withIv));
+    ok('the band renders on the pin line', /pin {4}none today · priced for ±9\.81 \(±1\.37%\)/.test(withIv));
+    ok('under the instrument it belongs to', withIv.indexOf('**QQQ**') < withIv.indexOf('priced for'));
     // A BAND IS NOT A BOUNDARY. Roughly one day in three finishes outside it, and the line says so
     // rather than letting the number read as a limit — ONCE, above the blocks, not repeated under
     // every instrument. Repeating a forty-word caveat per symbol is the clutter, not the caution.
     ok('and does not present itself as a limit', /one day in three finishes outside it/.test(withIv));
     eq('said once, not per symbol', withIv.split('one day in three').length - 1, 1);
     const noIv = renderGexSection(rows.map(r => ({ ...r, iv: null })), { rung: 'repriced' });
-    ok('no vol means no line, not a blank one', !/Priced for/.test(noIv));
+    ok('no vol means no band, not a blank one', !/priced for/.test(noIv));
   }
 }
 
@@ -668,125 +613,6 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
   ok('the state has words', /delayed feed/.test(freshnessText({ state: 'delayed', ageMin: 20 })));
 }
 
-
-// ── THE ASYMMETRY A WALL HIDES ───────────────────────────────────────────────
-// A wall is the strike carrying the most gamma-weighted open interest ON THAT SIDE, and the two
-// sides are counted independently. So "put wall 760 · call wall 760" is not a balanced strike — it
-// is one strike that won both counts. Observed on SPY 2026-09-10: both walls at 760 with put gamma
-// 6,665 against call gamma 1,031. Six and a half to one, rendered as a tie.
-{
-  const { mapRow, wallDominance, realLevels, dayKind, DOMINANCE_MIN } = await import('../lib/gexBrief.js');
-  const byStrike = [
-    { strike: 760, callGamma: 1031, putGamma: 6665 },
-    { strike: 765, callGamma: 962, putGamma: 1100 },
-    { strike: 770, callGamma: 877, putGamma: 600 },
-  ];
-
-  // ── A COLLISION IS A FACT, NOT A DRAWING PROBLEM ───────────────────────────
-  // The marks were written in order and the later overwrote the earlier, so when both walls landed
-  // in one column the put wall VANISHED and the row showed a lone `C` — the dominant half of the
-  // strike erased by draw order.
-  {
-    const collided = mapRow('SPY', { spot: 758.19, putWall: 760, callWall: 760, flipLevel: 767.68 });
-    ok('both walls in one cell render as B', /B/.test(collided));
-    ok('and neither is silently lost', !/P/.test(collided.slice(4)) && !/C/.test(collided.slice(4)));
-    const apart = mapRow('QQQ', { spot: 709.5, putWall: 700, callWall: 710, flipLevel: 718.4 });
-    ok('separate walls keep their own glyphs', /P/.test(apart.slice(4)) && /C/.test(apart.slice(4)));
-    ok('and do not become B', !/B/.test(apart));
-    // The pivot keeps its own mark: a pivot sharing a cell with a wall is a different statement.
-    ok('the price mark still wins its own cell', /\^/.test(collided));
-  }
-
-  // ── WHICH SIDE IS ACTUALLY HEAVY ───────────────────────────────────────────
-  {
-    const d = wallDominance(byStrike, 760);
-    eq('the heavy side is named', d.heavy, 'put');
-    eq('with the ratio', d.ratio, 6.5);
-    eq('and it is not two-sided', d.twoSided, false);
-    // A strike where the two sides are close IS two-sided, and saying "1.1x put-heavy" about it
-    // would dress a coin flip as a finding.
-    eq('a near-even strike says so instead', wallDominance(byStrike, 765).twoSided, true);
-    ok('the threshold is stated', DOMINANCE_MIN > 1);
-    eq('a strike with no row has no verdict', wallDominance(byStrike, 999), null);
-  }
-
-  // ── ONE STRIKE, ONE LINE ───────────────────────────────────────────────────
-  // The first cut looped the walls independently, so a strike winning both counts printed TWICE —
-  // and the second copy described the CALL wall as "6.5x the calls there", which is the put side's
-  // ratio pasted onto the wrong sentence.
-  {
-    const shared = realLevels({ spot: 758.19, putWall: 760, callWall: 760, byStrike,
-      agreement: { call: { agree: 0, total: 5, matched: [] }, put: { agree: 3, total: 5, matched: ['2026-09-18'] } } });
-    eq('a shared strike is one line, not two', shared.length, 1);
-    ok('and says both walls are on it', /both walls sit on this one strike/.test(shared[0]));
-    ok('named for the side that is heavy', /6.5x put-heavy/.test(shared[0]));
-    ok('never for the side it is not', !/put-heavy.*call-heavy|6.5x the calls/.test(shared[0]));
-    // A LEVEL IS ONLY AS STANDING AS ITS LEAST-SUPPORTED HALF. The call side peaks nowhere, so the
-    // shared strike reads as a zone even though the put side holds across three expiries.
-    ok('the weaker agreement governs a shared strike', /rather than a line/.test(shared[0]));
-  }
-  // ── WHEN THE LABEL AND THE HEAVY SIDE DISAGREE ─────────────────────────────
-  // Live on QQQ 2026-09-10: "**710.00** — heaviest call positioning, -0.1%. 1.5x put-heavy.
-  // Declines tend to slow here rather than turn." Every clause true, and it reads as a
-  // contradiction — a strike labelled for the calls, described by its puts.
-  {
-    const crossed = realLevels({ spot: 758.19, putWall: 770, callWall: 760, byStrike,
-      agreement: { call: { agree: 2, total: 5, matched: [] }, put: { agree: 2, total: 5, matched: [] } } });
-    ok('the disagreement is explained, not just stated', /But the puts there outweigh the calls 6.5x/.test(crossed[0]));
-    ok('and what it means for the level is said', /leans as a floor rather than a ceiling/.test(crossed[0]));
-    ok('the bare short form is gone from that line', !/6\.5x put-heavy/.test(crossed[0]));
-    // The mirror: a put wall whose calls are the heavy side.
-    ok('and it works the other way round', /But the calls there outweigh the puts 1\.5x, so it leans as a ceiling rather than a floor/.test(crossed[1]));
-    // A wall whose label AND heavy side agree keeps the short form — there is nothing to reconcile.
-    const aligned = realLevels({ spot: 758.19, putWall: 760, callWall: 770, byStrike,
-      agreement: { call: { agree: 2, total: 5, matched: [] }, put: { agree: 2, total: 5, matched: [] } } });
-    ok('an aligned wall stays short', /6\.5x put-heavy/.test(aligned[1]) && !/But the /.test(aligned[1]));
-    // A shared strike carries BOTH labels, so it has no side to contradict.
-    const shared2 = realLevels({ spot: 758.19, putWall: 760, callWall: 760, byStrike });
-    ok('a shared strike keeps the short form too', /6\.5x put-heavy/.test(shared2[0]));
-  }
-  {
-    const apart = realLevels({ spot: 758, putWall: 750, callWall: 770, byStrike,
-      agreement: { call: { agree: 0, total: 5, matched: [] }, put: { agree: 1, total: 5, matched: ['2026-09-18'] } },
-      pin: { pinned: true, share: 24, band: '757–759' } });
-    eq('separate walls are separate lines', apart.length, 3);
-    // A wall no expiry peaks at is a SUM, not a level — a point implies precision it lacks.
-    ok('a wall nothing peaks at reads as a zone', /No single expiry peaks exactly here/.test(apart[0]));
-    // One that is a single expiry's book stops existing when that expiry does.
-    ok('a one-expiry wall names the expiry', /Owned by the 2026-09-18 expiry/.test(apart[1]));
-    ok('and the pin is the third real level', /That is the pin/.test(apart[2]));
-  }
-  eq('no spot, no levels', realLevels({ spot: 0 }), []);
-
-  // ── WHAT KIND OF DAY ───────────────────────────────────────────────────────
-  // The regime as three bands rather than one label: "negative gamma" is a fact about where price
-  // IS, and the reader wants to know what happens if it moves.
-  {
-    const d = dayKind({ spot: 758.19, flipZoneLo: 760.95, flipZoneHi: 767.68 });
-    eq('three bands', d.length, 3);
-    ok('and the one price is in is marked', d.filter(l => /← here now/.test(l)).length === 1);
-    ok('below the zone is where moves extend', /Below 760.95.*extend rather than fade/.test(d[0]));
-    ok('marked as the live one', /← here now/.test(d[0]));
-    ok('above is where they are absorbed', /Above 767.68.*absorbed/.test(d[1]));
-    // The zone width is reported because it is why "above" and "below" are not a single line.
-    ok('and the zone states its own width', /zone is 6.73 wide/.test(d[2]));
-    eq('no zone, no bands', dayKind({ spot: 758 }), []);
-  }
-
-  // ── STILL OBSERVATIONAL ────────────────────────────────────────────────────
-  // These describe what an arrangement is consistent with and never what to do about it.
-  {
-    const { assertObservational } = await import('../lib/read.js');
-    const all = [
-      ...realLevels({ spot: 758, putWall: 760, callWall: 770, byStrike,
-        agreement: { call: { agree: 0, total: 5 }, put: { agree: 2, total: 5 } },
-        pin: { pinned: true, share: 24, band: '757–759' } }),
-      ...dayKind({ spot: 758, flipZoneLo: 761, flipZoneHi: 767 }),
-    ];
-    ok('there is something to check', all.length >= 5);
-    for (const l of all) ok(`observational: "${l.slice(2, 40)}"`, assertObservational(l).ok);
-  }
-}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

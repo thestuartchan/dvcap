@@ -35,7 +35,9 @@ const wallAgreementBoth = (grid, callWall, putWall) => {
     return { call: wallAgreement(grid, callWall, callWall), put: wallAgreement(grid, putWall, putWall) };
   } catch { return null; }
 };
-import { watchlist, renderWatchlist } from '../lib/watchlist.js';
+import { watchlist } from '../lib/watchlist.js';
+import { setups, setupCandidates, renderSetups, extendedLine } from '../lib/watchSetup.js';
+import { earningsCached } from '../lib/catalystFeed.js';
 import { WATCH_UNIVERSE } from '../data/watchUniverse.js';
 import {
   clockSection, overnightSection, breadthNote, backdropSection, changeSection,
@@ -612,7 +614,7 @@ async function gexBlock(liveSpot, tense = 'preview', opts = {}) {
       // final by 01:10 UTC and had not moved one series by 08:48. The expiries are matched to the
       // stored capture's so the two rungs describe the same book and the fall-through stays
       // comparable.
-      let settledAsOf = null, rowByStrike = null, rowAgreement = null, rowDecay = null, rowLevels = null;
+      let settledAsOf = null, rowByStrike = null, rowAgreement = null, rowDecay = null, rowLevels = null, rowGrid = null;
       try {
         // PUBLISHED. This map goes into a brief that reaches a reader and cannot be withdrawn, so
         // its soundness verdict is stamped as the one that counts. lib/occHealth.js reads back
@@ -635,6 +637,7 @@ async function gexBlock(liveSpot, tense = 'preview', opts = {}) {
           rowByStrike = st.byStrike || null;
           rowAgreement = wallAgreementBoth(st.grid, st.row.callWall, st.row.putWall);
           rowLevels = st.levels || null;
+          rowGrid = st.grid || null;
           // P8 — only the settled rung carries it. `repriced` and `stored` move yesterday's book
           // to today's spot; the front expiry on those is a day that has already gone, and a
           // decay reading built on it would describe an expiry that is already behind us.
@@ -650,11 +653,14 @@ async function gexBlock(liveSpot, tense = 'preview', opts = {}) {
           rowByStrike = rp.byStrike || null;
           rowAgreement = wallAgreementBoth(rp.grid, rp.row.callWall, rp.row.putWall);
           rowLevels = rp.levels || null;
+          rowGrid = rp.grid || null;
         }
       }
       if (!row) {
         row = { ...latest, pin: pinOf(stored.grid, { spot: latest.spot, today, expired }) };
         rowLevels = stored.levels || null;
+        rowGrid = stored.grid || null;
+        rowByStrike = stored.byStrike || null;
       }
 
       // ── THE PUT SIDE IS THREE OBJECTS ──
@@ -665,6 +671,9 @@ async function gexBlock(liveSpot, tense = 'preview', opts = {}) {
                   putWall: rowLevels ? (rowLevels.support?.strike ?? null) : row.putWall,
                   callWall: row.callWall,
                   levels: rowLevels, trapdoor: rowLevels?.trapdoor ?? null,
+                  // The per-expiry grid, so the ladder can name the expiry that owns each node
+                  // and describe the next expiry's own box once today's is gone.
+                  grid: rowGrid,
                   flipLevel: row.flipLevel, pin: row.pin,
                   // The flip ZONE, so "what kind of day" can name both edges rather than a line —
                   // the zone width is how far the pivot moves as the dealer assumption varies.
@@ -697,7 +706,7 @@ async function gexBlock(liveSpot, tense = 'preview', opts = {}) {
   rows.push(...slots.filter(Boolean));
   if (!rows.length) return null;
   return {
-    text: renderGexSection(rows, { ...vint, tense }),
+    text: renderGexSection(rows, { ...vint, tense, today: new Date().toISOString().slice(0, 10) }),
     diag: { rung: vint.rung, bySymbol: rungOf, fellBack: why },
     walls: Object.fromEntries(rows.map(r => [r.name, r.levels
       ? { support: r.levels.support?.strike ?? null, trapdoorNear: r.levels.trapdoor?.near?.strike ?? null, callWall: r.callWall }
@@ -885,13 +894,18 @@ async function runRegion(region, req) {
   let extraQuotes = {};
   if (missing.length) {
     try {
-      // Same deployment, so the origin comes off the request rather than being configured — a
-      // hardcoded host is one preview deployment away from quoting production's prices.
-      const proto = req.headers?.['x-forwarded-proto'] || 'https';
-      const base = `${proto}://${req.headers?.host}`;
-      const r = await fetch(`${base}/api/prices?tickers=${encodeURIComponent(missing.join(','))}`,
-        { headers: { cookie: req.headers?.cookie || '' } });
-      if (r.ok) extraQuotes = await r.json();
+      // IN PROCESS, NOT THROUGH /api/prices. That route returns a regular print and a day-change and
+      // nothing else, which is exactly what the watchlist could not trade off. getQuotes carries the
+      // year of bars behind each quote as setup stats (ATR, its percentile, yesterday's range, the
+      // 52-week levels) and, for the US before the open, the pre-market overlay — the four
+      // measurements lib/watchSetup.js is built on. The OVERNIGHT consumer reads price and
+      // changePercent, so the row keeps that shape.
+      const rows = await getQuotes(missing, { prepost: region === 'us' });
+      for (const q of rows) {
+        if (!q || q.price == null) continue;
+        extraQuotes[q.sym] = { sym: q.sym, price: q.price, changePercent: q.changePct, changePct: q.changePct,
+                               ext: q.ext ?? null, setup: q.setup ?? null, stale: q.stale };
+      }
     } catch { /* the watchlist thins and OVERNIGHT drops — neither takes the brief down */ }
   }
 
@@ -984,12 +998,33 @@ async function runRegion(region, req) {
     // of the 24 roots actually traded in the last quarter it could see two — so it was answering
     // "what is moving in semiconductors" under a heading that promised something else.
     const wu = (WATCH_UNIVERSE[region] || []).map(sym => ({ name: sym, sym, role: null }));
-    blocks.watchLines = renderWatchlist(watchlist(wu, sym => {
+    // ── SET UP, NOT ALREADY MOVED ──────────────────────────────────────────
+    // The list is what is set up this morning — gapping, coiled, at a level, reporting — from
+    // lib/watchSetup.js. Yesterday's movers survive as one line marked extended. The earnings
+    // feed is asked about the handful of names already carrying a tag, never the whole universe.
+    const rowsBySym = new Map();
+    for (const n of wu) {
+      const q = byS.get(n.sym);
+      const m = q || extraQuotes[n.sym];
+      if (!m || m.price == null) continue;
+      rowsBySym.set(n.sym, { sym: n.sym, price: m.price, changePct: m.changePct ?? m.changePercent ?? null, ext: m.ext ?? null, setup: m.setup ?? null });
+    }
+    const wrows = [...rowsBySym.values()];
+    const today = localDateIn(R.tz) || new Date().toISOString().slice(0, 10);
+    const tomorrow = (() => { const d = new Date(today + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); })();
+    const earnings = {};
+    if (region === 'us') {
+      for (const sym of setupCandidates(wrows, { today, tomorrow })) {
+        try { earnings[sym] = await earningsCached(sym); } catch { earnings[sym] = null; }
+      }
+    }
+    const movers = watchlist(wu, sym => {
       const q = byS.get(sym);
       if (q) { const d = displayQuote(q, region); return { price: d.price, changePercent: d.changePct }; }
       const m = extraQuotes[sym];
       return m?.price != null ? { price: m.price, changePercent: m.changePercent } : null;
-    }));
+    });
+    blocks.watchLines = renderSetups(setups(wrows, { earnings, today, tomorrow }), { extended: extendedLine(movers, rowsBySym) });
   } catch { blocks.watchLines = null; }
   // THE READ SECTION IS GONE, NOT LOST. Its structured rows are what BACKDROP now renders and its
   // tripwires are what WHAT WOULD CHANGE IT now renders — both from the same composed object, so
