@@ -27,7 +27,7 @@ import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY } from '
 // the book.
 const SEEN_KEY = 'dvcap:flex:seen:v1';
 import { derivePosition, splitIntoTrades } from '../lib/positions.js';
-import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, unrecordedTrades } from '../lib/flexTrades.js';
+import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, unrecordedTrades, dropCreatedAdds } from '../lib/flexTrades.js';
 import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf, planAck, reconcilingFill, flexEnv, flexConfigured, isoDate } from '../lib/flex.js';
 import { post, webhookFromEnv } from '../lib/discord.js';
 import { refresh } from './tradecard.js';
@@ -166,15 +166,30 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
     }
   }
 
+  // ── ONE ROW PER POSITION ──────────────────────────────────────────────────
+  // The reconciliation above ran against the console before the trade plan existed, so a position
+  // the console had never seen is in BOTH rec.adds (flat, at average cost) and tradePlan.creates
+  // (opened from its first fill). CRCL, 2026-09-22: two cards. The Trades row wins when the batch
+  // is being written; the position add is dropped and named.
+  let rec2 = rec;
+  if (tradeRows && tradePlan?.creates?.length) {
+    const { adds, dropped } = dropCreatedAdds(rec.adds, tradePlan.creates);
+    if (dropped.length) {
+      rec2 = { ...rec, adds };
+      result.adds = adds;
+      result.trades.openedNotAdded = dropped.map(r => r.symbol);
+    }
+  }
+
   // An ack is an explicit instruction naming the row and, implicitly, the number — so it writes on
   // its own rather than waiting for apply=1, which is about adding rows the request did not name.
-  const plan = planAck(rec, ack);
+  const plan = planAck(rec2, ack);
   if (plan.ack.length || plan.refused.length) { result.acknowledged = plan.ack; result.refused = plan.refused; }
 
   // Append only. An id collision would overwrite an existing row, so a clash is skipped and said.
   const have = new Set(rows.map(r => r.id));
-  const fresh = apply ? rec.adds.filter(r => !have.has(r.id)) : [];
-  if (apply) result.skipped = rec.adds.length - fresh.length;
+  const fresh = apply ? rec2.adds.filter(r => !have.has(r.id)) : [];
+  if (apply) result.skipped = rec2.adds.length - fresh.length;
   // WHAT THE CONSOLE SHOWS. The channel gets a message; the console gets the same thing as state,
   // so opening the tab answers "did the sync do anything" without going to Discord for it. Written
   // on scheduled runs only — a dry run someone typed into a browser is not news to anybody.
@@ -212,7 +227,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   // now only an ADD reached the channel — a quantity that disagreed, or a position open here and
   // gone at the broker, sat in a JSON response nobody had a reason to open. Scheduled runs now
   // announce anything actionable, once, and again only if what is wrong changes.
-  if (apply) result.told = await tell(rec, asOf, apply && tradeRows ? tradePlan : null);
+  if (apply) result.told = await tell(rec2, asOf, apply && tradeRows ? tradePlan : null);
   const writingTrades = apply && !!tradeRows;
   if (!fresh.length && !plan.ack.length && !writingTrades && !from0) {
     if (apply) await kvSetJson(FLEX_NOTE_KEY, noteOf());
