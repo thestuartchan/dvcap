@@ -1862,7 +1862,7 @@
       "hawkish_repricing": "STAGFLATION",
       "live_regime": "stag",
       "view_regime": "stag",
-      "pinned": true,
+      "pinned": false,
       "hyg_chg": -0.01,
       "hyg_qqq_divergence": -0.82,
       "inputs": {
@@ -1878,7 +1878,7 @@
           "qqq": "up",
           "iwm": "up",
           "btc": "down",
-          "breakevenBp": -1
+          "breakevenBp": 1
         },
         "ladderSpread": 1.93,
         "u3": 4.1,
@@ -1938,7 +1938,7 @@
         "quadrantRead": "growth firm, inflation cool"
       },
       "source": "client+cron",
-      "loggedAt": "2026-09-23T06:39:30.573Z"
+      "loggedAt": "2026-09-23T10:05:31.565Z"
     }
   ]
 }
