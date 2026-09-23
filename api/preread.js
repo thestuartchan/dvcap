@@ -612,7 +612,7 @@ async function gexBlock(liveSpot, tense = 'preview', opts = {}) {
       // final by 01:10 UTC and had not moved one series by 08:48. The expiries are matched to the
       // stored capture's so the two rungs describe the same book and the fall-through stays
       // comparable.
-      let settledAsOf = null, rowByStrike = null, rowAgreement = null, rowDecay = null;
+      let settledAsOf = null, rowByStrike = null, rowAgreement = null, rowDecay = null, rowLevels = null;
       try {
         // PUBLISHED. This map goes into a brief that reaches a reader and cannot be withdrawn, so
         // its soundness verdict is stamped as the one that counts. lib/occHealth.js reads back
@@ -634,6 +634,7 @@ async function gexBlock(liveSpot, tense = 'preview', opts = {}) {
           settledAsOf = st.iv?.asOf || new Date().toISOString();
           rowByStrike = st.byStrike || null;
           rowAgreement = wallAgreementBoth(st.grid, st.row.callWall, st.row.putWall);
+          rowLevels = st.levels || null;
           // P8 — only the settled rung carries it. `repriced` and `stored` move yesterday's book
           // to today's spot; the front expiry on those is a day that has already gone, and a
           // decay reading built on it would describe an expiry that is already behind us.
@@ -648,11 +649,22 @@ async function gexBlock(liveSpot, tense = 'preview', opts = {}) {
           rung = 'repriced';
           rowByStrike = rp.byStrike || null;
           rowAgreement = wallAgreementBoth(rp.grid, rp.row.callWall, rp.row.putWall);
+          rowLevels = rp.levels || null;
         }
       }
-      if (!row) row = { ...latest, pin: pinOf(stored.grid, { spot: latest.spot, today, expired }) };
+      if (!row) {
+        row = { ...latest, pin: pinOf(stored.grid, { spot: latest.spot, today, expired }) };
+        rowLevels = stored.levels || null;
+      }
 
-      slots[slot] = ({ name: sym, spot: row.spot, putWall: row.putWall, callWall: row.callWall,
+      // ── THE PUT SIDE IS THREE OBJECTS ──
+      // `putWall` on the row is the put SUPPORT strike (null when nothing qualifies) so the map's
+      // `P` and the legacy consumers mean the wall; the trapdoor and the pin box travel as their
+      // own fields. lib/gexLevels.js has the four boards this replaces.
+      slots[slot] = ({ name: sym, spot: row.spot,
+                  putWall: rowLevels ? (rowLevels.support?.strike ?? null) : row.putWall,
+                  callWall: row.callWall,
+                  levels: rowLevels, trapdoor: rowLevels?.trapdoor ?? null,
                   flipLevel: row.flipLevel, pin: row.pin,
                   // The flip ZONE, so "what kind of day" can name both edges rather than a line —
                   // the zone width is how far the pivot moves as the dealer assumption varies.
@@ -687,7 +699,9 @@ async function gexBlock(liveSpot, tense = 'preview', opts = {}) {
   return {
     text: renderGexSection(rows, { ...vint, tense }),
     diag: { rung: vint.rung, bySymbol: rungOf, fellBack: why },
-    walls: Object.fromEntries(rows.map(r => [r.name, { putWall: r.putWall, callWall: r.callWall }])),
+    walls: Object.fromEntries(rows.map(r => [r.name, r.levels
+      ? { support: r.levels.support?.strike ?? null, trapdoorNear: r.levels.trapdoor?.near?.strike ?? null, callWall: r.callWall }
+      : { putWall: r.putWall, callWall: r.callWall }])),
     spot: Object.fromEntries(rows.map(r => [r.name, r.spot])),
   };
 }

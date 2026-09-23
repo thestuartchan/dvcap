@@ -122,7 +122,9 @@ const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600000).toISOString();
   ok('and names the expiry that owns it', d.lines.some(l => l.includes('2026-09-02') && l.includes('expires')));
   eq('and is flagged on the object', d.concentrated, true);
   // The point of moving it: it has to land AFTER the walls line, where it qualifies something.
-  const wallAt = d.lines.findIndex(l => l.includes('Walls at'));
+  // A row-only fixture carries no per-strike rows, so the put side cannot be split; the call wall
+  // is still stated, with its kind, and the concentration line still has to land right after it.
+  const wallAt = d.lines.findIndex(l => l.includes('Call wall at 740.00 (ceiling, above spot)'));
   const concAt = d.lines.findIndex(l => l.includes('71.4%'));
   ok('the walls are stated first, then qualified', wallAt >= 0 && concAt === wallAt + 1);
 
@@ -130,7 +132,7 @@ const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600000).toISOString();
   // These fixtures carry no peak strikes at all, so neither wall can be any expiry's peak and the
   // line reports the count per wall. It still has to SPEAK — a spread book that says nothing about
   // its walls is the silent-agreement failure this block exists to prevent.
-  ok('a spread book says so too', sp.lines.some(l => /call wall 740: 0 of 3; put wall 690: 0 of 3/.test(l)));
+  ok('a spread book says so too', sp.lines.some(l => /No expiry peaks at the call wall 740\.00 \(0 of 3\)/.test(l)));
   eq('and is not flagged', sp.concentrated, false);
   ok('silence is not the same as agreement — both cases speak', sp.lines.length === d.lines.length);
 
@@ -219,11 +221,14 @@ const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600000).toISOString();
            callWall: 720, putWall: 717, gexUsd: -1960000000, asOf: '2026-09-08T13:40:00Z' },
     grid: real, now: new Date('2026-09-08T13:45:00Z'), live: true });
   const said = read.lines.join(' ');
-  ok('the read says only one expiry peaks at both walls', /Only 1 of 6 expiries peaks at both walls/.test(said));
+  ok('the read says one expiry owns the call wall', /call wall 720\.00 is 1 of 6 expiries' own peak/.test(said));
   ok('and that it expires today', /2026-09-08, expiring today/.test(said));
-  // Both walls ARE that expiry's own peaks here, so the closing clause must not claim otherwise.
-  ok('and it does not call either wall an aggregate', !/is a sum rather than a level/.test(said));
-  ok('it says instead that no ONE expiry claims both', /no single expiry claims both/.test(said));
+  // The call wall IS that expiry's own peak here, so it must not be called an aggregate.
+  ok('and it does not call the call wall an aggregate', !/is a sum across expiries/.test(said));
+  // THE PUT SIDE IS NOT JUDGED BY THE CALL WALL'S TEST ANY MORE. Put support qualifies by peaking
+  // (its tile prints the count); the trapdoor and the pin are different objects. "put wall" is
+  // not a phrase the read uses.
+  ok('the read never says "put wall"', !/put wall/i.test(said));
   // The per-wall split, which the combined count hid.
   eq('the call wall is one expiry\'s peak', [wa.call.agree, wa.call.matched], [1, ['2026-09-08']]);
   eq('and so is the put wall', [wa.put.agree, wa.put.matched], [1, ['2026-09-08']]);
@@ -250,8 +255,8 @@ const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600000).toISOString();
       row: { spot: 718.36, flipLevel: 718.83, flipZoneLo: 709.75, flipZoneHi: 718.83,
              callWall: 720, putWall: 700, gexUsd: -443800000, asOf: '2026-09-09T13:55:00Z' },
       grid: g0909, now: new Date('2026-09-09T13:56:00Z'), live: true }).lines.join(' ');
-    ok('the read reports each wall separately', /call wall 720: 0 of 6; put wall 700: 1 of 6 \(2026-09-18\)/.test(said0909));
-    ok('it says no expiry peaks at BOTH', /No expiry peaks at both walls/.test(said0909));
+    ok('the read reports the call wall on its own terms', /No expiry peaks at the call wall 720\.00 \(0 of 6\)/.test(said0909));
+    ok('and makes no claim about "both walls"', !/both walls/.test(said0909));
     // The old line claimed a remainder that a zero count does not have.
     ok('and it no longer says "the rest peak wider"', !/The rest peak wider/.test(said0909));
     // Only the call wall is unsupported. Saying "neither" would be as wrong as saying "both hold".
@@ -269,8 +274,8 @@ const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600000).toISOString();
     const said = gexRead({ row: { spot: 718, flipLevel: 718, flipZoneLo: 710, flipZoneHi: 718,
                                   callWall: 720, putWall: 700, gexUsd: -1e8, asOf: '2026-09-09T13:55:00Z' },
                            grid: none, now: new Date('2026-09-09T13:56:00Z'), live: true }).lines.join(' ');
-    ok('both are called sums', /Neither is any single expiry's peak/.test(said));
-    ok('and neither is singled out', !/No expiry peaks at the call wall/.test(said));
+    ok('the call wall is called a sum', /No expiry peaks at the call wall 720\.00 \(0 of 4\)/.test(said));
+    ok('and the put side is not judged by that test', !/put wall/i.test(said));
   }
 
   // NOT ONE-DIRECTIONAL. Walls that genuinely repeat must still be reported as holding, or the fix
@@ -284,7 +289,7 @@ const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600000).toISOString();
   const good = gexRead({ row: { spot: 717, flipLevel: 700, flipZoneLo: 690, flipZoneHi: 695,
                                 callWall: 730, putWall: 700, gexUsd: 1e9, asOf: '2026-09-08T13:40:00Z' },
                          grid: agreeing, now: new Date('2026-09-08T13:45:00Z'), live: true });
-  ok('and is reported as holding', /walls hold across 3 of 4 expiries/.test(good.lines.join(' ')));
+  ok('and is reported as holding', /call wall 730\.00 holds across 3 of 4 expiries/.test(good.lines.join(' ')));
 
   // Exactly half counts as holding — the tie has to fall somewhere and "half the book agrees" is
   // support rather than absence of it.
@@ -332,7 +337,9 @@ const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600000).toISOString();
   ok('every sign-of-gamma site exists', gammaSignSites.length >= 4);
   ok('and none of them is still red', gammaSignSites.every(m => m.endsWith('C.purple')));
   ok('the amplify headline is purple too — it is the same claim in words', /"amplify" \? C\.purple/.test(src));
-  ok('and the put wall stat matches its column', /label="Put wall"[^]*?color=\{C\.purple\}/.test(src));
+  ok('and the trapdoor stat matches its column', /label="Trapdoor"[^]*?color=\{C\.purple\}/.test(src));
+  ok('the put support stat is green — it is the wall', /label="Put support"[^]*?C\.green/.test(src));
+  ok('and there is no "Put wall" tile left', !/label="Put wall"/.test(src));
   // C.red survives ONLY where it means status: a stale capture, and a failed load. Those are
   // genuinely errors and should keep the alarm colour.
   const reds = (src.match(/C\.red/g) || []).length;
