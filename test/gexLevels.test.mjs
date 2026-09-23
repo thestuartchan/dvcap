@@ -354,7 +354,7 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
                 levels: lv, byStrike: b.byStrike, grid: b.grid, iv: 0.217, pin: { pinned: false, share: 11.3, near: false },
                 decay: { expiringToday: true, front: '2026-09-23', after: { flip: 733.96 } } };
   const L = renderLadder(row, { today: '2026-09-23' });
-  ok('the heading carries the regime and the zone', /^__\*\*QQQ\*\* 746\.06__ · positive gamma, moves damp · low confidence, flip zone 28 wide/.test(L.head));
+  ok('the heading is a subtitle and a regime line', /^### QQQ 746\.06\n_positive gamma, moves damp · low confidence, flip zone 28 wide/.test(L.head));
   const line = (label) => L.lines.find(l => l.startsWith(label));
   eq('eight lines at most', L.lines.length <= 8, true);
   ok('above', /^above {2}748 \(today\) · 750 \(2 of 5, ceiling\) · 755 \(Sep-25\) · 760 \(Nov-20\) {4}cap 748–760$/.test(line('above')));
@@ -370,12 +370,12 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   const out = renderGexSection([row, { ...row, name: 'SPY' }], { rung: 'occ', asOf: '2026-09-23T12:00:00Z', today: '2026-09-23' });
   const lines = out.split('\n');
   // The ladder itself is the picture (lib/gexImage.js); the text keeps a heading and four bullets.
-  ok('the heading leads', lines.includes(L.head));
+  ok('the heading leads', out.includes(L.head));
   ok('no fence — the fenced ladder wrapped on a phone', !lines.includes('```'));
   ok('the four bullets', ['stack', 'pin', 'book', 'after'].every(k => lines.some(l => l.startsWith(`• **${k}** `))));
   ok('above and below are not in the text', !lines.some(l => /^(above|below|spot)\s/.test(l)));
   eq('the caveat is said once', out.split('one day in three').length - 1, 1);
-  ok('QQQ before SPY', out.indexOf('**QQQ**') < out.indexOf('**SPY**'));
+  ok('QQQ before SPY', out.indexOf('### QQQ') < out.indexOf('### SPY'));
   ok('the rung footer survives', /today's settled open interest \(OCC\)/.test(out));
   ok('no horizontal map remains', !/`P` put|`C` call|·····/.test(out));
   // Every line is observational.

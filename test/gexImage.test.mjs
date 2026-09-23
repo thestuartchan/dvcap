@@ -123,11 +123,11 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
     // A picture ends a card, so the order is read-then-picture, one card per instrument.
     const cards = mapCards(parts, files, { head: '⚡ **TODAY\'S MAP**' });
     eq('two cards', cards.length, 2);
-    ok('card 1: the heading, caveat and QQQ\'s read, with QQQ\'s picture under it', cards[0].description.startsWith('⚡ **TODAY\'S MAP**\n_±band') && /__\*\*QQQ\*\*/.test(cards[0].description) && /• \*\*stack\*\*/.test(cards[0].description) && !/__\*\*SPY\*\*/.test(cards[0].description) && cards[0].filename === 'QQQ-ladder.png');
-    ok('card 2: SPY\'s read and the footer, with SPY\'s picture under it', cards[1].description.startsWith('__**SPY**') && /settled open interest/.test(cards[1].description) && cards[1].filename === 'SPY-ladder.png');
+    ok('card 1: the heading, caveat and QQQ\'s read, with QQQ\'s picture under it', cards[0].description.startsWith('⚡ **TODAY\'S MAP**\n_±band') && /### QQQ/.test(cards[0].description) && /• \*\*stack\*\*/.test(cards[0].description) && !/### SPY/.test(cards[0].description) && cards[0].filename === 'QQQ-ladder.png');
+    ok('card 2: SPY\'s read and the footer, with SPY\'s picture under it', cards[1].description.startsWith('### SPY') && /settled open interest/.test(cards[1].description) && cards[1].filename === 'SPY-ladder.png');
     // An instrument without a picture keeps its read in the running text of the next card.
     const one = mapCards(parts, [files[1]], { head: 'H' });
-    eq('QQQ without a picture: one card carrying both reads, SPY\'s picture under it', [one.length, /__\*\*QQQ\*\*[^]*__\*\*SPY\*\*/.test(one[0].description), one[0].filename], [1, true, 'SPY-ladder.png']);
+    eq('QQQ without a picture: one card carrying both reads, SPY\'s picture under it', [one.length, /### QQQ[^]*### SPY/.test(one[0].description), one[0].filename], [1, true, 'SPY-ladder.png']);
     const none = mapCards(parts, [], { head: 'H' });
     eq('no pictures: one text card', [none.length, none[0].filename], [1, undefined]);
     const cp = cardsPayload(cards, files);
@@ -143,6 +143,7 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
   ok('the pictures ride on the map part, as cards', /filesFor: files\.length \? \{ marker: MAP_HEAD, files, cards \} : null/.test(src) && /mapCards\(blocks\.gexParts, files, \{ head: MAP_HEAD \}\)/.test(src));
   ok('a failed picture never blocks the brief', /image = \{ ok: false, error: String\(e\?\.message \|\| e\) \}/.test(src));
   const dsc = readFileSync('lib/discord.js', 'utf8');
+  ok('the brief\'s title line, which precedes the marker in the chunk, leads the first card', /const before = chunks\[i\]\.slice\(0, chunks\[i\]\.indexOf\(filesFor\.marker\)\);/.test(dsc) && /description: `\$\{head\}\$\{before\}\$\{c\.description\}`/.test(dsc));
   ok('and a part whose pictures fail to attach still posts its words', /if \(id == null\) id = await post\(webhook, \{ embeds: \[\{ description: body\.slice\(0, limit\) \}\] \}\);/.test(dsc));
   ok('?image=1 answers with the PNG', /req\.query\.image === '1'/.test(src) && /'image\/png'/.test(src));
   const vc = JSON.parse(readFileSync('vercel.json', 'utf8'));
