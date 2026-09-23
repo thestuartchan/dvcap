@@ -332,6 +332,13 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   eq('the next positive node ends the air', [st.nextPositive.strike, st.airPct], [726, 2.5]);
   eq('touching means inside the pin half-width', STACK_TOUCH_PCT, 0.6);
   eq('a positive first strike is no stack', negativeStack([{ strike: 745, netGexUsd: 5 }, { strike: 740, netGexUsd: -5 }], { spot: 746 }).strikes, []);
+  // SPY, 23 Sep: every strike below spot negative to the edge of the band. The walk stops at 5%.
+  const allNeg = negativeStack(Array.from({ length: 20 }, (_, i) => ({ strike: 768 - i * 5, netGexUsd: -1e6 })), { spot: 768.52 });
+  eq('the stack stops at the 5% window and says so', [allNeg.hi, allNeg.lo >= 768.52 * 0.95, allNeg.truncated, allNeg.nextPositive], [768, true, true, null]);
+  // A call wall below spot rides on the below line as the magnet.
+  const mag = ladderNodes([{ strike: 745, netGexUsd: 20e6 }, { strike: 740, netGexUsd: -504e6 }, { strike: 739, netGexUsd: -393e6 }], null,
+    { spot: 740.69, callWall: 740, levels: { callWall: { strike: 740, kind: 'magnet' }, trapdoor: {}, support: {} } });
+  eq('the magnet is marked on the below line', mag.below.find(n => n.strike === 740)?.magnet, true);
 
   const nodes = ladderNodes(b.byStrike, b.grid, { spot, levels: lv, callWall: 750, pivotAfter: 733.96, today: '2026-09-23' });
   // 752 (+118M) is the fifth-heaviest inside 2.5% and the ladder keeps four.
