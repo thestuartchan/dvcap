@@ -8,7 +8,7 @@
    to feel like feedback rather than animation, and both respect a reduced-motion preference. */
 @keyframes dvcap-row-in  { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 @keyframes dvcap-row-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-6px); } }
-@keyframes dvcap-flash   { 0%,100% { box-shadow: 0 0 0 0 rgba(30,64,175,0); } 30% { box-shadow: 0 0 0 4px rgba(30,64,175,0.18); } }
+@keyframes dvcap-flash   { 0%,100% { box-shadow: 0 0 0 0 transparent; } 30% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); } }
 .dvcap-row-in  { animation: dvcap-row-in 220ms ease-out both; }
 .dvcap-row-out { animation: dvcap-row-out 260ms ease-in both; pointer-events: none; }
 .dvcap-flash   { animation: dvcap-flash 1100ms ease-out 1; }

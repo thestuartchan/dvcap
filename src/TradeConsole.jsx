@@ -18,7 +18,7 @@ import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
-import { C } from "./theme.js";
+import { C, P } from "./theme.js";
 import { SLabel, Card, Btn } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
 import { derivePosition, applyRolls, splitIntoTrades, collapseFills, oversellSplit, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, realizedCurve } from "../lib/positions.js";
@@ -204,7 +204,7 @@ const FillForm = ({ ctx, symbol, row }) => {
               style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
         </div>
         <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <Btn onClick={saveFill} color="#fff" bgColor={fillFor.side === "buy" ? C.green : C.blue} label="Record fill" />
+          <Btn onClick={saveFill} color={C.onFill} bgColor={fillFor.side === "buy" ? C.green : C.blue} label="Record fill" />
           {/* Distinct from Cancel, which means "I mis-clicked". This one means "I looked and chose
               not to", and it is the only action in this console that produces evidence a guard
               worked rather than evidence one was ignored. */}
@@ -268,7 +268,7 @@ const { kindCol } = ctx;
       // it fired, which is the moment you least need help telling them apart — the read you want at
       // a glance is "where are my stops", not "which one is live right now".
       border: "1.5px solid " + kindCol(lv.kind) + (hit ? "" : "66"),
-      background: hit ? (lv.kind === "buy" ? "#F0FDF4" : lv.kind === "sell" ? C.blBg : "#FEF2F2") : C.surf,
+      background: hit ? (lv.kind === "buy" ? C.gBg : lv.kind === "sell" ? C.blBg : C.rBg) : C.surf,
       fontSize: 11.5, fontWeight: 700, color: hit ? kindCol(lv.kind) : C.mid,
     }}>
       <span style={{ color: kindCol(lv.kind) }}>{hit ? "●" : "○"}</span> {lv.kind} {lv.at ?? "—"}{lv.to ? `–${lv.to}` : ""}
@@ -603,23 +603,23 @@ const {
               {weightPct != null && <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }}>{weightPct}% of equity</span>}
               {r.margined && mvBase != null && <span style={{ fontSize: 11, color: C.amber, whiteSpace: "nowrap" }} title="Notional controlled, not capital committed. A futures position is held on margin, so this is not a share of the book.">{money(mvBase, baseCcy)} notional</span>}
             </span>
-            {d.partiallyRealised && chip(`incl. realised ${money(d.realized, r.currency)}`, C.green, "#F0FDF4", "#BBF7D0")}
+            {d.partiallyRealised && chip(`incl. realised ${money(d.realized, r.currency)}`, C.green, C.gBg, P.green200)}
           </>
         )}
         {fitChip(fit.fit)}
-        {ins && chip("🛡 " + ins, "#B45309", "#FFFBEB", "#FDE68A")}
+        {ins && chip("🛡 " + ins, P.amber700, C.aBg, P.amber200)}
         {anyHit && chip("⚡ level hit", C.amber, C.aBg, C.aBdr)}
         {d.needsQty && chip("⚠ quantity needed", C.amber, C.aBg, C.aBdr)}
         </span>
         {/* The actions that answer "how do I record what I did" — on the row, not hidden. */}
         <span className="dvcap-row-actions" style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", flexShrink: 0, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
           {mode === "setup" && (
-            <Btn onClick={() => { setExpanded(r.id); openFill(r, "buy"); }} color="#fff" bgColor={C.green} label={`✓ I ${fillVerb(r.side).open.toLowerCase()}`} />
+            <Btn onClick={() => { setExpanded(r.id); openFill(r, "buy"); }} color={C.onFill} bgColor={C.green} label={`✓ I ${fillVerb(r.side).open.toLowerCase()}`} />
           )}
           {mode === "open" && (
             <>
-              <Btn onClick={() => { setExpanded(r.id); openFill(r, "buy"); }} color="#fff" bgColor={C.green} label={`＋ ${fillVerb(r.side).open}`} />
-              <Btn onClick={() => { setExpanded(r.id); openFill(r, "sell"); }} color="#fff" bgColor={C.blue} label={`－ ${fillVerb(r.side).close}`} />
+              <Btn onClick={() => { setExpanded(r.id); openFill(r, "buy"); }} color={C.onFill} bgColor={C.green} label={`＋ ${fillVerb(r.side).open}`} />
+              <Btn onClick={() => { setExpanded(r.id); openFill(r, "sell"); }} color={C.onFill} bgColor={C.blue} label={`－ ${fillVerb(r.side).close}`} />
               {stopLevel && <Btn onClick={() => { setExpanded(r.id); openFill(r, "stopped"); }} color={C.red} bgColor={C.surf} label="🛑 Stopped out" />}
             </>
           )}
@@ -817,7 +817,7 @@ const {
                         things depending on where you looked. Selling needs something to sell. */}
                     {hit && (l.kind === "buy" || d.qty > 0) && (
                       <button onClick={() => { setExpanded(r.id); openFill(r, l.kind === "sell" ? "sell" : l.kind === "stop" ? "stopped" : "buy"); }}
-                        style={{ marginLeft: 8, cursor: "pointer", background: kindCol(l.kind), color: "#fff", border: "none", borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 800 }}>
+                        style={{ marginLeft: 8, cursor: "pointer", background: kindCol(l.kind), color: C.onFill, border: "none", borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 800 }}>
                         record a fill
                       </button>
                     )}
@@ -1067,7 +1067,7 @@ const {
                 <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Tidy up</div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   {trips.length > 1 && (
-                    <Btn onClick={() => splitRow(r, trips)} color="#fff" bgColor={C.blue} label={`\u2442 Split into ${trips.length} trades`} />
+                    <Btn onClick={() => splitRow(r, trips)} color={C.onFill} bgColor={C.blue} label={`\u2442 Split into ${trips.length} trades`} />
                   )}
                   {col.to < col.from && (
                     <Btn onClick={() => collapseRow(r, col)} color={C.mid} bgColor={C.surf} label={`\u21e5 Collapse ${col.from} fills to ${col.to}`} />
@@ -1206,13 +1206,13 @@ const Section = ({ title, note, list, mode, ctx, reorder = false, sort = null })
 // identically in both places. Unicode, so nothing has to load and nothing can fail to.
 const CHAIN_ICON = (slug) => `https://icons.llamao.fi/icons/chains/rsz_${slug}.jpg`;
 const CHAIN_LOOK = {
-  "HyperEVM":        { mark: "\u{1F30A}", tint: "#0891B2", slug: "hyperevm" },
-  "Hyperliquid":     { mark: "\u{1F30A}", tint: "#0891B2", slug: "hyperliquid" },
-  "Ethereum":        { mark: "\u27E0",    tint: "#4F46E5", slug: "ethereum" },
-  "Arbitrum":        { mark: "\u{1F537}", tint: "#2563EB", slug: "arbitrum" },
-  "Base":            { mark: "\u{1F535}", tint: "#1D4ED8", slug: "base" },
-  "Polygon":         { mark: "\u{1F7E3}", tint: "#7C3AED", slug: "polygon" },
-  "Robinhood Chain": { mark: "\u{1FAB6}", tint: "#15803D", slug: "robinhood" },
+  "HyperEVM":        { mark: "\u{1F30A}", tint: P.cyan600, slug: "hyperevm" },
+  "Hyperliquid":     { mark: "\u{1F30A}", tint: P.cyan600, slug: "hyperliquid" },
+  "Ethereum":        { mark: "\u27E0",    tint: P.indigo600, slug: "ethereum" },
+  "Arbitrum":        { mark: "\u{1F537}", tint: P.blue600, slug: "arbitrum" },
+  "Base":            { mark: "\u{1F535}", tint: P.blue700, slug: "base" },
+  "Polygon":         { mark: "\u{1F7E3}", tint: P.violet600, slug: "polygon" },
+  "Robinhood Chain": { mark: "\u{1FAB6}", tint: P.green700, slug: "robinhood" },
 };
 const CHAIN_FALLBACK = { mark: "\u25E6", tint: C.bdrMd, slug: null };
 const chainLook = (label) => CHAIN_LOOK[label] || CHAIN_FALLBACK;
@@ -1579,7 +1579,7 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
             this shipped as an unlabelled, colourless pill — a button nobody could see, on the one
             control that makes the panel do anything. scripts/check-required-props.mjs now fails the
             build on a component given children it cannot render. */}
-        <Btn onClick={look} disabled={!ready || busy} color="#fff" bgColor={C.blue} label={busy ? "…" : "Size it"} />
+        <Btn onClick={look} disabled={!ready || busy} color={C.onFill} bgColor={C.blue} label={busy ? "…" : "Size it"} />
       </div>
       {/* A DISABLED BUTTON IS NOT AN EXPLANATION. `ready` wants a ticker, and for an option a
           positive strike and a real date — three conditions behind one greyed-out control, with
@@ -2932,7 +2932,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   // ── presentation helpers ──
   const chip = (t, col, bg, bd) => <span style={{ background: bg, color: col, border: "1px solid " + bd, borderRadius: 6, padding: "1px 7px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>{t}</span>;
   const ccyChip = (ccy) => { if (ccy === baseCcy) return null; const r = fxRisk(ccy, baseCcy); return chip(ccy + (r.real ? "" : " 🔒"), r.real ? C.amber : C.mid, r.real ? C.aBg : C.bg, r.real ? C.aBdr : C.bdr); };
-  const fitChip = (f) => f === "tailwind" ? chip("regime tailwind", C.green, "#F0FDF4", "#BBF7D0") : f === "headwind" ? chip("fights regime", C.red, "#FEF2F2", "#FECACA") : null;
+  const fitChip = (f) => f === "tailwind" ? chip("regime tailwind", C.green, C.gBg, P.green200) : f === "headwind" ? chip("fights regime", C.red, C.rBg, P.red200) : null;
 
   const nInput = (v, on, ph, w = 84) => <input value={v ?? ""} onChange={e => on(e.target.value)} placeholder={ph} inputMode="decimal" style={{ width: w, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} />;
   const kindCol = (k) => k === "buy" ? C.green : k === "sell" ? C.blue : C.red;
@@ -3105,7 +3105,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           <span style={{ fontSize: 11.5, color: C.mid }}>Kept in this browser already — syncing carries them to your other devices.</span>
           <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
             {saveMsg && <span style={{ fontSize: 11.5, color: C.mid }}>{saveMsg}</span>}
-            <Btn onClick={saveCloud} disabled={saving} color="#fff" bgColor={C.blue} label={saving ? "Saving…" : "☁ Save to cloud"} />
+            <Btn onClick={saveCloud} disabled={saving} color={C.onFill} bgColor={C.blue} label={saving ? "Saving…" : "☁ Save to cloud"} />
           </span>
         </div>
       )}
@@ -3120,7 +3120,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
         // and back, and a notice about the least reversible action in the tab should be dismissed
         // deliberately rather than on a clock.
         <div className="dvcap-toast" style={{ position: "sticky", top: 8, zIndex: 21, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "9px 13px", borderRadius: 10, boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
-          background: moved.to === "closed" ? "#F0FDF4" : C.blBg, border: "1.5px solid " + (moved.to === "closed" ? "#BBF7D0" : C.blBdr) }}>
+          background: moved.to === "closed" ? C.gBg : C.blBg, border: "1.5px solid " + (moved.to === "closed" ? P.green200 : C.blBdr) }}>
           <b style={{ fontSize: 13, color: moved.to === "closed" ? C.green : C.blue }}>
             {moved.symbol} {moved.to === "closed" ? "closed out" : moved.to === "open" ? "is now an open position" : "is back to a setup"}
           </b>
@@ -3318,7 +3318,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
                       fill and the server refuses to acknowledge it. */}
                   {n.ackable && n.id && (
                     <button disabled={ackBusy === n.id} onClick={() => acknowledge(n.id)}
-                      style={{ cursor: "pointer", background: C.blue, color: "#fff", border: "none", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800, opacity: ackBusy === n.id ? 0.5 : 1 }}>
+                      style={{ cursor: "pointer", background: C.blue, color: C.onFill, border: "none", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800, opacity: ackBusy === n.id ? 0.5 : 1 }}>
                       {ackBusy === n.id ? "…" : "Accept IBKR's cost basis"}
                     </button>
                   )}
@@ -3416,7 +3416,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
         const bars = held.filter(h => h.unBase != null || h.reBase)
           .map(h => ({ name: h.symbol, unrealised: +(h.unBase ?? 0).toFixed(2), realised: +(h.reBase ?? 0).toFixed(2), total: +h.totalBase.toFixed(2) }))
           .sort((a, b) => b.total - a.total);
-        const PAL = ["#1E40AF", "#0F766E", "#B45309", "#6D28D9", "#BE185D", "#047857", "#C2410C", "#4338CA", "#0E7490", "#7C2D12"];
+        const PAL = [C.blue, P.teal700, P.amber700, P.violet700, P.pink700, P.emerald700, C.orange, P.indigo700, P.cyan700, P.orange900];
         const cashPct = equityBase && totalMv ? Math.max(0, +(100 - (totalMv / equityBase) * 100).toFixed(1)) : null;
         return (
           <Card>
@@ -3447,7 +3447,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
                 <div style={{ height: 230 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={pie} cx="50%" cy="48%" innerRadius={44} outerRadius={72} dataKey="value" stroke="#fff" strokeWidth={2}
+                    <Pie data={pie} cx="50%" cy="48%" innerRadius={44} outerRadius={72} dataKey="value" stroke={C.surf} strokeWidth={2}
                       /* Only label slices with room for one. With nine positions where a cash leg is
                          ~60%, the remaining labels stack on top of each other and become unreadable;
                          the tooltip still names every slice on hover. */
@@ -3517,7 +3517,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
             </select>
           </label>
           <button onClick={async () => { if (typeof Notification !== "undefined" && Notification.permission !== "granted") { try { await Notification.requestPermission(); } catch { /* ignore */ } } setSettings(s => ({ ...s, alertsEnabled: !s.alertsEnabled })); touch(); }}
-            style={{ cursor: "pointer", background: settings.alertsEnabled ? C.green : C.surf, color: settings.alertsEnabled ? "#fff" : C.mid, border: "1.5px solid " + (settings.alertsEnabled ? C.green : C.bdr), borderRadius: 8, padding: "6px 11px", fontSize: 12.5, fontWeight: 800 }}>
+            style={{ cursor: "pointer", background: settings.alertsEnabled ? C.green : C.surf, color: settings.alertsEnabled ? C.onFill : C.mid, border: "1.5px solid " + (settings.alertsEnabled ? C.green : C.bdr), borderRadius: 8, padding: "6px 11px", fontSize: 12.5, fontWeight: 800 }}>
             {settings.alertsEnabled ? "🔔 Alerts on" : "🔕 Alerts off"}
           </button>
           <div style={{ marginLeft: "auto", display: "flex", gap: 9, alignItems: "center" }}>
@@ -3533,7 +3533,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
             {/* Both halves. Quotes come from Yahoo and the chain data from our own route; a
                 button labelled "refresh" that moved only one of them was the bug. */}
             <Btn onClick={() => { fetchPrices([...symbols, ...fxSyms]); refreshLive(); }} disabled={pricesLoading || !symbols.length} color={C.mid} bgColor={C.bg} label={pricesLoading ? "…" : "🔄 Prices"} />
-            <Btn onClick={saveCloud} disabled={saving} color="#fff" bgColor={dirty ? C.blue : C.bdrMd} label={saving ? "Saving…" : dirty ? "☁ Save to cloud" : "☁ Synced"} />
+            <Btn onClick={saveCloud} disabled={saving} color={C.onFill} bgColor={dirty ? C.blue : C.bdrMd} label={saving ? "Saving…" : dirty ? "☁ Save to cloud" : "☁ Synced"} />
           </div>
         </div>
       </Card>
@@ -3656,12 +3656,12 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
               <button key={sd} onClick={() => setAddSide(sd)}
                 style={{ cursor: "pointer", padding: "6px 12px", fontSize: 12, fontWeight: 800, border: "none",
                          background: addSide === sd ? (sd === "short" ? C.blue : C.green) : C.surf,
-                         color: addSide === sd ? "#fff" : C.mid }}>
+                         color: addSide === sd ? C.onFill : C.mid }}>
                 {SIDE_LABEL[sd]}
               </button>
             ))}
           </div>
-          <Btn onClick={() => addRow()} color="#fff" bgColor={C.blue} label="+ Add" />
+          <Btn onClick={() => addRow()} color={C.onFill} bgColor={C.blue} label="+ Add" />
           <span style={{ fontSize: 11.5, color: C.muted }}>starts as a watched setup — add levels and a stop before it becomes a position</span>
         </div>
         {tickerHint(addSym) && (
@@ -4207,7 +4207,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           <div style={{ marginLeft: "auto", display: "flex", gap: 9, alignItems: "center" }}>
             {kvOn === false && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>⚠ this browser only</span>}
             {saveMsg && <span style={{ fontSize: 12, color: C.mid }}>{saveMsg}</span>}
-            <Btn onClick={saveCloud} disabled={saving} color="#fff" bgColor={dirty ? C.blue : C.bdrMd} label={saving ? "Saving…" : dirty ? "☁ Save to cloud" : "☁ Synced"} />
+            <Btn onClick={saveCloud} disabled={saving} color={C.onFill} bgColor={dirty ? C.blue : C.bdrMd} label={saving ? "Saving…" : dirty ? "☁ Save to cloud" : "☁ Synced"} />
             <button onClick={() => setPortOpen(o => !o)} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700 }}>{portOpen ? "Hide" : "Open"}</button>
           </div>
         </div>
@@ -4216,7 +4216,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
             <textarea value={importTxt} onChange={e => setImportTxt(e.target.value)} placeholder='{"rows":[{"symbol":"GLD","currency":"USD","thesis":"...","levels":[{"kind":"buy","at":300,"to":310}],"fills":[]}]}'
               style={{ width: "100%", boxSizing: "border-box", minHeight: 100, padding: "9px 11px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 12, fontFamily: "ui-monospace, Menlo, monospace", background: C.surf, color: C.text }} />
             <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <Btn onClick={() => doImport("merge")} disabled={!importTxt.trim()} color="#fff" bgColor={C.blue} label="Merge in" />
+              <Btn onClick={() => doImport("merge")} disabled={!importTxt.trim()} color={C.onFill} bgColor={C.blue} label="Merge in" />
               <Btn onClick={() => doImport("replace")} disabled={!importTxt.trim()} color={C.red} bgColor={C.surf} label="Replace all" />
               <Btn onClick={() => { setImportTxt(exportJson()); setImportMsg({ ok: "Exported below — copy it somewhere safe." }); }} color={C.mid} bgColor={C.bg} label="⬇ Export" />
               {importMsg && <span style={{ fontSize: 12, fontWeight: 600, color: importMsg.err ? C.red : C.green }}>{importMsg.err || importMsg.ok}</span>}

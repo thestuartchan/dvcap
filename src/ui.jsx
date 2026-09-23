@@ -6,7 +6,7 @@
 //
 // The palette moved to theme.js: a module exporting both components and plain values cannot be
 // hot-reloaded reliably, so every edit to a colour forced a full remount and lost page state.
-import { C } from "./theme.js";
+import { C, alpha } from "./theme.js";
 
 export function SLabel({ children, color }) {
   return <div style={{ fontSize: 12, letterSpacing: 2.5, color: color || C.lbl, textTransform: "uppercase", fontWeight: 700, marginBottom: 10 }}>{children}</div>;
@@ -18,7 +18,7 @@ export function Card({ children, style, onClick, id }) {
 
 export function Btn({ onClick, disabled, color, bgColor, label }) {
   return (
-    <button onClick={onClick} disabled={!!disabled} style={{ background: bgColor || color, color: bgColor ? color : "#fff", border: bgColor ? "1.5px solid " + color + "60" : "none", borderRadius: 8, padding: "8px 14px", fontSize: 14, fontWeight: 700, cursor: "pointer", opacity: disabled ? 0.6 : 1, whiteSpace: "nowrap" }}>
+    <button onClick={onClick} disabled={!!disabled} style={{ background: bgColor || color, color: bgColor ? color : C.onFill, border: bgColor ? "1.5px solid " + alpha(color, 0x60) : "none", borderRadius: 8, padding: "8px 14px", fontSize: 14, fontWeight: 700, cursor: "pointer", opacity: disabled ? 0.6 : 1, whiteSpace: "nowrap" }}>
       {label}
     </button>
   );

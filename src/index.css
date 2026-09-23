@@ -1,16 +1,350 @@
 /* ── Google Fonts: DM Sans ─────────────────────────────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;0,9..40,900;1,9..40,400&display=swap');
 
+/* ── THEME TOKENS ──────────────────────────────────────────────────────────────
+   Every colour the dashboard draws is one of these. Components read them through C / P in
+   src/theme.js (which is lib/tokens.js) and never name a hex; scripts/check-theme-tokens.mjs fails
+   the build if one does. Three palettes, one per value of <html data-theme>:
+
+     light  today's palette, byte for byte — the toggle back to it changes nothing
+     soft   the default: the same hues a notch lower in contrast, surfaces with a hierarchy
+     dark   the same hues on a dark ground, tints inverted, text lightened
+
+   The first block is semantic (surfaces, text, the five status hues and their tints); the --c-*
+   block is the identity palette (fund colours, chart series, category pills) that the tabs use
+   for things that are not status. Light values are the literal hexes the components carried
+   before; soft and dark --c-* values are derived from them by one rule each (see the panel brief,
+   Step 1) so the identity vocabulary stays recognisable across all three. */
+:root, :root[data-theme="soft"] {
+  --bg-app: #F3F4F6;
+  --bg-surface: #FAFAFA;
+  --bg-inset: #F0F1F3;
+  --border: #E3E5E8;
+  --border-strong: #CFD3D9;
+  --text-primary: #1F2937;
+  --text-secondary: #5B6472;
+  --text-muted: #8A93A0;
+  --text-label: #9AA2AE;
+  --on-fill: #FAFAFA;
+  --accent: #2F4FB3;
+  --accent-bg: #E8ECF7;
+  --accent-bdr: #BCC7EA;
+  --pos: #2E7D5B;
+  --pos-bg: #E7F2EC;
+  --pos-bdr: #B9D9C8;
+  --neg: #7A4FB0;
+  --neg-bg: #EDE7F5;
+  --neg-bdr: #CBBFE3;
+  --warn: #B7791F;
+  --warn-bg: #F6EFE1;
+  --warn-bdr: #E3CF9F;
+  --elevated: #B05A2A;
+  --elevated-bg: #F6EBE3;
+  --elevated-bdr: #E5BFA4;
+  --danger: #B3423D;
+  --danger-bg: #F5E8E7;
+  --danger-bdr: #E3B3B0;
+  --hero-danger-1: #8F3A36;
+  --hero-danger-2: #A9504A;
+  --hero-alert-1: #8F5F1F;
+  --hero-alert-2: #A8752B;
+  --hero-watch-1: #3E4A5E;
+  --hero-watch-2: #2E3648;
+  --hero-neutral-1: #2B6B4F;
+  --hero-neutral-2: #3A7F5F;
+  --hero-contested-1: #565B70;
+  --hero-contested-2: #3B3F4F;
+  --on-hero: #FAFAFA;
+  --bg-metric: #F6F7F9;
+  --border-metric: #E3E5E8;
+  --c-emerald-700: #198164;
+  --c-cyan-600: #2598B4;
+  --c-cyan-700: #267E96;
+  --c-sky-500: #41A7D5;
+  --c-navy-700: #295DA0;
+  --c-teal-700: #247F78;
+  --c-green-700: #2B884E;
+  --c-green-600: #31A75C;
+  --c-blue-700: #496BCA;
+  --c-slate-800: #2E384A;
+  --c-green-500: #44C272;
+  --c-blue-600: #4873D1;
+  --c-slate-850: #3F4452;
+  --c-slate-700: #445162;
+  --c-gray-700: #48515F;
+  --c-blue-500: #417AD8;
+  --c-indigo-700: #645CBC;
+  --c-slate-600: #596576;
+  --c-indigo-600: #554ECB;
+  --c-grey-555: #646464;
+  --c-violet-800: #6D3EB8;
+  --c-teal-300: #70D8C6;
+  --c-indigo-500: #7577DF;
+  --c-gray-500: #7D828D;
+  --c-violet-700: #8052C6;
+  --c-emerald-300: #7DD8B4;
+  --c-orange-900: #854028;
+  --c-violet-600: #7A47D1;
+  --c-red-900: #883333;
+  --c-grey-888: #8C8C8C;
+  --c-violet-500: #936FE3;
+  --c-grey-999: #999999;
+  --c-yellow-700: #A56F22;
+  --c-emerald-200: #B1EACF;
+  --c-amber-700: #B56426;
+  --c-red-700: #BA3939;
+  --c-green-200: #C7EBD4;
+  --c-rose-700: #BE3053;
+  --c-pink-700: #BF366F;
+  --c-violet-300: #CCC3EF;
+  --c-amber-600: #D58528;
+  --c-red-600: #C85151;
+  --c-green-100: #E2F6E9;
+  --c-gray-200: #E6E7EA;
+  --c-yellow-500: #D8B138;
+  --c-emerald-50: #ECF8F3;
+  --c-red-500: #DA5959;
+  --c-teal-50: #ECF8F5;
+  --c-amber-500: #D8A040;
+  --c-violet-50: #EDEBFA;
+  --c-bitcoin: #D9943F;
+  --c-orange-500: #DB7E3E;
+  --c-amber-200: #EFDD98;
+  --c-red-200: #F4D4D4;
+  --c-rose-200: #F4D7DA;
+  --c-orange-200: #F4D6B4;
+  --c-yellow-50: #F9F8EB;
+  --c-m-orange-200: #EFC990;
+  --c-m-orange-100: #F5DEBC;
+  --c-rose-50: #FAEBEC;
+  --c-m-orange-50: #F9F2E6;
+  --c-bitcoin-bg: #FAF3EB;
+}
+:root[data-theme="light"] {
+  --bg-app: #F2F3F7;
+  --bg-surface: #FFFFFF;
+  --bg-inset: #F9FAFB;
+  --border: #E4E7F0;
+  --border-strong: #C9D0E4;
+  --text-primary: #1C1F2E;
+  --text-secondary: #4B5068;
+  --text-muted: #7C82A0;
+  --text-label: #9CA3C0;
+  --on-fill: #FFFFFF;
+  --accent: #1E40AF;
+  --accent-bg: #EFF6FF;
+  --accent-bdr: #BFDBFE;
+  --pos: #166534;
+  --pos-bg: #F0FDF4;
+  --pos-bdr: #86EFAC;
+  --neg: #6B21A8;
+  --neg-bg: #FAF5FF;
+  --neg-bdr: #D8B4FE;
+  --warn: #92400E;
+  --warn-bg: #FFFBEB;
+  --warn-bdr: #FCD34D;
+  --elevated: #C2410C;
+  --elevated-bg: #FFF7ED;
+  --elevated-bdr: #FDBA74;
+  --danger: #991B1B;
+  --danger-bg: #FEF2F2;
+  --danger-bdr: #FCA5A5;
+  --hero-danger-1: #991B1B;
+  --hero-danger-2: #B91C1C;
+  --hero-alert-1: #92400E;
+  --hero-alert-2: #B45309;
+  --hero-watch-1: #334155;
+  --hero-watch-2: #1E293B;
+  --hero-neutral-1: #166534;
+  --hero-neutral-2: #15803D;
+  --hero-contested-1: #4B5068;
+  --hero-contested-2: #2F3444;
+  --on-hero: #FFFFFF;
+  --bg-metric: #FAFBFF;
+  --border-metric: #E3E7F2;
+  --c-emerald-700: #047857;
+  --c-cyan-600: #0891B2;
+  --c-cyan-700: #0E7490;
+  --c-sky-500: #0EA5E9;
+  --c-navy-700: #0F4C9B;
+  --c-teal-700: #0F766E;
+  --c-green-700: #15803D;
+  --c-green-600: #16A34A;
+  --c-blue-700: #1D4ED8;
+  --c-slate-800: #1E293B;
+  --c-green-500: #22C55E;
+  --c-blue-600: #2563EB;
+  --c-slate-850: #2F3444;
+  --c-slate-700: #334155;
+  --c-gray-700: #374151;
+  --c-blue-500: #3B82F6;
+  --c-indigo-700: #4338CA;
+  --c-slate-600: #475569;
+  --c-indigo-600: #4F46E5;
+  --c-grey-555: #555555;
+  --c-violet-800: #5B21B6;
+  --c-teal-300: #5EEAD1;
+  --c-indigo-500: #6366F1;
+  --c-gray-500: #6B7280;
+  --c-violet-700: #6D28D9;
+  --c-emerald-300: #6EE7B7;
+  --c-orange-900: #7C2D12;
+  --c-violet-600: #7C3AED;
+  --c-red-900: #7F1D1D;
+  --c-grey-888: #888888;
+  --c-violet-500: #8B5CF6;
+  --c-grey-999: #999999;
+  --c-yellow-700: #A16207;
+  --c-emerald-200: #A7F3D0;
+  --c-amber-700: #B45309;
+  --c-red-700: #B91C1C;
+  --c-green-200: #BBF7D0;
+  --c-rose-700: #BE123C;
+  --c-pink-700: #BE185D;
+  --c-violet-300: #C4B5FD;
+  --c-amber-600: #D97706;
+  --c-red-600: #DC2626;
+  --c-green-100: #DCFCE7;
+  --c-gray-200: #E5E7EB;
+  --c-yellow-500: #EAB308;
+  --c-emerald-50: #ECFDF5;
+  --c-red-500: #EF4444;
+  --c-teal-50: #F0FDFA;
+  --c-amber-500: #F59E0B;
+  --c-violet-50: #F5F3FF;
+  --c-bitcoin: #F7931A;
+  --c-orange-500: #F97316;
+  --c-amber-200: #FDE68A;
+  --c-red-200: #FECACA;
+  --c-rose-200: #FECDD3;
+  --c-orange-200: #FED7AA;
+  --c-yellow-50: #FEFCE8;
+  --c-m-orange-200: #FFCC80;
+  --c-m-orange-100: #FFE0B2;
+  --c-rose-50: #FFF1F2;
+  --c-m-orange-50: #FFF3E0;
+  --c-bitcoin-bg: #FFF8F0;
+}
+:root[data-theme="dark"] {
+  --bg-app: #14161B;
+  --bg-surface: #1C1F26;
+  --bg-inset: #232730;
+  --border: #2E3340;
+  --border-strong: #3D4352;
+  --text-primary: #E6E8EE;
+  --text-secondary: #AAB1C0;
+  --text-muted: #7D8596;
+  --text-label: #6B7385;
+  --on-fill: #14161B;
+  --accent: #8FA6EA;
+  --accent-bg: #1D2540;
+  --accent-bdr: #34437A;
+  --pos: #6CC49B;
+  --pos-bg: #1C2F27;
+  --pos-bdr: #2F5C47;
+  --neg: #BB9EE3;
+  --neg-bg: #2A2338;
+  --neg-bdr: #4D3F6B;
+  --warn: #DCAB5C;
+  --warn-bg: #2F2819;
+  --warn-bdr: #5C4A24;
+  --elevated: #E0895A;
+  --elevated-bg: #33241B;
+  --elevated-bdr: #6B4227;
+  --danger: #E07B76;
+  --danger-bg: #33201F;
+  --danger-bdr: #6B3230;
+  --hero-danger-1: #7A2E2B;
+  --hero-danger-2: #8F3A36;
+  --hero-alert-1: #7A5119;
+  --hero-alert-2: #8F5F1F;
+  --hero-watch-1: #2C3446;
+  --hero-watch-2: #222938;
+  --hero-neutral-1: #245840;
+  --hero-neutral-2: #2B6B4F;
+  --hero-contested-1: #3A3F52;
+  --hero-contested-2: #262A38;
+  --on-hero: #F0F1F3;
+  --bg-metric: #20242C;
+  --border-metric: #2E3340;
+  --c-emerald-700: #81DAC1;
+  --c-cyan-600: #81C9DA;
+  --c-cyan-700: #81C7DA;
+  --c-sky-500: #81BEDA;
+  --c-navy-700: #81A8DA;
+  --c-teal-700: #81DAD3;
+  --c-green-700: #81DAA2;
+  --c-green-600: #81DAA2;
+  --c-blue-700: #8198DA;
+  --c-slate-800: #98A8C3;
+  --c-green-500: #81DAA2;
+  --c-blue-600: #819DDA;
+  --c-slate-850: #A1A7B9;
+  --c-slate-700: #9DABBE;
+  --c-gray-700: #A1ABBA;
+  --c-blue-500: #81A3DA;
+  --c-indigo-700: #8D88D3;
+  --c-slate-600: #A1ABBA;
+  --c-indigo-600: #8681DA;
+  --c-grey-555: #ADADAD;
+  --c-violet-800: #A381DA;
+  --c-teal-300: #6AD2C0;
+  --c-indigo-500: #6568D7;
+  --c-gray-500: #A8ABB3;
+  --c-violet-700: #A481DA;
+  --c-emerald-300: #6ECFA8;
+  --c-orange-900: #DA9781;
+  --c-violet-600: #A281DA;
+  --c-red-900: #D68484;
+  --c-grey-888: #ADADAD;
+  --c-violet-500: #8661DB;
+  --c-grey-999: #9E9E9E;
+  --c-yellow-700: #DAB681;
+  --c-emerald-200: #6BD2A2;
+  --c-amber-700: #DAA781;
+  --c-red-700: #DA8181;
+  --c-green-200: #1F3728;
+  --c-rose-700: #DA8196;
+  --c-pink-700: #DA81A6;
+  --c-violet-300: #241F37;
+  --c-amber-600: #DAB181;
+  --c-red-600: #DA8181;
+  --c-green-100: #1F3728;
+  --c-gray-200: #292A2E;
+  --c-yellow-500: #DAC481;
+  --c-emerald-50: #1F372C;
+  --c-red-500: #D76565;
+  --c-teal-50: #1F3732;
+  --c-amber-500: #DAB981;
+  --c-violet-50: #231F37;
+  --c-bitcoin: #DAB281;
+  --c-orange-500: #DAA581;
+  --c-amber-200: #E0C55D;
+  --c-red-200: #371F1F;
+  --c-rose-200: #371F22;
+  --c-orange-200: #E0A35C;
+  --c-yellow-50: #37351F;
+  --c-m-orange-200: #E2AB5A;
+  --c-m-orange-100: #E2AB5A;
+  --c-rose-50: #371F21;
+  --c-m-orange-50: #372E1F;
+  --c-bitcoin-bg: #372C1F;
+  color-scheme: dark;
+}
+
 /* ── Reset ──────────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
   width: 100%;
   min-height: 100vh;
-  background-color: #F2F3F7;
+  background-color: var(--bg-app);
   font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
   font-size: 16px;
-  color: #1C1F2E;
+  /* The brief's floor: body copy 15px on a 1.5 line, tables 13px on 1.4, never smaller. The root
+     stays at 16px (it was), so nothing sized in rem moves; the line height is what changes. */
+  line-height: 1.5;
+  color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   /* `clip`, NOT `hidden`. Per spec, setting one axis to anything other than `visible` forces the
@@ -25,17 +359,19 @@ html, body {
 #root {
   width: 100%;
   min-height: 100vh;
-  background-color: #F2F3F7;
+  background-color: var(--bg-app);
 }
+
+table { font-size: 13px; line-height: 1.4; }
 
 a { color: inherit; text-decoration: none; }
 button, input, textarea, select { font-family: inherit; }
 
 /* ── Scrollbar ──────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: #F2F3F7; }
-::-webkit-scrollbar-thumb { background: #C9D0E4; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #9CA3C0; }
+::-webkit-scrollbar-track { background: var(--bg-app); }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-label); }
 
 /* ── Responsive layout helpers ──────────────────────────────────────────────── */
 
@@ -252,8 +588,8 @@ button, input, textarea, select { font-family: inherit; }
 .mwd-metric-grid > * { min-width: 0; }
 
 .mwd-metric-card {
-  background: #FAFBFF;
-  border: 1.5px solid #E3E7F2;
+  background: var(--bg-metric);
+  border: 1.5px solid var(--border-metric);
   border-radius: 10px;
   padding: 10px 12px;
   min-width: 0;

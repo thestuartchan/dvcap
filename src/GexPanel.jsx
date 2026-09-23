@@ -10,7 +10,7 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ReferenceLine, ReferenceArea, ResponsiveContainer, Cell,
 } from "recharts";
-import { C } from "./theme.js";
+import { C, tint } from "./theme.js";
 import { Card, SLabel } from "./ui.jsx";
 import { gexRead, ageOf } from "../lib/gexRead.js";
 import { heatCells, heatAlpha } from "../lib/gex.js";
@@ -42,18 +42,14 @@ const fmtCell = (v) => {
 };
 const fmtNum = (v, d = 2) => (v == null || !Number.isFinite(+v)) ? "—" : (+v).toFixed(d);
 
-// The heat cells need their tone as an rgb triple to vary alpha per cell. That used to be two
-// hand-copied literals sitting a hundred lines away from the tokens they were transcriptions of,
-// with nothing keeping them in step — change a token and the grid quietly stays on the old hue.
-// Derived from the token instead, and a test in gexRead fails if a literal comes back.
-const rgbOf = (hex) => {
-  const h = String(hex).replace("#", "");
-  return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)).join(",");
-};
+// The heat cells vary the tone's opacity per cell. That used to mean parsing the token's hex into
+// an rgb triple for rgba(); a token is now a CSS variable and cannot be parsed, so the ramp is
+// built by tint() (color-mix) and stays inside CSS — which is also what lets the same cell read
+// correctly on the dark palette without the panel knowing which palette is on.
 // POSITIVE AND NEGATIVE GAMMA, NOT UP AND DOWN. Green/red is the wrong vocabulary here: negative
 // gamma means moves amplify, which fits a rally exactly as well as a selloff, and a red grid says
 // "bearish" to every reader before they have read a word of the caption.
-const HEAT_POS = rgbOf(C.green), HEAT_NEG = rgbOf(C.purple);
+const HEAT_POS = C.green, HEAT_NEG = C.purple;
 
 // Staleness is measured in HOURS, from the capture timestamp — not in days from the date.
 // The flip moved four points and its zone tripled inside ninety minutes on 2026-09-01. A row
@@ -744,7 +740,7 @@ export function GexPanel() {
                               style={{ height: 24, borderRadius: 3,
                                        opacity: rateOut && rateFarOut(e) ? 0.4 : 1,
                                        background: a === 0 ? C.bg
-                                         : `rgba(${v > 0 ? HEAT_POS : HEAT_NEG},${a})`,
+                                         : tint(v > 0 ? HEAT_POS : HEAT_NEG, a),
                                        border: "1px solid " + (isSpot ? C.blBdr : "transparent"),
                                        outline: isMax ? `2px solid ${C.amber}` : "none", outlineOffset: -1,
                                        boxShadow: isMax ? `0 0 0 2px ${C.surf}, 0 0 0 4px ${C.amber}` : "none",
@@ -757,7 +753,7 @@ export function GexPanel() {
                                   a blank cell stays blank, because there is nothing to print. */}
                               <span style={{ fontSize: isMax ? 11.5 : 10.5, fontWeight: 800, lineHeight: 1,
                                              fontVariantNumeric: "tabular-nums", letterSpacing: -0.2,
-                                             color: a >= 0.55 ? "#fff" : (v > 0 ? C.green : C.purple) }}>
+                                             color: a >= 0.55 ? C.onFill : (v > 0 ? C.green : C.purple) }}>
                                 {isMax ? (v > 0 ? "▲ " : "▼ ") : ""}{fmtCell(v)}
                               </span>
                             </div>

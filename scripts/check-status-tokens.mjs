@@ -47,7 +47,11 @@ for (const file of walk(join(ROOT, 'src')).concat(walk(join(ROOT, 'lib')))) {
       violations.push(`${rel}:${i + 1}  accent bar uses a hardcoded hex ${bar[2]} — use STATUS[...].color`);
     }
 
-    // 2. A status triple must be expressed as a state token, not three hexes.
+    // 2. A status triple must be expressed as a state token, not three hexes. (Since the theme
+    //    tokens no component carries a hex at all — scripts/check-theme-tokens.mjs gates that —
+    //    so this rule now guards only against the literal coming back. A triple of C.* tokens is
+    //    an identity vocabulary as often as a status one — LED/DIVERGED on the handoff chain
+    //    uses green and amber — and is out of scope, as the note above says.)
     const triple = line.match(/color:\s*"(#[0-9A-Fa-f]{6})"\s*,\s*bg:\s*"(#[0-9A-Fa-f]{6})"\s*,\s*bdr:\s*"(#[0-9A-Fa-f]{6})"/);
     if (triple) {
       const [, c, bg, bdr] = triple.map(x => typeof x === 'string' ? x.toLowerCase() : x);
@@ -72,4 +76,4 @@ if (violations.length) {
   console.error('\n  I.5: status colours come from lib/status.js. Category palettes are exempt by design.\n');
   process.exit(1);
 }
-console.log(`✔ status-token check passed (${STATUS_HEXES.size} token hexes; accent bars + status triples clean)`);
+console.log(`✔ status-token check passed (${STATUS_HEXES.size} status tokens; accent bars + status triples clean)`);
