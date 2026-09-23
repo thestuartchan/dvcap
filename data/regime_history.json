@@ -1868,7 +1868,7 @@
       "inputs": {
         "weightedRecessionProb": 14.3,
         "cpi": 3.35302,
-        "kalshi2027": 23,
+        "kalshi2027": 21,
         "tape": {
           "gold": "up",
           "tlt": "down",
@@ -1883,10 +1883,10 @@
         "ladderSpread": 1.93,
         "u3": 4.1,
         "empPop": 59.1,
-        "oas": 2.68,
-        "tenY": 5.01,
+        "oas": 2.66,
+        "tenY": 4.96,
         "twoY": 4.76,
-        "consensusAlive": 0.748,
+        "consensusAlive": 0.75,
         "regimeVintage": "decayed"
       },
       "axes": {
@@ -1914,10 +1914,10 @@
         },
         "inflation": {
           "state": "turning-hot",
-          "lean": -1,
+          "lean": 0,
           "market": {
-            "verdict": "BETWEEN",
-            "lean": 0,
+            "verdict": "HOT",
+            "lean": 1,
             "usable": 3,
             "of": 3
           },
@@ -1934,11 +1934,11 @@
             "of": 3
           }
         },
-        "quadrant": "ref",
-        "quadrantRead": "growth firm, inflation cool"
+        "quadrant": null,
+        "quadrantRead": "between quadrants — the inflation axis is flat"
       },
       "source": "client+cron",
-      "loggedAt": "2026-09-23T10:05:31.565Z"
+      "loggedAt": "2026-09-23T12:43:13.141Z"
     }
   ]
 }
