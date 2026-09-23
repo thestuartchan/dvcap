@@ -4,8 +4,9 @@
 // recorded INcorrectly cannot reach the console. Every plan is applied to a copy and held against
 // the Open Positions section of the same statement, and a batch that does not reconcile is
 // discarded whole. Most of what follows is about that gate.
-import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, fillFrom } from '../lib/flexTrades.js';
+import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, fillFrom, dropCreatedAdds } from '../lib/flexTrades.js';
 import { parseStatement } from '../lib/flex.js';
+import { readFileSync } from 'node:fs';
 import { derivePosition } from '../lib/positions.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -538,6 +539,31 @@ eq('a fill carries the id that stops it being recorded twice', fillFrom({ tradeI
     multiplier: 1, buySell: bs, quantity: q, tradePrice: px, ibCommission: -1, tradeDate: '20260901', levelOfDetail: 'ORDER' });
   const plan = planTrades([], parseTrades(mk('d1','SELL',50,400) + mk('d2','BUY',50,390)), { from: '2026-08-01' });
   eq('a short scalp is skipped like a long one', [plan.creates.length, plan.skipped.dayTrades], [0, 2]);
+}
+
+// ── ONE ROW PER POSITION ─────────────────────────────────────────────────────
+// CRCL, 2026-09-22: the Open Positions reconciliation proposed CRCL as a flat row at average cost,
+// and the Trades section opened CRCL from its first fill on the same run. Different ids, both
+// written, two cards. The Trades row wins; the position add is dropped and named.
+{
+  const adds = [
+    { id: 'CRCL-flex-789044667', symbol: 'CRCL', currency: 'USD', side: 'long' },
+    { id: 'NBIS-flex-111', symbol: 'NBIS', currency: 'USD', side: 'long' },
+    { id: 'CRCL-flex-sh', symbol: 'CRCL', currency: 'USD', side: 'short' },
+  ];
+  const creates = [{ id: 'CRCL-flex-98160', symbol: 'CRCL', currency: 'USD', side: 'long' }];
+  const { adds: kept, dropped } = dropCreatedAdds(adds, creates);
+  eq('a position add the trade plan already opened is dropped', dropped.map(r => r.id), ['CRCL-flex-789044667']);
+  eq('the others are kept', kept.map(r => r.symbol), ['NBIS', 'CRCL']);
+  eq('same symbol, other side, is a different position', kept[1].side, 'short');
+  eq('currency is part of the key', dropCreatedAdds([{ symbol: 'CRCL', currency: 'HKD' }], creates).dropped.length, 0);
+  eq('nothing created drops nothing', dropCreatedAdds(adds, []).adds.length, 3);
+  eq('degenerate inputs are handled', dropCreatedAdds(undefined, undefined), { adds: [], dropped: [] });
+  // The sync wires it between the trade plan and the write, on the rec the write reads from.
+  const src = readFileSync('api/flex-sync.js', 'utf8');
+  ok('the sync drops created adds before the write', /dropCreatedAdds\(rec\.adds, tradePlan\.creates\)/.test(src));
+  ok('and the append reads the filtered list', /const fresh = apply \? rec2\.adds\.filter/.test(src));
+  ok('and so does the channel message', /tell\(rec2, asOf/.test(src));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
