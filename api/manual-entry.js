@@ -106,7 +106,22 @@ function sanitizeLevel(l) {
   if (!kind) return null;
   const at = cn(l.at);
   if (at == null) return null;                       // a level without a price is not a level
-  return { id: cs(l.id, 16) || Math.random().toString(36).slice(2, 8), kind, at, to: cn(l.to), note: cs(l.note, 160) };
+  return { id: cs(l.id, 16) || Math.random().toString(36).slice(2, 8), kind, at, to: cn(l.to), note: cs(l.note, 160),
+    // What an option row's level watches: the combo mark (default) or the underlying. Absent on a
+    // share row, and ignored by it.
+    ...(l.on === 'underlying' ? { on: 'underlying' } : {}) };
+}
+// One leg of an option or spread row (lib/instruments.js). Anything malformed is dropped, and a
+// row whose legs all fail to parse is saved without them — it reads as shares until fixed, which
+// the console flags, rather than as a spread with invented strikes.
+function sanitizeLeg(l) {
+  if (!l || typeof l !== 'object') return null;
+  const right = l.right === 'P' ? 'P' : l.right === 'C' ? 'C' : null;
+  const strike = cn(l.strike), ratio = cn(l.ratio) ?? 1;
+  const expiry = /^\d{4}-\d{2}-\d{2}$/.test(String(l.expiry || '')) ? String(l.expiry) : null;
+  const side = l.side === 'short' ? 'short' : l.side === 'long' ? 'long' : null;
+  if (!right || !(strike > 0) || !expiry || !side || !(ratio > 0)) return null;
+  return { right, strike, expiry, side, ratio: Math.min(10, Math.round(ratio)) || 1 };
 }
 function sanitizeFill(f) {
   if (!f || typeof f !== 'object') return null;
@@ -168,6 +183,13 @@ function sanitizeRow(r) {
     levels: Array.isArray(r.levels) ? r.levels.map(sanitizeLevel).filter(Boolean).slice(0, 12) : [],
     fills: Array.isArray(r.fills) ? r.fills.map(sanitizeFill).filter(Boolean).slice(0, 200) : [],
     tags: Array.isArray(r.tags) ? r.tags.map(t => cs(t, 24)).filter(Boolean).slice(0, 8) : [],
+    // ── OPTIONS AND SPREADS (console rework, Step 2) ──
+    // The instrument, its legs, the hard exit date and a typed mark. Absent on a share row.
+    ...(['shares', 'option', 'spread', 'future'].includes(r.instrument) ? { instrument: r.instrument } : {}),
+    ...(r.underlying ? { underlying: String(r.underlying).toUpperCase().slice(0, 12) } : {}),
+    ...(Array.isArray(r.legs) && r.legs.length ? { legs: r.legs.map(sanitizeLeg).filter(Boolean).slice(0, 4) } : {}),
+    ...(/^\d{4}-\d{2}-\d{2}$/.test(String(r.hardDate || '')) ? { hardDate: String(r.hardDate) } : {}),
+    ...(cn(r.mark) != null ? { mark: cn(r.mark) } : {}),
   };
 }
 

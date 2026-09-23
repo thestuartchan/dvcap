@@ -32,7 +32,7 @@ import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf,
 import { post, webhookFromEnv } from '../lib/discord.js';
 import { refresh } from './tradecard.js';
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
-import { fetchCboeGreeks } from '../lib/cboe.js';
+import { fetchCboeGreeks, fetchCboeIndex } from '../lib/cboe.js';
 import { parseOptionSymbol, contractKey, TREND_WINDOW } from '../lib/bookExposure.js';
 import { appendRun, SIZER_RUNS_KEY, MAX_RUNS } from '../lib/sizer.js';
 import { catalystLookup } from '../lib/catalystFeed.js';
@@ -394,6 +394,21 @@ export default async function handler(req, res) {
       res.status(200).json(await catalystLookup({ symbol: catQ, expiry: /^\d{4}-\d{2}-\d{2}$/.test(expQ) ? expQ : null, kind }));
     } catch (e) {
       console.error('catalyst', e);
+      res.status(200).json({ ok: false, reason: String(e?.message || e) });
+    }
+    return;
+  }
+  // ?chain=SOFI — the expiries and strikes the root trades, for the entry form's leg table. Read
+  // from the same exchange feed as the greeks; carries nothing about the book, and sits on the
+  // gated route because the form that asks is the book's.
+  const chainQ = String(req.query?.chain ?? '').trim().toUpperCase();
+  if (chainQ) {
+    try {
+      if (!/^[A-Z][A-Z0-9.]{0,7}$/.test(chainQ)) { res.status(200).json({ ok: false, reason: 'not an underlying symbol' }); return; }
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(200).json(await fetchCboeIndex(chainQ));
+    } catch (e) {
+      console.error('chain-index', e);
       res.status(200).json({ ok: false, reason: String(e?.message || e) });
     }
     return;
