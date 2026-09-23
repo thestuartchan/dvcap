@@ -6,7 +6,7 @@
 // known by construction rather than by running the code and copying what it said.
 import {
   levelsOf, putSupport, trapdoors, pinBox, callWallOf, balanceOf, distanceFloor, peaksAt,
-  levelsLog, mustShow, regimeLine, regimeDetail, rateLine, rateFarOut, RATE_FAR_DAYS,
+  levelsLog, mustShow, regimeLine, regimeDetail, rateLine, rateFarOut, RATE_FAR_DAYS, negativeStack, ladderNodes, STACK_TOUCH_PCT,
   supportText, trapdoorText, pinText, callWallText, shortExpiry, fmtM,
   SUPPORT_MIN_DIST_PCT, SUPPORT_MAX_DIST_PCT, SUPPORT_MIN_SHARE, TRAPDOOR_NEAR_PCT, TRAPDOOR_DEEP_PCT,
   TRAPDOOR_MIN_FRAC, PIN_HALF_PCT, PIN_MIN_SHARE, BALANCE_MIN_RATIO,
@@ -15,7 +15,7 @@ import { heatCells, HEAT_ROWS, HEAT_MIN_PER_COLUMN } from '../lib/gex.js';
 import { compareGex, cboeSummary } from '../lib/cboe.js';
 import { gexRead } from '../lib/gexRead.js';
 import { riskFreeRate, RF_KEY, atr14 } from '../lib/gexStore.js';
-import { renderGexSection, mapRow, realLevels, downsideLevels } from '../lib/gexBrief.js';
+import { renderGexSection, renderLadder, bookWords, nextBox, regimeWords } from '../lib/gexBrief.js';
 import { assertObservational } from '../lib/read.js';
 import { healthSample } from '../lib/occHealth.js';
 import { readFileSync } from 'node:fs';
@@ -309,39 +309,93 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   ok('their put wall carries its net sign', s.putWall === 735 && s.putWallNet < 0 && s.callWallNet > 0);
 }
 
-// ── THE BRIEF NEVER CALLS A NEGATIVE NODE A WALL ─────────────────────────────
+// ── THE LADDER: THE 23 SEP BOARD, AS A DAY TRADER READS IT ───────────────────
+// spot 746.06, negative from 745 down to 740 in today's expiry, 750 the ceiling, Friday's box
+// 745–755 with 740 under it, Oct-02's −340M at 730, Oct-16's cushion at 726.
 {
-  const spot = 743.8, atr = 9;
+  const spot = 746.06, atr = 8;
   const b = board([
-    cell('2026-10-16', 700, -175), cell('2026-10-16', 730, 60), cell('2026-10-16', 740, 50), cell('2026-10-16', 750, 40),
-    cell('2026-09-23', 735, -89), cell('2026-09-23', 743, 20), cell('2026-09-23', 745, 80), cell('2026-09-23', 748, 40),
-    cell('2026-09-23', 750, 220), ...filler(spot, ['2026-10-16', '2026-09-23']),
+    cell('2026-09-23', 745, -110), cell('2026-09-23', 743, -175), cell('2026-09-23', 742, -98), cell('2026-09-23', 740, -50),
+    cell('2026-09-23', 748, 205), cell('2026-09-23', 750, 244), cell('2026-09-23', 752, 118),
+    cell('2026-09-25', 755, 241), cell('2026-09-25', 750, 250), cell('2026-09-25', 748, 111), cell('2026-09-25', 740, -109),
+    cell('2026-10-02', 730, -340), cell('2026-10-02', 748, 145),
+    cell('2026-10-16', 726, 60), cell('2026-10-16', 700, -165),
+    cell('2026-11-20', 760, 492),
   ]);
-  const lv = levelsOf({ ...b, spot, atr, callWall: 745 });
-  const row = { name: 'QQQ', spot, putWall: lv.support.strike, callWall: 745, flipLevel: 720.5, flipZoneLo: 711, flipZoneHi: 736,
-                levels: lv, trapdoor: lv.trapdoor, byStrike: b.byStrike, pin: { pinned: false }, iv: 0.2 };
-  const out = renderGexSection([row], { rung: 'occ', asOf: '2026-09-23T12:00:00Z' });
-  ok('the levels line names support and trapdoor', /put support 730\.00 \(-1\.86%\) · trapdoor 735\.00 \(-1\.18%\)/.test(out));
-  ok('and the call wall\'s kind', /call wall 745\.00 \(\+0\.16%, ceiling\)/.test(out));
-  ok('the legend has a trapdoor glyph', /`T` trapdoor/.test(out));
-  ok('the map draws it', /T/.test(mapRow('QQQ', row)));
-  ok('the levels-that-are-real block describes the support as a cushion', /730\.00\*\* — put support, −1\.9%\. Net gamma is positive here \(\+\$60M, mostly Oct-16\)/.test(out));
-  ok('and the trapdoor as acceleration', /Trapdoor \*\*735\.00\*\* \(−\$89M, mostly Sep-23, −1\.2%\), and deeper \*\*700\.00\*\*/.test(out));
-  ok('"put wall" is not a phrase the brief uses on a split row', !/put wall/.test(out));
-  const none = renderGexSection([{ ...row, putWall: null, levels: { ...lv, support: { strike: null, reason: 'no put support inside 5%' } } }], { rung: 'occ' });
-  ok('no support is said plainly', /put support: none inside 5%/.test(none) && /No put support inside 5%\.\*\*/.test(none));
+  b.grid.expiries = [{ expiry: '2026-09-23', shareOfAbs: 11.3 }, { expiry: '2026-09-25', shareOfAbs: 22.5 }, { expiry: '2026-10-02', shareOfAbs: 2.6 }, { expiry: '2026-10-16', shareOfAbs: 33.2 }, { expiry: '2026-11-20', shareOfAbs: 30.4 }];
+  const lv = levelsOf({ ...b, spot, atr, callWall: 750 });
+
+  // The stack: 745, 743, 742, 740 are contiguous negatives right under spot; 730 is next and
+  // negative too, so the run continues to it; 726 is the first positive node.
+  const st = negativeStack(b.byStrike, { spot });
+  eq('the run of negatives under spot', [st.hi, st.lo, st.touching], [745, 730, true]);
+  eq('the next positive node ends the air', [st.nextPositive.strike, st.airPct], [726, 2.5]);
+  eq('touching means inside the pin half-width', STACK_TOUCH_PCT, 0.6);
+  eq('a positive first strike is no stack', negativeStack([{ strike: 745, netGexUsd: 5 }, { strike: 740, netGexUsd: -5 }], { spot: 746 }).strikes, []);
+
+  const nodes = ladderNodes(b.byStrike, b.grid, { spot, levels: lv, callWall: 750, pivotAfter: 733.96, today: '2026-09-23' });
+  // 752 (+118M) is the fifth-heaviest inside 2.5% and the ladder keeps four.
+  eq('above: the heaviest positive nodes inside 2.5%, ascending', nodes.above.map(n => n.strike), [748, 750, 755, 760]);
+  eq('the call wall is marked with its peak count', [nodes.above[1].wall, nodes.above[1].peaks.agree], [true, 2]);
+  eq('the owner is named', nodes.above[2].expiry, '2026-09-25');
+  // 742 (−98M) is the fifth negative inside 3%; the four heaviest, the trapdoors, the pivot and the
+  // cushion make the line.
+  eq('below: negatives, the deep trapdoor, the pivot and the cushion, descending',
+     nodes.below.map(n => `${n.strike}:${n.kind}`), ['745:negative', '743:negative', '740:negative', '733.96:pivot', '730:negative', '726:support']);
+
+  const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flipLevel: 740.80, flipZoneLo: 712.76, flipZoneHi: 740.80,
+                levels: lv, byStrike: b.byStrike, grid: b.grid, iv: 0.217, pin: { pinned: false, share: 11.3, near: false },
+                decay: { expiringToday: true, front: '2026-09-23', after: { flip: 733.96 } } };
+  const L = renderLadder(row, { today: '2026-09-23' });
+  ok('the heading carries the regime and the zone', /^__\*\*QQQ\*\* 746\.06__ · positive gamma, moves damp · low confidence, flip zone 28 wide/.test(L.head));
+  const line = (label) => L.lines.find(l => l.startsWith(label));
+  eq('eight lines at most', L.lines.length <= 8, true);
+  ok('above', /^above {2}748 \(today\) · 750 \(2 of 5, ceiling\) · 755 \(Sep-25\) · 760 \(Nov-20\) {4}cap 748–760$/.test(line('above')));
+  eq('spot', line('spot'), 'spot   746.06');
+  ok('below, nearest first, sizes and owners', /^below {2}745 \(−110M today\) · 743 \(−175M today\) · 740 \(−159M Sep-25\) · 733\.96 \(pivot after today\) · 730 \(−340M Oct-02\) · 726 \(\+60M Oct-16, cushion, peaks 1 of 5\)$/.test(line('below')));
+  ok('the stack line is the new sentence', /^stack {2}negative 730–745 directly under spot: through 745 hedging accelerates, 2\.5% of air to 726 \(\+60M Oct-16\)$/.test(line('stack')));
+  ok('pin and priced-for on one line', /^pin {4}none today \(11\.3% expires, away from spot\) · priced for ±10\.2 \(±1\.37%\)$/.test(line('pin')));
+  ok('the book line names what the balance does', /^book {3}−\$[\d.]+B below \/ \+\$[\d.]+B above: (balanced either side|rallies absorbed into 750, dips extend|dips accelerate, rallies thin)$/.test(line('book')));
+  ok('after: the pivot once today is gone, and Friday\'s box', /^after {2}today's expiry: pivot 740\.80 → 733\.96 · Sep-25 box 748–755, 740 \(−109M\) under it$/.test(line('after')));
+  ok('never "wall" on the put side', !/put wall/i.test(L.lines.join(' ')));
+
+  // The section: heading outside the fence, ladder inside it, the caveat once, the footer once.
+  const out = renderGexSection([row, { ...row, name: 'SPY' }], { rung: 'occ', asOf: '2026-09-23T12:00:00Z', today: '2026-09-23' });
+  const lines = out.split('\n');
+  ok('the heading is outside the fence, so the bold renders', lines.indexOf(L.head) < lines.indexOf('```'));
+  eq('one fence per instrument', lines.filter(l => l === '```').length, 4);
+  eq('the caveat is said once', out.split('one day in three').length - 1, 1);
+  ok('QQQ before SPY', out.indexOf('**QQQ**') < out.indexOf('**SPY**'));
+  ok('the rung footer survives', /today's settled open interest \(OCC\)/.test(out));
+  ok('no horizontal map remains', !/`P` put|`C` call|·····/.test(out));
   // Every line is observational.
-  for (const l of [...downsideLevels(lv, spot), ...realLevels({ spot, putWall: 730, callWall: 745, byStrike: b.byStrike, levels: lv })]) {
-    let bad = null; try { assertObservational(l); } catch (e) { bad = e; }
-    ok(`observational: ${l.slice(0, 40)}…`, !bad);
-  }
-  // A legacy row (no levels) still renders the old way, so nothing stored breaks.
-  const legacy = renderGexSection([{ name: 'QQQ', spot: 718.36, putWall: 700, callWall: 720, flipLevel: 718.83, pin: { pinned: false } }], { rung: 'stored', from: '2026-09-08' });
-  ok('a row without levels keeps the legacy line', /put wall 700\.00/.test(legacy) && /`P` put wall/.test(legacy));
+  for (const l of L.lines) { let bad = null; try { assertObservational(l); } catch (e) { bad = e; } ok(`observational: ${l.slice(0, 32)}…`, !bad); }
+
+  // Words for the book line.
+  ok('upside-heavy positive', /rallies absorbed into 750, dips extend/.test(bookWords({ balance: { state: 'asymmetric_up', above: 5.18e9, below: -1.69e9 } }, 750)));
+  ok('downside-heavy negative', /dips accelerate, rallies thin/.test(bookWords({ balance: { state: 'asymmetric_down', above: 0.2e9, below: -3e9 } }, 750)));
+  ok('downside-heavy positive names the cushion', /dips cushioned at 726, rallies thin/.test(bookWords({ balance: { state: 'asymmetric_down', above: 0.2e9, below: 3e9 }, support: { strike: 726 } }, 750)));
+  eq('no balance, no line', bookWords(null), null);
+  // The next box prefers the coming week over the month's heaviest expiry.
+  const nb = nextBox(b.grid, { spot, today: '2026-09-23' });
+  eq('Friday wins over Oct-16 inside the week', [nb.expiry, nb.lo, nb.hi, nb.heaviestNegative.strike], ['2026-09-25', 748, 755, 740]);
+  eq('no grid, no box', nextBox(null, { spot }), null);
+  // The regime words.
+  ok('inside the zone is no regime', /at the flip, no regime/.test(regimeWords({ spot: 720, flipLevel: 718, flipZoneLo: 712, flipZoneHi: 722 })));
+  ok('a tight zone quotes the flip', /flip 718\.00 \(zone 2\.0 wide\)/.test(regimeWords({ spot: 730, flipLevel: 718, flipZoneLo: 717, flipZoneHi: 719 })));
+  ok('below is negative gamma', /negative gamma, moves extend/.test(regimeWords({ spot: 700, flipLevel: 718, flipZoneLo: 717, flipZoneHi: 719 })));
+
+  // A legacy row without per-strike rows still renders a ladder from the two walls it has.
+  const legacy = renderLadder({ name: 'QQQ', spot: 718.36, putWall: 700, callWall: 720, flipLevel: 718.83, pin: { pinned: false } }, { today: '2026-09-09' });
+  ok('legacy above', /^above {2}720\.00 \(call wall\)$/.test(legacy.lines[0]));
+  ok('legacy below never calls the put side a wall', /^below {2}700\.00 \(heaviest put strike\)$/.test(legacy.lines[2]));
+  // A closed session renders the heading only, then the handoff lines.
+  const closed = renderGexSection([row], { rung: 'stored', tense: 'closed', today: '2026-09-23' });
+  ok('closed: heading and where it finished', /closed above its pivot/.test(closed) && !/```/.test(closed));
+
   // The health sample carries the levels.
   const hs = healthSample({ ok: true, levels: lv, row: { rate: 0.038, rateStatus: 'live' }, vintage: {}, oi: {}, crossCheck: null }, { symbol: 'QQQ' });
-  eq('the health sample logs the levels', [hs.put_support_strike, hs.trapdoor_near, hs.trapdoor_deep, hs.pin_lo, hs.pin_hi, hs.call_wall_kind, hs.balance_state, hs.rf_status],
-     [730, 735, 700, 743, 748, 'ceiling', 'asymmetric_up', 'live']);
+  eq('the health sample logs the levels', [hs.put_support_strike, hs.trapdoor_near, hs.trapdoor_deep, hs.call_wall_kind, hs.rf_status], [726, 745, 730, 'ceiling', 'live']);
 }
 
 // ── THE PANEL WEARS THE VOCABULARY ───────────────────────────────────────────
