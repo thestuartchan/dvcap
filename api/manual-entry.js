@@ -190,6 +190,12 @@ function sanitizeRow(r) {
     ...(Array.isArray(r.legs) && r.legs.length ? { legs: r.legs.map(sanitizeLeg).filter(Boolean).slice(0, 4) } : {}),
     ...(/^\d{4}-\d{2}-\d{2}$/.test(String(r.hardDate || '')) ? { hardDate: String(r.hardDate) } : {}),
     ...(cn(r.mark) != null ? { mark: cn(r.mark) } : {}),
+    // ── THE CARD'S STATE (console rework, Step 3) ──
+    // When the row went flat (the 24h archive clock), a hand decision to archive or restore, and
+    // when it was restored. lib/lifecycle.js derives the state from these and the fills.
+    ...(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(String(r.closedAt || '')) ? { closedAt: String(r.closedAt).slice(0, 30) } : {}),
+    ...(r.archived === true || r.archived === false ? { archived: r.archived } : {}),
+    ...(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(String(r.restoredAt || '')) ? { restoredAt: String(r.restoredAt).slice(0, 30) } : {}),
   };
 }
 
