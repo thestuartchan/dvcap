@@ -35,6 +35,11 @@ import { bookExposure, parseOptionSymbol, contractKey } from "../lib/bookExposur
 import { sizeTrade, sizeFuture, sizerRun, reconcileRuns, mismatchReview, capReview, futuresReview, leveragedReview, SIZER_LIMITS, SINGLE_NAME_EXEMPT } from "../lib/sizer.js";
 import { leverageFor, SWING, roomInWrappers } from "../lib/leverage.js";
 import { modelledDelta } from "../lib/blackscholes.js";
+import { isDerivativeRow, underlyingOf, legLabel, optionDerived, exposureLines, optionRow, optionLevelVocab, hardDateCheck, defaultHardDate,
+         markOf, spreadShape, INSTRUMENTS, INSTRUMENT_LABEL, LEG_RIGHTS, LEG_SIDES, MAX_LEGS, expiryLabel } from "../lib/instruments.js";
+// A stable empty object for memo dependencies: a fresh `{}` on every render would recompute the
+// whole book each time the feed had nothing to say.
+const EMPTY_OBJ = Object.freeze({});
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
 import { companyName } from "../lib/companyNames.js";
 import { tickerHint, resolvedLabel } from "../lib/tickerHints.js";
@@ -181,7 +186,7 @@ const FillForm = ({ ctx, symbol, row }) => {
               <option value="buy">buy</option><option value="sell">sell</option>
             </select></label>
           <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Quantity <span style={{ fontWeight: 400, color: C.muted }}>(your position size)</span><br />{nInput(fillFor.qty, v => setFillFor(f => ({ ...f, qty: v })), "shares")}</label>
-          <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Price<br />{nInput(fillFor.price, v => setFillFor(f => ({ ...f, price: v })), "")}</label>
+          <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>{row?.opt ? <>Combo price <span style={{ fontWeight: 400, color: C.muted }}>(net, per share)</span></> : "Price"}<br />{nInput(fillFor.price, v => setFillFor(f => ({ ...f, price: v })), "")}</label>
           <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Date<br />
             <input type="date" value={fillFor.date} onChange={e => setFillFor(f => ({ ...f, date: e.target.value }))} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
           {fillFor.side === "buy" && (
@@ -257,7 +262,7 @@ const FillForm = ({ ctx, symbol, row }) => {
 // Hoisted here their identity is constant, so React re-renders in place and focus survives. Every
 // value they used from the closure is passed through a single `ctx` object.
 
-const LevelPill = ({ lv, price, ctx, side }) => {
+const LevelPill = ({ lv, price, ctx, side, on = null }) => {
 const { kindCol } = ctx;
   const hit = levelHit(lv, price, side);
   const d = distancePct(lv, price);
@@ -271,7 +276,7 @@ const { kindCol } = ctx;
       background: hit ? (lv.kind === "buy" ? C.gBg : lv.kind === "sell" ? C.blBg : C.rBg) : C.surf,
       fontSize: 11.5, fontWeight: 700, color: hit ? kindCol(lv.kind) : C.mid,
     }}>
-      <span style={{ color: kindCol(lv.kind) }}>{hit ? "●" : "○"}</span> {lv.kind} {lv.at ?? "—"}{lv.to ? `–${lv.to}` : ""}
+      <span style={{ color: kindCol(lv.kind) }}>{hit ? "●" : "○"}</span> {lv.kind}{on ? <span style={{ color: C.lbl, fontWeight: 600 }}> {on === "underlying" ? "under" : "combo"}</span> : null} {lv.at ?? "—"}{lv.to ? `–${lv.to}` : ""}
       {d != null && !hit && <span style={{ color: C.lbl, fontWeight: 600 }}>{d > 0 ? "+" : ""}{d}%</span>}
     </span>
   );
@@ -305,8 +310,11 @@ const looksLikeFuture = (sym) => isUnambiguousFuture(String(sym || '').toUpperCa
 const quoteSym = (r) => {
   const explicit = String(r?.quoteSymbol || '').trim();
   if (explicit) return explicit;
-  const sym = String(r?.symbol || '').trim();
-  if (r?.margined || looksLikeFuture(sym)) {
+  // An option or spread row is quoted as its UNDERLYING. The contract itself is priced off the
+  // greeks feed (see priceOf in the console); the underlying is what breakeven, a second trigger
+  // and the company name key off, and it is the only thing Yahoo can quote anyway.
+  const sym = isDerivativeRow(r) ? underlyingOf(r) : String(r?.symbol || '').trim();
+  if (!isDerivativeRow(r) && (r?.margined || looksLikeFuture(sym))) {
     if (!sym.includes('=') && !sym.includes('.')) return `${sym.toUpperCase()}=F`;
     return sym;
   }
@@ -404,7 +412,10 @@ const {
     : sug.fullQty > 0 ? `at or above full size — ${d.qty || 0} held vs ${sug.fullQty} suggested`
     : sizeMode === "risk" && !stopLevel ? "add a stop and this will size the trade for you"
     : "set your account equity to size this";
-  const anyHit = active.some(l => levelHit(l, price, r.side));
+  // Per LEVEL: an option row's levels watch the combo mark unless one says "underlying".
+  const anyHit = active.some(l => levelHit(l, ctx.priceOf(r, l), r.side));
+  const o = r.opt || null;
+  const urgent = !!(o?.expired || o?.hardDateReached);
   // DRAG FROM THE GRIP, NOT THE ROW. The row body opens and closes on click, and making the whole
   // thing draggable turns every mis-timed click into a drag — so `draggable` sits on the grip alone
   // and the row only listens for the drop. The grip also stops the click from bubbling, or picking
@@ -425,7 +436,7 @@ const {
     <div className={cls} data-row={r.id}
       onDragOver={reorderable && ctx.dragId ? (e => { e.preventDefault(); if (ctx.overId !== r.id) ctx.setOverId(r.id); }) : undefined}
       onDrop={reorderable && ctx.dragId ? (e => { e.preventDefault(); ctx.dropRow(ctx.dragId, r.id); ctx.endDrag(); }) : undefined}
-      style={{ border: "1.5px solid " + (anyHit ? C.amber : C.bdr), borderLeft: "4px solid " + (anyHit ? C.amber : mode === "open" ? C.blue : C.bdr), borderRadius: 10, overflow: "hidden",
+      style={{ border: "1.5px solid " + (urgent ? C.red : anyHit ? C.amber : C.bdr), borderLeft: "4px solid " + (urgent ? C.red : anyHit ? C.amber : mode === "open" ? C.blue : C.bdr), borderRadius: 10, overflow: "hidden",
                ...(dropEdge ? { boxShadow: dropEdge } : null) }}>
       {/* The row is TWO blocks, not one wrapping run: an info block that flexes and wraps inside
           itself, and an action block that never leaves the top line. Letting the whole row wrap put
@@ -485,7 +496,9 @@ const {
                              overflow: "hidden", textOverflow: "ellipsis", maxWidth: 190 }}
                     title={companyName(r.symbol) || `${ctx.atrFor(quoteSym(r)).detail.name} — what the feed resolves ${quoteSym(r)} to`}>
                 {companyName(r.symbol) || ctx.atrFor(quoteSym(r)).detail.name}</span> : null}
-          {d.multiplier > 1 ? chip(`×${d.multiplier}`, C.amber, C.aBg, C.aBdr) : null}
+          {/* THE CONTRACT, in words, beside the underlying: "Nov20'26 17/20 C · vertical". The
+              ×100 chip is folded into it — an option row says it is an option. */}
+          {o ? chip(`${o.label} · ${o.shape}`, C.blue, C.blBg, C.blBdr) : d.multiplier > 1 ? chip(`×${d.multiplier}`, C.amber, C.aBg, C.aBdr) : null}
           {/* SHORT IS MARKED, LONG IS NOT. Every number on a short row is the mirror of the one a
               reader expects — the stop is above, the target below, and a falling price is a gain —
               so the row says which it is rather than leaving the reader to infer it from levels
@@ -551,6 +564,19 @@ const {
 
         <Div />
         {/* The tape. Muted, and labelled "today", so it can never be read as your return. */}
+        {o ? (
+          <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}
+                title={o.markSource === "live" ? "The combo mark, from the exchange feed's per-leg marks" : o.markSource === "manual" ? "A mark typed on this row — the feed has none for a leg" : "No live mark and none typed: valued at your last fill, so the P&L reads flat"}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: o.markSource === "live" ? C.text : C.amber }}>{fmtPrice(price, { maxDp: 2 })}</span>
+            <span style={{ fontSize: 10.5, color: o.markSource === "live" ? C.muted : C.amber }}>{o.markSource === "live" ? "combo mark" : o.markSource === "manual" ? "typed mark" : o.markSource === "fill" ? "at your fill" : "no mark"}</span>
+            {ctx.underlyingPriceOf(r) != null && (
+              <span style={{ fontSize: 11, color: C.lbl, whiteSpace: "nowrap" }}>
+                {r.symbol} {fmtPrice(ctx.underlyingPriceOf(r), { maxDp: priceMaxDp(r.symbol) })}
+                {q?.changePercent != null && <span style={{ color: q.changePercent >= 0 ? C.green : C.red, fontWeight: 700 }}> {q.changePercent >= 0 ? "▲" : "▼"}{Math.abs(q.changePercent).toFixed(2)}%</span>}
+              </span>
+            )}
+          </span>
+        ) : (
         <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }} title="Last price and today's move on the tape — not your return">
           <span style={{ fontSize: 14, fontWeight: 700 }}>{fmtPrice(price, { maxDp: priceMaxDp(r.symbol) })}</span>
           <span style={{ fontSize: 11.5, fontWeight: 700, color: q?.changePercent == null ? C.muted : q.changePercent >= 0 ? C.green : C.red, whiteSpace: "nowrap" }}>
@@ -584,6 +610,7 @@ const {
             );
           })()}
         </span>
+        )}
 
         {mode === "open" && (
           <>
@@ -610,6 +637,13 @@ const {
         {ins && chip("🛡 " + ins, P.amber700, C.aBg, P.amber200)}
         {anyHit && chip("⚡ level hit", C.amber, C.aBg, C.aBdr)}
         {d.needsQty && chip("⚠ quantity needed", C.amber, C.aBg, C.aBdr)}
+        {/* ── THE OPTION ROW'S OWN FLAGS ── expiry passed, the hard exit date reached, a hard date
+            missing or past its limit, days to expiry, and a mark that is not live. */}
+        {o?.expired && chip("⚠ past expiry", C.red, C.rBg, C.rBdr)}
+        {o && !o.expired && o.hardDateReached && chip(`⏰ hard exit ${o.hardDate}`, C.red, C.rBg, C.rBdr)}
+        {o && !o.hardDateOk && chip("⚠ hard date needed", C.amber, C.aBg, C.aBdr)}
+        {o && !o.expired && o.dte != null && chip(`${o.dte} DTE`, o.dte <= 7 ? C.amber : C.muted, o.dte <= 7 ? C.aBg : C.bg, o.dte <= 7 ? C.aBdr : C.bdr)}
+        {o && mode === "open" && o.markSource !== "live" && chip(o.markSource === "manual" ? "typed mark" : "no live mark", C.amber, C.aBg, C.aBdr)}
         </span>
         {/* The actions that answer "how do I record what I did" — on the row, not hidden. */}
         <span className="dvcap-row-actions" style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", flexShrink: 0, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
@@ -637,7 +671,7 @@ const {
       {/* levels always visible — this is the daily read */}
       {active.length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "0 12px 9px" }}>
-          {active.map(l => <LevelPill key={l.id} lv={l} price={price} ctx={ctx} side={r.side} />)}
+          {active.map(l => <LevelPill key={l.id} lv={l} price={ctx.priceOf(r, l)} ctx={ctx} side={r.side} on={o ? (l.on === "underlying" ? "underlying" : "combo") : null} />)}
         </div>
       )}
 
@@ -756,6 +790,8 @@ const {
                 style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
           </div>
 
+          {o && <ContractPanel r={r} ctx={ctx} />}
+
           {/* ── LEVELS ──
               These are ALERTS, not orders and not a record of anything. The row said none of that,
               so "how do I flag a future buy without logging that I bought" had no answer visible
@@ -776,8 +812,9 @@ const {
               </div>
             )}
             {(r.levels || []).map(l => {
-              const hit = levelHit(l, price, r.side);
-              const dist = distancePct(l, price);
+              const lp = ctx.priceOf(r, l);
+              const hit = levelHit(l, lp, r.side);
+              const dist = distancePct(l, lp);
               return (
                 <div key={l.id} style={{ display: "flex", gap: 7, alignItems: "center", marginBottom: 5, flexWrap: "wrap" }}>
                   {/* Both halves, in one control. Naming only the behaviour ("it falls to") lost the
@@ -790,10 +827,19 @@ const {
                         It used to live here, three files from the logic, so a short row offered
                         "STOP · breaks below" over machinery that fires on the way up. */}
                     {["buy", "sell", "stop"].map(k => {
-                      const v = levelVocab(r.side, k);
+                      const v = o ? optionLevelVocab(k, l.on) : levelVocab(r.side, k);
                       return <option key={k} value={k}>{v.label} · {v.verb}</option>;
                     })}
                   </select>
+                  {/* WHAT AN OPTION LEVEL WATCHES. The combo mark by default — that is the price
+                      the position is valued at — or the underlying, as a second trigger. */}
+                  {o && (
+                    <select value={l.on === "underlying" ? "underlying" : "combo"} onChange={e => updLevel(r.id, l.id, { on: e.target.value === "underlying" ? "underlying" : null })}
+                      title="Watch the combo mark (the price this row is valued at) or the underlying's price"
+                      style={{ width: 104, padding: "4px 6px", border: "1.5px solid " + (l.on === "underlying" ? C.blue : C.bdr), borderRadius: 6, fontSize: 11.5, background: C.surf, color: l.on === "underlying" ? C.blue : C.mid, fontWeight: 700 }}>
+                      <option value="combo">combo mark</option><option value="underlying">underlying</option>
+                    </select>
+                  )}
                   {/* Draft-backed, so a decimal point survives being typed. The old input coerced the
                       raw string to a number on every keystroke, so "16." became 16 and the next two
                       digits made 1685 — and backspacing past a decimal appeared to eat two
@@ -808,8 +854,8 @@ const {
                   {/* What this level will actually do, in words, including the tolerance band that a
                       single price silently carries. */}
                   <div style={{ flexBasis: "100%", fontSize: 11, color: hit ? kindCol(l.kind) : C.muted, fontWeight: hit ? 700 : 500, paddingLeft: 2 }}>
-                    {l.at == null ? `Type a price and this ${levelVocab(r.side, l.kind).noun} starts watching.`
-                      : hit ? `⚡ Live now — ${price} is ${l.to != null ? `inside ${Math.min(l.at, l.to)}–${Math.max(l.at, l.to)}` : `within ${POINT_TOLERANCE_PCT}% of ${l.at}`}.`
+                    {l.at == null ? `Type a price and this ${(o ? optionLevelVocab(l.kind, l.on) : levelVocab(r.side, l.kind)).noun} starts watching${o ? ` the ${l.on === "underlying" ? "underlying" : "combo mark"}` : ""}.`
+                      : hit ? `⚡ Live now — ${o ? (l.on === "underlying" ? "underlying " : "combo mark ") : ""}${lp} is ${l.to != null ? `inside ${Math.min(l.at, l.to)}–${Math.max(l.at, l.to)}` : `within ${POINT_TOLERANCE_PCT}% of ${l.at}`}.`
                       : l.to != null ? `Fires anywhere in ${Math.min(l.at, l.to)}–${Math.max(l.at, l.to)} · ${dist == null ? "" : `${Math.abs(dist)}% ${dist > 0 ? "above" : "below"} the last price`}`
                       : `Single price — fires within ±${POINT_TOLERANCE_PCT}% of ${l.at} · ${dist == null ? "" : `${Math.abs(dist)}% ${dist > 0 ? "above" : "below"} the last price`}`}
                     {/* A hit level and the act of recording the trade were on opposite ends of the
@@ -884,7 +930,7 @@ const {
 
             <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
               {["buy", "sell", "stop"].map(k => (
-                <button key={k} onClick={() => addLevel(r.id, k)} style={{ cursor: "pointer", background: C.surf, color: kindCol(k), border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>＋ {levelVocab(r.side, k).add}</button>
+                <button key={k} onClick={() => addLevel(r.id, k)} style={{ cursor: "pointer", background: C.surf, color: kindCol(k), border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>＋ {o ? optionLevelVocab(k).noun : levelVocab(r.side, k).add}</button>
               ))}
               <span style={{ fontSize: 11, color: C.lbl }}>
                 One price fires within ±{POINT_TOLERANCE_PCT}% of it. Fill the second box to watch a whole zone instead.
@@ -1137,7 +1183,136 @@ const {
   );
 };
 
-const Section = ({ title, note, list, mode, ctx, reorder = false, sort = null }) => (
+// ── THE LEG TABLE ─────────────────────────────────────────────────────────────
+// One row per leg: right, strike, expiry, long/short, ratio. The chain (when the feed answered)
+// fills two datalists — expiries the root trades, and the strikes of the expiry the leg names —
+// so a contract can be picked rather than typed. Nothing is forced: a strike the feed does not
+// list is still accepted, because the feed is delayed and the list is a convenience.
+const blankLeg = () => ({ right: "C", strike: "", expiry: "", side: "long", ratio: 1 });
+const LegTable = ({ legs, setLegs, chain = null, max = MAX_LEGS, compact = false }) => {
+  const set = (i, patch) => setLegs(legs.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  const del = (i) => setLegs(legs.filter((_, j) => j !== i));
+  const add = () => { if (legs.length < max) setLegs([...legs, { ...blankLeg(), expiry: legs[legs.length - 1]?.expiry || "", side: legs.length % 2 ? "short" : "long" }]); };
+  const IN = { padding: "4px 7px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 12, background: C.surf, color: C.text };
+  const expiries = chain?.ok ? chain.expiries.map(e => e.expiry) : [];
+  const strikesFor = (exp) => chain?.ok ? (chain.expiries.find(e => e.expiry === exp)?.strikes || []) : [];
+  const shape = spreadShape(legs);
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 7, fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>
+        <span style={{ width: 62 }}>Right</span><span style={{ width: 92 }}>Strike</span><span style={{ width: 142 }}>Expiry</span><span style={{ width: 80 }}>Side</span><span style={{ width: 52 }}>Ratio</span>
+      </div>
+      {legs.map((l, i) => (
+        <div key={i} style={{ display: "flex", gap: 7, alignItems: "center", marginBottom: 5, flexWrap: "wrap" }}>
+          <select value={l.right} onChange={e => set(i, { right: e.target.value })} style={{ ...IN, width: 62, fontWeight: 700 }}>
+            {LEG_RIGHTS.map(r => <option key={r} value={r}>{r === "C" ? "Call" : "Put"}</option>)}
+          </select>
+          <input value={l.strike} inputMode="decimal" list={`strikes-${i}`} onChange={e => set(i, { strike: e.target.value })} placeholder="strike" style={{ ...IN, width: 92 }} />
+          <datalist id={`strikes-${i}`}>{strikesFor(l.expiry).map(k => <option key={k} value={k} />)}</datalist>
+          <input type="date" value={l.expiry} list="chain-expiries" onChange={e => set(i, { expiry: e.target.value })} style={{ ...IN, width: 142 }} />
+          <select value={l.side} onChange={e => set(i, { side: e.target.value })} style={{ ...IN, width: 80, fontWeight: 700, color: l.side === "short" ? C.blue : C.green }}>
+            {LEG_SIDES.map(sd => <option key={sd} value={sd}>{sd}</option>)}
+          </select>
+          <input value={l.ratio} inputMode="numeric" onChange={e => set(i, { ratio: e.target.value })} style={{ ...IN, width: 52 }} />
+          {legs.length > 1 && <button onClick={() => del(i)} title="remove this leg" style={{ cursor: "pointer", background: "none", border: "none", color: C.red, fontWeight: 800, fontSize: 13 }}>✕</button>}
+        </div>
+      ))}
+      <datalist id="chain-expiries">{expiries.map(e => <option key={e} value={e} />)}</datalist>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 11.5, color: C.muted }}>
+        {legs.length < max && <button onClick={add} style={{ cursor: "pointer", background: C.surf, color: C.blue, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "3px 9px", fontSize: 11.5, fontWeight: 700 }}>+ add leg</button>}
+        {legs.length > 1 && <span>{shape === "other" ? "not a vertical, calendar or diagonal — max loss will not be claimed" : `${shape}: ${legLabel(legs) || "—"}`}</span>}
+        {!compact && (chain?.ok
+          ? <span>chain from the exchange feed · {chain.expiries.length} expiries{chain.spot != null ? ` · spot ${fmtPrice(chain.spot)}` : ""}{chain.asOf ? ` · ${readAgo(chain.asOf) || chain.asOf}` : ""}</span>
+          : chain?.reason ? <span>no chain for {chain.symbol}: {chain.reason} — type the contract</span> : null)}
+      </div>
+    </div>
+  );
+};
+
+// One figure of the contract panel: a label, the number, a line under it saying where it came from.
+const CStat = ({ label, value, sub, col }) => (
+  <div style={{ flex: "1 1 130px", minWidth: 120 }}>
+    <div style={{ fontSize: 10, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
+    <div style={{ fontSize: 14, fontWeight: 800, color: col || C.text, marginTop: 1 }}>{value}</div>
+    {sub && <div style={{ fontSize: 10.5, color: C.muted, lineHeight: 1.4 }}>{sub}</div>}
+  </div>
+);
+
+// ── THE CONTRACT, ON THE ROW ─────────────────────────────────────────────────
+// What an option or spread row shows that a share row does not: the legs (editable), the hard exit
+// date (mandatory, validated), a typed mark for when the feed has none, and the derived block —
+// combo mark and where it came from, net delta, delta-notional, premium at risk, the defined risk,
+// days to expiry — with the underlying's combined line from the exposure book beneath.
+const ContractPanel = ({ r, ctx }) => {
+  const { upd, money, bookX, underlyingPriceOf } = ctx;
+  const o = r.opt;
+  if (!o) return null;
+  const legs = (r.legs && r.legs.length) ? r.legs : o.legs;
+  const setLegs = (L) => upd(r.id, { legs: L, ...(L.length > 1 ? { instrument: "spread" } : { instrument: "option" }) });
+  const hd = hardDateCheck(r.hardDate ?? o.hardDate, o.legs);
+  const grp = bookX?.book?.byUnderlying?.[o.underlying];
+  const src = o.markSource === "live" ? "live, from the exchange feed" : o.markSource === "manual" ? "typed on this row — no live mark" : o.markSource === "fill" ? "your last fill — no live mark and none typed" : "no mark";
+  const uPx = underlyingPriceOf(r);
+  return (
+    <div style={{ marginTop: 12, padding: "10px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 9 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>Contract</span>
+        <b style={{ fontSize: 12.5, color: C.text }}>{r.symbol} {o.label}</b>
+        <span style={{ fontSize: 11.5, color: C.lbl }}>{o.shape} · ×{o.multiplier} · fills are at the combo price</span>
+      </div>
+      <LegTable legs={legs} setLegs={setLegs} compact />
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
+        <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Hard exit date<br />
+          <input type="date" value={r.hardDate || o.hardDate || ""} max={o.hardDateLimit || undefined} onChange={e => upd(r.id, { hardDate: e.target.value || null })}
+            style={{ padding: "5px 8px", border: "1.5px solid " + (hd.ok ? (o.hardDateReached ? C.red : C.bdr) : C.red), borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} />
+          <span style={{ display: "block", fontWeight: 500, color: hd.ok ? (o.hardDateReached ? C.red : C.muted) : C.red, fontSize: 10.5, marginTop: 2, maxWidth: 240, lineHeight: 1.4 }}>
+            {!hd.ok ? `⚠ ${hd.reason}` : o.hardDateReached ? "⏰ reached — decide today" : o.hardDateDefault ? `expiry − 7 days · no later than ${o.hardDateLimit}` : `set by you · no later than ${o.hardDateLimit}`}
+          </span>
+        </label>
+        <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Mark if no feed <span style={{ fontWeight: 400, color: C.muted }}>(combo)</span><br />
+          <input value={r.mark ?? ""} inputMode="decimal" onChange={e => upd(r.id, { mark: e.target.value === "" ? null : e.target.value })} placeholder={o.markSource === "live" ? "live" : "e.g. 0.94"}
+            style={{ width: 96, padding: "5px 9px", border: "1.5px solid " + (o.markSource === "manual" ? C.blue : C.bdr), borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} />
+          <span style={{ display: "block", fontWeight: 500, color: C.muted, fontSize: 10.5, marginTop: 2, maxWidth: 200, lineHeight: 1.4 }}>
+            {o.markSource === "live" ? "the feed has every leg — a typed mark is ignored" : "used only while the feed has no mark for a leg"}
+          </span>
+        </label>
+      </div>
+      <div style={{ display: "flex", gap: "8px 14px", flexWrap: "wrap", marginTop: 10 }}>
+        <CStat label="Combo mark" value={o.mark == null ? "—" : fmtPrice(o.mark, { maxDp: 2 })} sub={src} col={o.markSource === "live" ? C.text : C.amber} />
+        <CStat label="Net delta" value={o.netDelta == null ? "—" : o.netDelta.toFixed(2)} sub={o.deltaSource ? `${o.deltaSource}${uPx != null ? ` · underlying ${fmtPrice(o.spot ?? uPx)}` : ""}` : (o.unpriced.length ? `${o.unpriced.length} leg${o.unpriced.length === 1 ? "" : "s"} without a published delta` : "awaiting greeks")} />
+        <CStat label="Delta-notional" value={o.deltaNotional == null ? "—" : money(o.deltaNotional, r.currency)} sub={o.pctNlv != null ? `${o.pctNlv}% of NLV · |Δ| × spot × ${o.multiplier} × ${r.derived.qty}` : "set account equity for % of NLV"} />
+        <CStat label="Premium at risk" value={o.premiumAtRisk == null ? "—" : money(o.premiumAtRisk, r.currency)} sub="at the current mark" />
+        <CStat label="Max loss" value={o.maxLoss == null ? (o.unlimited === "loss" ? "unlimited" : "—") : money(o.maxLoss, r.currency)} sub={o.riskNote || (o.shape === "vertical" ? "defined by the strikes and your entry" : null)} col={o.unlimited === "loss" ? C.red : undefined} />
+        <CStat label="Max profit" value={o.maxProfit == null ? (o.unlimited === "profit" ? "unlimited" : "—") : money(o.maxProfit, r.currency)} col={o.unlimited === "profit" ? C.green : undefined} />
+        <CStat label="Breakeven" value={o.breakeven == null ? "—" : fmtPrice(o.breakeven, { maxDp: 3 })} sub={o.breakeven != null && uPx != null ? `underlying ${fmtPrice(uPx)} · ${(((o.breakeven - uPx) / uPx) * 100).toFixed(1)}% away` : "at expiry, per share of underlying"} />
+        <CStat label="Expiry" value={o.expired ? "EXPIRED" : o.dte == null ? "—" : `${o.dte} DTE`} sub={o.expiry ? `${expiryLabel(o.expiry)} · ${o.expiry}` : null} col={o.expired ? C.red : o.dte != null && o.dte <= 7 ? C.amber : undefined} />
+      </div>
+      {grp && (
+        <div style={{ marginTop: 9, paddingTop: 7, borderTop: "1px dashed " + C.bdr, fontSize: 12, color: C.mid, lineHeight: 1.6 }}>
+          <b style={{ color: C.text }}>{o.underlying}</b> · combined delta-notional <b>{money(grp.deltaNotional, r.currency)}</b>
+          {grp.pctNlv != null && <> ({grp.pctNlv}% NLV)</>} · shares {money(grp.shares, r.currency)} · options {money(grp.options, r.currency)}
+          {grp.unpriced > 0 && <span style={{ color: C.amber }}> · {grp.unpriced} unpriced line{grp.unpriced === 1 ? "" : "s"}</span>}
+          <span style={{ color: C.lbl }}> — display only, from the exposure book</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Members of one underlying sit together, at the position of the first of them in the given order
+// — so a size sort still puts the biggest name first and its option lines beside it.
+const groupAdjacent = (list, groupOf) => {
+  const out = [], done = new Set();
+  for (const r of list) {
+    const k = groupOf(r);
+    if (done.has(k)) continue;
+    done.add(k);
+    out.push(...list.filter(x => groupOf(x) === k));
+  }
+  return out;
+};
+
+const Section = ({ title, note, list, mode, ctx, reorder = false, sort = null, groupOf = null, groupLine = null }) => (
   <Card>
     <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: list.length ? 10 : 0 }}>
       <SLabel>{title}</SLabel>
@@ -1161,9 +1336,22 @@ const Section = ({ title, note, list, mode, ctx, reorder = false, sort = null })
     </div>
     {list.length === 0
       ? <div style={{ fontSize: 12.5, color: C.muted, fontStyle: "italic", marginTop: 8 }}>Nothing here yet.</div>
-      : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{list.map((r, i) => <PositionRow key={r.id} r={r} mode={mode} ctx={ctx} reorder={reorder}
-          prevId={i > 0 ? list[i - 1].id : null} nextId={i < list.length - 1 ? list[i + 1].id : null}
-          idx={i} dragIdx={reorder && ctx.dragId ? list.findIndex(x => x.id === ctx.dragId) : -1} />)}</div>}
+      : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{list.map((r, i) => {
+          // ── GROUPED BY UNDERLYING ──
+          // SOFI shares and the SOFI vertical are one exposure. When an underlying has more than
+          // one row in this list, a header line above the first carries the combined figure.
+          const key = groupOf ? groupOf(r) : null;
+          const first = key != null && (i === 0 || groupOf(list[i - 1]) !== key);
+          const many = key != null && list.filter(x => groupOf(x) === key).length > 1;
+          return (
+            <div key={r.id} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {first && many && groupLine ? groupLine(key, list.filter(x => groupOf(x) === key)) : null}
+              <PositionRow r={r} mode={mode} ctx={ctx} reorder={reorder}
+                prevId={i > 0 ? list[i - 1].id : null} nextId={i < list.length - 1 ? list[i + 1].id : null}
+                idx={i} dragIdx={reorder && ctx.dragId ? list.findIndex(x => x.id === ctx.dragId) : -1} />
+            </div>
+          );
+        })}</div>}
   </Card>
 );
 
@@ -2205,6 +2393,17 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   const [addSym, setAddSym]     = useState("");
   const [symHint, setSymHint]   = useState(false);   // the ticker-spelling pointer beside the add field
   const [addSide, setAddSide]   = useState(DEFAULT_SIDE);
+  // ── ADD A TRADE: the instrument, and for an option or spread its legs and first fill ──
+  const [addKind, setAddKind]   = useState("shares");
+  const [addLegs, setAddLegs]   = useState([blankLeg()]);
+  const [addNet, setAddNet]     = useState("");
+  const [addQty, setAddQty]     = useState("");
+  const [addDate, setAddDate]   = useState(() => new Date().toISOString().slice(0, 10));
+  const [addErr, setAddErr]     = useState(null);
+  // The chain the underlying trades — expiries and their strikes — for the leg table's pre-fill.
+  // From the exchange feed (lib/cboe.js pickCboeIndex): IBKR is read through Flex here, which is
+  // a statement and carries no chain.
+  const [chain, setChain]       = useState(null);
   const [fillFor, setFillFor]   = useState(null);   // open "record a fill" form
   const [sizeOpen, setSizeOpen] = useState({});     // per-row: is the size suggestion unfolded
   const [moved, setMoved]       = useState(null);   // a row that just changed section, for the toast
@@ -2438,6 +2637,22 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
     return () => { cancelled = true; };
   }, [fetchKey]);   // eslint-disable-line
 
+  // The chain for the underlying being added, fetched once the ticker settles. Best-effort: the
+  // leg table works without it, the datalists are simply empty.
+  useEffect(() => {
+    if (addKind !== "option" && addKind !== "spread") return undefined;
+    const sym = addSym.trim().toUpperCase();
+    if (!/^[A-Z][A-Z0-9.]{0,7}$/.test(sym)) return undefined;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      fetch(`/api/flex-sync?chain=${encodeURIComponent(sym)}`, { credentials: "include" })
+        .then(r => r.ok ? r.json() : null)
+        .then(j => { if (!cancelled) setChain(j?.ok ? { ...j, symbol: sym } : { ok: false, symbol: sym, reason: j?.reason || "no chain came back" }); })
+        .catch(() => { if (!cancelled) setChain({ ok: false, symbol: sym, reason: "the chain lookup did not answer" }); });
+    }, 500);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [addKind, addSym]);
+
   // Resolve one symbol to {atr, status, detail} — the request state and the per-symbol state
   // combined, in that order of precedence.
   const atrFor = (sym) => {
@@ -2461,7 +2676,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
     const pinned = typeof r === "string" ? null : rateForRow(r);
     return convert(v, ccy, baseCcy, pinned != null ? { ...fxRates, [ccy]: pinned } : fxRates);
   };
-  const priceOf = (r) => prices?.[quoteSym(r)]?.price ?? null;
+  const underlyingPriceOf = (r) => prices?.[quoteSym(r)]?.price ?? null;
 
   // ── sizing context ──
   const numOrNull = (v) => (v == null || v === "" || !Number.isFinite(+v)) ? null : +v;
@@ -2480,12 +2695,38 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   const rm = regimeMultiplier(regimeCtx);
 
   // ── derive everything from fills ──
+  // TWO STAGES. The fills give quantity and cost (stage one). An option or spread row is then
+  // VALUED at its combo mark, which comes from the greeks feed — and the feed is asked for exactly
+  // the contracts the book holds, which stage one is what tells it. So the exposure book is read
+  // between the two stages, and stage two prices every row: shares off the quote, options off the
+  // feed's marks (lib/instruments.js markOf, which says when it fell back to a typed mark or the
+  // last fill).
   // applyRolls runs BETWEEN the derive and the P&L: a rolled contract's entry is back-adjusted
   // through the legs behind it, so a percentage computed first would describe the contract rather
   // than the trade.
-  const derivedRows = useMemo(() => applyRolls(
+  const baseRows = useMemo(() => applyRolls(
     rows.map(r => ({ ...r, derived: derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side }) })),
-  ).map(r => {
+  ), [rows]);
+  // ── P4 — the three numbers, computed once and read by both the header and the panel ──
+  // A spread hands the book one line per leg (lib/instruments.js exposureLines); a share row
+  // passes through with its quote.
+  const exposureRows = useMemo(
+    () => baseRows.flatMap(r => exposureLines({ ...r, livePrice: isDerivativeRow(r) ? null : underlyingPriceOf(r) })),
+    [baseRows, prices]);   // eslint-disable-line
+  // COMPUTED ONCE, USED IN BOTH — the tile reports the book, the sizer decides what may be added
+  // to it, and two separate totals on one panel would let it refuse a trade against a number it
+  // is not showing.
+  const bookX = useBookExposure(exposureRows, equityBase);
+  const feedGreeks = bookX.live?.greeks || EMPTY_OBJ;
+  const feedSpots = bookX.live?.spots || EMPTY_OBJ;
+  const todayISO = new Date().toISOString().slice(0, 10);
+  // THE PRICE A ROW IS VALUED AT. An option row's is its combo mark, unless the level asking
+  // watches the underlying — lib/positions.js levelHits passes the level for exactly this.
+  const priceOf = (r, lv) => {
+    if (isDerivativeRow(r) && lv?.on !== "underlying") return markOf(r, { greeks: feedGreeks }).value;
+    return underlyingPriceOf(r);
+  };
+  const derivedRows = useMemo(() => baseRows.map(r => {
     const pnl = positionPnl(r.derived, priceOf(r));
     // ONE SUGGESTION, computed here rather than inside the row. The row renders it and the decision
     // log records it, and if each computed its own they could disagree — which would make the log
@@ -2511,8 +2752,16 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
       divisible: q?.sizeStep != null ? q.sizeStep < 1 : isSpotCrypto(r.symbol),
       ...(q?.sizeStep != null ? { step: q.sizeStep } : {}),
     });
-    return { ...r, pnl, sug, sizeMode: mode, stopLevel: stopLevel || null };
-  }), [rows, prices, equityBase, baseRisk, targetPct, baseCcy, mergedSizing, liveRegime?.id, creditDanger, contested, regimeDiverged]);
+    // The option block: legs, combo mark and its source, net delta, delta-notional, defined risk,
+    // the hard exit date. Null on a share or futures row. The underlying's spot is the feed's,
+    // else the quote's — stated in the block as which.
+    const root = underlyingOf(r);
+    const opt = isDerivativeRow(r)
+      ? optionDerived(r, { greeks: feedGreeks, nlv: equityBase, today: todayISO,
+          spots: feedSpots[root] != null ? feedSpots : { ...feedSpots, [root]: underlyingPriceOf(r) } })
+      : null;
+    return { ...r, pnl, sug, sizeMode: mode, stopLevel: stopLevel || null, opt };
+  }), [baseRows, prices, feedGreeks, feedSpots, equityBase, baseRisk, targetPct, baseCcy, mergedSizing, liveRegime?.id, creditDanger, contested, regimeDiverged]);   // eslint-disable-line
 
   const setups   = derivedRows.filter(r => r.derived.status === "setup");
   const openPos  = derivedRows.filter(r => r.derived.status === "open");
@@ -2607,14 +2856,16 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   }, [rows, prices]);
 
   // ── level alerts (poll cadence — checked whenever prices refresh) ──
-  const hits = useMemo(() => levelHits(derivedRows.filter(r => r.derived.status !== "closed"), priceOf), [derivedRows, prices]);
+  const hits = useMemo(() => levelHits(derivedRows.filter(r => r.derived.status !== "closed"), priceOf), [derivedRows, prices, feedGreeks]);   // eslint-disable-line
   useEffect(() => {
     if (!settings.alertsEnabled || typeof Notification === "undefined" || Notification.permission !== "granted") return;
     for (const h of hits) {
       const key = `${h.position.id}:${h.level.kind}:${h.level.at}`;
       if (notifiedRef.current.has(key)) continue;
       notifiedRef.current.add(key);
-      try { new Notification(`${h.position.symbol} — ${h.level.kind} level`, { body: `${h.level.kind} ${h.level.at}${h.level.to ? "–" + h.level.to : ""} · live ${h.price}` }); } catch { /* ignore */ }
+      const what = h.level.on === "underlying" ? "underlying" : isDerivativeRow(h.position) ? "combo mark" : "live";
+      const name = h.position.opt ? `${h.position.symbol} ${h.position.opt.label}` : h.position.symbol;
+      try { new Notification(`${name} — ${h.level.kind} level`, { body: `${h.level.kind} ${h.level.at}${h.level.to ? "–" + h.level.to : ""} · ${what} ${h.price}` }); } catch { /* ignore */ }
     }
   }, [hits, settings.alertsEnabled]);
 
@@ -2622,6 +2873,18 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   const addRow = (side = addSide) => {
     const sym = addSym.trim().toUpperCase();
     if (!sym) return;
+    setAddErr(null);
+    // ── AN OPTION OR A SPREAD ──
+    // Built by lib/instruments.js optionRow: the underlying, the legs, the option multiplier, the
+    // default hard date, and — when a net price and a quantity were typed — the first fill at the
+    // combo price. Anything it refuses is said here, and no half-row is created.
+    if (addKind === "option" || addKind === "spread") {
+      const made = optionRow({ underlying: sym, legs: addLegs, side, qty: addQty === "" ? null : addQty, price: addNet === "" ? null : addNet, date: addDate });
+      if (made.error) { setAddErr(made.error); return; }
+      setRows(p => [...p, made.row]);
+      setAddSym(""); setAddSide(DEFAULT_SIDE); setAddLegs([blankLeg()]); setAddNet(""); setAddQty(""); setExpanded(made.row.id); touch();
+      return;
+    }
     const id = `${sym}-${Math.random().toString(36).slice(2, 8)}`;
     // THE CONTRACT SIZE IS SET WHEN THE TRADE IS SET UP, not remembered later. A futures row whose
     // multiplier is filled in afterwards is a row that computed every money figure at x1 until
@@ -2632,7 +2895,8 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
     // in afterwards is a row that computed every P&L, R and level breach the wrong way round until
     // somebody noticed. It is one click here and unrecoverable later.
     setRows(p => [...p, { id, symbol: sym, side: sideOf(side) ?? DEFAULT_SIDE, currency: "USD", thesis: "", levels: [], fills: [], tags: [],
-      ...(known.source === "table" ? { multiplier: known.multiplier, margined: true } : {}) }]);
+      instrument: addKind === "future" ? "future" : "shares",
+      ...(known.source === "table" ? { multiplier: known.multiplier, margined: true } : addKind === "future" ? { margined: true } : {}) }]);
     setAddSym(""); setAddSide(DEFAULT_SIDE); setExpanded(id); touch();
   };
   const upd = (id, patch) => { setRows(p => p.map(r => r.id === id ? { ...r, ...patch } : r)); touch(); };
@@ -2969,12 +3233,8 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   // A level's live state: how far away, and whether it is currently hit.  // Everything the hoisted row components need from this closure, in one object. Recreated each
   // render, which is fine: the COMPONENT identities are stable, so React re-renders rather than
   // remounting, and focus is preserved.
-  // ── P4 — the three numbers, computed once and read by both the header and the panel ──
-  const exposureRows = useMemo(() => derivedRows.map(r => ({ ...r, livePrice: priceOf(r) })), [derivedRows, prices]);
-  // COMPUTED ONCE, USED IN BOTH — the tile reports the book, the sizer decides what may be added
-  // to it, and two separate totals on one panel would let it refuse a trade against a number it
-  // is not showing.
-  const bookX = useBookExposure(exposureRows, equityBase);
+  // The exposure book (bookX) is computed ABOVE, between the two derive stages — the option rows'
+  // marks come out of it, so it cannot be read after them.
   // ── A SWING TRADE ON ITS FOURTH SESSION IS MOVED, AND THE LOG SAYS SO ──
   // Applied first (lib/bookExposure.js re-classifies it), told after: one note per symbol per
   // day into the decision log, fire-and-forget, remembered in settings so a reload does not
@@ -3090,6 +3350,9 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
     // says which it is showing.
     livePositions,
     dropRow, dragId, setDragId, overId, setOverId, endDrag,
+    // The exposure book, for the per-underlying combined line; the underlying's own quote, for an
+    // option row's second price.
+    bookX, underlyingPriceOf, todayISO,
   };
 
   return (
@@ -3135,6 +3398,42 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
             style={{ marginLeft: "auto", cursor: "pointer", background: C.surf, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "2px 9px", color: C.mid, fontWeight: 800, fontSize: 12 }}>✕ Got it</button>
         </div>
       )}
+
+      {/* ── ACTION REQUIRED ──
+          One line per item that needs a decision today: a hard exit date reached, a contract past
+          expiry, a level hit. Empty when nothing needs doing — it never shows decoration. Step 4 of
+          the console brief extends this with stops inside an ATR and short-dated options; this is
+          the strip it extends. */}
+      {(() => {
+        const items = [];
+        for (const r of derivedRows) {
+          if (r.derived.status === "closed") continue;
+          const name = r.opt ? `${r.symbol} ${r.opt.label}` : r.symbol;
+          if (r.opt?.expired) items.push({ id: r.id, rank: 0, col: C.red, text: `${name} · past expiry ${r.opt.expiry} with ${r.derived.qty} still open` });
+          else if (r.opt?.hardDateReached) items.push({ id: r.id, rank: 1, col: C.red, text: `${name} · hard exit date ${r.opt.hardDate} reached` });
+        }
+        for (const h of hits) {
+          const r = h.position;
+          const name = r.opt ? `${r.symbol} ${r.opt.label}` : r.symbol;
+          const what = h.level.on === "underlying" ? "underlying" : r.opt ? "combo mark" : "price";
+          items.push({ id: r.id, rank: 2, col: C.amber, text: `${name} · ${h.level.kind} level ${h.level.at}${h.level.to ? "–" + h.level.to : ""} hit — ${what} ${h.price}` });
+        }
+        if (!items.length) return null;
+        items.sort((a, b) => a.rank - b.rank);
+        const worst = items[0].col;
+        return (
+          <div style={{ padding: "9px 13px", borderRadius: 10, background: worst === C.red ? C.rBg : C.aBg, border: "1.5px solid " + (worst === C.red ? C.rBdr : C.aBdr) }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: worst === C.red ? C.red : C.amber, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>
+              Action required · {items.length}
+            </div>
+            {items.map((it, i) => (
+              <div key={i} onClick={() => setExpanded(it.id)} style={{ fontSize: 12.5, color: it.col, fontWeight: 700, cursor: "pointer", lineHeight: 1.6 }}>
+                {it.rank === 2 ? "⚡" : "⏰"} {it.text}
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* purpose + regime */}
       <div style={{ background: liveRegime?.bg || C.surf, border: "1.5px solid " + (liveRegime?.bdr || C.bdr), borderTop: "4px solid " + (liveRegime?.color || C.blue), borderRadius: 12, padding: "12px 16px" }}>
@@ -3637,8 +3936,15 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           rather than buried under the book. */}
       <Card>
         <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
-          <SLabel>Add a setup</SLabel>
-          <input value={addSym} onChange={e => setAddSym(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addRow(); }} placeholder="Ticker"
+          <SLabel>Add a trade</SLabel>
+          {/* THE INSTRUMENT, chosen first. Shares and futures are one ticker; an option or a spread
+              is an underlying and a leg table, and the row that results is valued at its combo mark
+              rather than at the underlying's quote. */}
+          <select value={addKind} onChange={e => { setAddKind(e.target.value); setAddErr(null); }}
+            style={{ padding: "6px 8px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 12.5, background: C.surf, color: C.text, fontWeight: 700 }}>
+            {INSTRUMENTS.map(k => <option key={k} value={k}>{INSTRUMENT_LABEL[k]}</option>)}
+          </select>
+          <input value={addSym} onChange={e => setAddSym(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addRow(); }} placeholder={addKind === "option" || addKind === "spread" ? "Underlying" : "Ticker"}
             style={{ width: 180, padding: "6px 10px", border: "1.5px solid " + C.bdr, borderRadius: 8, fontSize: 13, background: C.surf, color: C.text, textTransform: "uppercase" }} />
           {/* A pointer on how the feed spells things, because the feed's spelling is not always
               yours: a bare US ticker is fine, Hong Kong wants the zero-padded code with .HK, a
@@ -3662,8 +3968,33 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
             ))}
           </div>
           <Btn onClick={() => addRow()} color={C.onFill} bgColor={C.blue} label="+ Add" />
-          <span style={{ fontSize: 11.5, color: C.muted }}>starts as a watched setup — add levels and a stop before it becomes a position</span>
+          <span style={{ fontSize: 11.5, color: C.muted }}>
+            {addKind === "option" || addKind === "spread"
+              ? "with a net price and quantity it opens as a position; without them it is a watched setup"
+              : "starts as a watched setup — add levels and a stop before it becomes a position"}
+          </span>
         </div>
+        {(addKind === "option" || addKind === "spread") && (
+          <div style={{ marginTop: 10 }}>
+            <LegTable legs={addLegs} setLegs={setAddLegs} chain={chain?.symbol === addSym.trim().toUpperCase() ? chain : null} max={addKind === "option" ? 1 : MAX_LEGS} />
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
+              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Net price <span style={{ fontWeight: 400, color: C.muted }}>(combo, per share; debit positive)</span><br />
+                <input value={addNet} inputMode="decimal" onChange={e => setAddNet(e.target.value)} placeholder="e.g. 0.85"
+                  style={{ width: 110, padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
+              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Quantity <span style={{ fontWeight: 400, color: C.muted }}>(contracts)</span><br />
+                <input value={addQty} inputMode="decimal" onChange={e => setAddQty(e.target.value)} placeholder="e.g. 15"
+                  style={{ width: 90, padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
+              <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Fill date<br />
+                <input type="date" value={addDate} onChange={e => setAddDate(e.target.value)}
+                  style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
+              <span style={{ fontSize: 11.5, color: C.muted, lineHeight: 1.5, flex: "1 1 220px" }}>
+                {addLegs.some(l => l.expiry) ? <>Hard exit date defaults to <b>{defaultHardDate(addLegs) || "—"}</b> (expiry − 7 days), editable on the row.</> : "Every option row carries a hard exit date; it defaults to expiry − 7 days."}
+                {" "}Fills are at the <b>combo price</b>; the row is valued at the live combo mark.
+              </span>
+            </div>
+            {addErr && <div style={{ fontSize: 12, color: C.red, fontWeight: 700, marginTop: 6 }}>⚠ {addErr}</div>}
+          </div>
+        )}
         {tickerHint(addSym) && (
           <div style={{ fontSize: 11.5, color: C.amber, marginTop: 6, lineHeight: 1.5 }}>⚠ {tickerHint(addSym).text} Type the one you mean, or add the row and set <i>Quote as</i>.</div>
         )}
@@ -3680,9 +4011,24 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
       {/* Biggest first. Import order is meaningless, and the position that most deserves a second
           look each morning is the one carrying the most of the book. Rows whose market value cannot
           be converted sort last rather than to the top as a zero. */}
-      <Section title="Open positions" note="spot / swing holds, scaled in and out"
-        list={openSort === "manual" ? openPos : [...openPos].sort((a, b) => (convert(b.pnl.marketValue, b.currency || "USD", baseCcy, fxRates) ?? -1) - (convert(a.pnl.marketValue, a.currency || "USD", baseCcy, fxRates) ?? -1))}
-        mode="open" ctx={ctx} reorder={openSort === "manual"} sort={{ value: openSort, set: setOpenSort }} />
+      <Section title="Open positions" note="spot / swing holds, scaled in and out · options and spreads under their underlying"
+        list={groupAdjacent(openSort === "manual" ? openPos : [...openPos].sort((a, b) => (convert(b.pnl.marketValue, b.currency || "USD", baseCcy, fxRates) ?? -1) - (convert(a.pnl.marketValue, a.currency || "USD", baseCcy, fxRates) ?? -1)), underlyingOf)}
+        mode="open" ctx={ctx} reorder={openSort === "manual"} sort={{ value: openSort, set: setOpenSort }}
+        groupOf={underlyingOf}
+        groupLine={(root, members) => {
+          const g = bookX.book?.byUnderlying?.[root];
+          const ccy = members[0]?.currency || "USD";
+          return (
+            <div style={{ display: "flex", gap: "4px 12px", flexWrap: "wrap", alignItems: "baseline", padding: "4px 12px", fontSize: 12, color: C.mid }}>
+              <b style={{ color: C.text, fontSize: 13 }}>{root}</b>
+              <span style={{ color: C.lbl }}>{members.length} lines</span>
+              {g ? <>
+                <span>combined delta-notional <b style={{ color: C.text }}>{money(g.deltaNotional, ccy)}</b>{g.pctNlv != null && <> ({g.pctNlv}% NLV)</>}</span>
+                <span style={{ color: C.lbl }}>shares {money(g.shares, ccy)} · options {money(g.options, ccy)}{g.unpriced > 0 ? ` · ${g.unpriced} unpriced` : ""}</span>
+              </> : <span style={{ color: C.lbl }}>combined delta-notional awaits the greeks feed</span>}
+            </div>
+          );
+        }} />
 
       {/* ── THE PERP BOOK, AS THE VENUE HAS IT ─────────────────────────────────────────────────
           The address was configured and nothing appeared, because live positions only rendered
@@ -3988,7 +4334,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
                     <tr key={r.id} title={r.thesis || "Open to edit"}
                         onClick={() => setExpanded(expanded === r.id ? null : r.id)}
                         style={{ cursor: "pointer", background: expanded === r.id ? C.bg : undefined }}>
-                      <td style={{ ...td, fontWeight: 700 }}>{caret(expanded === r.id)} {r.symbol} {ccyChip(r.currency)}
+                      <td style={{ ...td, fontWeight: 700 }}>{caret(expanded === r.id)} {r.symbol}{r.opt ? <span style={{ fontSize: 11, color: C.blue, fontWeight: 700 }}> {r.opt.label}</span> : null} {ccyChip(r.currency)}
                         {r.derived.multiplier > 1 ? <span style={{ fontWeight: 700, color: C.amber, fontSize: 11 }}> ×{r.derived.multiplier}</span> : null}
                         {r.trade ? <span style={{ fontWeight: 600, color: C.lbl, fontSize: 11.5 }}> · {r.trade}</span> : null}</td>
                       <td style={{ ...td, color: C.lbl, whiteSpace: "nowrap" }}>
@@ -4084,7 +4430,7 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
                   <div onClick={() => setExpanded(open ? null : r.id)} title={r.thesis || "Tap to edit"}
                        style={{ display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap", cursor: "pointer" }}>
                     {caret(open)}
-                    <b style={{ fontSize: 13.5 }}>{r.symbol}</b>
+                    <b style={{ fontSize: 13.5 }}>{r.symbol}</b>{r.opt ? <span style={{ fontSize: 11, color: C.blue, fontWeight: 700 }}> {r.opt.label}</span> : null}
                     {ccyChip(r.currency)}
                     {d.multiplier > 1 ? <span style={{ fontWeight: 700, color: C.amber, fontSize: 11 }}>×{d.multiplier}</span> : null}
                     {r.trade ? <span style={{ fontSize: 11.5, color: C.lbl }}>{r.trade}</span> : null}
