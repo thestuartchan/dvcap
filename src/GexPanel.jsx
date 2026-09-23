@@ -705,12 +705,12 @@ export function GexPanel() {
               {/* Scrolls on its own rather than widening the page — the strike column is pinned so a
                   row stays identifiable once the expiries run off the right on a phone. */}
               <div style={{ marginTop: 8, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-                <div style={{ display: "grid", gridTemplateColumns: `56px repeat(${heat.expiries.length}, minmax(66px, 1fr))`,
-                              gap: 2, minWidth: 56 + heat.expiries.length * 68 }}>
+                <div style={{ display: "grid", gridTemplateColumns: `60px repeat(${heat.expiries.length}, minmax(78px, 1fr))`,
+                              gap: 2, minWidth: 60 + heat.expiries.length * 80 }}>
                   <div style={{ position: "sticky", left: 0, background: C.surf, zIndex: 1 }} />
                   {heat.expiries.map(e => (
                     <div key={e} title={rateOut && rateFarOut(e) ? "priced with no risk-free rate" : undefined}
-                         style={{ fontSize: 9.5, fontWeight: 800, color: C.lbl, textAlign: "center",
+                         style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textAlign: "center",
                                   letterSpacing: 0.2, paddingBottom: 2, opacity: rateOut && rateFarOut(e) ? 0.4 : 1 }}>
                       {e.slice(5)}{rateOut && rateFarOut(e) ? " r?" : ""}
                     </div>
@@ -725,21 +725,29 @@ export function GexPanel() {
                     return (
                       <Fragment key={k}>
                         <div style={{ position: "sticky", left: 0, background: C.surf, zIndex: 1,
-                                      fontSize: 10, fontWeight: 800, textAlign: "right", paddingRight: 6,
-                                      lineHeight: "20px",
+                                      fontSize: 11.5, fontWeight: 800, textAlign: "right", paddingRight: 6,
+                                      lineHeight: "24px",
                                       color: isSpot ? C.blue : inZone ? C.amber : C.lbl }}>
                           {fmtNum(k, 0)}{isSpot ? " ◂" : inZone ? " ·" : isForced ? " +" : ""}
                         </div>
                         {heat.expiries.map(e => {
                           const v = heat.at.get(`${e}|${k}`);
-                          const a = heatAlpha(v, heat.cap);
+                          // THE COLUMN'S HEAVIEST CELL, RINGED. One per expiry, whatever its sign:
+                          // the fill goes to full strength and a two-pixel ring in the sign's own
+                          // colour marks it, so the day's level is found first and its sign read
+                          // from the ring rather than from a shade the scale compresses on purpose.
+                          const isMax = heat.colMax?.get(e) === k;
+                          const a = isMax ? 1 : heatAlpha(v, heat.cap);
+                          const tone = v > 0 ? C.green : C.purple;
                           return (
-                            <div key={e} title={`${e} · ${fmtNum(k, 0)} · ${fmtUsd(v ?? 0)}`}
-                              style={{ height: 20, borderRadius: 3,
+                            <div key={e} title={`${e} · ${fmtNum(k, 0)} · ${fmtUsd(v ?? 0)}${isMax ? " · the heaviest level in this expiry" : ""}`}
+                              style={{ height: 24, borderRadius: 3,
                                        opacity: rateOut && rateFarOut(e) ? 0.4 : 1,
                                        background: a === 0 ? C.bg
                                          : `rgba(${v > 0 ? HEAT_POS : HEAT_NEG},${a})`,
                                        border: "1px solid " + (isSpot ? C.blBdr : "transparent"),
+                                       outline: isMax ? `2px solid ${tone}` : "none", outlineOffset: -1,
+                                       boxShadow: isMax ? `0 0 0 2px ${C.surf}, 0 0 0 3px ${tone}` : "none",
                                        display: "flex", alignItems: "center", justifyContent: "center",
                                        overflow: "hidden" }}>
                               {/* THE FIGURE, NOT ONLY THE SHADE. Colour answers "where" at a glance
@@ -747,10 +755,10 @@ export function GexPanel() {
                                   so two cells that look alike can differ several-fold. Text flips to
                                   white once the ground is dark enough to swallow the tone colour;
                                   a blank cell stays blank, because there is nothing to print. */}
-                              <span style={{ fontSize: 8.5, fontWeight: 800, lineHeight: 1,
+                              <span style={{ fontSize: isMax ? 11.5 : 10.5, fontWeight: 800, lineHeight: 1,
                                              fontVariantNumeric: "tabular-nums", letterSpacing: -0.2,
                                              color: a >= 0.55 ? "#fff" : (v > 0 ? C.green : C.purple) }}>
-                                {fmtCell(v)}
+                                {isMax ? (v > 0 ? "▲ " : "▼ ") : ""}{fmtCell(v)}
                               </span>
                             </div>
                           );
@@ -764,7 +772,9 @@ export function GexPanel() {
                 A strike coloured across several columns is a level the whole book agrees on. One
                 bright cell in the nearest expiry with nothing behind it is that expiry's positioning
                 and it stops existing when the contract does. ◂ marks spot; · marks the flip zone; + marks a
-                strike kept because a tile is about it (the ranking alone would have dropped it).
+                strike kept because a tile is about it (the ranking alone would have dropped it). The ringed
+                cell in each column is that expiry's heaviest level, ▲ positive gamma, ▼ negative — one per
+                column, whatever its sign.
                 Shading is compressed — capped at the 90th percentile and square-rooted — so one huge
                 cell cannot blank the rest, which means two cells of similar colour can differ
                 several-fold. The figure in each is the exact one; hover for full precision.
