@@ -1,6 +1,6 @@
 // test/gexImage.test.mjs — the ladder as a picture: what is drawn, and that it rasterises here,
 // with the bundled engine and fonts, into a real PNG.
-import { ladderSvg, renderPng, ladderImages, IMAGE_W, IMAGE_H, INK } from '../lib/gexImage.js';
+import { ladderSvg, renderPng, ladderImages, wrap, IMAGE_W, IMAGE_H, INK, FONT } from '../lib/gexImage.js';
 import { levelsOf } from '../lib/gexLevels.js';
 import { imagePayload } from '../lib/discord.js';
 import { readFileSync, existsSync } from 'node:fs';
@@ -42,7 +42,8 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
   ok('sized for a phone, portrait', new RegExp(`width="${IMAGE_W}" height="${IMAGE_H}"`).test(svg) && IMAGE_H > IMAGE_W * 0.75);
   ok('the heading names the instrument and spot', /QQQ 746\.06/.test(svg));
   ok('and the regime', /positive gamma, moves damp/.test(svg));
-  ok('spot is drawn, labelled at the right edge clear of the strikes', new RegExp(`stroke="${INK.spot}"`).test(svg) && />spot 746\.06</.test(svg));
+  ok('spot is drawn, its number on the axis in the line\'s blue', new RegExp(`stroke="${INK.spot}"`).test(svg) && new RegExp(`fill="${INK.spot}">746\\.06<`).test(svg));
+  ok('set in the friendlier face', new RegExp(`font-family="${FONT}"`).test(svg) && FONT === 'Nunito');
   ok('the flip zone is a band', /flip zone 712\.76–740\.80/.test(svg));
   ok('the pivot after today is dashed', /stroke-dasharray/.test(svg) && /pivot after today 733\.96/.test(svg));
   ok('positive bars are green, negative purple', new RegExp(`fill="${INK.pos}"`).test(svg) && new RegExp(`fill="${INK.neg}"`).test(svg));
@@ -51,7 +52,9 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
   ok('the trapdoor is labelled', /−340M Oct-02 · trapdoor/.test(svg));
   ok('today\'s negatives say today', /−110M today/.test(svg));
   ok('the stack is bracketed in the margin, clear of the labels', new RegExp(`<rect x="82" y="[\\d.]+" width="5" height="[\\d.]+" rx="2" fill="${INK.neg}"/>`).test(svg));
-  ok('the four text lines repeat under the plot', /stack {2}negative 730–745 under spot/.test(svg) && /pin {4}none today/.test(svg) && /book {3}/.test(svg) && /after {2}pivot 740\.80 → 733\.96 after today · Sep-25 box 748–755/.test(svg));
+  ok('the four text lines repeat under the plot, label in bold', /<tspan font-weight="700">stack<\/tspan> negative 730–745 under spot/.test(svg) && /<tspan font-weight="700">pin<\/tspan> none today/.test(svg) && /<tspan font-weight="700">book<\/tspan> /.test(svg) && /<tspan font-weight="700">after<\/tspan> pivot 740\.80 to 733\.96 after today · Sep-25 box 748–755/.test(svg));
+  eq('a long footer line wraps', wrap('one two three four five six', 10), ['one two', 'three four', 'five six']);
+  eq('a short one does not', wrap('short', 10), ['short']);
   ok('the caption says which colour means what', /green = positive gamma, hedging leans against price/.test(svg));
   ok('and the vintage', /OCC settled open interest at the live spot/.test(svg));
   ok('text is escaped', !/[<>&]"/.test(svg.replace(/<[^>]+>/g, '')));
@@ -63,23 +66,28 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
     const dense = ladderSvg({ name: 'QQQ', spot: 740.71, callWall: 740, levels: dl, byStrike: d.byStrike, grid: d.grid, flipLevel: 740.59, flipZoneLo: 711.51, flipZoneHi: 740.59, pin: { pinned: false, share: 43.9 }, decay: { expiringToday: true, front: '2026-09-23', after: { flip: 732.74 } } }, { today: '2026-09-23' });
     const axisYs = [...dense.matchAll(/<text x="\d+" y="([\d.]+)" font-size="1[67]" font-weight="700" text-anchor="end"/g)].map(m => +m[1]).sort((a, b) => a - b);
     ok('axis labels, spot included, never overprint', axisYs.length >= 5 && axisYs.every((v, i) => i === 0 || v - axisYs[i - 1] >= 19.9));
-    ok('a displaced label gets a leader line to its bar', /<line x1="\d+" y1="[\d.]+" x2="\d+" y2="[\d.]+" stroke="#6e7681" stroke-width="1"\/>/.test(dense));
+    ok('a displaced label gets a leader line to its bar', /<line x1="\d+" y1="[\d.]+" x2="\d+" y2="[\d.]+" stroke="#6e7681" stroke-width="1" stroke-opacity="0.6"\/>/.test(dense));
+    // The pivot and the flip zone are laid out with the rest, in the annotation column.
+    const auxYs = [...dense.matchAll(/<text x="\d+" y="([\d.]+)" font-size="1[35]"[^>]*>(?:pivot after today|flip zone|[−+])/g)].map(m => +m[1]).sort((a, b) => a - b);
+    ok('the pivot and flip-zone labels never overprint an annotation', auxYs.length >= 6 && auxYs.every((v, i) => i === 0 || v - auxYs[i - 1] >= 18.9));
+    ok('the pivot label is in the column, on a dark backing', /font-size="13" fill="#c9d1d9">pivot after today 732\.74</.test(dense) && /rx="4" fill="#0d1117" fill-opacity="0.85"/.test(dense));
+    ok('no arrow glyph the face cannot draw', !/→/.test(dense));
     ok('the magnet is one word beside the bars', /−534M today · magnet</.test(dense));
     ok('no annotation is wider than the column', [...dense.matchAll(/font-size="15" fill="(?:#2ea043|#8957e5)">([^<]*)</g)].every(m => m[1].length <= 38));
   }
   // Labels never overprint: consecutive annotation y's are at least the minimum gap apart.
-  const ys = [...svg.matchAll(/<text x="\d+" y="([\d.]+)" font-size="15" fill=/g)].map(m => +m[1]).sort((a, b) => a - b);
+  const ys = [...svg.matchAll(/<text x="\d+" y="([\d.]+)" font-size="15" font-weight="600" fill=/g)].map(m => +m[1]).sort((a, b) => a - b);
   ok('annotations are spaced apart', ys.length >= 6 && ys.every((v, i) => i === 0 || v - ys[i - 1] >= 19.9));
   eq('no spot, no picture', ladderSvg({ name: 'X' }), null);
   // A legacy row without the per-strike table still gets a heading, spot and zone.
   const legacy = ladderSvg({ name: 'SPY', spot: 762.4, callWall: 770, flipLevel: 769.6, flipZoneLo: 765, flipZoneHi: 772 }, {});
-  ok('a legacy row draws without bars', /SPY 762\.40/.test(legacy) && !/fill-opacity="0\.85"/.test(legacy));
+  ok('a legacy row draws without bars', /SPY 762\.40/.test(legacy) && !/rx="2" fill="#(?:2ea043|8957e5)" fill-opacity="0\.85"/.test(legacy));
 }
 
 // ── THE RASTER ───────────────────────────────────────────────────────────────
 {
   ok('the engine is bundled', existsSync(new URL('../data/render/resvg.wasm', import.meta.url)));
-  ok('and the fonts, with their licence', existsSync(new URL('../data/render/IBMPlexMono-Regular.ttf', import.meta.url)) && /SIL Open Font License/.test(readFileSync(new URL('../data/render/OFL.txt', import.meta.url), 'utf8')));
+  ok('and the fonts, with their licence', existsSync(new URL('../data/render/Nunito_400Regular.ttf', import.meta.url)) && existsSync(new URL('../data/render/Nunito_700Bold.ttf', import.meta.url)) && /SIL Open Font License/.test(readFileSync(new URL('../data/render/OFL.txt', import.meta.url), 'utf8')) && /Nunito/.test(readFileSync(new URL('../data/render/OFL.txt', import.meta.url), 'utf8')));
   const png = await renderPng(ladderSvg(row, { today: '2026-09-23' }));
   ok('a PNG comes back', png && png.length > 10000 && png[0] === 0x89 && png[1] === 0x50 && png[2] === 0x4e && png[3] === 0x47);
   // Width and height from the IHDR chunk: 820 wide, portrait.
@@ -89,13 +97,18 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
   eq('no svg, no png', await renderPng(null), null);
   const files = await ladderImages([row, { ...row, name: 'SPY' }, { name: 'X' }], { today: '2026-09-23' });
   eq('one file per drawable instrument, named for it', files.map(f => f.filename), ['QQQ-ladder.png', 'SPY-ladder.png']);
-  // The webhook payload names each attachment by index.
-  eq('the multipart payload', imagePayload(files, { content: '⚡ TODAY\'S MAP · QQQ · SPY' }),
-     { content: '⚡ TODAY\'S MAP · QQQ · SPY', attachments: [{ id: 0, filename: 'QQQ-ladder.png' }, { id: 1, filename: 'SPY-ladder.png' }] });
-  // The pre-read posts the picture ahead of the words, and the dry run can hand it back.
+  // The webhook payload: the text card first, then one picture card per file, each pointing at
+  // its attachment, and the attachments named by index.
+  eq('the multipart payload puts the pictures inside the card', imagePayload(files, { description: 'the map' }),
+     { embeds: [{ description: 'the map' }, { image: { url: 'attachment://QQQ-ladder.png' } }, { image: { url: 'attachment://SPY-ladder.png' } }],
+       attachments: [{ id: 0, filename: 'QQQ-ladder.png' }, { id: 1, filename: 'SPY-ladder.png' }] });
+  // The pre-read hands the files to the part that carries the map, and the dry run can hand the
+  // picture back.
   const src = readFileSync('api/preread.js', 'utf8');
-  ok('the picture is posted before the brief', src.indexOf('await postImages(') < src.indexOf('await postLong('));
+  ok('the pictures ride on the map part', /filesFor: files\.length \? \{ marker: MAP_HEAD, files \} : null/.test(src));
   ok('a failed picture never blocks the brief', /image = \{ ok: false, error: String\(e\?\.message \|\| e\) \}/.test(src));
+  const dsc = readFileSync('lib/discord.js', 'utf8');
+  ok('and a part whose pictures fail to attach still posts its words', /if \(id == null\) id = await post\(webhook, \{ embeds: \[\{ description: body\.slice\(0, limit\) \}\] \}\);/.test(dsc));
   ok('?image=1 answers with the PNG', /req\.query\.image === '1'/.test(src) && /'image\/png'/.test(src));
   const vc = JSON.parse(readFileSync('vercel.json', 'utf8'));
   eq('the render assets ride with the function', vc.functions?.['api/preread.js']?.includeFiles, 'data/render/**');
