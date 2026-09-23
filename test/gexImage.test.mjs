@@ -72,6 +72,16 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
     ok('the pivot and flip-zone labels never overprint an annotation', auxYs.length >= 6 && auxYs.every((v, i) => i === 0 || v - auxYs[i - 1] >= 18.9));
     ok('the pivot label is in the column, on a dark backing', /font-size="13" fill="#c9d1d9">pivot after today 732\.74</.test(dense) && /rx="4" fill="#0d1117" fill-opacity="0.85"/.test(dense));
     ok('no arrow glyph the face cannot draw', !/→/.test(dense));
+    // A stack that runs below the window, and a footer line that wraps: the bracket stops at the
+    // plot's foot and the plot gives the footer its extra line.
+    const deep = board([cell('2026-09-23', 768, -954), cell('2026-09-23', 767, -784), cell('2026-09-25', 760, -588), cell('2026-10-16', 750, -554), cell('2026-10-16', 740, -300), cell('2026-10-16', 730, -200), cell('2026-10-16', 725, -100), cell('2026-10-09', 785, 1070), cell('2026-09-23', 772, 971)]);
+    const dlv = levelsOf({ ...deep, spot: 768.12, atr: 6, callWall: 772 });
+    const deepSvg = ladderSvg({ name: 'SPY', spot: 768.12, callWall: 772, levels: dlv, byStrike: deep.byStrike, grid: deep.grid, flipLevel: 771.61, flipZoneLo: 759.38, flipZoneHi: 771.61, iv: 0.12, pin: { pinned: false, share: 43.2 }, decay: { expiringToday: true, front: '2026-09-23', after: { flip: 769 } } }, { today: '2026-09-23' });
+    const bracket = /<rect x="82" y="([\d.]+)" width="5" height="([\d.]+)" rx="2"/.exec(deepSvg);
+    const plot = /<rect x="96" y="84" width="\d+" height="([\d.]+)" rx="8"/.exec(deepSvg);
+    ok('the bracket stops at the plot\'s foot', bracket && plot && (+bracket[1] + +bracket[2]) <= 84 + +plot[1] + 0.1);
+    const footYs = [...deepSvg.matchAll(/<text x="24" y="(\d+)" font-size="15"/g)].map(m => +m[1]);
+    ok('the footer wrapped and every line sits above the caption', footYs.length >= 5 && Math.max(...footYs) < IMAGE_H - 44);
     ok('the magnet is one word beside the bars', /−534M today · magnet</.test(dense));
     ok('no annotation is wider than the column', [...dense.matchAll(/font-size="15" fill="(?:#2ea043|#8957e5)">([^<]*)</g)].every(m => m[1].length <= 38));
   }
