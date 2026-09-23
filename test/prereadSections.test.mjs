@@ -46,10 +46,10 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
   // The ladder itself is the picture now (lib/gexImage.js); the text is a heading and bullets.
   ok('no fence — the fenced ladder wrapped on a phone', !out.includes('```'));
   ok('no horizontal map survives', !/·····|`P` put|`C` call/.test(out));
-  ok('QQQ before SPY', at('__**QQQ**') < at('__**SPY**'));
+  ok('QQQ before SPY', at('### QQQ') < at('### SPY'));
   {
     const first = lines.findIndex(l => l.startsWith('• **pin**')), second = lines.findIndex((l, i) => l.startsWith('• **pin**') && i > first);
-    ok('pin appears under each instrument', first > at('__**QQQ**') && first < at('__**SPY**') && second > at('__**SPY**'));
+    ok('pin appears under each instrument', first > at('### QQQ') && first < at('### SPY') && second > at('### SPY'));
   }
   ok('the levels are not in the text', !/^(above|below|spot)\s/m.test(out));
   ok('the put side is never called a wall', !/put wall/.test(out));
@@ -62,7 +62,7 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
   eq('the spacer is a zero-width space, not an empty line', SPACER, '​');
   ok('the section breathes', lines.filter(l => l === SPACER).length >= 3);
   ok('and the instruments are divided from each other', lines.includes(SUB_RULE));
-  ok('with the divider between them, not before the first', lines.indexOf(SUB_RULE) > at('__**QQQ**') && lines.indexOf(SUB_RULE) < at('__**SPY**'));
+  ok('with the divider between them, not before the first', lines.indexOf(SUB_RULE) > at('### QQQ') && lines.indexOf(SUB_RULE) < at('### SPY'));
   ok('the sub-rule is lighter than the brief\'s section rule', !SUB_RULE.includes('─'));
 
   // ── TENSE ──────────────────────────────────────────────────────────────────
@@ -71,7 +71,7 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
   ok('it reports where price finished instead', /closed below its pivot/.test(closed));
   ok('and says the expiry is gone', /expiry is gone/.test(closed));
   ok('and that settlement will move it', /overnight settlement/.test(closed));
-  ok('the heading survives the tense change, the bullets do not', /__\*\*QQQ\*\*/.test(closed) && !/• \*\*pin/.test(closed));
+  ok('the heading survives the tense change, the bullets do not', /### QQQ/.test(closed) && !/• \*\*pin/.test(closed));
 
   eq('an expired pin is never pinned', pinOf(
     { expiries: [{ expiry: '2026-09-09', shareOfAbs: 35, peakPutStrike: 716, peakCallStrike: 717 }] },
