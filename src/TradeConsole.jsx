@@ -1631,7 +1631,7 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
         <div style={{ fontSize: 11.5, color: C.muted, marginTop: 5 }}>
           ATR(20){kind === "future" ? " realised" : ""} {px.atr.toFixed(2)}{px.atrPct != null ? ` (${px.atrPct.toFixed(2)}%)` : ""}{kind === "future" && px.atr != null && futRes?.ok ? ` · $${Math.round(px.atr * (futRes.chosen.multiplier || 0)).toLocaleString("en-US")} per ${futRes.chosen.symbol?.split(" ")[0]} contract` : ""}
           {px.price != null ? ` · ${root} ${px.price.toFixed(2)}` : ""}
-          {greek?.delta != null ? ` · ${strike}${right === "P" ? "P" : "C"} δ ${greek.delta.toFixed(2)} · mark ${Number(greek.mark).toFixed(2)}`
+          {greek?.delta != null ? ` · ${strike}${right === "P" ? "P" : "C"} δ ${greek.delta.toFixed(2)} (live) · mark ${Number(greek.mark).toFixed(2)}`
             : modelled ? ` · ${strike}${right === "P" ? "P" : "C"} δ ${modelled.delta.toFixed(2)} (modelled, IV ${(modelled.sigma * 100).toFixed(0)}%) · mark ${Number(markEff).toFixed(2)}${greek?.mark != null ? "" : " typed"}` : ""}
           {result?.dte != null ? ` · ${result.dte} DTE` : ""}
         </div>
@@ -1715,7 +1715,12 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
             <b style={{ fontSize: 22, color: result.belowOne ? C.amber : C.green }}>
               {result.size}{result.kind === "option" ? " contracts" : result.kind === "future" ? ` ${result.symbol?.split(" ")[0] || ""} contract${result.size === 1 ? "" : "s"}` : " shares"}
             </b>
-            {result.premium != null && <span style={{ fontSize: 12, color: C.muted }}>{money(result.premium)} {result.kind === "option" ? "premium" : "notional"}</span>}
+            {result.premium != null && <span style={{ fontSize: 12, color: C.muted }}>{money(result.premium)} {result.kind === "option" ? "premium" : "notional"}{result.kind === "option" && nlv > 0 ? ` (${((result.premium / nlv) * 100).toFixed(1)}% NLV)` : ""}</span>}
+            {/* WHAT THE SUGGESTION CONTROLS, beside what it costs — the line that translates
+                premium into exposure, with the share equivalent. */}
+            {result.kind === "option" && result.deltaAdded != null && (
+              <span style={{ fontSize: 12, color: C.muted }}>· delta-notional <b style={{ color: C.text }}>{money(result.deltaAdded)}</b>{nlv > 0 ? ` (${((Math.abs(result.deltaAdded) / nlv) * 100).toFixed(1)}% NLV)` : ""}{result.singleName?.addedShareEquivalent != null ? ` ≈ ${Math.abs(result.singleName.addedShareEquivalent).toLocaleString("en-US")} ${root} shares` : ""}</span>
+            )}
             {result.indicative && <span style={{ fontSize: 11, fontWeight: 800, color: C.amber }}>INDICATIVE</span>}
             <span style={{ marginLeft: "auto" }}>
               <Btn onClick={record} color={C.mid} bgColor={C.bg} label="Record run" />
