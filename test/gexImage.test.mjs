@@ -55,6 +55,18 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
   ok('the caption says which colour means what', /green = positive gamma, hedging leans against price/.test(svg));
   ok('and the vintage', /OCC settled open interest at the live spot/.test(svg));
   ok('text is escaped', !/[<>&]"/.test(svg.replace(/<[^>]+>/g, '')));
+  // A dense board: dollar strikes right under spot, which overprinted on the axis before every
+  // label went through the one spacing pass.
+  {
+    const d = board([cell('2026-09-23', 740, -534), cell('2026-09-23', 739, -401), cell('2026-09-23', 738, -138), cell('2026-09-23', 745, 336), cell('2026-09-23', 748, 131), cell('2026-10-02', 730, -375), cell('2026-10-16', 755, 293)]);
+    const dl = levelsOf({ ...d, spot: 740.71, atr: 8, callWall: 740 });
+    const dense = ladderSvg({ name: 'QQQ', spot: 740.71, callWall: 740, levels: dl, byStrike: d.byStrike, grid: d.grid, flipLevel: 740.59, flipZoneLo: 711.51, flipZoneHi: 740.59, pin: { pinned: false, share: 43.9 }, decay: { expiringToday: true, front: '2026-09-23', after: { flip: 732.74 } } }, { today: '2026-09-23' });
+    const axisYs = [...dense.matchAll(/<text x="\d+" y="([\d.]+)" font-size="1[67]" font-weight="700" text-anchor="end"/g)].map(m => +m[1]).sort((a, b) => a - b);
+    ok('axis labels, spot included, never overprint', axisYs.length >= 5 && axisYs.every((v, i) => i === 0 || v - axisYs[i - 1] >= 19.9));
+    ok('a displaced label gets a leader line to its bar', /<line x1="\d+" y1="[\d.]+" x2="\d+" y2="[\d.]+" stroke="#6e7681" stroke-width="1"\/>/.test(dense));
+    ok('the magnet is one word beside the bars', /−534M today · magnet</.test(dense));
+    ok('no annotation is wider than the column', [...dense.matchAll(/font-size="15" fill="(?:#2ea043|#8957e5)">([^<]*)</g)].every(m => m[1].length <= 38));
+  }
   // Labels never overprint: consecutive annotation y's are at least the minimum gap apart.
   const ys = [...svg.matchAll(/<text x="\d+" y="([\d.]+)" font-size="15" fill=/g)].map(m => +m[1]).sort((a, b) => a - b);
   ok('annotations are spaced apart', ys.length >= 6 && ys.every((v, i) => i === 0 || v - ys[i - 1] >= 19.9));
