@@ -72,6 +72,7 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
     const auxYs = [...dense.matchAll(/<text x="\d+" y="([\d.]+)" font-size="1[35]"[^>]*>(?:pivot after today|flip zone|[−+])/g)].map(m => +m[1]).sort((a, b) => a - b);
     ok('the pivot and flip-zone labels never overprint an annotation', auxYs.length >= 6 && auxYs.every((v, i) => i === 0 || v - auxYs[i - 1] >= 18.9));
     ok('the pivot label is in the column, on a dark backing', /font-size="13" fill="#c9d1d9">pivot after today 732\.74</.test(dense) && /rx="4" fill="#0d1117" fill-opacity="0.85"/.test(dense));
+    ok('floating labels are drawn before the annotations, so a backing never covers a strike', dense.lastIndexOf('fill-opacity="0.85"/>') < dense.indexOf('font-weight="600" fill="'));
     ok('no arrow glyph the face cannot draw', !/→/.test(dense));
     // A stack that runs below the window, and a footer line that wraps: the bracket stops at the
     // plot's foot and the plot gives the footer its extra line.
@@ -119,18 +120,20 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
   {
     const parts = renderGexParts([row, { ...row, name: 'SPY' }], { rung: 'occ', asOf: '2026-09-23T12:00:00Z', today: '2026-09-23' });
     eq('the section comes apart into caveat, one text per instrument, footer', [!!parts.caveat, parts.instruments.map(i => i.name), /settled open interest/.test(parts.footer)], [true, ['QQQ', 'SPY'], true]);
+    // A picture ends a card, so the order is read-then-picture, one card per instrument.
     const cards = mapCards(parts, files, { head: '⚡ **TODAY\'S MAP**' });
-    eq('three cards', cards.length, 3);
-    ok('card 1: the heading and caveat, with QQQ\'s picture under it', cards[0].description.startsWith('⚡ **TODAY\'S MAP**\n_±band') && cards[0].filename === 'QQQ-ladder.png');
-    ok('card 2: QQQ\'s read, with SPY\'s picture under it', cards[1].description.startsWith('__**QQQ**') && /• \*\*stack\*\*/.test(cards[1].description) && cards[1].filename === 'SPY-ladder.png');
-    ok('card 3: SPY\'s read and the footer, no picture', cards[2].description.startsWith('__**SPY**') && /settled open interest/.test(cards[2].description) && !cards[2].filename);
-    // An instrument without a picture keeps its read in the running text.
-    const one = mapCards(parts, [files[0]], { head: 'H' });
-    eq('with one picture, two cards, the second carrying both reads', [one.length, /__\*\*QQQ\*\*[^]*__\*\*SPY\*\*/.test(one[1].description)], [2, true]);
+    eq('two cards', cards.length, 2);
+    ok('card 1: the heading, caveat and QQQ\'s read, with QQQ\'s picture under it', cards[0].description.startsWith('⚡ **TODAY\'S MAP**\n_±band') && /__\*\*QQQ\*\*/.test(cards[0].description) && /• \*\*stack\*\*/.test(cards[0].description) && !/__\*\*SPY\*\*/.test(cards[0].description) && cards[0].filename === 'QQQ-ladder.png');
+    ok('card 2: SPY\'s read and the footer, with SPY\'s picture under it', cards[1].description.startsWith('__**SPY**') && /settled open interest/.test(cards[1].description) && cards[1].filename === 'SPY-ladder.png');
+    // An instrument without a picture keeps its read in the running text of the next card.
+    const one = mapCards(parts, [files[1]], { head: 'H' });
+    eq('QQQ without a picture: one card carrying both reads, SPY\'s picture under it', [one.length, /__\*\*QQQ\*\*[^]*__\*\*SPY\*\*/.test(one[0].description), one[0].filename], [1, true, 'SPY-ladder.png']);
+    const none = mapCards(parts, [], { head: 'H' });
+    eq('no pictures: one text card', [none.length, none[0].filename], [1, undefined]);
     const cp = cardsPayload(cards, files);
-    eq('the payload: three embeds, pictures on the first two, two attachments in order',
-       [cp.embeds.length, cp.embeds[0].image?.url, cp.embeds[1].image?.url, cp.embeds[2].image, cp.attachments],
-       [3, 'attachment://QQQ-ladder.png', 'attachment://SPY-ladder.png', undefined, [{ id: 0, filename: 'QQQ-ladder.png' }, { id: 1, filename: 'SPY-ladder.png' }]]);
+    eq('the payload: two embeds, a picture on each, two attachments in order',
+       [cp.embeds.length, cp.embeds[0].image?.url, cp.embeds[1].image?.url, cp.attachments],
+       [2, 'attachment://QQQ-ladder.png', 'attachment://SPY-ladder.png', [{ id: 0, filename: 'QQQ-ladder.png' }, { id: 1, filename: 'SPY-ladder.png' }]]);
     ok('the cards fit Discord\'s limits', cp.embeds.length <= EMBEDS_MAX && cp.embeds.reduce((a, e) => a + (e.description?.length || 0), 0) <= 6000);
     eq('a card naming a file that is not attached shows no picture', cardsPayload([{ description: 'x', filename: 'nope.png' }], files).embeds[0].image, undefined);
   }
