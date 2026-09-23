@@ -33,9 +33,12 @@ const coilBars = () => bars({ last: [...Array.from({ length: 13 }, () => ({ high
   eq('the 52-week levels', [s.hi52, s.lo52], [101, 99]);
   eq('a flat tape has no move in ATRs', s.yMoveAtr, 0);
   eq('every day the same range is not a narrow day — a tie is not a coil', s.nr7, false);
-  // During the session the last bar is today and partial — yesterday is the one before it.
-  const open = setupStats(bars({ last: [{ high: 120, low: 80, close: 100 }] }), { open: true });
-  eq('open: the partial bar is skipped', [open.yHigh, open.yLow], [101, 99]);
+  // A bar dated today is the session in progress and is dropped — by its date, not by whether
+  // the market is open, because Yahoo does not always serve the partial bar.
+  const open = setupStats(bars({ last: [{ high: 120, low: 80, close: 100 }] }), { today: day(259) });
+  eq('a bar dated today is skipped', [open.yHigh, open.yLow], [101, 99]);
+  const noPartial = setupStats(bars({ last: [{ high: 120, low: 80, close: 100 }] }), { today: day(260) });
+  eq('with no bar for today, the last bar is yesterday and is kept', [noPartial.yHigh, noPartial.yLow], [120, 80]);
   eq('too few bars, no stats', setupStats(bars({ n: 10 })), null);
   eq('garbage, no stats', setupStats(null), null);
   // A coil: the last fourteen days at a quarter of the usual range.
@@ -69,7 +72,8 @@ const coilBars = () => bars({ last: [...Array.from({ length: 13 }, () => ({ high
   // COILED.
   const coiled = setupStats(coilBars());
   const coil = setupTags({ ...base, setup: coiled });
-  ok('a coil is tagged with the percentile and the narrow day', /^coiled: 14-day range at the \d+(st|nd|rd|th) percentile of its year, narrowest day in 7$/.test(coil.find(t => t.kind === 'coil')?.text || ''));
+  ok('a coil is tagged with the percentile and the narrow day', /^coiled: 14-day range (the lowest of its year|at the \d+(st|nd|rd|th) percentile of its year), narrowest day in 7$/.test(coil.find(t => t.kind === 'coil')?.text || ''));
+  eq('a year-low ATR reads as the lowest, not the 0th percentile', setupTags({ ...base, setup: { ...flat, atrPctile: 0 } }).find(t => t.kind === 'coil')?.text, 'coiled: 14-day range the lowest of its year');
   // CATALYST: today or tomorrow, from the cached feed's answer.
   const today = '2026-09-23', tomorrow = '2026-09-24';
   eq('earnings today', setupTags(base, { earnings: { ok: true, date: today, time: 'after close', status: 'confirmed' }, today, tomorrow }).find(t => t.kind === 'catalyst')?.text, 'earnings today (after close)');
@@ -137,7 +141,7 @@ const coilBars = () => bars({ last: [...Array.from({ length: 13 }, () => ({ high
   const lib = readFileSync('lib/watchSetup.js', 'utf8');
   ok('no console, no positions, no holdings reach the setup list', !/CONSOLE_KEY|positions|holding/i.test(lib.replace(/\/\/.*$/gm, '')));
   const q = readFileSync('lib/quotes.js', 'utf8');
-  ok('the quote row carries the setup stats', /setup: o\.setup \?\? null/.test(q) && /setupStats\(c\.bars/.test(q));
+  ok('the quote row carries the setup stats', /setup: o\.setup \?\? null/.test(q) && /setupStats\(c\.bars, \{ today:/.test(q));
 }
 
 console.log(`\n${fail ? '❌' : '✅'} ${pass} passed, ${fail} failed`);
