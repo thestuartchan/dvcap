@@ -50,7 +50,7 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
   ok('the cushion is labelled', /\+60M Oct-16 · cushion · peaks 1 of 5/.test(svg));
   ok('the trapdoor is labelled', /−340M Oct-02 · trapdoor/.test(svg));
   ok('today\'s negatives say today', /−110M today/.test(svg));
-  ok('the stack is bracketed', new RegExp(`<rect x="\\d+" y="[\\d.]+" width="5" height="[\\d.]+" rx="2" fill="${INK.neg}"/>`).test(svg));
+  ok('the stack is bracketed in the margin, clear of the labels', new RegExp(`<rect x="82" y="[\\d.]+" width="5" height="[\\d.]+" rx="2" fill="${INK.neg}"/>`).test(svg));
   ok('the four text lines repeat under the plot', /stack {2}negative 730–745 under spot/.test(svg) && /pin {4}none today/.test(svg) && /book {3}/.test(svg) && /after {2}pivot 740\.80 → 733\.96 after today · Sep-25 box 748–755/.test(svg));
   ok('the caption says which colour means what', /green = positive gamma, hedging leans against price/.test(svg));
   ok('and the vintage', /OCC settled open interest at the live spot/.test(svg));
