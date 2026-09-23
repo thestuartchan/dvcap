@@ -16,6 +16,7 @@
     "check:deploy": "NODE_USE_ENV_PROXY=1 node --no-warnings scripts/check-deploy.mjs"
   },
   "dependencies": {
+    "@resvg/resvg-wasm": "^2.6.2",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "recharts": "^3.8.1"

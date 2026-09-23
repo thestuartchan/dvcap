@@ -369,8 +369,11 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   // The section: heading outside the fence, ladder inside it, the caveat once, the footer once.
   const out = renderGexSection([row, { ...row, name: 'SPY' }], { rung: 'occ', asOf: '2026-09-23T12:00:00Z', today: '2026-09-23' });
   const lines = out.split('\n');
-  ok('the heading is outside the fence, so the bold renders', lines.indexOf(L.head) < lines.indexOf('```'));
-  eq('one fence per instrument', lines.filter(l => l === '```').length, 4);
+  // The ladder itself is the picture (lib/gexImage.js); the text keeps a heading and four bullets.
+  ok('the heading leads', lines.includes(L.head));
+  ok('no fence — the fenced ladder wrapped on a phone', !lines.includes('```'));
+  ok('the four bullets', ['stack', 'pin', 'book', 'after'].every(k => lines.some(l => l.startsWith(`• **${k}** `))));
+  ok('above and below are not in the text', !lines.some(l => /^(above|below|spot)\s/.test(l)));
   eq('the caveat is said once', out.split('one day in three').length - 1, 1);
   ok('QQQ before SPY', out.indexOf('**QQQ**') < out.indexOf('**SPY**'));
   ok('the rung footer survives', /today's settled open interest \(OCC\)/.test(out));
@@ -398,7 +401,7 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   ok('legacy below never calls the put side a wall', /^below {2}700\.00 \(heaviest put strike\)$/.test(legacy.lines[2]));
   // A closed session renders the heading only, then the handoff lines.
   const closed = renderGexSection([row], { rung: 'stored', tense: 'closed', today: '2026-09-23' });
-  ok('closed: heading and where it finished', /closed above its pivot/.test(closed) && !/```/.test(closed));
+  ok('closed: heading and where it finished', /closed above its pivot/.test(closed) && !/• \*\*stack/.test(closed));
 
   // The health sample carries the levels.
   const hs = healthSample({ ok: true, levels: lv, row: { rate: 0.038, rateStatus: 'live' }, vintage: {}, oi: {}, crossCheck: null }, { symbol: 'QQQ' });

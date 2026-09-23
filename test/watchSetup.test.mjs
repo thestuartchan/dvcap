@@ -122,7 +122,8 @@ const coilBars = () => bars({ last: [...Array.from({ length: 13 }, () => ({ high
 
   // Rendering: name, ticker in a code span, price, the tags — and the extended line last.
   const text = renderSetups(list, { extended: ext });
-  ok('a row renders name, ticker, price and tags', /^• \*\*MU\*\* · 101\.20 — gapping \+1\.2% pre-market · coiled: /m.test(text));
+  ok('a row renders name, ticker, price, industry and tags', /^• \*\*MU\*\* · 101\.20 · _semis_ — gapping \+1\.2% pre-market · coiled: /m.test(text));
+  eq('the industry is the narrowest level the metadata has', list.find(r => r.sym === 'MU')?.industry, 'semis');
   ok('a name with a display name renders it with the ticker in a code span', /^• \*\*[^*]+\*\* `[A-Z0-9.]+` · /m.test(renderSetups([{ sym: '0005.HK', name: 'HSBC', price: 70, tags: [{ text: 'gapping +1.0% pre-market' }] }])));
   ok('the extended line closes the section', text.split('\n').at(-1).startsWith('_extended after yesterday'));
   eq('nothing set up renders nothing', renderSetups([], {}), null);
