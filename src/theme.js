@@ -2,22 +2,10 @@
 //
 // It lived in ui.jsx beside the shared components, which tripped react-refresh: a module that
 // exports both components and plain values cannot be hot-reloaded reliably, so every edit to a
-// colour forced a full remount and lost whatever state the page was holding. That was the only
-// error the linter reported about src/ once the false ones were cleared, and it was describing a
-// real cost paid on every theme tweak.
+// colour forced a full remount and lost whatever state the page was holding.
 //
-// Constants here, components in ui.jsx. Nothing imports this for its side effects.
-export const C = {
-  bg:"#F2F3F7", surf:"#FFFFFF", bdr:"#E4E7F0", bdrMd:"#C9D0E4",
-  text:"#1C1F2E", mid:"#4B5068", muted:"#7C82A0", lbl:"#9CA3C0",
-  green:"#166534", gBg:"#F0FDF4", gBdr:"#86EFAC",
-  amber:"#92400E", aBg:"#FFFBEB", aBdr:"#FCD34D",
-  red:"#991B1B",   rBg:"#FEF2F2", rBdr:"#FCA5A5",
-  // NOT A STATUS COLOUR. Purple carries the SIGN OF GAMMA on the GEX panel, where red would be
-  // actively misleading: negative gamma is not bearish, it is amplifying, and a red cell in a
-  // financial grid reads as "down" to anyone who has ever looked at one. The panel's own copy
-  // insists the reading says nothing about direction, so the palette had better not contradict it.
-  // purple-800 to match green-800 and red-800 in weight, so the alpha ramps stay comparable.
-  purple:"#6B21A8", pBg:"#FAF5FF", pBdr:"#D8B4FE",
-  blue:"#1E40AF",  blBg:"#EFF6FF", blBdr:"#BFDBFE",
-};
+// The names now live in lib/tokens.js (the server-side modules that carry colours import them
+// from there) and the values in src/index.css, one block per theme. This module is the browser's
+// door to both: C for the semantic tokens, P for the identity palette, alpha()/tint() for the
+// ramps that used to be built by hand from a hex.
+export { C, P, alpha, tint, THEMES, DEFAULT_THEME, THEME_KEY } from '../lib/tokens.js';

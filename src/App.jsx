@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, Component, Fragment } from "react";
-import { C } from "./theme.js";
+import { C, P, alpha, THEMES, DEFAULT_THEME, THEME_KEY } from "./theme.js";
 import { SLabel, Card, Btn } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
 import { REGIMES, REGIME_PALETTE } from "../lib/regimes.js";
@@ -61,7 +61,7 @@ import { parseSecYieldPaste, parseYieldValue } from "../lib/fundYield.js";
 import { COMPANY_NAMES } from '../lib/companyNames.js';  // one map, shared with the trade console
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
-const SC = ["#1E40AF","#166534","#D97706","#6D28D9","#B45309","#BE185D","#0F766E","#F59E0B"];
+const SC = [C.blue,C.green,P.amber600,P.violet700,P.amber700,P.pink700,P.teal700,P.amber500];
 
 // ─── CHART DATA ───────────────────────────────────────────────────────────────
 const YIELD_DATA = [
@@ -84,7 +84,7 @@ const CREDIT_DATA = [
 const INDICATORS = [
   {
     id:"yield", name:"Yield Curve (10Y – 2Y)", current:"+0.38%",
-    status:"AMBER", label:"Watch", color:"#92400E", areaColor:"#F59E0B",
+    status:"AMBER", label:"Watch", color:C.amber, areaColor:P.amber500,
     dataKey:"yieldHistory", data:YIELD_DATA, refLine:0, yDomain:[-1.2,1.0],
     yFmt: v=>`${v>=0?"+":""}${v.toFixed(2)}%`,
     // The un-inversion narrative is DATE arithmetic, so it is computed from the history
@@ -97,9 +97,9 @@ const INDICATORS = [
       return head + ph.note + tail;
     },
     thresholds:[
-      {val:-0.5, label:"Deep inversion", color:"#DC2626", dash:"4 2"},
-      {val:0,    label:"Inversion line",  color:"#D97706", dash:"5 3"},
-      {val:1.0,  label:"Normal",          color:"#16A34A", dash:"4 2"},
+      {val:-0.5, label:"Deep inversion", color:P.red600, dash:"4 2"},
+      {val:0,    label:"Inversion line",  color:P.amber600, dash:"5 3"},
+      {val:1.0,  label:"Normal",          color:P.green600, dash:"4 2"},
     ],
     // Returns independent assessment based on this indicator's own live value
     signal(liveVal, hist) {
@@ -122,15 +122,15 @@ const INDICATORS = [
   },
   {
     id:"unemp", name:"Unemployment Rate", current:"—",
-    status:"AMBER", label:"↑ since '23 low", color:"#92400E", areaColor:"#F59E0B",
+    status:"AMBER", label:"↑ since '23 low", color:C.amber, areaColor:P.amber500,
     dataKey:"unempHistory", data:UNEMP_DATA, refLine:4.0, yDomain:[3.0,5.5],
     yFmt: v=>`${v.toFixed(1)}%`,
     detail: (v) => `Currently ${v.toFixed(1)}% — rose from a 3.4% trough (Jan 2023), a ${(v - 3.4).toFixed(1)}pp rise. Sahm Rule triggers at 0.5pp above the 12-month low. ${v >= 4.5 ? "The Sahm Rule has triggered — recession risk is elevated." : v >= 4.0 ? "We are approaching the Sahm Rule threshold. Direction is the concern." : "Still below the Sahm Rule trigger zone."}`,
     thresholds:[
-      {val:3.5, label:"Pre-pandemic low",   color:"#16A34A", dash:"4 2"},
-      {val:4.0, label:"Historical avg",     color:"#D97706", dash:"5 3"},
-      {val:4.5, label:"Sahm Rule zone",     color:"#DC2626", dash:"4 2"},
-      {val:5.0, label:"Recession confirmed",color:"#7F1D1D", dash:"3 2"},
+      {val:3.5, label:"Pre-pandemic low",   color:P.green600, dash:"4 2"},
+      {val:4.0, label:"Historical avg",     color:P.amber600, dash:"5 3"},
+      {val:4.5, label:"Sahm Rule zone",     color:P.red600, dash:"4 2"},
+      {val:5.0, label:"Recession confirmed",color:P.red900, dash:"3 2"},
     ],
     signal(liveVal) {
       if (liveVal == null) return { label: "No print", text: "The live series is unavailable, so this indicator has no current reading. The chart below is history only.", state: "UNKNOWN" };
@@ -144,14 +144,14 @@ const INDICATORS = [
   },
   {
     id:"credit", name:"HY Credit Spreads (ICE BofA OAS)", current:"2.75%",
-    status:"GREEN", label:"Benign", color:"#166534", areaColor:"#22C55E",
+    status:"GREEN", label:"Benign", color:C.green, areaColor:P.green500,
     dataKey:"creditHistory", data:CREDIT_DATA, refLine:4.5, yDomain:[1.5,7.0],
     yFmt: v=>`${v.toFixed(2)}%`,
     detail: (v) => `At ${v.toFixed(2)}%, markets are ${v < 3.0 ? "NOT pricing stress — calm conditions prevail" : v < 4.5 ? "beginning to price some stress — watch closely" : "pricing significant stress — act defensively"}. This is your best leading indicator. GFC peak: 21.8%. COVID peak: 10.9%. ${v >= 4.5 ? "⚠️ Alert threshold breached." : "Alert threshold: 4.5%."}`,
     thresholds:[
-      {val:3.0, label:"Mild stress",         color:"#D97706", dash:"4 2"},
-      {val:4.5, label:"⚠ Alert threshold",   color:"#F97316", dash:"5 3"},
-      {val:6.0, label:"🔴 Recession likely", color:"#DC2626", dash:"4 2"},
+      {val:3.0, label:"Mild stress",         color:P.amber600, dash:"4 2"},
+      {val:4.5, label:"⚠ Alert threshold",   color:P.orange500, dash:"5 3"},
+      {val:6.0, label:"🔴 Recession likely", color:P.red600, dash:"4 2"},
     ],
     signal(liveVal) {
       if (liveVal == null) return { label: "No print", text: "The live series is unavailable, so this indicator has no current reading. The chart below is history only.", state: "UNKNOWN" };
@@ -264,11 +264,11 @@ const PHASE_NOTES = {
 const INSURANCE_PHASES = [
   { k:"preCrash",  col:"preCrash",  label:"Pre-Crash",                 short:"Pre-Crash",         color:STATUS.WATCH.color,  bg:STATUS.WATCH.bg,  bdr:STATUS.WATCH.bdr,  desc:"Signals deteriorating, no drawdown yet — the accumulation window. Protection is cheap: puts and VIX calls are the right instruments here, before IV reprices. GLD works; miners lag (equity beta).", size:{ band:"0–3%", note:"protection is cheap (VIX low, IV not yet repriced) — begin sizing puts / VIX calls; don't fully activate yet." } },
   { k:"liquidity", col:"liquidity", label:"Liquidity Phase",           short:"Liquidity Phase",   color:STATUS.DANGER.color, bg:STATUS.DANGER.bg, bdr:STATUS.DANGER.bdr, desc:"Drawdown underway — margin calls, correlations going to 1. Gold is SOLD here because it is liquid and profitable: it fell ~12% over ~8 sessions in March 2020 and ~30% from its March 2008 high to its October 2008 low, both times while equities collapsed. Miners are worse (GDX ~−70% in 2008). Protection bought now is expensive — IV has already repriced, so puts and VIX calls are a poor purchase. Cash is the only thing that works cleanly.", size:{ band:"hold · add ~0%", note:"protection is now expensive (IV repriced) — don't chase it. Raise cash and prepare the recovery buy." } },
-  { k:"recovery",  col:"recovery",  label:"Recovery / Post-Trough",    short:"Recovery",          color:"#047857", bg:"#ECFDF5", bdr:"#A7F3D0", desc:"VIX has peaked and is rolling over, credit has stopped widening, forced selling is exhausted — resolution not yet determined. This is THE BUY: gold miners, BTC and equities lead off the trough (the NYSE Arca Gold Miners Index ran +100% Oct'07→Mar'09 while the S&P fell 57%, +40% in Apr'20, +27% in a single day Nov'08 — all of it here, none in the collapse column). Sell the decay hedges into the vol collapse: holding the right hedge past its window is where most insurance P&L is given back. Miners here are a post-trough TRADE with a trigger, never a hedge and never a hold.", size:{ band:"insurance → ~0%", note:"unwind the decay hedges into the vol collapse and rotate the proceeds + dry powder into the recovery buy (miners / BTC / equities)." } },
-  { k:"def",       col:"def",       label:"Deflationary Recession",    short:"Defl. Recession",   color:"#1E40AF", bg:"#EFF6FF", bdr:"#BFDBFE", desc:"Crash resolves through debt deflation — falling prices, Japan-style. TLT wins. Gold moderate. BTC loses. Same term as the Macro tab's regime: a deflationary recession, whether you're forecasting it (Macro) or hedging its arrival (here).", size:{ band:"10–18%", note:"the highest insurance allocation — TLT and SPY puts dominate; add IEF as a lower-vol duration alternative." } },
-  { k:"inf",       col:"inf",       label:"Resolution: Debasement",    short:"Res: Debasement",   color:"#7C3AED", bg:"#F5F3FF", bdr:"#C4B5FD", desc:"Crash resolves through DEBASEMENT — Fed prints, dollar credibility erodes, currency stress, loss of monetary confidence. Gold and BTC win; TLT is a trap. This is a CRISIS — the OPPOSITE of Macro's 'Inflationary Boom' (a good, growth-strong outcome you'd want to be long). Read at speed, the shared word invites exactly the wrong action; hence 'Resolution: Debasement'. Its slow-motion, multi-year cousin — Financial Repression (negative real yields held for years, Japan-style) — is a Macro-tab regime STATE, not a crash resolution; see the Regime-shift scenarios there, not a column here.", size:{ band:"5–10%", note:"gold and BTC as MONETARY insurance (not crash insurance) — TLT is a trap here." } },
-  { k:"stag",      col:"stag",      label:"Resolution: Stagflation",   short:"Res: Stagflation",  color:"#0F766E", bg:"#F0FDFA", bdr:"#5EEAD1", desc:"Persistent stagflation — slow grind, not a sharp crash. Favour passive real-asset hedges (GLD, XLP, farmland, HYG puts) over active short instruments. Avoid VIX calls (contango) and SQQQ (daily decay). Size conservatively; favour longer-dated instruments to reduce theta bleed.", size:{ band:"8–15%", note:"gold / staples / HYG puts; size conservatively and favour longer-dated to cut theta bleed over a slow grind." } },
-  { k:"hawkish",   col:"hawkish",   label:"Hawkish Rates Repricing",   short:"Hawkish Repricing", color:"#B45309", bg:"#FFF7ED", bdr:"#FED7AA", desc:"Not a crash — a rates repricing (occurred 2026-07-31: gold −2.07%, TLT −0.87%, XLU −0.37%, XLP −0.80%, IWM −0.70%, BTC −1.8%, SPY roughly flat). Nothing hedges this except the front end. Duration is the risk, and every asset that competes with cash for yield gets sold simultaneously — including the defensives (GLD, TLT, staples) that work in every other scenario.", size:{ band:"front-end only", note:"nothing hedges a rates repricing except the front end (bills / USFR) — duration IS the risk." } },
+  { k:"recovery",  col:"recovery",  label:"Recovery / Post-Trough",    short:"Recovery",          color:P.emerald700, bg:P.emerald50, bdr:P.emerald200, desc:"VIX has peaked and is rolling over, credit has stopped widening, forced selling is exhausted — resolution not yet determined. This is THE BUY: gold miners, BTC and equities lead off the trough (the NYSE Arca Gold Miners Index ran +100% Oct'07→Mar'09 while the S&P fell 57%, +40% in Apr'20, +27% in a single day Nov'08 — all of it here, none in the collapse column). Sell the decay hedges into the vol collapse: holding the right hedge past its window is where most insurance P&L is given back. Miners here are a post-trough TRADE with a trigger, never a hedge and never a hold.", size:{ band:"insurance → ~0%", note:"unwind the decay hedges into the vol collapse and rotate the proceeds + dry powder into the recovery buy (miners / BTC / equities)." } },
+  { k:"def",       col:"def",       label:"Deflationary Recession",    short:"Defl. Recession",   color:C.blue, bg:C.blBg, bdr:C.blBdr, desc:"Crash resolves through debt deflation — falling prices, Japan-style. TLT wins. Gold moderate. BTC loses. Same term as the Macro tab's regime: a deflationary recession, whether you're forecasting it (Macro) or hedging its arrival (here).", size:{ band:"10–18%", note:"the highest insurance allocation — TLT and SPY puts dominate; add IEF as a lower-vol duration alternative." } },
+  { k:"inf",       col:"inf",       label:"Resolution: Debasement",    short:"Res: Debasement",   color:P.violet600, bg:P.violet50, bdr:P.violet300, desc:"Crash resolves through DEBASEMENT — Fed prints, dollar credibility erodes, currency stress, loss of monetary confidence. Gold and BTC win; TLT is a trap. This is a CRISIS — the OPPOSITE of Macro's 'Inflationary Boom' (a good, growth-strong outcome you'd want to be long). Read at speed, the shared word invites exactly the wrong action; hence 'Resolution: Debasement'. Its slow-motion, multi-year cousin — Financial Repression (negative real yields held for years, Japan-style) — is a Macro-tab regime STATE, not a crash resolution; see the Regime-shift scenarios there, not a column here.", size:{ band:"5–10%", note:"gold and BTC as MONETARY insurance (not crash insurance) — TLT is a trap here." } },
+  { k:"stag",      col:"stag",      label:"Resolution: Stagflation",   short:"Res: Stagflation",  color:P.teal700, bg:P.teal50, bdr:P.teal300, desc:"Persistent stagflation — slow grind, not a sharp crash. Favour passive real-asset hedges (GLD, XLP, farmland, HYG puts) over active short instruments. Avoid VIX calls (contango) and SQQQ (daily decay). Size conservatively; favour longer-dated instruments to reduce theta bleed.", size:{ band:"8–15%", note:"gold / staples / HYG puts; size conservatively and favour longer-dated to cut theta bleed over a slow grind." } },
+  { k:"hawkish",   col:"hawkish",   label:"Hawkish Rates Repricing",   short:"Hawkish Repricing", color:P.amber700, bg:C.oBg, bdr:P.orange200, desc:"Not a crash — a rates repricing (occurred 2026-07-31: gold −2.07%, TLT −0.87%, XLU −0.37%, XLP −0.80%, IWM −0.70%, BTC −1.8%, SPY roughly flat). Nothing hedges this except the front end. Duration is the risk, and every asset that competes with cash for yield gets sold simultaneously — including the defensives (GLD, TLT, staples) that work in every other scenario.", size:{ band:"front-end only", note:"nothing hedges a rates repricing except the front end (bills / USFR) — duration IS the risk." } },
 ];
 
 // P1.3 — the six columns are TWO dimensions: crash TIME PHASES (pre-crash / liquidity) and crash
@@ -368,18 +368,18 @@ function cellAction(glyph, phaseKey, row) {
 // (blue); HOLD as keep-don't-chase (grey); WAIT / CONDITIONAL / TRIM as caution (amber); AVOID as
 // stop (red); SELL as unwind-now (rose — deliberately distinct from AVOID's don't-buy red).
 const ACT_STYLE = {
-  "INITIATE":    { color:"#047857", bg:"#ECFDF5", bdr:"#A7F3D0" },
-  "BUY":         { color:"#047857", bg:"#ECFDF5", bdr:"#A7F3D0" },
-  "STAGE":       { color:"#1D4ED8", bg:"#EFF6FF", bdr:"#BFDBFE" },
-  "ON PIVOT":    { color:"#1D4ED8", bg:"#EFF6FF", bdr:"#BFDBFE" },
-  "DEPLOY":      { color:"#1D4ED8", bg:"#EFF6FF", bdr:"#BFDBFE" },
-  "HOLD":        { color:"#6B7280", bg:"#F9FAFB", bdr:"#E5E7EB" },
-  "HOLD LIGHT":  { color:"#6B7280", bg:"#F9FAFB", bdr:"#E5E7EB" },
-  "WAIT":        { color:"#B45309", bg:"#FFF7ED", bdr:"#FED7AA" },
-  "CONDITIONAL": { color:"#B45309", bg:"#FFF7ED", bdr:"#FED7AA" },
-  "TRIM→cash":   { color:"#B45309", bg:"#FFF7ED", bdr:"#FED7AA" },
-  "AVOID":       { color:"#B91C1C", bg:"#FEF2F2", bdr:"#FECACA" },
-  "SELL":        { color:"#BE123C", bg:"#FFF1F2", bdr:"#FECDD3" },
+  "INITIATE":    { color:P.emerald700, bg:P.emerald50, bdr:P.emerald200 },
+  "BUY":         { color:P.emerald700, bg:P.emerald50, bdr:P.emerald200 },
+  "STAGE":       { color:P.blue700, bg:C.blBg, bdr:C.blBdr },
+  "ON PIVOT":    { color:P.blue700, bg:C.blBg, bdr:C.blBdr },
+  "DEPLOY":      { color:P.blue700, bg:C.blBg, bdr:C.blBdr },
+  "HOLD":        { color:P.gray500, bg:C.inset, bdr:P.gray200 },
+  "HOLD LIGHT":  { color:P.gray500, bg:C.inset, bdr:P.gray200 },
+  "WAIT":        { color:P.amber700, bg:C.oBg, bdr:P.orange200 },
+  "CONDITIONAL": { color:P.amber700, bg:C.oBg, bdr:P.orange200 },
+  "TRIM→cash":   { color:P.amber700, bg:C.oBg, bdr:P.orange200 },
+  "AVOID":       { color:P.red700, bg:C.rBg, bdr:P.red200 },
+  "SELL":        { color:P.rose700, bg:P.rose50, bdr:P.rose200 },
 };
 const actStyle = a => ACT_STYLE[a] || ACT_STYLE.HOLD;
 
@@ -498,14 +498,14 @@ const POSTURE_BUCKET_META = [
   { key:"deploymentReady", name:"Deployment ready", icon:"🚀", sub:"stage-gated adds" },
 ];
 const POSTURE_STATUS = {
-  HOLD:       { color:"#6B7280", bg:"#F9FAFB", bdr:"#E5E7EB" },
-  PREPARE:    { color:"#1E40AF", bg:"#EFF6FF", bdr:"#BFDBFE" },
+  HOLD:       { color:P.gray500, bg:C.inset, bdr:P.gray200 },
+  PREPARE:    { color:C.blue, bg:C.blBg, bdr:C.blBdr },
   WATCH:      { state:"WATCH" },
   ACTIVATE:   { state:"BENIGN" },
   ACCUMULATE: { state:"BENIGN" },
   DEPLOY:     { state:"BENIGN" },
   SELECTIVE:  { state:"WATCH" },
-  REDUCE:     { color:"#B45309", bg:"#FFF7ED", bdr:"#FED7AA" },
+  REDUCE:     { color:P.amber700, bg:C.oBg, bdr:P.orange200 },
   PAUSE:      { state:"DANGER" },
 };
 // Midpoint of a "60–70%" style range, for the allocation donut.
@@ -527,7 +527,7 @@ const DEPLOY_STAGES = [
 const INCOME_PLAYS = [
   {
     rank:1, defRank:5, refRank:5, infRank:1, category:"Energy Pipelines / MLPs", icon:"🛢️", yieldRange:"5–9%", stagProof:true,
-    color:"#B45309", bg:"#FFFBEB",
+    color:P.amber700, bg:C.aBg,
     why:"Toll-road model — fee-based contracts insulated from commodity price swings. AI data center power demand driving new gas pipeline demand. Pass inflation through contract escalators.",
     globalNote:"Canadian & HK holders: use AMLP ETF to avoid K-1 tax form complexity. US withholding on distributions varies — check with local tax advisor.",
     risks:"MLPs issue K-1 tax forms (complex for international filers). Distribution cuts possible in severe oil crashes.",
@@ -544,7 +544,7 @@ const INCOME_PLAYS = [
   },
   {
     rank:2, defRank:3, refRank:1, infRank:3, category:"Triple-Net Lease REITs", icon:"🏪", yieldRange:"4–7%", stagProof:true,
-    color:"#1E40AF", bg:"#EFF6FF",
+    color:C.blue, bg:C.blBg,
     why:"Tenants pay taxes, insurance, maintenance. Landlord gets pure rental income insulated from rising costs. Long-term leases = predictable cash flows. Monthly payers available.",
     globalNote:"Accessible via IBKR from all your family jurisdictions. 30% US withholding for non-US (15% for Canada under treaty, 30% for HK unless treaty applies).",
     risks:"Rate sensitivity — REIT prices fall when rates rise. Commercial real estate weakens in severe recessions.",
@@ -558,7 +558,7 @@ const INCOME_PLAYS = [
   },
   {
     rank:3, defRank:2, refRank:2, infRank:4, category:"Dividend Aristocrats", icon:"👑", yieldRange:"2.5–5%", stagProof:true,
-    color:"#5B21B6", bg:"#F5F3FF",
+    color:P.violet800, bg:P.violet50,
     why:"25+ years of consecutive dividend increases. Pricing power means dividends grow with inflation. Capital preservation + income growth.",
     globalNote:"Most accessible globally via IBKR. 15% US withholding for Canada (treaty), 30% for HK. SCHD is the ETF wrapper with quality screening.",
     risks:"Lower current yields than MLPs/REITs. Slower income build but more reliable long-term.",
@@ -578,7 +578,7 @@ const INCOME_PLAYS = [
   },
   {
     rank:4, defRank:6, refRank:3, infRank:2, category:"Covered Call ETFs", icon:"📈", yieldRange:"7–12%", stagProof:false,
-    color:"#166534", bg:"#F0FDF4",
+    color:C.green, bg:C.gBg,
     why:"Sell calls against existing holdings to generate premium income. Works well in volatile, sideways markets — exactly the stagflationary environment. Non-correlated income.",
     globalNote:"Accessible from all jurisdictions via IBKR. Income treated as ordinary income in most jurisdictions.",
     risks:"You give up upside beyond the strike. Income falls in low-volatility bull markets. Net losers in strong rallies.",
@@ -590,7 +590,7 @@ const INCOME_PLAYS = [
   },
   {
     rank:5, defRank:4, refRank:4, infRank:5, category:"Preferred Shares", icon:"💳", yieldRange:"5–8%", stagProof:false,
-    color:"#0F766E", bg:"#F0FDFA",
+    color:P.teal700, bg:P.teal50,
     why:"Fixed dividend, senior to common equity, junior to debt. Yielding 6–7% currently. More liquid than bonds.",
     globalNote:"Monthly income. Subject to US withholding. PFF is the most accessible ETF wrapper.",
     risks:"Rate sensitive. Callable risk. Not ideal in rising rate environment.",
@@ -601,7 +601,7 @@ const INCOME_PLAYS = [
   },
   {
     rank:6, defRank:1, refRank:6, infRank:6, category:"Short-Duration / Cash", icon:"💵", yieldRange:"3.5–5%", stagProof:true,
-    color:"#374151", bg:"#F9FAFB",
+    color:P.gray700, bg:C.inset,
     why:"T-bills yield ~4.2% — risk-free income while you wait for dislocations. Berkshire's $397B strategy. Optionality > chasing yield in uncertain environments.",
     globalNote:"Best for all your family members as safe USD yield. Fully liquid. No withholding tax complexity.",
     risks:"Yield falls when Fed cuts. No capital appreciation. Inflation erodes real returns over time.",
@@ -617,11 +617,11 @@ const INCOME_PLAYS = [
 const DEFAULT_FUNDS = [
   {
     id:"berkshire", name:"Berkshire Hathaway", manager:"Greg Abel (Buffett chairman)",
-    aum:"$323.8B equity (Q2 13F) · $365.5B cash (Q2 10-Q, Aug 8)", style:"Quality compounder / Value", color:"#1E40AF",
-    turnover:"Low–Medium", signal:"NET BUYER", signalColor:"#166534",
+    aum:"$323.8B equity (Q2 13F) · $365.5B cash (Q2 10-Q, Aug 8)", style:"Quality compounder / Value", color:C.blue,
+    turnover:"Low–Medium", signal:"NET BUYER", signalColor:C.green,
     lastUpdated:"Q2 2026 · as of Jun 30 · cash Q2 10-Q Aug 8",
     regimeBet:"Deploying — net buyer (first cash drawdown in ~4yr)",
-    regimeBetColor:"#166534",
+    regimeBetColor:C.green,
     regimeBetSignal:"NOT agnostic in Q2: net buyer of ~$19.8B ($23.5B bought vs $3.7B sold) — the largest single-quarter net buying in 3.5yr, ending a 14-quarter selling streak. Cash FELL to $365.5B (Q2 10-Q, Aug 8) from $397B — its first quarterly decline in ~4 years. Buybacks $4.5B (vs $235M in Q1).",
     thesis:"Q2 marks a turn: after 14 straight quarters of net selling, Berkshire was a NET BUYER of ~$19.8B ($23.5B purchased vs $3.7B sold) — the biggest single-quarter net buying in at least 3.5 years — and bought back $4.5B of stock (vs $235M in Q1). Cash fell to $365.5B (Q2 10-Q, Aug 8) from $397B, the first quarterly decline in ~4 years. The equity story is still Alphabet: GOOGL added to $28.2B plus a new $9.6B GOOG Class C stake (~12.6%, top-4, its most AI-adjacent bet though still no chips), on top of a separate $10B Alphabet private placement outside the 13F. Top five are now ~66% of the $323.8B book, up ~5pts q/q. Value/quality, not growth. Positions as of Jun 30.",
     holdings:[
@@ -647,11 +647,11 @@ const DEFAULT_FUNDS = [
   },
   {
     id:"pershing", name:"Pershing Square", manager:"Bill Ackman",
-    aum:"$19.5B (Q2 13F, via Pershing Square Inc.)", style:"Concentrated activist", color:"#6D28D9",
-    turnover:"Medium", signal:"QUALITY COMPOUNDERS", signalColor:"#1E40AF",
+    aum:"$19.5B (Q2 13F, via Pershing Square Inc.)", style:"Concentrated activist", color:P.violet700,
+    turnover:"Medium", signal:"QUALITY COMPOUNDERS", signalColor:C.blue,
     lastUpdated:"Q2 2026 · as of Jun 30",
     regimeBet:"Quality compounding / soft landing",
-    regimeBetColor:"#6D28D9",
+    regimeBetColor:P.violet700,
     regimeBetSignal:"Q2 book now filed via the public parent Pershing Square Inc. (Capital Management filed a 13F-NT notice). NEW Visa, Mastercard, S&P Global, Netflix — a tilt into payment networks and financial-data compounders. Uber now #1; Amazon trimmed. Not crisis positioning.",
     thesis:"Q2: reporting consolidated under the public parent Pershing Square Inc. — Capital Management filed a 13F-NT notice pointing to the parent, whose filing now carries the whole $19.5B book. Diversified out of the ultra-concentrated 10-name Q1 book: NEW stakes in Visa, Mastercard, S&P Global and Netflix (payment networks + financial-data compounders) plus a Pershing Square USA Ltd position. Uber is now #1 (added), ahead of Brookfield (trimmed) and Microsoft (added); Amazon trimmed ~25%; the small Alphabet stub exited. Still quality compounders, not crisis positioning. Positions as of Jun 30.",
     holdings:[
@@ -675,11 +675,11 @@ const DEFAULT_FUNDS = [
   },
   {
     id:"bridgewater", name:"Bridgewater Associates", manager:"Karniol-Tambour / Prince / Jensen",
-    aum:"$24.4B (13F) · $92B total", style:"Global macro / Risk parity", color:"#166534",
-    turnover:"High (~40%)", signal:"AI CHIPS + GOLD", signalColor:"#92400E",
+    aum:"$24.4B (13F) · $92B total", style:"Global macro / Risk parity", color:C.green,
+    turnover:"High (~40%)", signal:"AI CHIPS + GOLD", signalColor:C.amber,
     lastUpdated:"Q2 2026 · as of Jun 30",
     regimeBet:"Stagflation + normalization",
-    regimeBetColor:"#92400E",
+    regimeBetColor:C.amber,
     regimeBetSignal:"Still adding AI chips (NVDA/AVGO/LRCX/AMD) alongside gold (Newmont + Barrick). Hedging both stagflation and recovery.",
     thesis:"~1,000 holdings — a systematic risk-parity book, not stock-picking. Core is the S&P 500 ETFs (SPY + IVV ≈ 25%), then a long diversified tail: AI/semis (NVDA, AVGO, LRCX, AMD, AMAT, MU) and mega-cap tech (GOOGL, MSFT, ORCL), with a gold tilt (Newmont + Barrick) and Korea (EWY). Q2: chip sleeve maintained/added, added Seagate + GE Vernova in the AI-infra tail. Broad equity beta tilted to AI infrastructure, hedged with gold and international. Positions as of Jun 30.",
     holdings:[
@@ -707,11 +707,11 @@ const DEFAULT_FUNDS = [
   },
   {
     id:"duquesne", name:"Duquesne Family Office", manager:"Stanley Druckenmiller",
-    aum:"$5.2B (13F)", style:"Global macro / Top-down rotator", color:"#B45309",
-    turnover:"Very High (38–43%)", signal:"EM + COMMODITIES", signalColor:"#6D28D9",
+    aum:"$5.2B (13F)", style:"Global macro / Top-down rotator", color:P.amber700,
+    turnover:"Very High (38–43%)", signal:"EM + COMMODITIES", signalColor:P.violet700,
     lastUpdated:"Q2 2026 · as of Jun 30",
     regimeBet:"Stagflation / supercycle",
-    regimeBetColor:"#B45309",
+    regimeBetColor:P.amber700,
     regimeBetSignal:"~25–30% gold off-13F — held through gold's worst quarter since 2013 (−20–24%), now +17% in August. EM hard assets (Brazil/Argentina). Q2 reversal: re-entered AMZN + GOOGL after exiting in Q1.",
     thesis:"Q2 reversal — RE-ENTERED mega-cap tech (AMZN + GOOGL) after fully exiting both in Q1. Natera (NTRA) still #1 at 16.6%; biotech sleeve (INSM, Revolution, NewAmsterdam) deep. New STMicro (STM); semis via TSM, Seagate, SanDisk. EM/macro: Brazil (EWZ + calls), Argentina (YPF), Mexico (BBB Foods), Sea Ltd. Heavy call usage for leverage (RSP/IWM/SPY/EWZ/INSM/TSLA calls, in Other). ~25–30% gold remains off-13F. GOLD MARK-TO-MARKET: the position was deeply underwater at the filing date — gold fell 20–24% in Q2 (its worst quarter since 2013) from a Jan 28 record near $5,589 to ~$4,000 by Aug 1 — and is now the best-performing bet in the set: ~$4,680 today (GLD 427.33), ~+17% in August, its best month since January. Positions as of Jun 30.",
     holdings:[
@@ -738,11 +738,11 @@ const DEFAULT_FUNDS = [
   },
   {
     id:"tiger", name:"Tiger Global", manager:"Chase Coleman",
-    aum:"$24B", style:"Global tech / Growth", color:"#BE185D",
-    turnover:"High", signal:"TECH BULL", signalColor:"#166534",
+    aum:"$24B", style:"Global tech / Growth", color:P.pink700,
+    turnover:"High", signal:"TECH BULL", signalColor:C.green,
     lastUpdated:"Q2 2026 · as of Jun 30",
     regimeBet:"Reflationary recovery",
-    regimeBetColor:"#166534",
+    regimeBetColor:C.green,
     regimeBetSignal:"AI chips moved to the TOP — TSM now #1, added Lam/Applied, NEW Cerebras, re-entered Intel. Trimmed GOOGL from #1.",
     thesis:"Q2: the AI-chip sleeve moved to the very top — TSM is now #1 (added), with NVDA, Lam (added), Applied Materials (added), Broadcom, a NEW Cerebras (private-AI-chip) stake, and a RE-ENTERED Intel. GOOGL trimmed from #1 to ~8.7%. Still AI-consensus at the core, now tilted toward the picks-and-shovels chip layer. Sea Ltd (SE) the SE-Asia growth play; Corpay + GE Vernova the non-tech adds. Positions as of Jun 30.",
     holdings:[
@@ -769,11 +769,11 @@ const DEFAULT_FUNDS = [
   },
   {
     id:"appaloosa", name:"Appaloosa Management", manager:"David Tepper",
-    aum:"$~20B", style:"Distressed / Deep value", color:"#D97706",
-    turnover:"Medium–High", signal:"CHINA + CYCLICALS", signalColor:"#B45309",
+    aum:"$~20B", style:"Distressed / Deep value", color:P.amber600,
+    turnover:"Medium–High", signal:"CHINA + CYCLICALS", signalColor:P.amber700,
     lastUpdated:"Q2 2026 · as of Jun 30",
     regimeBet:"China recovery + soft landing",
-    regimeBetColor:"#D97706",
+    regimeBetColor:P.amber600,
     regimeBetSignal:"AMZN top; Micron (AI memory) now top-2. Added Korea (EWY). NEW: an AAPL PUT hedge. BABA trimmed further — China conviction cut.",
     thesis:"Q2: Micron (MU) surged to top-2 (14.6%) — a large AI-memory bet — behind AMZN. Semis/AI sleeve deep (MU, TSM, NVDA, Lam, AMD, ASML, Broadcom, Qualcomm). Notable NEW hedge: an AAPL PUT (~3.1%). Added Korea (EWY to 6.3%); new Boeing, CoreWeave, ASML. BABA trimmed further to ~2.5% — the China bet is being cut, not held. Power-demand play (Vistra + NRG) held. Positions as of Jun 30.",
     holdings:[
@@ -800,11 +800,11 @@ const DEFAULT_FUNDS = [
   },
   {
     id:"fairfax", name:"Fairfax Financial Holdings", manager:"Prem Watsa",
-    aum:"~$75B (insurance + investment portfolio)", style:"Value / Insurance Float", color:"#A16207",
-    turnover:"Low (buy & hold)", signal:"MACRO HEDGE + INDIA", signalColor:"#B45309",
+    aum:"~$75B (insurance + investment portfolio)", style:"Value / Insurance Float", color:P.yellow700,
+    turnover:"Low (buy & hold)", signal:"MACRO HEDGE + INDIA", signalColor:P.amber700,
     lastUpdated:"⚠ Annual Report 2025 · not a US 13F filer — H1 2026 interim not fetched this run",
     regimeBet:"INFLATION + DEFLATION HEDGE",
-    regimeBetColor:"#B45309",
+    regimeBetColor:P.amber700,
     regimeBetSignal:"⚠ Not on EDGAR (Canadian, files on SEDAR+). Not refreshed this cycle — pull Fairfax's H1 2026 interim report + hedge disclosures manually. Long India/EM structural bet. CPI-linked hedges + tail protection.",
     thesis:"The 'Canadian Berkshire.' Watsa runs a massive insurance float like Buffett — but with a harder macro edge. Known for prescient macro calls: shorted the US housing market pre-2008, held CPI-linked derivatives for years anticipating inflation. Currently positioned with significant equity exposure in India and emerging markets, commodity-linked names, and tail hedges. Watsa has been consistently bullish on India as a decade-long structural bet. Canadian-listed (TSX: FFH). Holdings from annual report — not a US 13F filer.",
     holdings:[
@@ -853,10 +853,10 @@ const CONSENSUS_ROWS = [
 // How each source tag renders: label + colour. 13F is the default equity vintage; the others are
 // deliberately a different hue so a non-13F row can't be mistaken for one that moved on the 13F date.
 const SOURCE_TAGS = {
-  "13F":     { label: "13F",              col: "#1E40AF" },
-  "13F+mgr": { label: "13F + disclosure", col: "#6D28D9" },
-  "10-Q":    { label: "10-Q",             col: "#0F766E" },
-  "Manager disclosure": { label: "Mgr disclosure", col: "#B45309" },
+  "13F":     { label: "13F",              col: C.blue },
+  "13F+mgr": { label: "13F + disclosure", col: P.violet700 },
+  "10-Q":    { label: "10-Q",             col: P.teal700 },
+  "Manager disclosure": { label: "Mgr disclosure", col: P.amber700 },
 };
 
 // ── Improvement #2 — 13F COVERAGE per fund. A 13F only shows long US-listed equity; cash, bonds,
@@ -873,10 +873,10 @@ const FUND_COVERAGE = {
   fairfax:     { band: "None",    note: "Not a US 13F filer — files on SEDAR+. Holdings shown are from the 2025 annual report, not a 13F." },
 };
 const COVERAGE_BAND = {
-  Most:    { col: "#166534", bg: "#F0FDF4", bdr: "#86EFAC" },
-  Partial: { col: "#B45309", bg: "#FFF7ED", bdr: "#FED7AA" },
-  Low:     { col: "#B45309", bg: "#FFF7ED", bdr: "#FED7AA" },
-  None:    { col: "#991B1B", bg: "#FEF2F2", bdr: "#FECACA" },
+  Most:    { col: C.green, bg: C.gBg, bdr: C.gBdr },
+  Partial: { col: P.amber700, bg: C.oBg, bdr: P.orange200 },
+  Low:     { col: P.amber700, bg: C.oBg, bdr: P.orange200 },
+  None:    { col: C.red, bg: C.rBg, bdr: P.red200 },
 };
 
 // ── B4 — HEDGES per manager. The disclosed downside/tail protection (mostly off-13F), tracked so Q3
@@ -948,7 +948,7 @@ function ageSince(iso) {
 // positioning against, explicitly NOT consensus probabilities. Boom ≠ Debasement — kept distinct.
 const REGIME_SHIFTS = [
   {
-    id:"debase", label:"Debasement", color:"#7C3AED", bg:"#F5F3FF", bdr:"#C4B5FD",
+    id:"debase", label:"Debasement", color:P.violet600, bg:P.violet50, bdr:P.violet300,
     tag:"currency devaluation · weak growth · suppressed yields",
     desc:"Currency loses purchasing power while real growth stays weak and yields are administratively suppressed below inflation. NOT Inflationary Boom (that is strong growth + inflation).",
     discriminator:"gold up + breakevens UP = confirming · gold up + breakevens FLAT = ambiguous · gold up + breakevens DOWN = a real-yield trade, not debasement",
@@ -957,7 +957,7 @@ const REGIME_SHIFTS = [
     decision:"⚠ Parking-bucket flip: the USFR/T-bill parking thesis assumes STAGFLATION, where short bills are a best asset. In DEBASEMENT the same bills are the WRONG asset — real value erodes. If the discriminator confirms debasement, the cash bucket must rotate into real assets.",
   },
   {
-    id:"hawkish", label:"Hawkish Rates Repricing", color:"#B91C1C", bg:"#FEF2F2", bdr:"#FCA5A5",
+    id:"hawkish", label:"Hawkish Rates Repricing", color:P.red700, bg:C.rBg, bdr:C.rBdr,
     tag:"long-end breaks higher · term premium repricing",
     desc:"The long end reprices higher — 30Y breaks above ~5.35% and rate-sensitives sell together. A duration event, distinct from a growth-driven selloff.",
     discriminator:"30Y > 5.35% AND gold, TLT, XLU, XLP, IWM selling together (a broad rate-sensitive de-rate, not a single-name move)",
@@ -970,7 +970,7 @@ const REGIME_SHIFTS = [
     // horizon is DECADES, and it is the tool used to AVOID a crash, not a crash resolution. So it is
     // a structural background STATE, gated on a sustained-negative 10Y real yield (DFII10), and it is
     // deliberately kept off the Insurance tab (which only asks how a crash resolves).
-    id:"repress", label:"Financial Repression", color:"#0F766E", bg:"#F0FDFA", bdr:"#5EEAD1",
+    id:"repress", label:"Financial Repression", color:P.teal700, bg:P.teal50, bdr:P.teal300,
     tag:"structural · multi-year",
     desc:"Retiring the debt in real terms by holding nominal yields below inflation for years — Dalio's \"artificially low interest rate… the way Japan has done it.\" NOT a crash resolution: repression is the mechanism used to AVOID a crash. Japan ran suppressed JGB yields ~1990–2024 with no crash — the Nikkei peaked in 1989 and did not recover until 2024. Cash bleeds ~1–2%/yr: slow and survivable, not the fast erosion of Debasement.",
     discriminator:"10Y real yield (DFII10) sustained NEGATIVE → repression active · positive → not repression. This IS the definition — the bondholder must receive less than inflation.",
@@ -985,7 +985,7 @@ const REGIME_SHIFTS = [
 
 // CPI tracker series colours — ONE definition shared by the headline tiles, the chart lines
 // and the legend, so a tile can never drift out of sync with the line it labels.
-const CPI_SERIES = { headline: "#ef4444", core: "#f97316", pce: "#8b5cf6" };
+const CPI_SERIES = { headline: P.red500, core: P.orange500, pce: P.violet500 };
 
 // ─── LIVE CASH YIELD ──────────────────────────────────────────────────────────
 // Single source of truth for "what does cash earn right now". Short-Treasury vehicles
@@ -1080,7 +1080,7 @@ function InterventionToggle({ jpyChangePct, dxyChangePct, onChange }) {
         <button
           onClick={() => toggle(!active)} disabled={saving}
           style={{
-            background: active ? tok.color : "#fff", color: active ? "#fff" : C.mid,
+            background: active ? tok.color : C.onFill, color: active ? C.onFill : C.mid,
             border: "1.5px solid " + (active ? tok.color : C.bdrMd), borderRadius: 8,
             padding: "6px 14px", fontSize: 12.5, fontWeight: 800,
             cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1,
@@ -1232,7 +1232,7 @@ function FedPathCard({ effr, feed = null }) {
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 6, fontSize: 10.5, color: C.mid }} title={`${feed.source} · EFFR ${feed.effr ?? "—"} (${feed.effrSource || "no EFFR"})`}>
               {(feed.contracts || []).filter(c => c.ok).map(c => (
                 <button key={c.code} onClick={() => setContract(c.label)}
-                  style={{ cursor: "pointer", background: c.label === contract ? C.blue : C.surf, color: c.label === contract ? "#fff" : C.mid, border: "1.5px solid " + (c.label === contract ? C.blue : C.bdr), borderRadius: 999, padding: "2px 9px", fontSize: 10.5, fontWeight: 700 }}>
+                  style={{ cursor: "pointer", background: c.label === contract ? C.blue : C.surf, color: c.label === contract ? C.onFill : C.mid, border: "1.5px solid " + (c.label === contract ? C.blue : C.bdr), borderRadius: 999, padding: "2px 9px", fontSize: 10.5, fontWeight: 700 }}>
                   {c.label.slice(0, 3)} {c.impliedRate.toFixed(2)}%
                 </button>
               ))}
@@ -1378,7 +1378,7 @@ function CashComparisonCard({ liveInd }) {
         <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: "1.5px solid " + C.bdr }}>
           {["simple", "apy"].map(cv => (
             <button key={cv} onClick={() => set("conv", cv)} style={{ cursor: "pointer", border: "none", padding: "6px 10px", fontSize: 11.5, fontWeight: 800,
-              background: cfg.conv === cv ? C.blue : C.surf, color: cfg.conv === cv ? "#fff" : C.mid }}>{cv === "apy" ? "APY" : "simple"}</button>
+              background: cfg.conv === cv ? C.blue : C.surf, color: cfg.conv === cv ? C.onFill : C.mid }}>{cv === "apy" ? "APY" : "simple"}</button>
           ))}
         </div>
         <label style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>Term
@@ -1539,9 +1539,9 @@ const fmtPrintDate = d => d.toLocaleDateString("en-US", { month: "short", day: "
 
 // Credit thresholds — one definition for both the reference lines and the legend.
 const CREDIT_MARKS = [
-  { val: 3.0, label: "Mild stress",       color: "#D97706", dash: "4 2" },
-  { val: 4.5, label: "Alert threshold",   color: "#F97316", dash: "5 3" },
-  { val: 6.0, label: "Recession likely",  color: "#DC2626", dash: "4 2" },
+  { val: 3.0, label: "Mild stress",       color: P.amber600, dash: "4 2" },
+  { val: 4.5, label: "Alert threshold",   color: P.orange500, dash: "5 3" },
+  { val: 6.0, label: "Recession likely",  color: P.red600, dash: "4 2" },
 ];
 
 // ─── CREDIT BLOCK (P2 / F.2) ──────────────────────────────────────────────────
@@ -1870,7 +1870,7 @@ function IsmEntryPanel({ entry, onChange }) {
           <span>services</span>{inp(services, setServices, "52.0")}
           <span>released</span><input type="date" value={asOf} onChange={e => setAsOf(e.target.value)} style={{ padding: "4px 6px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12, background: C.surf, color: C.text }} />
           <button onClick={save} disabled={saving || pmi === ""}
-            style={{ cursor: "pointer", background: C.blue, color: "#fff", border: "none", borderRadius: 7, padding: "5px 12px", fontSize: 12, fontWeight: 800, opacity: (saving || pmi === "") ? 0.5 : 1 }}>
+            style={{ cursor: "pointer", background: C.blue, color: C.onFill, border: "none", borderRadius: 7, padding: "5px 12px", fontSize: 12, fontWeight: 800, opacity: (saving || pmi === "") ? 0.5 : 1 }}>
             {saving ? "saving…" : "save"}
           </button>
         </div>
@@ -2190,9 +2190,9 @@ function LaborPanel({ labor, depth = "full", extras = null, announced = false })
               {(() => {
                 const hi = Math.max(...chart.map(r => r.empPop).filter(v => v != null));
                 return [
-                  { y: hi, c: "#166534", d: "4 2" },
-                  { y: hi - 0.25, c: "#D97706", d: "5 3" },
-                  { y: hi - 0.5, c: "#DC2626", d: "4 2" },
+                  { y: hi, c: C.green, d: "4 2" },
+                  { y: hi - 0.25, c: P.amber600, d: "5 3" },
+                  { y: hi - 0.5, c: P.red600, d: "4 2" },
                 ].map(t => <ReferenceLine key={t.y} yAxisId="ep" y={t.y} stroke={t.c} strokeDasharray={t.d} strokeWidth={1.5} />);
               })()}
               <Line yAxisId="ep" type="monotone" dataKey="empPop" name="empPop" stroke={tok.color} strokeWidth={2.5} dot={false} connectNulls />
@@ -2206,9 +2206,9 @@ function LaborPanel({ labor, depth = "full", extras = null, announced = false })
         {chart.length >= 2 && (() => {
           const hi = Math.max(...chart.map(r => r.empPop).filter(v => v != null));
           const marks = [
-            { val: +hi.toFixed(2), label: "12m high", color: "#166534", dash: "4 2" },
-            { val: +(hi - 0.25).toFixed(2), label: "Watch −0.25pp", color: "#D97706", dash: "5 3" },
-            { val: +(hi - 0.5).toFixed(2), label: "Sahm equiv −0.5pp", color: "#DC2626", dash: "4 2" },
+            { val: +hi.toFixed(2), label: "12m high", color: C.green, dash: "4 2" },
+            { val: +(hi - 0.25).toFixed(2), label: "Watch −0.25pp", color: P.amber600, dash: "5 3" },
+            { val: +(hi - 0.5).toFixed(2), label: "Sahm equiv −0.5pp", color: P.red600, dash: "4 2" },
           ];
           return (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginTop: 4 }}>
@@ -2412,36 +2412,36 @@ const SEP_HIKE_ODDS = { value: 31, prior: 57, asOf: "2026-08-24", source: "CME F
 const FED_LANGUAGE_STATES = {
   hawkish_hold: {
     label: "🔴 Hawkish Hold",
-    color: "#ef4444",
-    bg: "#fef2f2",
+    color: P.red500,
+    bg: C.rBg,
     description: "Higher for longer dominant. No acknowledgment of downside risks. Rate cuts not on the table.",
     watchFor: "Watch for: first mention of 'data dependent' flexibility, any acknowledgment of labor market softening, or dissenting dovish votes at FOMC.",
   },
   hawkish_tilt: {
     label: "🟠 Hawkish Tilt",
-    color: "#f97316",
-    bg: "#fff7ed",
+    color: P.orange500,
+    bg: C.oBg,
     description: "Still holding but beginning to acknowledge growth risks or disinflation progress. 'Data dependent' language increasing.",
     watchFor: "Watch for: 'appropriate to begin discussing' rate adjustments, explicit acknowledgment of disinflation progress, two consecutive dovish dissenting votes.",
   },
   neutral: {
     label: "🟡 Neutral / Watching",
-    color: "#eab308",
-    bg: "#fefce8",
+    color: P.yellow500,
+    bg: P.yellow50,
     description: "Balanced language. Internal debate visible. Historical pivot precursor — typically 1-2 meetings before first cut.",
     watchFor: "Watch for: explicit 'easing may be appropriate' language, removal of 'higher for longer' phrasing, Fed Chair press conference tone shift.",
   },
   dovish_tilt: {
     label: "🟢 Dovish Tilt",
-    color: "#22c55e",
-    bg: "#f0fdf4",
+    color: P.green500,
+    bg: C.gBg,
     description: "Explicit acknowledgment that policy needs to ease. First cut likely within 1-2 meetings.",
     watchFor: "Watch for: first actual cut, pace of subsequent cuts, terminal rate language.",
   },
   active_easing: {
     label: "🟢🟢 Active Easing",
-    color: "#16a34a",
-    bg: "#dcfce7",
+    color: P.green600,
+    bg: P.green100,
     description: "Cutting cycle underway. Focus shifts to pace and terminal rate.",
     watchFor: "Watch for: pause signals, re-acceleration of inflation, terminal rate guidance.",
   },
@@ -2524,7 +2524,7 @@ function RecessionEntryPanel({ overrides, onSaved }) {
     setSaving(false);
   }
 
-  const inp = { padding: "6px 9px", fontSize: 12, border: "1px solid " + C.bdrMd, borderRadius: 6, background: "#fff", color: C.text };
+  const inp = { padding: "6px 9px", fontSize: 12, border: "1px solid " + C.bdrMd, borderRadius: 6, background: C.surf, color: C.text };
   return (
     <Card>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
@@ -2544,12 +2544,12 @@ function RecessionEntryPanel({ overrides, onSaved }) {
         style={{ ...inp, width: "100%", marginTop: 8, boxSizing: "border-box" }} />
       <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
         <button onClick={() => save(false)} disabled={saving}
-          style={{ background: C.blue, color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 12.5, fontWeight: 800, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 }}>
+          style={{ background: C.blue, color: C.onFill, border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 12.5, fontWeight: 800, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 }}>
           {saving ? "Saving…" : "Save override"}
         </button>
         {current && (
           <button onClick={() => save(true)} disabled={saving}
-            style={{ background: "#fff", color: C.mid, border: "1.5px solid " + C.bdrMd, borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: saving ? "wait" : "pointer" }}>
+            style={{ background: C.surf, color: C.mid, border: "1.5px solid " + C.bdrMd, borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: saving ? "wait" : "pointer" }}>
             Clear override
           </button>
         )}
@@ -2687,6 +2687,52 @@ const HEADER_TICKERS = ["AAPL","AXP","KO","BAC","CVX","OXY","GOOGL","DAL","BN","
 // ─── SHARED HOOKS ─────────────────────────────────────────────────────────────
 // localStorage cache so the last successful fetch survives a page reload, instead
 // of resetting to the hardcoded static fallbacks (oil 88, spread 2.75, prices "—").
+// ── THE THEME ────────────────────────────────────────────────────────────────
+// Three palettes, one attribute. The choice lives on <html data-theme> (index.html sets it from
+// storage before the first paint, so there is no flash) and in localStorage under THEME_KEY;
+// this hook is the header toggle's view of both. "soft" is the default and needs no attribute.
+// Setting the attribute is the whole mechanism: the tokens in src/index.css resolve differently
+// and nothing re-renders for it.
+function useTheme() {
+  const [theme, setThemeState] = useState(() => {
+    try { const t = localStorage.getItem(THEME_KEY); return THEMES.includes(t) ? t : DEFAULT_THEME; }
+    catch (_) { return DEFAULT_THEME; }
+  });
+  useEffect(() => {
+    if (theme === DEFAULT_THEME) document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
+  const setTheme = (t) => {
+    if (!THEMES.includes(t)) return;
+    setThemeState(t);
+    try { localStorage.setItem(THEME_KEY, t); } catch (_) { /* storage refused — the choice holds for this page and resets on reload */ }
+  };
+  return [theme, setTheme];
+}
+
+// Light · Soft · Dark, as one control. The three are a segmented pill rather than a cycling
+// button because the reader should be able to see what the other choices ARE — a single button
+// that says "Dark" leaves you guessing whether it names the current state or the next one.
+function ThemeToggle({ theme, setTheme }) {
+  const names = { light: "Light", soft: "Soft", dark: "Dark" };
+  return (
+    <div role="radiogroup" aria-label="Colour theme" title="Light is the palette the dashboard had before; Soft is the same a notch lower in contrast; Dark is the same on a dark ground."
+         style={{ display: "inline-flex", border: "1.5px solid " + C.bdr, borderRadius: 999, padding: 2, background: C.inset, gap: 2 }}>
+      {THEMES.map(t => {
+        const on = t === theme;
+        return (
+          <button key={t} role="radio" aria-checked={on} onClick={() => setTheme(t)}
+                  style={{ border: "none", borderRadius: 999, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: on ? "default" : "pointer",
+                           background: on ? C.surf : "transparent", color: on ? C.text : C.muted,
+                           boxShadow: on ? "0 1px 3px rgba(0,0,0,.08)" : "none" }}>
+            {names[t]}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function cacheLoad(key, fallback) {
   try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : fallback; }
   catch (_) { return fallback; }
@@ -2828,15 +2874,15 @@ async function persistFunds(funds) {
 // ─── TICKER → COMPANY NAME MAP ───────────────────────────────────────────────
 function Pill({ label, color, bg, bdr }) {
   return (
-    <span style={{ background: bg || color + "18", color, border: "1.5px solid " + (bdr || color + "44"), borderRadius: 6, padding: "3px 9px", fontSize: 12, fontWeight: 800 }}>
+    <span style={{ background: bg || alpha(color, 0x18), color, border: "1.5px solid " + (bdr || alpha(color, 0x44)), borderRadius: 6, padding: "3px 9px", fontSize: 12, fontWeight: 800 }}>
       {label}
     </span>
   );
 }
 function ActionBadge({ action }) {
-  const M = { bought:["#166534","#F0FDF4","NEW BUY"], added:["#166534","#F0FDF4","ADDED"], hold:["#6B7280","#F9FAFB","HOLD"], trim:["#B45309","#FFFBEB","TRIM"], exit:["#991B1B","#FEF2F2","EXIT"], "+50%":["#166534","#F0FDF4","+50%"], mixed:["#6B7280","#F9FAFB","MIX"] };
-  const [fg, bg, lbl] = M[action] || ["#6B7280", "#F9FAFB", action];
-  return <span style={{ background: bg, color: fg, border: "1px solid " + fg + "33", borderRadius: 4, padding: "1px 6px", fontSize: 11, fontWeight: 700 }}>{lbl}</span>;
+  const M = { bought:[C.green,C.gBg,"NEW BUY"], added:[C.green,C.gBg,"ADDED"], hold:[P.gray500,C.inset,"HOLD"], trim:[P.amber700,C.aBg,"TRIM"], exit:[C.red,C.rBg,"EXIT"], "+50%":[C.green,C.gBg,"+50%"], mixed:[P.gray500,C.inset,"MIX"] };
+  const [fg, bg, lbl] = M[action] || [P.gray500, C.inset, action];
+  return <span style={{ background: bg, color: fg, border: "1px solid " + alpha(fg, 0x33), borderRadius: 4, padding: "1px 6px", fontSize: 11, fontWeight: 700 }}>{lbl}</span>;
 }
 // Exchange deep-links for foreign names Yahoo doesn't cover (manual price entry).
 const EXCHANGE_LINKS = {
@@ -2956,7 +3002,7 @@ function PriceBadge({ ticker, prices }) {
 }
 function ChartTip({ active, payload, label, fmt }) {
   if (!active || !payload || !payload.length) return null;
-  return <div style={{ background: "#fff", border: "1px solid " + C.bdr, borderRadius: 8, padding: "8px 12px", boxShadow: "0 2px 8px rgba(0,0,0,.1)" }}>
+  return <div style={{ background: C.surf, border: "1px solid " + C.bdr, borderRadius: 8, padding: "8px 12px", boxShadow: "0 2px 8px rgba(0,0,0,.1)" }}>
     <div style={{ color: C.muted, fontSize: 12, marginBottom: 2 }}>{label}</div>
     <div style={{ color: C.text, fontWeight: 800, fontSize: 15 }}>{fmt ? fmt(payload[0].value) : payload[0].value}</div>
   </div>;
@@ -3153,7 +3199,7 @@ function AssetDetail({ asset, prices, onFetchPrices, pricesLoading, pricesUpdate
           <SLabel>Tickers + Live Prices</SLabel>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {pricesUpdated && <span style={{ color: C.lbl, fontSize: 12 }}>Updated {fmtTime(pricesUpdated)}</span>}
-            <Btn onClick={() => onFetchPrices(tickers)} disabled={pricesLoading} color="#fff" bgColor={C.green} label={pricesLoading ? "Loading…" : "🔄 Prices"} />
+            <Btn onClick={() => onFetchPrices(tickers)} disabled={pricesLoading} color={C.onFill} bgColor={C.green} label={pricesLoading ? "Loading…" : "🔄 Prices"} />
           </div>
         </div>
         {asset.tickers.map((tk, i) => (
@@ -3227,12 +3273,12 @@ function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated 
           <SLabel>Sector Allocation</SLabel>
           <ResponsiveContainer width="100%" height={175}>
             <PieChart>
-              <Pie data={pieData} cx="50%" cy="50%" innerRadius={38} outerRadius={64} dataKey="value" stroke="#fff" strokeWidth={2}>
+              <Pie data={pieData} cx="50%" cy="50%" innerRadius={38} outerRadius={64} dataKey="value" stroke={C.surf} strokeWidth={2}>
                 {pieData.map((_, i) => <Cell key={i} fill={SC[i % SC.length]} />)}
               </Pie>
               <Tooltip content={function({ active, payload }) {
                 if (!active || !payload || !payload.length) return null;
-                return <div style={{ background: "#fff", border: "1px solid " + C.bdr, borderRadius: 8, padding: "8px 12px" }}>
+                return <div style={{ background: C.surf, border: "1px solid " + C.bdr, borderRadius: 8, padding: "8px 12px" }}>
                   <div style={{ fontWeight: 700, fontSize: 14 }}>{payload[0].name}</div>
                   <div style={{ color: C.muted, fontSize: 13 }}>{payload[0].value}%</div>
                 </div>;
@@ -3274,17 +3320,17 @@ function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated 
               </span>;
             })()}
             {pricesUpdated && <span style={{ color: C.lbl, fontSize: 12 }}>{fmtTime(pricesUpdated)}</span>}
-            <Btn onClick={() => onFetchPrices(tickers)} disabled={pricesLoading} color="#fff" bgColor={C.green} label={pricesLoading ? "Loading…" : "🔄 Prices"} />
+            <Btn onClick={() => onFetchPrices(tickers)} disabled={pricesLoading} color={C.onFill} bgColor={C.green} label={pricesLoading ? "Loading…" : "🔄 Prices"} />
           </div>
         </div>
         <ResponsiveContainer width="100%" height={Math.max(200, fund.holdings.length * 28)}>
           <BarChart data={fund.holdings} layout="vertical" margin={{ left: 4, right: 44, top: 0, bottom: 0 }}>
             <XAxis type="number" domain={[0, dataMax => Math.ceil(dataMax * 1.08)]} tick={{ fill: C.lbl, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => v + "%"} />
             <YAxis type="category" dataKey="name" interval={0} tick={{ fill: C.mid, fontSize: 11, fontWeight: 600 }} axisLine={false} tickLine={false} width={64} />
-            <Tooltip formatter={v => [v + "%", "% of Portfolio"]} contentStyle={{ background: "#fff", border: "1px solid " + C.bdr, borderRadius: 8, fontSize: 13 }} />
+            <Tooltip formatter={v => [v + "%", "% of Portfolio"]} contentStyle={{ background: C.surf, border: "1px solid " + C.bdr, borderRadius: 8, fontSize: 13 }} />
             <Bar dataKey="pct" radius={[0, 5, 5, 0]}>
               {fund.holdings.map((h, i) => (
-                <Cell key={i} fill={h.action === "bought" ? "#166534" : h.action === "added" ? "#22C55E" : h.action === "trim" ? "#D97706" : h.action === "exit" ? "#DC2626" : fund.color} opacity={0.85} />
+                <Cell key={i} fill={h.action === "bought" ? C.green : h.action === "added" ? P.green500 : h.action === "trim" ? P.amber600 : h.action === "exit" ? P.red600 : fund.color} opacity={0.85} />
               ))}
               <LabelList dataKey="pct" position="right" formatter={v => v + "%"} style={{ fill: C.mid, fontSize: 11, fontWeight: 700 }} />
             </Bar>
@@ -3326,10 +3372,10 @@ function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated 
             <div key={i} style={{ color: C.green, fontSize: 14, padding: "4px 0", borderBottom: i < fund.recentBuys.length - 1 ? "1px solid " + C.gBdr : "none" }}>↑ {b}</div>
           ))}
         </div>
-        <div style={{ flex: 1, minWidth: 160, background: "#FFF3E0", border: "1.5px solid #FFCC80", borderRadius: 10, padding: "12px 14px" }}>
+        <div style={{ flex: 1, minWidth: 160, background: P.mOrange50, border: "1.5px solid " + P.mOrange200, borderRadius: 10, padding: "12px 14px" }}>
           <SLabel color={C.amber}>Q1 Key Sells</SLabel>
           {fund.recentSells.map((s, i) => (
-            <div key={i} style={{ color: C.amber, fontSize: 14, padding: "4px 0", borderBottom: i < fund.recentSells.length - 1 ? "1px solid #FFE0B2" : "none" }}>↓ {s}</div>
+            <div key={i} style={{ color: C.amber, fontSize: 14, padding: "4px 0", borderBottom: i < fund.recentSells.length - 1 ? "1px solid " + P.mOrange100 : "none" }}>↓ {s}</div>
           ))}
         </div>
       </div>
@@ -3449,7 +3495,7 @@ function RegionSessionBadge({ session, tz }) {
   let clock = "";
   try { clock = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date()); } catch { /* bad tz */ }
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color, background: color + "18", border: "1px solid " + color + "55", borderRadius: 5, padding: "2px 7px" }}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color, background: alpha(color, 0x18), border: "1px solid " + alpha(color, 0x55), borderRadius: 5, padding: "2px 7px" }}>
       <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, display: "inline-block" }} />
       {label}{clock ? " · " + clock + " local" : ""}
     </span>
@@ -3485,7 +3531,7 @@ function MetricCard({ label, labelRight, value, valueColor, strike, sub, badge, 
 function StateChip({ label, color, filled }) {
   return (
     <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color,
-      background: filled ? C.aBg : "transparent", border: "1px solid " + color + "55", borderRadius: 4, padding: "1px 5px", whiteSpace: "nowrap" }}>
+      background: filled ? C.aBg : "transparent", border: "1px solid " + alpha(color, 0x55), borderRadius: 4, padding: "1px 5px", whiteSpace: "nowrap" }}>
       {label}
     </span>
   );
@@ -3506,7 +3552,7 @@ function HandKept({ asOf, cadenceDays = null, what = null }) {
   return (
     <span title={what ? `Updated by hand ${what} — not fed by a live series.` : "Updated by hand, not fed by a live series."}
       style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: col,
-               background: stale ? C.aBg : "transparent", border: "1px solid " + col + "66", borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap" }}>
+               background: stale ? C.aBg : "transparent", border: "1px solid " + alpha(col, 0x66), borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap" }}>
       ✍ hand-kept{asOf ? ` · as of ${asOf}` : ""}{days != null ? ` · ${days}d` : ""}{stale ? " · REFRESH DUE" : ""}
     </span>
   );
@@ -3621,7 +3667,7 @@ function GaugesLeaning({ leaning, prominent }) {
           const c = i.tripped === null ? C.lbl : i.tripped ? C.red : C.green;
           return (
             <span key={i.name} title={i.detail}
-              style={{ fontSize: 10.5, fontWeight: 700, color: c, border: "1px solid " + c + "55", background: c + "12", borderRadius: 5, padding: "2px 6px" }}>
+              style={{ fontSize: 10.5, fontWeight: 700, color: c, border: "1px solid " + alpha(c, 0x55), background: alpha(c, 0x12), borderRadius: 5, padding: "2px 6px" }}>
               {i.tripped === null ? "· " : i.tripped ? "▲ " : "▼ "}{i.name}
               {i.tripped === null ? <span style={{ color: C.lbl }}> n/a</span> : null}
             </span>
@@ -4011,14 +4057,14 @@ function ScenarioBoard({ scenarios }) {
                     of its own falsifier were true on the same screen, which reads as one leg away
                     from firing when the correct read is that it is finished. */}
                 {s.broken && (
-                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: "#fff",
+                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: C.onFill,
                                  background: C.mid, borderRadius: 4, padding: "1px 5px" }}
                     title={s.brokenBy?.join(" · ") || "the break predicate is satisfied"}>
                     ✕ BROKEN
                   </span>
                 )}
                 {changed[s.id] && (
-                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: "#fff", background: toneCol, borderRadius: 4, padding: "1px 5px" }}
+                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: C.onFill, background: toneCol, borderRadius: 4, padding: "1px 5px" }}
                     title={`moved ${changed[s.id]} → ${s.met}/${s.total} since the last change`}>
                     ▲ CHANGED {changed[s.id]} → {s.met}/{s.total}
                   </span>
@@ -4049,7 +4095,7 @@ function ScenarioBoard({ scenarios }) {
                     could not express: a scenario six tenths of a basis point away rendered
                     identically to one nowhere near. */}
                 {s.near && !s.broken && !s.confirmed && (
-                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: "#fff",
+                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: C.onFill,
                                  background: C.amber, borderRadius: 4, padding: "1px 5px" }}
                     title={s.nearest ? `${s.nearest.label}: ${s.nearest.display}` : "a leg is inside half an ATR of its threshold"}>
                     ⚠ NEAR{s.nearest?.gapDisplay ? ` ${s.nearest.gapDisplay}` : ""}
@@ -4530,7 +4576,7 @@ function RegimeShiftScenarios({ realYield = null, realYieldAsOf = null }) {
           const on = x.id === sel;
           return (
             <button key={x.id} onClick={() => setSel(x.id)} style={{
-              background: on ? x.color : C.surf, color: on ? "#fff" : C.mid,
+              background: on ? x.color : C.surf, color: on ? C.onFill : C.mid,
               border: "1.5px solid " + (on ? x.color : C.bdr), borderRadius: 8,
               padding: "6px 12px", fontSize: 12.5, fontWeight: 800, cursor: "pointer", opacity: on ? 1 : 0.75,
             }}>{on ? "● " : ""}{x.label}</button>
@@ -4871,14 +4917,14 @@ function SouthboundPanel() {
     setSaving(false);
   }
 
-  const inp = { padding: "6px 9px", fontSize: 12, border: "1px solid " + C.bdrMd, borderRadius: 6, background: "#fff", color: C.text };
+  const inp = { padding: "6px 9px", fontSize: 12, border: "1px solid " + C.bdrMd, borderRadius: 6, background: C.surf, color: C.text };
   const win = (w) => `${w.sum > 0 ? "+" : ""}${w.sum} (${w.days}d, ${w.dir})`;
   const dlt = (v) => v == null ? "—" : `${v > 0 ? "+" : ""}${v}pp`;
   const CCASS = "https://www3.hkexnews.hk/sdw/search/searchsdw.aspx";
   return (
     <Card>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-        <SLabel><span style={{ display: "inline-block", background: "#B91C1C", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 4px", borderRadius: 3, marginRight: 5 }}>HK</span>China-policy trade — SMIC A/H premium + Southbound flow</SLabel>
+        <SLabel><span style={{ display: "inline-block", background: P.red700, color: C.onFill, fontSize: 9, fontWeight: 800, padding: "1px 4px", borderRadius: 3, marginRight: 5 }}>HK</span>China-policy trade — SMIC A/H premium + Southbound flow</SLabel>
         <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>{ahOk ? "A/H premium 📡 auto" : "A/H feed down — SMIC holding ✍️ manual"} · aggregate net ✍️ manual</span>
       </div>
 
@@ -4930,7 +4976,7 @@ function SouthboundPanel() {
       </div>
       <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="notes (optional)" style={{ ...inp, width: "100%", marginTop: 8, boxSizing: "border-box" }} />
       <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <button onClick={save} disabled={saving} style={{ background: C.blue, color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 12.5, fontWeight: 800, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : "Save day"}</button>
+        <button onClick={save} disabled={saving} style={{ background: C.blue, color: C.onFill, border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 12.5, fontWeight: 800, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : "Save day"}</button>
         <span style={{ fontSize: 11, color: C.lbl }}>{tAgg.nObs} day{tAgg.nObs === 1 ? "" : "s"} stored</span>
         {msg && <span style={{ fontSize: 11.5, fontWeight: 700, color: msg.ok ? C.green : C.red }}>{msg.text}</span>}
       </div>
@@ -5008,7 +5054,7 @@ function KoreaManualEntry({ kofia, gate2 = null, onSaved }) {
 
   return (
     <Card>
-      <SLabel><span style={{ display: "inline-block", background: "#0F4C9B", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 4px", borderRadius: 3, marginRight: 5, letterSpacing: 0 }}>KR</span>Korea Manual Entry — KOFIA paste + 7709 units + KRX flows</SLabel>
+      <SLabel><span style={{ display: "inline-block", background: P.navy700, color: C.onFill, fontSize: 9, fontWeight: 800, padding: "1px 4px", borderRadius: 3, marginRight: 5, letterSpacing: 0 }}>KR</span>Korea Manual Entry — KOFIA paste + 7709 units + KRX flows</SLabel>
       <div style={{ fontSize: 11, margin: "3px 0 8px", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
         <span style={{ color: C.muted, fontWeight: 700 }}>Sources:</span>
         <a href="https://freesis.kofia.or.kr/" target="_blank" rel="noopener noreferrer" style={{ color: C.blue, textDecoration: "none", fontWeight: 700 }}>KOFIA freesis ↗</a>
@@ -5242,7 +5288,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
             const on = regions.includes(r.id);
             return (
               <button key={r.id} onClick={() => toggleRegion(r.id)} style={{
-                background: on ? C.blue : C.surf, color: on ? "#fff" : C.mid,
+                background: on ? C.blue : C.surf, color: on ? C.onFill : C.mid,
                 border: "1.5px solid " + (on ? C.blue : C.bdr), borderRadius: 8,
                 padding: "7px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: on ? 1 : 0.6,
               }}>{on ? "✓ " : ""}{r.label}</button>
@@ -6006,6 +6052,7 @@ export default function App() {
   // Lands on the first tab of the first group. Declaring Trade Desk first and then opening in the
   // middle of Market Watch is the kind of small incoherence that makes an ordering feel arbitrary.
   const [tab, setTab]           = useState("global");
+  const [theme, setTheme]       = useTheme();
   const [pbRegions, setPbRegions] = useState(["asia", "eu", "us"]); // Global Playbook — multi-select, default All
   const toggleRegion = (r) => setPbRegions(prev => {
     const next = prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r];
@@ -6293,6 +6340,7 @@ export default function App() {
               </p>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <ThemeToggle theme={theme} setTheme={setTheme} />
               {/* Unified refresh — fires both prices and indicators */}
               <button
                 onClick={() => {
@@ -6448,7 +6496,7 @@ export default function App() {
               {regimePin.note ? <span style={{ fontStyle: "italic", color: C.mid }}> — “{regimePin.note}”</span> : null}
             </span>
             <span style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-              <Btn onClick={switchToLive} color="#fff" bgColor={C.blue} label="Switch to live" />
+              <Btn onClick={switchToLive} color={C.onFill} bgColor={C.blue} label="Switch to live" />
               <Btn onClick={() => {
                 const n = window.prompt("Why keep this pinned? (shown in the banner)", regimePin.note || "");
                 if (n !== null) keepPinned(n);
@@ -6518,10 +6566,10 @@ export default function App() {
               // that assumed WATCH=1 / ALERT=2 / DANGER=3 was one stage behind at every level
               // above 1. The card contradicted itself, and the bullets were the wrong advice.
               const GRADIENTS = {
-                DANGER:  { g1: "#991B1B", g2: "#B91C1C", shadow: "rgba(153,27,27,0.35)" },
-                ALERT:   { g1: "#92400E", g2: "#B45309", shadow: "rgba(146,64,14,0.35)" },
-                WATCH:   { g1: "#334155", g2: "#1E293B", shadow: "rgba(30,41,59,0.35)" },
-                NEUTRAL: { g1: "#166534", g2: "#15803D", shadow: "rgba(22,101,52,0.30)" },
+                DANGER:  { g1: C.heroDanger1, g2: C.heroDanger2, shadow: "rgba(153,27,27,0.35)" },
+                ALERT:   { g1: C.heroAlert1, g2: C.heroAlert2, shadow: "rgba(146,64,14,0.35)" },
+                WATCH:   { g1: C.heroWatch1, g2: C.heroWatch2, shadow: "rgba(30,41,59,0.35)" },
+                NEUTRAL: { g1: C.heroNeutral1, g2: C.heroNeutral2, shadow: "rgba(22,101,52,0.30)" },
               };
               const STAGE_BULLETS = {
                 1: ["🔍 Stage 1 — Surveillance. No insurance purchases yet.",
@@ -6557,7 +6605,7 @@ export default function App() {
                 .map(id => REGIMES.find(r => r.id === id)?.label).filter(Boolean);
               return (
                 <>
-                  <div style={{ background: contested ? "linear-gradient(135deg, #4B5068, #2F3444)" : `linear-gradient(135deg, ${cfg.g1}, ${cfg.g2})`, borderRadius: 14, padding: "18px 22px", color: "#fff", boxShadow: `0 4px 24px ${contested ? "rgba(75,80,104,0.35)" : cfg.shadow}`, transition: "background 0.4s" }}>
+                  <div style={{ background: contested ? `linear-gradient(135deg, ${C.heroContested1}, ${C.heroContested2})` : `linear-gradient(135deg, ${cfg.g1}, ${cfg.g2})`, borderRadius: 14, padding: "18px 22px", color: C.onHero, boxShadow: `0 4px 24px ${contested ? "rgba(75,80,104,0.35)" : cfg.shadow}`, transition: "background 0.4s" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
                       <div>
                         <div style={{ fontSize: 11, letterSpacing: 3, textTransform: "uppercase", opacity: 0.7, fontWeight: 700, marginBottom: 5 }}>
@@ -6571,7 +6619,7 @@ export default function App() {
                       </div>
                       <div style={{ background: "rgba(255,255,255,0.18)", borderRadius: 10, padding: "8px 16px", textAlign: "center", backdropFilter: "blur(4px)", minWidth: 90 }}>
                         <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", opacity: 0.8, marginBottom: 2 }}>Signal</div>
-                        <div style={{ fontSize: 22, fontWeight: 900, color: "#fff", lineHeight: 1 }}>{contested ? "—" : sigLabel}</div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: C.onHero, lineHeight: 1 }}>{contested ? "—" : sigLabel}</div>
                         <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>{contested ? topTwoLabels.join(" / ") : activeRegime.label}</div>
                       </div>
                     </div>
@@ -6582,7 +6630,7 @@ export default function App() {
                            `🗓️ Consensus inputs are ${CONSENSUS_VINTAGE.label} (${CONSENSUS_VINTAGE.staleNote}); ${CONSENSUS_VINTAGE.dueNote}.`]
                         : cfg.bullets).map((t, i) => (
                         <div key={i} style={{ flex: "1 1 200px" }}>
-                          <span style={{ color: "#fff", fontSize: 14, lineHeight: 1.7, opacity: 0.92 }}>{t}</span>
+                          <span style={{ color: C.onHero, fontSize: 14, lineHeight: 1.7, opacity: 0.92 }}>{t}</span>
                         </div>
                       ))}
                     </div>
@@ -6630,7 +6678,7 @@ export default function App() {
                 {/* M.2 — vintage removed: this composite reads LIVE data. Stale stamps go on
                     the individual stale inputs (regime consensus), never on the composite. */}
                 <SLabel>Overall Read</SLabel>
-                <Btn onClick={fetchIndicators} disabled={indLoading} color="#fff" bgColor={C.blue} label={indLoading ? "Fetching…" : "🔄 Refresh Live Data"} />
+                <Btn onClick={fetchIndicators} disabled={indLoading} color={C.onFill} bgColor={C.blue} label={indLoading ? "Fetching…" : "🔄 Refresh Live Data"} />
               </div>
               {liveInd && (
                 <div style={{ marginBottom: 10, padding: "8px 12px", background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 8, fontSize: 13, color: C.blue, fontWeight: 700 }}>
@@ -6741,7 +6789,7 @@ export default function App() {
               const maxMid = Math.max(...mids, 1);
               const segColor = mid => {
                 const a = Math.max(0.30, Math.min(1, (mid || 0) / maxMid));
-                return activeRegime.color + Math.round(a * 255).toString(16).padStart(2, "0");
+                return alpha(activeRegime.color, a);
               };
               const chartData = POSTURE_BUCKET_META.map((m, i) => ({ name: m.name, value: mids[i] || 0.5, range: alloc[m.key].range, fill: segColor(mids[i]) }));
               // Fix F — portfolio value → dollar extrapolation.
@@ -6800,16 +6848,16 @@ export default function App() {
                         <div style={{ fontSize: 11, letterSpacing: 2.5, textTransform: "uppercase", color: activeRegime.color, fontWeight: 700, marginBottom: 3 }}>Portfolio Posture · {activeRegime.label}</div>
                         <div style={{ fontSize: 16, fontWeight: 900, color: activeRegime.color }}>Allocation by bucket — driven by the active regime</div>
                       </div>
-                      <div style={{ background: "#fff", border: "1.5px solid " + sigColor + "55", borderRadius: 10, padding: "6px 14px", textAlign: "center", minWidth: 90 }}>
+                      <div style={{ background: C.surf, border: "1.5px solid " + alpha(sigColor, 0x55), borderRadius: 10, padding: "6px 14px", textAlign: "center", minWidth: 90 }}>
                         <div style={{ color: C.lbl, fontSize: 10, letterSpacing: 2, textTransform: "uppercase", fontWeight: 700 }}>Live Signal</div>
                         <div style={{ color: sigColor, fontSize: 17, fontWeight: 900, lineHeight: 1 }}>{sigLabel}</div>
                         <div style={{ color: sigColor, fontSize: 10, marginTop: 2, opacity: 0.8 }}>Stage {activeStage} active</div>
                       </div>
                     </div>
                     <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <button onClick={() => setTab("indicators")} style={{ background: "#fff", color: activeRegime.color, border: "1.5px solid " + activeRegime.bdr, borderRadius: 8, padding: "5px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>📡 See Indicators tab for signals →</button>
-                      <button onClick={() => setTab("insurance")} style={{ background: "#fff", color: activeRegime.color, border: "1.5px solid " + activeRegime.bdr, borderRadius: 8, padding: "5px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>🛡️ See Insurance tab for instruments →</button>
-                      <button onClick={() => setTab("income")} style={{ background: "#fff", color: activeRegime.color, border: "1.5px solid " + activeRegime.bdr, borderRadius: 8, padding: "5px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>💰 See Income tab for yield ranking →</button>
+                      <button onClick={() => setTab("indicators")} style={{ background: C.surf, color: activeRegime.color, border: "1.5px solid " + activeRegime.bdr, borderRadius: 8, padding: "5px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>📡 See Indicators tab for signals →</button>
+                      <button onClick={() => setTab("insurance")} style={{ background: C.surf, color: activeRegime.color, border: "1.5px solid " + activeRegime.bdr, borderRadius: 8, padding: "5px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>🛡️ See Insurance tab for instruments →</button>
+                      <button onClick={() => setTab("income")} style={{ background: C.surf, color: activeRegime.color, border: "1.5px solid " + activeRegime.bdr, borderRadius: 8, padding: "5px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>💰 See Income tab for yield ranking →</button>
                     </div>
                   </div>
 
@@ -6826,13 +6874,13 @@ export default function App() {
                         )}
                         <ResponsiveContainer width="100%" height={200}>
                           <PieChart>
-                            <Pie data={chartData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" stroke="#fff" strokeWidth={2} paddingAngle={2}>
+                            <Pie data={chartData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" stroke={C.surf} strokeWidth={2} paddingAngle={2}>
                               {chartData.map((d, i) => <Cell key={i} fill={d.fill} />)}
                             </Pie>
                             <Tooltip content={function({ active, payload }) {
                               if (!active || !payload || !payload.length) return null;
                               const p = payload[0].payload;
-                              return <div style={{ background: "#fff", border: "1px solid " + C.bdr, borderRadius: 8, padding: "8px 12px" }}>
+                              return <div style={{ background: C.surf, border: "1px solid " + C.bdr, borderRadius: 8, padding: "8px 12px" }}>
                                 <div style={{ fontWeight: 700, fontSize: 14 }}>{p.name}</div>
                                 <div style={{ color: C.muted, fontSize: 13 }}>{p.range}</div>
                               </div>;
@@ -6899,7 +6947,7 @@ export default function App() {
                         const toggled = s.n === 4 ? stage4 : s.n === 5 ? stage5 : false;
                         return (
                           <div key={s.n} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "10px 12px", borderRadius: 10, background: isActive ? activeRegime.bg : C.bg, border: "1.5px solid " + (isActive ? activeRegime.color : C.bdr) }}>
-                            <div style={{ flexShrink: 0, width: 30, height: 30, borderRadius: "50%", background: isActive ? activeRegime.color : C.bdrMd, color: "#fff", fontWeight: 900, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>{s.n}</div>
+                            <div style={{ flexShrink: 0, width: 30, height: 30, borderRadius: "50%", background: isActive ? activeRegime.color : C.bdrMd, color: C.onFill, fontWeight: 900, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>{s.n}</div>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
                                 <span style={{ fontWeight: 800, fontSize: 14, color: isActive ? activeRegime.color : C.text }}>Stage {s.n}: {s.label}</span>
@@ -6919,7 +6967,7 @@ export default function App() {
                                 style={{
                                   flexShrink: 0, alignSelf: "center",
                                   background: toggled ? C.green : C.surf,
-                                  color: toggled ? "#fff" : C.muted,
+                                  color: toggled ? C.onFill : C.muted,
                                   border: "1.5px solid " + (toggled ? C.green : C.bdrMd),
                                   borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap",
                                 }}
@@ -6984,7 +7032,7 @@ export default function App() {
                       <>
                         <span style={{ color: C.lbl }}>·</span>
                         <span style={{ color: C.lbl, fontWeight: 700 }}>today’s tape:</span>
-                        <button onClick={() => pickInsurancePhase("hawkish")} style={{ cursor: "pointer", background: "#FFF7ED", color: "#B45309", border: "1.5px solid #FED7AA", borderRadius: 6, padding: "3px 9px", fontWeight: 800, fontSize: 12 }}>
+                        <button onClick={() => pickInsurancePhase("hawkish")} style={{ cursor: "pointer", background: C.oBg, color: P.amber700, border: "1.5px solid " + P.orange200, borderRadius: 6, padding: "3px 9px", fontWeight: 800, fontSize: 12 }}>
                           Hawkish Rates Repricing → see column
                         </button>
                       </>
@@ -7001,7 +7049,7 @@ export default function App() {
                     ))}
                     <span style={{ color: C.lbl }}>·</span>
                     <span style={{ color: C.muted, fontWeight: 700 }}>avoid:</span>
-                    <span style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 6, padding: "2px 8px", fontWeight: 800, color: "#B91C1C" }}>
+                    <span style={{ background: C.rBg, border: "1.5px solid " + P.red200, borderRadius: 6, padding: "2px 8px", fontWeight: 800, color: P.red700 }}>
                       {insWorst.icon} {insWorst.name}
                     </span>
                     <span style={{ color: C.muted, fontStyle: "italic", fontSize: 11.5 }}>ranked for {liveRegime?.label} — full order in the best→worst bar below</span>
@@ -7024,7 +7072,7 @@ export default function App() {
                   const on = insDimOf(insurancePhase) === dim;
                   return (
                     <button key={dim} onClick={() => pickInsurancePhase(INS_PHASE_DIMS[dim][0])} style={{
-                      background: on ? C.blue : C.surf, color: on ? "#fff" : C.mid,
+                      background: on ? C.blue : C.surf, color: on ? C.onFill : C.mid,
                       border: "1.5px solid " + (on ? C.blue : C.bdr), borderRadius: 8,
                       padding: "6px 14px", fontSize: 12.5, fontWeight: 800, cursor: "pointer", opacity: on ? 1 : 0.7,
                     }}>{on ? "● " : ""}{INS_DIM_LABELS[dim]}{dim === "resolution" ? " ▾" : ""}</button>
@@ -7048,7 +7096,7 @@ export default function App() {
                     <button onClick={() => pickInsurancePhase(sp.k)} style={{ cursor: "pointer", background: sp.bg, color: sp.color, border: "1.5px solid " + sp.bdr, borderRadius: 6, padding: "2px 8px", fontWeight: 800, fontSize: 11.5 }}>{sp.short}</button>
                     <span style={{ fontSize: 11, color: C.muted, fontStyle: "italic" }}>{insuranceSuggest.why}</span>
                     {!insurancePinned && <span style={{ fontSize: 10.5, color: C.green, fontWeight: 800 }}>· auto (following signal)</span>}
-                    {diverged && <button onClick={followInsuranceSignal} style={{ cursor: "pointer", background: C.green, color: "#fff", border: "none", borderRadius: 6, padding: "2px 9px", fontWeight: 800, fontSize: 11 }}>Follow signal</button>}
+                    {diverged && <button onClick={followInsuranceSignal} style={{ cursor: "pointer", background: C.green, color: C.onFill, border: "none", borderRadius: 6, padding: "2px 9px", fontWeight: 800, fontSize: 11 }}>Follow signal</button>}
                     {insurancePinned && !diverged && <span style={{ fontSize: 10.5, color: C.muted, fontWeight: 700 }}>· pinned (matches)</span>}
                   </div>
                 );
@@ -7066,7 +7114,7 @@ export default function App() {
                             <button onClick={() => pickInsurancePhase(p.k)} title={p.desc} style={{
                               width: "100%", cursor: "pointer", border: "none", whiteSpace: "nowrap",
                               background: on ? p.color : "transparent",
-                              color: on ? "#fff" : p.color,
+                              color: on ? C.onFill : p.color,
                               fontWeight: 800, fontSize: 12, padding: "8px 10px", lineHeight: 1.25,
                               borderTopLeftRadius: 6, borderTopRightRadius: 6,
                             }}>
@@ -7088,7 +7136,7 @@ export default function App() {
                       const rows = [];
                       if (showGroup) rows.push(
                         <tr key={"grp-" + r.group}>
-                          <td colSpan={1 + shownPhases.length} style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#999", textTransform: "uppercase", padding: "10px 12px 4px", backgroundColor: "transparent", borderBottom: "none" }}>
+                          <td colSpan={1 + shownPhases.length} style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: P.grey999, textTransform: "uppercase", padding: "10px 12px 4px", backgroundColor: "transparent", borderBottom: "none" }}>
                             {r.group}
                           </td>
                         </tr>
@@ -7097,7 +7145,7 @@ export default function App() {
                         <tr key={r.row} style={{ background: ri % 2 === 0 ? C.surf : C.bg }}>
                           <td style={{ padding: "6px 10px", color: C.text, fontWeight: 600, borderBottom: "1px solid " + C.bdr, width: 168, minWidth: 168 }}>
                             {r.row}
-                            {r.benchmark && <span style={{ display: "inline-block", marginLeft: 5, fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: "#1D4ED8", background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 4, padding: "1px 4px", verticalAlign: "middle" }} title="Benchmark — not investable in this account">Benchmark · not investable</span>}
+                            {r.benchmark && <span style={{ display: "inline-block", marginLeft: 5, fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: P.blue700, background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 4, padding: "1px 4px", verticalAlign: "middle" }} title="Benchmark — not investable in this account">Benchmark · not investable</span>}
                             {r.note && <div style={{ fontSize: 11, color: C.lbl, fontWeight: 400, lineHeight: 1.45, marginTop: 3 }} title={r.note}>{r.note.length > 90 ? r.note.slice(0, 88) + "…" : r.note}</div>}
                           </td>
                           {shownPhases.map(p => {
@@ -7188,14 +7236,14 @@ export default function App() {
               {/* B5 — the conversion map. The point of insurance is not to profit on the hedge; it is to
                   FUND the recovery buy. Rendered as its own panel on the Recovery phase. */}
               {insurancePhase === "recovery" && (
-                <div style={{ marginTop: 10, padding: "12px 14px", background: "#ECFDF5", border: "1.5px solid #A7F3D0", borderRadius: 10, borderTop: "4px solid #047857" }}>
-                  <div style={{ color: "#047857", fontWeight: 900, fontSize: 13.5, letterSpacing: 0.3, marginBottom: 2 }}>AT THE VIX PEAK — sell these, buy those</div>
+                <div style={{ marginTop: 10, padding: "12px 14px", background: P.emerald50, border: "1.5px solid " + P.emerald200, borderRadius: 10, borderTop: "4px solid " + P.emerald700 }}>
+                  <div style={{ color: P.emerald700, fontWeight: 900, fontSize: 13.5, letterSpacing: 0.3, marginBottom: 2 }}>AT THE VIX PEAK — sell these, buy those</div>
                   <div style={{ color: C.muted, fontSize: 11.5, fontStyle: "italic", marginBottom: 10 }}>Trigger: VIX term structure flips backwardation → contango. The hedge doesn't need to profit — it needs to fund the buy.</div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
                     {[
-                      { head: "🔻 SELL", tint: "#BE123C", bg: "#FFF1F2", bd: "#FECDD3", items: "VIX calls · SPY/QQQ puts · HYG puts · SQQQ", sub: "vol collapse + IV crush — the most expensive things to hold here" },
-                      { head: "✅ BUY", tint: "#047857", bg: "#ECFDF5", bd: "#A7F3D0", items: "Gold miners · BTC · equities", sub: "highest beta to returning liquidity — miners lead off the trough" },
-                      { head: "🔷 DEPLOY", tint: "#1D4ED8", bg: "#EFF6FF", bd: "#BFDBFE", items: "Cash → the above", sub: "the sale proceeds and dry powder fund the recovery buy" },
+                      { head: "🔻 SELL", tint: P.rose700, bg: P.rose50, bd: P.rose200, items: "VIX calls · SPY/QQQ puts · HYG puts · SQQQ", sub: "vol collapse + IV crush — the most expensive things to hold here" },
+                      { head: "✅ BUY", tint: P.emerald700, bg: P.emerald50, bd: P.emerald200, items: "Gold miners · BTC · equities", sub: "highest beta to returning liquidity — miners lead off the trough" },
+                      { head: "🔷 DEPLOY", tint: P.blue700, bg: C.blBg, bd: C.blBdr, items: "Cash → the above", sub: "the sale proceeds and dry powder fund the recovery buy" },
                     ].map(c => (
                       <div key={c.head} style={{ background: c.bg, border: "1.5px solid " + c.bd, borderRadius: 8, padding: "9px 11px" }}>
                         <div style={{ color: c.tint, fontWeight: 900, fontSize: 12.5, marginBottom: 3 }}>{c.head}</div>
@@ -7276,7 +7324,7 @@ export default function App() {
                         borderLeftColor: a.color,
                         borderRadius: 10, padding: "10px 12px", cursor: "pointer", textAlign: "left",
                         flex: "1 1 130px",
-                        boxShadow: activeAsset.id === a.id ? "0 2px 10px " + a.color + "20" : "none",
+                        boxShadow: activeAsset.id === a.id ? "0 2px 10px " + alpha(a.color, 0x20) : "none",
                       }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
                           <span style={{ fontSize: 19 }}>{a.icon}</span>
@@ -7323,7 +7371,7 @@ export default function App() {
                       const dotColor = isTop ? C.green : isBottom ? C.red : C.amber;
                       return (
                         <button key={p.category} onClick={() => setActiveIncome(p)} style={{
-                          background: "#fff", color: dotColor, border: "1.5px solid " + dotColor + "50",
+                          background: C.surf, color: dotColor, border: "1.5px solid " + alpha(dotColor, 0x50),
                           borderRadius: 8, padding: "4px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer",
                           display: "flex", alignItems: "center", gap: 5,
                         }}>
@@ -7361,9 +7409,9 @@ export default function App() {
                           background: activeIncome.category === p.category ? p.bg : C.surf,
                           borderStyle: "solid",
                           borderTopWidth: 1.5, borderRightWidth: 1.5, borderBottomWidth: 1.5, borderLeftWidth: 4,
-                          borderTopColor: activeIncome.category === p.category ? p.color + "60" : C.bdr,
-                          borderRightColor: activeIncome.category === p.category ? p.color + "60" : C.bdr,
-                          borderBottomColor: activeIncome.category === p.category ? p.color + "60" : C.bdr,
+                          borderTopColor: activeIncome.category === p.category ? alpha(p.color, 0x60) : C.bdr,
+                          borderRightColor: activeIncome.category === p.category ? alpha(p.color, 0x60) : C.bdr,
+                          borderBottomColor: activeIncome.category === p.category ? alpha(p.color, 0x60) : C.bdr,
                           borderLeftColor: p.color,
                           borderRadius: 10, padding: "10px 12px", cursor: "pointer", textAlign: "left", flex: "1 1 120px",
                         }}>
@@ -7416,12 +7464,12 @@ export default function App() {
                     <Card>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
                         <SLabel>Tickers + Live Yields</SLabel>
-                        <Btn onClick={() => fetchPrices(activeIncome.tickers.map(t => t.t))} disabled={pricesLoading} color="#fff" bgColor={C.green} label={pricesLoading ? "Loading…" : "🔄 Prices"} />
+                        <Btn onClick={() => fetchPrices(activeIncome.tickers.map(t => t.t))} disabled={pricesLoading} color={C.onFill} bgColor={C.green} label={pricesLoading ? "Loading…" : "🔄 Prices"} />
                       </div>
                       {activeIncome.tickers.map((tk, i) => (
                         <div key={tk.t} style={{ display: "flex", gap: 12, padding: "10px 0", borderBottom: i < activeIncome.tickers.length - 1 ? "1px solid " + C.bdr : "none", alignItems: "flex-start" }}>
                           <div style={{ flexShrink: 0, width: 70 }}>
-                            <span title={tk.t} style={{ background: activeIncome.bg, color: activeIncome.color, border: "1.5px solid " + activeIncome.color + "40", borderRadius: 6, padding: "3px 5px", fontSize: tk.t.length > 8 ? 9 : tk.t.length > 5 ? 11 : 13, fontWeight: 800, display: "block", textAlign: "center", whiteSpace: "nowrap", maxWidth: 72, overflow: "hidden", textOverflow: "ellipsis" }}>{tk.t}</span>
+                            <span title={tk.t} style={{ background: activeIncome.bg, color: activeIncome.color, border: "1.5px solid " + alpha(activeIncome.color, 0x40), borderRadius: 6, padding: "3px 5px", fontSize: tk.t.length > 8 ? 9 : tk.t.length > 5 ? 11 : 13, fontWeight: 800, display: "block", textAlign: "center", whiteSpace: "nowrap", maxWidth: 72, overflow: "hidden", textOverflow: "ellipsis" }}>{tk.t}</span>
                             {/* Rate-linked cash vehicles (BIL/SGOV/USFR) resolve their yield from
                                 the live short rate rather than a hardcoded string — they all track
                                 the same T-bill curve, so one live number keeps them consistent.
@@ -7448,7 +7496,7 @@ export default function App() {
                               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
                                 <PriceBadge ticker={tk.t} prices={prices} />
                                 {prices[tk.t]?.dividendYield > 0 && (
-                                  <span title="Trailing 12-month dividend yield" style={{ fontSize: 11, color: "#22c55e", fontWeight: 600 }}>
+                                  <span title="Trailing 12-month dividend yield" style={{ fontSize: 11, color: P.green500, fontWeight: 600 }}>
                                     {(prices[tk.t].dividendYield * 100).toFixed(1)}% yield
                                   </span>
                                 )}
@@ -7517,14 +7565,14 @@ export default function App() {
                         <td style={{ padding: "9px 12px", borderBottom: "1px solid " + C.bdr }}>
                           <div style={{ color: C.text, fontSize: 14, fontWeight: 600 }}>{row.theme}</div>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
-                            <span style={{ fontSize: 9.5, fontWeight: 800, color: "#fff", background: tag.col, borderRadius: 4, padding: "1px 5px", whiteSpace: "nowrap" }}>{tag.label}</span>
+                            <span style={{ fontSize: 9.5, fontWeight: 800, color: C.onFill, background: tag.col, borderRadius: 4, padding: "1px 5px", whiteSpace: "nowrap" }}>{tag.label}</span>
                             <span style={{ fontSize: 10.5, color: C.lbl, whiteSpace: "nowrap" }}>{dateLine}</span>
                           </div>
                         </td>
                         {row.vals.slice(0, funds.length).map((v, i) => {
                           // ▨ = Withheld (manager filed for confidential treatment — a position exists
                           // but is delayed), deliberately distinct from ◯ Absent (no reportable position).
-                          const col = v === "●" || v === "●●" ? "#166534" : v === "◐" ? "#D97706" : v === "✕" ? "#991B1B" : v === "▨" ? "#475569" : C.bdrMd;
+                          const col = v === "●" || v === "●●" ? C.green : v === "◐" ? P.amber600 : v === "✕" ? C.red : v === "▨" ? P.slate600 : C.bdrMd;
                           return <td key={i} style={{ textAlign: "center", padding: "9px 8px", color: col, fontSize: 17, borderBottom: "1px solid " + C.bdr }}>{v}</td>;
                         })}
                         <td style={{ padding: "9px 8px", color: C.muted, fontSize: 12, borderBottom: "1px solid " + C.bdr }}>{row.note}</td>
@@ -7535,7 +7583,7 @@ export default function App() {
                 </table>
               </div>
               <div style={{ display: "flex", gap: 16, marginTop: 10, flexWrap: "wrap" }}>
-                {[["#166534","● Active"],["#D97706","◐ Partial"],["#991B1B","✕ Short/exit"],[C.bdrMd,"◯ Absent"],["#475569","▨ Withheld"]].map(([col, lbl]) => (
+                {[[C.green,"● Active"],[P.amber600,"◐ Partial"],[C.red,"✕ Short/exit"],[C.bdrMd,"◯ Absent"],[P.slate600,"▨ Withheld"]].map(([col, lbl]) => (
                   <div key={lbl} style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 13, color: C.muted }}>
                     <span style={{ color: col, fontSize: 15 }}>{lbl.charAt(0)}</span>{lbl.slice(2)}
                   </div>
@@ -7632,7 +7680,7 @@ export default function App() {
                         </td>
                         <td style={{ padding: "9px 12px", borderBottom: "1px solid " + C.bdr, minWidth: 140 }}>
                           {f.regimeBet
-                            ? <span style={{ background: (f.regimeBetColor || f.color) + "15", color: f.regimeBetColor || f.color, border: "1.5px solid " + (f.regimeBetColor || f.color) + "40", borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 800, lineHeight: 1.5, display: "inline-block" }}>{f.regimeBet}</span>
+                            ? <span style={{ background: alpha(f.regimeBetColor || f.color, 0x15), color: f.regimeBetColor || f.color, border: "1.5px solid " + (f.regimeBetColor || f.color) + "40", borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 800, lineHeight: 1.5, display: "inline-block" }}>{f.regimeBet}</span>
                             : <span style={{ color: C.lbl, fontSize: 12 }}>Not set</span>
                           }
                         </td>
@@ -7657,7 +7705,7 @@ export default function App() {
                   updates the shorthand). All-longhand can't be clobbered. */}
               {funds.map(f => (
                 <button key={f.id} onClick={() => setSelectedFund(f)} style={{
-                  background: selectedFund.id === f.id ? f.color + "12" : C.surf,
+                  background: selectedFund.id === f.id ? alpha(f.color, 0x12) : C.surf,
                   borderStyle: "solid",
                   borderTopWidth: 1.5, borderRightWidth: 1.5, borderBottomWidth: 1.5, borderLeftWidth: 4,
                   borderTopColor: selectedFund.id === f.id ? f.color : C.bdr,
@@ -7668,7 +7716,7 @@ export default function App() {
                 }}>
                   <div style={{ color: f.color, fontWeight: 800, fontSize: 13, lineHeight: 1.3, marginBottom: 3, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{f.name}</div>
                   <div style={{ color: C.muted, fontSize: 12, lineHeight: 1.3, marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.manager}</div>
-                  <div style={{ background: f.signalColor + "15", color: f.signalColor, border: "1.5px solid " + f.signalColor + "40", borderRadius: 6, padding: "3px 7px", fontSize: 11, fontWeight: 800, lineHeight: 1.4, display: "inline-block", maxWidth: "100%", wordBreak: "break-word" }}>{f.signal}</div>
+                  <div style={{ background: alpha(f.signalColor, 0x15), color: f.signalColor, border: "1.5px solid " + alpha(f.signalColor, 0x40), borderRadius: 6, padding: "3px 7px", fontSize: 11, fontWeight: 800, lineHeight: 1.4, display: "inline-block", maxWidth: "100%", wordBreak: "break-word" }}>{f.signal}</div>
                   {f.lastUpdated && <div style={{ color: C.lbl, fontSize: 10, marginTop: 6 }}>{f.lastUpdated}</div>}
                 </button>
               ))}
@@ -7849,7 +7897,7 @@ export default function App() {
                   bar cannot collapse; a non-zero share keeps a 2px floor so even 5% stays visible. */}
               <div style={{ display: "flex", height: 12, borderRadius: 6, overflow: "hidden", border: "1px solid " + C.bdr }}>
                 {regimeSorted.map(({ r, prob }) => (
-                  <div key={r.id} style={{ width: prob + "%", minWidth: prob > 0 ? 2 : 0, background: r.color, fontSize: 10, color: "#fff", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }} title={r.label}>{prob}%</div>
+                  <div key={r.id} style={{ width: prob + "%", minWidth: prob > 0 ? 2 : 0, background: r.color, fontSize: 10, color: C.onFill, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }} title={r.label}>{prob}%</div>
                 ))}
               </div>
               {derivedRegimes ? (
@@ -7904,7 +7952,7 @@ export default function App() {
                     Playbook tape read (one session) and the debasement cross-asset read (5d). */}
                 <div style={{ fontSize: 11, fontWeight: 800, color: C.blue, letterSpacing: 0.3, marginBottom: 4 }}>structural · consensus-derived · months</div>
                 <p style={{ color: C.mid, fontSize: 15, lineHeight: 1.75, margin: "0 0 12px" }}>{activeRegime.desc}</p>
-                <div style={{ padding: "10px 13px", background: "#fff", border: "1px solid " + activeRegime.bdr, borderRadius: 8 }}>
+                <div style={{ padding: "10px 13px", background: C.surf, border: "1px solid " + activeRegime.bdr, borderRadius: 8 }}>
                   <div style={{ color: activeRegime.color, fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Transition trigger</div>
                   <div style={{ color: C.mid, fontSize: 14 }}>{activeRegime.trigger}</div>
                 </div>
@@ -8012,8 +8060,8 @@ export default function App() {
               const currentState = FED_LANGUAGE_STATES[FED_LANGUAGE_STATUS.status] || FED_LANGUAGE_STATES.hawkish_hold;
               const cell = (label, text, italic) => (
                 <div>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
-                  <div style={{ fontSize: 12, marginTop: 2, color: italic ? "#555" : C.mid, fontStyle: italic ? "italic" : "normal", lineHeight: 1.5 }}>{text}</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: P.grey888, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
+                  <div style={{ fontSize: 12, marginTop: 2, color: italic ? P.grey555 : C.mid, fontStyle: italic ? "italic" : "normal", lineHeight: 1.5 }}>{text}</div>
                 </div>
               );
               return (
@@ -8027,7 +8075,7 @@ export default function App() {
                         <span style={{ fontSize: 12, color: C.muted }}>{FED_LANGUAGE_STATUS.lastEvent}</span>
                       </div>
                     </div>
-                    <div style={{ fontSize: 11, color: "#888", textAlign: "right" }}>Next: {FED_LANGUAGE_STATUS.nextEvent}</div>
+                    <div style={{ fontSize: 11, color: P.grey888, textAlign: "right" }}>Next: {FED_LANGUAGE_STATUS.nextEvent}</div>
                   </div>
                   {/* Decision + vote + dissent + guidance — the meeting's actual character,
                       not just the state label. Dissent direction is the hawkish/dovish tell. */}
@@ -8037,7 +8085,7 @@ export default function App() {
                         {FED_LANGUAGE_STATUS.decision}
                       </span>
                       {FED_LANGUAGE_STATUS.vote && (
-                        <span style={{ fontSize: 12, fontWeight: 800, color: currentState.color, background: currentState.bg, border: "1.5px solid " + currentState.color + "55", borderRadius: 6, padding: "4px 9px" }}>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: currentState.color, background: currentState.bg, border: "1.5px solid " + alpha(currentState.color, 0x55), borderRadius: 6, padding: "4px 9px" }}>
                           Vote {FED_LANGUAGE_STATUS.vote} · 3 dissents to HIKE
                         </span>
                       )}
@@ -8130,11 +8178,11 @@ export default function App() {
               const dtb3 = liveInd?.tbill3m ?? null;
               const secDiv = proxyDivergence(dtb3);
               const cashMarks = [
-                { key: "USFR", label: "USFR", value: SEC_YIELDS.USFR.value, color: "#0EA5E9",
+                { key: "USFR", label: "USFR", value: SEC_YIELDS.USFR.value, color: P.sky500,
                   detail: `SEC 30-day yield ${SEC_YIELDS.USFR.value}% — as of ${SEC_YIELDS.USFR.asOf} · ${SEC_YIELDS.USFR.src}` },
-                { key: "SGOV", label: "SGOV", value: SEC_YIELDS.SGOV.value, color: "#6366F1",
+                { key: "SGOV", label: "SGOV", value: SEC_YIELDS.SGOV.value, color: P.indigo500,
                   detail: `SEC 30-day yield ${SEC_YIELDS.SGOV.value}% — as of ${SEC_YIELDS.SGOV.asOf} · expense ${SEC_YIELDS.SGOV.expense}% · ${SEC_YIELDS.SGOV.src}` },
-                cashYield && { key: "bill", label: cashYield.src, value: cashYield.value, color: "#3b82f6",
+                cashYield && { key: "bill", label: cashYield.src, value: cashYield.value, color: P.blue500,
                   detail: `spot policy-linked rate${cashYield.asOf ? `, as of ${cashYield.asOf}` : ""}` },
               ].filter(Boolean);
               // These three sit within a few bps of each other, so drawing three separate
@@ -8154,11 +8202,11 @@ export default function App() {
               // legend below, so the eye maps tile → line without a lookup. The level read
               // (how far above target) hasn't been lost — it moves to a small band chip.
               const bandOf = v => v == null ? null
-                : v >= 4.0 ? { t: "well above target", c: "#ef4444" }
-                : v >= 3.0 ? { t: "elevated",          c: "#f97316" }
-                : v >= 2.5 ? { t: "above target",      c: "#eab308" }
-                : v >= 1.5 ? { t: "near target",       c: "#22c55e" }
-                :            { t: "below target",      c: "#3b82f6" };
+                : v >= 4.0 ? { t: "well above target", c: P.red500 }
+                : v >= 3.0 ? { t: "elevated",          c: P.orange500 }
+                : v >= 2.5 ? { t: "above target",      c: P.yellow500 }
+                : v >= 1.5 ? { t: "near target",       c: P.green500 }
+                :            { t: "below target",      c: P.blue500 };
               // WHICH MONTH. Three tiles carried a figure, a source and a delta, and never said what
               // period any of them covered — while CPI and PCE publish two and a half weeks apart, so
               // for half of every month they are not the same month. A reader comparing the tiles was
@@ -8167,9 +8215,9 @@ export default function App() {
                 const band = bandOf(val);
                 return (
                   <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>{label}</div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: P.grey888, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>{label}</div>
                     <div style={{ fontSize: 24, fontWeight: 700, color: seriesColor }}>{val != null ? val.toFixed(1) + "%" : "—"}</div>
-                    <div style={{ fontSize: 11, color: "#888" }}>{sub}{obsDate ? <> · <b style={{ color: C.mid }}>{monthName(obsDate)}</b></> : null}</div>
+                    <div style={{ fontSize: 11, color: P.grey888 }}>{sub}{obsDate ? <> · <b style={{ color: C.mid }}>{monthName(obsDate)}</b></> : null}</div>
                     {trendChip(trend)}
                     {band && <div style={{ fontSize: 10, fontWeight: 700, color: band.c, marginTop: 1 }}>● {band.t}</div>}
                   </div>
@@ -8205,7 +8253,7 @@ export default function App() {
                       return (
                         <div style={{ marginBottom: 12, padding: "8px 12px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8 }}>
                           <div style={{ display: "flex", gap: 9, alignItems: "baseline", flexWrap: "wrap" }}>
-                            <span style={{ fontSize: 10, fontWeight: 800, color: "#888", textTransform: "uppercase", letterSpacing: 0.5 }}>Core PCE − Core CPI</span>
+                            <span style={{ fontSize: 10, fontWeight: 800, color: P.grey888, textTransform: "uppercase", letterSpacing: 0.5 }}>Core PCE − Core CPI</span>
                             <b style={{ fontSize: 15, color: C.amber }}>not comparable this week</b>
                           </div>
                           <div style={{ fontSize: 11.5, color: C.mid, marginTop: 4, lineHeight: 1.5 }}>
@@ -8221,7 +8269,7 @@ export default function App() {
                     return (
                       <div style={{ marginBottom: 12, padding: "8px 12px", background: bg, border: "1px solid " + bdr, borderRadius: 8 }}>
                         <div style={{ display: "flex", gap: 9, alignItems: "baseline", flexWrap: "wrap" }}>
-                          <span style={{ fontSize: 10, fontWeight: 800, color: "#888", textTransform: "uppercase", letterSpacing: 0.5 }}>Core PCE − Core CPI</span>
+                          <span style={{ fontSize: 10, fontWeight: 800, color: P.grey888, textTransform: "uppercase", letterSpacing: 0.5 }}>Core PCE − Core CPI</span>
                           <b style={{ fontSize: 15, color: col }}>{sp.pp >= 0 ? "+" : "−"}{Math.abs(sp.pp).toFixed(2)}pp</b>
                           <span style={{ fontSize: 12, fontWeight: 700, color: col }}>{sp.label}</span>
                         </div>
@@ -8348,12 +8396,12 @@ export default function App() {
                             "right" clipped at the container edge, "insideRight" overprinted the
                             data lines. Every reference is identified in the legend row beneath
                             the chart instead, which has room for the exact value and method. */}
-                        <ReferenceLine y={2} stroke="#22c55e" strokeDasharray="4 3" ifOverflow="extendDomain" />
+                        <ReferenceLine y={2} stroke={P.green500} strokeDasharray="4 3" ifOverflow="extendDomain" />
                         {/* Cash band: the funds and the bill rate sit within a few bps, so the
                             range is shaded once rather than drawn as three overlapping lines. */}
                         {cashLo != null && (
                           <ReferenceArea y1={cashLo} y2={cashHi} ifOverflow="extendDomain"
-                            fill="#3b82f6" fillOpacity={0.10} stroke="#3b82f6" strokeOpacity={0.35} strokeDasharray="4 3" />
+                            fill={P.blue500} fillOpacity={0.10} stroke={P.blue500} strokeOpacity={0.35} strokeDasharray="4 3" />
                         )}
                         {/* connectNulls: a series missing a single month is a publication gap
                             (BLS/BEA schedules), not a break in the underlying series. */}
@@ -8372,13 +8420,13 @@ export default function App() {
                     <div style={{ marginTop: 8, borderTop: "1px solid " + C.bdr, paddingTop: 8 }}>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5 }} title="The Fed's stated inflation goal">
-                          <span style={{ width: 14, height: 0, borderTop: "2px dashed #22c55e", display: "inline-block" }} />
-                          <b style={{ color: "#22c55e" }}>2%</b><span style={{ color: C.muted }}>Fed target</span>
+                          <span style={{ width: 14, height: 0, borderTop: "2px dashed " + P.green500, display: "inline-block" }} />
+                          <b style={{ color: P.green500 }}>2%</b><span style={{ color: C.muted }}>Fed target</span>
                         </span>
                         {cashLo != null && (
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5 }}
                             title="Shaded band spans the cash yields below — they sit within a few bps of each other">
-                            <span style={{ width: 14, height: 9, background: "#3b82f6", opacity: 0.18, border: "1px dashed #3b82f6", display: "inline-block", borderRadius: 2 }} />
+                            <span style={{ width: 14, height: 9, background: P.blue500, opacity: 0.18, border: "1px dashed " + P.blue500, display: "inline-block", borderRadius: 2 }} />
                             <span style={{ color: C.muted }}>cash band {cashLo.toFixed(2)}–{cashHi.toFixed(2)}%</span>
                           </span>
                         )}
@@ -8475,7 +8523,7 @@ export default function App() {
                   <div style={{ flex: "1 1 260px", background: opts.primary ? C.blBg : C.bg, border: "1.5px solid " + (opts.primary ? C.blBdr : C.bdr), borderRadius: 10, padding: "11px 13px" }}>
                     <div style={{ display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap" }}>
                       <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, color: opts.primary ? C.blue : C.muted }}>{title}</span>
-                      {opts.primary && <span style={{ fontSize: 9.5, fontWeight: 800, color: "#fff", background: C.blue, borderRadius: 4, padding: "1px 6px" }}>DRIVES REGIME</span>}
+                      {opts.primary && <span style={{ fontSize: 9.5, fontWeight: 800, color: C.onFill, background: C.blue, borderRadius: 4, padding: "1px 6px" }}>DRIVES REGIME</span>}
                     </div>
                     <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 4 }}>
                       <b style={{ fontSize: 24, color: c.value == null ? C.muted : C.text, lineHeight: 1.1 }}>{c.value == null ? "—" : c.value + "%"}</b>
@@ -8660,7 +8708,7 @@ export default function App() {
             <Card>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 4 }}>
                 <SLabel>Transition Roadmap</SLabel>
-                <Btn onClick={fetchIndicators} disabled={indLoading} color="#fff" bgColor={C.blue} label={indLoading ? "Fetching…" : "🔄 Refresh signals"} />
+                <Btn onClick={fetchIndicators} disabled={indLoading} color={C.onFill} bgColor={C.blue} label={indLoading ? "Fetching…" : "🔄 Refresh signals"} />
               </div>
               {(() => {
                 // ── NO STATIC FALLBACKS ──────────────────────────────────────
@@ -8851,7 +8899,7 @@ export default function App() {
                   },
                   {
                     label: "Any regime → Inflationary Boom",
-                    regimeKey: "inf", character: "Dalio scenario", tiebreak: 4, color: "#7C3AED",
+                    regimeKey: "inf", character: "Dalio scenario", tiebreak: 4, color: P.violet600,
                     path: "The US government keeps spending regardless of the Fed. The dollar structurally weakens. AI generates a genuine productivity surprise. The result: persistent inflation above 4%, but with real growth — a 1990s-style boom with a debasement twist. Gold miners, commodities, and Bitcoin are the standout winners.",
                     signals: [
                       {
@@ -8908,7 +8956,7 @@ export default function App() {
                   <div key={r.regimeKey} style={{ padding: "16px 0", borderBottom: i < rankSorted.length - 1 ? "1px solid " + C.bdr : "none" }}>
                     <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
                       <div style={{ flexShrink: 0, width: 120, paddingTop: 2 }}>
-                        <div style={{ background: r.color + "15", color: r.color, border: "1.5px solid " + r.color + "40", borderRadius: 8, padding: "6px 8px", textAlign: "center", lineHeight: 1.25 }}>
+                        <div style={{ background: alpha(r.color, 0x15), color: r.color, border: "1.5px solid " + alpha(r.color, 0x40), borderRadius: 8, padding: "6px 8px", textAlign: "center", lineHeight: 1.25 }}>
                           <div style={{ fontSize: 19, fontWeight: 900 }}>{regimeProbFor(r.regimeKey)}%</div>
                           <div style={{ fontSize: 10, fontWeight: 800, marginTop: 3 }}>{RANK_BADGES[i] || `${i + 1}th`}</div>
                           <div style={{ fontSize: 9.5, fontWeight: 700, marginTop: 2, opacity: 0.85 }}>{r.character}</div>
@@ -8922,7 +8970,7 @@ export default function App() {
                             <SignalBar key={si} {...s} />
                           ))}
                         </div>
-                        <div style={{ background: r.color + "0D", border: "1px solid " + r.color + "30", borderRadius: 8, padding: "9px 12px", color: r.color, fontSize: 12, lineHeight: 1.65, fontWeight: 500 }}>
+                        <div style={{ background: alpha(r.color, 0x0D), border: "1px solid " + alpha(r.color, 0x30), borderRadius: 8, padding: "9px 12px", color: r.color, fontSize: 12, lineHeight: 1.65, fontWeight: 500 }}>
                           📡 {r.tip}
                         </div>
                       </div>

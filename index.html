@@ -6,6 +6,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Market Watch Dashboard — Recession indicators, crash insurance, income plays, smart money tracking, macro regime analysis." />
     <title>Market Watch Dashboard</title>
+    <!-- The palette is chosen before the first paint, from the same key the header toggle writes
+         (src/App.jsx useTheme). Done here rather than in React so the page never flashes the
+         default palette for a frame before the stored choice takes over. Anything but the three
+         known names falls through to the default. -->
+    <script>
+      try {
+        var t = localStorage.getItem("theme_v1");
+        if (t === "light" || t === "soft" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) { /* storage refused: the default palette applies */ }
+    </script>
   </head>
   <body>
     <div id="root"></div>
