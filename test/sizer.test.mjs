@@ -142,14 +142,14 @@ const NLV = 202000;
   ok('with the reason', /range that is not known/.test(noAtr.tests[0].detail));
   eq('and the other test still binds', noAtr.size, 202);
   eq('the unscored test is named', noAtr.unscored, ['ATR test']);
-  const noDelta = sizeTrade({ kind: 'option', price: 718, atr: 8.5, mark: 11.9, expiry: '2026-10-16', nlv: NLV, now: NOW });
+  const noDelta = sizeTrade({ kind: 'option', symbol: 'QQQ 730C', price: 718, atr: 8.5, mark: 11.9, expiry: '2026-10-16', nlv: NLV, now: NOW });
   ok('no delta is its own reason', /move per ATR is unknown/.test(noDelta.tests[0].detail));
 }
 
 // ── INDICATIVE, NOT BLANK ───────────────────────────────────────────────────
 // Pre-open the greeks are the prior close. The size is still computed and marked.
 {
-  const r = sizeTrade({ kind: 'option', price: 718, atr: 8.5, delta: 0.42, mark: 11.9,
+  const r = sizeTrade({ kind: 'option', symbol: 'QQQ 730C', price: 718, atr: 8.5, delta: 0.42, mark: 11.9,
     expiry: '2026-10-16', nlv: NLV, indicative: true, asOf: '2026-09-09T20:05:00Z', now: NOW });
   eq('a size is still produced', r.size, 5);
   eq('and marked', r.indicative, true);
@@ -173,7 +173,7 @@ const NLV = 202000;
   ok('with the failure mode named', /multi-month thesis wrapped in a dated option/.test(empty.note));
   // NOT CHECKED is distinct from CHECKED AND EMPTY.
   eq('no calendar means not checked', catalystCheck('2026-10-16', null, NOW).checked, false);
-  const r = sizeTrade({ kind: 'option', price: 718, atr: 8.5, delta: 0.42, mark: 11.9,
+  const r = sizeTrade({ kind: 'option', symbol: 'QQQ 730C', price: 718, atr: 8.5, delta: 0.42, mark: 11.9,
     expiry: '2026-09-12', nlv: NLV, catalysts: cal, now: NOW });
   // A FLAG, NOT A STOP. The prior design proposed making this a required input; it is optional in
   // every sense, and an expiry with nothing scheduled is reported as a NOTE rather than a warning
@@ -182,7 +182,7 @@ const NLV = 202000;
   ok('without becoming a warning', !r.warnings.some(w => /no scheduled catalyst/.test(w)));
   eq('and the size is computed regardless', r.size > 0, true);
   // NOTHING REQUIRES THE CALENDAR. Omitting it changes what is reported, never what is returned.
-  const noCal = sizeTrade({ kind: 'option', price: 718, atr: 8.5, delta: 0.42, mark: 11.9,
+  const noCal = sizeTrade({ kind: 'option', symbol: 'QQQ 730C', price: 718, atr: 8.5, delta: 0.42, mark: 11.9,
     expiry: '2026-09-12', nlv: NLV, now: NOW });
   eq('no calendar, same size', noCal.size, r.size);
   eq('and it says so rather than assuming', noCal.catalysts.checked, false);
@@ -246,7 +246,7 @@ const NLV = 202000;
 // lib/decisions.js reads `suggestion.roomQty ?? suggestion.fullQty` as the recommendation. A
 // second journal of the same thing would drift from it within a week.
 {
-  const r = sizeTrade({ kind: 'option', price: 718, atr: 8.5, delta: 0.42, mark: 11.9,
+  const r = sizeTrade({ kind: 'option', symbol: 'QQQ 730C', price: 718, atr: 8.5, delta: 0.42, mark: 11.9,
     expiry: '2026-10-16', nlv: NLV, now: NOW });
   eq('the suggestion carries the field the log reads', r.roomQty, 5);
   eq('and the full size beside it', r.fullQty, 5);
@@ -254,7 +254,7 @@ const NLV = 202000;
   // ONE SIZE, AND IT IS THE RULE'S. `roomQty` used to become `fitSize` once the book was past the
   // ceiling, so the reconciliation measured an override against a number the ceiling had
   // substituted rather than against what the rule said.
-  const b = sizeTrade({ kind: 'option', price: 718, atr: 8.5, delta: 0.42, mark: 11.9,
+  const b = sizeTrade({ kind: 'option', symbol: 'QQQ 730C', price: 718, atr: 8.5, delta: 0.42, mark: 11.9,
     expiry: '2026-10-16', nlv: NLV, bookDeltaNotional: 250000, now: NOW });
   eq('past the ceiling it still recommends the rule\'s size', b.roomQty, 5);
   eq('with what would fit reported separately', b.fitSize, 1);
@@ -331,7 +331,7 @@ const NLV = 202000;
   // other if only one is stored.
   eq('the catalyst state is recorded', [run.catalyst.checked, run.catalyst.none], [true, false]);
   eq('with the event named', run.catalyst.first, 'US CPI (Sep)');
-  const none = sizerRun(sizeTrade({ kind: 'option', price: 718, atr: 8.5, delta: 0.42, mark: 11.9,
+  const none = sizerRun(sizeTrade({ kind: 'option', symbol: 'QQQ 730C', price: 718, atr: 8.5, delta: 0.42, mark: 11.9,
     expiry: '2026-10-16', nlv: NLV, now: NOW }), { at: '2026-09-11T13:45:00Z' });
   eq('an unchecked calendar is recorded as unchecked', none.catalyst.checked, false);
 }
@@ -429,8 +429,12 @@ const NLV = 202000;
                 sizerRun(mod, { at: '2026-09-14T14:00:00Z' }), sizerRun(stk, { at: '2026-09-14T15:00:00Z' }),
                 sizerRun(xle, { at: '2026-07-01T14:00:00Z' })];
   const rv = capReview(runs, { now: new Date('2026-09-17T16:00:00Z') });
-  eq('the month counts option entries, exempt ones apart', [rv.n, rv.counted, rv.past, rv.exempt, rv.modelled], [4, 3, 3, 1, 1]);
-  eq('and says so', rv.note, '3 of 3 option entries in 30d exceeded the single-name cap on delta-notional · 1 on exempt index ETFs, not counted · 1 on a modelled delta');
+  // The modelled XLE run typed no count, so its suggestion now follows the cap and is clear; the
+  // two that typed a count above the cap's are the two the month counts.
+  eq('the month counts option entries, exempt ones apart', [rv.n, rv.counted, rv.past, rv.exempt, rv.modelled], [4, 3, 2, 1, 1]);
+  eq('and says so, with what governed and how often the typed count went past the cap\'s', rv.note,
+     '2 of 3 option entries in 30d exceeded the single-name cap on delta-notional · 2 entered above the cap\'s count · governing test: cap 3 / atr 1 · 1 on exempt index ETFs, not counted · 1 on a modelled delta');
+  eq('the distribution is on the object too', [rv.governing, rv.enteredOverCap], [{ cap: 3, atr: 1 }, 2]);
   eq('nothing yet is silent', capReview([], { now: NOW }).note, null);
 }
 
@@ -536,6 +540,54 @@ const NLV = 202000;
   eq('the month: 2 leveraged entries, 1 over the cap, average hold measured in sessions (3 and 6)', [rv.n, rv.exceeded, rv.measured, rv.avgHold], [2, 1, 2, 4.5]);
   ok('…and says so', /2 leveraged-ETF entries in 30d; 1 exceeded the cap on delta-notional; average hold 4\.5 sessions/.test(rv.note));
   eq('nothing yet is silent', leveragedReview([], []).note, null);
+}
+
+// ── THE CAP GOVERNS THE COUNT (24 Sep brief) ────────────────────────────────
+// NLV ~$211,000: single-name cap $21,100, premium cap $6,330, risk budget $2,110. The suggestion
+// is the floor of the minimum of three tests, all printed; for an exempt index ETF the cap is
+// shown and does not govern. Numbers from the live SOFI chain of 24 Sep, not estimates.
+{
+  const N = 211000;
+  const base = { kind: 'option', nlv: N, now: NOW, underlyingShares: 0, underlyingOptions: 0 };
+  const t = (r, re) => r.tests.find(x => re.test(x.name));
+  // SOFI Nov20 18C · delta 0.42 · mark 0.97 · ATR $0.50
+  const sofi = sizeTrade({ ...base, symbol: 'SOFI 2026-11-20 C18', price: 16.72, atr: 0.50, delta: 0.42, mark: 0.97, expiry: '2026-11-20' });
+  eq('ATR test 100', t(sofi, /^ATR/).size, 100);
+  eq('premium cap 65', t(sofi, /^Premium/).size, 65);
+  eq('delta-notional cap 30, with its arithmetic', [t(sofi, /^Delta-notional/).size, t(sofi, /^Delta-notional/).detail], [30, '$21,100 ÷ $702 per contract']);
+  eq('the cap governs: 30 contracts, not 65', [sofi.size, sofi.binding], [30, 'Delta-notional cap (10%)']);
+  eq('all three are printed', sofi.tests.length, 3);
+  eq('premium $2,910', sofi.premium, 2910);
+  ok('delta-notional ≈ $21,060, 10.0% of NLV', Math.abs(sofi.deltaAdded - 21067) < 10 && Math.abs(sofi.singleName.pct - 10) < 0.1);
+  eq('≈ 1,260 SOFI shares', sofi.singleName.addedShareEquivalent, 1260);
+  eq('the counts and the governing test are on the result', sofi.optionCounts, { atr: 100, premium: 65, cap: 30, governing: 'cap', capExempt: false });
+  // SOFI Nov20 20C · delta 0.25 · mark 0.50 → cap 50, premium 126, ATR 168 → 50, and the delta floor note.
+  const c20 = sizeTrade({ ...base, symbol: 'SOFI 2026-11-20 C20', price: 16.72, atr: 0.50, delta: 0.25, mark: 0.50, expiry: '2026-11-20' });
+  eq('20C: cap 50 / premium 126 / ATR 168 → 50', [t(c20, /^Delta-notional/).size, t(c20, /^Premium/).size, t(c20, /^ATR/).size, c20.size], [50, 126, 168, 50]);
+  ok('…and the panel notes the delta is below the 0.35 entry floor, as information', c20.notes.some(n => /delta 0\.25 is below the 0\.35 entry floor — info/.test(n)) && !c20.warnings.some(w => /entry floor/.test(w)));
+  // SOFI Nov20 18/22 call spread · net delta 0.20 · net debit 0.70 → cap 63, premium 90, ATR 211 → 63.
+  const sp = sizeTrade({ ...base, symbol: 'SOFI 2026-11-20 C18/C22', price: 16.72, atr: 0.50, delta: 0.20, mark: 0.70, expiry: '2026-11-20' });
+  eq('spread: cap 63 / premium 90 / ATR 211 → 63, delta the net of the legs', [t(sp, /^Delta-notional/).size, t(sp, /^Premium/).size, t(sp, /^ATR/).size, sp.size], [63, 90, 211, 63]);
+  // QQQ Oct16 730C ×3 at 718.66, delta 0.40: $86,240, 41.8%, exempt — the cap is shown and does not govern.
+  const qqq = sizeTrade({ ...base, symbol: 'QQQ 2026-10-16 C730', price: 718.66, atr: 8.5, delta: 0.40, mark: 7.56, expiry: '2026-10-16', entered: 3 });
+  eq('QQQ: the cap test is shown, exempt, and does not bind', [t(qqq, /^Delta-notional/).size, t(qqq, /^Delta-notional/).exempt, t(qqq, /^Delta-notional/).binds], [0, true, false]);
+  ok('…the suggestion comes from the other two', ['atr', 'premium'].includes(qqq.optionCounts.governing) && qqq.size > 0);
+  // 41.8% was at the brief's earlier NLV of $206,358; at $211,000 the same $86,240 is 40.9%.
+  ok('…$86,240, 40.9% of this NLV, no flag', Math.abs(qqq.singleName.options.total - 86239) < 3 && qqq.singleName.pct === 40.9 && !qqq.singleName.past && qqq.singleName.exempt);
+  // XLE Jan27 55C ×5, delta 0.90 → $28,980 (13.7%) ⚠, and the cap now says 3.
+  const xle = sizeTrade({ ...base, symbol: 'XLE 2027-01-15 C55', price: 64.40, atr: 1.2, delta: 0.90, mark: 10.4, expiry: '2027-01-15', entered: 5 });
+  eq('XLE: the cap allows 3; 5 were entered', [t(xle, /^Delta-notional/).size, xle.size, xle.entered], [3, 3, 5]);
+  ok('…$28,980 at 13.7%, amber — a sector ETF keeps the cap', Math.abs(xle.singleName.options.total - 28980) < 1 && xle.singleName.pct === 13.7 && xle.singleName.past);
+  // The log carries the three counts, what governed, the delta source and the exemption.
+  const run = sizerRun(xle, { at: '2026-09-24T14:00:00Z' });
+  eq('the run\'s fields', [run.atr_contracts, run.premium_contracts, run.cap_contracts, run.governing_test, run.delta_source, run.etf_exempt], [19, 6, 3, 'cap', 'exchange', false]);
+  eq('an exempt run says so', [sizerRun(qqq).etf_exempt, sizerRun(qqq).governing_test !== 'cap'], [true, true]);
+  // A 0DTE contract keeps its own rule set: no delta-notional test, no counts.
+  const z = sizeTrade({ ...base, symbol: 'SPY 0DTE', price: 759, atr: 6.2, delta: 0.40, mark: 2.5, expiry: NOW.toISOString().slice(0, 10) });
+  eq('0DTE has no cap test and no counts', [z.tests.some(x => /^Delta-notional/.test(x.name)), z.optionCounts], [false, null]);
+  // No price: the cap test is unscored and says why; the other two still size.
+  const np = sizeTrade({ ...base, symbol: 'SOFI 2026-11-20 C18', atr: 0.50, delta: 0.42, mark: 0.97, expiry: '2026-11-20' });
+  eq('no price: the cap is unscored, named', [t(np, /^Delta-notional/).size, t(np, /^Delta-notional/).detail, np.size], [null, 'no price', 65]);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
