@@ -7,7 +7,7 @@
 // are distinctive digit strings, asserted to appear nowhere in the serialised output.
 import { chainMark, headerMark, WALLET_MARK } from '../lib/chains.js';
 import { classifyTrigger, parseTriggerOrders } from '../lib/hyperliquid.js';
-import { walletPublicView, diffHoldings, buildWalletCard, eventLine, holdingLine, groupedHoldingLine, mergePending, MIN_CHAIN_HOLDINGS, publishable, symbolKey, isPlainSymbol, isUnsolicited, inheritProvenance, rememberProvenance, applyMemory, provenanceKey,
+import { walletPublicView, diffHoldings, buildWalletCard, eventLine, holdingLine, groupedHoldingLine, mergePending, MIN_CHAIN_HOLDINGS, publishable, symbolKey, isPlainSymbol, isUnsolicited, inheritProvenance, rememberProvenance, applyMemory, provenanceKey, publishReport,
          HIDDEN_SYMBOLS, hiddenSymbols,
          perpPublicView, perpLine, PERP_PUBLIC_FIELDS,
          WALLET_PUBLIC_FIELDS, EVENT_PUBLIC_FIELDS, MIN_NOTIONAL_USD } from '../lib/walletcard.js';
@@ -589,6 +589,11 @@ const row = (o = {}) => ({
   eq('an inherited or remembered answer is not written back as a fresh confirmation', rememberProvenance(fromMem.rows, {}).added, 0);
   eq('a row with no address has no key', provenanceKey({ coin: 'X', chain: 'Base' }), null);
   eq('the twin, later bought, would be remembered then', rememberProvenance([{ ...twin, acquired: true }], mem.memory).added, 1);
+  // The run's answer names what is withheld, and why — never a balance.
+  eq('the bad morning, reported', publishReport(today), { listed: 1, withheld: [{ symbol: 'Robinhood Chain:PONS', why: '2 of a name, provenance unknown/unknown' }] });
+  eq('with the answer carried, nothing is withheld but the twin, silently inside the group', publishReport(carried.rows), { listed: 2, withheld: [] });
+  eq('an airdrop alone is withheld as unsolicited', publishReport([twin]), { listed: 0, withheld: [{ symbol: 'Robinhood Chain:PONS', why: 'unsolicited' }] });
+  ok('and nothing in the report is a quantity', !JSON.stringify(publishReport(today)).includes('0.6918'));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

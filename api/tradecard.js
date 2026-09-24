@@ -20,7 +20,7 @@ import { upsertCard, post, remove, webhookFromEnv, walletWebhookFromEnv, mention
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
 import { fetchWallets } from '../lib/wallet.js';
 import { fetchSpotContext, fetchHyperliquid, fetchHlAccount, fetchHlSpot, fetchHlOrders } from '../lib/hyperliquid.js';
-import { diffHoldings, walletPublicView, buildWalletCard, mergePending, perpPublicView, publishable, inheritProvenance, rememberProvenance, applyMemory } from '../lib/walletcard.js';
+import { diffHoldings, walletPublicView, buildWalletCard, mergePending, perpPublicView, publishable, inheritProvenance, rememberProvenance, applyMemory, publishReport } from '../lib/walletcard.js';
 
 // A row's symbol is what you call it; the quote feed may call it something else. Mirrors the tab's
 // own resolution — Yahoo has no MNQ, and its MGC is an unrelated stock.
@@ -268,6 +268,9 @@ export async function refreshWallet({ post = false, clock = new Date() } = {}) {
   now = carried.rows;
   provenance.inherited = carried.inherited;
   provenance.unknown = now.filter(r => !r.verified && r.acquired == null).length;
+
+  // What the gate is withholding today, by name and reason — the card's absences, said out loud.
+  provenance.gate = publishReport(now);
 
   const fresh = diffHoldings(prevSnap.rows, now);
   const pendingRec = await kvGetJson(WALLET_PENDING_KEY);
