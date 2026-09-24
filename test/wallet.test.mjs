@@ -98,8 +98,10 @@ const HOLDER = '0x000000000000000000000000000000000000dEaD';
   eq('the native coin leads and is named', [b[0].coin, b[0].total, b[0].native], [NATIVE_SYMBOL, 3, true]);
   eq('a zero balance is not carried as a row', b.map(x => x.coin), [NATIVE_SYMBOL, 'A']);
   eq('and the reverted call costs nothing but itself', b.length, 2);
+  // `address` joined on 2026-09-24: the contract is what tells a token from a lookalike wearing
+  // its name, and the card's provenance memory keys on it. The valuer ignores it.
   eq('the shape matches the exchange ledger, so one valuer serves both',
-     Object.keys(b[1]).sort(), ['coin', 'entryNtl', 'free', 'hold', 'native', 'total']);
+     Object.keys(b[1]).sort(), ['address', 'coin', 'entryNtl', 'free', 'hold', 'native', 'total']);
   eq('nothing on chain is on hold — that is an exchange idea', [b[1].hold, b[1].free], [0, b[1].total]);
   eq('a wallet with nothing in it is empty, not an error', walletBalances('0x0', [], []), []);
   eq('the native decimals are the EVM default', NATIVE_DECIMALS, 18);
@@ -333,6 +335,10 @@ const HOLDER = '0x000000000000000000000000000000000000dEaD';
   // The acquisition read is the same class of wiring and fails the same silent way.
   ok('the wallet asks how each token arrived', /fetchAcquisition\s*\(/.test(src));
   ok('and marks the ones that were paid for', /\.acquired\s*=\s*true/.test(src));
+  // 2026-09-24: a token the read never reached was being marked "not acquired" — the same verdict
+  // as an airdrop — and the public card hid it. Past a truncated read, unseen is unknown.
+  ok('a token unseen past a truncated read stays unknown, not false', /verdict != null \|\| !how\.truncated\) b\.acquired = false;\s*else b\.acquired = null;/.test(src));
+  ok('and the chain result says how the check went', /acquisition = \{ asked: true, ok: !!how\.ok/.test(src));
   // The same guard for every other module the wallet leans on, so a lost edit is caught once.
   for (const [mod, fn] of [['dexscreener', 'fetchDexPrices'], ['alchemy', 'discoverTokens'], ['chains', 'CHAINS']])
     ok(`${mod} is imported and used`, new RegExp(`from '\\./${mod}\\.js'`).test(src) && new RegExp(`\\b${fn}\\b`).test(src));
