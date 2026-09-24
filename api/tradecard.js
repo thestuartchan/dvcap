@@ -13,14 +13,14 @@
 // lib/tradecard.js from a whitelisted projection of a row, so a size or a dollar figure cannot
 // reach Discord even by accident. See the header of that file.
 
-import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, WALLET_SNAPSHOT_KEY, WALLET_PENDING_KEY } from '../lib/kv.js';
+import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, WALLET_SNAPSHOT_KEY, WALLET_PROVENANCE_KEY, WALLET_PENDING_KEY } from '../lib/kv.js';
 import { derivePosition, positionPnl, levelHits, applyRolls } from '../lib/positions.js';
 import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard } from '../lib/tradecard.js';
 import { upsertCard, post, remove, webhookFromEnv, walletWebhookFromEnv, mentionFromEnv, alertTtlMin, CARD_KEY } from '../lib/discord.js';
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
 import { fetchWallets } from '../lib/wallet.js';
 import { fetchSpotContext, fetchHyperliquid, fetchHlAccount, fetchHlSpot, fetchHlOrders } from '../lib/hyperliquid.js';
-import { diffHoldings, walletPublicView, buildWalletCard, mergePending, perpPublicView, publishable } from '../lib/walletcard.js';
+import { diffHoldings, walletPublicView, buildWalletCard, mergePending, perpPublicView, publishable, inheritProvenance, rememberProvenance, applyMemory } from '../lib/walletcard.js';
 
 // A row's symbol is what you call it; the quote feed may call it something else. Mirrors the tab's
 // own resolution — Yahoo has no MNQ, and its MGC is an unrelated stock.
@@ -208,14 +208,24 @@ export async function refreshWallet({ post = false, clock = new Date() } = {}) {
   // SPOT ledger joins as one more chain: it is a balance like any other, and diffing it the same
   // way means a spot buy there is announced like a spot buy anywhere else. The EVM side is already
   // covered separately as HyperEVM — different venue, different balances, so both belong.
-  const now = w.chains.filter(c => c.ok).flatMap(c =>
+  let now = w.chains.filter(c => c.ok).flatMap(c =>
     // `thin` rides along: a price from a market with no volume in it is not the same fact as a
     // price from a real one, and the card was publishing both with identical authority.
     // …and so do the three facts lib/walletcard.js `publishable` reads: whether the contract is
     // vouched for, whether the price is a pool's, and whether the wallet swapped for it. Without
     // them an airdropped lookalike is a holding and its arrival is a buy (2026-09-21, PONS).
     c.rows.map(r => ({ coin: r.coin, chain: c.chain, total: r.total, price: r.price, thin: !!r.thin,
-                       verified: !!r.verified, viaPool: !!r.viaPool, acquired: r.acquired ?? null, native: !!r.native })));
+                       verified: !!r.verified, viaPool: !!r.viaPool, acquired: r.acquired ?? null, native: !!r.native,
+                       // The contract, so tomorrow's read can tell this token from one wearing its name.
+                       address: r.address ?? null })));
+  // How the provenance check went, per chain — counts and reasons, never balances — so a morning
+  // the history could not be read is visible in the run's answer rather than only in its effect.
+  const provenance = {
+    unchecked: w.chains.filter(c => c.ok && c.acquisition?.asked && !c.acquisition.ok).map(c => ({ chain: c.chain, error: c.acquisition.error })),
+    truncated: w.chains.filter(c => c.ok && c.acquisition?.truncated).map(c => c.chain),
+    unknown: now.filter(r => !r.verified && r.acquired == null).length,
+    inherited: 0,
+  };
   if (hlSpot.ok) {
     for (const r of hlSpot.rows) now.push({ coin: r.coin, chain: 'Hyperliquid', total: r.total, price: r.price, thin: !!r.thin, verified: true, viaPool: false, acquired: null });
   }
@@ -232,13 +242,32 @@ export async function refreshWallet({ post = false, clock = new Date() } = {}) {
       .filter(Boolean);
   }
 
+  // The long memory first: every contract the chain has ever confirmed, applied to whatever it
+  // would not confirm today, then extended with today's confirmations. Then the one-day snapshot,
+  // which still covers rows from before addresses existed.
+  const memRec = (await kvGetJson(WALLET_PROVENANCE_KEY)) || { memory: {} };
+  const applied = applyMemory(now, memRec.memory || {});
+  now = applied.rows;
+  provenance.remembered = applied.applied;
+  const remembered = rememberProvenance(now, memRec.memory || {});
+  if (remembered.added) await kvSetJson(WALLET_PROVENANCE_KEY, { memory: remembered.memory, at: new Date().toISOString() });
+  provenance.memorised = remembered.added;
+
   const prevSnap = (await kvGetJson(WALLET_SNAPSHOT_KEY)) || null;
   // FIRST RUN POSTS NOTHING. With nothing to compare against, every holding looks newly bought and
   // the first card would be a fabricated buying spree. Record and stay quiet.
   if (!prevSnap?.rows) {
     await kvSetJson(WALLET_SNAPSHOT_KEY, { rows: now, at: new Date().toISOString() });
-    return { ok: true, posted: false, seeded: now.length };
+    return { ok: true, posted: false, seeded: now.length, provenance };
   }
+
+  // What the chain would not say today, yesterday's snapshot may still know (lib/walletcard.js
+  // inheritProvenance). Applied before the diff AND before the snapshot is written, so the answer
+  // carries forward through a run of bad mornings rather than surviving exactly one.
+  const carried = inheritProvenance(now, prevSnap.rows);
+  now = carried.rows;
+  provenance.inherited = carried.inherited;
+  provenance.unknown = now.filter(r => !r.verified && r.acquired == null).length;
 
   const fresh = diffHoldings(prevSnap.rows, now);
   const pendingRec = await kvGetJson(WALLET_PENDING_KEY);
@@ -263,7 +292,7 @@ export async function refreshWallet({ post = false, clock = new Date() } = {}) {
   const lastPosted = lastPostedStamp;
   if (!shouldPublish({ forced: post, clock, lastPosted })) {
     return { ok: true, posted: false, detected: fresh.length, pending: pending.length,
-             due: `${PUBLISH_HOUR_UTC}:00Z`, lastPosted };
+             due: `${PUBLISH_HOUR_UTC}:00Z`, lastPosted, provenance };
   }
 
   const holdings = publishable(now).filter(r => r.price != null).map(r => walletPublicView(r, r.chain));
@@ -277,7 +306,7 @@ export async function refreshWallet({ post = false, clock = new Date() } = {}) {
   if (!r.ok) return { ok: false, posted: false, pending: pending.length, error: `discord HTTP ${r.status}` };
   // The date is what makes it once-a-day; the buffer clearing is what makes it not repeat itself.
   await kvSetJson(WALLET_PENDING_KEY, { events: [], at: clock.toISOString(), postedOn: today });
-  return { ok: true, posted: true, events: pending.length };
+  return { ok: true, posted: true, events: pending.length, provenance };
 }
 
 export default async function handler(req, res) {

@@ -7,7 +7,7 @@
 // are distinctive digit strings, asserted to appear nowhere in the serialised output.
 import { chainMark, headerMark, WALLET_MARK } from '../lib/chains.js';
 import { classifyTrigger, parseTriggerOrders } from '../lib/hyperliquid.js';
-import { walletPublicView, diffHoldings, buildWalletCard, eventLine, holdingLine, groupedHoldingLine, mergePending, MIN_CHAIN_HOLDINGS, publishable, symbolKey, isPlainSymbol, isUnsolicited,
+import { walletPublicView, diffHoldings, buildWalletCard, eventLine, holdingLine, groupedHoldingLine, mergePending, MIN_CHAIN_HOLDINGS, publishable, symbolKey, isPlainSymbol, isUnsolicited, inheritProvenance, rememberProvenance, applyMemory, provenanceKey,
          HIDDEN_SYMBOLS, hiddenSymbols,
          perpPublicView, perpLine, PERP_PUBLIC_FIELDS,
          WALLET_PUBLIC_FIELDS, EVENT_PUBLIC_FIELDS, MIN_NOTIONAL_USD } from '../lib/walletcard.js';
@@ -553,6 +553,42 @@ const row = (o = {}) => ({
   ok('the card says no changes', /No changes today/.test(desc));
   eq('and lists PONS once', (desc.match(/PONS/g) || []).length, 1);
   ok('and never the twin', !desc.includes('\u041e') && !desc.includes('0.5782'));
+}
+
+// ── THE MORNING THE CHAIN WOULD NOT ANSWER ───────────────────────────────────
+// 2026-09-24: "No changes today", and the real PONS gone from the list. The transfer history could
+// not be read, both PONS rows came back with provenance unknown, and two of a name with nothing to
+// tell them apart published neither. Yesterday's snapshot knew which was which.
+{
+  const real = { coin: 'PONS', chain: 'Robinhood Chain', total: 0.6918, price: 0.69, viaPool: true, verified: false, acquired: true, address: '0xreal' };
+  const twin = { coin: 'PONS', chain: 'Robinhood Chain', total: 12345, price: 0.02, viaPool: true, verified: false, acquired: false, address: '0xtwin' };
+  const yesterday = [real, twin, { coin: 'ETH', chain: 'Robinhood Chain', total: 1, price: 2691, verified: true, native: true, acquired: null }];
+  const today = yesterday.map(r => ({ ...r, acquired: null }));
+  eq('with provenance unknown, both PONS rows vanish and nothing is said', [publishable(today).map(r => r.coin), diffHoldings(yesterday, today)], [['ETH'], []]);
+  const carried = inheritProvenance(today, yesterday);
+  eq('yesterday\'s answer is carried forward for both', [carried.inherited, carried.rows.map(r => r.acquired)], [2, [true, false, null]]);
+  eq('and it says where it came from', carried.rows[0].acquiredFrom, 'snapshot');
+  eq('so the real PONS is listed and the twin is not', publishable(carried.rows).map(r => [r.coin, r.address]), [['PONS', '0xreal'], ['ETH', undefined]]);
+  eq('and there are still no events', diffHoldings(yesterday, carried.rows), []);
+  // A snapshot from before addresses existed still tells them apart by exact balance.
+  const old = yesterday.map(r => { const { address: _a, ...rest } = r; return rest; });
+  const viaQty = inheritProvenance(today, old);
+  eq('matched by balance when the snapshot has no address', viaQty.rows.map(r => r.acquired), [true, false, null]);
+  eq('but not when the balance moved — that is a new question for the chain', inheritProvenance([{ ...today[0], total: 0.5 }], old).rows[0].acquired, null);
+  // Nothing is ever downgraded, and a verified row needs no memory.
+  eq('today\'s own answer wins', inheritProvenance([{ ...today[0], acquired: false }], yesterday).rows[0].acquired, false);
+  eq('a verified row is left alone', inheritProvenance([{ ...today[0], verified: true }], yesterday).inherited, 0);
+  eq('no snapshot, no change', inheritProvenance(today, null).inherited, 0);
+
+  // The long memory: what the chain ever confirmed, by contract, applied on a day it will not.
+  const mem = rememberProvenance(yesterday, {});
+  eq('only the confirmed row is remembered', [mem.added, Object.keys(mem.memory)], [1, ['Robinhood Chain:0xreal']]);
+  eq('remembering twice adds nothing', rememberProvenance(yesterday, mem.memory).added, 0);
+  const fromMem = applyMemory(today, mem.memory);
+  eq('the memory answers for the real one and says so', [fromMem.applied, fromMem.rows[0].acquired, fromMem.rows[0].acquiredFrom, fromMem.rows[1].acquired], [1, true, 'memory', null]);
+  eq('an inherited or remembered answer is not written back as a fresh confirmation', rememberProvenance(fromMem.rows, {}).added, 0);
+  eq('a row with no address has no key', provenanceKey({ coin: 'X', chain: 'Base' }), null);
+  eq('the twin, later bought, would be remembered then', rememberProvenance([{ ...twin, acquired: true }], mem.memory).added, 1);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

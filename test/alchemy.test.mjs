@@ -164,7 +164,9 @@ const ADDR = '0x000000000000000000000000000000000000dEaD';
   let pages = 0;
   const endless = async (_u, o) => { pages += 1;
     return { ok: true, json: async () => ({ result: { transfers: [rx('0x' + pages, '0xY')], pageKey: 'more' } }) }; };
-  await fetchAcquisition({ network: 'n', address: wallet, key: 'k', fetchImpl: endless });
+  const capped = await fetchAcquisition({ network: 'n', address: wallet, key: 'k', fetchImpl: endless });
+  eq('a capped read says so', capped.truncated, true);
+  eq('and a complete one does not', (await fetchAcquisition({ network: 'n', address: wallet, key: 'k', fetchImpl: stub([rx('0x1', '0xX')], [rx('0x1', '0xUSDC')]) })).truncated, false);
   eq('capped, both directions', pages, MAX_TRANSFER_PAGES * 2);
 
   // No key, no claim — and a failure must not read as "nothing was solicited".
