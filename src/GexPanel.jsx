@@ -15,6 +15,7 @@ import { Card, SLabel } from "./ui.jsx";
 import { gexRead, ageOf } from "../lib/gexRead.js";
 import { heatCells, heatAlpha } from "../lib/gex.js";
 import { levelsOf, mustShow, rateLine, rateFarOut } from "../lib/gexLevels.js";
+import { pineFor } from "../lib/pine.js";
 
 const fmtUsd = (v) => {
   if (v == null || !Number.isFinite(+v)) return "—";
@@ -221,6 +222,11 @@ export function GexPanel() {
   // nothing: the stored series stays the clean scheduled record.
   const [live, setLive] = useState(null);
   const [liveBusy, setLiveBusy] = useState(false);
+  // ── THE LEVELS AS A TRADINGVIEW SCRIPT ──
+  // Pine cannot fetch, so the board travels as source (lib/pine.js). Copied to the clipboard; on a
+  // browser that refuses the clipboard the script opens in a box to select and copy by hand.
+  const [pineMsg, setPineMsg] = useState(null);
+  const [pineShown, setPineShown] = useState(null);
   // WHY THE RECOMPUTE DID NOTHING. The button used to answer a refusal by setting live to null,
   // which leaves the stored row on screen unchanged and says nothing at all — so a working guard
   // and a broken button look identical. The IV guard added on 2026-09-03 made refusals common,
@@ -435,8 +441,22 @@ export function GexPanel() {
                  : "● live") : `${fresh.stale ? "⚠ " : ""}${fresh.label}`}
         </span>
       )}
+      <button onClick={async () => {
+          const made = pineFor({ symbol: latest?.symbol || data?.symbol, latest, levels: lv, byStrike: strikeSource || [], grid, today: latest?.date || null });
+          if (!made) { setPineMsg("no board to export"); setTimeout(() => setPineMsg(null), 3000); return; }
+          try { await navigator.clipboard.writeText(made.source); setPineMsg("copied — paste into TradingView's Pine editor"); setPineShown(null); }
+          catch { setPineShown(made.source); setPineMsg("select and copy the script below"); }
+          setTimeout(() => setPineMsg(null), 6000);
+        }} disabled={!latest}
+        style={{ marginLeft: "auto", cursor: latest ? "pointer" : "default", background: C.surf, color: C.mid,
+                 border: "1.5px solid " + C.bdr, borderRadius: 8, padding: "4px 11px", fontSize: 12, fontWeight: 800,
+                 opacity: latest ? 1 : 0.6, whiteSpace: "nowrap" }}
+        title="Copy today's levels as a TradingView indicator: flip zone and pin box as bands, call wall, put support, trapdoors and the ladder nodes as lines. Paste into Pine Editor → Add to chart. Levels only.">
+        ⧉ Copy Pine
+      </button>
+      {pineMsg && <span style={{ fontSize: 11.5, color: C.mid, fontWeight: 700 }}>{pineMsg}</span>}
       <button onClick={refreshLive} disabled={liveBusy}
-        style={{ marginLeft: "auto", cursor: liveBusy ? "wait" : "pointer", background: C.surf, color: C.blue,
+        style={{ cursor: liveBusy ? "wait" : "pointer", background: C.surf, color: C.blue,
                  border: "1.5px solid " + C.blue, borderRadius: 8, padding: "4px 11px", fontSize: 12, fontWeight: 800,
                  opacity: liveBusy ? 0.6 : 1, whiteSpace: "nowrap" }}
         title="Recompute the stored positioning at the current spot and time decay. Writes nothing.">
@@ -444,6 +464,17 @@ export function GexPanel() {
       </button>
     </div>
   );
+
+  const pineBox = pineShown ? (
+    <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 7, background: C.bg, border: "1px solid " + C.bdr }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
+        <b style={{ fontSize: 11.5, color: C.mid }}>The Pine script — select all and copy</b>
+        <button onClick={() => setPineShown(null)} style={{ marginLeft: "auto", cursor: "pointer", background: "none", border: "none", color: C.muted, fontWeight: 800, fontSize: 12 }}>✕</button>
+      </div>
+      <textarea readOnly value={pineShown} onFocus={e => e.target.select()} rows={10}
+        style={{ width: "100%", boxSizing: "border-box", fontFamily: "ui-monospace, monospace", fontSize: 11, background: C.surf, color: C.text, border: "1px solid " + C.bdr, borderRadius: 6, padding: 6 }} />
+    </div>
+  ) : null;
 
   const liveErrCard = liveErr ? (
     <div style={{ marginTop: 8, padding: "7px 10px", borderRadius: 7, background: C.aBg,
@@ -496,7 +527,7 @@ export function GexPanel() {
   }
   if (!data.available) {
     return (
-      <Card>{header}{liveErrCard}{repricedCard}
+      <Card>{header}{liveErrCard}{pineBox}{repricedCard}
         <div style={{ fontSize: 12.5, color: C.mid, marginTop: 8, lineHeight: 1.6 }}>
           Nothing captured yet. The snapshot runs mid-session each weekday and writes one row per symbol;
           the by-strike chart appears after the first run and the time series becomes meaningful after
@@ -517,7 +548,7 @@ export function GexPanel() {
           that always has an opinion is one nobody should size off. */}
       <Card>
         {header}
-        {liveErrCard}
+        {liveErrCard}{pineBox}
         {repricedCard}
         {read.ok && (
           <div style={{ marginTop: 10, padding: "11px 13px", borderRadius: 9,
