@@ -1969,7 +1969,7 @@
       "axes": {
         "growth": {
           "state": "turning-down",
-          "lean": 0,
+          "lean": 1,
           "market": {
             "verdict": "CONTRACTING",
             "lean": -1,
@@ -1977,9 +1977,9 @@
             "of": 5
           },
           "weekly": {
-            "verdict": "INSUFFICIENT",
-            "lean": null,
-            "usable": 1,
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 3,
             "of": 4
           },
           "monthly": {
@@ -2012,10 +2012,10 @@
           }
         },
         "quadrant": null,
-        "quadrantRead": "between quadrants — the growth axis is flat"
+        "quadrantRead": "between quadrants — the inflation axis is flat"
       },
       "source": "cron",
-      "loggedAt": "2026-09-24T08:45:48.561Z"
+      "loggedAt": "2026-09-24T12:41:34.379Z"
     }
   ]
 }
