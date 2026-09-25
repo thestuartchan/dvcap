@@ -43,6 +43,9 @@ const short = { id: 'sh', symbol: 'SMH', derived: { status: 'open', qty: 3 }, le
   eq('short-dated option', items[4].text, "SMH Sep30'26 300P — 4 days to expiry");
   eq('the swing trade past its window', items[5].text, 'ARM — swing trade in session 4, past the 3-session window');
   eq('every item points at its card', items.map(i => i.id), ['exp', 'xle', 'sofi', 'arm', 'sh', 'arm']);
+  // The note on a level rides on its line — the separate "Levels hit" strip that showed it is gone.
+  const noted = actionItems({ rows: [sofi], hits: hits.map(h => ({ ...h, level: { ...h.level, note: '1h bounce and retest close above' } })), atrOf: () => 0.5, priceOf: () => 15.9 });
+  eq('a level note is carried on the alert line', noted[0].text, 'SOFI — stop level 16 hit, price 15.9 · 1h bounce and retest close above');
   // A stop already hit is the alert, not a second line.
   const dup = actionItems({ rows: [sofi], hits, atrOf: () => 0.5, priceOf: () => 15.9 });
   eq('a hit stop is listed once', dup.map(i => i.kind), ['alert']);

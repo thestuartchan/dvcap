@@ -2394,7 +2394,7 @@ function Holdings({ data, title, note, open, onToggle, money, bare = false, look
   );
 }
 
-export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, contested, regimeDiverged, regimeVintage = null, prices, fetchPrices, pricesLoading }) {
+export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverged, regimeVintage = null, prices, fetchPrices, pricesLoading }) {
   const LS = "dvcap_console_v2";
   // Dismissal is by TIMESTAMP, not a flag: the next run's news must reappear rather than being
   // permanently silenced by one click on the last one.
@@ -2466,7 +2466,6 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
   // screen every single time. It is worth keeping, because the fill model genuinely needs
   // explaining once, and worth folding away, because nobody needs it explained daily.
   // Collapsed by default and remembered, so it is one click away and never in the way.
-  const [showHowItWorks, setShowHowItWorks] = useRemembered("howitworks", false);
   // ── THE ARCHIVE GROWS FOREVER AND THE SCREEN DOES NOT ────────────────────────────────────────
   // Grain, and which periods are expanded. `periodOpen` holds only what the reader has TOGGLED, so
   // the default (the most recent few) keeps applying to periods that did not exist when the page
@@ -3511,164 +3510,6 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
         </div>
       )}
 
-      {/* ── THE COMMAND BAR ──
-          One row at the top of the console: TICKER · direction · instrument · [qty @ price] · Add.
-          Typed as one line or set from the pills, which rewrite the same line. With a fill the card
-          is created OPEN, in one action; without, WATCHING. Press n anywhere to get here. */}
-      <Card>
-        <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
-          <SLabel>Add a trade</SLabel>
-          <input ref={cmdRef} value={cmd} onChange={e => { setCmd(e.target.value); setAddErr(null); }}
-            onKeyDown={e => { if (e.key === "Enter") addRow(); if (e.key === "Escape") { setCmd(""); e.target.blur(); } }}
-            placeholder="TICKER · long/short · shares/option/spread/future · qty @ price"
-            style={{ flex: "1 1 340px", minWidth: 220, padding: "7px 11px", border: "1.5px solid " + (parsed.error && cmd ? C.aBdr : C.bdr), borderRadius: 8, fontSize: 13.5, background: C.surf, color: C.text }} />
-          <button onClick={() => setSymHint(h => !h)} aria-label="How to write the ticker"
-            title="US: QQQ · Hong Kong: 0981.HK or just 981 · Korea: 005930 · Europe: ASML.AS, SHEL.L · crypto: BTC-USD · futures: MNQ, MGC, COIL · a contract: QQQ Oct16'26 730C"
-            style={{ cursor: "pointer", width: 22, height: 22, borderRadius: 999, border: "1.5px solid " + (symHint ? C.blue : C.bdr), background: C.surf, color: symHint ? C.blue : C.muted, fontSize: 12, fontWeight: 800 }}>?</button>
-          <Btn onClick={addRow} color={C.onFill} bgColor={C.blue} label="+ Add" />
-        </div>
-        {/* The pills: what the line says, and a way to change it without retyping. */}
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8, fontSize: 12 }}>
-          {(() => {
-            const rewrite = ({ side = addSide, kind = addKind }) => {
-              const fill = parsed.qty != null && parsed.price != null ? ` ${parsed.qty} @ ${parsed.price}` : "";
-              setCmd(`${addSym || ""} ${side} ${kind}${fill}`.trim());
-            };
-            return (<>
-              <span style={{ display: "inline-flex", border: "1.5px solid " + C.bdr, borderRadius: 8, overflow: "hidden" }}>
-                {SIDES.map(sd => (
-                  <button key={sd} onClick={() => rewrite({ side: sd })} disabled={!addSym}
-                    style={{ cursor: addSym ? "pointer" : "default", padding: "4px 10px", fontSize: 11.5, fontWeight: 800, border: "none",
-                             background: addSide === sd ? (sd === "short" ? C.blue : C.green) : C.surf, color: addSide === sd ? C.onFill : C.mid }}>
-                    {SIDE_LABEL[sd]}
-                  </button>
-                ))}
-              </span>
-              <span style={{ display: "inline-flex", border: "1.5px solid " + C.bdr, borderRadius: 8, overflow: "hidden" }}>
-                {INSTRUMENTS.map(k => (
-                  <button key={k} onClick={() => rewrite({ kind: k })} disabled={!addSym}
-                    style={{ cursor: addSym ? "pointer" : "default", padding: "4px 10px", fontSize: 11.5, fontWeight: 700, border: "none",
-                             background: addKind === k ? C.blBg : C.surf, color: addKind === k ? C.blue : C.mid }}>
-                    {INSTRUMENT_LABEL[k]}
-                  </button>
-                ))}
-              </span>
-              <label style={{ fontSize: 11, color: C.lbl, fontWeight: 700, display: "inline-flex", gap: 5, alignItems: "center" }}>fill date
-                <input type="date" value={addDate} onChange={e => setAddDate(e.target.value)} style={{ padding: "3px 6px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 11.5, background: C.surf, color: C.text }} />
-              </label>
-            </>);
-          })()}
-          <span style={{ color: parsed.error && cmd ? C.amber : C.muted, fontWeight: parsed.error && cmd ? 700 : 500 }}>
-            {!cmd ? "e.g. SOFI long shares 500 @ 16.675 — with a fill the card opens as OPEN; without, as WATCHING"
-              : parsed.error ? `⚠ ${parsed.error}`
-              : commandSummary(parsed)}
-          </span>
-        </div>
-        {/* What the feed resolved the ticker to — the name, so a number computed on the wrong
-            instrument cannot look like one computed on the right one. */}
-        {addSym && addKind !== "option" && addKind !== "spread" && resolved?.for === addSym && (
-          <div style={{ marginTop: 5, fontSize: 11.5, color: resolved.unresolved ? C.amber : C.mid, lineHeight: 1.5 }}>
-            {resolved.unresolved
-              ? <>⚠ the feed has no quote for <b>{resolved.for}</b>{resolved.tried?.length ? ` (tried ${resolved.tried.join(", ")})` : ""} — it will be added as typed; set <i>Quote as</i> on the card if the feed calls it something else</>
-              : <>resolves to <b>{resolved.symbol}</b>{resolved.name ? ` · ${resolvedLabel(resolved)}` : ""}{resolved.symbol !== resolved.for ? <span style={{ color: C.lbl }}> · {resolved.why}</span> : null}{resolved.front ? <span style={{ color: C.lbl }}> · front {resolved.front}</span> : null}</>}
-          </div>
-        )}
-        {tickerHint(addSym) && (
-          <div style={{ fontSize: 11.5, color: C.amber, marginTop: 5, lineHeight: 1.5 }}>⚠ {tickerHint(addSym).text} Type the one you mean, or add the row and set <i>Quote as</i>.</div>
-        )}
-        {symHint && (
-          <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
-            How the feed spells it — <b>US</b> QQQ · <b>Hong Kong</b> 0981.HK, or just 981 · <b>Korea</b> 005930 · <b>Europe</b> ASML.AS, SHEL.L, MC.PA, SAP.DE · <b>crypto</b> BTC-USD, ETH-USD · <b>futures</b> MNQ, MGC, COIL · <b>a contract</b> QQQ Oct16'26 730C. Words after the ticker: long/short · shares/option/spread/future · qty @ price.
-          </div>
-        )}
-        {(addKind === "option" || addKind === "spread") && (
-          <div style={{ marginTop: 10 }}>
-            <LegTable legs={addLegs} setLegs={setAddLegs} chain={chain?.symbol === addSym.trim().toUpperCase() ? chain : null} max={addKind === "option" ? 1 : MAX_LEGS} />
-            <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
-              {addLegs.some(l => l.expiry) ? <>Hard exit date defaults to <b>{defaultHardDate(addLegs) || "—"}</b> (expiry − 7 days), editable on the card.</> : "Leave the table empty and the card opens WATCHING with it, to fill in there."}
-              {" "}A first fill is the line's <b>qty @ price</b>, at the <b>combo price</b>; the card is valued at the live combo mark.
-            </div>
-          </div>
-        )}
-        {addErr && <div style={{ fontSize: 12, color: C.red, fontWeight: 700, marginTop: 6 }}>⚠ {addErr}</div>}
-      </Card>
-
-      {/* ── ACTION REQUIRED ──
-          One line per item that needs a decision today, sorted by urgency (lib/actions.js): a
-          contract past expiry, a hard exit date reached, a level hit, a stop inside an ATR, an
-          option under seven days, a swing trade past its window. Absent when there is nothing —
-          never "nothing to do". At the top, under the command bar, so it is the first thing read;
-          click a line to open its card on its tab. */}
-      {(() => {
-        const items = actionItems({
-          rows: derivedRows, hits, today: todayISO,
-          swingLines: bookX.book?.buckets?.swingLines || [],
-          atrOf: (r) => atrFor(quoteSym(r)).atr,
-          priceOf,
-        });
-        if (!items.length) return null;
-        const worst = items[0].tone;
-        const col = (t) => (t === "danger" ? C.red : C.amber);
-        return (
-          <div style={{ padding: "9px 13px", borderRadius: 10, background: worst === "danger" ? C.rBg : C.aBg, border: "1.5px solid " + (worst === "danger" ? C.rBdr : C.aBdr) }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: col(worst), textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>
-              Action required · {items.length}
-            </div>
-            {items.map((it, i) => (
-              <div key={i} onClick={() => { setBookTab(derivedRows.find(r => r.id === it.id)?.state || bookTab); setExpanded(it.id); }}
-                   style={{ fontSize: 12.5, color: col(it.tone), fontWeight: 700, cursor: "pointer", lineHeight: 1.6 }}>
-                {it.kind === "alert" ? "⚡" : it.kind === "stop-near" ? "▲" : it.kind === "swing" ? "↻" : "⏰"} {it.text}
-              </div>
-            ))}
-          </div>
-        );
-      })()}
-
-      {/* purpose + regime */}
-      <div style={{ background: liveRegime?.bg || C.surf, border: "1.5px solid " + (liveRegime?.bdr || C.bdr), borderTop: "4px solid " + (liveRegime?.color || C.blue), borderRadius: 12, padding: "12px 16px" }}>
-        <div style={{ display: "flex", gap: "5px 14px", flexWrap: "wrap", alignItems: "baseline", fontSize: 13 }}>
-          <span style={{ color: C.lbl, fontWeight: 700 }}>Live regime:</span>
-          <b style={{ color: liveRegime?.color }}>{liveRegime?.label} {regimeProbFor(liveRegime?.id)}%</b>
-          {contested && chip("⚖ CONTESTED", C.amber, C.aBg, C.aBdr)}
-          {regimeDiverged && chip("📌 PINNED≠LIVE", C.amber, C.aBg, C.aBdr)}
-          <button onClick={() => setShowHowItWorks(v => !v)}
-            style={{ marginLeft: "auto", cursor: "pointer", background: "transparent", border: "none",
-                     color: C.lbl, fontWeight: 700, fontSize: 11.5, padding: 0 }}>
-            {showHowItWorks ? "▲ hide" : "▼ how it works"}
-          </button>
-        </div>
-        {showHowItWorks && (
-        <div style={{ marginTop: 8, fontSize: 12.5, color: C.mid, lineHeight: 1.6, background: "rgba(255,255,255,0.55)", border: "1px solid " + C.bdr, borderRadius: 8, padding: "8px 11px" }}>
-          <b style={{ color: C.text }}>Setups and levels.</b> What you are waiting for, and whether it has arrived —
-          checked against live prices each time this loads. Spot, swing and long holds only; day trades and scalps
-          stay in the broker. Poll-cadence, not streaming; nothing here places orders.
-          <div style={{ marginTop: 7 }}>
-          <b style={{ color: C.text }}>How it works:</b> add a ticker, give it <b>levels</b> (buy / sell / stop — a single price or a zone).
-          It sits in <b>Setups</b> and every load checks the live price against those levels, flagging any that are hit.
-          When you actually trade it, press <b style={{ color: C.green }}>✓ I bought</b> — that records a <b>fill</b> (quantity + price)
-          and moves it to <b>Open positions</b>. Buying more or selling part adds another fill, so scaling in and out is just more fills:
-          your average cost, realised and unrealised P&amp;L are all worked out from them. Sell everything (or press <b style={{ color: C.red }}>🛑 Stopped out</b>) and it moves to <b>Archive</b>.
-          <span style={{ color: C.muted }}> Position size is the quantity you enter on a fill.</span>
-          </div>
-        </div>
-        )}
-      </div>
-
-      {/* level hits — the reason this tab exists */}
-      {hits.length > 0 && (
-        <div style={{ background: C.aBg, border: "1.5px solid " + C.aBdr, borderRadius: 12, padding: "11px 14px" }}>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: C.amber, marginBottom: 7 }}>⚡ Levels hit ({hits.length})</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {hits.map((h, i) => (
-              <span key={i} style={{ background: C.surf, border: "1.5px solid " + kindCol(h.level.kind), borderRadius: 8, padding: "4px 10px", fontSize: 12.5, fontWeight: 700 }}>
-                <b>{h.position.symbol}</b> <span style={{ color: kindCol(h.level.kind) }}>{h.level.kind}</span> {h.level.at}{h.level.to ? `–${h.level.to}` : ""} · live {h.price}
-                {h.level.note && <span style={{ color: C.lbl, fontWeight: 500 }}> · {h.level.note}</span>}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* ── WHAT THE OVERNIGHT RECONCILIATION DID ──
           The channel already gets a message, but the channel is somewhere else. This is the same
           news where the work happens. */}
@@ -3818,64 +3659,68 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
         </div>
       )}
 
-      {/* ── EXPOSURE — WHAT THE BOOK IS CARRYING, IN DELTA ──
-          The broker's leverage line counts long options at PREMIUM. Measured 2026-09-10 that read
-          0.74x against a delta-notional of roughly 3.5x NLV — an understatement of about five
-          times, with one QQQ line carrying 2.37x on its own. Risk coverage above answers "what
-          does a stop-out cost"; this answers "what am I carrying right now", and on this book the
-          two differ by a factor of twelve. */}
-      <PositionSizer book={bookX.book} nlv={equityBase} fills={openingFills} exempt={settings.sizerExempt ?? null} holds={holds} />
-      <ExposureTile book={bookX.book} err={bookX.err} />
-
-      {/* ── P4 — RISK COVERAGE ──
-          Three numbers, same units, never summed, and never collapsed into one. A single
-          portfolio-heat figure would report the first of these and name itself after all three:
-          on this book two of nine non-cash rows carry a stop, so risk-to-stop describes a fifth of
-          the exposure. The gap between the first and second number IS the finding. */}
-      {(coverage.gross.rows > 0 || coverage.undefined.rows > 0) && (
-        <Card>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-            <SLabel>Risk coverage</SLabel>
-            <span style={{ fontSize: 11.5, color: C.muted }}>three measures, not one — they do not add up</span>
-            {coverage.unpriced > 0 && (
-              <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }}>
-                ⚠ {coverage.unpriced} row{coverage.unpriced === 1 ? "" : "s"} unpriced and out of every figure below
-              </span>
-            )}
-          </div>
-          <div style={{ marginTop: 9, display: "flex", gap: 22, flexWrap: "wrap" }}>
-            {[
-              { k: "defined", label: "Defined risk", c: coverage.defined, col: C.green,
-                note: "what a stop-out costs, across rows that have one" },
-              { k: "undefined", label: "Undefined exposure", c: coverage.undefined,
-                col: coverage.undefined.pctOfEquity != null && coverage.undefined.pctOfEquity > 20 ? C.red : C.amber,
-                note: "market value riding with no stop at all" },
-              { k: "gross", label: "Gross notional", c: coverage.gross, col: C.mid,
-                note: "every row at full contract value, futures included" },
-            ].map(x => (
-              <div key={x.k} style={{ flex: "1 1 190px", minWidth: 170 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>{x.label}</div>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 7, marginTop: 2 }}>
-                  <b style={{ fontSize: 18, color: x.col }}>
-                    {x.c.pctOfEquity == null ? "—" : `${x.c.pctOfEquity}%`}
-                  </b>
-                  <span style={{ fontSize: 12, color: C.mid }}>{x.c.amount == null ? "—" : fmtCcy(x.c.amount, baseCcy)}</span>
-                  <span style={{ fontSize: 11, color: C.muted }}>· {x.c.rows} row{x.c.rows === 1 ? "" : "s"}</span>
-                </div>
-                <div style={{ fontSize: 10.5, color: C.muted, marginTop: 2, lineHeight: 1.45 }}>{x.note}</div>
+      {/* ── ACTION REQUIRED ──
+          One line per item that needs a decision today, sorted by urgency (lib/actions.js): a
+          contract past expiry, a hard exit date reached, a level hit, a stop inside an ATR, an
+          option under seven days, a swing trade past its window. Absent when there is nothing —
+          never "nothing to do". At the top, under the notices, so it is the first thing read;
+          click a line to open its card on its tab. It absorbed the separate "Levels hit" strip,
+          which listed a subset of these same lines — a hit's note rides on its line instead. */}
+      {(() => {
+        const items = actionItems({
+          rows: derivedRows, hits, today: todayISO,
+          swingLines: bookX.book?.buckets?.swingLines || [],
+          atrOf: (r) => atrFor(quoteSym(r)).atr,
+          priceOf,
+        });
+        if (!items.length) return null;
+        const worst = items[0].tone;
+        const col = (t) => (t === "danger" ? C.red : C.amber);
+        return (
+          <div style={{ padding: "9px 13px", borderRadius: 10, background: worst === "danger" ? C.rBg : C.aBg, border: "1.5px solid " + (worst === "danger" ? C.rBdr : C.aBdr) }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: col(worst), textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>
+              Action required · {items.length}
+            </div>
+            {items.map((it, i) => (
+              <div key={i} onClick={() => { setBookTab(derivedRows.find(r => r.id === it.id)?.state || bookTab); setExpanded(it.id); }}
+                   style={{ fontSize: 12.5, color: col(it.tone), fontWeight: 700, cursor: "pointer", lineHeight: 1.6 }}>
+                {it.kind === "alert" ? "⚡" : it.kind === "stop-near" ? "▲" : it.kind === "swing" ? "↻" : "⏰"} {it.text}
               </div>
             ))}
           </div>
-          {coverage.futures.rows > 0 && (
-            <div style={{ fontSize: 11.5, color: C.mid, marginTop: 9, paddingTop: 8, borderTop: "1px solid " + C.bdr }}>
-              <b style={{ color: C.amber }}>{coverage.futures.pctOfEquity == null ? "—" : `${coverage.futures.pctOfEquity}%`}</b>
-              {" of that gross figure is "}{coverage.futures.rows} margined row{coverage.futures.rows === 1 ? "" : "s"}
-              {" — "}{fmtCcy(coverage.futures.amount, baseCcy)} of notional.
-              <span style={{ color: C.lbl }}> Excluded from the weights, cash and donut below on purpose, because the notional is not capital you have committed — and included here on purpose, because it is what the book controls.</span>
-            </div>
-          )}
-        </Card>
-      )}
+        );
+      })()}
+
+      {/* toolbar */}
+      <Card>
+        <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
+          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700, display: "flex", gap: 6, alignItems: "center" }}>
+            Base
+            <select value={baseCcy} onChange={e => { setSettings(s => ({ ...s, baseCurrency: e.target.value })); touch(); }} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
+              {CURRENCY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+          <button onClick={async () => { if (typeof Notification !== "undefined" && Notification.permission !== "granted") { try { await Notification.requestPermission(); } catch { /* ignore */ } } setSettings(s => ({ ...s, alertsEnabled: !s.alertsEnabled })); touch(); }}
+            style={{ cursor: "pointer", background: settings.alertsEnabled ? C.green : C.surf, color: settings.alertsEnabled ? C.onFill : C.mid, border: "1.5px solid " + (settings.alertsEnabled ? C.green : C.bdr), borderRadius: 8, padding: "6px 11px", fontSize: 12.5, fontWeight: 800 }}>
+            {settings.alertsEnabled ? "🔔 Alerts on" : "🔕 Alerts off"}
+          </button>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 9, alignItems: "center" }}>
+            {kvOn === false && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>⚠ this browser only</span>}
+            {kvOn === true && <span style={{ fontSize: 11.5, color: C.green, fontWeight: 700 }}>☁ syncing</span>}
+            {/* Nothing to say, so say only that it looked. An absence of news is worth one line. */}
+            {flexNote && !flexNote.needsYou?.length && !flexNote.applied && !flexNote.discarded && (
+              <span title={`IBKR statement of ${flexNote.asOf} — ${flexNote.summary}`} style={{ fontSize: 11.5, color: C.muted }}>
+                IBKR ✓ {String(flexNote.at).slice(0, 10)}
+              </span>
+            )}
+            {saveMsg && <span style={{ fontSize: 12, color: C.mid }}>{saveMsg}</span>}
+            {/* Both halves. Quotes come from Yahoo and the chain data from our own route; a
+                button labelled "refresh" that moved only one of them was the bug. */}
+            <Btn onClick={() => { fetchPrices([...symbols, ...fxSyms]); refreshLive(); }} disabled={pricesLoading || !symbols.length} color={C.mid} bgColor={C.bg} label={pricesLoading ? "…" : "🔄 Prices"} />
+            <Btn onClick={saveCloud} disabled={saving} color={C.onFill} bgColor={dirty ? C.blue : C.bdrMd} label={saving ? "Saving…" : dirty ? "☁ Save to cloud" : "☁ Synced"} />
+          </div>
+        </div>
+      </Card>
 
       {/* ── CURRENT PORTFOLIO ──
           Same visual idiom as the Smart Money tab (donut for weight, horizontal bars for the
@@ -3995,42 +3840,73 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
         );
       })()}
 
-      {/* toolbar */}
-      <Card>
-        <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
-          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700, display: "flex", gap: 6, alignItems: "center" }}>
-            Base
-            <select value={baseCcy} onChange={e => { setSettings(s => ({ ...s, baseCurrency: e.target.value })); touch(); }} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
-              {CURRENCY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </label>
-          <button onClick={async () => { if (typeof Notification !== "undefined" && Notification.permission !== "granted") { try { await Notification.requestPermission(); } catch { /* ignore */ } } setSettings(s => ({ ...s, alertsEnabled: !s.alertsEnabled })); touch(); }}
-            style={{ cursor: "pointer", background: settings.alertsEnabled ? C.green : C.surf, color: settings.alertsEnabled ? C.onFill : C.mid, border: "1.5px solid " + (settings.alertsEnabled ? C.green : C.bdr), borderRadius: 8, padding: "6px 11px", fontSize: 12.5, fontWeight: 800 }}>
-            {settings.alertsEnabled ? "🔔 Alerts on" : "🔕 Alerts off"}
-          </button>
-          <div style={{ marginLeft: "auto", display: "flex", gap: 9, alignItems: "center" }}>
-            {kvOn === false && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>⚠ this browser only</span>}
-            {kvOn === true && <span style={{ fontSize: 11.5, color: C.green, fontWeight: 700 }}>☁ syncing</span>}
-            {/* Nothing to say, so say only that it looked. An absence of news is worth one line. */}
-            {flexNote && !flexNote.needsYou?.length && !flexNote.applied && !flexNote.discarded && (
-              <span title={`IBKR statement of ${flexNote.asOf} — ${flexNote.summary}`} style={{ fontSize: 11.5, color: C.muted }}>
-                IBKR ✓ {String(flexNote.at).slice(0, 10)}
+      {/* ── EXPOSURE — WHAT THE BOOK IS CARRYING, IN DELTA ──
+          The broker's leverage line counts long options at PREMIUM. Measured 2026-09-10 that read
+          0.74x against a delta-notional of roughly 3.5x NLV — an understatement of about five
+          times, with one QQQ line carrying 2.37x on its own. Risk coverage below answers "what
+          does a stop-out cost"; this answers "what am I carrying right now", and on this book the
+          two differ by a factor of twelve. */}
+      <ExposureTile book={bookX.book} err={bookX.err} />
+
+      {/* ── P4 — RISK COVERAGE ──
+          Three numbers, same units, never summed, and never collapsed into one. A single
+          portfolio-heat figure would report the first of these and name itself after all three:
+          on this book two of nine non-cash rows carry a stop, so risk-to-stop describes a fifth of
+          the exposure. The gap between the first and second number IS the finding. */}
+      {(coverage.gross.rows > 0 || coverage.undefined.rows > 0) && (
+        <Card>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+            <SLabel>Risk coverage</SLabel>
+            <span style={{ fontSize: 11.5, color: C.muted }}>three measures, not one — they do not add up</span>
+            {coverage.unpriced > 0 && (
+              <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }}>
+                ⚠ {coverage.unpriced} row{coverage.unpriced === 1 ? "" : "s"} unpriced and out of every figure below
               </span>
             )}
-            {saveMsg && <span style={{ fontSize: 12, color: C.mid }}>{saveMsg}</span>}
-            {/* Both halves. Quotes come from Yahoo and the chain data from our own route; a
-                button labelled "refresh" that moved only one of them was the bug. */}
-            <Btn onClick={() => { fetchPrices([...symbols, ...fxSyms]); refreshLive(); }} disabled={pricesLoading || !symbols.length} color={C.mid} bgColor={C.bg} label={pricesLoading ? "…" : "🔄 Prices"} />
-            <Btn onClick={saveCloud} disabled={saving} color={C.onFill} bgColor={dirty ? C.blue : C.bdrMd} label={saving ? "Saving…" : dirty ? "☁ Save to cloud" : "☁ Synced"} />
           </div>
-        </div>
-      </Card>
+          <div style={{ marginTop: 9, display: "flex", gap: 22, flexWrap: "wrap" }}>
+            {[
+              { k: "defined", label: "Defined risk", c: coverage.defined, col: C.green,
+                note: "what a stop-out costs, across rows that have one" },
+              { k: "undefined", label: "Undefined exposure", c: coverage.undefined,
+                col: coverage.undefined.pctOfEquity != null && coverage.undefined.pctOfEquity > 20 ? C.red : C.amber,
+                note: "market value riding with no stop at all" },
+              { k: "gross", label: "Gross notional", c: coverage.gross, col: C.mid,
+                note: "every row at full contract value, futures included" },
+            ].map(x => (
+              <div key={x.k} style={{ flex: "1 1 190px", minWidth: 170 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>{x.label}</div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 7, marginTop: 2 }}>
+                  <b style={{ fontSize: 18, color: x.col }}>
+                    {x.c.pctOfEquity == null ? "—" : `${x.c.pctOfEquity}%`}
+                  </b>
+                  <span style={{ fontSize: 12, color: C.mid }}>{x.c.amount == null ? "—" : fmtCcy(x.c.amount, baseCcy)}</span>
+                  <span style={{ fontSize: 11, color: C.muted }}>· {x.c.rows} row{x.c.rows === 1 ? "" : "s"}</span>
+                </div>
+                <div style={{ fontSize: 10.5, color: C.muted, marginTop: 2, lineHeight: 1.45 }}>{x.note}</div>
+              </div>
+            ))}
+          </div>
+          {coverage.futures.rows > 0 && (
+            <div style={{ fontSize: 11.5, color: C.mid, marginTop: 9, paddingTop: 8, borderTop: "1px solid " + C.bdr }}>
+              <b style={{ color: C.amber }}>{coverage.futures.pctOfEquity == null ? "—" : `${coverage.futures.pctOfEquity}%`}</b>
+              {" of that gross figure is "}{coverage.futures.rows} margined row{coverage.futures.rows === 1 ? "" : "s"}
+              {" — "}{fmtCcy(coverage.futures.amount, baseCcy)} of notional.
+              <span style={{ color: C.lbl }}> Excluded from the weights, cash and donut below on purpose, because the notional is not capital you have committed — and included here on purpose, because it is what the book controls.</span>
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* sizing settings */}
       <Card>
         <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
           <SLabel>Sizing</SLabel>
           <span style={{ fontSize: 11.5, color: C.muted }}>suggestions only — shown beside your own number, never applied</span>
+          {/* The regime card that used to head the tab repeated the header strip; the two flags it
+              carried are kept here, beside the multiplier they cut by ×0.7. */}
+          {contested && chip("⚖ CONTESTED", C.amber, C.aBg, C.aBdr)}
+          {regimeDiverged && chip("📌 PINNED≠LIVE", C.amber, C.aBg, C.aBdr)}
           <span style={{ marginLeft: "auto", fontSize: 12.5 }}>
             <span style={{ color: C.lbl, fontWeight: 700 }}>regime ×</span> <b style={{ color: liveRegime?.color }}>{rm.mult.toFixed(2)}</b>
             <span style={{ color: C.muted, fontSize: 11.5 }} title={rm.reasons.join(' · ')}> ({rm.reasons[rm.reasons.length - 1]})</span>
@@ -4115,6 +3991,91 @@ export function TradeConsole({ liveRegime, regimeProbFor, creditDanger, conteste
           <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>Credit-DANGER caps the multiplier at {CREDIT_DANGER_CAP_LABEL}; a contested or pinned≠live regime applies a further ×0.7.</div>
         </div>
         </>)}
+      </Card>
+
+      <PositionSizer book={bookX.book} nlv={equityBase} fills={openingFills} exempt={settings.sizerExempt ?? null} holds={holds} />
+
+      {/* ── THE COMMAND BAR ──
+          Under the sizer, so a size is worked out before the trade is typed: TICKER · direction ·
+          instrument · [qty @ price] · Add.
+          Typed as one line or set from the pills, which rewrite the same line. With a fill the card
+          is created OPEN, in one action; without, WATCHING. Press n anywhere to get here. */}
+      <Card>
+        <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
+          <SLabel>Add a trade</SLabel>
+          <input ref={cmdRef} value={cmd} onChange={e => { setCmd(e.target.value); setAddErr(null); }}
+            onKeyDown={e => { if (e.key === "Enter") addRow(); if (e.key === "Escape") { setCmd(""); e.target.blur(); } }}
+            placeholder="TICKER · long/short · shares/option/spread/future · qty @ price"
+            style={{ flex: "1 1 340px", minWidth: 220, padding: "7px 11px", border: "1.5px solid " + (parsed.error && cmd ? C.aBdr : C.bdr), borderRadius: 8, fontSize: 13.5, background: C.surf, color: C.text }} />
+          <button onClick={() => setSymHint(h => !h)} aria-label="How to write the ticker"
+            title="US: QQQ · Hong Kong: 0981.HK or just 981 · Korea: 005930 · Europe: ASML.AS, SHEL.L · crypto: BTC-USD · futures: MNQ, MGC, COIL · a contract: QQQ Oct16'26 730C"
+            style={{ cursor: "pointer", width: 22, height: 22, borderRadius: 999, border: "1.5px solid " + (symHint ? C.blue : C.bdr), background: C.surf, color: symHint ? C.blue : C.muted, fontSize: 12, fontWeight: 800 }}>?</button>
+          <Btn onClick={addRow} color={C.onFill} bgColor={C.blue} label="+ Add" />
+        </div>
+        {/* The pills: what the line says, and a way to change it without retyping. */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8, fontSize: 12 }}>
+          {(() => {
+            const rewrite = ({ side = addSide, kind = addKind }) => {
+              const fill = parsed.qty != null && parsed.price != null ? ` ${parsed.qty} @ ${parsed.price}` : "";
+              setCmd(`${addSym || ""} ${side} ${kind}${fill}`.trim());
+            };
+            return (<>
+              <span style={{ display: "inline-flex", border: "1.5px solid " + C.bdr, borderRadius: 8, overflow: "hidden" }}>
+                {SIDES.map(sd => (
+                  <button key={sd} onClick={() => rewrite({ side: sd })} disabled={!addSym}
+                    style={{ cursor: addSym ? "pointer" : "default", padding: "4px 10px", fontSize: 11.5, fontWeight: 800, border: "none",
+                             background: addSide === sd ? (sd === "short" ? C.blue : C.green) : C.surf, color: addSide === sd ? C.onFill : C.mid }}>
+                    {SIDE_LABEL[sd]}
+                  </button>
+                ))}
+              </span>
+              <span style={{ display: "inline-flex", border: "1.5px solid " + C.bdr, borderRadius: 8, overflow: "hidden" }}>
+                {INSTRUMENTS.map(k => (
+                  <button key={k} onClick={() => rewrite({ kind: k })} disabled={!addSym}
+                    style={{ cursor: addSym ? "pointer" : "default", padding: "4px 10px", fontSize: 11.5, fontWeight: 700, border: "none",
+                             background: addKind === k ? C.blBg : C.surf, color: addKind === k ? C.blue : C.mid }}>
+                    {INSTRUMENT_LABEL[k]}
+                  </button>
+                ))}
+              </span>
+              <label style={{ fontSize: 11, color: C.lbl, fontWeight: 700, display: "inline-flex", gap: 5, alignItems: "center" }}>fill date
+                <input type="date" value={addDate} onChange={e => setAddDate(e.target.value)} style={{ padding: "3px 6px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 11.5, background: C.surf, color: C.text }} />
+              </label>
+            </>);
+          })()}
+          <span style={{ color: parsed.error && cmd ? C.amber : C.muted, fontWeight: parsed.error && cmd ? 700 : 500 }}>
+            {!cmd ? "e.g. SOFI long shares 500 @ 16.675 — with a fill the card opens as OPEN; without, as WATCHING"
+              : parsed.error ? `⚠ ${parsed.error}`
+              : commandSummary(parsed)}
+          </span>
+        </div>
+        {/* What the feed resolved the ticker to — the name, so a number computed on the wrong
+            instrument cannot look like one computed on the right one. */}
+        {addSym && addKind !== "option" && addKind !== "spread" && resolved?.for === addSym && (
+          <div style={{ marginTop: 5, fontSize: 11.5, color: resolved.unresolved ? C.amber : C.mid, lineHeight: 1.5 }}>
+            {resolved.unresolved
+              ? <>⚠ the feed has no quote for <b>{resolved.for}</b>{resolved.tried?.length ? ` (tried ${resolved.tried.join(", ")})` : ""} — it will be added as typed; set <i>Quote as</i> on the card if the feed calls it something else</>
+              : <>resolves to <b>{resolved.symbol}</b>{resolved.name ? ` · ${resolvedLabel(resolved)}` : ""}{resolved.symbol !== resolved.for ? <span style={{ color: C.lbl }}> · {resolved.why}</span> : null}{resolved.front ? <span style={{ color: C.lbl }}> · front {resolved.front}</span> : null}</>}
+          </div>
+        )}
+        {tickerHint(addSym) && (
+          <div style={{ fontSize: 11.5, color: C.amber, marginTop: 5, lineHeight: 1.5 }}>⚠ {tickerHint(addSym).text} Type the one you mean, or add the row and set <i>Quote as</i>.</div>
+        )}
+        {symHint && (
+          <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
+            How the feed spells it — <b>US</b> QQQ · <b>Hong Kong</b> 0981.HK, or just 981 · <b>Korea</b> 005930 · <b>Europe</b> ASML.AS, SHEL.L, MC.PA, SAP.DE · <b>crypto</b> BTC-USD, ETH-USD · <b>futures</b> MNQ, MGC, COIL · <b>a contract</b> QQQ Oct16'26 730C. Words after the ticker: long/short · shares/option/spread/future · qty @ price.
+          </div>
+        )}
+        {(addKind === "option" || addKind === "spread") && (
+          <div style={{ marginTop: 10 }}>
+            <LegTable legs={addLegs} setLegs={setAddLegs} chain={chain?.symbol === addSym.trim().toUpperCase() ? chain : null} max={addKind === "option" ? 1 : MAX_LEGS} />
+            <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
+              {addLegs.some(l => l.expiry) ? <>Hard exit date defaults to <b>{defaultHardDate(addLegs) || "—"}</b> (expiry − 7 days), editable on the card.</> : "Leave the table empty and the card opens WATCHING with it, to fill in there."}
+              {" "}A first fill is the line's <b>qty @ price</b>, at the <b>combo price</b>; the card is valued at the live combo mark.
+            </div>
+          </div>
+        )}
+        {addErr && <div style={{ fontSize: 12, color: C.red, fontWeight: 700, marginTop: 6 }}>⚠ {addErr}</div>}
       </Card>
 
       {/* ── THE FOUR TABS ── Watching · Open · Closed · Archive. One state on screen at a time, each

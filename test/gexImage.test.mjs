@@ -44,7 +44,7 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
   ok('the heading names the instrument and spot', /QQQ 746\.06/.test(svg));
   ok('and the regime', /positive gamma, moves damp/.test(svg));
   ok('spot is drawn, its number on the axis in the line\'s blue', new RegExp(`stroke="${INK.spot}"`).test(svg) && new RegExp(`fill="${INK.spot}">746\\.06<`).test(svg));
-  ok('set in Inter', new RegExp(`font-family="${FONT}"`).test(svg) && FONT === 'Inter');
+  ok('set in Manrope', new RegExp(`font-family="${FONT}"`).test(svg) && FONT === 'Manrope');
   ok('the flip zone is a band', /flip zone 712\.76–740\.80/.test(svg));
   ok('the pivot after today is dashed', /stroke-dasharray/.test(svg) && /pivot after today 733\.96/.test(svg));
   ok('positive bars are green, negative purple', new RegExp(`fill="${INK.pos}"`).test(svg) && new RegExp(`fill="${INK.neg}"`).test(svg));
@@ -114,7 +114,7 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
 // ── THE RASTER ───────────────────────────────────────────────────────────────
 {
   ok('the engine is bundled', existsSync(new URL('../data/render/resvg.wasm', import.meta.url)));
-  ok('and the fonts, with their licence', existsSync(new URL('../data/render/Inter_400Regular.ttf', import.meta.url)) && existsSync(new URL('../data/render/Inter_700Bold.ttf', import.meta.url)) && /SIL Open Font License/.test(readFileSync(new URL('../data/render/OFL.txt', import.meta.url), 'utf8')) && /Inter/.test(readFileSync(new URL('../data/render/OFL.txt', import.meta.url), 'utf8')));
+  ok('and the fonts, with their licence', ['400Regular', '600SemiBold', '700Bold'].every(w => existsSync(new URL(`../data/render/Manrope_${w}.ttf`, import.meta.url))) && /SIL Open Font License/.test(readFileSync(new URL('../data/render/OFL.txt', import.meta.url), 'utf8')) && /Manrope/.test(readFileSync(new URL('../data/render/OFL.txt', import.meta.url), 'utf8')));
   const png = await renderPng(ladderSvg(row, { today: '2026-09-23' }));
   ok('a PNG comes back', png && png.length > 10000 && png[0] === 0x89 && png[1] === 0x50 && png[2] === 0x4e && png[3] === 0x47);
   // Width and height from the IHDR chunk: 820 wide, portrait.
