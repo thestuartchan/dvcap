@@ -6214,7 +6214,6 @@ export default function App() {
         {tab === "console" && (
           <TradeConsole
             liveRegime={liveRegime}
-            regimeProbFor={regimeProbFor}
             liveInd={liveInd}
             creditDanger={creditStatus(liveInd?.creditSpread) === "DANGER"}
             contested={!!derivedRegimes?.contested}
