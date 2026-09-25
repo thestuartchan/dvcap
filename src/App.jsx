@@ -5,6 +5,7 @@ import { ASSETS } from "../lib/assets.js";
 import { REGIMES, REGIME_PALETTE } from "../lib/regimes.js";
 import { TradeConsole } from "./TradeConsole.jsx";
 import { GexPanel } from "./GexPanel.jsx";
+import { CtaPanel } from "./CtaPanel.jsx";
 import {
   AreaChart, Area, BarChart, Bar, RadarChart, PolarGrid,
   PolarAngleAxis, Radar, PieChart, Pie, Cell, LineChart, Line,
@@ -5343,6 +5344,9 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {data.auctions && <AuctionCard a={data.auctions} />}
           {/* 2 — Tripwires: vol regime + gauges + 7709, tagged by scenario. */}
           {data.volTerm && <VolRegime v={data.volTerm} />}
+          {/* CTA positioning sits beside vol because the funds size to it: lower vol, bigger
+              positions for the same trend. Self-fetching (/api/atr?cta=1), like the gamma panel. */}
+          <CtaPanel />
           <GaugesLeaning leaning={data.leaning} prominent />
           {/* CSOP 7709 deleveraging tripwire — standalone, NOT part of the gauges count. */}
           {data.csop7709 && <Csop7709Tripwire t={data.csop7709} />}

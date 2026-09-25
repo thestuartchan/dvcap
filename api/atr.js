@@ -14,6 +14,35 @@ import { atrSummary, ATR_PERIOD } from '../lib/atr.js';
 import { FAMILIES, MULTIPLIER, familyOf, parentFamily, isIndexFamily, contractMonths, frontMonth } from '../lib/futuresContracts.js';
 import { kvGetJson, kvSetJsonEx, kvConfigured } from '../lib/kv.js';
 import holidays from '../data/holidays.json' with { type: 'json' };
+import { CTA_MARKETS, ctaMarket, ctaSummary, nearestCut } from '../lib/cta.js';
+import { marketState } from '../lib/sessions.js';
+
+// ── ?cta=1 — THE TREND-FUND REPLICA ──────────────────────────────────────────
+// Here rather than in a route of its own because the deployment is at Vercel's twelve-function
+// cap, and this is the route that already turns public daily bars into a derived number. Two
+// years of daily closes for six markets, one after another with a small gap (Yahoo throttles a
+// burst), then lib/cta.js. Cached for half an hour: the model moves with the tape, but a trend
+// fund's position does not change minute to minute and six chart fetches are not free.
+const CTA_KEY = 'dvcap:cta:v1';
+const CTA_TTL_S = 30 * 60;
+async function buildCta() {
+  if (kvConfigured()) {
+    try { const c = await kvGetJson(CTA_KEY); if (c?.at && Date.now() - Date.parse(c.at) < CTA_TTL_S * 1000) return { ...c, cache: 'kv' }; } catch { /* a miss */ }
+  }
+  const markets = [];
+  for (const [i, m] of CTA_MARKETS.entries()) {
+    if (i > 0) await new Promise(r => setTimeout(r, 150));
+    const d = await yahooDailyOHLCDetailed(m.symbol, '2y').catch(() => null);
+    const base = { key: m.key, symbol: m.symbol, label: m.label, group: m.group, roll: m.roll };
+    if (!d?.ok) { markets.push({ ...base, ok: false, reason: d?.status || 'fetch failed' }); continue; }
+    const live = marketState(m.sessionSymbol || m.symbol) === 'open';
+    const r = ctaMarket(d.bars.map(b => b.close), { live });
+    markets.push({ ...base, date: d.bars.at(-1)?.date ?? null, ...r, cut: r.ok ? nearestCut(r) : null });
+  }
+  const out = { ok: markets.some(m => m.ok), markets, summary: ctaSummary(markets), at: new Date().toISOString() };
+  if (out.ok && kvConfigured()) { try { await kvSetJsonEx(CTA_KEY, out, CTA_TTL_S); } catch { /* uncached is slower, not wrong */ } }
+  return out;
+}
 
 // ── ?future=CL — A CONTRACT FAMILY, RESOLVED ─────────────────────────────────
 // The months still trading, each with the feed's last close, the exchange's last trading day and
@@ -64,7 +93,15 @@ async function resolveFuture(raw, p) {
 const MAX_SYMBOLS = 24;   // the console asks for its open rows, not a universe
 
 export default async function handler(req, res) {
-  const { tickers, period, future } = req.query || {};
+  const { tickers, period, future, cta } = req.query || {};
+  if (String(cta || '') === '1') {
+    try {
+      res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=1800');
+      return res.status(200).json(await buildCta());
+    } catch (e) {
+      return res.status(200).json({ ok: false, reason: String(e?.message || e) });
+    }
+  }
   if (future) {
     const p0 = Number.isFinite(+period) && +period > 1 ? Math.trunc(+period) : ATR_PERIOD;
     try {
