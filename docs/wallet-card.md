@@ -197,30 +197,34 @@ inside an embed description and **not** inside its title — a title carrying `<
 text literally. Since the header is where a wallet mark belongs, the header moved. A bold first line
 reads as a title anyway, and it puts the whole card in one rendering context.
 
-### Using the real chain logos
+### The real logos, built in
 
-Unicode has no chain logos, so the marks above are stand-ins. Real logos are possible, but they are
-**custom Discord emoji** — they live on one server and are referenced by id, not by name.
+Unicode has no chain logos, so the marks above are stand-ins. The real ones are **custom Discord
+emoji** uploaded to the server the card posts into, referenced by id rather than name — Discord's
+API cannot resolve `:name:`, only `<:name:id>`.
 
-1. Upload each logo to the server: **Server Settings → Emoji → Upload Emoji**.
-2. In any channel, type `\:name:` (with the backslash) and send it. Discord prints the raw form,
-   e.g. `<:ethereum:1234567890123456>`. That string is what the card needs.
-3. Set `DISCORD_CHAIN_EMOJI` in Vercel to a JSON object keyed by the chain label exactly as it
-   appears on the card, then redeploy:
+Since 2026-09-25 they are built in as `SERVER_EMOJI` in `lib/chains.js`, so nothing needs
+configuring:
 
-   ```json
-   {
-     "Wallet":          "<:1385metamask:000000000000000000>",
-     "Ethereum":        "<:18119ethereum:000000000000000000>",
-     "Robinhood Chain": "<:666045robinhoodlogo:000000000000000000>",
-     "Hyperliquid":     "<:Hyperliquid_Blob_Green:000000000000000000>",
-     "HyperEVM":        "<:Hyperliquid_Blob_Green:000000000000000000>"
-   }
-   ```
+| Card label | Emoji |
+|---|---|
+| Wallet | `<:Metamask:1547031346071736392>` |
+| Ethereum | `<:Ethereum:1547031296696516728>` |
+| Robinhood Chain | `<:Robinhood:1547031326727864352>` |
+| Hyperliquid, HyperEVM | `<:Hyperliquid:1547031379160858746>` |
 
-Any chain the object omits keeps its built-in mark, so a partial map is fine. A malformed value —
-bad JSON, a non-string, anything with a newline — is ignored and the built-ins stand, because a typo
-in an env var must not stop the daily card from posting.
+Every other chain keeps its Unicode mark.
+
+**Order of precedence:** `DISCORD_CHAIN_EMOJI` (a Vercel env var, a JSON object keyed by the chain
+label exactly as it appears on the card) → the server logos above → the Unicode marks. The env var
+is the escape hatch: if an emoji is ever deleted or renamed, its id dangles and Discord prints
+`:name:` as text, so set that label back to a Unicode mark there (`{"Robinhood Chain": "🪶"}`) or
+to the new id, and redeploy. A malformed value — bad JSON, a non-string, anything with a newline — is
+ignored, because a typo in an env var must not stop the daily card from posting.
+
+To get a new id: in any channel type `\:` and pick the emoji from the popup (not by typing its name),
+then send; Discord prints the raw `<:name:id>`. It needs the server permissions the emoji settings
+need.
 
 ## Hyperliquid
 
