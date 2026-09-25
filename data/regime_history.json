@@ -2036,13 +2036,13 @@
       "hawkish_repricing": "INSUFFICIENT_DATA",
       "live_regime": "stag",
       "view_regime": "stag",
-      "pinned": false,
+      "pinned": true,
       "hyg_chg": -0.74,
       "hyg_qqq_divergence": 0.1,
       "inputs": {
         "weightedRecessionProb": 14.3,
         "cpi": 3.35302,
-        "kalshi2027": 24,
+        "kalshi2027": 26,
         "tape": {
           "gold": "down",
           "tlt": "down",
@@ -2112,7 +2112,7 @@
         "quadrantRead": "between quadrants — the inflation axis is flat"
       },
       "source": "client+cron",
-      "loggedAt": "2026-09-25T09:43:17.884Z"
+      "loggedAt": "2026-09-25T11:16:03.593Z"
     }
   ]
 }
