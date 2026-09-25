@@ -48,7 +48,11 @@ const EMPTY_OBJ = Object.freeze({});
 // chain) is read from the venue and the chain, not from rows, so it is not a state of a trade — but
 // rendered under every tab it sat above the archive, and on the Archive tab the archive appeared to
 // be missing. Its own tab keeps it off the others.
-const BOOK_TABS = Object.freeze([...TABS, { id: "CRYPTO", label: "Crypto" }]);
+// CLOSED has no tab of its own: a trade flat for under 24 hours is the archive's newest entry that
+// is still editable, and it heads the Archive tab. The state itself is unchanged (lib/lifecycle.js);
+// only where it is shown moved. Anything that asks for the CLOSED tab lands on Archive.
+const BOOK_TABS = Object.freeze([...TABS.filter(t => t.id !== "CLOSED"), { id: "CRYPTO", label: "Crypto" }]);
+const tabFor = (t) => (t === "CLOSED" ? "ARCHIVED" : t);
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
 import { companyName } from "../lib/companyNames.js";
 import { tickerHint, resolvedLabel } from "../lib/tickerHints.js";
@@ -698,7 +702,7 @@ const {
         <fieldset disabled={mode === "archived"} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, opacity: mode === "archived" ? 0.9 : 1 }}>
           {mode === "archived" && (
             <div style={{ marginBottom: 10, fontSize: 11.5, color: C.mid, padding: "6px 10px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8 }}>
-              Archived — read-only. <b>↩ Restore</b> in the header brings it back to CLOSED, where it can be corrected.
+              Archived — read-only. <b>↩ Restore</b> in the header brings it back to CLOSED, at the top of this tab, where it can be corrected.
             </div>
           )}
           {/* ── 1. THESIS AND LABEL ── first, because it is required before a fill can be recorded. */}
@@ -2479,8 +2483,9 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
   };
 
   // ── THE FOUR TABS ── which state of the book is on screen. Remembered per browser.
-  const [bookTab, setBookTabRaw] = useRemembered("bookTab", "OPEN");
-  const setBookTab = (t) => setBookTabRaw(BOOK_TABS.some(x => x.id === t) ? t : "OPEN");
+  const [bookTabStored, setBookTabRaw] = useRemembered("bookTab", "OPEN");
+  const bookTab = tabFor(bookTabStored);
+  const setBookTab = (t) => setBookTabRaw(BOOK_TABS.some(x => x.id === tabFor(t)) ? tabFor(t) : "OPEN");
   // A deleted fill, held for undo. One at a time — the toast is the whole of the mechanism.
   const [undo, setUndo] = useState(null);
   const [showPortfolio, setShowPortfolio] = useRemembered("portfolio", true);
@@ -3563,7 +3568,7 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
             <span style={{ fontSize: 12.5, color: C.mid }}>
               Realised <b style={{ color: pnlCol(moved.realized) }}>{(moved.realized > 0 ? "+" : "") + fmtCcy(moved.realized, moved.currency)}</b>
               {moved.realizedPct != null && <b style={{ color: pnlCol(moved.realizedPct) }}> {(moved.realizedPct > 0 ? "+" : "") + moved.realizedPct}%</b>}
-              {" — in the Closed tab for 24 hours, then the Archive. Nothing was deleted."}
+              {" — at the top of the Archive tab, still editable for 24 hours. Nothing was deleted."}
             </span>
           )}
           <button onClick={() => setMoved(null)} title="dismiss"
@@ -4140,13 +4145,13 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
         {addErr && <div style={{ fontSize: 12, color: C.red, fontWeight: 700, marginTop: 6 }}>⚠ {addErr}</div>}
       </Card>
 
-      {/* ── THE TABS ── Watching · Open · Closed · Archive · Crypto. One state on screen at a time, each
+      {/* ── THE TABS ── Watching · Open · Archive · Crypto. One state on screen at a time, each
           card carrying its pill; a card that changes state moves tabs and the toast says where.
           Crypto carries no count: it is balances by venue and chain, not rows. */}
       <div className="mwd-tabrow" style={{ display: "flex", gap: 0, overflowX: "auto", borderBottom: "2px solid " + C.bdr }}>
         {BOOK_TABS.map(t => {
           const on = bookTab === t.id;
-          const n = tabs[t.id]?.length ?? "";
+          const n = t.id === "ARCHIVED" ? tabs.ARCHIVED.length + tabs.CLOSED.length : tabs[t.id]?.length ?? "";
           return (
             <button key={t.id} onClick={() => setBookTab(t.id)} style={{
               background: "none", border: "none", borderBottom: "3px solid " + (on ? C.blue : "transparent"), marginBottom: -2,
@@ -4159,7 +4164,6 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
       {/* Setups have no size to sort by and no rule worth keeping, so they are simply in your
           order, always. */}
       {bookTab === "WATCHING" && <Section title="Watching" note="no position yet; levels are being watched · record the first fill inside the card" list={setups} mode="setup" ctx={ctx} reorder />}
-      {bookTab === "CLOSED" && <Section title="Closed" note="flat within the last 24 hours · realised P&L frozen · archives itself after a day, or now" list={tabs.CLOSED} mode="closed" ctx={ctx} />}
       {/* Biggest first. Import order is meaningless, and the position that most deserves a second
           look each morning is the one carrying the most of the book. Rows whose market value cannot
           be converted sort last rather than to the top as a zero. */}
@@ -4353,6 +4357,9 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
       {/* ── THE ARCHIVE TAB ── the record, with its performance summary and period subtotals.
           The rows are THE SAME CARD, read-only, inside the period bands — no table, no second
           layout for a phone. */}
+      {/* Closed within the last 24 hours: still editable (a mistyped fill, a wrong exit), so it
+          heads the archive rather than hiding in a tab that was empty most days. */}
+      {bookTab === "ARCHIVED" && tabs.CLOSED.length > 0 && <Section title="Closed in the last 24h" note="still editable · realised P&L frozen · moves into the archive below after a day, or now" list={tabs.CLOSED} mode="closed" ctx={ctx} />}
       {bookTab === "ARCHIVED" && <Card>
         <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
           <SLabel>Archive — closed</SLabel>
@@ -4445,7 +4452,7 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
                               borderRadius: 9, padding: "9px 11px", margin: "16px 0 8px" }}>
                   {caret(p.shown)}
                   <b style={{ fontSize: 13, color: C.text }}>{p.label}</b>
-                  <span style={{ fontSize: 11.5, color: C.muted }}>{st.count} trade{st.count === 1 ? "" : "s"}{rowsHere.length < p.rows.length ? ` · ${p.rows.length - rowsHere.length} still in Closed` : ""}</span>
+                  <span style={{ fontSize: 11.5, color: C.muted }}>{st.count} trade{st.count === 1 ? "" : "s"}{rowsHere.length < p.rows.length ? ` · ${p.rows.length - rowsHere.length} closed in the last 24h, above` : ""}</span>
                   {st.winRate != null && <>
                     {winBar(st.wins, st.losses, 34)}
                     <span style={{ fontSize: 11.5, color: C.lbl, fontVariantNumeric: "tabular-nums" }}>{st.wins}↑ {st.losses}↓ · {st.winRate}%</span>
