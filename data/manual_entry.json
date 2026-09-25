@@ -145,7 +145,7 @@
       "hyg_qqq_divergence": -1.96,
       "oas_actual_chg": 0.02,
       "direction_agreed": false,
-      "loggedAt": "2026-09-25T18:53:10.190Z"
+      "loggedAt": "2026-09-25T20:13:31.282Z"
     },
     {
       "date": "2026-08-06",
@@ -153,7 +153,7 @@
       "hyg_qqq_divergence": -3.1,
       "oas_actual_chg": -0.04,
       "direction_agreed": true,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.284Z"
     },
     {
       "date": "2026-08-07",
@@ -161,7 +161,7 @@
       "hyg_qqq_divergence": -1.96,
       "oas_actual_chg": -0.01,
       "direction_agreed": true,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.284Z"
     },
     {
       "date": "2026-08-12",
@@ -169,7 +169,7 @@
       "hyg_qqq_divergence": 0.86,
       "oas_actual_chg": -0.01,
       "direction_agreed": false,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.284Z"
     },
     {
       "date": "2026-08-13",
@@ -177,7 +177,7 @@
       "hyg_qqq_divergence": 0.38,
       "oas_actual_chg": 0,
       "direction_agreed": true,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.284Z"
     },
     {
       "date": "2026-08-14",
@@ -185,7 +185,7 @@
       "hyg_qqq_divergence": 0.38,
       "oas_actual_chg": -0.04,
       "direction_agreed": true,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-08-17",
@@ -193,7 +193,7 @@
       "hyg_qqq_divergence": 0.04,
       "oas_actual_chg": 0.03,
       "direction_agreed": true,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-08-18",
@@ -201,7 +201,7 @@
       "hyg_qqq_divergence": 0.04,
       "oas_actual_chg": 0.05,
       "direction_agreed": true,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-08-19",
@@ -209,7 +209,7 @@
       "hyg_qqq_divergence": 1.59,
       "oas_actual_chg": -0.02,
       "direction_agreed": false,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-08-20",
@@ -217,7 +217,7 @@
       "hyg_qqq_divergence": 0.43,
       "oas_actual_chg": 0.02,
       "direction_agreed": false,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-08-21",
@@ -225,7 +225,7 @@
       "hyg_qqq_divergence": 0.53,
       "oas_actual_chg": -0.05,
       "direction_agreed": false,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-08-24",
@@ -233,7 +233,7 @@
       "hyg_qqq_divergence": -0.29,
       "oas_actual_chg": -0.01,
       "direction_agreed": true,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-08-25",
@@ -241,7 +241,7 @@
       "hyg_qqq_divergence": 1.59,
       "oas_actual_chg": 0.01,
       "direction_agreed": true,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-08-27",
@@ -249,7 +249,7 @@
       "hyg_qqq_divergence": -0.12,
       "oas_actual_chg": -0.04,
       "direction_agreed": false,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-08-28",
@@ -257,7 +257,7 @@
       "hyg_qqq_divergence": 1.59,
       "oas_actual_chg": -0.03,
       "direction_agreed": false,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-08-31",
@@ -265,7 +265,7 @@
       "hyg_qqq_divergence": 0.49,
       "oas_actual_chg": 0.03,
       "direction_agreed": true,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-09-01",
@@ -273,7 +273,7 @@
       "hyg_qqq_divergence": -0.13,
       "oas_actual_chg": 0.02,
       "direction_agreed": true,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-09-02",
@@ -281,7 +281,7 @@
       "hyg_qqq_divergence": 0.38,
       "oas_actual_chg": 0.01,
       "direction_agreed": true,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-09-03",
@@ -289,7 +289,7 @@
       "hyg_qqq_divergence": -0.22,
       "oas_actual_chg": -0.01,
       "direction_agreed": true,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-09-04",
@@ -297,7 +297,7 @@
       "hyg_qqq_divergence": -1.06,
       "oas_actual_chg": 0.03,
       "direction_agreed": false,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-09-08",
@@ -305,7 +305,7 @@
       "hyg_qqq_divergence": -0.24,
       "oas_actual_chg": -0.01,
       "direction_agreed": false,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-09-09",
@@ -313,7 +313,7 @@
       "hyg_qqq_divergence": 0.03,
       "oas_actual_chg": 0.04,
       "direction_agreed": true,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-09-10",
@@ -321,7 +321,7 @@
       "hyg_qqq_divergence": 0.11,
       "oas_actual_chg": -0.01,
       "direction_agreed": false,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-09-11",
@@ -329,7 +329,7 @@
       "hyg_qqq_divergence": 0.6,
       "oas_actual_chg": -0.05,
       "direction_agreed": false,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-09-14",
@@ -337,7 +337,7 @@
       "hyg_qqq_divergence": -0.9,
       "oas_actual_chg": 0.06,
       "direction_agreed": true,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-09-15",
@@ -345,7 +345,7 @@
       "hyg_qqq_divergence": 1.59,
       "oas_actual_chg": 0.05,
       "direction_agreed": true,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-09-16",
@@ -353,7 +353,7 @@
       "hyg_qqq_divergence": 0.43,
       "oas_actual_chg": -0.06,
       "direction_agreed": false,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-09-17",
@@ -361,7 +361,7 @@
       "hyg_qqq_divergence": 0.46,
       "oas_actual_chg": 0,
       "direction_agreed": true,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-09-18",
@@ -369,7 +369,7 @@
       "hyg_qqq_divergence": -1.38,
       "oas_actual_chg": -0.02,
       "direction_agreed": true,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-09-21",
@@ -377,7 +377,7 @@
       "hyg_qqq_divergence": -0.87,
       "oas_actual_chg": -0.02,
       "direction_agreed": false,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-09-22",
@@ -385,7 +385,7 @@
       "hyg_qqq_divergence": 0.38,
       "oas_actual_chg": 0.02,
       "direction_agreed": false,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-09-23",
@@ -393,7 +393,7 @@
       "hyg_qqq_divergence": -0.82,
       "oas_actual_chg": 0.05,
       "direction_agreed": true,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     },
     {
       "date": "2026-09-24",
@@ -401,7 +401,7 @@
       "hyg_qqq_divergence": 0.1,
       "oas_actual_chg": 0.07,
       "direction_agreed": true,
-      "loggedAt": "2026-09-25T18:53:10.207Z"
+      "loggedAt": "2026-09-25T20:13:31.285Z"
     }
   ],
   "intervention": {
