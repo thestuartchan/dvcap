@@ -20,7 +20,7 @@ import { upsertCard, post, remove, webhookFromEnv, walletWebhookFromEnv, mention
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
 import { fetchWallets } from '../lib/wallet.js';
 import { fetchSpotContext, fetchHyperliquid, fetchHlAccount, fetchHlSpot, fetchHlOrders } from '../lib/hyperliquid.js';
-import { diffHoldings, walletPublicView, buildWalletCard, mergePending, perpPublicView, publishable, inheritProvenance, rememberProvenance, applyMemory, publishReport } from '../lib/walletcard.js';
+import { diffHoldings, walletPublicView, buildWalletCard, mergePending, perpPublicView, publishable, inheritProvenance, rememberProvenance, applyMemory, publishReport, pinsFromMemory, symbolKey } from '../lib/walletcard.js';
 
 // A row's symbol is what you call it; the quote feed may call it something else. Mirrors the tab's
 // own resolution — Yahoo has no MNQ, and its MGC is an unrelated stock.
@@ -196,9 +196,14 @@ export async function refreshWallet({ post = false, clock = new Date() } = {}) {
   if (!hook) return { ok: false, skipped: 'DISCORD_WALLET_WEBHOOK is not set' };
   if (!kvConfigured()) return { ok: false, skipped: 'no Redis — nothing to compare against' };
 
-  const [spotCtx, hlMarkets] = await Promise.all([fetchSpotContext(), fetchHyperliquid()]);
+  // The provenance memory is read FIRST now, because it does two jobs: it answers for rows the
+  // chain would not confirm today (below), and it names contracts the wallet read must reach even
+  // when discovery stops short (lib/wallet.js, "what was chosen is always read").
+  const [spotCtx, hlMarkets, memRec] = await Promise.all([fetchSpotContext(), fetchHyperliquid(),
+    kvGetJson(WALLET_PROVENANCE_KEY).then(v => v || { memory: {} })]);
+  const pinned = pinsFromMemory(memRec.memory || {});
   const [w, hlSpot, hlAcct] = await Promise.all([
-    fetchWallets({ spotMeta: spotCtx.meta, spotPrices: spotCtx.prices, markets: hlMarkets.markets }),
+    fetchWallets({ spotMeta: spotCtx.meta, spotPrices: spotCtx.prices, markets: hlMarkets.markets, pinned }),
     fetchHlSpot({ context: spotCtx }),
     fetchHlAccount(),
   ]);
@@ -223,6 +228,8 @@ export async function refreshWallet({ post = false, clock = new Date() } = {}) {
   const provenance = {
     unchecked: w.chains.filter(c => c.ok && c.acquisition?.asked && !c.acquisition.ok).map(c => ({ chain: c.chain, error: c.acquisition.error })),
     truncated: w.chains.filter(c => c.ok && c.acquisition?.truncated).map(c => c.chain),
+    // Discovery that stopped short, and how many chosen contracts were read on top of it.
+    discovery: w.chains.filter(c => c.ok && c.discovery?.truncated).map(c => ({ chain: c.chain, seen: c.discovery.seen, pinned: c.discovery.pinned ?? 0 })),
     unknown: now.filter(r => !r.verified && r.acquired == null).length,
     inherited: 0,
   };
@@ -245,7 +252,6 @@ export async function refreshWallet({ post = false, clock = new Date() } = {}) {
   // The long memory first: every contract the chain has ever confirmed, applied to whatever it
   // would not confirm today, then extended with today's confirmations. Then the one-day snapshot,
   // which still covers rows from before addresses existed.
-  const memRec = (await kvGetJson(WALLET_PROVENANCE_KEY)) || { memory: {} };
   const applied = applyMemory(now, memRec.memory || {});
   now = applied.rows;
   provenance.remembered = applied.applied;
@@ -271,6 +277,9 @@ export async function refreshWallet({ post = false, clock = new Date() } = {}) {
 
   // What the gate is withholding today, by name and reason — the card's absences, said out loud.
   provenance.gate = publishReport(now);
+  // What the gate kept but the card will still drop, because nothing priced it. It used to vanish
+  // here without a word — 2026-09-25, the real PONS.
+  provenance.gate.unpriced = publishable(now).filter(r => r.price == null).map(r => `${r.chain || ''}:${symbolKey(r.coin)}`);
 
   const fresh = diffHoldings(prevSnap.rows, now);
   const pendingRec = await kvGetJson(WALLET_PENDING_KEY);
