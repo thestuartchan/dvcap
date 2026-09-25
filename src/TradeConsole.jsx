@@ -44,6 +44,11 @@ import { isDerivativeRow, underlyingOf, legLabel, optionDerived, exposureLines, 
 // A stable empty object for memo dependencies: a fresh `{}` on every render would recompute the
 // whole book each time the feed had nothing to say.
 const EMPTY_OBJ = Object.freeze({});
+// The book's four state tabs plus Crypto. The crypto card (perps, exchange ledger, one section per
+// chain) is read from the venue and the chain, not from rows, so it is not a state of a trade — but
+// rendered under every tab it sat above the archive, and on the Archive tab the archive appeared to
+// be missing. Its own tab keeps it off the others.
+const BOOK_TABS = Object.freeze([...TABS, { id: "CRYPTO", label: "Crypto" }]);
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
 import { companyName } from "../lib/companyNames.js";
 import { tickerHint, resolvedLabel } from "../lib/tickerHints.js";
@@ -2475,7 +2480,7 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
 
   // ── THE FOUR TABS ── which state of the book is on screen. Remembered per browser.
   const [bookTab, setBookTabRaw] = useRemembered("bookTab", "OPEN");
-  const setBookTab = (t) => setBookTabRaw(TABS.some(x => x.id === t) ? t : "OPEN");
+  const setBookTab = (t) => setBookTabRaw(BOOK_TABS.some(x => x.id === t) ? t : "OPEN");
   // A deleted fill, held for undo. One at a time — the toast is the whole of the mechanism.
   const [undo, setUndo] = useState(null);
   const [showPortfolio, setShowPortfolio] = useRemembered("portfolio", true);
@@ -2968,9 +2973,9 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
         return;
       }
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-        const i = TABS.findIndex(x => x.id === tabRef.current);
-        const n = (i + (e.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length;
-        setBookTab(TABS[n].id);
+        const i = BOOK_TABS.findIndex(x => x.id === tabRef.current);
+        const n = (i + (e.key === "ArrowRight" ? 1 : BOOK_TABS.length - 1)) % BOOK_TABS.length;
+        setBookTab(BOOK_TABS[n].id);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -4135,12 +4140,13 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
         {addErr && <div style={{ fontSize: 12, color: C.red, fontWeight: 700, marginTop: 6 }}>⚠ {addErr}</div>}
       </Card>
 
-      {/* ── THE FOUR TABS ── Watching · Open · Closed · Archive. One state on screen at a time, each
-          card carrying its pill; a card that changes state moves tabs and the toast says where. */}
+      {/* ── THE TABS ── Watching · Open · Closed · Archive · Crypto. One state on screen at a time, each
+          card carrying its pill; a card that changes state moves tabs and the toast says where.
+          Crypto carries no count: it is balances by venue and chain, not rows. */}
       <div className="mwd-tabrow" style={{ display: "flex", gap: 0, overflowX: "auto", borderBottom: "2px solid " + C.bdr }}>
-        {TABS.map(t => {
+        {BOOK_TABS.map(t => {
           const on = bookTab === t.id;
-          const n = tabs[t.id].length;
+          const n = tabs[t.id]?.length ?? "";
           return (
             <button key={t.id} onClick={() => setBookTab(t.id)} style={{
               background: "none", border: "none", borderBottom: "3px solid " + (on ? C.blue : "transparent"), marginBottom: -2,
@@ -4189,7 +4195,10 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
           exchange ledger is not the wallet, so there is still no grand total and still one section
           per chain — the header carries the two figures that are separately meaningful rather than
           a sum that would describe a position you cannot take. */}
-      {(livePerps.length > 0 || hlSpot?.rows?.length > 0 || wallet?.chains?.some(c => c.ok && c.rows.length > 0)) && (
+      {bookTab === "CRYPTO" && !(livePerps.length > 0 || hlSpot?.rows?.length > 0 || wallet?.chains?.some(c => c.ok && c.rows.length > 0)) && (
+        <Card><div style={{ fontSize: 12.5, color: C.muted }}>Nothing read yet — no perps, exchange balances or on-chain holdings for the configured address. Refresh prices to read again.</div></Card>
+      )}
+      {bookTab === "CRYPTO" && (livePerps.length > 0 || hlSpot?.rows?.length > 0 || wallet?.chains?.some(c => c.ok && c.rows.length > 0)) && (
       <Card>
         <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap",
                       paddingBottom: 9, borderBottom: "1.5px solid " + C.bdrMd }}>
