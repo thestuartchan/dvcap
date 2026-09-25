@@ -12,6 +12,27 @@ const fmtPx = (p) => (p == null ? "—" : Number(p).toLocaleString("en-US", { mi
 const pct = (v) => { if (v == null) return "—"; const n = Math.round(v * 100); return `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n)}%`; };
 const signed = (v, dp = 1) => (v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(dp)}`);
 // Neutral is grey, not a faint long: inside ±20% the model is close to flat, and colour would say otherwise.
+const fmtK = (v) => { if (v == null) return "—"; const a = Math.abs(v); const t = a >= 1e6 ? `${(a / 1e6).toFixed(2)}m` : a >= 1e3 ? `${Math.round(a / 1e3)}k` : String(a); return `${v > 0 ? "+" : v < 0 ? "−" : ""}${t}`; };
+const fmtDay = (iso) => (iso ? new Date(iso + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }) : "—");
+
+// The CFTC's week, and whether that category has ever tested the replica in this market. A record
+// that runs the other way is said so, rather than its weekly verdict being read as a check.
+function CotLine({ c }) {
+  if (!c) return null;
+  const t = c.track;
+  const head = `CFTC ${c.trader}, week to ${fmtDay(c.date)}: net ${fmtK(c.net)} (${c.netPctOI == null ? "—" : signed(c.netPctOI)}% of open interest), ${fmtK(c.netChange)} on the week`;
+  const rec = t ? `agrees ${t.agree} of ${t.clear} weeks (corr ${signed(t.corr, 2)})` : null;
+  return (
+    <div style={{ marginTop: 2, fontSize: 11.5, color: C.muted, lineHeight: 1.55 }}>
+      {head}
+      {t?.tracks && c.week !== "unclear" && <span> — <b style={{ color: c.week === "agrees" ? C.mid : C.amber }}>{c.week === "agrees" ? "with" : "against"} the replica this week</b></span>}
+      {rec && <span>. Past year: {rec}</span>}
+      {t && !t.tracks && <span> — this category does not track the replica here, so it does not test it</span>}
+      .
+    </div>
+  );
+}
+
 const toneOf = (pos) => (pos == null || Math.abs(pos) < NEUTRAL ? C.muted : pos > 0 ? C.green : C.purple);
 
 // −100% … +100% as a bar from the centre, so a long and a short read in opposite directions.
@@ -76,6 +97,7 @@ function MarketRow({ m }) {
         Position at −2σ {pct(sc(-2))} · −1σ {pct(sc(-1))} · unchanged {pct(sc(0))} · +1σ {pct(sc(1))} · +2σ {pct(sc(2))}
         {m.roll === "high" && <span> · levels in front-month terms; the longer windows span contract rolls</span>}
       </div>
+      <CotLine c={m.cot} />
     </div>
   );
 }
@@ -110,13 +132,28 @@ export function CtaPanel() {
               {n && <span style={{ color: C.mid }}> — nearest cut: {n.key} {fmtPx(n.flip)} ({n.label}, {signed(n.pct)}%, {signed(n.sigmas)} daily σ)</span>}
             </div>
           )}
+          {data.calibration?.tested && (
+            <div style={{ marginTop: 4, fontSize: 12, color: C.mid, lineHeight: 1.5 }}>
+              CFTC check, week to {fmtDay(data.calibration.date)}:{" "}
+              {data.calibration.tested.length
+                ? <>tests the replica in {data.calibration.tested.join(", ")} ({data.calibration.week.agree} of {data.calibration.week.clear} with it this week)</>
+                : <>tests the replica in no market this year</>}
+              {data.calibration.untested.length > 0 && (
+                <span style={{ color: C.muted }}>; not in {data.calibration.untested.join(", ")}, where the funds category runs opposite the replica</span>
+              )}
+              .
+            </div>
+          )}
+          {data.calibration?.error && <div style={{ marginTop: 4, fontSize: 12, color: C.muted }}>CFTC check unavailable: {data.calibration.error}</div>}
           <div style={{ marginTop: 8 }}>
             {data.markets.map(m => <MarketRow key={m.key} m={m} />)}
           </div>
           <div style={{ marginTop: 8, fontSize: 11.5, color: C.muted, lineHeight: 1.55 }}>
             A model of where mechanical trend funds probably sit, not their orders. Each market blends
             1-, 3- and 12-month trends measured in its own volatility; ±100% is the model&apos;s maximum.
-            Flip levels apply to {live ? "today's" : "the next"} close. No dollar flow is estimated.
+            Flip levels apply to {live ? "today's" : "the next"} close. No dollar flow is estimated. The CFTC's
+            weekly report is the check: managed money in commodities is the closest public proxy for trend
+            funds; leveraged funds in financial futures are dominated by basis and relative-value books.
           </div>
         </>
       )}
