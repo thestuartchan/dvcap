@@ -163,13 +163,18 @@ const cardRows = (rows) => publishable(rows.map(r => ({ ...r, chain: 'Robinhood 
   eq('and without the pin it is exactly the day PONS vanished', none.rows.some(r => r.address === REAL), false);
 }
 
-// ── AN UNTRUNCATED DISCOVERY IS TAKEN AT ITS WORD ────────────────────────────
+// ── AN INDEXER THAT SIMPLY MISSED IT ─────────────────────────────────────────
+// Untruncated, and still without the chosen contract. balanceOf is the chain's answer: held is
+// recovered, zero is a contract since sold and adds no row.
 {
-  const tokens = { [REAL]: { symbol: 'PONS', raw: 1000n * E18 }, [LOOK]: { symbol: 'OTHER', raw: 5n * E18 } };
-  const chain = fakeChain({ tokens, discovered: [LOOK], swapped: [REAL], pairs: {} });
-  const w = await read(chain, { pinned: [REAL] });
-  eq('nothing is pinned when discovery saw everything', w.discovery.pinned, 0);
-  ok('so a chosen contract it did not list is one since sold', !chain.seen.balanceOfAsked.includes(REAL));
+  const SOLD = '0x' + '33'.repeat(20);
+  const tokens = { [REAL]: { symbol: 'PONS', raw: 1000n * E18 }, [LOOK]: { symbol: 'OTHER', raw: 5n * E18 }, [SOLD]: { symbol: 'GONE', raw: 0n } };
+  const chain = fakeChain({ tokens, discovered: [LOOK], swapped: [REAL, SOLD], pairs: { [REAL]: [pool(0.62, USDG)] } });
+  const w = await read(chain);
+  eq('both chosen contracts are asked, by balanceOf', [REAL, SOLD].every(a => chain.seen.balanceOfAsked.includes(a)), true);
+  eq('the one still held is recovered, priced', [w.discovery.recovered, w.rows.find(r => r.address === REAL)?.price], [1, 0.62]);
+  eq('the one sold adds no row', w.rows.some(r => r.address === SOLD), false);
+  eq('and a discovered token is not asked twice', chain.seen.balanceOfAsked.includes(LOOK), false);
 }
 
 // ── THE MEMORY, AS PINS ──────────────────────────────────────────────────────
