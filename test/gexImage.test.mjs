@@ -52,7 +52,7 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
   ok('the cushion is labelled', /\+60M Oct-16 · cushion · peaks 1 of 5/.test(svg));
   ok('the trapdoor is labelled', /−340M Oct-02 · trapdoor/.test(svg));
   ok('today\'s negatives say today', /−110M today/.test(svg));
-  ok('the stack is bracketed in the margin, clear of the labels', new RegExp(`<rect x="82" y="[\\d.]+" width="5" height="[\\d.]+" rx="2" fill="${INK.neg}"/>`).test(svg));
+  ok('the stack is bracketed beside the bars, clear of the labels', new RegExp(`<rect x="84" y="[\\d.]+" width="5" height="[\\d.]+" rx="2" fill="${INK.neg}"/>`).test(svg));
   ok('the four text lines repeat under the plot, label in bold', /<tspan font-weight="700">stack<\/tspan> negative 730–745 under spot/.test(svg) && /<tspan font-weight="700">pin<\/tspan> none today/.test(svg) && /<tspan font-weight="700">book<\/tspan> /.test(svg) && /<tspan font-weight="700">after<\/tspan> pivot 740\.80 to 733\.96 after today · Sep-25 box 748–755/.test(svg));
   eq('a long footer line wraps', wrap('one two three four five six', 10), ['one two', 'three four', 'five six']);
   eq('a short one does not', wrap('short', 10), ['short']);
@@ -65,31 +65,46 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
     const d = board([cell('2026-09-23', 740, -534), cell('2026-09-23', 739, -401), cell('2026-09-23', 738, -138), cell('2026-09-23', 745, 336), cell('2026-09-23', 748, 131), cell('2026-10-02', 730, -375), cell('2026-10-16', 755, 293)]);
     const dl = levelsOf({ ...d, spot: 740.71, atr: 8, callWall: 740 });
     const dense = ladderSvg({ name: 'QQQ', spot: 740.71, callWall: 740, levels: dl, byStrike: d.byStrike, grid: d.grid, flipLevel: 740.59, flipZoneLo: 711.51, flipZoneHi: 740.59, pin: { pinned: false, share: 43.9 }, decay: { expiringToday: true, front: '2026-09-23', after: { flip: 732.74 } } }, { today: '2026-09-23' });
-    const axisYs = [...dense.matchAll(/<text x="\d+" y="([\d.]+)" font-size="1[67]" font-weight="700" text-anchor="end"/g)].map(m => +m[1]).sort((a, b) => a - b);
-    ok('axis labels, spot included, never overprint', axisYs.length >= 5 && axisYs.every((v, i) => i === 0 || v - axisYs[i - 1] >= 19.9));
-    ok('a displaced label gets a leader line to its bar', /<line x1="\d+" y1="[\d.]+" x2="\d+" y2="[\d.]+" stroke="#6e7681" stroke-width="1" stroke-opacity="0.6"\/>/.test(dense));
+    const axisYs = [...dense.matchAll(/<text x="424" y="([\d.]+)" font-size="17" font-weight="700"/g)].map(m => +m[1]).sort((a, b) => a - b);
+    ok('callout strikes, spot included, never overprint', axisYs.length >= 5 && axisYs.every((v, i) => i === 0 || v - axisYs[i - 1] >= 19.9));
+    const leaders = [...dense.matchAll(/<path d="M[\d.]+ ([\d.]+) L[\d.]+ [\d.]+ L[\d.]+ ([\d.]+)" fill="none"/g)];
+    ok("every row has a leader to its bar, and a displaced row's leader bends", leaders.length >= 6 && leaders.some(m => Math.abs(+m[1] - +m[2]) > 2));
     // The pivot and the flip zone are laid out with the rest, in the annotation column.
     const auxYs = [...dense.matchAll(/<text x="\d+" y="([\d.]+)" font-size="1[35]"[^>]*>(?:pivot after today|flip zone|[−+])/g)].map(m => +m[1]).sort((a, b) => a - b);
     ok('the pivot and flip-zone labels never overprint an annotation', auxYs.length >= 6 && auxYs.every((v, i) => i === 0 || v - auxYs[i - 1] >= 18.9));
-    ok('the pivot label is in the column, on a dark backing', /font-size="13" fill="#c9d1d9">pivot after today 732\.74</.test(dense) && /rx="4" fill="#0d1117" fill-opacity="0.85"/.test(dense));
-    ok('floating labels are drawn before the annotations, so a backing never covers a strike', dense.lastIndexOf('fill-opacity="0.85"/>') < dense.indexOf('font-weight="600" fill="'));
+    ok('the pivot label is in the callout column', /<text x="424" y="[\d.]+" font-size="13" fill="#c9d1d9">pivot after today 732\.74</.test(dense));
+    // Nothing crosses the callout column, which is why its labels need no backing.
+    ok('no line or band is drawn across the callout column', [...dense.matchAll(/<line x1="[\d.]+" y1="[\d.]+" x2="([\d.]+)"/g)].every(m => +m[1] < 424)
+       && [...dense.matchAll(/<rect x="([\d.]+)" y="[\d.]+" width="([\d.]+)"[^>]*fill-opacity="0.13"/g)].every(m => +m[1] + +m[2] < 424));
     ok('no arrow glyph the face cannot draw', !/→/.test(dense));
     // A stack that runs below the window, and a footer line that wraps: the bracket stops at the
     // plot's foot and the plot gives the footer its extra line.
     const deep = board([cell('2026-09-23', 768, -954), cell('2026-09-23', 767, -784), cell('2026-09-25', 760, -588), cell('2026-10-16', 750, -554), cell('2026-10-16', 740, -300), cell('2026-10-16', 730, -200), cell('2026-10-16', 725, -100), cell('2026-10-09', 785, 1070), cell('2026-09-23', 772, 971)]);
     const dlv = levelsOf({ ...deep, spot: 768.12, atr: 6, callWall: 772 });
     const deepSvg = ladderSvg({ name: 'SPY', spot: 768.12, callWall: 772, levels: dlv, byStrike: deep.byStrike, grid: deep.grid, flipLevel: 771.61, flipZoneLo: 759.38, flipZoneHi: 771.61, iv: 0.12, pin: { pinned: false, share: 43.2 }, decay: { expiringToday: true, front: '2026-09-23', after: { flip: 769 } } }, { today: '2026-09-23' });
-    const bracket = /<rect x="82" y="([\d.]+)" width="5" height="([\d.]+)" rx="2"/.exec(deepSvg);
-    const plot = /<rect x="96" y="84" width="\d+" height="([\d.]+)" rx="8"/.exec(deepSvg);
+    const bracket = /<rect x="84" y="([\d.]+)" width="5" height="([\d.]+)" rx="2"/.exec(deepSvg);
+    const plot = /<rect x="24" y="84" width="\d+" height="([\d.]+)" rx="8"/.exec(deepSvg);
     ok('the bracket stops at the plot\'s foot', bracket && plot && (+bracket[1] + +bracket[2]) <= 84 + +plot[1] + 0.1);
     const footYs = [...deepSvg.matchAll(/<text x="24" y="(\d+)" font-size="15"/g)].map(m => +m[1]);
-    ok('the footer wrapped and every line sits above the caption', footYs.length >= 5 && Math.max(...footYs) < IMAGE_H - 44);
+    ok('the footer lines all sit above the caption', footYs.length >= 4 && Math.max(...footYs) < IMAGE_H - 44);
     ok('the magnet is one word beside the bars', /−534M today · magnet</.test(dense));
     ok('no annotation is wider than the column', [...dense.matchAll(/font-size="15" fill="(?:#2ea043|#8957e5)">([^<]*)</g)].every(m => m[1].length <= 38));
   }
   // Labels never overprint: consecutive annotation y's are at least the minimum gap apart.
   const ys = [...svg.matchAll(/<text x="\d+" y="([\d.]+)" font-size="15" font-weight="600" fill=/g)].map(m => +m[1]).sort((a, b) => a - b);
   ok('annotations are spaced apart', ys.length >= 6 && ys.every((v, i) => i === 0 || v - ys[i - 1] >= 19.9));
+  // ── THE REDESIGN (2026-09-25) ──────────────────────────────────────────────
+  // Bars diverge around a zero line: negative left, positive right, so direction reads from
+  // position and not colour alone.
+  const zero = /<line x1="([\d.]+)" y1="[\d.]+" x2="\1" y2="[\d.]+" stroke="#8b949e"/.exec(svg);
+  const barsAt = (fill) => [...svg.matchAll(new RegExp(`<rect x="([\\d.]+)" y="[\\d.]+" width="([\\d.]+)" height="[\\d.]+" rx="2" fill="${fill}"`, 'g'))];
+  ok('there is a zero line', !!zero);
+  ok('negative bars end at it, on the left', barsAt(INK.neg).filter(m => +m[1] >= 84 + 5).every(m => Math.abs(+m[1] + +m[2] - +zero[1]) < 0.2));
+  ok('positive bars start at it, on the right', barsAt(INK.pos).every(m => Math.abs(+m[1] - +zero[1]) < 0.2));
+  ok('each side says what it means, in words', /negative · leans with price</.test(svg) && /positive · leans against</.test(svg));
+  ok("the ladder's nodes are drawn full, the rest faded to context", /fill-opacity="0.95"/.test(svg) && /fill-opacity="0.3"/.test(svg));
+  ok('a price scale runs down the left', [...svg.matchAll(/font-size="12" text-anchor="end" fill="#6e7681">\d/g)].length >= 4);
+  ok('spot names itself in the column', /fill="#58a6ff">spot</.test(svg));
   eq('no spot, no picture', ladderSvg({ name: 'X' }), null);
   // A legacy row without the per-strike table still gets a heading, spot and zone.
   const legacy = ladderSvg({ name: 'SPY', spot: 762.4, callWall: 770, flipLevel: 769.6, flipZoneLo: 765, flipZoneHi: 772 }, {});

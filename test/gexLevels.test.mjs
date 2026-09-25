@@ -332,6 +332,11 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   eq('the next positive node ends the air', [st.nextPositive.strike, st.airPct], [726, 2.5]);
   eq('touching means inside the pin half-width', STACK_TOUCH_PCT, 0.6);
   eq('a positive first strike is no stack', negativeStack([{ strike: 745, netGexUsd: 5 }, { strike: 740, netGexUsd: -5 }], { spot: 746 }).strikes, []);
+  // SPY on 2026-09-25: a +52M sliver at 767 over a negative run from 766 down — the sliver is not a floor.
+  const sliver = negativeStack([{ strike: 767, netGexUsd: 52e6 }, { strike: 766, netGexUsd: -217e6 }, { strike: 765, netGexUsd: -138e6 },
+    { strike: 760, netGexUsd: -828e6 }, { strike: 755, netGexUsd: -375e6 }, { strike: 750, netGexUsd: 90e6 }], { spot: 767.18 });
+  eq('a sliver of positive gamma does not hide the stack under it', [sliver.hi, sliver.lo, sliver.touching], [766, 755, true]);
+  eq('but a positive strike a tenth the size of the run is a floor', negativeStack([{ strike: 767, netGexUsd: 200e6 }, { strike: 766, netGexUsd: -1000e6 }], { spot: 767.18 }).strikes, []);
   // SPY, 23 Sep: every strike below spot negative to the edge of the band. The walk stops at 5%.
   const allNeg = negativeStack(Array.from({ length: 20 }, (_, i) => ({ strike: 768 - i * 5, netGexUsd: -1e6 })), { spot: 768.52 });
   eq('the stack stops at the 5% window and says so', [allNeg.hi, allNeg.lo >= 768.52 * 0.95, allNeg.truncated, allNeg.nextPositive], [768, true, true, null]);
