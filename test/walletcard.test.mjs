@@ -509,6 +509,10 @@ const row = (o = {}) => ({
   const before = [real, eth];
 
   eq('fullwidth and zero-width fold to the plain symbol', [symbolKey(twinFullwidth.coin), symbolKey(twinSpaced.coin), symbolKey(' pons ')], ['PONS', 'PONS', 'PONS']);
+  eq('an invisible character folds for identity but is never plain', [symbolKey('PO\u200bNS'), isPlainSymbol('PO\u200bNS'), isPlainSymbol('PONS\u200b'), isPlainSymbol('PO\u2060NS')], ['PONS', false, false, false]);
+  // The spoof as it actually arrived: priced by a pool, provenance unknown. Alone, it is withheld.
+  eq('the zero-width spoof alone is withheld, not printed as PONS', publishable([{ ...twinSpaced, coin: 'PO\u200bNS', acquired: null }, eth]).map(r => r.coin), ['ETH']);
+  eq('and the report says why', publishReport([{ ...twinSpaced, coin: 'PO\u200bNS', acquired: null }, eth]).withheld, [{ symbol: 'Robinhood Chain:PONS', why: 'symbol not plain' }]);
   eq('a Cyrillic О does not fold, so the name is not plain', [isPlainSymbol(twinCyrillic.coin), isPlainSymbol('PONS'), isPlainSymbol('USDT0'), isPlainSymbol('')], [false, true, true, false]);
   eq('unbidden = pool-priced, unvouched, and the chain says nothing was given up', [isUnsolicited(twinCyrillic), isUnsolicited(real), isUnsolicited({ ...real, acquired: null }), isUnsolicited({ ...twinCyrillic, verified: true })], [true, false, false, false]);
 
