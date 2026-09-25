@@ -6,6 +6,7 @@ import { REGIMES, REGIME_PALETTE } from "../lib/regimes.js";
 import { TradeConsole } from "./TradeConsole.jsx";
 import { GexPanel } from "./GexPanel.jsx";
 import { CtaPanel } from "./CtaPanel.jsx";
+import { ScenarioBoard } from "./ScenarioBoard.jsx";
 import {
   AreaChart, Area, BarChart, Bar, RadarChart, PolarGrid,
   PolarAngleAxis, Radar, PieChart, Pie, Cell, LineChart, Line,
@@ -929,17 +930,6 @@ function bookSinceFiling(fund, prices) {
 
 
 
-// How long a reading has stood, in the coarsest honest unit. A scenario that turned this morning
-// and one stuck at 2/2 for three weeks rendered identically before this; the age is the difference.
-function ageSince(iso) {
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return "";
-  const h = (Date.now() - t) / 3600000;
-  if (h < 0) return "";                       // clock skew — say nothing rather than lie
-  if (h < 24) return h < 1 ? "just turned" : `${Math.round(h)}h`;
-  const d = Math.round(h / 24);
-  return d < 14 ? `${d}d` : `${Math.round(d / 7)}w`;
-}
 
 // P0.2 — Regime-SHIFT scenarios. The recession-consensus engine produces four states
 // (stag/ref/def/inf) and cannot derive these two: Debasement is a currency-devaluation regime and
@@ -3805,66 +3795,7 @@ function PostureCard({ p: raw, regime = null, tape = null }) {
   );
 }
 
-// WATCH / EXPECT / NOT for one scenario card. Module scope, not defined during render — a
-// component created inside a render is a new type each pass and remounts its own state, which
-// here is the open/closed toggle.
-const DescHead = ({ children }) => (
-  <span style={{ fontSize: 9.5, fontWeight: 800, color: C.muted, textTransform: "uppercase",
-                 letterSpacing: 0.5, minWidth: 46, flexShrink: 0, display: "inline-block" }}>{children}</span>
-);
 
-function ScenarioDescriptors({ s, toneCol }) {
-  // A live or NEAR scenario is the one being decided about, so it opens itself. DERIVED, not
-  // synced through an effect: an effect that mirrors a prop into state runs a second render every
-  // time the prop moves, and loses the reader's own click the moment the board refreshes.
-  const auto = !s.broken && (s.confirmed || s.near);
-  const [override, setOverride] = useState(null);
-  const open = override ?? auto;
-  if (!s.watchlist?.length && !s.expect?.length && !s.notLines?.length) return null;
-  return (
-    <div style={{ marginTop: 5 }}>
-      <button onClick={() => setOverride(!open)}
-        style={{ background: "none", border: "none", padding: 0, cursor: "pointer",
-                 fontSize: 9.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.5 }}>
-        {open ? "▾" : "▸"} watch · expect · not
-      </button>
-      {open && (
-        <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 4 }}>
-          {/* WATCH is deliberately NOT the trigger legs. The legs are the measurement, taken after
-              the fact; these are the instruments that move first. */}
-          {s.watchlist?.length > 0 && (
-            <div style={{ display: "flex", gap: 6, alignItems: "baseline", flexWrap: "wrap" }}>
-              <DescHead>watch</DescHead>
-              {s.watchlist.map(w => (
-                <span key={w} style={{ fontSize: 10, fontWeight: 700, color: C.mid, background: C.surf,
-                                       border: "1px solid " + C.bdr, borderRadius: 4, padding: "1px 5px" }}>{w}</span>
-              ))}
-            </div>
-          )}
-          {/* EXPECT audits itself: a scenario marked live while the tape does the opposite of what
-              this says is a visible sign the classification is wrong. */}
-          {s.expect?.length > 0 && (
-            <div style={{ display: "flex", gap: 6, alignItems: "baseline" }}>
-              <DescHead>expect</DescHead>
-              <div style={{ fontSize: 11, color: C.mid, fontWeight: 600, lineHeight: 1.5 }}>
-                {s.expect.map((e, i) => <div key={i}>· {e}</div>)}
-              </div>
-            </div>
-          )}
-          {/* The question a reader actually has is not "what is C" but "why is this C and not B". */}
-          {s.notLines?.length > 0 && (
-            <div style={{ display: "flex", gap: 6, alignItems: "baseline" }}>
-              <DescHead>not</DescHead>
-              <div style={{ fontSize: 11, color: toneCol, fontWeight: 600, lineHeight: 1.5 }}>
-                {s.notLines.map((n, i) => <div key={i}>{n}</div>)}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // P7 — THE AUCTION CARD. On 2026-09-10 the 30-year settled at 1pm and nothing on this board
 // mentioned it, on the morning the long end was the entire story and scenario C sat three tenths
@@ -4000,243 +3931,6 @@ function MonetizationRung({ m }) {
   );
 }
 
-// Part C — scenario board. Answers "which scenario am I in" at the top of the page, so the user
-// doesn't reassemble it from five category-bucketed sections. Each row: name, X/N met, and its
-// conditions with threshold + live value. Sorted server-side by consequence weight, then proximity.
-function ScenarioBoard({ scenarios }) {
-  // A6 — mark scenarios whose confirmed-count moved since the last DIFFERENT render (stored in
-  // localStorage). KM going 2/3 → 3/3 overnight is the most actionable fact on the page.
-  const [changed, setChanged] = useState({});
-  useEffect(() => {
-    if (!scenarios?.length) return;
-    const KEY = "dvcap_scenario_counts";
-    let stored = {};
-    try { stored = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch { /* ignore */ }
-    const cur = {}, ch = {};
-    let anyDiff = false;
-    for (const s of scenarios) {
-      const cnt = s.total > 0 ? `${s.met}/${s.total}` : "n/a";
-      cur[s.id] = cnt;
-      if (stored[s.id] && stored[s.id] !== cnt) { ch[s.id] = stored[s.id]; anyDiff = true; }
-    }
-    if (anyDiff || Object.keys(stored).length === 0) {
-      if (anyDiff) setChanged(ch);
-      try { localStorage.setItem(KEY, JSON.stringify(cur)); } catch { /* ignore */ }
-    }
-  }, [scenarios]);
-  if (!scenarios?.length) return null;
-  const TONE = { red: C.red, amber: C.amber, green: C.green, muted: C.muted };
-  return (
-    <Card>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
-        <SLabel>🧭 Scenario board</SLabel>
-        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>which scenario am I in · sorted by consequence weight</span>
-        <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase" }}>weeks</span>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-        {scenarios.map(s => {
-          // Color by the scenario's OWN tone, not a blanket red: "A · Plan works" confirming is a
-          // GOOD state (green), only "D · Disorderly" confirming is red. Confirmed just fills the
-          // tone-appropriate background + shows ✓; a near-miss (one short) reads amber.
-          const toneCol = TONE[s.tone] || C.muted;
-          const TBG  = { red: C.rBg, amber: C.aBg, green: C.gBg };
-          const TBDR = { red: C.rBdr, amber: C.aBdr, green: C.gBdr };
-          // A BROKEN scenario is greyed out entirely, tone included. Keeping "KOREA MECHANICAL
-          // UNWIND" in its amber alert colour while the card says the scenario is over asks the
-          // reader to hold two opposite things at once, and the colour wins that argument.
-          const bg  = s.broken ? C.bg : s.confirmed ? (TBG[s.tone] || C.bg) : C.bg;
-          const bdr = s.broken ? C.bdrMd : s.unverified ? C.amber : s.confirmed ? (TBDR[s.tone] || C.bdrMd) : C.bdrMd;
-          const countCol = s.broken ? C.muted : s.confirmed ? toneCol : (s.total > 0 && s.met === s.total - 1 ? C.amber : C.muted);
-          const headCol = s.broken ? C.muted : toneCol;
-          return (
-            <div key={s.id} style={{ padding: "8px 10px", borderRadius: 8, background: bg,
-              border: "1px solid " + bdr }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 12.5, fontWeight: 900, color: headCol,
-                               textDecoration: s.broken ? "line-through" : "none" }}>{s.id} · {s.name}</span>
-                {/* THE BADGE THAT HAD TO EXIST. On 2026-09-09 KM rendered "2/3" while both halves
-                    of its own falsifier were true on the same screen, which reads as one leg away
-                    from firing when the correct read is that it is finished. */}
-                {s.broken && (
-                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: C.onFill,
-                                 background: C.mid, borderRadius: 4, padding: "1px 5px" }}
-                    title={s.brokenBy?.join(" · ") || "the break predicate is satisfied"}>
-                    ✕ BROKEN
-                  </span>
-                )}
-                {changed[s.id] && (
-                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: C.onFill, background: toneCol, borderRadius: 4, padding: "1px 5px" }}
-                    title={`moved ${changed[s.id]} → ${s.met}/${s.total} since the last change`}>
-                    ▲ CHANGED {changed[s.id]} → {s.met}/{s.total}
-                  </span>
-                )}
-                {/* THE MARK THE BOARD WOULD NOT PUBLISH. On 2026-09-10 C and D scored `30Y > 5.35%`
-                    and `30Y > 5.5%` against an 09-08 print of 5.25 and rendered `✗ … 0/2` while the
-                    live yield was 5.344 — six tenths of a basis point from C's line. "0/2" reads as
-                    "not close", which is worse than showing nothing, so the count goes too. */}
-                {s.unscored > 0 && !s.broken && (
-                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: C.amber,
-                                 background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 4, padding: "1px 5px" }}
-                    title={s.unscoredNote || "an input is too old to score against its threshold"}>
-                    ⚠ UNSCORED · {s.unscored} leg{s.unscored === 1 ? "" : "s"}
-                  </span>
-                )}
-                {/* CHARACTER — confirming evidence that is NOT corroborating. It used to be half
-                    of C's disjunctive break, which retired the scenario three tenths of a basis
-                    point from its own trigger because XLP ticked up. Evidence weakening lowers
-                    confidence; it does not retire a scenario. */}
-                {s.character?.state && !s.broken && (
-                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: C.amber,
-                                 background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 4, padding: "1px 5px" }}
-                    title={s.character.note || undefined}>
-                    ⚠ {s.character.state}
-                  </span>
-                )}
-                {/* NEAR — an unmet leg inside half an ATR of its own line. The state the board
-                    could not express: a scenario six tenths of a basis point away rendered
-                    identically to one nowhere near. */}
-                {s.near && !s.broken && !s.confirmed && (
-                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: C.onFill,
-                                 background: C.amber, borderRadius: 4, padding: "1px 5px" }}
-                    title={s.nearest ? `${s.nearest.label}: ${s.nearest.display}` : "a leg is inside half an ATR of its threshold"}>
-                    ⚠ NEAR{s.nearest?.gapDisplay ? ` ${s.nearest.gapDisplay}` : ""}
-                  </span>
-                )}
-                {/* A composite whose inputs come from different days is not a reading. It is shown
-                    as UNVERIFIED with the dates, never as a tick and never as a blank card. */}
-                {s.unverified && (
-                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: C.amber,
-                                 background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 4, padding: "1px 5px" }}
-                    title={s.vintage?.reason || "inputs span different observation dates"}>
-                    ⚠ UNVERIFIED
-                  </span>
-                )}
-                <span style={{ fontSize: 10.5, color: C.muted, fontWeight: 600, fontStyle: "italic" }}>{s.gloss}</span>
-                {/* HOW LONG IT HAS SAID THIS. A board stuck at 2/2 for three weeks and one that
-                    turned this morning used to render identically. */}
-                {s.lastFlipped && (
-                  <span style={{ fontSize: 9.5, color: C.lbl, fontWeight: 700 }}
-                    title={`this reading last changed ${s.lastFlipped}`}>
-                    {ageSince(s.lastFlipped)}
-                  </span>
-                )}
-                <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 900, color: countCol }}>
-                  {/* The entry count is DEMOTED, not deleted. "2/3" is still true and still worth
-                      seeing; it just must not be the headline of a scenario that is over. */}
-                  {s.broken ? <span style={{ fontSize: 11, fontWeight: 800 }}>OVER<span style={{ color: C.lbl, fontWeight: 600, fontSize: 10 }}> · entry was {s.met}/{s.total}</span></span>
-                    : <>{s.countDisplay ?? "—"} {(s.unverified || s.unscored > 0) ? "" : s.confirmed ? "✓" : "✗"}</>}
-                  {s.unavailable > 0 && <span style={{ color: C.lbl, fontWeight: 600, fontSize: 10 }}> · {s.unavailable} n/a</span>}
-                  {s.unscored > 0 && <span style={{ color: C.amber, fontWeight: 700, fontSize: 10 }} title={s.unscoredNote || undefined}> · {s.unscored} unscored</span>}
-                  {s.neutral > 0 && <span style={{ color: C.lbl, fontWeight: 600, fontSize: 10 }} title="inputs that moved less than half their own ATR — too small to confirm or deny"> · {s.neutral} below noise</span>}
-                </span>
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 14px", marginTop: 4 }}>
-                {s.conditions.map((c, i) => {
-                  // An UNSCORED leg is amber, not grey: grey is "nothing to see", and this is
-                  // "there is something here the board declined to mark".
-                  const cc = c.unscored ? C.amber : c.met === null ? C.lbl : c.met ? toneCol : C.muted;
-                  return (
-                    <span key={i} title={c.reason || undefined} style={{ fontSize: 11, fontWeight: 600, color: cc, fontVariantNumeric: "tabular-nums" }}>
-                      {c.unscored ? "⌀" : c.met === null ? "·" : c.met ? "✓" : "✗"} {c.label}
-                      {/* Value · distance from the line · that distance in the instrument's own
-                          daily range · where the number came from — all four, because the first
-                          alone is what let `✗ 30Y > 5.35%  5.25%` read as "not close". */}
-                      <span style={{ color: C.lbl, fontWeight: 700 }}> {c.display}</span>
-                      {c.near && <span style={{ color: C.amber, fontWeight: 800 }}> ⚠ NEAR</span>}
-                      {c.unscored && <span style={{ color: C.amber, fontWeight: 800 }}> UNSCORED</span>}
-                    </span>
-                  );
-                })}
-              </div>
-              {/* The character reading, where a scenario has one. Named dissent, not a count:
-                  gold bid against duration is an inflation bid and reads stagflationary; XLP
-                  dissenting is dispersion. "4/5" says the same thing about both. */}
-              {s.character && s.character.display && s.character.display !== "n/a" && (
-                <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.45,
-                              color: s.character.confirmed ? C.mid : C.amber }}>
-                  {s.character.confirmed ? "✓" : "⚠"} {s.character.label} — <b>{s.character.display}</b>
-                  {s.character.dissent?.length > 0 && <> · {s.character.dissent.join(", ")} not participating</>}
-                  {s.character.note && (
-                    <div style={{ color: C.lbl, fontWeight: 600, marginTop: 1 }}>{s.character.note}</div>
-                  )}
-                </div>
-              )}
-              {/* A2 — the consequence, AND ONLY WHERE THE SCENARIO HOLDS.
-                  This used to render on every card, muted when unconfirmed, which made it a
-                  standing assertion rather than a conclusion. On the 2026-09-03 board every
-                  scenario was UNREADABLE — both inputs under the noise floor — and all six still
-                  printed an instruction, including two that contradict each other outright:
-                  A "Duration leg validated — USFR → IEF/TLT sequencing on track" beside B "Skip
-                  the bond leg — go bills → equities directly". "Validated" on a scenario with no
-                  evaluable condition is simply false, and font weight is not the difference
-                  between a conclusion and its opposite.
-                  Unconfirmed cards carry `implication` instead, which states what it WOULD mean
-                  without claiming it does. lib/posture.js already filtered on confirmed, so its
-                  DO list was never affected. */}
-              {s.consequence && s.confirmed && !s.broken && (
-                <div style={{ marginTop: 4, fontSize: 11, fontWeight: 800, color: toneCol, lineHeight: 1.45 }}>
-                  → {s.consequence}
-                </div>
-              )}
-              {/* OBSERVATION, NOT INSTRUCTION. What it would mean, and the single thing that would
-                  break it. A scenario nobody can state a disproof for is a mood, not a reading —
-                  which is why the falsifier is the more useful of the two. */}
-              {(s.implication || s.falsifier) && (
-                <div style={{ marginTop: 3, fontSize: 10.5, color: C.lbl, lineHeight: 1.5 }}>
-                  {s.implication && !s.broken && <div>means · {s.implication}</div>}
-                  {s.falsifier && <div>{s.broken ? "broke on" : "breaks if"} · {s.falsifier}</div>}
-                </div>
-              )}
-              {/* The falsifier's legs, scored with the same marks and the same ATR gate the entry
-                  criteria use — so a break is held to the standard a confirmation is, and a reader
-                  can audit it rather than taking the badge on trust. */}
-              {s.breakConditions?.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 14px", marginTop: 3 }}>
-                  {s.breakConditions.map((c, i) => (
-                    <span key={i} title={c.reason || undefined}
-                      style={{ fontSize: 10.5, fontWeight: 600, fontVariantNumeric: "tabular-nums",
-                               color: c.met === null ? C.lbl : c.met ? C.mid : C.lbl }}>
-                      {c.met === null ? "·" : c.met ? "✕" : "○"} {c.label}
-                      <span style={{ color: C.lbl, fontWeight: 700 }}> {c.display}</span>
-                    </span>
-                  ))}
-                  {s.breakMode === "any" && s.breakTotal > 1 && (
-                    <span style={{ fontSize: 10, color: C.lbl, fontStyle: "italic" }}>either leg ends it</span>
-                  )}
-                  {s.breakUnverified && (
-                    <span style={{ fontSize: 10, color: C.amber }} title={s.breakVintage?.reason || ""}>
-                      ⚠ break inputs span different dates — not scored
-                    </span>
-                  )}
-                </div>
-              )}
-              {/* ── WATCH · EXPECT · NOT ──────────────────────────────────────────────
-                  The cards said what was being MEASURED and nothing about what to do with it.
-                  Three of the six are rates scenarios whose implications INVERT — B says the
-                  dollar falls, C says it rises; B favours banks and value, C sells everything
-                  that competes with cash; D is C plus a credit crack and the only one where gold
-                  sells too — and none of that was extractable from the board.
-
-                  Open by default on the scenario that is live or NEAR, because that is the one
-                  the reader is deciding about; everything else is one click away. */}
-              <ScenarioDescriptors s={s} toneCol={toneCol} />
-              {s.qualifier && (
-                <div style={{ marginTop: 4, fontSize: 10.5, color: C.amber, lineHeight: 1.5 }}>
-                  ⚠ {s.qualifier}
-                </div>
-              )}
-              {s.unverified && s.vintage?.reason && (
-                <div style={{ marginTop: 3, fontSize: 10, color: C.amber, lineHeight: 1.45 }}>
-                  ⚠ {s.vintage.reason}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </Card>
-  );
-}
 
 // D2 — event positioning. Before a catalyst, the question is what is already PAID FOR. Shows the
 // run-up into each upcoming event and how stretched above the 50d line — the "priced for
@@ -5338,7 +5032,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {/* A1 — POSTURE headline: the single "what to do" card, above everything. */}
           {data.posture && <PostureCard p={data.posture} regime={regime} tape={data.marketRegime} />}
           {/* 1 — Scenario board (synthesis). */}
-          {data.scenarios && <ScenarioBoard scenarios={data.scenarios} />}
+          {data.scenarios && <ScenarioBoard scenarios={data.scenarios} board={data.scenarioBoard} />}
           {/* P7 — Treasury supply. Sits directly under the scenario board because three of the six
               scenarios are rates scenarios and this is the supply side of all three. */}
           {data.auctions && <AuctionCard a={data.auctions} />}
