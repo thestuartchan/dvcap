@@ -97,7 +97,10 @@ const N = MIN_BARS + 20;
     { label: '3m', score: 0.3, flip: 100.5, flipSigmas: -0.4 },
     { label: '12m', score: -1, flip: 105, flipSigmas: 3 } ] };
   eq('a net short is cut above price, by its nearest short window', nearestCut(short).label, '1m');
-  eq('net flat: the nearest flip either way', nearestCut({ ...m, position: 0.05 }).label, '3m');
+  // Neutral: the net-flat level, not a single window — gold on 2026-09-25.
+  const gold = nearestCut({ ...m, position: 0.07, price: 4339.6, flip: 4274.23, flipPct: -1.51, flipSigmas: -1.2 });
+  eq('a neutral market is cut at its net-flat level', [gold.label, gold.net, gold.flip, gold.side, gold.tips], ['net', true, 4274.23, 'below', 'short']);
+  eq('and from below, it tips long above it', nearestCut({ ...m, position: -0.1, price: 4200, flip: 4274.23 }).tips, 'long');
 }
 
 // ── THE BOOK LINE ────────────────────────────────────────────────────────────
