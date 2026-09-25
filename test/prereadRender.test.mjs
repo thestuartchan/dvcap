@@ -33,6 +33,7 @@
 // live/delayed boundary — so the golden would have described a freshness that never existed.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { buildBlocks, assembleDiscord } from '../api/preread.js';
+import { ctaSection } from '../lib/briefSections.js';
 import { UNIVERSE } from '../data/universe.js';
 import { gaugesLeaning } from '../lib/gates.js';
 import { composeRead } from '../lib/read.js';
@@ -235,6 +236,22 @@ for (const region of REGIONS) {
   ok('the frozen store reads foreigners as sellers', /net sellers|Risk-OFF/.test(a));
   ok('and the flipped one does not', !/net sellers/.test(b));
   ok('so the store really is the input, not the file behind it', a !== b);
+}
+
+// ── THE TREND-FUND SECTION, THROUGH THE REAL ASSEMBLER ───────────────────────
+// The fixtures carry market state but no CTA book — the model is fetched live at brief time — so
+// the section is rendered here through assembleDiscord with the book as the model read it on
+// 2026-09-25, and asserted where it lands: right after the watchlist, under its own heading.
+{
+  const book = { at: '2026-09-25T12:00:00Z', markets: [
+    { key: 'ES', ok: true, position: 0.76, stance: 'long', change: 0.41, cut: { label: '1m', flip: 7690, flipPct: -1.34, flipSigmas: -1.85 } },
+    { key: 'GC', ok: true, position: 0.07, stance: 'neutral', change: -0.18, cut: { label: 'net', net: true, flip: 4273.95, flipPct: -1.39, flipSigmas: -1.05, side: 'below', tips: 'short' } },
+  ] };
+  const text = assembleDiscord('us', 'US', { watchLines: '• one', ctaLines: ctaSection(book, { now: new Date('2026-09-25T12:30:00Z') }) });
+  rendered._cta = text;
+  ok('the trend-fund section renders under its heading', /📐 \*\*TREND FUNDS \(CTA MODEL\)\*\*\n• \*\*Where they sit:\*\* S&P \*\*long\*\* 76% ▲/.test(text));
+  ok('right after the watchlist', text.indexOf('TODAY\'S WATCHLIST') < text.indexOf('TREND FUNDS'));
+  ok('and is absent when there is no model', !/TREND FUNDS/.test(assembleDiscord('us', 'US', { ctaLines: null })));
 }
 
 // ── NO LINE SHIPS UNRENDERED ─────────────────────────────────────────────────

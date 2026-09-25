@@ -43,7 +43,9 @@ import { WATCH_UNIVERSE } from '../data/watchUniverse.js';
 import {
   clockSection, overnightSection, breadthNote, backdropSection, changeSection,
   compressLine, creditLine, ratesLine, oilLine, volLine, supplyLine, monetizationLine, handoffLine, chinaLine, plainTripwire, pctWord, clockIn, sinceSection,
+  ctaSection,
 } from '../lib/briefSections.js';
+import { buildCta } from '../lib/ctaBook.js';
 
 
 function fmtPct(p) { return p == null ? '—' : `${p > 0 ? '+' : ''}${p.toFixed(1)}%`; }
@@ -753,6 +755,9 @@ export function assembleDiscord(region, label, blocks) {
     // minute. The US brief fires into the pre-open, which is the one time it is a preview.
     ...(region === 'us' && blocks.gexLines ? [`${MAP_HEAD}\n${blocks.gexLines}`] : []),
     ...(blocks.watchLines ? [`👀 **TODAY'S WATCHLIST**\n${blocks.watchLines}`] : []),
+    // Levels again, but the trend funds' rather than the option book's — and for every region, since
+    // a futures level holds through every session.
+    ...(blocks.ctaLines ? [`📐 **TREND FUNDS (CTA MODEL)**\n${blocks.ctaLines}`] : []),
     ...(blocks.clockLines ? [`🕐 **CLOCK**\n${blocks.clockLines}`] : []),
     ...(blocks.overnightLines ? [`🌙 **OVERNIGHT**\n${blocks.overnightLines}`] : []),
     // Between what happened overnight and the conditions it happened inside — a delta against the
@@ -1035,6 +1040,9 @@ async function runRegion(region, req) {
     });
     blocks.watchLines = renderSetups(setups(wrows, { earnings, today, tomorrow }), { extended: extendedLine(movers, rowsBySym) });
   } catch { blocks.watchLines = null; }
+  // TREND FUNDS — the CTA replica's read, from the same cached book the Daily tab shows. Best-effort
+  // like the sections around it: a model that cannot be read is omitted, never faked.
+  try { blocks.ctaLines = ctaSection(await buildCta()); } catch { blocks.ctaLines = null; }
   // THE READ SECTION IS GONE, NOT LOST. Its structured rows are what BACKDROP now renders and its
   // tripwires are what WHAT WOULD CHANGE IT now renders — both from the same composed object, so
   // there is still no model call anywhere in this path and every figure traces to a parsed field.
