@@ -590,9 +590,13 @@ const row = (o = {}) => ({
   eq('a row with no address has no key', provenanceKey({ coin: 'X', chain: 'Base' }), null);
   eq('the twin, later bought, would be remembered then', rememberProvenance([{ ...twin, acquired: true }], mem.memory).added, 1);
   // The run's answer names what is withheld, and why — never a balance.
-  eq('the bad morning, reported', publishReport(today), { listed: 1, withheld: [{ symbol: 'Robinhood Chain:PONS', why: '2 of a name, provenance unknown/unknown' }] });
-  eq('with the answer carried, nothing is withheld but the twin, silently inside the group', publishReport(carried.rows), { listed: 2, withheld: [] });
-  eq('an airdrop alone is withheld as unsolicited', publishReport([twin]), { listed: 0, withheld: [{ symbol: 'Robinhood Chain:PONS', why: 'unsolicited' }] });
+  eq('the bad morning, reported', publishReport(today), { listed: 1, withheld: [{ symbol: 'Robinhood Chain:PONS', why: '2 of a name, provenance unknown/unknown' }], airdrops: [] });
+  eq('with the answer carried, nothing is withheld', [publishReport(carried.rows).listed, publishReport(carried.rows).withheld], [2, []]);
+  // …and the twin, dropped INSIDE a group that was kept, is named rather than silent. This is the
+  // shape that hid the real PONS: the group was "listed" while the wrong row stood for it.
+  eq('the twin dropped inside a kept group is named, as shadowed', publishReport(carried.rows).airdrops.map(a => [a.symbol, a.shadowed]), [['Robinhood Chain:PONS', true]]);
+  eq('an airdrop alone is withheld as unsolicited', [publishReport([twin]).listed, publishReport([twin]).withheld], [0, [{ symbol: 'Robinhood Chain:PONS', why: 'unsolicited' }]]);
+  eq('and named as an airdrop, not shadowed', publishReport([twin]).airdrops.map(a => a.shadowed), [false]);
   ok('and nothing in the report is a quantity', !JSON.stringify(publishReport(today)).includes('0.6918'));
 }
 
