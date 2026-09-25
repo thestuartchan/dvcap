@@ -3,7 +3,7 @@
 // Dragging DOWN removes the row before inserting it, so every index above the origin shifts by one.
 // A naive splice lands one short, and ONLY for downward moves — which is exactly the kind of bug
 // that survives a manual test because the tester happens to drag upward first.
-import { moveOnto } from '../lib/reorder.js';
+import { moveOnto, moveGroupOnto } from '../lib/reorder.js';
 
 // A REFERENCE IMPLEMENTATION, deliberately not shipped. moveOnto is checked against it below, so
 // the semantics are pinned by two independent definitions rather than by one function agreeing
@@ -96,6 +96,33 @@ const ids = (l) => l.map(r => r.id);
   const byIndex = moveBy(stored, 'openX', 1);
   eq('whereas moving by one index leaves the visible order untouched',
      ids(byIndex).filter(id => visible.includes(id)), ['openX', 'openY']);
+}
+
+// ── A GROUP MOVES AS ONE ─────────────────────────────────────────────────────
+{
+  const G = (id, g) => ({ id, g });
+  const key = (r) => r.g || r.id;
+  // The drawn order: each group at its first member, members together.
+  const drawn = (l) => { const out = [], seen = new Set(); for (const r of l) { const k = key(r); if (seen.has(k)) continue; seen.add(k); out.push(...l.filter(x => key(x) === k).map(x => x.id)); } return out; };
+  // Stored order with the SOFI pair split by a setup and NVDA — the case that used to misbehave.
+  const book = [G('sofi-sh', 'SOFI'), G('setup'), G('nvda'), G('sofi-sp', 'SOFI'), G('aapl')];
+  eq('drawn together to begin with', drawn(book), ['sofi-sh', 'sofi-sp', 'setup', 'nvda', 'aapl']);
+  // ▼ on the last SOFI line, onto the next drawn row (setup), moves the pair past it.
+  eq('the pair moves down past the next row', drawn(moveGroupOnto(book, 'sofi-sp', 'setup', key)), ['setup', 'sofi-sh', 'sofi-sp', 'nvda', 'aapl']);
+  // Dragging the shares line onto AAPL takes the vertical with it.
+  eq('dragging one member takes the group', drawn(moveGroupOnto(book, 'sofi-sh', 'aapl', key)), ['setup', 'nvda', 'aapl', 'sofi-sh', 'sofi-sp']);
+  // Up: AAPL onto the SOFI group lands before the whole group.
+  eq('a row moving up lands before the whole group', drawn(moveGroupOnto(book, 'aapl', 'sofi-sp', key)), ['aapl', 'sofi-sh', 'sofi-sp', 'setup', 'nvda']);
+  // Within the group it is an ordinary move.
+  eq('inside the group, members swap', drawn(moveGroupOnto(book, 'sofi-sp', 'sofi-sh', key)), ['sofi-sp', 'sofi-sh', 'setup', 'nvda', 'aapl']);
+  // Nothing to do returns the same array, so a caller can skip the save.
+  ok('a no-op returns the input', moveGroupOnto(book, 'nvda', 'nvda', key) === book);
+  ok('an unknown id returns the input', moveGroupOnto(book, 'zzz', 'nvda', key) === book);
+  eq('never mutates', ids(book), ['sofi-sh', 'setup', 'nvda', 'sofi-sp', 'aapl']);
+  // Ungrouped rows behave exactly as moveOnto.
+  const plain = L('a', 'b', 'c', 'd');
+  eq('ungrouped down matches moveOnto', ids(moveGroupOnto(plain, 'a', 'c')), ids(moveOnto(plain, 'a', 'c')));
+  eq('ungrouped up matches moveOnto', ids(moveGroupOnto(plain, 'd', 'b')), ids(moveOnto(plain, 'd', 'b')));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
