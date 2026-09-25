@@ -3,8 +3,8 @@
   "latest": {
     "units7709": {
       "value": 842000000,
-      "asOf": "2026-09-23",
-      "delta": -3000000
+      "asOf": "2026-09-25",
+      "delta": 0
     },
     "kospi": {
       "value": 7080.92,
@@ -51,17 +51,17 @@
     "instNet": {
       "value": 323,
       "unit": "십억원",
-      "asOf": "2026-09-24"
+      "asOf": "2026-09-25"
     },
     "foreignNet": {
       "value": -499,
       "unit": "십억원",
-      "asOf": "2026-09-24"
+      "asOf": "2026-09-25"
     },
     "retailNet": {
       "value": -1454,
       "unit": "십억원",
-      "asOf": "2026-09-24"
+      "asOf": "2026-09-25"
     }
   },
   "history": [
@@ -2325,6 +2325,49 @@
         "value": 842000000,
         "asOf": "2026-09-23"
       }
+    },
+    {
+      "savedAt": "2026-09-25T11:17:31.886Z",
+      "kospi": {
+        "value": 7080.92,
+        "asOf": "2026-09-23"
+      },
+      "deposits": {
+        "value": 100982555,
+        "asOf": "2026-09-22"
+      },
+      "marginLoans": {
+        "value": 32819168,
+        "asOf": "2026-09-22"
+      },
+      "cma": {
+        "value": 105635781,
+        "asOf": "2026-09-22"
+      },
+      "kr3yGovt": {
+        "value": 4.006,
+        "asOf": "2026-09-23"
+      },
+      "kr3yCorp": {
+        "value": 4.689,
+        "asOf": "2026-09-23"
+      },
+      "instNet": {
+        "value": 323,
+        "asOf": "2026-09-25"
+      },
+      "foreignNet": {
+        "value": -499,
+        "asOf": "2026-09-25"
+      },
+      "retailNet": {
+        "value": -1454,
+        "asOf": "2026-09-25"
+      },
+      "units7709": {
+        "value": 842000000,
+        "asOf": "2026-09-25"
+      }
     }
   ],
   "series": {
@@ -4048,6 +4091,13 @@
         "unit": "units",
         "delta": null,
         "pct": null
+      },
+      {
+        "date": "2026-09-25",
+        "value": 842000000,
+        "unit": "units",
+        "delta": null,
+        "pct": null
       }
     ],
     "foreignNet": [
@@ -4305,6 +4355,13 @@
       },
       {
         "date": "2026-09-24",
+        "value": -499,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-09-25",
         "value": -499,
         "unit": "십억원",
         "delta": null,
@@ -4570,6 +4627,13 @@
         "unit": "십억원",
         "delta": null,
         "pct": null
+      },
+      {
+        "date": "2026-09-25",
+        "value": 323,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
       }
     ],
     "retailNet": [
@@ -4813,6 +4877,13 @@
       },
       {
         "date": "2026-09-24",
+        "value": -1454,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-09-25",
         "value": -1454,
         "unit": "십억원",
         "delta": null,
