@@ -2042,7 +2042,7 @@
       "inputs": {
         "weightedRecessionProb": 14.3,
         "cpi": 3.35302,
-        "kalshi2027": 25,
+        "kalshi2027": 24,
         "tape": {
           "gold": "down",
           "tlt": "down",
@@ -2112,7 +2112,7 @@
         "quadrantRead": "between quadrants — the inflation axis is flat"
       },
       "source": "client+cron",
-      "loggedAt": "2026-09-25T14:09:52.613Z"
+      "loggedAt": "2026-09-25T17:33:24.595Z"
     }
   ]
 }
