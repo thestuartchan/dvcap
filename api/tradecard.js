@@ -229,7 +229,7 @@ export async function refreshWallet({ post = false, clock = new Date() } = {}) {
     unchecked: w.chains.filter(c => c.ok && c.acquisition?.asked && !c.acquisition.ok).map(c => ({ chain: c.chain, error: c.acquisition.error })),
     truncated: w.chains.filter(c => c.ok && c.acquisition?.truncated).map(c => c.chain),
     // Discovery that stopped short, and how many chosen contracts were read on top of it.
-    discovery: w.chains.filter(c => c.ok && c.discovery?.truncated).map(c => ({ chain: c.chain, seen: c.discovery.seen, pinned: c.discovery.pinned ?? 0 })),
+    discovery: w.chains.filter(c => c.ok && (c.discovery?.truncated || c.discovery?.recovered)).map(c => ({ chain: c.chain, truncated: !!c.discovery.truncated, seen: c.discovery.seen, pinned: c.discovery.pinned ?? 0, recovered: c.discovery.recovered ?? 0 })),
     unknown: now.filter(r => !r.verified && r.acquired == null).length,
     inherited: 0,
   };
@@ -279,7 +279,9 @@ export async function refreshWallet({ post = false, clock = new Date() } = {}) {
   provenance.gate = publishReport(now);
   // What the gate kept but the card will still drop, because nothing priced it. It used to vanish
   // here without a word — 2026-09-25, the real PONS.
-  provenance.gate.unpriced = publishable(now).filter(r => r.price == null).map(r => `${r.chain || ''}:${symbolKey(r.coin)}`);
+  // With the TOKEN's contract beside it — a public address, not the wallet's — so "which PONS is
+  // this" can be answered from a block explorer rather than guessed.
+  provenance.gate.unpriced = publishable(now).filter(r => r.price == null).map(r => `${r.chain || ''}:${symbolKey(r.coin)}${r.address ? '@' + r.address : ''}`);
 
   const fresh = diffHoldings(prevSnap.rows, now);
   const pendingRec = await kvGetJson(WALLET_PENDING_KEY);
