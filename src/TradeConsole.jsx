@@ -56,7 +56,7 @@ const tabFor = (t) => (t === "CLOSED" ? "ARCHIVED" : t);
 import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUITY_STALE_DAYS, DEFAULT_BASE_RISK_PCT, DEFAULT_TARGET_PCT, CREDIT_DANGER_CAP } from "../lib/sizing.js";
 import { companyName } from "../lib/companyNames.js";
 import { tickerHint, resolvedLabel } from "../lib/tickerHints.js";
-import { moveOnto } from "../lib/reorder.js";
+import { moveGroupOnto } from "../lib/reorder.js";
 
 // Shown in the sizing note; kept a constant so the copy and the cap cannot drift apart.
 const CREDIT_DANGER_CAP_LABEL = `×${CREDIT_DANGER_CAP.toFixed(2)}`;
@@ -1362,22 +1362,34 @@ const Section = ({ title, note, list, mode, ctx, reorder = false, sort = null, g
     </div>
     {list.length === 0
       ? <div style={{ fontSize: 12.5, color: C.muted, fontStyle: "italic", marginTop: 8 }}>Nothing here yet.</div>
-      : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{list.map((r, i) => {
+      : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{(() => {
           // ── GROUPED BY UNDERLYING ──
-          // SOFI shares and the SOFI vertical are one exposure. When an underlying has more than
-          // one row in this list, a header line above the first carries the combined figure.
-          const key = groupOf ? groupOf(r) : null;
-          const first = key != null && (i === 0 || groupOf(list[i - 1]) !== key);
-          const many = key != null && list.filter(x => groupOf(x) === key).length > 1;
-          return (
-            <div key={r.id} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {first && many && groupLine ? groupLine(key, list.filter(x => groupOf(x) === key)) : null}
-              <PositionRow r={r} mode={mode} ctx={ctx} reorder={reorder}
-                prevId={i > 0 ? list[i - 1].id : null} nextId={i < list.length - 1 ? list[i + 1].id : null}
-                idx={i} dragIdx={reorder && ctx.dragId ? list.findIndex(x => x.id === ctx.dragId) : -1} />
-            </div>
+          // SOFI shares and the SOFI vertical are one exposure: when an underlying has more than one
+          // row here they share one frame, and the combined figure is its footer — read after the
+          // lines it sums, not floating above them. They also move as one (dropRow).
+          const row = (r, i) => (
+            <PositionRow key={r.id} r={r} mode={mode} ctx={ctx} reorder={reorder}
+              prevId={i > 0 ? list[i - 1].id : null} nextId={i < list.length - 1 ? list[i + 1].id : null}
+              idx={i} dragIdx={reorder && ctx.dragId ? list.findIndex(x => x.id === ctx.dragId) : -1} />
           );
-        })}</div>}
+          const out = [];
+          for (let i = 0; i < list.length;) {
+            const key = groupOf ? groupOf(list[i]) : null;
+            let j = i + 1;
+            while (key != null && j < list.length && groupOf(list[j]) === key) j++;
+            if (j - i > 1 && groupLine) {
+              const members = list.slice(i, j);
+              out.push(
+                <div key={`g:${key}`} style={{ display: "flex", flexDirection: "column", gap: 6, padding: 6, borderRadius: 12, background: C.bg, border: "1px solid " + C.bdr }}>
+                  {members.map((r, k) => row(r, i + k))}
+                  {groupLine(key, members)}
+                </div>
+              );
+            } else for (let k = i; k < j; k++) out.push(row(list[k], k));
+            i = j;
+          }
+          return out;
+        })()}</div>}
   </Card>
 );
 
@@ -3037,7 +3049,13 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
   // The order lives in `rows` itself rather than in a separate list of ids, so it persists with
   // everything else and cannot drift out of step with the positions it describes. lib/reorder.js
   // holds the arithmetic; these only decide when to save.
-  const dropRow = (dragId, overId) => setRows(p => { const n = moveOnto(p, dragId, overId); if (n !== p) touch(); return n; });
+  // Open lines on one underlying are drawn as one group, so they move as one (lib/reorder.js
+  // moveGroupOnto); every other row — setups, closed rows — is its own group of one.
+  const dropRow = (dragId, overId) => {
+    const openIds = new Set(openPos.map(r => r.id));
+    const groupKey = (r) => (openIds.has(r.id) ? `U:${underlyingOf(r)}` : `R:${r.id}`);
+    setRows(p => { const n = moveGroupOnto(p, dragId, overId, groupKey); if (n !== p) touch(); return n; });
+  };
   const [dragId, setDragId] = useState(null);
   // Which row the pointer is currently over, so the card can show WHERE the drop lands
   // rather than only that something is being dragged.
@@ -4175,13 +4193,12 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
           const g = bookX.book?.byUnderlying?.[root];
           const ccy = members[0]?.currency || "USD";
           return (
-            <div style={{ display: "flex", gap: "4px 12px", flexWrap: "wrap", alignItems: "baseline", padding: "4px 12px", fontSize: 12, color: C.mid }}>
-              <b style={{ color: C.text, fontSize: 13 }}>{root}</b>
-              <span style={{ color: C.lbl }}>{members.length} lines</span>
+            <div style={{ display: "flex", gap: "4px 14px", flexWrap: "wrap", alignItems: "baseline", padding: "3px 8px 2px", fontSize: 12, color: C.mid }}>
+              <span style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.5 }}>{root} combined</span>
               {g ? <>
-                <span>combined delta-notional <b style={{ color: C.text }}>{money(g.deltaNotional, ccy)}</b>{g.pctNlv != null && <> ({g.pctNlv}% NLV)</>}</span>
+                <span>Δ <b style={{ color: C.text }}>{money(g.deltaNotional, ccy)}</b>{g.pctNlv != null && <span style={{ color: C.lbl }}> ({g.pctNlv}% NLV)</span>}</span>
                 <span style={{ color: C.lbl }}>shares {money(g.shares, ccy)} · options {money(g.options, ccy)}{g.unpriced > 0 ? ` · ${g.unpriced} unpriced` : ""}</span>
-              </> : <span style={{ color: C.lbl }}>combined delta-notional awaits the greeks feed</span>}
+              </> : <span style={{ color: C.lbl }}>delta-notional awaits the greeks feed</span>}
             </div>
           );
         }} />}
