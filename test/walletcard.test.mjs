@@ -5,7 +5,7 @@
 // prices, never size and never an ENTRY price. Same four forbidden quantities as lib/tradecard.js — SIZE, ABSOLUTE P&L, MARKET
 // VALUE, SHARE OF BOOK — for the same reason, and tested the same way: rows whose private values
 // are distinctive digit strings, asserted to appear nowhere in the serialised output.
-import { chainMark, headerMark, WALLET_MARK } from '../lib/chains.js';
+import { chainMark, headerMark, WALLET_MARK, SERVER_EMOJI } from '../lib/chains.js';
 import { classifyTrigger, parseTriggerOrders } from '../lib/hyperliquid.js';
 import { walletPublicView, diffHoldings, buildWalletCard, eventLine, holdingLine, groupedHoldingLine, mergePending, MIN_CHAIN_HOLDINGS, publishable, symbolKey, isPlainSymbol, isUnsolicited, inheritProvenance, rememberProvenance, applyMemory, provenanceKey, publishReport,
          HIDDEN_SYMBOLS, hiddenSymbols,
@@ -113,7 +113,7 @@ const row = (o = {}) => ({
   // Crypto keeps four decimals above a dollar, equities two — the rule lib/crypto.js owns.
   ok('a holding line is led by its chain mark and carries price and day move',
      holdingLine({ symbol: 'PONS', price: 0.7121, changePercent: -17.68, chain: 'Robinhood Chain' })
-     === '🪶 **PONS** 0.7121 (-17.68%) · Robinhood Chain');
+     === '<:Robinhood:1547031326727864352> **PONS** 0.7121 (-17.68%) · Robinhood Chain');
   ok('and omits a missing day move rather than printing zero',
      !/%/.test(holdingLine({ symbol: 'X', price: 1, changePercent: null, chain: null })));
 
@@ -196,8 +196,11 @@ const row = (o = {}) => ({
 // override must never take the card down.
 {
   const E = {};   // nothing configured
-  eq('each chain has its own mark', chainMark('Robinhood Chain', E), '🪶');
-  eq('and another does not borrow it', chainMark('Ethereum', E), '⟠');
+  eq('each chain has its own mark', chainMark('Robinhood Chain', E), '<:Robinhood:1547031326727864352>');
+  eq('and another does not borrow it', chainMark('Ethereum', E), '<:Ethereum:1547031296696516728>');
+  // The server's logos are the default; a chain without one keeps its Unicode stand-in.
+  eq('the server logos, by id', [SERVER_EMOJI.Wallet, SERVER_EMOJI.Hyperliquid === SERVER_EMOJI.HyperEVM], ['<:Metamask:1547031346071736392>', true]);
+  eq('a chain with no server logo keeps its Unicode mark', [chainMark('Base', E), chainMark('Arbitrum', E)], ['🔵', '🔷']);
   ok('every configured chain has a distinct mark', (() => {
     const marks = ['Ethereum', 'Arbitrum', 'Base', 'Polygon', 'Robinhood Chain'].map(c => chainMark(c, E));
     return new Set(marks).size === marks.length;
@@ -217,11 +220,13 @@ const row = (o = {}) => ({
     'an array': '["a","b"]',
     'a bare string': '"nope"',
     'a null': 'null',
-  })) eq(`${name} falls back to the built-in`, chainMark('Ethereum', { DISCORD_CHAIN_EMOJI: raw }), '⟠');
+  })) eq(`${name} falls back to the built-in`, chainMark('Ethereum', { DISCORD_CHAIN_EMOJI: raw }), '<:Ethereum:1547031296696516728>');
 
-  eq('a non-string value is rejected', chainMark('Ethereum', { DISCORD_CHAIN_EMOJI: '{"Ethereum":42}' }), '⟠');
+  eq('a non-string value is rejected', chainMark('Ethereum', { DISCORD_CHAIN_EMOJI: '{"Ethereum":42}' }), '<:Ethereum:1547031296696516728>');
   eq('and one carrying a newline is too, since it would break the layout',
-     chainMark('Ethereum', { DISCORD_CHAIN_EMOJI: '{"Ethereum":"a\\nb"}' }), '⟠');
+     chainMark('Ethereum', { DISCORD_CHAIN_EMOJI: '{"Ethereum":"a\\nb"}' }), '<:Ethereum:1547031296696516728>');
+  // …and the override still wins, including back to a Unicode mark if a server emoji is deleted.
+  eq('an override can put a Unicode mark back', chainMark('Robinhood Chain', { DISCORD_CHAIN_EMOJI: '{"Robinhood Chain":"🪶"}' }), '🪶');
 }
 
 // ── ONE CARD, GROUPED BY CHAIN ───────────────────────────────────────────────
@@ -241,10 +246,10 @@ const row = (o = {}) => ({
   const d = card.embeds[0].description;
 
   eq('there is exactly one embed', card.embeds.length, 1);
-  ok('the header leads the description', d.startsWith('🦊 **Wallet**'));
+  ok('the header leads the description', d.startsWith('<:Metamask:1547031346071736392> **Wallet**'));
   for (const c of ['Ethereum', 'Arbitrum', 'Robinhood Chain'])
     ok(`${c} is a heading inside it`, d.includes(`**${chainMark(c)} ${c}**`));
-  ok('each chain carries its mark', d.includes('⟠ Ethereum') && d.includes('🪶 Robinhood Chain'));
+  ok('each chain carries its mark', d.includes('<:Ethereum:1547031296696516728> Ethereum') && d.includes('<:Robinhood:1547031326727864352> Robinhood Chain'));
   ok('holdings sit under their chain', /Robinhood Chain\*\*\n\*\*PONS\*\*/.test(d));
   ok('and a grouped line does not repeat the chain name',
      !/\*\*PONS\*\* 1\.00 · Robinhood/.test(d));
@@ -431,12 +436,14 @@ const row = (o = {}) => ({
   ok('there is no author slot to jump the title', !('author' in c));
   eq('the title comes first', c.title, '📊 Daily Summary');
   ok('and the wallet line is inside the description, after it',
-     c.description.startsWith(`${WALLET_MARK} **Wallet**`));
+     c.description.startsWith(`${SERVER_EMOJI.Wallet} **Wallet**`));
   ok('the day follows the header', c.description.split('\n\n')[1] === '_No changes today._');
 
-  eq('the mark needs nothing configured', headerMark({}), '🦊');
+  eq('the mark needs nothing configured: the server logo', headerMark({}), '<:Metamask:1547031346071736392>');
+  eq('and the fox is still the last resort', WALLET_MARK, '🦊');
+  eq('which an override can put back', headerMark({ DISCORD_CHAIN_EMOJI: '{"Wallet":"🦊"}' }), '🦊');
   eq('the header is a parameter', buildWalletCard([], [], { header: 'Project wallet', env: {} })
-     .embeds[0].description.startsWith('🦊 **Project wallet**'), true);
+     .embeds[0].description.startsWith('<:Metamask:1547031346071736392> **Project wallet**'), true);
 
   // The upgrade path stays open: an id, if one ever turns up, swaps the real logo in HERE with no
   // other change — same line, same order.
@@ -444,12 +451,12 @@ const row = (o = {}) => ({
   eq('a configured id replaces the fox in place', headerMark(withId), '<:Metamask:123>');
   ok('on the same line, in the same order',
      buildWalletCard([], [], { env: withId }).embeds[0].description.startsWith('<:Metamask:123> **Wallet**'));
-  eq('and a malformed map falls back to the fox', headerMark({ DISCORD_CHAIN_EMOJI: '{oops' }), '🦊');
+  eq('and a malformed map falls back to the server logo', headerMark({ DISCORD_CHAIN_EMOJI: '{oops' }), '<:Metamask:1547031346071736392>');
 
   // Chain headings are the same mechanism, one line down.
   eq('a chain heading still takes a custom emoji when configured',
      chainMark('Robinhood Chain', { DISCORD_CHAIN_EMOJI: '{"Robinhood Chain":"<:rh:43>"}' }), '<:rh:43>');
-  ok('and falls back to its built-in mark otherwise', /🪶/.test(c.description));
+  ok('and falls back to the server logo otherwise', c.description.includes('<:Robinhood:1547031326727864352>'));
 }
 
 // ── WHAT THE CARD DOES NOT CARRY ─────────────────────────────────────────────
