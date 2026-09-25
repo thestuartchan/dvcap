@@ -2026,6 +2026,83 @@
       },
       "source": "client+cron",
       "loggedAt": "2026-09-24T17:34:13.419Z"
+    },
+    {
+      "date": "2026-09-25",
+      "stagflation_p": 65,
+      "reflationary_p": 17,
+      "deflationary_p": 13,
+      "inflationary_p": 5,
+      "hawkish_repricing": null,
+      "live_regime": "stag",
+      "view_regime": null,
+      "pinned": null,
+      "hyg_chg": null,
+      "hyg_qqq_divergence": null,
+      "inputs": {
+        "weightedRecessionProb": 14.3,
+        "cpi": 3.35302,
+        "kalshi2027": 25,
+        "tape": null,
+        "ladderSpread": null,
+        "u3": 4.1,
+        "empPop": 59.1,
+        "oas": 2.73,
+        "tenY": 5.11,
+        "twoY": 4.85,
+        "consensusAlive": 0.744,
+        "regimeVintage": "decayed"
+      },
+      "axes": {
+        "growth": {
+          "state": "turning-down",
+          "lean": 1,
+          "market": {
+            "verdict": "CONTRACTING",
+            "lean": -1,
+            "usable": 5,
+            "of": 5
+          },
+          "weekly": {
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 4,
+            "of": 4
+          },
+          "monthly": {
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 3,
+            "of": 4
+          }
+        },
+        "inflation": {
+          "state": "turning-hot",
+          "lean": 0,
+          "market": {
+            "verdict": "HOT",
+            "lean": 1,
+            "usable": 3,
+            "of": 3
+          },
+          "nowcast": {
+            "verdict": "BETWEEN",
+            "lean": 0,
+            "usable": 2,
+            "of": 2
+          },
+          "printed": {
+            "verdict": "COOLING",
+            "lean": -1,
+            "usable": 3,
+            "of": 3
+          }
+        },
+        "quadrant": null,
+        "quadrantRead": "between quadrants — the inflation axis is flat"
+      },
+      "source": "cron",
+      "loggedAt": "2026-09-25T00:55:26.983Z"
     }
   ]
 }
