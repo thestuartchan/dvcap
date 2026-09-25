@@ -1,7 +1,8 @@
 // test/commandBar.test.mjs — one line to add a trade (console rework, Step 4a).
-import { parseCommand, resolveCandidates, commandRow, commandSummary } from '../lib/commandBar.js';
+import { parseCommand, resolveCandidates, commandRow, commandSummary, firstFill, parsePrice } from '../lib/commandBar.js';
 import { derivePosition } from '../lib/positions.js';
 import { stateOf } from '../lib/lifecycle.js';
+import { optionRow, definedRisk } from '../lib/instruments.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const ok = (n, c) => eq(n, !!c, true);
@@ -11,7 +12,7 @@ const pick = (p) => ({ symbol: p.symbol, side: p.side, instrument: p.instrument,
 {
   eq('SOFI long shares 500 @ 16.675', pick(parseCommand('SOFI long shares 500 @ 16.675')), { symbol: 'SOFI', side: 'long', instrument: 'shares', qty: 500, price: 16.675, error: null });
   eq('SOFI long spread', pick(parseCommand('SOFI long spread')), { symbol: 'SOFI', side: 'long', instrument: 'spread', qty: null, price: null, error: null });
-  eq('→ OPEN in one action', commandSummary(parseCommand('SOFI long shares 500 @ 16.675')), 'SOFI · LONG · shares · 500 @ 16.675 → OPEN');
+  eq('→ OPEN in one action', commandSummary(parseCommand('SOFI long shares 500 @ 16.675')), 'SOFI · LONG · shares → OPEN · 500 @ 16.675');
   eq('→ WATCHING with no fill', commandSummary(parseCommand('SOFI long spread')), 'SOFI · LONG · spread → WATCHING');
 }
 
@@ -59,6 +60,47 @@ const pick = (p) => ({ symbol: p.symbol, side: p.side, instrument: p.instrument,
   eq('the resolved symbol wins over the typed one', commandRow(parseCommand('7709 long'), { resolved: { symbol: '7709.HK' } }).row.symbol, '7709.HK');
   ok('a spread is refused here — its legs come from the table', /legs from the table/.test(commandRow(parseCommand('SOFI long spread')).error));
   ok('an error is passed through', /ticker/.test(commandRow(parseCommand('')).error));
+}
+
+// ── 4a AMENDMENT — THE FIRST FILL AS TWO VISIBLE FIELDS ──
+{
+  const LEGS = [
+    { right: 'C', strike: 17, expiry: '2026-11-20', side: 'long', ratio: 1 },
+    { right: 'C', strike: 20, expiry: '2026-11-20', side: 'short', ratio: 1 },
+  ];
+  const sp = parseCommand('SOFI long spread');
+  // Qty / Price blank → WATCHING, no fill.
+  const none = firstFill({ qty: '', price: '', side: 'long', instrument: 'spread' });
+  eq('both blank is WATCHING', none.state, 'none');
+  eq('the preview says WATCHING', commandSummary(sp, none), 'SOFI · LONG · spread → WATCHING');
+  const w = optionRow({ underlying: 'SOFI', legs: LEGS, side: 'long', qty: none.qty, price: none.price, date: '2026-09-23' });
+  eq('and the row carries no fill', w.row.fills.length, 0);
+  // Qty 15, Price 0.85, 2026-09-23 → OPEN with that fill, max loss $1,275.
+  const f = firstFill({ qty: '15', price: '0.85', side: 'long', instrument: 'spread' });
+  eq('both filled is OPEN', [f.state, f.qty, f.price], ['open', 15, 0.85]);
+  eq('the preview reads OPEN · 15 @ 0.85', commandSummary(sp, f), 'SOFI · LONG · spread → OPEN · 15 @ 0.85');
+  const o = optionRow({ underlying: 'SOFI', legs: LEGS, side: 'long', qty: f.qty, price: f.price, date: '2026-09-23' });
+  eq('one fill, 15 @ 0.85 on 09-23', [o.row.fills.length, o.row.fills[0].qty, o.row.fills[0].price, o.row.fills[0].date], [1, 15, 0.85, '2026-09-23']);
+  eq('max loss $1,275', definedRisk(o.row.legs, f.price, { qty: f.qty }).maxLoss, 1275);
+  // Typed in the bar → the fields populate from the parse; the preview shows OPEN.
+  const bar = parseCommand('SOFI long spread 15 @ 0.85');
+  eq('the bar yields the two field values', [bar.qty, bar.price, bar.baseError], [15, 0.85, null]);
+  eq('and the preview from them is OPEN', commandSummary(bar, firstFill({ qty: String(bar.qty), price: String(bar.price), side: bar.side, instrument: bar.instrument })), 'SOFI · LONG · spread → OPEN · 15 @ 0.85');
+  // Qty 15, Price blank → the prompt, under Price; Add is held.
+  const half = firstFill({ qty: '15', price: '', side: 'long', instrument: 'spread' });
+  eq('qty alone is incomplete, prompted under Price', [half.state, half.prompt.field, half.prompt.text], ['incomplete', 'price', 'Enter a price or clear Qty']);
+  const half2 = firstFill({ qty: '', price: '0.85', side: 'long', instrument: 'spread' });
+  eq('price alone is prompted under Qty', [half2.state, half2.prompt.field, half2.prompt.text], ['incomplete', 'qty', 'Enter a quantity or clear Price']);
+  // A long price is above zero; a short spread takes a credit, stored negative.
+  eq('a long cannot take a credit', firstFill({ qty: '15', price: '-0.85', side: 'long', instrument: 'spread' }).prompt?.text, 'Price must be above zero for a long position');
+  eq('a long cannot take zero', firstFill({ qty: '15', price: '0', side: 'long', instrument: 'shares' }).state, 'invalid');
+  eq('a short spread takes "0.85cr" as a credit', [firstFill({ qty: '15', price: '0.85cr', side: 'short', instrument: 'spread' }).state, firstFill({ qty: '15', price: '0.85cr', side: 'short', instrument: 'spread' }).price], ['open', -0.85]);
+  eq('or a negative number', firstFill({ qty: '15', price: '-0.85', side: 'short', instrument: 'spread' }).price, -0.85);
+  eq('a short share cannot take a credit', firstFill({ qty: '100', price: '-5', side: 'short', instrument: 'shares' }).prompt?.text, 'A credit is taken on a short spread only');
+  eq('the credit preview', commandSummary(parseCommand('SOFI short spread'), firstFill({ qty: '15', price: '0.85 cr', side: 'short', instrument: 'spread' })), 'SOFI · SHORT · spread → OPEN · 15 @ 0.85 cr');
+  eq('prices as typed', ['0.85', '-0.85', '0.85cr', '0.85 CR', '.5', 'x'].map(parsePrice), [0.85, -0.85, -0.85, -0.85, 0.5, null]);
+  eq('"cr" in the bar is a credit', parseCommand('SOFI short spread 15 @ 0.85cr').price, -0.85);
+  eq('a bare quantity in the bar is a fill error, not a line error', [!!parseCommand('SOFI 500').error, parseCommand('SOFI 500').baseError], [true, null]);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

@@ -36,7 +36,7 @@ import { sizeTrade, sizeFuture, sizerRun, reconcileRuns, mismatchReview, capRevi
 import { leverageFor, SWING, roomInWrappers } from "../lib/leverage.js";
 import { modelledDelta } from "../lib/blackscholes.js";
 import { stateOf, byState, afterFill, thesisOk, archivePatch, restorePatch, hoursToArchive, TABS } from "../lib/lifecycle.js";
-import { parseCommand, resolveCandidates, commandRow, commandSummary } from "../lib/commandBar.js";
+import { parseCommand, resolveCandidates, commandRow, commandSummary, firstFill, priceText } from "../lib/commandBar.js";
 import { actionItems } from "../lib/actions.js";
 import { useRef } from "react";
 import { isDerivativeRow, underlyingOf, legLabel, optionDerived, exposureLines, optionRow, optionLevelVocab, hardDateCheck, defaultHardDate,
@@ -1512,7 +1512,7 @@ function useBookExposure(rows, nlv) {
 // everything — size so that one ATR of adverse movement costs 1% of NLV — then the concentration
 // caps, then the smallest result. See lib/sizer.js for the worked example this was built from: the
 // QQQ line where both tests said five contracts and the position was twenty.
-function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], exempt = null, holds = [] }) {
+function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], exempt = null, holds = [], head = null }) {
   const [tkr, setTkr] = useState("");
   const [kind, setKind] = useState("option");
   // CALL OR PUT. The chain key was hard-coded to the call, so a put at the same strike was priced
@@ -1735,6 +1735,7 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
 
   return (
     <Card>
+      {head && <div style={{ marginBottom: 12, paddingBottom: 11, borderBottom: "1px solid " + C.bdr }}>{head}</div>}
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <SLabel>Position sizer</SLabel>
         <span style={{ fontSize: 11.5, color: C.muted }}>one ATR against you costs {SIZER_LIMITS.riskPct}% of NLV</span>
@@ -2172,8 +2173,11 @@ const isStale = (asOf) => {
   return !Number.isFinite(t) || (Date.now() - t) / 60000 > STALE_MIN;
 };
 
-function ExposureTile({ book, err }) {
-  if (!book?.available) return null;
+// Risk coverage rides in this card as its second half (children): one answers "what am I
+// carrying", the other "what does a stop-out cost", and the gap between them is the read. With no
+// greeks book, coverage still gets a card of its own.
+function ExposureTile({ book, err, children = null }) {
+  if (!book?.available) return children ? <Card>{children}</Card> : null;
   const L = book.limits;
   const money = (v) => v == null ? "—" : (v < 0 ? "−$" : "$") + Math.abs(Math.round(v)).toLocaleString("en-US");
   const stateCol = book.state === "OVER CEILING" ? C.red
@@ -2284,6 +2288,7 @@ function ExposureTile({ book, err }) {
         {book.note}. Greeks are CBOE's published values, not modelled — no assumed rate or dividend.
         Book vol assumes {Math.round(L.underlyingVol * 100)}% underlying and {L.correlation} correlation, so diversification does close to nothing.
       </div>
+      {children && <div style={{ marginTop: 12, paddingTop: 11, borderTop: "1px solid " + C.bdr }}>{children}</div>}
     </Card>
   );
 }
@@ -2417,6 +2422,21 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
   const [symHint, setSymHint]   = useState(false);   // the ticker-spelling pointer beside the add field
   const [addLegs, setAddLegs]   = useState([blankLeg()]);
   const [addDate, setAddDate]   = useState(() => new Date().toISOString().slice(0, 10));
+  // The first fill, as two visible fields beside the fill date (4a amendment). They are the source
+  // of truth; "qty @ price" typed in the line fills them, and deleting it from the line clears
+  // them only while they still hold what the line put there.
+  const [fillQty, setFillQty]   = useState("");
+  const [fillPrice, setFillPrice] = useState("");
+  const fillFromBar = useRef(false);
+  const addFill = firstFill({ qty: fillQty, price: fillPrice, side: addSide, instrument: addKind });
+  const addBlocked = addFill.state === "incomplete" || addFill.state === "invalid";
+  const onCmd = (v) => {
+    setCmd(v); setAddErr(null);
+    const p = parseCommand(v);
+    if (p.qty != null || p.price != null) {
+      setFillQty(p.qty != null ? String(p.qty) : ""); setFillPrice(p.price != null ? priceText(p.price) : ""); fillFromBar.current = true;
+    } else if (fillFromBar.current) { setFillQty(""); setFillPrice(""); fillFromBar.current = false; }
+  };
   const [addErr, setAddErr]     = useState(null);
   // What the feed resolved the typed ticker to — name, and the feed symbol (7709 → 7709.HK).
   const [resolved, setResolved] = useState(null);
@@ -2964,7 +2984,9 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
   // which is the brief's "SOFI long spread" case.
   const addRow = () => {
     setAddErr(null);
-    if (parsed.error) { setAddErr(parsed.error); return; }
+    if (parsed.baseError || !parsed.symbol) { setAddErr(parsed.baseError || parsed.error); return; }
+    if (addFill.state === "incomplete" || addFill.state === "invalid") return;   // the prompt is on screen
+    const fq = addFill.state === "open" ? addFill.qty : null, fp = addFill.state === "open" ? addFill.price : null;
     const sym = (resolved?.for === addSym && !resolved.unresolved ? resolved.symbol : addSym).toUpperCase();
     let made;
     if (addKind === "option" || addKind === "spread") {
@@ -2973,15 +2995,16 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
         const id = `${sym}-${Math.random().toString(36).slice(2, 8)}`;
         made = { row: { id, symbol: sym, underlying: sym, instrument: addKind, legs: [], side: sideOf(addSide) ?? DEFAULT_SIDE, currency: "USD", thesis: "", levels: [], fills: [], tags: [], multiplier: 100 }, opensAs: "WATCHING" };
       } else {
-        made = optionRow({ underlying: sym, legs: addLegs, side: addSide, qty: parsed.qty, price: parsed.price, date: addDate });
+        made = optionRow({ underlying: sym, legs: addLegs, side: addSide, qty: fq, price: fp, date: addDate });
         if (!made.error) made.opensAs = made.row.fills.length ? "OPEN" : "WATCHING";
       }
     } else {
-      made = commandRow(parsed, { resolved: resolved?.for === addSym && !resolved.unresolved ? resolved : null, date: addDate });
+      made = commandRow({ ...parsed, qty: fq, price: fp, error: null }, { resolved: resolved?.for === addSym && !resolved.unresolved ? resolved : null, date: addDate });
     }
     if (made.error) { setAddErr(made.error); return; }
     setRows(p => [...p, made.row]);
-    setCmd(""); setAddLegs([blankLeg()]); setExpanded(made.row.id); touch();
+    setCmd(""); setFillQty(""); setFillPrice(""); fillFromBar.current = false;
+    setAddLegs([blankLeg()]); setExpanded(made.row.id); touch();
     setBookTab(made.opensAs === "OPEN" ? "OPEN" : "WATCHING");
   };
   const upd = (id, patch) => { setRows(p => p.map(r => r.id === id ? { ...r, ...patch } : r)); touch(); };
@@ -3457,6 +3480,39 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
     bookX, underlyingPriceOf, todayISO,
   };
 
+  // ── THE BASE BAR, INSIDE CURRENT PORTFOLIO ──
+  // Base currency, alerts, sync state and the price refresh used to be a card of their own
+  // between the notices and the book. They are the portfolio's controls, so they live in its
+  // card; Save is the sticky "Unsaved changes" banner's job, which showed the same button twice.
+  const baseBar = (
+      <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap", margin: "2px 0 8px" }}>
+        <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700, display: "flex", gap: 6, alignItems: "center" }}>
+          Base
+          <select value={baseCcy} onChange={e => { setSettings(s => ({ ...s, baseCurrency: e.target.value })); touch(); }} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
+            {CURRENCY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+        <button onClick={async () => { if (typeof Notification !== "undefined" && Notification.permission !== "granted") { try { await Notification.requestPermission(); } catch { /* ignore */ } } setSettings(s => ({ ...s, alertsEnabled: !s.alertsEnabled })); touch(); }}
+          style={{ cursor: "pointer", background: settings.alertsEnabled ? C.green : C.surf, color: settings.alertsEnabled ? C.onFill : C.mid, border: "1.5px solid " + (settings.alertsEnabled ? C.green : C.bdr), borderRadius: 8, padding: "6px 11px", fontSize: 12.5, fontWeight: 800 }}>
+          {settings.alertsEnabled ? "🔔 Alerts on" : "🔕 Alerts off"}
+        </button>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 9, alignItems: "center" }}>
+          {kvOn === false && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>⚠ this browser only</span>}
+          {kvOn === true && <span style={{ fontSize: 11.5, color: C.green, fontWeight: 700 }}>☁ syncing</span>}
+          {/* Nothing to say, so say only that it looked. An absence of news is worth one line. */}
+          {flexNote && !flexNote.needsYou?.length && !flexNote.applied && !flexNote.discarded && (
+            <span title={`IBKR statement of ${flexNote.asOf} — ${flexNote.summary}`} style={{ fontSize: 11.5, color: C.muted }}>
+              IBKR ✓ {String(flexNote.at).slice(0, 10)}
+            </span>
+          )}
+          {saveMsg && <span style={{ fontSize: 12, color: C.mid }}>{saveMsg}</span>}
+          {/* Both halves. Quotes come from Yahoo and the chain data from our own route; a
+              button labelled "refresh" that moved only one of them was the bug. */}
+          <Btn onClick={() => { fetchPrices([...symbols, ...fxSyms]); refreshLive(); }} disabled={pricesLoading || !symbols.length} color={C.mid} bgColor={C.bg} label={pricesLoading ? "…" : "🔄 Prices"} />
+        </div>
+      </div>
+  );
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {/* ── STICKY SAVE STATE ──
@@ -3691,43 +3747,22 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
         );
       })()}
 
-      {/* toolbar */}
-      <Card>
-        <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
-          <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700, display: "flex", gap: 6, alignItems: "center" }}>
-            Base
-            <select value={baseCcy} onChange={e => { setSettings(s => ({ ...s, baseCurrency: e.target.value })); touch(); }} style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
-              {CURRENCY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </label>
-          <button onClick={async () => { if (typeof Notification !== "undefined" && Notification.permission !== "granted") { try { await Notification.requestPermission(); } catch { /* ignore */ } } setSettings(s => ({ ...s, alertsEnabled: !s.alertsEnabled })); touch(); }}
-            style={{ cursor: "pointer", background: settings.alertsEnabled ? C.green : C.surf, color: settings.alertsEnabled ? C.onFill : C.mid, border: "1.5px solid " + (settings.alertsEnabled ? C.green : C.bdr), borderRadius: 8, padding: "6px 11px", fontSize: 12.5, fontWeight: 800 }}>
-            {settings.alertsEnabled ? "🔔 Alerts on" : "🔕 Alerts off"}
-          </button>
-          <div style={{ marginLeft: "auto", display: "flex", gap: 9, alignItems: "center" }}>
-            {kvOn === false && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>⚠ this browser only</span>}
-            {kvOn === true && <span style={{ fontSize: 11.5, color: C.green, fontWeight: 700 }}>☁ syncing</span>}
-            {/* Nothing to say, so say only that it looked. An absence of news is worth one line. */}
-            {flexNote && !flexNote.needsYou?.length && !flexNote.applied && !flexNote.discarded && (
-              <span title={`IBKR statement of ${flexNote.asOf} — ${flexNote.summary}`} style={{ fontSize: 11.5, color: C.muted }}>
-                IBKR ✓ {String(flexNote.at).slice(0, 10)}
-              </span>
-            )}
-            {saveMsg && <span style={{ fontSize: 12, color: C.mid }}>{saveMsg}</span>}
-            {/* Both halves. Quotes come from Yahoo and the chain data from our own route; a
-                button labelled "refresh" that moved only one of them was the bug. */}
-            <Btn onClick={() => { fetchPrices([...symbols, ...fxSyms]); refreshLive(); }} disabled={pricesLoading || !symbols.length} color={C.mid} bgColor={C.bg} label={pricesLoading ? "…" : "🔄 Prices"} />
-            <Btn onClick={saveCloud} disabled={saving} color={C.onFill} bgColor={dirty ? C.blue : C.bdrMd} label={saving ? "Saving…" : dirty ? "☁ Save to cloud" : "☁ Synced"} />
-          </div>
-        </div>
-      </Card>
 
       {/* ── CURRENT PORTFOLIO ──
           Same visual idiom as the Smart Money tab (donut for weight, horizontal bars for the
           per-name read) so the two tabs are read the same way. Everything is converted into the
           base currency; a position whose FX rate is missing is EXCLUDED and counted, never added
           at face value in the wrong currency. */}
-      {openPos.length > 0 && (() => {
+      {(() => {
+        if (!openPos.length) return (
+          <Card>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
+              <SLabel>Current portfolio</SLabel>
+              <span style={{ fontSize: 12, color: C.muted }}>no open positions · {baseCcy}</span>
+            </div>
+            {baseBar}
+          </Card>
+        );
         const held = openPos.map(r => {
           const mv = r.pnl.marketValue == null ? null : toBase(r.pnl.marketValue, r);
           const un = r.pnl.unrealized == null ? null : toBase(r.pnl.unrealized, r);
@@ -3766,6 +3801,7 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
                 <button onClick={() => setShowPortfolio(v => !v)} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{showPortfolio ? "Hide" : "Show"}</button>
               </div>
             </div>
+            {baseBar}
             {/* A warning is not detail and is never folded away. */}
             {missing > 0 && (
               <div style={{ fontSize: 11.5, color: C.amber, fontWeight: 700, marginBottom: 6 }}>
@@ -3846,15 +3882,9 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
           times, with one QQQ line carrying 2.37x on its own. Risk coverage below answers "what
           does a stop-out cost"; this answers "what am I carrying right now", and on this book the
           two differ by a factor of twelve. */}
-      <ExposureTile book={bookX.book} err={bookX.err} />
-
-      {/* ── P4 — RISK COVERAGE ──
-          Three numbers, same units, never summed, and never collapsed into one. A single
-          portfolio-heat figure would report the first of these and name itself after all three:
-          on this book two of nine non-cash rows carry a stop, so risk-to-stop describes a fifth of
-          the exposure. The gap between the first and second number IS the finding. */}
-      {(coverage.gross.rows > 0 || coverage.undefined.rows > 0) && (
-        <Card>
+      <ExposureTile book={bookX.book} err={bookX.err}>
+        {(coverage.gross.rows > 0 || coverage.undefined.rows > 0) && (
+        <div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
             <SLabel>Risk coverage</SLabel>
             <span style={{ fontSize: 11.5, color: C.muted }}>three measures, not one — they do not add up</span>
@@ -3892,14 +3922,24 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
               <b style={{ color: C.amber }}>{coverage.futures.pctOfEquity == null ? "—" : `${coverage.futures.pctOfEquity}%`}</b>
               {" of that gross figure is "}{coverage.futures.rows} margined row{coverage.futures.rows === 1 ? "" : "s"}
               {" — "}{fmtCcy(coverage.futures.amount, baseCcy)} of notional.
-              <span style={{ color: C.lbl }}> Excluded from the weights, cash and donut below on purpose, because the notional is not capital you have committed — and included here on purpose, because it is what the book controls.</span>
+              <span style={{ color: C.lbl }}> Excluded from the weights, cash and donut in Current portfolio on purpose, because the notional is not capital you have committed — and included here on purpose, because it is what the book controls.</span>
             </div>
           )}
-        </Card>
-      )}
+        </div>
+        )}
+      </ExposureTile>
 
-      {/* sizing settings */}
-      <Card>
+      {/* ── P4 — RISK COVERAGE ──
+          Three numbers, same units, never summed, and never collapsed into one. A single
+          portfolio-heat figure would report the first of these and name itself after all three:
+          on this book two of nine non-cash rows carry a stop, so risk-to-stop describes a fifth of
+          the exposure. The gap between the first and second number IS the finding. */}
+
+
+      {/* ── SIZING, ONE CARD ── The master settings (equity, risk, allocation, regime multipliers)
+          head the calculator that uses them; they were two cards reading the same inputs. */}
+      <PositionSizer book={bookX.book} nlv={equityBase} fills={openingFills} exempt={settings.sizerExempt ?? null} holds={holds}
+        head={<>
         <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
           <SLabel>Sizing</SLabel>
           <span style={{ fontSize: 11.5, color: C.muted }}>suggestions only — shown beside your own number, never applied</span>
@@ -3991,9 +4031,7 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
           <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>Credit-DANGER caps the multiplier at {CREDIT_DANGER_CAP_LABEL}; a contested or pinned≠live regime applies a further ×0.7.</div>
         </div>
         </>)}
-      </Card>
-
-      <PositionSizer book={bookX.book} nlv={equityBase} fills={openingFills} exempt={settings.sizerExempt ?? null} holds={holds} />
+        </>} />
 
       {/* ── THE COMMAND BAR ──
           Under the sizer, so a size is worked out before the trade is typed: TICKER · direction ·
@@ -4003,20 +4041,20 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
       <Card>
         <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
           <SLabel>Add a trade</SLabel>
-          <input ref={cmdRef} value={cmd} onChange={e => { setCmd(e.target.value); setAddErr(null); }}
-            onKeyDown={e => { if (e.key === "Enter") addRow(); if (e.key === "Escape") { setCmd(""); e.target.blur(); } }}
+          <input ref={cmdRef} value={cmd} onChange={e => onCmd(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") addRow(); if (e.key === "Escape") { onCmd(""); e.target.blur(); } }}
             placeholder="TICKER · long/short · shares/option/spread/future · qty @ price"
-            style={{ flex: "1 1 340px", minWidth: 220, padding: "7px 11px", border: "1.5px solid " + (parsed.error && cmd ? C.aBdr : C.bdr), borderRadius: 8, fontSize: 13.5, background: C.surf, color: C.text }} />
+            style={{ flex: "1 1 340px", minWidth: 220, padding: "7px 11px", border: "1.5px solid " + (parsed.baseError && cmd ? C.aBdr : C.bdr), borderRadius: 8, fontSize: 13.5, background: C.surf, color: C.text }} />
           <button onClick={() => setSymHint(h => !h)} aria-label="How to write the ticker"
             title="US: QQQ · Hong Kong: 0981.HK or just 981 · Korea: 005930 · Europe: ASML.AS, SHEL.L · crypto: BTC-USD · futures: MNQ, MGC, COIL · a contract: QQQ Oct16'26 730C"
             style={{ cursor: "pointer", width: 22, height: 22, borderRadius: 999, border: "1.5px solid " + (symHint ? C.blue : C.bdr), background: C.surf, color: symHint ? C.blue : C.muted, fontSize: 12, fontWeight: 800 }}>?</button>
-          <Btn onClick={addRow} color={C.onFill} bgColor={C.blue} label="+ Add" />
+          <Btn onClick={addRow} disabled={addBlocked} color={C.onFill} bgColor={C.blue} label="+ Add" />
         </div>
         {/* The pills: what the line says, and a way to change it without retyping. */}
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8, fontSize: 12 }}>
           {(() => {
             const rewrite = ({ side = addSide, kind = addKind }) => {
-              const fill = parsed.qty != null && parsed.price != null ? ` ${parsed.qty} @ ${parsed.price}` : "";
+              const fill = addFill.state === "open" ? ` ${addFill.qty} @ ${priceText(addFill.price)}` : "";
               setCmd(`${addSym || ""} ${side} ${kind}${fill}`.trim());
             };
             return (<>
@@ -4041,12 +4079,31 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
               <label style={{ fontSize: 11, color: C.lbl, fontWeight: 700, display: "inline-flex", gap: 5, alignItems: "center" }}>fill date
                 <input type="date" value={addDate} onChange={e => setAddDate(e.target.value)} style={{ padding: "3px 6px", border: "1.5px solid " + C.bdr, borderRadius: 6, fontSize: 11.5, background: C.surf, color: C.text }} />
               </label>
+              {[
+                { k: "qty", label: "qty", value: fillQty, set: setFillQty, ph: "e.g. 15", w: 70 },
+                { k: "price", label: addKind === "spread" ? "combo price" : "price", value: fillPrice, set: setFillPrice,
+                  ph: addKind === "spread" && addSide === "short" ? "0.85 or 0.85cr" : "e.g. 0.85", w: 96,
+                  title: addKind === "spread" ? "Net debit or credit per spread. A short spread may take a credit: -0.85 or 0.85cr." : undefined },
+              ].map(f => {
+                const miss = addFill.prompt?.field === f.k;
+                return (
+                  <label key={f.k} title={f.title} style={{ fontSize: 11, color: C.lbl, fontWeight: 700, display: "inline-flex", flexDirection: "column", gap: 2, position: "relative" }}>
+                    <span style={{ display: "inline-flex", gap: 5, alignItems: "center" }}>{f.label}
+                      <input value={f.value} placeholder={f.ph} inputMode="decimal"
+                        onChange={e => { f.set(e.target.value); fillFromBar.current = false; setAddErr(null); }}
+                        onKeyDown={e => { if (e.key === "Enter") addRow(); }}
+                        style={{ width: f.w, padding: "3px 6px", border: "1.5px solid " + (miss ? C.aBdr : C.bdr), borderRadius: 6, fontSize: 11.5, background: C.surf, color: C.text }} />
+                    </span>
+                    {miss && <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }}>{addFill.prompt.text}</span>}
+                  </label>
+                );
+              })}
             </>);
           })()}
-          <span style={{ color: parsed.error && cmd ? C.amber : C.muted, fontWeight: parsed.error && cmd ? 700 : 500 }}>
+          <span style={{ color: parsed.baseError && cmd ? C.amber : C.muted, fontWeight: parsed.baseError && cmd ? 700 : 500 }}>
             {!cmd ? "e.g. SOFI long shares 500 @ 16.675 — with a fill the card opens as OPEN; without, as WATCHING"
-              : parsed.error ? `⚠ ${parsed.error}`
-              : commandSummary(parsed)}
+              : parsed.baseError || !parsed.symbol ? `⚠ ${parsed.baseError || parsed.error}`
+              : commandSummary(parsed, addFill)}
           </span>
         </div>
         {/* What the feed resolved the ticker to — the name, so a number computed on the wrong
@@ -4071,7 +4128,7 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
             <LegTable legs={addLegs} setLegs={setAddLegs} chain={chain?.symbol === addSym.trim().toUpperCase() ? chain : null} max={addKind === "option" ? 1 : MAX_LEGS} />
             <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
               {addLegs.some(l => l.expiry) ? <>Hard exit date defaults to <b>{defaultHardDate(addLegs) || "—"}</b> (expiry − 7 days), editable on the card.</> : "Leave the table empty and the card opens WATCHING with it, to fill in there."}
-              {" "}A first fill is the line's <b>qty @ price</b>, at the <b>combo price</b>; the card is valued at the live combo mark.
+              {" "}A first fill is <b>qty</b> and <b>combo price</b> (net debit, or a credit on a short spread: −0.85 or 0.85cr); the card is valued at the live combo mark.
             </div>
           </div>
         )}

@@ -44,6 +44,7 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
   ok('the heading names the instrument and spot', /QQQ 746\.06/.test(svg));
   ok('and the regime', /positive gamma, moves damp/.test(svg));
   ok('spot is drawn, its number on the axis in the line\'s blue', new RegExp(`stroke="${INK.spot}"`).test(svg) && new RegExp(`fill="${INK.spot}">746\\.06<`).test(svg));
+  ok('the title is the heaviest weight', /font-size="28" font-weight="800"/.test(svg));
   ok('set in Manrope', new RegExp(`font-family="${FONT}"`).test(svg) && FONT === 'Manrope');
   ok('the flip zone is a band', /flip zone 712\.76–740\.80/.test(svg));
   ok('the pivot after today is dashed', /stroke-dasharray/.test(svg) && /pivot after today 733\.96/.test(svg));
@@ -53,7 +54,7 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
   ok('the trapdoor is labelled', /−340M Oct-02 · trapdoor/.test(svg));
   ok('today\'s negatives say today', /−110M today/.test(svg));
   ok('the stack is bracketed beside the bars, clear of the labels', new RegExp(`<rect x="84" y="[\\d.]+" width="5" height="[\\d.]+" rx="2" fill="${INK.neg}"/>`).test(svg));
-  ok('the four text lines repeat under the plot, label in bold', /<tspan font-weight="700">stack<\/tspan> negative 730–745 under spot/.test(svg) && /<tspan font-weight="700">pin<\/tspan> none today/.test(svg) && /<tspan font-weight="700">book<\/tspan> /.test(svg) && /<tspan font-weight="700">after<\/tspan> pivot 740\.80 to 733\.96 after today · Sep-25 box 748–755/.test(svg));
+  ok('the four text lines repeat under the plot, label in bold capitals', /<tspan font-weight="700" letter-spacing="0.6">STACK<\/tspan> negative 730–745 under spot/.test(svg) && /<tspan font-weight="700" letter-spacing="0.6">PIN<\/tspan> none today/.test(svg) && /<tspan font-weight="700" letter-spacing="0.6">BOOK<\/tspan> /.test(svg) && /<tspan font-weight="700" letter-spacing="0.6">AFTER<\/tspan> pivot 740\.80 to 733\.96 after today · Sep-25 box 748–755/.test(svg));
   eq('a long footer line wraps', wrap('one two three four five six', 10), ['one two', 'three four', 'five six']);
   eq('a short one does not', wrap('short', 10), ['short']);
   ok('the caption says which colour means what', /green = positive gamma, hedging leans against price/.test(svg));
@@ -114,7 +115,7 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
 // ── THE RASTER ───────────────────────────────────────────────────────────────
 {
   ok('the engine is bundled', existsSync(new URL('../data/render/resvg.wasm', import.meta.url)));
-  ok('and the fonts, with their licence', ['400Regular', '600SemiBold', '700Bold'].every(w => existsSync(new URL(`../data/render/Manrope_${w}.ttf`, import.meta.url))) && /SIL Open Font License/.test(readFileSync(new URL('../data/render/OFL.txt', import.meta.url), 'utf8')) && /Manrope/.test(readFileSync(new URL('../data/render/OFL.txt', import.meta.url), 'utf8')));
+  ok('and the fonts, with their licence', ['400Regular', '600SemiBold', '700Bold', '800ExtraBold'].every(w => existsSync(new URL(`../data/render/Manrope_${w}.ttf`, import.meta.url))) && /SIL Open Font License/.test(readFileSync(new URL('../data/render/OFL.txt', import.meta.url), 'utf8')) && /Manrope/.test(readFileSync(new URL('../data/render/OFL.txt', import.meta.url), 'utf8')));
   const png = await renderPng(ladderSvg(row, { today: '2026-09-23' }));
   ok('a PNG comes back', png && png.length > 10000 && png[0] === 0x89 && png[1] === 0x50 && png[2] === 0x4e && png[3] === 0x47);
   // Width and height from the IHDR chunk: 820 wide, portrait.
