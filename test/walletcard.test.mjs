@@ -7,7 +7,7 @@
 // are distinctive digit strings, asserted to appear nowhere in the serialised output.
 import { chainMark, headerMark, WALLET_MARK, SERVER_EMOJI } from '../lib/chains.js';
 import { classifyTrigger, parseTriggerOrders } from '../lib/hyperliquid.js';
-import { walletPublicView, diffHoldings, buildWalletCard, eventLine, holdingLine, groupedHoldingLine, mergePending, MIN_CHAIN_HOLDINGS, publishable, symbolKey, isPlainSymbol, isUnsolicited, inheritProvenance, rememberProvenance, applyMemory, provenanceKey, publishReport,
+import { carryUnanswered, walletPublicView, diffHoldings, buildWalletCard, eventLine, holdingLine, groupedHoldingLine, mergePending, MIN_CHAIN_HOLDINGS, publishable, symbolKey, isPlainSymbol, isUnsolicited, inheritProvenance, rememberProvenance, applyMemory, provenanceKey, publishReport,
          HIDDEN_SYMBOLS, hiddenSymbols,
          perpPublicView, perpLine, PERP_PUBLIC_FIELDS,
          WALLET_PUBLIC_FIELDS, EVENT_PUBLIC_FIELDS, MIN_NOTIONAL_USD } from '../lib/walletcard.js';
@@ -612,6 +612,38 @@ const row = (o = {}) => ({
   eq('a contested symbol names the contract that stands for it', publishReport(carried.rows).contested, [{ symbol: 'Robinhood Chain:PONS', kept: '0xreal', dropped: ['0xtwin'] }]);
   eq('and one with no contest is not listed there', publishReport([real, yesterday[2]]).contested, []);
   ok('and nothing in the report is a quantity', !JSON.stringify(publishReport(today)).includes('0.6918'));
+}
+
+// ── A CHAIN THAT DID NOT ANSWER WAS NOT EMPTIED (2026-09-25, 20:22Z) ──
+{
+  const RH = 'Robinhood Chain';
+  const tok = (coin, chain, total, price, address) => ({ coin, chain, total, price, address, verified: true, viaPool: false, acquired: true });
+  const yesterday = [tok('PONS', RH, 1000, 0.65, '0x39db'), tok('ORBIO', RH, 5000, 0.075, '0x0rb1'), tok('ETH', 'Ethereum', 0.01, 2690, null)];
+  const todayEth = [tok('ETH', 'Ethereum', 0.01, 2690, null)];
+  const chains = (rh) => [{ chain: 'Ethereum', ok: true, rows: 1 }, { chain: RH, ...rh }];
+  // The night itself: 20:22 the chain fails, 23:27 it answers. Before the fix: 2 sells, then 2 buys.
+  eq('before: a silent chain reads as selling everything on it', diffHoldings(yesterday, todayEth).map(e => e.kind), ['sold', 'sold']);
+  const failed = carryUnanswered(todayEth, yesterday, chains({ ok: false, rows: 0 }));
+  eq('a chain that did not answer keeps yesterday\'s rows', failed.rows.filter(r => r.chain === RH).map(r => r.coin), ['PONS', 'ORBIO']);
+  eq('and is named as carried', failed.carried, [RH]);
+  eq('so nothing is sold', diffHoldings(yesterday, failed.rows), []);
+  eq('and nothing is bought when it answers again', diffHoldings(failed.rows, yesterday), []);
+  // Answered, but empty where it held something: carried once…
+  const empty1 = carryUnanswered(todayEth, yesterday, chains({ ok: true, rows: 0 }));
+  eq('an empty read is carried the first time', [empty1.carried, empty1.suspect], [[RH], { [RH]: true }]);
+  eq('with no sale', diffHoldings(yesterday, empty1.rows), []);
+  // …and believed the second time running: a real exit, one run late.
+  const empty2 = carryUnanswered(todayEth, empty1.rows, chains({ ok: true, rows: 0 }), { suspect: empty1.suspect });
+  eq('empty twice running is believed', [empty2.carried, empty2.suspect], [[], {}]);
+  eq('and the exit is reported', diffHoldings(empty1.rows, empty2.rows).map(e => `${e.kind} ${e.symbol}`), ['sold ORBIO', 'sold PONS']);
+  // A real read clears the suspicion; a chain that held nothing is never carried.
+  const back = carryUnanswered(yesterday, yesterday, chains({ ok: true, rows: 2 }), { suspect: { [RH]: true } });
+  eq('a real read is trusted and clears the record', [back.carried, back.suspect, back.rows.length], [[], {}, 3]);
+  eq('a chain with nothing before is never carried', carryUnanswered(todayEth, todayEth, chains({ ok: false, rows: 0 })).carried, []);
+  // A partial answer is not duplicated: rows it did return are not added twice.
+  const part = carryUnanswered([...todayEth, tok('PONS', RH, 1000, 0.66, '0x39db')], yesterday, chains({ ok: false, rows: 0 }));
+  eq('carried rows do not duplicate ones already read', part.rows.filter(r => r.coin === 'PONS').length, 1);
+  ok('never mutates its input', todayEth.length === 1);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
