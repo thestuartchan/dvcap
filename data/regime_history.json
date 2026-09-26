@@ -2120,38 +2120,38 @@
       "reflationary_p": 17,
       "deflationary_p": 13,
       "inflationary_p": 5,
-      "hawkish_repricing": "DISINFLATIONARY_EASING",
+      "hawkish_repricing": "HAWKISH_RATES_REPRICING",
       "live_regime": "stag",
       "view_regime": "stag",
-      "pinned": true,
-      "hyg_chg": -0.04,
-      "hyg_qqq_divergence": -0.5,
+      "pinned": false,
+      "hyg_chg": -0.27,
+      "hyg_qqq_divergence": -0.26,
       "inputs": {
         "weightedRecessionProb": 14.3,
         "cpi": 3.35302,
         "kalshi2027": 24,
         "tape": {
-          "gold": "up",
+          "gold": "down",
           "tlt": "down",
-          "xlu": "up",
-          "xlp": "up",
-          "spy": "up",
-          "qqq": "up",
-          "iwm": "up",
-          "btc": "down",
+          "xlu": "down",
+          "xlp": "down",
+          "spy": "down",
+          "qqq": "flat",
+          "iwm": "down",
+          "btc": "up",
           "breakevenBp": -2
         },
-        "ladderSpread": 1.05,
+        "ladderSpread": 0.12,
         "u3": 4.1,
         "empPop": 59.1,
-        "oas": 2.8,
+        "oas": 2.73,
         "tenY": 5.11,
         "twoY": 4.85,
         "consensusAlive": 0.739,
         "regimeVintage": "decayed"
       },
       "source": "client",
-      "loggedAt": "2026-09-26T09:08:57.328Z"
+      "loggedAt": "2026-09-26T11:17:46.265Z"
     }
   ]
 }
