@@ -20,7 +20,7 @@ import { upsertCard, post, remove, webhookFromEnv, walletWebhookFromEnv, mention
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
 import { fetchWallets } from '../lib/wallet.js';
 import { fetchSpotContext, fetchHyperliquid, fetchHlAccount, fetchHlSpot, fetchHlOrders } from '../lib/hyperliquid.js';
-import { diffHoldings, walletPublicView, buildWalletCard, mergePending, perpPublicView, publishable, inheritProvenance, rememberProvenance, applyMemory, publishReport, pinsFromMemory, symbolKey } from '../lib/walletcard.js';
+import { diffHoldings, walletPublicView, buildWalletCard, mergePending, perpPublicView, publishable, inheritProvenance, rememberProvenance, applyMemory, publishReport, pinsFromMemory, symbolKey, carryUnanswered } from '../lib/walletcard.js';
 
 // A row's symbol is what you call it; the quote feed may call it something else. Mirrors the tab's
 // own resolution — Yahoo has no MNQ, and its MGC is an unrelated stock.
@@ -267,6 +267,18 @@ export async function refreshWallet({ post = false, clock = new Date() } = {}) {
     return { ok: true, posted: false, seeded: now.length, provenance };
   }
 
+  // A chain that did not answer, or answered empty where it held something, keeps yesterday's rows
+  // (lib/walletcard.js carryUnanswered) — before the diff, and into the snapshot, so its return is
+  // not a buy either. Named in the answer, by chain, never by balance.
+  const answered = [
+    ...w.chains.map(c => ({ chain: c.chain, ok: !!c.ok, rows: c.rows?.length ?? 0 })),
+    { chain: 'Hyperliquid', ok: !!hlSpot.ok, rows: hlSpot.rows?.length ?? 0 },
+  ];
+  const held = carryUnanswered(now, prevSnap.rows, answered, { suspect: prevSnap.suspect || {} });
+  now = held.rows;
+  provenance.unanswered = answered.filter(c => !c.ok).map(c => c.chain);
+  provenance.carried = held.carried;
+
   // What the chain would not say today, yesterday's snapshot may still know (lib/walletcard.js
   // inheritProvenance). Applied before the diff AND before the snapshot is written, so the answer
   // carries forward through a run of bad mornings rather than surviving exactly one.
@@ -299,7 +311,7 @@ export async function refreshWallet({ post = false, clock = new Date() } = {}) {
       return { ok: false, posted: false, error: 'could not buffer events — snapshot left where it was' };
     }
   }
-  await kvSetJson(WALLET_SNAPSHOT_KEY, { rows: now, at: new Date().toISOString() });
+  await kvSetJson(WALLET_SNAPSHOT_KEY, { rows: now, suspect: held.suspect, at: new Date().toISOString() });
 
   // `post` forces it (the manual dispatch); otherwise the clock and the record decide.
   const today = utcDate(clock);
@@ -309,7 +321,9 @@ export async function refreshWallet({ post = false, clock = new Date() } = {}) {
              due: `${PUBLISH_HOUR_UTC}:00Z`, lastPosted, provenance };
   }
 
-  const holdings = publishable(now).filter(r => r.price != null).map(r => walletPublicView(r, r.chain));
+  // A carried chain's rows hold yesterday's prices; the card says "prices at time of post", so they
+  // stay out of it. They exist only so the diff does not read a silent chain as a sale.
+  const holdings = publishable(now).filter(r => r.price != null && !held.carried.includes(r.chain)).map(r => walletPublicView(r, r.chain));
   const card = buildWalletCard(pending, holdings, { perps });
   const r = await fetch(hook, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
