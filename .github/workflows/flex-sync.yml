@@ -50,14 +50,27 @@ jobs:
           code=$(curl -sS -o /tmp/flex.json -w '%{http_code}' --max-time 90 \
             -H "x-tradecard-key: ${{ secrets.TRADECARD_KEY }}" \
             "https://dvcap.vercel.app/api/flex-sync?apply=$apply&trades=1") || true
-          echo "HTTP $code"; cat /tmp/flex.json; echo
+          echo "HTTP $code"
+          # COUNTS ONLY. This repository is public, and so are its Actions logs: the full answer
+          # carries the account number and every position with its quantity, and printing it here
+          # published the book every weekday. The log says whether the sync ran and what it did —
+          # never what is held. The detail stays in the console, behind the login.
+          jq -c '{ok, asOf, applied, error: (.error // null),
+                  positions, agree: (.agree | length?), differs: (.differs | length?), ambiguous: (.ambiguous | length?),
+                  reported: (.report | length?), added: (.adds | length?), needsYou: (.needsYou | length?),
+                  discarded: (.discarded != null and .discarded != false),
+                  trades: (.trades | if . then {inStatement, verified, applied: (.applied // false),
+                           toApply: (.plan.apply | length?), creates: (.plan.creates | length?), problems: (.problems | length?),
+                           skipped: .plan.skipped} else null end),
+                  told: (.told | if . then {posted, reason} else null end)}' /tmp/flex.json 2>/dev/null \
+            || echo '{"note":"answer was not JSON — not printed"}'
           # The endpoint answers 200 with a reason rather than failing, so "not configured yet" is
           # visible in the log without turning the workflow red.
           if [ "$code" = "401" ]; then
             echo "::error::Refused. The server and this workflow must share one value:"
             echo "::error::  Vercel  -> environment variable TRADECARD_KEY"
             echo "::error::  GitHub  -> repository secret  TRADECARD_KEY"
-            echo "::error::The endpoint says why:"; cat /tmp/out.json; echo
+            echo "::error::The endpoint says why:"; jq -r '.why // .error // "no reason given"' /tmp/flex.json 2>/dev/null; echo
             exit 1
           fi
           [ "$code" = "200" ] || exit 1

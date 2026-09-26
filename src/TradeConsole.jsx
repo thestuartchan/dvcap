@@ -57,6 +57,7 @@ import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUIT
 import { companyName } from "../lib/companyNames.js";
 import { tickerHint, resolvedLabel } from "../lib/tickerHints.js";
 import { moveGroupOnto } from "../lib/reorder.js";
+import { syncStatus } from "../lib/flexStatus.js";
 
 // Shown in the sizing note; kept a constant so the copy and the cap cannot drift apart.
 const CREDIT_DANGER_CAP_LABEL = `×${CREDIT_DANGER_CAP.toFixed(2)}`;
@@ -3527,12 +3528,20 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
         <div style={{ marginLeft: "auto", display: "flex", gap: 9, alignItems: "center" }}>
           {kvOn === false && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>⚠ this browser only</span>}
           {kvOn === true && <span style={{ fontSize: 11.5, color: C.green, fontWeight: 700 }}>☁ syncing</span>}
-          {/* Nothing to say, so say only that it looked. An absence of news is worth one line. */}
-          {flexNote && !flexNote.needsYou?.length && !flexNote.applied && !flexNote.discarded && (
-            <span title={`IBKR statement of ${flexNote.asOf} — ${flexNote.summary}`} style={{ fontSize: 11.5, color: C.muted }}>
-              IBKR ✓ {String(flexNote.at).slice(0, 10)}
-            </span>
-          )}
+          {/* ── DID THE DAILY IBKR SYNC RUN ──
+              It used to show only when something needed you, so a healthy quiet morning and a sync
+              that had stopped running looked identical. Now it always says when it last ran, what
+              it read and whether it agreed — and turns amber when a weekday run is missing. */}
+          {kvOn !== false && (() => {
+            const st = syncStatus(flexNote);
+            return (
+              <span title={st.title} style={{ fontSize: 11.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+                color: st.tone === "ok" ? C.green : C.amber, background: st.tone === "ok" ? C.gBg : C.aBg,
+                border: "1px solid " + (st.tone === "ok" ? C.gBdr : C.aBdr) }}>
+                {st.tone === "ok" ? "✓ " : ""}{st.text}
+              </span>
+            );
+          })()}
           {saveMsg && <span style={{ fontSize: 12, color: C.mid }}>{saveMsg}</span>}
           {/* Both halves. Quotes come from Yahoo and the chain data from our own route; a
               button labelled "refresh" that moved only one of them was the bug. */}

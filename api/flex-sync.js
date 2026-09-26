@@ -197,6 +197,10 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
     at: new Date().toISOString(),
     asOf,
     applied: !!(fresh.length || plan.ack.length || (apply && tradeRows)),
+    // Counts for the console's status line (lib/flexStatus.js) — how many of the statement's
+    // positions the console agrees with, so a quiet run reads as checked rather than as absent.
+    agree: rec.agree.length,
+    positions: got.statement.positions.length,
     added: fresh.map(r => r.symbol),
     recorded: tradePlan ? tradePlan.apply.length : 0,
     opened: tradePlan ? tradePlan.creates.map(c => c.symbol) : [],
