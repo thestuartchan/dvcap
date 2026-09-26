@@ -345,8 +345,9 @@ ok('and never a quantity', !/\b(50|100|1058)\b/.test(line));
   // the console is announced. A day trade — opened at 0 or 1 day to expiry — is not.
   const opts = parseStatement('<OpenPosition symbol="QQQ 260911C00737000" underlyingSymbol="QQQ" assetCategory="OPT" currency="USD" multiplier="100" position="15" costBasisPrice="8.77" />').positions;
   const rec = reconcile([], opts, {});
-  eq('an option the console does not hold is announced', [rec.report.length, actionable(rec).length], [1, 1]);
-  eq('by its contract', summariseActionable(rec), '1 option contract to check (QQQ 2026-09-11 737C)');
+  eq('an option the console does not hold is added, like a share', [rec.report.length, rec.adds.length, actionable(rec).length], [0, 1, 1]);
+  eq('and named by its contract', summariseActionable(rec), "added QQQ Sep11'26 737C");
+  eq('but the channel gets the ticker only — the contract stays in the console', summariseActionable(rec, { forChannel: true }), 'added QQQ option');
   const day = parseStatement('<OpenPosition symbol="QQQ 260911C00737000" underlyingSymbol="QQQ" assetCategory="OPT" currency="USD" multiplier="100" position="15" costBasisPrice="8.77" holdingPeriodDateTime="20260910;093500" />').positions;
   const recDay = reconcile([], day, { asOf: '2026-09-10' });
   eq('a 1DTE option is a day trade: named, not announced', [recDay.report.map(r => r.kind), actionable(recDay).length], [['daytrade-option'], 0]);
@@ -511,7 +512,7 @@ eq('elements are found whether or not they self-close', elements('<A x="1"/><A x
   const rec = reconcile(rows, st.positions, { asOf: '2026-09-11', derive: r => r.derived });
   eq('the share row agrees with the share line', rec.agree.map(a => a.root), ['INTC']);
   eq('and is not contradicted by the option line', rec.differs, []);
-  eq('the option is reported by its own contract', rec.report.filter(r => r.kind === 'option-not-in-console').map(r => `${r.contract}:${r.qty}`), ['INTC 2026-10-17 30C:6']);
+  eq('the option is added as its own contract', rec.adds.map(r => [r.instrument, r.legs[0].strike, r.legs[0].expiry, r.fills[0].qty]), [['option', 30, '2026-10-17', 6]]);
 }
 
 // ── THE FILL THAT CLOSES A QUANTITY GAP ──────────────────────────────────────
@@ -551,7 +552,7 @@ eq('elements are found whether or not they self-close', elements('<A x="1"/><A x
 // A SOFI Nov20 17/20 call vertical is ONE console row and TWO statement lines. Matched leg by leg,
 // signed; the SOFI share row beside it is untouched.
 {
-  const { parseStatement, reconcile, actionable, isDayTradeOption, optionContractOf } = await import('../lib/flex.js');
+  const { parseStatement, reconcile, actionable, isDayTradeOption, optionContractOf, summariseActionable } = await import('../lib/flex.js');
   const xml = (lines) => `<FlexQueryResponse><FlexStatements><FlexStatement accountId="U1" fromDate="2026-09-24" toDate="2026-09-24"><OpenPositions>${lines}</OpenPositions></FlexStatement></FlexStatements></FlexQueryResponse>`;
   const SH = '<OpenPosition currency="USD" assetCategory="STK" symbol="SOFI" position="500" costBasisPrice="16.68" levelOfDetail="SUMMARY" />';
   const L17 = (q = 15) => `<OpenPosition currency="USD" assetCategory="OPT" symbol="SOFI  261120C00017000" underlyingSymbol="SOFI" multiplier="100" position="${q}" costBasisPrice="1.9" strike="17" putCall="C" expiry="20261120" holdingPeriodDateTime="20260923" levelOfDetail="SUMMARY" />`;
@@ -571,12 +572,27 @@ eq('elements are found whether or not they self-close', elements('<A x="1"/><A x
   const short = run(SH + L17() + L20(-10));
   eq('a leg that disagrees is named with both numbers', short.report.filter(r => r.kind === 'option-differs').map(r => [r.contract, r.qty]), [['SOFI 2026-11-20 20C', { console: -15, ibkr: -10 }]]);
   eq('and is announced', actionable(short).length, 1);
+  eq('in the channel by ticker, not contract', summariseActionable(short, { forChannel: true }), '1 option contract to check (SOFI)');
 
   const gone = run(SH);
   eq('legs the console holds and IBKR does not', gone.report.filter(r => r.kind === 'option-missing-at-broker').map(r => r.contract).sort(), ['SOFI 2026-11-20 17C', 'SOFI 2026-11-20 20C']);
 
   const extra = run(SH + L17() + L20() + '<OpenPosition currency="USD" assetCategory="OPT" symbol="WFC   261016C00085000" underlyingSymbol="WFC" multiplier="100" position="30" costBasisPrice="1.2" strike="85" putCall="C" expiry="20261016" holdingPeriodDateTime="20260915" levelOfDetail="SUMMARY" />');
-  eq('an option only IBKR holds', extra.report.filter(r => r.kind === 'option-not-in-console').map(r => `${r.contract}:${r.qty}`), ['WFC 2026-10-16 85C:30']);
+  eq('an option only IBKR holds is added', extra.adds.map(r => [r.symbol, r.instrument, r.side, r.legs[0].right, r.legs[0].strike, r.fills[0].qty, r.fills[0].price, r.fills[0].date]),
+     [['WFC', 'option', 'long', 'C', 85, 30, 1.2, '2026-09-15']]);
+  // The added row matches the next statement: the add is stable, not repeated.
+  const withWfc = [share, spread, { ...extra.adds[0], derived: { qty: 30, avgCost: 1.2, status: 'open', firstDate: '2026-09-15' } }];
+  const again = reconcile(withWfc, parseStatement(xml(SH + L17() + L20() + '<OpenPosition currency="USD" assetCategory="OPT" symbol="WFC   261016C00085000" underlyingSymbol="WFC" multiplier="100" position="30" costBasisPrice="1.2" strike="85" putCall="C" expiry="20261016" holdingPeriodDateTime="20260915" levelOfDetail="SUMMARY" />')).positions, { asOf: '2026-09-24', derive });
+  eq('and agrees the day after', [again.adds.length, again.agree.length, actionable(again)], [0, 4, []]);
+  // A short option alone is a short row.
+  const shortPut = run(SH + L17() + L20() + '<OpenPosition currency="USD" assetCategory="OPT" symbol="XLE   261120P00080000" underlyingSymbol="XLE" multiplier="100" position="-5" costBasisPrice="2.1" strike="80" putCall="P" expiry="20261120" holdingPeriodDateTime="20260910" levelOfDetail="SUMMARY" />');
+  eq('a short option is added short', shortPut.adds.map(r => [r.side, r.legs[0].side, r.fills[0].side, r.fills[0].qty]), [['short', 'long', 'sell', 5]]);
+  // A spread held only at IBKR: two legs opened together → ONE spread row, net debit.
+  const onlyIbkr = run(SH + L17() + L20(), [share]);
+  eq('legs opened together become one spread', onlyIbkr.adds.map(r => [r.instrument, r.legs.map(l => `${l.side} ${l.strike}${l.right}`), r.fills[0].qty, r.fills[0].price]),
+     [['spread', ['long 17C', 'short 20C'], 15, 0.85]]);
+  const spreadRow = { ...onlyIbkr.adds[0], derived: { qty: 15, avgCost: 0.85, status: 'open', firstDate: '2026-09-23' } };
+  eq('and that spread matches both lines next time', run(SH + L17() + L20(), [share, spreadRow]).agree.length, 3);
 
   // A short spread: the row is short, so its legs flip.
   const shortSpread = { ...spread, id: 'sofi-short', side: 'short', fills: [{ side: 'sell', qty: 15, price: 0.85, date: '2026-09-23' }] };
