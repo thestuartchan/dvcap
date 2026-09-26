@@ -28,7 +28,7 @@ import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY } from '
 const SEEN_KEY = 'dvcap:flex:seen:v1';
 import { derivePosition, splitIntoTrades } from '../lib/positions.js';
 import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, unrecordedTrades, dropCreatedAdds } from '../lib/flexTrades.js';
-import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf, planAck, reconcilingFill, flexEnv, flexConfigured, isoDate } from '../lib/flex.js';
+import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf, planAck, reconcilingFill, flexEnv, flexConfigured, isoDate, optionFindings } from '../lib/flex.js';
 import { post, webhookFromEnv } from '../lib/discord.js';
 import { refresh } from './tradecard.js';
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
@@ -222,6 +222,10 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
         fix: reconcilingFill(d, { asOf, statementFills: (tradePlan?.apply || []).filter(a => a.root === d.root && (a.rowId === d.id || !rows.some(r => r.id === a.rowId))).map(a => a.fill) }) })),
       ...rec.ambiguous.map(a => ({ what: 'ambiguous — two rows share this symbol', root: a.root })),
       ...rec.report.filter(r => r.kind === 'missing-at-broker').map(r => ({ what: 'open here, not at the broker', root: r.root, id: r.id })),
+      // Option contracts, by contract rather than by underlying (lib/flex.js optionFindings).
+      ...optionFindings(rec).map(o => ({ what: o.kind === 'option-differs' ? `${o.contract}: console ${o.qty.console}, statement ${o.qty.ibkr}`
+                                            : o.kind === 'option-not-in-console' ? `${o.contract}: held at IBKR, not in the console`
+                                            : `${o.contract}: in the console, not at IBKR`, root: o.root, id: o.ids?.[0] || null })),
       ...((tradePlan?.report) || []).map(r => ({ what: r.kind.replace(/-/g, ' '), root: r.root })),
     ].slice(0, 12),
     summary: [tradePlan ? summariseTrades(tradePlan) : '', summariseActionable(rec)].filter(Boolean).join(' · ') || 'everything reconciles',
