@@ -414,6 +414,14 @@ const {
   const anyHit = active.some(l => levelHit(l, ctx.priceOf(r, l), r.side));
   const o = r.opt || null;
   const urgent = !!(o?.expired || o?.hardDateReached);
+  // ── WHAT KIND OF THING THIS IS, AT A GLANCE ──
+  // Every row was blue — the OPEN pill, the left edge, the contract chip — so an option read like a
+  // share until the chip was actually read. Options and spreads are violet, futures teal: the left
+  // edge, a tag before the ticker, and (for options) the contract chip. Shares stay as they were;
+  // they are most of the book and an unmarked row is the default. A hit level or an urgent date
+  // still takes the edge, because that is what needs doing.
+  const kind = o ? { tag: o.instrument === "spread" ? "SPREAD" : "OPTION", col: P.violet700, bg: P.violet50, bdr: P.violet300 }
+    : r.margined ? { tag: "FUTURE", col: P.teal700, bg: P.teal50, bdr: P.teal300 } : null;
   // DRAG FROM THE GRIP, NOT THE ROW. The row body opens and closes on click, and making the whole
   // thing draggable turns every mis-timed click into a drag — so `draggable` sits on the grip alone
   // and the row only listens for the drop. The grip also stops the click from bubbling, or picking
@@ -434,7 +442,7 @@ const {
     <div className={cls} data-row={r.id}
       onDragOver={reorderable && ctx.dragId ? (e => { e.preventDefault(); if (ctx.overId !== r.id) ctx.setOverId(r.id); }) : undefined}
       onDrop={reorderable && ctx.dragId ? (e => { e.preventDefault(); ctx.dropRow(ctx.dragId, r.id); ctx.endDrag(); }) : undefined}
-      style={{ border: "1.5px solid " + (urgent ? C.red : anyHit ? C.amber : C.bdr), borderLeft: "4px solid " + (urgent ? C.red : anyHit ? C.amber : mode === "open" ? C.blue : C.bdr), borderRadius: 10, overflow: "hidden",
+      style={{ border: "1.5px solid " + (urgent ? C.red : anyHit ? C.amber : C.bdr), borderLeft: "4px solid " + (urgent ? C.red : anyHit ? C.amber : kind ? kind.col : mode === "open" ? C.blue : C.bdr), borderRadius: 10, overflow: "hidden",
                ...(dropEdge ? { boxShadow: dropEdge } : null) }}>
       {/* The row is TWO blocks, not one wrapping run: an info block that flexes and wraps inside
           itself, and an action block that never leaves the top line. Letting the whole row wrap put
@@ -479,6 +487,8 @@ const {
           </span>
         )}
         <span style={{ display: "inline-flex", alignItems: "baseline", gap: 7, minWidth: 0 }}>
+          {kind && <span title={kind.tag === "FUTURE" ? "a futures contract" : `an ${kind.tag === "SPREAD" ? "options spread" : "option"} on ${r.symbol}`}
+            style={{ alignSelf: "center", fontSize: 9.5, fontWeight: 900, letterSpacing: 0.6, color: kind.col, background: kind.bg, border: "1px solid " + kind.bdr, borderRadius: 5, padding: "1px 5px", whiteSpace: "nowrap" }}>{kind.tag}</span>}
           <b style={{ fontSize: 15 }}>{r.symbol}</b>
           {/* A label that just restates the ticker ("AMD" on AMD) is noise, so it is dropped. */}
           {r.trade && r.trade.trim().toUpperCase() !== r.symbol.toUpperCase()
@@ -496,7 +506,7 @@ const {
                 {companyName(r.symbol) || ctx.atrFor(quoteSym(r)).detail.name}</span> : null}
           {/* THE CONTRACT, in words, beside the underlying: "Nov20'26 17/20 C · vertical". The
               ×100 chip is folded into it — an option row says it is an option. */}
-          {o ? (o.legs.length ? chip(`${o.label} · ${o.shape}`, C.blue, C.blBg, C.blBdr) : chip(`${o.instrument} · legs to fill in`, C.amber, C.aBg, C.aBdr)) : d.multiplier > 1 ? chip(`×${d.multiplier}`, C.amber, C.aBg, C.aBdr) : null}
+          {o ? (o.legs.length ? chip(`${o.label} · ${o.shape}`, P.violet700, P.violet50, P.violet300) : chip(`${o.instrument} · legs to fill in`, C.amber, C.aBg, C.aBdr)) : d.multiplier > 1 ? chip(`×${d.multiplier}`, C.amber, C.aBg, C.aBdr) : null}
           {/* SHORT IS MARKED, LONG IS NOT. Every number on a short row is the mirror of the one a
               reader expects — the stop is above, the target below, and a falling price is a gain —
               so the row says which it is rather than leaving the reader to infer it from levels
