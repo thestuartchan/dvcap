@@ -28,7 +28,7 @@ import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY } from '
 const SEEN_KEY = 'dvcap:flex:seen:v1';
 import { derivePosition, splitIntoTrades } from '../lib/positions.js';
 import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, unrecordedTrades, dropCreatedAdds } from '../lib/flexTrades.js';
-import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf, planAck, reconcilingFill, flexEnv, flexConfigured, isoDate, optionFindings } from '../lib/flex.js';
+import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf, planAck, reconcilingFill, flexEnv, flexConfigured, isoDate, optionFindings, addLabel } from '../lib/flex.js';
 import { post, webhookFromEnv } from '../lib/discord.js';
 import { refresh } from './tradecard.js';
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
@@ -51,7 +51,7 @@ async function tell(rec, asOf, tradePlan = null) {
   const seen = await kvGetJson(SEEN_KEY);
   if (seen?.sig === sig) return { posted: false, reason: 'unchanged since the last run' };
   await kvSetJson(SEEN_KEY, { sig, at: new Date().toISOString() });
-  const line = [traded, summariseActionable(rec)].filter(Boolean).join(' · ');
+  const line = [traded, summariseActionable(rec, { forChannel: true })].filter(Boolean).join(' · ');
   if (!line) return { posted: false, reason: 'nothing needs acting on' };
   const hook = webhookFromEnv();
   if (!hook) return { posted: false, reason: 'no webhook configured' };
@@ -201,7 +201,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
     // positions the console agrees with, so a quiet run reads as checked rather than as absent.
     agree: rec.agree.length,
     positions: got.statement.positions.length,
-    added: fresh.map(r => r.symbol),
+    added: fresh.map(addLabel),
     recorded: tradePlan ? tradePlan.apply.length : 0,
     opened: tradePlan ? tradePlan.creates.map(c => c.symbol) : [],
     discarded: result.trades?.discarded || null,
