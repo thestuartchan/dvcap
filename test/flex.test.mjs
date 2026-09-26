@@ -125,9 +125,11 @@ eq('positions that match are quiet', rec.agree.map(a => a.root).sort(), ['0981',
 eq('a quantity disagreement is reported', rec.differs.map(d => d.root), ['HOOD']);
 eq('with both numbers, so it can be judged', rec.differs[0].qty, { console: 50, ibkr: 100 });
 eq('and nothing invented for the part that agrees', rec.differs[0].avg, null);
-// USFR is cash and AVGO is an option: reported, never added.
+// USFR is cash; AVGO is an option the console does not hold, expiring the day after the statement
+// with no open date given — by the 0/1DTE rule a day trade, set aside rather than announced.
 eq('nothing outside the console scope is auto-added', rec.adds, []);
-eq('they are reported instead', rec.report.filter(r => r.kind === 'unmatched').map(r => `${r.root}:${r.assetClass}`).sort(), ['AVGO:option', 'USFR:cash']);
+eq('cash is reported as unmatched', rec.report.filter(r => r.kind === 'unmatched').map(r => `${r.root}:${r.assetClass}`).sort(), ['USFR:cash']);
+eq('and the next-day option as a day trade', rec.report.filter(r => r.kind === 'daytrade-option').map(r => r.root), ['AVGO']);
 
 // A share the console has never seen IS added.
 const withNew = parseStatement(STMT.replace('</OpenPositions>',
@@ -339,12 +341,16 @@ ok('and never a quantity', !/\b(50|100|1058)\b/.test(line));
   eq('an acknowledged row says nothing', actionable(reconcile([{ ...arm, costBasisAck: 409.260003 }], armPos, {})), []);
 }
 {
-  // The permanent residents are NOT actionable — the options are outside the console's scope for
-  // ever, so announcing them daily would train the reader to ignore the message.
+  // Options are in scope now (the console holds options and spreads): one held at IBKR and not in
+  // the console is announced. A day trade — opened at 0 or 1 day to expiry — is not.
   const opts = parseStatement('<OpenPosition symbol="QQQ 260911C00737000" underlyingSymbol="QQQ" assetCategory="OPT" currency="USD" multiplier="100" position="15" costBasisPrice="8.77" />').positions;
   const rec = reconcile([], opts, {});
-  eq('an out-of-scope option is reported but not announced', [rec.report.length, actionable(rec).length], [1, 0]);
-  eq('so the channel stays quiet', summariseActionable(rec), '');
+  eq('an option the console does not hold is announced', [rec.report.length, actionable(rec).length], [1, 1]);
+  eq('by its contract', summariseActionable(rec), '1 option contract to check (QQQ 2026-09-11 737C)');
+  const day = parseStatement('<OpenPosition symbol="QQQ 260911C00737000" underlyingSymbol="QQQ" assetCategory="OPT" currency="USD" multiplier="100" position="15" costBasisPrice="8.77" holdingPeriodDateTime="20260910;093500" />').positions;
+  const recDay = reconcile([], day, { asOf: '2026-09-10' });
+  eq('a 1DTE option is a day trade: named, not announced', [recDay.report.map(r => r.kind), actionable(recDay).length], [['daytrade-option'], 0]);
+  eq('and the channel stays quiet', summariseActionable(recDay), '');
 }
 {
   // Nor is a position that moved after the statement was cut — that resolves itself tomorrow.
@@ -505,7 +511,7 @@ eq('elements are found whether or not they self-close', elements('<A x="1"/><A x
   const rec = reconcile(rows, st.positions, { asOf: '2026-09-11', derive: r => r.derived });
   eq('the share row agrees with the share line', rec.agree.map(a => a.root), ['INTC']);
   eq('and is not contradicted by the option line', rec.differs, []);
-  eq('the option is reported as outside scope, by its underlying', rec.report.filter(r => r.kind === 'unmatched').map(r => `${r.root}:${r.assetClass}:${r.qty}`), ['INTC:option:6']);
+  eq('the option is reported by its own contract', rec.report.filter(r => r.kind === 'option-not-in-console').map(r => `${r.contract}:${r.qty}`), ['INTC 2026-10-17 30C:6']);
 }
 
 // ── THE FILL THAT CLOSES A QUANTITY GAP ──────────────────────────────────────
@@ -539,6 +545,58 @@ eq('elements are found whether or not they self-close', elements('<A x="1"/><A x
   const partial = reconcilingFill({ qty: { console: 30, ibkr: 6 } }, { statementFills: [{ side: 'sell', qty: 10, price: 26, date: '2026-09-10' }] });
   eq('fills that cover only part of the gap say so', partial.covers, false);
   ok('a sale outside the window says where the price is', /IBKR trade confirmation/.test(reconcilingFill({ qty: { console: 30, ibkr: 6 } }).text));
+}
+
+// ── OPTIONS MATCHED BY CONTRACT (2026-09-26) ──
+// A SOFI Nov20 17/20 call vertical is ONE console row and TWO statement lines. Matched leg by leg,
+// signed; the SOFI share row beside it is untouched.
+{
+  const { parseStatement, reconcile, actionable, isDayTradeOption, optionContractOf } = await import('../lib/flex.js');
+  const xml = (lines) => `<FlexQueryResponse><FlexStatements><FlexStatement accountId="U1" fromDate="2026-09-24" toDate="2026-09-24"><OpenPositions>${lines}</OpenPositions></FlexStatement></FlexStatements></FlexQueryResponse>`;
+  const SH = '<OpenPosition currency="USD" assetCategory="STK" symbol="SOFI" position="500" costBasisPrice="16.68" levelOfDetail="SUMMARY" />';
+  const L17 = (q = 15) => `<OpenPosition currency="USD" assetCategory="OPT" symbol="SOFI  261120C00017000" underlyingSymbol="SOFI" multiplier="100" position="${q}" costBasisPrice="1.9" strike="17" putCall="C" expiry="20261120" holdingPeriodDateTime="20260923" levelOfDetail="SUMMARY" />`;
+  const L20 = (q = -15) => `<OpenPosition currency="USD" assetCategory="OPT" symbol="SOFI  261120C00020000" underlyingSymbol="SOFI" multiplier="100" position="${q}" costBasisPrice="1.05" strike="20" putCall="C" expiry="20261120" holdingPeriodDateTime="20260923" levelOfDetail="SUMMARY" />`;
+  const share = { id: 'sofi-sh', symbol: 'SOFI', currency: 'USD', side: 'long', fills: [{ side: 'buy', qty: 500, price: 16.68, date: '2026-09-23' }], derived: { qty: 500, avgCost: 16.68, unadjustedAvgCost: 16.68, status: 'open', sold: 0, firstDate: '2026-09-23' } };
+  const spread = { id: 'sofi-sp', symbol: 'SOFI', underlying: 'SOFI', instrument: 'spread', currency: 'USD', side: 'long', multiplier: 100,
+    legs: [{ right: 'C', strike: 17, expiry: '2026-11-20', side: 'long', ratio: 1 }, { right: 'C', strike: 20, expiry: '2026-11-20', side: 'short', ratio: 1 }],
+    fills: [{ side: 'buy', qty: 15, price: 0.85, date: '2026-09-23' }], derived: { qty: 15, avgCost: 0.85, status: 'open', sold: 0, firstDate: '2026-09-23' } };
+  const derive = (r) => ({ qty: (r.fills || []).reduce((a, f) => a + (f.side === 'buy' ? f.qty : -f.qty), 0), avgCost: r.derived?.avgCost });
+  const run = (lines, rows = [share, spread]) => reconcile(rows, parseStatement(xml(lines)).positions, { asOf: '2026-09-24', derive });
+
+  const ok1 = run(SH + L17() + L20());
+  eq('the share row and both legs agree', ok1.agree.map(a => a.contract || a.root).sort(), ['SOFI', 'SOFI 2026-11-20 17C', 'SOFI 2026-11-20 20C']);
+  eq('the spread row no longer makes the share row ambiguous', ok1.ambiguous, []);
+  eq('nothing to announce', actionable(ok1), []);
+
+  const short = run(SH + L17() + L20(-10));
+  eq('a leg that disagrees is named with both numbers', short.report.filter(r => r.kind === 'option-differs').map(r => [r.contract, r.qty]), [['SOFI 2026-11-20 20C', { console: -15, ibkr: -10 }]]);
+  eq('and is announced', actionable(short).length, 1);
+
+  const gone = run(SH);
+  eq('legs the console holds and IBKR does not', gone.report.filter(r => r.kind === 'option-missing-at-broker').map(r => r.contract).sort(), ['SOFI 2026-11-20 17C', 'SOFI 2026-11-20 20C']);
+
+  const extra = run(SH + L17() + L20() + '<OpenPosition currency="USD" assetCategory="OPT" symbol="WFC   261016C00085000" underlyingSymbol="WFC" multiplier="100" position="30" costBasisPrice="1.2" strike="85" putCall="C" expiry="20261016" holdingPeriodDateTime="20260915" levelOfDetail="SUMMARY" />');
+  eq('an option only IBKR holds', extra.report.filter(r => r.kind === 'option-not-in-console').map(r => `${r.contract}:${r.qty}`), ['WFC 2026-10-16 85C:30']);
+
+  // A short spread: the row is short, so its legs flip.
+  const shortSpread = { ...spread, id: 'sofi-short', side: 'short', fills: [{ side: 'sell', qty: 15, price: 0.85, date: '2026-09-23' }] };
+  eq('a short spread is the legs flipped', run(SH + L17(-15) + L20(15), [share, { ...shortSpread, derived: { ...spread.derived } }]).agree.length, 3);
+
+  // Opened after the statement's day: not expected in it, so not "missing at broker".
+  const later = { ...spread, fills: [{ side: 'buy', qty: 15, price: 0.85, date: '2026-09-25' }], derived: { ...spread.derived, firstDate: '2026-09-25' } };
+  eq('a spread opened after the statement is not a finding', run(SH, [share, later]).report.filter(r => r.kind.startsWith('option')), []);
+
+  // Day trades: 0 or 1 day to expiry at the open.
+  const c = optionContractOf({ root: 'QQQ', strike: 740, putCall: 'P', expiry: '20260925' });
+  eq('contract from fields', c, { root: 'QQQ', expiry: '2026-09-25', type: 'put', strike: 740 });
+  eq('0DTE is a day trade', isDayTradeOption(c, { openDate: '2026-09-25' }), true);
+  eq('1DTE is a day trade', isDayTradeOption(c, { openDate: '2026-09-24' }), true);
+  eq('2DTE is not', isDayTradeOption(c, { openDate: '2026-09-23' }), false);
+  const dt = run(SH + L17() + L20() + '<OpenPosition currency="USD" assetCategory="OPT" symbol="QQQ   260925P00740000" underlyingSymbol="QQQ" multiplier="100" position="5" costBasisPrice="2" strike="740" putCall="P" expiry="20260925" holdingPeriodDateTime="20260924;150000" levelOfDetail="SUMMARY" />');
+  const nearExp = { ...spread, id: 'near', legs: [{ right: 'C', strike: 17, expiry: '2026-09-25', side: 'long', ratio: 1 }], instrument: 'option' };
+  const L17near = '<OpenPosition currency="USD" assetCategory="OPT" symbol="SOFI  260925C00017000" underlyingSymbol="SOFI" multiplier="100" position="15" costBasisPrice="1" strike="17" putCall="C" expiry="20260925" levelOfDetail="SUMMARY" />';
+  eq('a swing option the console holds still matches the day before expiry', run(SH + L17near, [share, nearExp]).agree.map(a => a.contract || a.root).sort(), ['SOFI', 'SOFI 2026-09-25 17C']);
+  eq('a 1DTE line is set aside, not matched or announced', [dt.report.filter(r => r.kind === 'daytrade-option').map(r => r.contract), actionable(dt)], [['QQQ 2026-09-25 740P'], []]);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
