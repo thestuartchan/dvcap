@@ -1,0 +1,60 @@
+# Deletes old runs of the flex sync — their logs included.
+#
+# WHY. Until 2026-09-26 flex-sync.yml printed the endpoint's full answer to its log, and this
+# repository's Actions logs are public: the account number and every position with its quantity,
+# every weekday. The workflow now prints counts only (#228). This removes the runs from before that,
+# so the old logs are gone rather than merely superseded.
+#
+# Run by hand only. It deletes flex-sync runs created BEFORE the cutoff and leaves everything after
+# it — including every run of the counts-only version — alone. It prints run ids and dates, never
+# the logs themselves.
+name: purge flex-sync logs
+
+on:
+  workflow_dispatch:
+    inputs:
+      before:
+        description: 'Delete flex-sync runs created before this UTC time'
+        type: string
+        default: '2026-09-26T06:00:00Z'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Delete flex-sync runs before the cutoff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BEFORE: ${{ inputs.before }}
+        run: |
+          set -euo pipefail
+          api() { curl -sS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$@"; }
+          deleted=0; kept=0; failed=0
+          # Collect first, delete after: deleting while paging shifts the pages under the loop.
+          : > /tmp/runs.txt
+          for page in 1 2 3 4 5 6 7 8 9 10; do
+            got=$(api "https://api.github.com/repos/$REPO/actions/workflows/flex-sync.yml/runs?per_page=100&page=$page" \
+                  | jq -r '.workflow_runs[] | "\(.id) \(.created_at)"')
+            [ -z "$got" ] && break
+            echo "$got" >> /tmp/runs.txt
+          done
+          while read -r id created; do
+            [ -z "$id" ] && continue
+            if [[ "$created" < "$BEFORE" ]]; then
+              code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE \
+                -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/$REPO/actions/runs/$id")
+              if [ "$code" = "204" ]; then echo "deleted run $id ($created)"; deleted=$((deleted+1));
+              else echo "::warning::run $id ($created) — HTTP $code"; failed=$((failed+1)); fi
+            else
+              kept=$((kept+1))
+            fi
+          done < /tmp/runs.txt
+          echo "deleted $deleted · kept $kept · failed $failed"
+          [ "$failed" = "0" ]
