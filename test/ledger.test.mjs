@@ -34,6 +34,9 @@ const find = (l, key) => l.rows.find(r => r.key === key);
   eq('an ISM entry past 35 days is stale — excluded from the axis', find(l, 'ism').state, 'stale');
   eq('a USFR yield past two weeks is due, still shown', find(l, 'usfr').state, 'due');
   eq('Southbound past a trading week is stale', find(l, 'southbound').state, 'stale');
+  // With the HKEX feed answering, the row is automatic and ages the feed's latest file instead.
+  const auto = handKeptLedger({ manual, consts: { southboundFeed: { ok: true, series: [{ date: '2026-09-11' }] } }, now: NOW });
+  eq('a live Southbound feed makes the row automatic', [find(auto, 'southbound').group, find(auto, 'southbound').state], ['Automatic feed', 'fresh']);
   eq('an unset intervention flag is retired — nothing to keep', find(l, 'intervention').state, 'retired');
   eq('an override past 180 days is stale — its weight is zero', find(l, 'override:Goldman Sachs').state, 'stale');
   eq('a fresh override is fresh', find(l, 'override:JPMorgan').state, 'fresh');

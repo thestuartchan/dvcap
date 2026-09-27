@@ -4,6 +4,7 @@ import { INFLATION_SERIES } from "../lib/inflationAxis.js";
 import { kvGetJson, kvSetJson, kvConfigured } from "../lib/kv.js";
 import { zqMovesPriced } from "../lib/fedpath.js";
 import { fetchSmicAHPremium } from "../lib/smicah.js";
+import { fetchSouthbound } from "../lib/hkexSouthbound.js";
 import { fredJsonEx } from '../lib/fred.js';
 import { fetchIsharesSecYield } from '../lib/fundYield.js';
 
@@ -19,9 +20,15 @@ export default async function handler(req, res) {
   if (String(req.query?.smic ?? '') === '1') {
     try {
       res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
-      return res.status(200).json({ smicAH: await fetchSmicAHPremium() });
+      // The aggregate Southbound net rides along — HKEX's daily file, KV-cached per day
+      // (lib/hkexSouthbound.js). Settled separately so one failing never blanks the other.
+      const [ah, sb] = await Promise.allSettled([fetchSmicAHPremium(), fetchSouthbound()]);
+      return res.status(200).json({
+        smicAH: ah.status === 'fulfilled' ? ah.value : null,
+        southbound: sb.status === 'fulfilled' ? sb.value : { ok: false, series: [], error: String(sb.reason?.message || sb.reason) },
+      });
     } catch (e) {
-      return res.status(200).json({ smicAH: null, error: String(e?.message || e) });
+      return res.status(200).json({ smicAH: null, southbound: null, error: String(e?.message || e) });
     }
   }
 

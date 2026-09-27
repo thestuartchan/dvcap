@@ -11,7 +11,7 @@ import {
   ReferenceLine, ReferenceArea, ResponsiveContainer, Cell,
 } from "recharts";
 import { C, tint } from "./theme.js";
-import { Card, SLabel } from "./ui.jsx";
+import { Card, SLabel, StaleChip } from "./ui.jsx";
 import { gexRead, ageOf } from "../lib/gexRead.js";
 import { heatCells, heatAlpha } from "../lib/gex.js";
 import { levelsOf, mustShow, rateLine, rateFarOut } from "../lib/gexLevels.js";
@@ -438,9 +438,10 @@ export function GexPanel() {
                        color: live ? (live.mode === "repriced" ? C.amber : C.green) : (TONE_FOR_AGE[fresh.level] || C.muted) }}>
           {live ? (live.mode === "repriced" ? "◐ repriced"
                  : live.mode === "settled" ? "● settled book"
-                 : "● live") : `${fresh.stale ? "⚠ " : ""}${fresh.label}`}
+                 : "● live") : fresh.label}
         </span>
       )}
+      {latest && !live && fresh.stale && <StaleChip />}
       <button onClick={async () => {
           const made = pineFor({ symbol: latest?.symbol || data?.symbol, latest, levels: lv, byStrike: strikeSource || [], grid, today: latest?.date || null });
           if (!made) { setPineMsg("no board to export"); setTimeout(() => setPineMsg(null), 3000); return; }

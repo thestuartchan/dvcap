@@ -19,7 +19,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
 import { C, P } from "./theme.js";
-import { SLabel, Card, Btn } from "./ui.jsx";
+import { SLabel, Card, Btn, StaleChip } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
 import { derivePosition, applyRolls, splitIntoTrades, collapseFills, oversellSplit, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, realizedCurve } from "../lib/positions.js";
 import { sideOf, isShort, openSideFor, closeSideFor, geometryCheck, levelVocab, fillVerb, SIDES, SIDE_LABEL, DEFAULT_SIDE } from "../lib/side.js";
@@ -4015,7 +4015,7 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
                 <div style={{ fontSize: 10.5, fontWeight: 600, color: f.stale ? C.amber : C.lbl, marginTop: 2 }}
                   title={`Sizing scales linearly with equity, so it is refreshed on your schedule rather than synced — a figure within ~${EQUITY_STALE_DAYS} days is plenty.`}>
                   {f.days == null ? "no date recorded" : f.days === 0 ? "as of today" : `as of ${settings.equityAsOf} · ${f.days}d ago`}
-                  {f.stale ? " ⚠" : ""}
+                  {f.stale ? <StaleChip /> : null}
                 </div>
               );
             })()}
