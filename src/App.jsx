@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, Component, Fragment } from "react";
 import { C, P, alpha, THEMES, DEFAULT_THEME, THEME_KEY } from "./theme.js";
-import { SLabel, Card, Btn } from "./ui.jsx";
+import { SLabel, Card, Btn, StaleChip } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
 import { REGIMES, REGIME_PALETTE } from "../lib/regimes.js";
 import { TradeConsole } from "./TradeConsole.jsx";
@@ -22,6 +22,7 @@ import { applyRegimeGuard } from "../lib/posture.js";
 import { regimeFlipsIf } from "../lib/regime.js";
 import { minersPairImplication } from "../lib/regimeState.js";
 import { southboundTrend, southboundLevelTrend, southboundRead, ahPremiumRead, sbStale } from "../lib/southbound.js";
+import { mergeSouthbound } from "../lib/hkexSouthbound.js";
 import { STATUS, creditStatus, deriveAction, headerSignal } from "../lib/status.js";
 import { HORIZON, HORIZON_LABEL, dispersionRead, NO_CONVERSION_NOTE } from "../lib/recession.js";
 import { buildViews, evaluateViews, regimeCluster, divergenceRead } from "../lib/analystViews.js";
@@ -1231,7 +1232,7 @@ function FedPathCard({ effr, feed = null }) {
           )}
           <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 2 }}>
             ZQ {L.price} (100 − price = implied rate) · {L.source === "feed" ? `last close ${L.date} · feed` : `entered ${L.date}`}
-            {kofiaStale(L.date) ? <span style={{ color: C.amber, fontWeight: 700 }}> · ⚠ stale, re-enter</span> : null}
+            {kofiaStale(L.date) ? <StaleChip>re-enter</StaleChip> : null}
           </div>
           {/* The three things the number does NOT say, stated once so the card cannot imply them.
               The month-average point is the one that changes a reading: a hike landing mid-December
@@ -2381,13 +2382,10 @@ function LaborPanel({ labor, depth = "full", extras = null, announced = false })
 
 // ─── FED LANGUAGE STATUS ──────────────────────────────────────────────────────
 // Manually-updated status card (no live fetch). Update the STATUS fields below
-// after each FOMC meeting / significant Fed communication. The five STATES
-// definitions are stable and only change on explicit request.
+// after each FOMC meeting / significant Fed communication. The six STATES
+// definitions are stable and only change on explicit request (active_tightening added 2026-09-27).
 const FED_LANGUAGE_STATUS = {
-  // No "tightening" state exists among the five below (they stop at hawkish_hold), and they change
-  // only on explicit request — so a HIKE is filed under the nearest one and said out loud in the
-  // decision/summary rather than by inventing a state.
-  status: "hawkish_hold", // current state — update manually
+  status: "active_tightening", // current state — update manually (the state was added on request 2026-09-27)
   lastUpdated: "2026-09-27",
   lastEvent: "September FOMC (decision Sep 16) — HIKED 25bp, unanimous · new SEP",
   decision: "HIKED 25bp to 3.75–4.00% — the first move after five holds",
@@ -2404,6 +2402,15 @@ const FED_LANGUAGE_STATUS = {
 // last 2026-08-24) that kept rendering for a month after the September meeting it described had
 // hiked. Now derived live from the ZQ curve (lib/fedpath.js nextMeetingOdds).
 const FED_LANGUAGE_STATES = {
+  // Added 2026-09-27 on request: the scale stopped at a hawkish HOLD, so the Sep 16 hike had
+  // nowhere to go. The mirror of active_easing at the other end.
+  active_tightening: {
+    label: "🔴🔴 Active Tightening",
+    color: P.red700,
+    bg: C.rBg,
+    description: "Hiking cycle underway. The question is how many more and how fast, not whether.",
+    watchFor: "Watch for: a pause signal, dissents against a hike, the dots' terminal rate moving, a labour-market crack that makes the next hike conditional.",
+  },
   hawkish_hold: {
     label: "🔴 Hawkish Hold",
     color: P.red500,
@@ -4470,7 +4477,7 @@ function MacroCell({ field, value, delta, deltaSuffix, extra = null }) {
       <div style={{ fontSize: 11, display: "flex", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
         {suspect && <span style={{ color: C.amber, fontWeight: 700 }}>suspect ({field.src})</span>}
         {!suspect && delta != null && <span style={{ color: dcol, fontWeight: 700 }}>{arrow} {Math.abs(delta)}{deltaSuffix}</span>}
-        {mf.text && <span style={{ color: mf.stale ? C.amber : C.lbl }}>{mf.text}</span>}
+        {mf.text && (mf.stale ? <StaleChip>{mf.text.replace(/\s*·\s*stale\s*·\s*/, " · ").replace(/^stale\s*·\s*/, "")}</StaleChip> : <span style={{ color: C.lbl }}>{mf.text}</span>)}
         {/* A CHECK THAT STOPPED MUST SAY SO. A derived card that quietly renders "—" looks like a
             feed outage; this one names the vintage mismatch that prevented it, so the blank is
             legible rather than alarming. */}
@@ -4569,8 +4576,9 @@ function KoreaStressPanel({ korea }) {
 // Southbound net — a manual daily hand entry for the broad mainland-appetite backdrop. Trends are
 // 5d/20d since single days are noise. Self-fetches both; a save 401s if unauthenticated.
 function SouthboundPanel() {
-  const [series, setSeries] = useState([]);
+  const [manualSeries, setSeries] = useState([]);
   const [smicAH, setSmicAH] = useState(null);
+  const [sbFeed, setSbFeed] = useState(null);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [agg, setAgg] = useState("");
   const [smic, setSmic] = useState("");
@@ -4582,8 +4590,12 @@ function SouthboundPanel() {
     // ONE FIELD, NOT THE ROUTE. This fetched /api/indicators whole — a second full FRED burst in
     // the same page load as the Macro tab's own, which is what tipped the key over its minute
     // budget on 2026-09-21. ?smic=1 answers with the SMIC feed alone and touches FRED not at all.
-    fetch("/api/indicators?smic=1").then(r => r.json()).then(j => setSmicAH(j.smicAH || null)).catch(() => {});
+    fetch("/api/indicators?smic=1").then(r => r.json()).then(j => { setSmicAH(j.smicAH || null); setSbFeed(j.southbound || null); }).catch(() => {});
   }, []);
+  // AUTOMATIC NOW. The aggregate net is HKEX's own daily file (lib/hkexSouthbound.js); a hand-entered
+  // row still wins for its day, and the SMIC CCASS holding — not in that file — stays manual.
+  const series = mergeSouthbound(sbFeed?.series || [], manualSeries);
+  const sbAuto = !!sbFeed?.ok;
 
   const ahOk = smicAH?.premium != null;           // auto feed live?
   const ah = southboundLevelTrend(smicAH?.series || [], "premium");
@@ -4650,14 +4662,14 @@ function SouthboundPanel() {
 
         {/* SECONDARY — aggregate Southbound net: manual broad mainland-appetite backdrop. */}
         <div style={{ flex: "1 1 200px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, padding: "9px 12px" }}>
-          <div style={{ fontSize: 11, color: C.mid, fontWeight: 700 }}>Aggregate Southbound net (HKD bn) <span style={{ color: C.muted, fontWeight: 700 }}>· ✍️ manual</span></div>
+          <div style={{ fontSize: 11, color: C.mid, fontWeight: 700 }}>Aggregate Southbound net (HKD bn) <span style={{ color: C.muted, fontWeight: 700 }}>· {sbAuto ? "auto · HKEX daily Stock Connect stats" : "✍️ manual"}</span></div>
           {latest ? (
             <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3, lineHeight: 1.6 }}>
-              {latest.date}: <b style={{ color: latest.aggregateNet > 0 ? C.green : latest.aggregateNet < 0 ? C.red : C.muted }}>{latest.aggregateNet != null ? (latest.aggregateNet > 0 ? "+" : "") + latest.aggregateNet : "—"}</b>{stale && <span style={{ color: C.amber, fontWeight: 700 }}> · ⚠ stale</span>}<br />
+              {latest.date}: <b style={{ color: latest.aggregateNet > 0 ? C.green : latest.aggregateNet < 0 ? C.red : C.muted }}>{latest.aggregateNet != null ? (latest.aggregateNet > 0 ? "+" : "") + latest.aggregateNet : "—"}</b>{stale && <StaleChip />}<br />
               5-day <b style={{ color: C.text }}>{win(tAgg.w5)}</b> · 20-day <b style={{ color: C.text }}>{win(tAgg.w20)}</b>
             </div>
           ) : (
-            <div style={{ fontSize: 12, color: C.lbl, marginTop: 3, lineHeight: 1.5 }}>Optional — hand-enter the day's total Southbound net buy below (HKEX daily Stock Connect stats).</div>
+            <div style={{ fontSize: 12, color: C.lbl, marginTop: 3, lineHeight: 1.5 }}>{sbFeed && !sbFeed.ok ? "HKEX's daily file did not answer — hand-enter the day's total Southbound net buy below." : "Loading HKEX's daily Stock Connect statistics…"}</div>
           )}
         </div>
       </div>
@@ -4762,7 +4774,8 @@ function KoreaManualEntry({ kofia, gate2 = null, onSaved }) {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 14, margin: "8px 0 10px" }}>
         {["marginLoans", "deposits", "cma", "kr3yGovt", "kr3yCorp", "units7709", "foreignNet", "instNet", "retailNet"].map(k => {
           const e = latest[k];
-          const line = kofiaStoredLine(k, e);
+          const line = kofiaStoredLine(k, e, new Date(), { staleMark: false });
+          const old = !!(e?.asOf && kofiaStale(e.asOf));
           // Colour by direction: currency rows by their %, flows by net sign (green up/buy, red down/sell).
           const isCur = KOFIA_CURRENCY.includes(k), isFlow = KOFIA_FLOWS.includes(k);
           const sig = !e ? null : isCur ? e.pct : isFlow ? e.value : null;
@@ -4774,7 +4787,7 @@ function KoreaManualEntry({ kofia, gate2 = null, onSaved }) {
           return (
             <div key={k} style={{ minWidth: 140 }} title={tip}>
               <div style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>{KOFIA_NAME_BY_KEY[k] || k}</div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: line ? ((isCur || isFlow) ? col : C.text) : C.lbl }}>{line || "— not set"}</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: line ? ((isCur || isFlow) ? col : C.text) : C.lbl }}>{line || "— not set"}{old && <StaleChip title={`as of ${e.asOf} — more than two Seoul sessions old`} />}</div>
               {e?.unit && <div style={{ fontSize: 9.5, color: C.lbl }}>unit {e.unit}{nObs ? ` · ${nObs} obs` : ""}</div>}
             </div>
           );
@@ -5812,11 +5825,15 @@ export default function App() {
   // ── THE HAND-KEPT LEDGER ─────────────────────────────────────────────────────
   // Every input a person keeps, with its age and what the system does when it is late. One list,
   // so nothing is overlooked for a while because its badge was on a tab nobody opened.
+  // The Southbound feed, for the ledger only (the panel fetches its own) — the same edge-cached
+  // ?smic=1 answer, so the ledger can say the flow is automatic rather than "missing".
+  const [sbFeedTop, setSbFeedTop] = useState(null);
+  useEffect(() => { fetch("/api/indicators?smic=1").then(r => r.json()).then(j => setSbFeedTop(j?.southbound || null)).catch(() => {}); }, []);
   const ledger = useMemo(() => handKeptLedger({
     manual: manualStore || {}, kofia: pbData?.asia?.kofia?.latest || null,
     consts: {
       consensusVintage: CONSENSUS_VINTAGE, recessionSources: effectiveRecessionSources, recessionCadence: RECESSION_SOURCE_CADENCE,
-      fedLanguage: FED_LANGUAGE_STATUS, secYields: SEC_YIELDS,
+      fedLanguage: FED_LANGUAGE_STATUS, secYields: SEC_YIELDS, southboundFeed: sbFeedTop,
       fedPathFeed: liveInd?.fedPathFeed ?? null,
       analystBoard: { asOf: "2026-06-29", cadence: 90 }, recessionProse: { asOf: "2026-08-24", cadence: 30 },
       announced: {
@@ -5829,7 +5846,7 @@ export default function App() {
       holidaysThrough: Object.entries(HOLIDAYS).filter(([k]) => !k.startsWith("_")).flatMap(([, v]) => [...(v?.closed || []), ...(v?.half || [])]).sort().at(-1) ?? null,
       calendarEvents: Array.isArray(CALENDAR) ? CALENDAR : (CALENDAR?.events || []),
     },
-  }), [manualStore, pbData, liveInd, effectiveRecessionSources]);
+  }), [manualStore, pbData, liveInd, effectiveRecessionSources, sbFeedTop]);
   // Section D — one labour-stress read, replacing every unemployment-RATE tripwire.
   const labStress = laborStress({
     empPop: { delta: laborView?.empPop?.delta ?? null },
@@ -8043,7 +8060,7 @@ export default function App() {
                             <span style={{ color: C.muted }}>· gap {sign(d.bp)} = {sign(d.modelBp)} model {sign(d.rateBp)} bill since</span>
                             <span style={{ fontWeight: 800, color: d.diverged ? C.amber : C.green }}>
                               {d.diverged ? `⚠ model off ${sign(d.modelBp)} — re-fit the residual` : "✓ model fits"}</span>
-                            {d.stale && <span style={{ fontWeight: 800, color: C.amber }}>⚠ published figure {d.ageDays}d old — refresh from the issuer page</span>}
+                            {d.stale && <StaleChip>published figure {d.ageDays}d old — refresh from the issuer page</StaleChip>}
                           </div>
                         );
                       })}
@@ -8203,7 +8220,7 @@ export default function App() {
                   yieldSpread: liveInd?.yieldSpread ?? null,
                   nextHikeOdds: nextMeetingOdds(liveInd?.fedPathFeed ?? null)?.hikePct ?? null,
                   nextMeetingLabel: (() => { const o = nextMeetingOdds(liveInd?.fedPathFeed ?? null); return o ? new Date(o.meeting + "T12:00:00Z").toLocaleString("en-US", { month: "short", timeZone: "UTC" }) : null; })(),
-                  fedHawkish: /hawkish/i.test(FED_LANGUAGE_STATUS?.status || ""),
+                  fedHawkish: /hawkish|tightening/i.test(FED_LANGUAGE_STATUS?.status || ""),
                   capexRising: true,   // big-four 2026 ~$725B (+77% YoY) — Smart Money tab, sourced
                   unemployment: laborView?.u3?.value ?? liveInd?.unemployment ?? null,
                   // The employment SHARE, not the headline rate: U3 can fall on labour-force exit

@@ -23,3 +23,18 @@ export function Btn({ onClick, disabled, color, bgColor, label }) {
     </button>
   );
 }
+
+// ── STALE, AS ITS OWN MARK ──
+// A stale flag typed into the same string as its number took the number's colour — a red margin
+// loan read "…09-22 ⚠stale" in red, a green deposit line in green — and was missed for days. It is
+// a separate chip everywhere now: amber on its own tint, bordered, in capitals, so it reads as a
+// status and never as part of the figure beside it.
+export function StaleChip({ children = null, title = undefined }) {
+  return (
+    <span title={title} style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 6, verticalAlign: "middle",
+      fontSize: 10, fontWeight: 900, letterSpacing: 0.6, textTransform: "uppercase", whiteSpace: "nowrap",
+      color: C.amber, background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 5, padding: "1px 6px" }}>
+      ⚠ stale{children ? <span style={{ fontWeight: 700, textTransform: "none", letterSpacing: 0 }}>· {children}</span> : null}
+    </span>
+  );
+}
