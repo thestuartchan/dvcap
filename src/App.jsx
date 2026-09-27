@@ -5997,8 +5997,8 @@ export default function App() {
   const TAB_GROUPS = [
     { id: "desk", label: "Trade Desk", hint: "act", tabs: [
       { id: "global",     label: "🌏 Daily Overview" },
-      { id: "gex",        label: "🌀 Gamma"          },
       { id: "console",    label: "🎚️ Console"        },
+      { id: "gex",        label: "🌀 Gamma"          },
     ] },
     { id: "watch", label: "Market Watch", hint: "read", tabs: [
       { id: "macro",      label: "🌐 Macro"          },
