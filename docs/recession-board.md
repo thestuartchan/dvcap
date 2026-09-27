@@ -52,6 +52,14 @@ Dispersion now names the count — *"only 2 independent views — too few to dis
 is not consensus"* — and carries a `thin` flag below `THIN_PANEL` (3), the smallest panel where one
 source can be the odd one out and still leave two to form a view.
 
+## A re-check does not make a view younger
+
+Decided 2026-09-27 (operator's call). A row's recency runs from the date the house PUBLISHED the
+figure, never from the date someone confirmed it is still current. Goldman's 15% was reconfirmed
+that day and still ages from its June note, so the consensus stays graded *decayed* — and the
+sizer keeps its haircut — until a house actually publishes again. Thin, ageing evidence is
+exactly what the haircut is for; counting a re-check as fresh would hide that.
+
 ## Refresh log
 
 **2026-09-27 — September round** (after the Sep 16 SEP). Every hand-kept row re-read from its
