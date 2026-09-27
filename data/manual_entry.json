@@ -5,9 +5,10 @@
       "contract": "Dec-2026",
       "price": 95.81,
       "impliedRate": 4.19,
-      "effr": 3.63,
-      "movesPriced": 2.24,
-      "enteredAt": "2026-09-25T11:18:09.786Z"
+      "effr": 3.88,
+      "movesPriced": 1.24,
+      "enteredAt": "2026-09-25T11:18:09.786Z",
+      "effrCorrected": "2026-09-27: was 3.63, the monthly fed funds average that lagged the Sep 16 hike; FRED EFFR 3.88 from 2026-09-17"
     },
     "series": [
       {
@@ -123,18 +124,20 @@
         "contract": "Dec-2026",
         "price": 95.84,
         "impliedRate": 4.16,
-        "effr": 3.63,
-        "movesPriced": 2.12,
-        "enteredAt": "2026-09-23T07:27:39.169Z"
+        "effr": 3.88,
+        "movesPriced": 1.12,
+        "enteredAt": "2026-09-23T07:27:39.169Z",
+        "effrCorrected": "2026-09-27: was 3.63, the monthly fed funds average that lagged the Sep 16 hike; FRED EFFR 3.88 from 2026-09-17"
       },
       {
         "date": "2026-09-25",
         "contract": "Dec-2026",
         "price": 95.81,
         "impliedRate": 4.19,
-        "effr": 3.63,
-        "movesPriced": 2.24,
-        "enteredAt": "2026-09-25T11:18:09.786Z"
+        "effr": 3.88,
+        "movesPriced": 1.24,
+        "enteredAt": "2026-09-25T11:18:09.786Z",
+        "effrCorrected": "2026-09-27: was 3.63, the monthly fed funds average that lagged the Sep 16 hike; FRED EFFR 3.88 from 2026-09-17"
       }
     ]
   },
@@ -424,7 +427,28 @@
     }
   },
   "ism": {
-    "latest": null,
-    "series": []
+    "latest": {
+      "period": "2026-08",
+      "manufacturing": 54.6,
+      "newOrders": 53.7,
+      "services": 55.4,
+      "asOf": "2026-09-01"
+    },
+    "series": [
+      {
+        "period": "2026-07",
+        "manufacturing": 55.6,
+        "newOrders": 56.7,
+        "services": null,
+        "asOf": "2026-08-03"
+      },
+      {
+        "period": "2026-08",
+        "manufacturing": 54.6,
+        "newOrders": 53.7,
+        "services": 55.4,
+        "asOf": "2026-09-01"
+      }
+    ]
   }
 }
