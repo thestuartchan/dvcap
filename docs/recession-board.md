@@ -65,6 +65,13 @@ primary source:
   Scenario weights, so added as a qualitative row and kept out of the average.
 - **FOMC** — the July-minutes row is replaced by the September decision: a 25bp hike, 12–0; SEP
   median funds rate 4.1 for end-2026 and end-2027.
-- **Moody's, EY-Parthenon, JPMorgan Research** — no dated primary figure found; still retired.
+- **Moody's (Zandi)** — 40% over 12 months, quoted directly from a TheStreet interview (reported
+  2026-05-20). Read, and left out: it predates the June peace deal that moved every other house
+  (Goldman 25% → 15%), and at 130 days old it would enter at 0.28 recency. Measured on 2026-09-27
+  it would lift the rolling consensus 14.3% → 16.5% and cut the alive share 73.6% → 64.4% — a
+  larger sizing haircut on a superseded view. A post-deal Zandi figure would go in.
+- **Goldman** — the operator's source (Yahoo Finance, 2026-07-01) confirms the 15% note; nothing
+  newer found on 2026-09-27.
+- **EY-Parthenon, JPMorgan Research** — no dated primary figure found; still retired.
 
 Next round: mid-December, after the Dec 8–9 SEP.
