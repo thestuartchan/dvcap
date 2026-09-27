@@ -56,7 +56,7 @@ const byRank = (key) => (a, b) => key ? ((a[key] ?? 99) - (b[key] ?? 99)) : 0;
 import { laborStress, sahmAnnotation, laborVerdict, laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead, quitsRead, revisionTrackerRead, twelveMonthAvgRead, ytdDivergenceRead } from "../lib/labor.js";
 import { handoffChain } from "../lib/handoff.js";
 import { coreSpread, monthName } from "../lib/inflation.js";
-import { pathReading, ladder, CAVEATS as FED_PATH_CAVEATS } from "../lib/fedpath.js";
+import { pathReading, ladder, CAVEATS as FED_PATH_CAVEATS, nextMeetingOdds } from "../lib/fedpath.js";
 import HOLIDAYS from "../data/holidays.json";
 import { SEC_YIELDS, PROXY, secYieldProxy, proxyDivergence, proxyError, ISSUER_PAGE, apyFromSec, billFromDiscount, BILL_DAYS, compareCash } from "../lib/cashyield.js";
 import { parseSecYieldPaste, parseYieldValue } from "../lib/fundYield.js";
@@ -2384,22 +2384,25 @@ function LaborPanel({ labor, depth = "full", extras = null, announced = false })
 // after each FOMC meeting / significant Fed communication. The five STATES
 // definitions are stable and only change on explicit request.
 const FED_LANGUAGE_STATUS = {
+  // No "tightening" state exists among the five below (they stop at hawkish_hold), and they change
+  // only on explicit request — so a HIKE is filed under the nearest one and said out loud in the
+  // decision/summary rather than by inventing a state.
   status: "hawkish_hold", // current state — update manually
-  lastUpdated: "2026-08-19",
-  lastEvent: "July FOMC minutes (released Aug 19) — hawkish upgrade",
-  decision: "HELD at 3.50–3.75% — fifth consecutive hold",
-  vote: "9–3",
-  dissents: "Hammack (Cleveland), Kashkari (Minneapolis), Logan (Dallas) — all three dissented FOR a 25bp HIKE",
-  dissentNote: "Aug 19 minutes show 'many participants' saw further tightening as likely necessary — so the three dissents UNDERSTATE the committee's hawkishness",
-  guidance: "NONE — Warsh continues removing forward guidance (\"family fight\", data-dependent). No new dot plot; next SEP is September. Warsh floated cutting FOMC meetings from 8 to 6 a year (no decision; 2026 schedule unaffected) — structurally significant: fewer meetings means larger moves per meeting.",
-  summary: "Hawkish hold, upgraded by the Aug 19 minutes: 'many participants' assessed further tightening would likely be necessary — a material step up from June's 'only a few', so the three hike dissents understate committee hawkishness. Warsh framed inflation as \"a choice\", reaffirmed the 2% target and rejected any \"soft or implicit\" target, and flagged labour-market downside as the two-sided risk. The Board also discussed an intermeeting incident that disrupted transaction settlements. September is live in both directions.",
-  bias: "Hold, hawkish bias, data-dependent — September live",
-  nextEvent: "Jackson Hole Aug 27–29 (Warsh Fri Aug 28) · FOMC Sept 15–16 (decision Sept 16)",
+  lastUpdated: "2026-09-27",
+  lastEvent: "September FOMC (decision Sep 16) — HIKED 25bp, unanimous · new SEP",
+  decision: "HIKED 25bp to 3.75–4.00% — the first move after five holds",
+  vote: "12–0",
+  dissents: "None — unanimous. The three July dissents (Hammack, Kashkari, Logan) were FOR this hike, and nobody dissented against it",
+  dissentNote: "A unanimous hike after a 9–3 hold: the July hawks carried the committee rather than splitting it",
+  guidance: "NONE in the statement — still no forward guidance (\"Today's policy action will support a timelier return to the Committee's 2 percent goal … The Committee will deliver price stability\"). The September SEP median puts the funds rate at 4.1 at end-2026 (one more 25bp hike) and 4.1 at end-2027, up from 3.8 and 3.6 in June; longer run 3.2. Median core PCE 3.4% for 2026 and 2.5% for 2027; unemployment 4.1%; GDP 2.3%.",
+  summary: "Tightening resumed. A unanimous 25bp hike on Sep 16 took the target range to 3.75–4.00%. The statement reads strength, not risk: activity \"expanding at a solid pace\", domestic spending \"resilient\", productivity \"strong\", capital investment \"robust\", job gains keeping pace with the workforce — and \"inflation remains elevated\". The dots moved up a full step: the 2026 median rose from 3.8 to 4.1 and 2027 from 3.6 to 4.1, so the committee's own path has one more hike this year and no cut next year. October 27–28 is live.",
+  bias: "Tightening, data-dependent — one more hike in the dots; October live",
+  nextEvent: "September minutes (three weeks after, ≈Oct 7) · FOMC Oct 27–28 (decision Oct 28, no SEP) · Dec 8–9 (SEP)",
+  source: "federalreserve.gov — FOMC statement of 2026-09-16 and the September 2026 Summary of Economic Projections (Table 1)",
 };
-// C3 — market-implied odds of a HIKE at the September FOMC. The single cleanest forward Fed metric.
-// Sourced from CME FedWatch / the Kalshi Fed contracts (manual — no keyless feed). Moved from ~57%
-// on the July decision day to ~34% after the August −23k payroll print.
-const SEP_HIKE_ODDS = { value: 31, prior: 57, asOf: "2026-08-24", source: "CME FedWatch / Kalshi Fed contracts", note: "≈57% on the July decision day → ≈31% after three soft prints in a week (jobs, CPI, PPI); the consensus has moved from two 2026 hikes to one. Odds of NO change are the complement; a cut is not being priced." };
+// C3 — market-implied odds at the NEXT FOMC. Was a hand-copied FedWatch figure (SEP_HIKE_ODDS,
+// last 2026-08-24) that kept rendering for a month after the September meeting it described had
+// hiked. Now derived live from the ZQ curve (lib/fedpath.js nextMeetingOdds).
 const FED_LANGUAGE_STATES = {
   hawkish_hold: {
     label: "🔴 Hawkish Hold",
@@ -5813,7 +5816,7 @@ export default function App() {
     manual: manualStore || {}, kofia: pbData?.asia?.kofia?.latest || null,
     consts: {
       consensusVintage: CONSENSUS_VINTAGE, recessionSources: effectiveRecessionSources, recessionCadence: RECESSION_SOURCE_CADENCE,
-      fedLanguage: FED_LANGUAGE_STATUS, sepOdds: SEP_HIKE_ODDS, secYields: SEC_YIELDS,
+      fedLanguage: FED_LANGUAGE_STATUS, secYields: SEC_YIELDS,
       fedPathFeed: liveInd?.fedPathFeed ?? null,
       analystBoard: { asOf: "2026-06-29", cadence: 90 }, recessionProse: { asOf: "2026-08-24", cadence: 30 },
       announced: {
@@ -7233,7 +7236,7 @@ export default function App() {
                 since, and the positioning reads differently against it. */}
             <div style={{ padding: "8px 11px", background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 8, fontSize: 11.5, color: C.mid, lineHeight: 1.6 }}>
               <b style={{ color: C.blue }}>Fed context since Jun 30: </b>
-              September hike odds <b>≈31%</b> (from ≈57% on the July decision day) after three soft prints in a week (jobs, CPI, PPI); consensus moved from two 2026 hikes to one. July FOMC was a <b>9–3 hold</b> with three regional presidents dissenting <i>for</i> a hike, and the Aug 19 minutes recorded "many participants" saw tightening as likely necessary — <b>more hawkish than the three dissents implied</b>. The book below was set before all of this.
+              July was a <b>9–3 hold</b> with three presidents dissenting <i>for</i> a hike, and the Aug 19 minutes said "many participants" saw tightening as likely necessary. On <b>Sep 16 the Fed hiked 25bp to 3.75–4.00%, 12–0</b>, and the September dots added one more hike for 2026 and no cut in 2027. The book below was set before all of this — every position in it was chosen against a Fed that was still holding.
             </div>
             {/* Cross-Fund Positioning Matrix — rendered above the fund selector (Fix 3) */}
             <Card>
@@ -7712,15 +7715,18 @@ export default function App() {
             {(() => {
               const bps = liveInd?.impliedCutsBps ?? null;
               const cf = liveInd?.currentFedFunds ?? null, tb = liveInd?.tbill6m ?? null;
-              const sept = SEP_HIKE_ODDS.value;
+              const nx = nextMeetingOdds(liveInd?.fedPathFeed ?? null);
+              const mtgLabel = nx ? new Date(nx.meeting + "T12:00:00Z").toLocaleString("en-US", { month: "long", day: "numeric", timeZone: "UTC" }) : null;
+              const sept = nx ? nx.hikePct : null;
               const sixDir = bps == null ? null : bps > 10 ? "dovish" : bps < 0 ? "hawkish" : "neutral";
               const sixLean = bps == null ? null : bps > 10 ? 1 : bps < 0 ? -1 : 0;
-              const septDir = sept <= 30 ? "dovish" : sept >= 45 ? "hawkish" : "neutral";
-              const septLean = sept <= 30 ? 1 : sept >= 45 ? -1 : 0;
+              const septDir = !nx ? null : nx.cutPct >= 30 || sept <= 30 ? "dovish" : sept >= 45 ? "hawkish" : "neutral";
+              const septLean = !nx ? null : septDir === "dovish" ? 1 : septDir === "hawkish" ? -1 : 0;
               let xread, xcol;
-              if (sixLean == null) { xread = "6-month path unavailable — showing the September read only."; xcol = C.muted; }
-              else if (sixLean !== 0 && septLean !== 0 && sixLean === septLean) { xread = `Aligned — both lean ${sixDir}. The near-term path and the September meeting point the same way.`; xcol = C.green; }
-              else if (sixLean !== 0 && septLean !== 0 && sixLean !== septLean) { xread = `Diverge — the 6-month path leans ${sixDir} but September-meeting odds lean ${septDir}. Trust the meeting read for September, the path for the trajectory.`; xcol = C.amber; }
+              if (septLean == null) { xread = "Next-meeting odds unavailable — the ZQ curve did not load."; xcol = C.muted; }
+              else if (sixLean == null) { xread = `6-month path unavailable — showing the ${mtgLabel} read only.`; xcol = C.muted; }
+              else if (sixLean !== 0 && septLean !== 0 && sixLean === septLean) { xread = `Aligned — both lean ${sixDir}. The near-term path and the ${mtgLabel} meeting point the same way.`; xcol = C.green; }
+              else if (sixLean !== 0 && septLean !== 0 && sixLean !== septLean) { xread = `Diverge — the 6-month path leans ${sixDir} but ${mtgLabel} meeting odds lean ${septDir}. Trust the meeting read for ${mtgLabel}, the path for the trajectory.`; xcol = C.amber; }
               else { xread = "Mixed / neutral — nothing decisively priced either way."; xcol = C.muted; }
               const dirCol = d => d === "dovish" ? C.green : d === "hawkish" ? C.red : C.muted;
               const row = (label, big, sub, col) => (
@@ -7735,19 +7741,19 @@ export default function App() {
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                     <SLabel>Fed pricing — what's priced for the Fed</SLabel>
                     <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>two market reads, cross-checked · ZQ futures path below</span>
-                    {/* The 6-month path is live from FRED. The meeting odds are a number a person copied
-                        from FedWatch/Kalshi on a date — a week's cadence is generous for odds on a
-                        meeting days away. */}
-                    <span style={{ marginLeft: "auto" }}><HandKept asOf={SEP_HIKE_ODDS.asOf} cadenceDays={7} what="from CME FedWatch / Kalshi — the meeting-odds row only" /></span>
+                    {/* Both rows are live now: the 6-month path from FRED, the meeting odds from the ZQ
+                        curve. The meeting row used to be copied from FedWatch by hand. */}
+                    {nx?.asOf && <span style={{ marginLeft: "auto", fontSize: 10.5, color: C.muted }}>ZQ settle {nx.asOf}</span>}
                   </div>
                   <div style={{ marginTop: 6 }}>
                     {row("6-month path", bps != null ? `${bps} bps` : "—", bps != null ? `${bps > 0 ? "cuts" : bps < 0 ? "hikes" : "flat"} priced · 6M bill ${tb != null ? tb.toFixed(2) : "—"}% vs funds ${cf != null ? cf.toFixed(2) : "—"}%` : "Fed funds / T-bill not loaded", bps != null ? dirCol(sixDir) : C.muted)}
-                    {row("September meeting", `${sept}%`, `implied hike odds · ${SEP_HIKE_ODDS.value < SEP_HIKE_ODDS.prior ? "↓" : "↑"} from ${SEP_HIKE_ODDS.prior}%`, dirCol(septDir))}
+                    {nx ? row(`${mtgLabel} meeting`, nx.cutPct > 0 ? `${nx.cutPct}% cut` : `${sept}%`, `${nx.cutPct > 0 ? "implied cut odds" : "implied hike odds"} · ${nx.contract} ZQ ${nx.impliedPost.toFixed(3)}% vs EFFR ${nx.effr.toFixed(2)}%`, dirCol(septDir))
+                        : row("Next meeting", "—", "ZQ curve not loaded", C.muted)}
                   </div>
                   <div style={{ marginTop: 8, padding: "8px 11px", background: xcol === C.amber ? C.aBg : xcol === C.green ? C.gBg : C.bg, border: "1px solid " + (xcol === C.amber ? C.aBdr : xcol === C.green ? C.gBdr : C.bdr), borderRadius: 8, fontSize: 12.5, fontWeight: 700, color: xcol, lineHeight: 1.5 }}>
                     Cross-check: {xread}
                   </div>
-                  <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 6, lineHeight: 1.5 }}>{SEP_HIKE_ODDS.note} <span style={{ color: C.muted }}>· Sept odds as of {SEP_HIKE_ODDS.asOf}, {SEP_HIKE_ODDS.source}.</span></div>
+                  {nx && <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 6, lineHeight: 1.5 }}>Read off {nx.method} ({nx.contract}): the post-meeting rate it implies, less today's EFFR, in quarter points. Risk-neutral, so close to — not exactly — a probability.</div>}
                 </Card>
               );
             })()}
@@ -7818,7 +7824,10 @@ export default function App() {
               );
             })()}
 
-            <FedPathCard effr={liveInd?.currentFedFunds ?? null} feed={liveInd?.fedPathFeed ?? null} />
+            {/* The DAILY EFFR from the feed, not the monthly fed funds average: after the Sep 16 hike the
+                monthly figure still read 3.63 and a hand-entered futures price was measured against it,
+                overstating "moves priced" by a full hike. */}
+            <FedPathCard effr={liveInd?.fedPathFeed?.effr ?? liveInd?.currentFedFunds ?? null} feed={liveInd?.fedPathFeed ?? null} />
             <InterventionToggle
               jpyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "JPY=X")?.changePct ?? null}
               dxyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "DX-Y.NYB")?.changePct ?? null}
@@ -8192,7 +8201,8 @@ export default function App() {
                   oil: liveInd?.oil ?? null,
                   gdpGrowth: liveInd?.gdpGrowth ?? null,
                   yieldSpread: liveInd?.yieldSpread ?? null,
-                  septHikeOdds: SEP_HIKE_ODDS?.value ?? null,
+                  nextHikeOdds: nextMeetingOdds(liveInd?.fedPathFeed ?? null)?.hikePct ?? null,
+                  nextMeetingLabel: (() => { const o = nextMeetingOdds(liveInd?.fedPathFeed ?? null); return o ? new Date(o.meeting + "T12:00:00Z").toLocaleString("en-US", { month: "short", timeZone: "UTC" }) : null; })(),
                   fedHawkish: /hawkish/i.test(FED_LANGUAGE_STATUS?.status || ""),
                   capexRising: true,   // big-four 2026 ~$725B (+77% YoY) — Smart Money tab, sourced
                   unemployment: laborView?.u3?.value ?? liveInd?.unemployment ?? null,

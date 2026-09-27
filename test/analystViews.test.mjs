@@ -17,7 +17,7 @@ const ev = evaluateViews(buildViews(NOW));
 eq('Goldman: under pressure (2/4, own flag fired)', find(ev, 'Goldman Sachs').verdict, 'under pressure');
 eq('Goldman: critical condition broken',            find(ev, 'Goldman Sachs').criticalBroken, true);
 eq('NY Fed curve: holding',                          find(ev, 'NY Fed Yield Curve Model').verdict, 'holding');
-eq('FOMC minutes: holding',                          find(ev, 'July FOMC Minutes').verdict, 'holding');
+eq('September FOMC: holding',                       find(ev, 'September FOMC').verdict, 'holding');
 eq('JPMorgan: void (oil-shock condition false)',     find(ev, 'JPMorgan').verdict, 'void');
 eq("Moody's: void",                                  find(ev, "Moody's Analytics (Zandi)").verdict, 'void');
 eq('cluster on reflationary',                        regimeCluster(ev).top, 'ref');
@@ -43,7 +43,7 @@ eq('void contributes nothing', VERDICT_WEIGHT.void, 0);
 // Benign path: Goldman's thesis fully intact, the hawkish-Fed thesis dies.
 const benign = evaluateViews(buildViews({ ...NOW, gdpGrowth: 2.4, septHikeOdds: 10, fedHawkish: false }));
 eq('benign: Goldman holding',  find(benign, 'Goldman Sachs').verdict, 'holding');
-eq('benign: FOMC thesis void', find(benign, 'July FOMC Minutes').verdict, 'void');
+eq('benign: FOMC thesis void', find(benign, 'September FOMC').verdict, 'void');
 
 // Missing inputs render n/a — never counted as met, never as a clean miss.
 eq('no live data -> unverifiable', find(evaluateViews(buildViews({})), 'NY Fed Yield Curve Model').verdict, 'unverifiable');

@@ -51,3 +51,20 @@ two of them is an absence of evidence rather than agreement.
 Dispersion now names the count — *"only 2 independent views — too few to disagree, so 0pp of spread
 is not consensus"* — and carries a `thin` flag below `THIN_PANEL` (3), the smallest panel where one
 source can be the odd one out and still leave two to form a view.
+
+## Refresh log
+
+**2026-09-27 — September round** (after the Sep 16 SEP). Every hand-kept row re-read from its
+primary source:
+
+- **Goldman Sachs** — still 15%; no print newer than the note that cut 25% → 15% ("Global Views: More
+  Crude, Less Concern", reported 1 Jul).
+- **NY Fed DSGE** — the September forecast (Liberty Street Economics, 18 Sep) again states no
+  recession probability (growth 1.2% for 2026, 0.1% for 2027). Stays retired.
+- **J.P. Morgan Asset Management** — 3Q Global Fixed Income Views (22 Sep): Recession 5%, Crisis 10%.
+  Scenario weights, so added as a qualitative row and kept out of the average.
+- **FOMC** — the July-minutes row is replaced by the September decision: a 25bp hike, 12–0; SEP
+  median funds rate 4.1 for end-2026 and end-2027.
+- **Moody's, EY-Parthenon, JPMorgan Research** — no dated primary figure found; still retired.
+
+Next round: mid-December, after the Dec 8–9 SEP.
