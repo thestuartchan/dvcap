@@ -4,7 +4,7 @@
 // "1.3 × 25bp HIKES priced vs EFFR 3.63%", "ZQ 96.045". Every line true, and together they still do
 // not say what to do with "1.3 hikes" — which is not a thing that can happen. The Fed moves in
 // quarter points, so a fractional count is a probability wearing the clothes of a forecast.
-import { zqImpliedRate, zqMovesPriced, pathReading, ladder, article, STEP_PP, FLAT_MOVES, CAVEATS } from '../lib/fedpath.js';
+import { zqImpliedRate, zqMovesPriced, pathReading, ladder, article, STEP_PP, FLAT_MOVES, CAVEATS, nextMeetingOdds, FOMC_DECISIONS } from '../lib/fedpath.js';
 import { assertObservational } from '../lib/read.js';
 
 let pass = 0, fail = 0;
@@ -85,6 +85,30 @@ const EFFR = 3.63;
   // The card sits on a trading surface: an explanation is not licence to start advising.
   for (const c of CAVEATS) ok(`observational: "${c.slice(0, 40)}"`, assertObservational(c).ok);
   ok('and the reading itself is too', assertObservational(pathReading(3.955, EFFR, { contract: 'December' }).sentence).ok);
+}
+
+// ── THE NEXT MEETING, FROM THE CURVE ─────────────────────────────────────────
+{
+  // The feed as it stood on 2026-09-25 (after the Sep 16 hike; EFFR 3.88).
+  const feed = { effr: 3.88, asOf: '2026-09-25', contracts: [
+    { label: 'Sep-2026', month: '2026-09', impliedRate: 3.745, date: '2026-09-25' },
+    { label: 'Oct-2026', month: '2026-10', impliedRate: 3.89, date: '2026-09-25' },
+    { label: 'Nov-2026', month: '2026-11', impliedRate: 4.035, date: '2026-09-25' },
+    { label: 'Dec-2026', month: '2026-12', impliedRate: 4.18, date: '2026-09-25' },
+  ] };
+  const o = nextMeetingOdds(feed, { today: '2026-09-27' });
+  eq('the next decision after Sep 27 is Oct 28', o.meeting, '2026-10-28');
+  eq('read off November, which holds no meeting', [o.contract, o.method], ['Nov-2026', 'the month after, which holds no meeting']);
+  eq('0.62 of a hike → 62% odds (Kalshi traded 65–66¢ the same weekend)', [o.moves, o.hikePct, o.cutPct], [0.62, 62, 0]);
+  // December 9: January holds a meeting, so December itself, day-weighted (9 days old, 22 new).
+  const d = nextMeetingOdds({ ...feed, effr: 4.13 }, { today: '2026-10-29' });
+  eq('December reads its own month, day-weighted', [d.meeting, d.contract, d.method], ['2026-12-09', 'Dec-2026', 'the meeting month, day-weighted']);
+  eq('4.18 average with 9 of 31 days at 4.13 → post-meeting ≈4.20, 0.28 of a hike', [d.impliedPost, d.moves, d.hikePct], [4.2, 0.28, 28]);
+  eq('a cut is priced as a cut', nextMeetingOdds({ ...feed, contracts: [{ label: 'Nov-2026', month: '2026-11', impliedRate: 3.755 }] }, { today: '2026-09-27' }).cutPct, 50);
+  eq('no EFFR, no reading', nextMeetingOdds({ contracts: feed.contracts }, { today: '2026-09-27' }), null);
+  eq('no contract for the meeting, no reading', nextMeetingOdds({ effr: 3.88, contracts: [] }, { today: '2026-09-27' }), null);
+  eq('past the published calendar, no reading', nextMeetingOdds(feed, { today: '2028-01-01' }), null);
+  ok('the calendar is in order', FOMC_DECISIONS.every((x, i) => i === 0 || x > FOMC_DECISIONS[i - 1]));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
