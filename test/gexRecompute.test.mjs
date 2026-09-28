@@ -9,6 +9,10 @@ const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
   const rec = recomputeRecord('QQQ', { ok: true, row: { flipLevel: 730 }, byStrike: [1], grid: null, iv: 'cboe', extra: 'x' }, '2026-09-28T19:00:00Z');
   eq('the record carries what the panel draws and nothing else',
      Object.keys(rec), ['symbol', 'at', 'mode', 'row', 'byStrike', 'grid', 'decay', 'levels', 'crossCheck', 'oi', 'iv', 'spotSource', 'contracts']);
+  const rp = recomputeRecord('SPY', { ok: true, mode: 'repriced', row: { flipLevel: 760 }, repricedFrom: '2026-09-25', capturedAt: '2026-09-26T00:23:49Z', liveIv: 0.02, expiredSinceCapture: 3, reason: 'OI 0%' }, '2026-09-28T14:00:00Z');
+  eq('the Yahoo fallback is kept too, with what its "repriced from" note needs',
+     [rp.mode, rp.repricedFrom, rp.capturedAt, rp.liveIv, rp.expiredSinceCapture, rp.reason], ['repriced', '2026-09-25', '2026-09-26T00:23:49Z', 0.02, 3, 'OI 0%']);
+  eq('a fresh Yahoo chain keeps its mode and carries no note', [recomputeRecord('QQQ', { ok: true, mode: 'fresh', row: {} }).mode, 'repricedFrom' in recomputeRecord('QQQ', { ok: true, mode: 'fresh', row: {} })], ['fresh', false]);
   eq('a refused recompute is not kept', [recomputeRecord('QQQ', { ok: false, reason: 'x' }), recomputeRecord('QQQ', { ok: true })], [null, null]);
   const now = new Date('2026-09-28T19:05:00Z');
   const stored = { date: '2026-09-28', asOf: '2026-09-28T15:40:00Z' };
