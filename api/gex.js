@@ -34,7 +34,17 @@ export default async function handler(req, res) {
     // CDN fetch, which is cheap but not free, and a caller that only wants the flip should not pay
     // for a second opinion it is going to ignore.
     const compare = String(req.query?.compare ?? '') !== '0';
-    const out = await captureGex({ symbols, dry: req.query?.dry === '1', session, compare });
+    const dry = req.query?.dry === '1';
+    const out = await captureGex({ symbols, dry, session, compare });
+    // The panel's fallback rung — Yahoo, when the settled book cannot answer. Kept the same way as
+    // the settled recompute (LAST_RECOMPUTE_KEY), for the same reason; a scheduled capture writes
+    // the series itself and has nothing to keep.
+    if (dry && out?.ok && await authorised(req)) {
+      for (const r of out.results || []) {
+        const rec = recomputeRecord(r.symbol, r);
+        if (rec) { try { await kvSetJsonEx(LAST_RECOMPUTE_KEY(r.symbol), rec, LAST_RECOMPUTE_TTL_SEC); } catch { /* the board still returns */ } }
+      }
+    }
     return res.status(200).json(out);
   }
 
