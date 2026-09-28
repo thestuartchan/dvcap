@@ -9,8 +9,9 @@
 //   GET /api/gex?symbol=QQQ          read the stored series (default)
 //   GET /api/gex?snapshot=1[&dry=1]  capture today's chain — the cron target
 //   GET /api/gex?custom=INTC         one typed name, on demand, nothing stored (gated)
-import { kvConfigured, kvGetJson } from '../lib/kv.js';
-import { captureGex, readGex, settledGex, observeRoll, OCC_ROLL_LOG_KEY, OCC_HEALTH_KEY, GEX_SYMBOLS, CUSTOM_ROOT_RE } from '../lib/gexStore.js';
+import { kvConfigured, kvGetJson, kvSetJsonEx } from '../lib/kv.js';
+import { captureGex, readGex, settledGex, observeRoll, OCC_ROLL_LOG_KEY, OCC_HEALTH_KEY, GEX_SYMBOLS, CUSTOM_ROOT_RE,
+         LAST_RECOMPUTE_KEY, LAST_RECOMPUTE_TTL_SEC, recomputeRecord, newerRecompute } from '../lib/gexStore.js';
 import { instrumentKind } from '../lib/catalyst.js';
 import { authorised, refusalReason } from '../lib/apiauth.js';
 import { getQuotes } from '../lib/quotes.js';
@@ -163,6 +164,11 @@ export default async function handler(req, res) {
       } catch { return null; }   // settledGex falls back to CBOE's, and the footer names it
     };
     const results = [];
+    // KEPT, NOT WRITTEN INTO THE SERIES. A signed-in recompute of the book pair is saved on its own
+    // expiring key so the next page load shows it rather than the older scheduled capture (see
+    // LAST_RECOMPUTE_KEY). Signed-in only: an anonymous caller does not get to decide what the
+    // panel opens on.
+    const keep = await authorised(req);
     for (const sym of syms) {
       // The stored row's expiries, so the settled map covers the same book as the series it sits
       // beside — otherwise the two disagree about the flip for reasons that are about coverage.
@@ -172,11 +178,15 @@ export default async function handler(req, res) {
         expiries: stored?.latest?.expiries || null,
       });
       results.push({ symbol: sym, ...out });
+      const rec = keep ? recomputeRecord(sym, { ...out, mode: 'settled' }) : null;
+      if (rec) { try { await kvSetJsonEx(LAST_RECOMPUTE_KEY(sym), rec, LAST_RECOMPUTE_TTL_SEC); } catch { /* the board still returns */ } }
     }
     return res.status(200).json({ mode: 'settled', at: new Date().toISOString(), results });
   }
 
   const symbol = String(req.query?.symbol || 'QQQ').toUpperCase();
   if (!GEX_SYMBOLS.includes(symbol)) return res.status(400).json({ error: `unknown symbol ${symbol}` });
-  return res.status(200).json(await readGex(symbol));
+  const stored = await readGex(symbol);
+  const rec = await kvGetJson(LAST_RECOMPUTE_KEY(symbol)).catch(() => null);
+  return res.status(200).json({ ...stored, recompute: newerRecompute(stored.latest, rec) });
 }
