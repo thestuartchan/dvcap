@@ -65,8 +65,43 @@ async function resolveFuture(raw, p) {
 
 const MAX_SYMBOLS = 24;   // the console asks for its open rows, not a universe
 
+// ── ?history=1&tickers=A,B — DAILY CLOSES, FOR THE FACTOR PANEL ──────────────
+// The one mode here that returns the bars rather than a summary of them: the console regresses the
+// book's daily P&L on seven factors (lib/factorExposure.js) and needs each line's closes and each
+// factor's. Closes only, as [date, close] pairs — the smallest shape that answers the question.
+// Public like the rest of this route: a ticker's price history is not account state, and nothing
+// here says what is held or how much. Three at a time: the keyless feed refuses a burst of thirty,
+// and one at a time is thirty round trips.
+const HISTORY_MAX = 40;
+const HISTORY_RANGES = new Set(['3mo', '6mo', '1y']);
+async function closeHistory(list, range) {
+  const out = {};
+  for (let i = 0; i < list.length; i += 3) {
+    if (i > 0) await new Promise(r => setTimeout(r, 120));
+    await Promise.all(list.slice(i, i + 3).map(async (sym) => {
+      try {
+        const d = await yahooDailyOHLCDetailed(sym, range);
+        out[sym] = d.ok
+          ? { status: 'ok', closes: d.bars.map(b => [b.date, b.close]), name: d.name ?? null }
+          : { status: d.status, httpStatus: d.httpStatus ?? null };
+      } catch (e) {
+        out[sym] = { status: 'fetch-failed', error: String(e?.name || e).slice(0, 60) };
+      }
+    }));
+  }
+  return out;
+}
+
 export default async function handler(req, res) {
-  const { tickers, period, future, cta } = req.query || {};
+  const { tickers, period, future, cta, history, range } = req.query || {};
+  if (String(history || '') === '1') {
+    if (!tickers) return res.status(400).json({ error: 'Missing tickers' });
+    const list = [...new Set(String(tickers).split(',').map(t => t.trim()).filter(Boolean))].slice(0, HISTORY_MAX);
+    const rg = HISTORY_RANGES.has(String(range)) ? String(range) : '6mo';
+    // An hour: the last bar is today's and moves until the close; the rest never will.
+    res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=21600');
+    return res.status(200).json({ range: rg, at: new Date().toISOString(), symbols: await closeHistory(list, rg) });
+  }
   if (String(cta || '') === '1') {
     try {
       res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=1800');

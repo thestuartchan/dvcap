@@ -58,6 +58,7 @@ import { companyName } from "../lib/companyNames.js";
 import { tickerHint, resolvedLabel } from "../lib/tickerHints.js";
 import { moveGroupOnto } from "../lib/reorder.js";
 import { syncStatus } from "../lib/flexStatus.js";
+import { FACTORS, FACTOR_SYMBOLS, TAGS, tagOf, holdingsOf, factorExposure, scenarioPnl, overnightFlag } from "../lib/factorExposure.js";
 
 // Shown in the sizing note; kept a constant so the copy and the cap cannot drift apart.
 const CREDIT_DANGER_CAP_LABEL = `×${CREDIT_DANGER_CAP.toFixed(2)}`;
@@ -420,6 +421,7 @@ const {
   // edge, a tag before the ticker, and (for options) the contract chip. Shares stay as they were;
   // they are most of the book and an unmarked row is the default. A hit level or an urgent date
   // still takes the edge, because that is what needs doing.
+  const overnight = overnightFlag(r, { open: mode === "open" });
   const kind = o ? { tag: o.instrument === "spread" ? "SPREAD" : "OPTION", col: P.violet700, bg: P.violet50, bdr: P.violet300 }
     : r.margined ? { tag: "FUTURE", col: P.teal700, bg: P.teal50, bdr: P.teal300 } : null;
   // DRAG FROM THE GRIP, NOT THE ROW. The row body opens and closes on click, and making the whole
@@ -490,6 +492,8 @@ const {
           {kind && <span title={kind.tag === "FUTURE" ? "a futures contract" : `an ${kind.tag === "SPREAD" ? "options spread" : "option"} on ${r.symbol}`}
             style={{ alignSelf: "center", fontSize: 9.5, fontWeight: 900, letterSpacing: 0.6, color: kind.col, background: kind.bg, border: "1px solid " + kind.bdr, borderRadius: 5, padding: "1px 5px", whiteSpace: "nowrap" }}>{kind.tag}</span>}
           <b style={{ fontSize: 15 }}>{r.symbol}</b>
+          {tagOf(r) && <span title="what this line is for — set in the row" style={{ alignSelf: "center", fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, color: C.mid, background: C.bg, border: "1px solid " + C.bdr, borderRadius: 5, padding: "1px 5px", textTransform: "uppercase", whiteSpace: "nowrap" }}>{tagOf(r)}</span>}
+          {overnight && <span title={`${overnight.text} — info only`} style={{ alignSelf: "center", fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, color: C.amber, background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 5, padding: "1px 5px", whiteSpace: "nowrap" }}>HELD PAST SESSION</span>}
           {/* A label that just restates the ticker ("AMD" on AMD) is noise, so it is dropped. */}
           {r.trade && r.trade.trim().toUpperCase() !== r.symbol.toUpperCase()
             ? <span style={{ fontSize: 11.5, color: C.mid, fontWeight: 700, background: C.bg, border: "1px solid " + C.bdr, borderRadius: 6, padding: "1px 7px", whiteSpace: "nowrap" }}>{r.trade}</span> : null}
@@ -725,6 +729,14 @@ const {
             <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Trade label<br />
               <input value={r.trade || ""} onChange={e => upd(r.id, { trade: e.target.value })} placeholder="e.g. Aug 18 entry"
                 style={{ width: 120, padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
+            {/* WHAT THE LINE IS FOR. The factor panel's oil-shock coverage is the lines tagged hedge;
+                a future or leveraged ETF carried overnight under anything but swing is flagged. */}
+            <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Tag<br />
+              <select value={tagOf(r) || ""} onChange={e => upd(r.id, { tag: e.target.value || null })}
+                style={{ padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }}>
+                <option value="">—</option>
+                {TAGS.map(t => <option key={t} value={t}>{t}</option>)}
+              </select></label>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
             {/* DIRECTION, EDITABLE — because a mislabelled row has to be FIXABLE. The geometry
@@ -2208,6 +2220,187 @@ const isStale = (asOf) => {
 // Risk coverage rides in this card as its second half (children): one answers "what am I
 // carrying", the other "what does a stop-out cost", and the gap between them is the read. With no
 // greeks book, coverage still gets a card of its own.
+// ── FACTOR EXPOSURE — WHAT THE BOOK HAS ACTUALLY DONE ────────────────────────
+// Read-only. The exposure tile above is what the deltas say the book carries; this is what its
+// realised daily P&L says it did, against seven macro factors, over 20 and 60 sessions — and what
+// an oil-shock day would cost with the lines tagged hedge set against the rest. The maths, and
+// what it cannot see, are in lib/factorExposure.js.
+const FACTOR_LOOKBACK_DAYS = 100;
+const numOr = (v, d) => (Number.isFinite(+v) && +v > 0 ? +v : d);
+function FactorPanel({ rows, toBase, nlv, baseCcy, today }) {
+  const [mode, setMode] = useState("held");
+  const [open, setOpen] = useState(null);
+  const [hist, setHist] = useState({ state: "idle", symbols: {}, key: "" });
+  const since = new Date(Date.parse(today + "T00:00:00Z") - FACTOR_LOOKBACK_DAYS * 86400000).toISOString().slice(0, 10);
+  // A line is any row held at some close inside the window: open now, or closed recently enough
+  // that its days are still in the 60. Watching rows hold nothing.
+  const specs = useMemo(() => rows.filter(r => (r.fills || []).length && (r.state === "OPEN" ||
+      String(r.derived?.lastDate || "").slice(0, 10) >= since)).map(r => {
+    const holdings = holdingsOf(r);
+    const base = { id: r.id, label: r.symbol + (r.trade && r.trade.trim().toUpperCase() !== r.symbol.toUpperCase() ? ` · ${r.trade}` : ""),
+                   tag: tagOf(r), symbol: quoteSym(r), holdings, qtyNow: r.state === "OPEN" ? (holdings.at(-1)?.[1] ?? 0) : 0 };
+    if (isHlPerp(r.symbol)) return { ...base, skip: "no daily history (Hyperliquid)" };
+    const fx = toBase(1, r);
+    if (fx == null) return { ...base, skip: `no ${r.currency} rate` };
+    if (isDerivativeRow(r)) {
+      const d = r.opt?.netDelta;
+      if (d == null) return { ...base, skip: "no delta yet" };
+      // The holdings carry the direction; the combo delta must not carry it twice.
+      return { ...base, perUnit: d * (isShort(r.side) ? -1 : 1) * (r.opt?.multiplier || numOr(r.multiplier, 100)), fx, option: true };
+    }
+    return { ...base, perUnit: numOr(r.multiplier, 1), fx };
+  }), [rows, toBase, since]);
+  const wanted = [...new Set([...FACTOR_SYMBOLS, ...specs.filter(l => !l.skip).map(l => l.symbol)])].sort();
+  const key = wanted.join(",");
+  useEffect(() => {
+    if (!wanted.length || hist.key === key) return;
+    let dead = false;
+    (async () => {
+      try {
+        const got = {};
+        for (let i = 0; i < wanted.length; i += 40) {
+          const r = await fetch(`/api/atr?history=1&range=6mo&tickers=${encodeURIComponent(wanted.slice(i, i + 40).join(","))}`);
+          const j = await r.json();
+          Object.assign(got, j?.symbols || {});
+        }
+        if (!dead) setHist({ state: "ok", symbols: got, key });
+      } catch (e) {
+        if (!dead) setHist({ state: "error", symbols: {}, key, err: String(e?.message || e) });
+      }
+    })();
+    return () => { dead = true; };
+  }, [key]);   // eslint-disable-line
+
+  // Loading is derived, not set: the answer on hand is for a different set of symbols.
+  const loading = !!wanted.length && hist.key !== key;
+  const factorCloses = useMemo(() => Object.fromEntries(FACTORS.map(f => [f.id, hist.symbols[f.symbol]?.closes || []])), [hist]);
+  const lines = useMemo(() => specs.map(l => ({ ...l, closes: l.skip ? [] : (hist.symbols[l.symbol]?.closes || []) })), [specs, hist]);
+  const fx = useMemo(() => hist.state === "ok" ? factorExposure({ factorCloses, lines, nlv, mode }) : null, [factorCloses, lines, nlv, mode, hist.state]);
+  const sc = useMemo(() => hist.state === "ok" ? scenarioPnl({ factorCloses, lines }) : null, [factorCloses, lines, hist.state]);
+  const flags = rows.map(r => ({ r, f: overnightFlag(r, { today, open: r.state === "OPEN" }) })).filter(x => x.f);
+  if (!specs.length && !flags.length) return null;
+
+  const usd = (v) => v == null ? "—" : fmtCcy(v, baseCcy);
+  const signed = (v) => v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + fmtCcy(Math.abs(v), baseCcy);
+  const col = (v) => v == null || Math.abs(v) < 0.5 ? C.mid : v > 0 ? C.green : C.red;
+  const w20 = fx?.ok ? Object.fromEntries(fx.windows[20].map(x => [x.factor, x])) : {};
+  const w60 = fx?.ok ? Object.fromEntries(fx.windows[60].map(x => [x.factor, x])) : {};
+  const th = { fontSize: 10, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4, textAlign: "right", padding: "4px 6px", whiteSpace: "nowrap" };
+  const td = { fontSize: 12, textAlign: "right", padding: "5px 6px", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" };
+  const cells = (x, edge = false) => { const t0 = edge ? { ...td, borderLeft: "1px solid " + C.bdr } : td; return x?.usdPerUnit == null ? [<td key="b" style={t0}>—</td>, <td key="r" style={td}>—</td>, <td key="u" style={td}>—</td>] : [
+    <td key="b" style={{ ...t0, fontWeight: 800 }}>{x.beta == null ? "—" : x.beta.toFixed(2)}</td>,
+    <td key="r" style={{ ...td, color: x.r2 < 0.1 ? C.muted : C.mid }}>{x.r2.toFixed(2)}</td>,
+    <td key="u" style={{ ...td, color: col(x.usdPerUnit), fontWeight: 700 }}>{signed(x.usdPerUnit)}</td>,
+  ]; };
+  const shockText = sc?.ok ? Object.entries(sc.shocks).map(([k, v]) => {
+    const f = FACTORS.find(x => x.id === k);
+    return `${f.label.replace(" front", "")} ${v > 0 ? "+" : "−"}${Math.abs(v)}${f.kind === "bp" ? "bp" : "%"}`;
+  }).join(" · ") : "";
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+        <SLabel>Factor exposure</SLabel>
+        <span style={{ fontSize: 11.5, color: C.muted }}>realised — daily book P&amp;L from the fills × closes, regressed on each factor</span>
+        <span style={{ marginLeft: "auto", display: "inline-flex", gap: 4 }}>
+          {[["held", "as held"], ["current", "today's book"]].map(([k, t]) => (
+            <button key={k} onClick={() => setMode(k)} title={k === "held" ? "each day's P&L on the position held at the previous close" : "today's quantities, back through the window"}
+              style={{ cursor: "pointer", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 6,
+                       border: "1.5px solid " + (mode === k ? C.blue : C.bdr), background: mode === k ? C.blBg : C.surf, color: mode === k ? C.blue : C.mid }}>{t}</button>
+          ))}
+        </span>
+      </div>
+      {loading && <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>pulling six months of daily closes…</div>}
+      {hist.state === "error" && <div style={{ fontSize: 12, color: C.amber, marginTop: 8 }}>⚠ price history unavailable — {hist.err}</div>}
+      {fx && !fx.ok && <div style={{ fontSize: 12, color: C.amber, marginTop: 8 }}>⚠ {fx.reason}</div>}
+      {fx?.ok && (<>
+        <div style={{ overflowX: "auto", marginTop: 8 }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 560 }}>
+            <thead>
+              <tr>
+                <th style={{ ...th, textAlign: "left" }}>Factor</th>
+                <th style={th} colSpan={3}>20 sessions</th>
+                <th style={{ ...th, borderLeft: "1px solid " + C.bdr }} colSpan={3}>60 sessions</th>
+                <th style={{ ...th, textAlign: "left" }}>Driven by (60d)</th>
+              </tr>
+              <tr>
+                <th style={th} />
+                <th style={{ ...th, textTransform: "none" }} title="book % per unit move">β</th><th style={th}>R²</th><th style={th}>$ / unit</th>
+                <th style={{ ...th, textTransform: "none", borderLeft: "1px solid " + C.bdr }} title="book % per unit move">β</th><th style={th}>R²</th><th style={th}>$ / unit</th>
+                <th style={th} />
+              </tr>
+            </thead>
+            <tbody>
+              {FACTORS.map(f => {
+                const a = w20[f.id], b = w60[f.id], isOpen = open === f.id;
+                return (
+                  <Fragment key={f.id}>
+                    <tr onClick={() => setOpen(isOpen ? null : f.id)} style={{ cursor: "pointer", borderTop: "1px solid " + C.bdr, background: isOpen ? C.bg : "transparent" }}>
+                      <td style={{ ...td, textAlign: "left", fontWeight: 800 }}>{isOpen ? "▾" : "▸"} {f.label} <span style={{ fontWeight: 500, color: C.muted, fontSize: 11 }}>per {f.unit}</span></td>
+                      {cells(a)}
+                      {cells(b, true)}
+                      <td style={{ ...td, textAlign: "left", color: C.mid, fontSize: 11.5 }}>{(b?.top || []).length ? b.top.slice(0, 2).map((t, i) => <span key={t.id}>{i ? ", " : ""}{t.label.split(" · ")[0]} <span style={{ color: col(t.usd) }}>{signed(t.usd)}</span></span>) : "—"}</td>
+                    </tr>
+                    {isOpen && (
+                      <tr style={{ background: C.bg }}>
+                        <td colSpan={8} style={{ padding: "4px 10px 10px 22px" }}>
+                          <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
+                            {[[20, a], [60, b]].map(([w, x]) => (
+                              <div key={w} style={{ minWidth: 220 }}>
+                                <div style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>top 5 · {w} sessions · $ per {f.unit}</div>
+                                {(x?.top || []).length ? x.top.map(t => (
+                                  <div key={t.id} style={{ display: "flex", gap: 8, fontSize: 12, marginTop: 3 }}>
+                                    <span style={{ flex: 1 }}>{t.label}{t.tag ? <span style={{ color: C.muted, fontSize: 10.5 }}> · {t.tag}</span> : null}</span>
+                                    <b style={{ color: col(t.usd), fontVariantNumeric: "tabular-nums" }}>{signed(t.usd)}</b>
+                                  </div>
+                                )) : <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>no line moved with it</div>}
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {sc?.ok && (
+          <div style={{ marginTop: 10, paddingTop: 9, borderTop: "1px solid " + C.bdr }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+              <b style={{ fontSize: 12.5 }}>{sc.scenario}</b>
+              <span style={{ fontSize: 11.5, color: C.muted }}>{shockText} · today's book, 60-session loadings</span>
+            </div>
+            <div style={{ display: "flex", gap: 22, flexWrap: "wrap", marginTop: 6, alignItems: "baseline" }}>
+              <span style={{ fontSize: 12 }}>Book <b style={{ fontSize: 16, color: col(sc.book) }}>{signed(sc.book)}</b></span>
+              <span style={{ fontSize: 12 }}>Hedges <b style={{ fontSize: 16, color: col(sc.hedge) }}>{signed(sc.hedge)}</b></span>
+              <span style={{ fontSize: 12 }}>Coverage <b style={{ fontSize: 16, color: sc.coverage == null ? C.mid : sc.coverage >= 50 ? C.green : C.amber }}>
+                {sc.coverage == null ? "—" : `${sc.coverage}%`}</b>
+                <span style={{ color: C.muted, fontSize: 11 }}> {sc.coverage == null ? (sc.hedges.length ? "the rest of the book does not lose on this day" : "no line tagged hedge") : `hedges ÷ the ${usd(-sc.exposed)} the rest loses`}</span></span>
+            </div>
+            {sc.hedges.length > 0 && (
+              <div style={{ fontSize: 11.5, color: C.mid, marginTop: 5 }}>
+                hedge lines: {sc.hedges.map((h, i) => <span key={h.id}>{i ? " · " : ""}{h.label} <b style={{ color: col(h.usd) }}>{signed(h.usd)}</b></span>)}
+              </div>
+            )}
+          </div>
+        )}
+        <div style={{ fontSize: 10.5, color: C.muted, marginTop: 9, lineHeight: 1.5 }}>
+          β is book % per unit move on {nlv ? usd(nlv) : "NLV (set account equity for β)"}; $ / unit is the slope itself. {fx.first} → {fx.last}, {fx.sessions} sessions{fx.short ? " — fewer than 60, so the 60 is what there is" : ""}.
+          Close to close, so intraday trades do not count. Options at today's delta on the underlying; futures on the continuous front month, roll days included.
+          {fx.skipped.length > 0 && <> Not in it: {fx.skipped.map(s => `${s.label} (${s.why})`).join(", ")}.</>}
+        </div>
+      </>)}
+      {flags.length > 0 && (
+        <div style={{ marginTop: 9, paddingTop: 8, borderTop: "1px solid " + C.bdr, fontSize: 11.5, color: C.amber }}>
+          {flags.map(({ r, f }) => <div key={r.id}>● {r.symbol} — {f.text}</div>)}
+          <div style={{ color: C.muted, fontSize: 10.5, marginTop: 2 }}>info only — tag it swing if that is what it is</div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function ExposureTile({ book, err, children = null }) {
   if (!book?.available) return children ? <Card>{children}</Card> : null;
   const L = book.limits;
@@ -3331,6 +3524,7 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
         levels: Array.isArray(r.levels) ? r.levels : [],
         fills: Array.isArray(r.fills) ? r.fills.map(f => (f && f.tradeId) ? { ...f, tradeId: String(f.tradeId).slice(0, 24) } : f) : [],
         tags: Array.isArray(r.tags) ? r.tags : [],
+        tag: tagOf(r),
       })).filter(r => r.symbol);
       if (mode === "replace") setRows(clean);
       else {
@@ -3975,6 +4169,9 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
         </div>
         )}
       </ExposureTile>
+
+      {/* ── FACTOR EXPOSURE ── realised betas and the oil-shock day, beside the delta view above. */}
+      <FactorPanel rows={derivedRows} toBase={toBase} nlv={equityBase} baseCcy={baseCcy} today={todayISO} />
 
       {/* ── P4 — RISK COVERAGE ──
           Three numbers, same units, never summed, and never collapsed into one. A single
