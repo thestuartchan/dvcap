@@ -2198,18 +2198,28 @@
       "reflationary_p": 17,
       "deflationary_p": 13,
       "inflationary_p": 5,
-      "hawkish_repricing": null,
+      "hawkish_repricing": "INFLATIONARY_BOOM",
       "live_regime": "stag",
-      "view_regime": null,
-      "pinned": null,
-      "hyg_chg": null,
-      "hyg_qqq_divergence": null,
+      "view_regime": "stag",
+      "pinned": false,
+      "hyg_chg": -0.04,
+      "hyg_qqq_divergence": -0.5,
       "inputs": {
         "weightedRecessionProb": 14.3,
         "cpi": 3.35302,
         "kalshi2027": 22,
-        "tape": null,
-        "ladderSpread": null,
+        "tape": {
+          "gold": "up",
+          "tlt": "down",
+          "xlu": "up",
+          "xlp": "up",
+          "spy": "up",
+          "qqq": "up",
+          "iwm": "up",
+          "btc": "up",
+          "breakevenBp": 1
+        },
+        "ladderSpread": 1.05,
         "u3": 4.1,
         "empPop": 59.1,
         "oas": 2.8,
@@ -2266,8 +2276,8 @@
         "quadrant": null,
         "quadrantRead": "between quadrants — the inflation axis is flat"
       },
-      "source": "cron",
-      "loggedAt": "2026-09-28T08:45:51.146Z"
+      "source": "client+cron",
+      "loggedAt": "2026-09-28T10:51:59.026Z"
     }
   ]
 }
