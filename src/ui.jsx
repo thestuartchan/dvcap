@@ -29,12 +29,17 @@ export function Btn({ onClick, disabled, color, bgColor, label }) {
 // loan read "…09-22 ⚠stale" in red, a green deposit line in green — and was missed for days. It is
 // a separate chip everywhere now: amber on its own tint, bordered, in capitals, so it reads as a
 // status and never as part of the figure beside it.
+//
+// IT WRAPS INSIDE ITS BOX. Unbreakable, a chip carrying "last print 2026-09-24 · 2d" was wider than
+// a macro tile and ran through the tile's border into the next one. The word STALE stays on one
+// line; the detail after it wraps, and the chip never grows past the width it is given.
 export function StaleChip({ children = null, title = undefined }) {
   return (
-    <span title={title} style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 6, verticalAlign: "middle",
-      fontSize: 10, fontWeight: 900, letterSpacing: 0.6, textTransform: "uppercase", whiteSpace: "nowrap",
+    <span title={title} style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 4, marginLeft: 6, verticalAlign: "middle",
+      maxWidth: "calc(100% - 6px)", minWidth: 0, boxSizing: "border-box", overflowWrap: "anywhere",
+      fontSize: 10, fontWeight: 900, letterSpacing: 0.6, textTransform: "uppercase",
       color: C.amber, background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 5, padding: "1px 6px" }}>
-      ⚠ stale{children ? <span style={{ fontWeight: 700, textTransform: "none", letterSpacing: 0 }}>· {children}</span> : null}
+      <span style={{ whiteSpace: "nowrap" }}>⚠ stale</span>{children ? <span style={{ fontWeight: 700, textTransform: "none", letterSpacing: 0, minWidth: 0 }}>· {children}</span> : null}
     </span>
   );
 }

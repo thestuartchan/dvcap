@@ -3510,6 +3510,14 @@ function RegionSessionBadge({ session, tz }) {
 function MetricGrid({ children, min = 200 }) {
   return <div className="mwd-metric-grid" style={{ "--mwd-min": min + "px" }}>{children}</div>;
 }
+// "last print 2026-09-24 · stale · 2d" → "Sep 24 · 2d": the date and the age, which is what a
+// stale chip on a macro tile has room for.
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function staleTileText(text) {
+  const t = String(text || "").replace(/\s*·\s*stale\s*·\s*/, " · ").replace(/^stale\s*·\s*/, "");
+  return t.replace(/^last print\s+/, "").replace(/\b\d{4}-(\d{2})-(\d{2})\b/, (_, m, d) => `${MONTHS_SHORT[+m - 1]} ${+d}`);
+}
+
 function MetricCard({ label, labelRight, value, valueColor, strike, sub, badge, accent, title, children }) {
   return (
     <div className="mwd-metric-card" style={accent ? { borderColor: accent } : undefined} title={title}>
@@ -4477,7 +4485,9 @@ function MacroCell({ field, value, delta, deltaSuffix, extra = null }) {
       <div style={{ fontSize: 11, display: "flex", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
         {suspect && <span style={{ color: C.amber, fontWeight: 700 }}>suspect ({field.src})</span>}
         {!suspect && delta != null && <span style={{ color: dcol, fontWeight: 700 }}>{arrow} {Math.abs(delta)}{deltaSuffix}</span>}
-        {mf.text && (mf.stale ? <StaleChip>{mf.text.replace(/\s*·\s*stale\s*·\s*/, " · ").replace(/^stale\s*·\s*/, "")}</StaleChip> : <span style={{ color: C.lbl }}>{mf.text}</span>)}
+        {/* SHORT ON A TILE. The full "last print 2026-09-24 · 2d" wrapped to three lines in a 170px
+            tile; the chip says the date and the age, the hover says the rest. */}
+        {mf.text && (mf.stale ? <StaleChip title={[mf.text, field?.vintage?.late ? field.vintage.note : null].filter(Boolean).join(" — ")}>{staleTileText(mf.text)}</StaleChip> : <span style={{ color: C.lbl }}>{mf.text}</span>)}
         {/* A CHECK THAT STOPPED MUST SAY SO. A derived card that quietly renders "—" looks like a
             feed outage; this one names the vintage mismatch that prevented it, so the blank is
             legible rather than alarming. */}
@@ -4488,7 +4498,9 @@ function MacroCell({ field, value, delta, deltaSuffix, extra = null }) {
         {field?.live === true && field?.liveAsOf && (
           <span style={{ color: C.green, fontWeight: 700 }} title={`live quote · ${field.liveSrc || ""}`}>live {String(field.liveAsOf).slice(11)}</span>
         )}
-        {field?.vintage?.late && (
+        {/* ONE MARK, NOT TWO. With the stale chip already up, "no print since" was the same date
+            and the same count a second time, in a second colour, on a tile 170px wide. */}
+        {field?.vintage?.late && !mf.stale && (
           <span style={{ color: C.amber, fontWeight: 700 }} title={field.vintage.note || ""}>
             ⚠ no print since {field.vintage.obsDate} ({field.vintage.bizDays}d)
           </span>

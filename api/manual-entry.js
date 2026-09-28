@@ -145,6 +145,9 @@ function sanitizeRow(r) {
     thesis: cs(r.thesis, 600),
     // Short label that distinguishes two trades in the SAME symbol (one archived, one open).
     trade: cs(r.trade, 40),
+    // What the line is FOR — hedge, position, swing or intraday (lib/factorExposure.js TAGS). The
+    // factor panel sums the hedges for its scenario coverage. Anything else is no tag.
+    tag: ['hedge', 'position', 'swing', 'intraday'].includes(r.tag) ? r.tag : null,
     // DIRECTION. Persisted rather than inferred: every P&L, R, and level-breach rule downstream
     // needs it, and the one thing it must never be re-derived from is where the stop sits — a
     // short's ordinary stop is above entry, which is exactly the geometry that reads as a
