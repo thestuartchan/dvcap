@@ -232,6 +232,21 @@ export function GexPanel() {
   // and a broken button look identical. The IV guard added on 2026-09-03 made refusals common,
   // and every one of them was invisible.
   const [liveErr, setLiveErr] = useState(null);
+  // One shape for a recompute on screen, whether it came back from the button just now or was
+  // kept by the server and handed back on load.
+  const liveFrom = (hit, base, asOf) => ({
+    row: { ...(base || {}), ...hit.row, asOf },
+    byStrike: hit.byStrike || null, grid: hit.grid || null,
+    // P8 — what stops existing tonight. Only the settled recompute carries it: a repriced row is
+    // yesterday's book at today's spot, so its front expiry is a day that has already gone.
+    decay: hit.decay || null,
+    mode: hit.mode || "fresh", note: hit.mode === "repriced" ? hit : null,
+    crossCheck: hit.crossCheck ?? null,
+    // Provenance, so the badge can say WHICH book this is rather than only that it is fresh. A
+    // number without its source is not checkable.
+    oi: hit.oi ?? null, ivSrc: hit.iv ?? null,
+    spotSource: hit.spotSource ?? null, contracts: hit.contracts ?? null,
+  });
   const refreshLive = async () => {
     if (custom) { await lookUpCustom(custom); return; }
     setLiveBusy(true);
@@ -292,18 +307,7 @@ export function GexPanel() {
       }
       // The snapshot result carries headline figures; re-read the stored row for the rest and
       // overlay. A live read that silently dropped the walls would be a downgrade, not a refresh.
-      if (hit) setLive({ row: { ...(data?.latest || {}), ...hit.row, asOf: new Date().toISOString() },
-                         byStrike: hit.byStrike || null, grid: hit.grid || null,
-                         // P8 — what stops existing tonight. Only the settled recompute carries
-                         // it: a repriced row is yesterday's book at today's spot, so its front
-                         // expiry is a day that has already gone.
-                         decay: hit.decay || null,
-                         mode: hit.mode || "fresh", note: hit.mode === "repriced" ? hit : null,
-                         crossCheck: hit.crossCheck ?? null,
-                         // Provenance, so the badge can say WHICH book this is rather than only
-                         // that it is fresh. A number without its source is not checkable.
-                         oi: hit.oi ?? null, ivSrc: hit.iv ?? null,
-                         spotSource: hit.spotSource ?? null, contracts: hit.contracts ?? null });
+      if (hit) setLive(liveFrom(hit, data?.latest, new Date().toISOString()));
       else setLive(null);
     } catch (e) {
       setLive(null);
@@ -319,7 +323,10 @@ export function GexPanel() {
     let cancelled = false;
     setData(null); setErr(null);
     fetchStored(symbol)
-      .then(j => { if (!cancelled) setData(j); })
+      // A RELOAD KEEPS THE RECOMPUTE. The server hands back the last signed-in recompute when it
+      // is newer than the scheduled capture, and it opens as the board — with its own time on it,
+      // so its age is still measured and still marked once it is old.
+      .then(j => { if (cancelled) return; setData(j); if (j?.recompute?.row) setLive(prev => prev || liveFrom(j.recompute, j.latest, j.recompute.at)); })
       .catch(e => { if (!cancelled) setErr(String(e.message || e)); });
     return () => { cancelled = true; };
   }, [symbol]);
@@ -332,7 +339,7 @@ export function GexPanel() {
     if (s !== symbol) { setSymbol(s); return; }
     if (!wasCustom) return;
     setData(null); setErr(null); setLive(null); setLiveErr(null);
-    fetchStored(s).then(setData).catch(e => setErr(String(e.message || e)));
+    fetchStored(s).then(j => { setData(j); if (j?.recompute?.row) setLive(prev => prev || liveFrom(j.recompute, j.latest, j.recompute.at)); }).catch(e => setErr(String(e.message || e)));
   };
 
   // The custom read. One call; the server resolves the spot the same pre/post-aware way the
@@ -441,7 +448,8 @@ export function GexPanel() {
                  : "● live") : fresh.label}
         </span>
       )}
-      {latest && !live && fresh.stale && <StaleChip />}
+      {latest && live && <span style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>{fresh.label}</span>}
+      {latest && fresh.stale && <StaleChip />}
       <button onClick={async () => {
           const made = pineFor({ symbol: latest?.symbol || data?.symbol, latest, levels: lv, byStrike: strikeSource || [], grid, today: latest?.date || null });
           if (!made) { setPineMsg("no board to export"); setTimeout(() => setPineMsg(null), 3000); return; }
@@ -460,7 +468,7 @@ export function GexPanel() {
         style={{ cursor: liveBusy ? "wait" : "pointer", background: C.surf, color: C.blue,
                  border: "1.5px solid " + C.blue, borderRadius: 8, padding: "4px 11px", fontSize: 12, fontWeight: 800,
                  opacity: liveBusy ? 0.6 : 1, whiteSpace: "nowrap" }}
-        title="Recompute the stored positioning at the current spot and time decay. Writes nothing.">
+        title="Recompute today's settled positioning at the current spot and time decay. The daily series is untouched; the recompute is kept so the next page load opens on it.">
         {liveBusy ? "Recomputing…" : "↻ Live recompute"}
       </button>
     </div>
