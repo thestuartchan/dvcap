@@ -226,6 +226,18 @@ export function GexPanel() {
   // Pine cannot fetch, so the board travels as source (lib/pine.js). Copied to the clipboard; on a
   // browser that refuses the clipboard the script opens in a box to select and copy by hand.
   const [pineMsg, setPineMsg] = useState(null);
+  // ── THE READ-ONLY JSON FEED ── its URL is secret (the slug is the protection), so it is fetched
+  // only on click, only for a signed-in session, and shown here rather than anywhere else.
+  const [feed, setFeed] = useState(null);
+  const loadFeed = async (rotate = false) => {
+    if (rotate && typeof window !== "undefined" && !window.confirm("Replace the feed URL? The current one stops working at once.")) return;
+    setFeed({ busy: true });
+    try {
+      const r = await fetch(`/api/gex?feedslug=1${rotate ? "&rotate=1" : ""}`, { method: rotate ? "POST" : "GET", credentials: "include" });
+      const j = await r.json();
+      setFeed(j?.ok ? { paths: j.paths, createdAt: j.createdAt } : { err: j?.error || `HTTP ${r.status}` });
+    } catch (e) { setFeed({ err: String(e?.message || e) }); }
+  };
   const [pineShown, setPineShown] = useState(null);
   // WHY THE RECOMPUTE DID NOTHING. The button used to answer a refusal by setting live to null,
   // which leaves the stored row on screen unchanged and says nothing at all — so a working guard
@@ -246,6 +258,9 @@ export function GexPanel() {
     // number without its source is not checkable.
     oi: hit.oi ?? null, ivSrc: hit.iv ?? null,
     spotSource: hit.spotSource ?? null, contracts: hit.contracts ?? null,
+    // The recompute's own levels. Without them the tiles fell through to the STORED capture's
+    // support, trapdoor and pin while the headline above them was the recompute's.
+    levels: hit.levels || null,
   });
   const refreshLive = async () => {
     if (custom) { await lookUpCustom(custom); return; }
@@ -380,7 +395,9 @@ export function GexPanel() {
   // Computed server-side on every path and carried on the response; recomputed here only when a
   // row arrived without them (a build from before the split), so the tiles never go blank.
   const lv = useMemo(() => {
-    const got = live?.levels || data?.levels || null;
+    // A recompute's levels, or the stored board's — never the stored board's under a recompute's
+    // headline. A recompute that came back without levels gets them from its own rows below.
+    const got = live ? (live.levels || null) : (data?.levels || null);
     if (got) return got;
     if (!latest?.spot || !strikeSource?.length) return null;
     return levelsOf({ byStrike: strikeSource, grid, spot: latest.spot, atr: latest.atr ?? null, callWall: latest.callWall });
@@ -478,6 +495,12 @@ export function GexPanel() {
         ⧉ Copy Pine
       </button>
       {pineMsg && <span style={{ fontSize: 11.5, color: C.mid, fontWeight: 700 }}>{pineMsg}</span>}
+      <button onClick={() => (feed?.paths ? setFeed(null) : loadFeed())}
+        style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 8,
+                 padding: "4px 11px", fontSize: 12, fontWeight: 800, whiteSpace: "nowrap" }}
+        title="The read-only gamma JSON for QQQ and SPY, for a tool that cannot log in. The URL is the password — keep it private.">
+        {"{ }"} JSON feed
+      </button>
       <button onClick={refreshLive} disabled={liveBusy}
         style={{ cursor: liveBusy ? "wait" : "pointer", background: C.surf, color: C.blue,
                  border: "1.5px solid " + C.blue, borderRadius: 8, padding: "4px 11px", fontSize: 12, fontWeight: 800,
@@ -487,6 +510,31 @@ export function GexPanel() {
       </button>
     </div>
   );
+
+  const feedBox = feed ? (
+    <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 7, background: C.bg, border: "1px solid " + C.bdr, fontSize: 11.5, color: C.mid, lineHeight: 1.6 }}>
+      {feed.busy && "fetching the feed URL…"}
+      {feed.err && <span style={{ color: C.amber }}>⚠ {feed.err}</span>}
+      {feed.paths && (<>
+        <div style={{ color: C.lbl }}>Read-only gamma JSON · no login · 30 requests an hour per IP · recomputed at most every 5 minutes. The URL is the password: anyone holding it can read the board (gamma only — nothing about the account).</div>
+        {feed.paths.map(pth => {
+          const url = (typeof window !== "undefined" ? window.location.origin : "") + pth;
+          return (
+            <div key={pth} style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, minWidth: 0 }}>
+              <code style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", fontSize: 11, color: C.text }}>{url}</code>
+              <button onClick={() => { try { navigator.clipboard.writeText(url); } catch { /* select by hand */ } }}
+                style={{ cursor: "pointer", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 6, border: "1px solid " + C.bdr, background: C.surf, color: C.mid }}>copy</button>
+            </div>
+          );
+        })}
+        <div style={{ marginTop: 5, display: "flex", gap: 10, alignItems: "center" }}>
+          <span style={{ color: C.muted, fontSize: 10.5 }}>issued {String(feed.createdAt || "").slice(0, 16).replace("T", " ")}Z</span>
+          <button onClick={() => loadFeed(true)}
+            style={{ cursor: "pointer", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 6, border: "1px solid " + C.aBdr, background: C.aBg, color: C.amber }}>replace URL</button>
+        </div>
+      </>)}
+    </div>
+  ) : null;
 
   const pineBox = pineShown ? (
     <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 7, background: C.bg, border: "1px solid " + C.bdr }}>
@@ -550,7 +598,7 @@ export function GexPanel() {
   }
   if (!data.available) {
     return (
-      <Card>{header}{liveErrCard}{pineBox}{repricedCard}
+      <Card>{header}{liveErrCard}{pineBox}{feedBox}{repricedCard}
         <div style={{ fontSize: 12.5, color: C.mid, marginTop: 8, lineHeight: 1.6 }}>
           Nothing captured yet. The snapshot runs mid-session each weekday and writes one row per symbol;
           the by-strike chart appears after the first run and the time series becomes meaningful after
@@ -571,7 +619,7 @@ export function GexPanel() {
           that always has an opinion is one nobody should size off. */}
       <Card>
         {header}
-        {liveErrCard}{pineBox}
+        {liveErrCard}{pineBox}{feedBox}
         {repricedCard}
         {read.ok && (
           <div style={{ marginTop: 10, padding: "11px 13px", borderRadius: 9,
