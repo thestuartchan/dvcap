@@ -13,7 +13,7 @@ import {
 import { C, tint } from "./theme.js";
 import { Card, SLabel, StaleChip } from "./ui.jsx";
 import { gexRead, ageOf } from "../lib/gexRead.js";
-import { heatCells, heatAlpha } from "../lib/gex.js";
+import { heatCells, heatAlpha, spotSlot } from "../lib/gex.js";
 import { levelsOf, mustShow, rateLine, rateFarOut } from "../lib/gexLevels.js";
 import { pineFor } from "../lib/pine.js";
 
@@ -401,6 +401,20 @@ export function GexPanel() {
     const m = mustShow(lv, { flipZoneLo: latest?.flipZoneLo, flipZoneHi: latest?.flipZoneHi });
     return heatCells(grid, { must: m.strikes, flipZone: m.flipZone });
   }, [grid, lv, latest]);
+  const spotAt = heat ? spotSlot(heat.strikes, latest?.spot) : null;
+  const spotLine = heat && spotAt != null ? (
+    <Fragment key="spot">
+      <div style={{ position: "sticky", left: 0, background: C.surf, zIndex: 1, fontSize: 10.5, fontWeight: 900,
+                    color: C.blue, textAlign: "right", paddingRight: 6, lineHeight: "14px", whiteSpace: "nowrap" }}
+           title={`spot ${latest.spot}${live ? " — the live recompute's" : " — at capture"}`}>
+        {fmtNum(latest.spot, 2)} ▸
+      </div>
+      <div style={{ gridColumn: `span ${heat.expiries.length}`, height: 14, display: "flex", alignItems: "center" }}>
+        <div style={{ flex: 1, height: 2, background: C.blue, borderRadius: 1 }} />
+        <span style={{ fontSize: 9.5, fontWeight: 900, letterSpacing: 0.6, color: C.blue, padding: "0 6px" }}>SPOT</span>
+      </div>
+    </Fragment>
+  ) : null;
   const rateOut = !!latest && (latest.rateStatus === "unavailable" || !(+latest.rate > 0));
 
   const seriesRows = useMemo(() => (data?.series || []).map(r => ({
@@ -751,20 +765,22 @@ export function GexPanel() {
                       {e.slice(5)}{rateOut && rateFarOut(e) ? " r?" : ""}
                     </div>
                   ))}
-                  {heat.strikes.map(k => {
+                  {heat.strikes.map((k, row) => {
                     // Spot and the flip zone are drawn ONTO the grid rather than beside it. A strike
                     // being heavy matters entirely relative to where price is standing.
-                    const isSpot = latest?.spot != null && Math.abs(k - latest.spot) <= 2.5;
+                    // SPOT IS A LINE BETWEEN ROWS, at the price itself (spotLine, above). It follows
+                    // the board on screen, so a live recompute moves it.
                     const inZone = latest?.flipZoneLo != null && latest?.flipZoneHi != null
                       && k >= latest.flipZoneLo - 2.5 && k <= latest.flipZoneHi + 2.5;
                     const isForced = heat.added?.includes(k);
                     return (
                       <Fragment key={k}>
+                        {spotAt === row && spotLine}
                         <div style={{ position: "sticky", left: 0, background: C.surf, zIndex: 1,
                                       fontSize: 11.5, fontWeight: 800, textAlign: "right", paddingRight: 6,
                                       lineHeight: "24px",
-                                      color: isSpot ? C.blue : inZone ? C.amber : C.lbl }}>
-                          {fmtNum(k, 0)}{isSpot ? " ◂" : inZone ? " ·" : isForced ? " +" : ""}
+                                      color: inZone ? C.amber : C.lbl }}>
+                          {fmtNum(k, 0)}{inZone ? " ·" : isForced ? " +" : ""}
                         </div>
                         {heat.expiries.map(e => {
                           const v = heat.at.get(`${e}|${k}`);
@@ -781,7 +797,7 @@ export function GexPanel() {
                                        opacity: rateOut && rateFarOut(e) ? 0.4 : 1,
                                        background: a === 0 ? C.bg
                                          : tint(v > 0 ? HEAT_POS : HEAT_NEG, a),
-                                       border: "1px solid " + (isSpot ? C.blBdr : "transparent"),
+                                       border: "1px solid transparent",
                                        outline: isMax ? `2px solid ${C.amber}` : "none", outlineOffset: -1,
                                        boxShadow: isMax ? `0 0 0 2px ${C.surf}, 0 0 0 4px ${C.amber}` : "none",
                                        display: "flex", alignItems: "center", justifyContent: "center",
@@ -802,12 +818,13 @@ export function GexPanel() {
                       </Fragment>
                     );
                   })}
+                  {spotAt === heat.strikes.length && spotLine}
                 </div>
               </div>
               <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 7, lineHeight: 1.5 }}>
                 A strike coloured across several columns is a level the whole book agrees on. One
                 bright cell in the nearest expiry with nothing behind it is that expiry's positioning
-                and it stops existing when the contract does. ◂ marks spot; · marks the flip zone; + marks a
+                and it stops existing when the contract does. The blue line is spot, drawn at the price itself; · marks the flip zone; + marks a
                 strike kept because a tile is about it (the ranking alone would have dropped it). The amber
                 ring in each column marks that expiry's heaviest level, one per column whatever its sign; the
                 fill and ▲/▼ say whether it is positive or negative gamma.
