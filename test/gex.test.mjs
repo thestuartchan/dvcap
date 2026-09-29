@@ -3,7 +3,7 @@
 // code and copying what it said.
 import {
   gexSummary, netGammaAt, flipLevel, flipFragility, walls, toDollarGex,
-  contractGamma, gammaGrid, GEX_CONVENTIONS, CONTRACT_MULTIPLIER, heatCells, heatAlpha, HEAT_ROWS, HEAT_PCTL, HEAT_ALPHA_FLOOR } from '../lib/gex.js';
+  contractGamma, gammaGrid, GEX_CONVENTIONS, CONTRACT_MULTIPLIER, heatCells, heatAlpha, spotSlot, HEAT_ROWS, HEAT_PCTL, HEAT_ALPHA_FLOOR } from '../lib/gex.js';
 import { gamma } from '../lib/blackscholes.js';
 import { wallAgreement } from '../lib/gexRead.js';
 import { CUSTOM_ROOT_RE } from '../lib/gexStore.js';
@@ -330,5 +330,12 @@ const PE = (k, oi, e, T, iv = 0.22) => ({ type: 'put', strike: k, oi, iv, T, exp
   for (const bad of ['', 'intc', 'BRK.B', 'INTC 2026-10-02 C115', '7709.HK', '^VIX', 'CL=F', 'ABCDEFG', 'QQQ,SPY']) ok(`${JSON.stringify(bad)} is not`, !CUSTOM_ROOT_RE.test(bad));
 }
 
+{
+  const ks = [760, 741, 737, 736, 730, 726];
+  eq('spot sits between the two strikes that bracket it', spotSlot(ks, 736.53), 3);
+  eq('on a strike, the line is drawn above that row', spotSlot(ks, 736), 3);
+  eq('above every row / below every row', [spotSlot(ks, 800), spotSlot(ks, 700)], [0, 6]);
+  eq('no spot, no line', [spotSlot(ks, null), spotSlot(null, 736)], [null, null]);
+}
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
