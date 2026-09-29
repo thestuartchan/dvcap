@@ -9,7 +9,13 @@
 //   GET /api/gex?symbol=QQQ          read the stored series (default)
 //   GET /api/gex?snapshot=1[&dry=1]  capture today's chain — the cron target
 //   GET /api/gex?custom=INTC         one typed name, on demand, nothing stored (gated)
-import { kvConfigured, kvGetJson, kvSetJsonEx } from '../lib/kv.js';
+//   GET /api/g/<slug>/<ticker>       the read-only gamma JSON feed (vercel.json rewrites it to
+//                                    ?feed=<slug>&symbol=<ticker>); the slug is the protection
+//   GET /api/gex?feedslug=1          the feed's slug, minted on first ask (gated); POST &rotate=1
+//                                    replaces it
+import { createHash, randomBytes } from 'node:crypto';
+import { kvConfigured, kvGetJson, kvSetJson, kvSetJsonEx, kvIncrEx, kvSetNxEx } from '../lib/kv.js';
+import { gexFeedPayload, feedLeaks, slugMatches, rateBucket, FEED_TICKERS, FEED_RECOMPUTE_MIN, FEED_RATE_PER_HOUR } from '../lib/gexFeed.js';
 import { captureGex, readGex, settledGex, observeRoll, OCC_ROLL_LOG_KEY, OCC_HEALTH_KEY, GEX_SYMBOLS, CUSTOM_ROOT_RE,
          LAST_RECOMPUTE_KEY, LAST_RECOMPUTE_TTL_SEC, recomputeRecord, newerRecompute } from '../lib/gexStore.js';
 import { instrumentKind } from '../lib/catalyst.js';
@@ -19,9 +25,104 @@ import { marketState } from '../lib/sessions.js';
 import { rollSummary, OCC_CONFIRM_MIN } from '../lib/occ.js';
 import { healthSummary, transitionRuns, confirmMinVerdict } from '../lib/occHealth.js';
 
+// ── THE SPOT A RECOMPUTE IS PRICED AT ────────────────────────────────────────
+// The panel was fetching /api/prices and passing the result. That route returns the REGULAR
+// print and never an extended-hours one, so pre-open it handed back the PRIOR CLOSE — 716.31
+// against a live pre-market 707.94 on 2026-09-10, a 1.2% error, labelled `spotSource: caller`
+// and therefore reported in the footer as the live spot. So the spot is resolved here, with the
+// same getQuotes({ prepost }) call the pre-read uses: one definition of the current price.
+async function resolveSpot(sym) {
+  try {
+    const [q] = await getQuotes([sym], { prepost: true });
+    // Outside regular hours the extended print is the live one and the regular is yesterday's.
+    // Inside them it is the other way round, and a stale ext must never override a live regular.
+    const shut = marketState(sym) !== 'open';
+    const px = (shut && q?.ext && !q.ext.stale && q.ext.price > 0) ? q.ext.price : q?.price;
+    return Number.isFinite(+px) && +px > 0 ? +px : null;
+  } catch { return null; }   // settledGex falls back to CBOE's, and the footer names it
+}
+
+// ── THE READ-ONLY FEED ───────────────────────────────────────────────────────
+// For a consumer that cannot send an auth header. The slug (32 random bytes, minted below and
+// kept in KV) is the protection; wrong slugs and unknown tickers are both a plain 404. Rate-limited
+// per IP BEFORE the slug is checked, so guessing costs the same as asking. GET only, no CORS
+// headers, never edge-cached (the Cache-Control at the top of the handler). The payload is built
+// by lib/gexFeed.js from named gamma fields only, and refused outright if it ever contains a word
+// on the brief's banned list.
+const FEED_SLUG_KEY = 'dvcap:gex:feed:slug:v1';
+const FEED_LOCK_KEY = (sym) => `dvcap:gex:feed:lock:v1:${sym}`;
+
+// The board to serve: a recompute no older than FEED_RECOMPUTE_MIN if there is one — the panel's
+// or this route's, they share LAST_RECOMPUTE_KEY — else a new one if the lock allows (at most one
+// per ticker per FEED_RECOMPUTE_MIN, however many callers), else the newest thing on hand.
+async function feedBoard(sym, now = Date.now()) {
+  const stored = await readGex(sym).catch(() => null);
+  // The row a recompute is shown with on the tab: the stored row with the recompute's on top.
+  const fromRecord = (rec) => ({ board: { ...rec, row: { ...(stored?.latest || {}), ...rec.row } }, mode: 'live_recompute', asOf: rec.at,
+    source: rec.mode === 'repriced' ? (rec.capturedAt || rec.at) : (rec.iv?.asOf || rec.at) });
+  const kept = await kvGetJson(LAST_RECOMPUTE_KEY(sym)).catch(() => null);
+  const age = kept?.at ? now - Date.parse(kept.at) : Infinity;
+  if (age < FEED_RECOMPUTE_MIN * 60000) return fromRecord(kept);
+  if (await kvSetNxEx(FEED_LOCK_KEY(sym), { at: new Date(now).toISOString() }, FEED_RECOMPUTE_MIN * 60)) {
+    try {
+      const out = await settledGex(sym, { spot: await resolveSpot(sym), expiries: stored?.latest?.expiries || null });
+      const rec = recomputeRecord(sym, { ...out, mode: 'settled' });
+      if (rec) {
+        try { await kvSetJsonEx(LAST_RECOMPUTE_KEY(sym), rec, LAST_RECOMPUTE_TTL_SEC); } catch { /* served anyway */ }
+        return fromRecord(rec);
+      }
+    } catch { /* fall through to what is on hand */ }
+  }
+  const rec = newerRecompute(stored?.latest, kept);
+  if (rec) return fromRecord(rec);
+  if (stored?.latest) {
+    return { board: { row: stored.latest, levels: stored.levels, grid: stored.grid, byStrike: stored.byStrike,
+                      decay: null, crossCheck: stored.latest.crossCheck ?? null },
+             mode: 'settled', asOf: stored.latest.asOf, source: stored.latest.asOf };
+  }
+  return { board: null };
+}
+
+async function serveFeed(req, res) {
+  if (req.method !== 'GET') { res.setHeader('Allow', 'GET'); return res.status(405).json({ error: 'GET only' }); }
+  const ip = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim() || String(req.headers?.['x-real-ip'] || '') || 'unknown';
+  const ipHash = createHash('sha256').update(ip).digest('hex').slice(0, 16);
+  const n = await kvIncrEx(rateBucket(ipHash), 3600);
+  if (n != null && n > FEED_RATE_PER_HOUR) {
+    const d = new Date(); const next = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours() + 1);
+    res.setHeader('Retry-After', String(Math.max(1, Math.ceil((next - d.getTime()) / 1000))));
+    return res.status(429).json({ error: `limit is ${FEED_RATE_PER_HOUR} requests an hour` });
+  }
+  const stored = await kvGetJson(FEED_SLUG_KEY).catch(() => null);
+  if (!slugMatches(req.query?.feed, stored?.slug)) return res.status(404).json({ error: 'not found' });
+  const sym = String(req.query?.symbol || '').trim().toUpperCase();
+  if (!FEED_TICKERS.includes(sym)) return res.status(404).json({ error: 'not found' });
+  const { board, mode, asOf, source } = await feedBoard(sym);
+  if (!board) return res.status(503).json({ error: 'no board yet' });
+  const body = JSON.stringify(gexFeedPayload(sym, board, { mode, asOf, sourceSnapshot: source }));
+  if (feedLeaks(body).length) return res.status(500).json({ error: 'refused' });
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  return res.status(200).send(body);
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'private, no-store');
   if (!kvConfigured()) return res.status(200).json({ available: false, ok: false, reason: 'KV not configured' });
+
+  if (req.query?.feed != null) return serveFeed(req, res);
+
+  // The feed's slug, for the signed-in Gamma tab to show. Minted on first ask; POST &rotate=1
+  // replaces it, which retires the old URL at once.
+  if (String(req.query?.feedslug || '') === '1') {
+    if (!(await authorised(req))) return res.status(401).json({ ok: false, error: 'unauthorised', why: refusalReason(req) });
+    let cur = await kvGetJson(FEED_SLUG_KEY).catch(() => null);
+    const rotate = req.method === 'POST' && String(req.query?.rotate || '') === '1';
+    if (!cur?.slug || rotate) {
+      cur = { slug: randomBytes(32).toString('base64url'), createdAt: new Date().toISOString() };
+      if (!(await kvSetJson(FEED_SLUG_KEY, cur))) return res.status(500).json({ ok: false, error: 'could not store the slug' });
+    }
+    return res.status(200).json({ ok: true, createdAt: cur.createdAt, paths: FEED_TICKERS.map(t => `/api/g/${cur.slug}/${t}`) });
+  }
 
   if (String(req.query?.snapshot || '') === '1') {
     const symbols = String(req.query?.symbols || '').trim()
@@ -149,42 +250,23 @@ export default async function handler(req, res) {
       : GEX_SYMBOLS;
     const bad = syms.filter(x => !GEX_SYMBOLS.includes(x));
     if (bad.length) return res.status(400).json({ error: `unknown symbol ${bad.join(', ')}` });
-    // ── THE SERVER DECIDES WHAT "THE CURRENT PRICE" MEANS ────────────────────
-    // The panel was fetching /api/prices and passing the result. That route returns the REGULAR
-    // print and never an extended-hours one, so pre-open it handed back the PRIOR CLOSE — 716.31
-    // against a live pre-market 707.94 on 2026-09-10, a 1.2% error, labelled `spotSource: caller`
-    // and therefore reported in the footer as the live spot. Exactly the defect just fixed in the
-    // pre-read, one layer over: the map's own symbols were being priced off a quote that has no
-    // pre/post overlay.
-    //
-    // So the spot is resolved HERE, with the same getQuotes({ prepost }) call the pre-read uses,
-    // and there is one definition of the current price rather than one per caller. An explicit
-    // ?spot= still wins — it is how a caller asks "what would the book look like at X" — but
-    // nothing has to pass one to get the right answer.
+    // The spot is the server's (resolveSpot, above). An explicit ?spot= still wins — it is how a
+    // caller asks "what would the book look like at X" — but nothing has to pass one.
     const spotIn = Number(req.query?.spot);
-    const resolveSpot = async (sym) => {
-      if (Number.isFinite(spotIn) && spotIn > 0 && syms.length === 1) return spotIn;
-      try {
-        const [q] = await getQuotes([sym], { prepost: true });
-        // Outside regular hours the extended print is the live one and the regular is yesterday's.
-        // Inside them it is the other way round, and a stale ext must never override a live regular.
-        const shut = marketState(sym) !== 'open';
-        const px = (shut && q?.ext && !q.ext.stale && q.ext.price > 0) ? q.ext.price : q?.price;
-        return Number.isFinite(+px) && +px > 0 ? +px : null;
-      } catch { return null; }   // settledGex falls back to CBOE's, and the footer names it
-    };
+    const spotFor = async (sym) => (Number.isFinite(spotIn) && spotIn > 0 && syms.length === 1) ? spotIn : resolveSpot(sym);
     const results = [];
     // KEPT, NOT WRITTEN INTO THE SERIES. A signed-in recompute of the book pair is saved on its own
     // expiring key so the next page load shows it rather than the older scheduled capture (see
     // LAST_RECOMPUTE_KEY). Signed-in only: an anonymous caller does not get to decide what the
     // panel opens on.
-    const keep = await authorised(req);
+    // A what-if (?spot=) is never kept: it is a board at a price nobody is trading at.
+    const keep = !(Number.isFinite(spotIn) && spotIn > 0) && await authorised(req);
     for (const sym of syms) {
       // The stored row's expiries, so the settled map covers the same book as the series it sits
       // beside — otherwise the two disagree about the flip for reasons that are about coverage.
       const stored = await readGex(sym).catch(() => null);
       const out = await settledGex(sym, {
-        spot: await resolveSpot(sym),
+        spot: await spotFor(sym),
         expiries: stored?.latest?.expiries || null,
       });
       results.push({ symbol: sym, ...out });

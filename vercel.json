@@ -13,5 +13,11 @@
     "api/preread.js": {
       "includeFiles": "data/render/**"
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/api/g/:slug/:ticker",
+      "destination": "/api/gex?feed=:slug&symbol=:ticker"
+    }
+  ]
 }
