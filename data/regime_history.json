@@ -2288,9 +2288,9 @@
       "hawkish_repricing": "INSUFFICIENT_DATA",
       "live_regime": "stag",
       "view_regime": "stag",
-      "pinned": false,
-      "hyg_chg": -0.54,
-      "hyg_qqq_divergence": 0.69,
+      "pinned": true,
+      "hyg_chg": -0.41,
+      "hyg_qqq_divergence": 0.66,
       "inputs": {
         "weightedRecessionProb": 14.3,
         "cpi": 3.35302,
@@ -2299,20 +2299,20 @@
           "gold": "down",
           "tlt": "down",
           "xlu": "down",
-          "xlp": "flat",
+          "xlp": "up",
           "spy": "down",
           "qqq": "down",
           "iwm": "down",
           "btc": "down",
-          "breakevenBp": 1
+          "breakevenBp": null
         },
-        "ladderSpread": -0.8,
+        "ladderSpread": -0.67,
         "u3": 4.1,
         "empPop": 59.1,
         "oas": 2.93,
-        "tenY": 5.18,
-        "twoY": 4.87,
-        "consensusAlive": 0.725,
+        "tenY": 5.17,
+        "twoY": 4.81,
+        "consensusAlive": 0.733,
         "regimeVintage": "decayed"
       },
       "axes": {
@@ -2364,7 +2364,7 @@
         "quadrantRead": "growth firm, inflation cool"
       },
       "source": "client+cron",
-      "loggedAt": "2026-09-29T09:23:59.215Z"
+      "loggedAt": "2026-09-29T12:59:15.826Z"
     }
   ]
 }
