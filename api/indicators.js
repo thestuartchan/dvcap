@@ -5,7 +5,7 @@ import { kvGetJson, kvSetJson, kvConfigured } from "../lib/kv.js";
 import { stateInputs } from "../lib/marketStateFeed.js";
 import { crossCheckPayload } from "../lib/crossCheckFeed.js";
 import { crossCheckHealth } from "../lib/crossCheck.js";
-import { conditions, conditionsAt, liquidity, seriesStats } from "../lib/marketState.js";
+import { conditions, conditionsAt, liquidity, seriesStats, inflationMomentum } from "../lib/marketState.js";
 import { zqMovesPriced } from "../lib/fedpath.js";
 import { fetchSmicAHPremium } from "../lib/smicah.js";
 import { fetchSouthbound } from "../lib/hkexSouthbound.js";
@@ -36,6 +36,8 @@ export default async function handler(req, res) {
         conditions: cond, liquidity: liquidity(inp.series), stats: seriesStats(inp.series),
         // The same composite five sessions back, so the if/then list can say what moved closer.
         conditionsWeekAgo: conditionsAt(inp.series, 5),
+        // Core CPI and core PCE momentum from the index levels (m/m, 3-month annualised, y/y).
+        inflation: inflationMomentum(inp.series),
       });
     } catch (e) {
       return res.status(200).json({ ok: false, error: String(e?.message || e) });
