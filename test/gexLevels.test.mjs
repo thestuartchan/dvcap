@@ -62,25 +62,30 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   eq('the near trapdoor is 735, that day\'s expiry', [lv.trapdoor.near.strike, lv.trapdoor.near.netGexUsd, lv.trapdoor.near.expiry], [735, -89 * M, '2026-09-23']);
   eq('the deep trapdoor is 700, Oct-16', [lv.trapdoor.deep.strike, lv.trapdoor.deep.netGexUsd, lv.trapdoor.deep.expiry], [700, -175 * M, '2026-10-16']);
   eq('the trapdoor tile', lv.text.trapdoor, '735 · −89M (Sep-23) · 1.2% below · deeper: 700 · −175M (Oct-16) · 5.9% below');
-  eq('the pin box is 743–748', [lv.pin.pinned, lv.pin.lo, lv.pin.hi], [true, 743, 748]);
-  ok('carrying roughly 40% of the nearest expiry', lv.pin.share > 30 && lv.pin.share < 45);
-  eq('with the magnets above spot named', lv.pin.magnets, [745, 748]);
-  ok('the pin tile', /^743–748 · Sep-23 \d+(\.\d)?% · magnets 745\/748 above spot$/.test(lv.text.pin));
+  // THE POSITIVE RUN (30 Sep brief): today's cells positive from 743 up; 735 is negative below, and
+  // 760 (+10M) is under 5% of the run's 750 peak (+220M) — the tail — so the box is 743–750.
+  eq('the pin box is the positive run, 743–750', [lv.pin.pinned, lv.pin.lo, lv.pin.hi], [true, 743, 750]);
+  ok('carrying most of the nearest expiry', lv.pin.share > 70 && lv.pin.share < 85);
+  eq('magnets: the two largest cells in the box, either side of spot', lv.pin.magnets, [745, 750]);
+  ok('the pin tile', /^743–750 · Sep-23 \d+(\.\d)?% · magnets 745\/750$/.test(lv.text.pin));
+  eq('the pin top is the box\'s upper edge', lv.pinTop, 750);
   eq('the call wall at 745 is a ceiling, inside the pin band', [lv.callWall.kind, lv.callWall.inPin], ['ceiling', true]);
-  eq('the call wall tile', lv.text.callWall, '745 · ceiling (above spot, inside the pin band)');
+  // The call wall is the LARGEST positive node above spot within 5%: 750 (+260M summed), not the
+  // heaviest call-gamma strike handed in (745).
+  eq('the call wall tile', lv.text.callWall, '750 · ceiling (above spot, inside the pin band)');
   // −$0.14B below against +$0.41B above on this fixture: the smaller side is under 40%.
   eq('the balance is asymmetric, upside damped', lv.balance.state, 'asymmetric_up');
   ok('and says so with the direction', /asymmetric — \$0\.41B above \/ −\$0\.14B below: upside damped, downside thin/.test(lv.balance.sentence));
-  eq('the one-line summary reads the objects', lv.summary, 'Cushion at 730; acceleration below 735 and 700; pin 743–748.');
-  ok('and the detailed line carries sizes and owners', /Cushion at 730 \(\+60M, Oct-16, 1\.9% below, peaks 1 of 8\); acceleration below 735 \(−89M, Sep-23, 1\.2% below\) and 700 \(−175M, Oct-16, 5\.9% below\); pin 743–748/.test(regimeDetail(lv)));
+  eq('the one-line summary reads the objects', lv.summary, 'Cushion at 730; acceleration below 735 and 700; pin 743–750.');
+  ok('and the detailed line carries sizes and owners', /Cushion at 730 \(\+60M, Oct-16, 1\.9% below, peaks 1 of 8\); acceleration below 735 \(−89M, Sep-23, 1\.2% below\) and 700 \(−175M, Oct-16, 5\.9% below\); pin 743–750/.test(regimeDetail(lv)));
   ok('the word "wall" never touches the put side', !/wall/i.test(lv.text.support + lv.text.trapdoor + lv.text.pin));
   // What is persisted.
   eq('the log row', levelsLog(lv, { rate: 0.038, rateStatus: 'live' }), {
-    put_support_strike: 730, trapdoor_near: 735, trapdoor_deep: 700, pin_lo: 743, pin_hi: 748,
-    call_wall_strike: 745, call_wall_kind: 'ceiling', balance_state: 'asymmetric_up', rf_rate: 0.038, rf_status: 'live' });
+    put_support_strike: 730, trapdoor_near: 735, trapdoor_deep: 700, pin_lo: 743, pin_hi: 750,
+    call_wall_strike: 750, call_wall_kind: 'ceiling', balance_state: 'asymmetric_up', rf_rate: 0.038, rf_status: 'live' });
   // The strikes the table may never drop.
   const m = mustShow(lv, { flipZoneLo: 711, flipZoneHi: 736 });
-  eq('the must-show list is the level strikes', m.strikes.sort((a, b) => a - b), [700, 730, 735, 743, 745, 748]);
+  eq('the must-show list is the level strikes', m.strikes.sort((a, b) => a - b), [700, 730, 735, 743, 745, 748, 750]);
   eq('with the flip zone alongside', m.flipZone, { lo: 711, hi: 736 });
 }
 
@@ -93,12 +98,19 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
     ...filler(spot, ['2026-09-17', '2026-10-16']).filter(c => c.expiry !== '2026-09-23'),
   ]);
   const lv = levelsOf({ ...b, spot, atr, callWall: 715 });
-  eq('a positive node below spot is a magnet, not a wall', [lv.callWall.strike, lv.callWall.kind], [715, 'magnet']);
-  eq('the tile says so', lv.text.callWall, '715 · magnet (below spot, inside the pin band)');
+  // The call wall is the largest positive node ABOVE spot: 720 (+30M), not the heavier 715 below it.
+  eq('the call wall is the largest positive node above spot', [lv.callWall.strike, lv.callWall.kind], [720, 'ceiling']);
+  // With nothing positive above spot inside 5%, the heaviest call-gamma strike stands in — and below
+  // spot it is a magnet, as before.
+  const b2 = board([cell('2026-09-17', 715, 140), cell('2026-09-17', 725, -30), cell('2026-10-16', 700, -160)]);
+  const lv2 = levelsOf({ ...b2, spot, atr, callWall: 715 });
+  eq('a positive node below spot is a magnet, not a wall', [lv2.callWall.strike, lv2.callWall.kind], [715, 'magnet']);
+  eq('the tile says so', lv2.text.callWall, '715 · magnet (below spot, inside the pin band)');
   eq('no put support inside 5%', [lv.support.strike, lv.support.reason], [null, 'no put support inside 5%']);
   eq('the tile prints the honest blank', lv.text.support, 'no put support inside 5%');
-  eq('700 is the trapdoor', [lv.trapdoor.near?.strike, lv.trapdoor.deep, lv.trapdoor.sameStrike], [700, null, true]);
-  eq('and it is logged as both near and deep', [levelsLog(lv).trapdoor_near, levelsLog(lv).trapdoor_deep], [700, 700]);
+  // 700 is 2.2% below spot — beyond the near trapdoor's 1.5% window — so it is the deep one alone.
+  eq('700 is the trapdoor, and it is deep', [lv.trapdoor.near, lv.trapdoor.deep?.strike], [null, 700]);
+  eq('logged as deep, with no near', [levelsLog(lv).trapdoor_near, levelsLog(lv).trapdoor_deep], [null, 700]);
 }
 
 // ── 18 SEP: SPOT 721 — 716 NEAR, 700 DEEP, BOTH MATTERED ─────────────────────
@@ -135,7 +147,8 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   eq('700 is nobody\'s peak', peaksAt(b.grid, 700, -1).agree, 0);
   ok('and it is not the support — it is negative', lv.support.strike !== 700);
   eq('it appears as the deep trapdoor', lv.trapdoor.deep.strike, 700);
-  eq('with the day\'s negative at 717 as the near one', lv.trapdoor.near.strike, 717);
+  // 717 is 1.6% below spot: outside the near trapdoor's 1.5% window (30 Sep brief), so no near one.
+  eq('717 is outside the near window', lv.trapdoor.near, null);
 }
 
 // ── THE SUPPORT TESTS, ONE AT A TIME ─────────────────────────────────────────
@@ -166,12 +179,12 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   const tiny = board([cell('2026-10-16', 660, -50), cell('2026-10-16', 720, 90), cell('2026-09-25', 690, 1), cell('2026-10-16', 695, 200)]);
   const ty = putSupport(tiny.byStrike, tiny.grid, { spot, atr: 3 });
   ok('a node under 5% of the positive gamma below spot is out', ty.rejected.find(r => r.strike === 690)?.why?.startsWith('under 5%'));
-  eq('the thresholds are stated', [SUPPORT_MIN_DIST_PCT, SUPPORT_MAX_DIST_PCT, SUPPORT_MIN_SHARE, TRAPDOOR_NEAR_PCT, TRAPDOOR_DEEP_PCT, PIN_HALF_PCT, PIN_MIN_SHARE, BALANCE_MIN_RATIO],
+  eq('the thresholds are stated', [SUPPORT_MIN_DIST_PCT, SUPPORT_MAX_DIST_PCT, SUPPORT_MIN_SHARE, TRAPDOOR_NEAR_PCT * 2, TRAPDOOR_DEEP_PCT, PIN_HALF_PCT, PIN_MIN_SHARE, BALANCE_MIN_RATIO],
      [1, 5, 0.05, 3, 10, 0.5, 0.1, 0.4]);
   // Degenerate inputs.
   eq('no spot, no support', putSupport([], null, { spot: null }).strike, null);
   eq('no strikes below spot', putSupport([{ strike: 710, netGexUsd: 1 }], null, { spot: 700 }).reason, 'no strikes below spot');
-  eq('no negatives, no trapdoor', trapdoors([{ strike: 690, netGexUsd: 5 }], null, { spot: 700 }), { near: null, deep: null, sameStrike: false });
+  eq('no negatives, no trapdoor', trapdoors([{ strike: 690, netGexUsd: 5 }], null, { spot: 700 }), { near: null, deep: null, sameStrike: false, deepNote: 'no negative node below spot inside 10%' });
   eq('no grid, no pin', pinBox([], null, { spot: 700 }).pinned, false);
   eq('a levels call with nothing does not throw', levelsOf({ spot: null }).support.strike, null);
   eq('callWallOf finds the heaviest call side when no wall is passed', callWallOf([{ strike: 705, callGamma: 5, netGexUsd: 1 }, { strike: 710, callGamma: 9, netGexUsd: 2 }], null, { spot: 700 }).strike, 710);
@@ -182,13 +195,19 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   const spot = 700;
   const b = board([cell('2026-09-23', 698, 30), cell('2026-09-23', 702, 50), cell('2026-09-23', 720, 20), cell('2026-10-16', 700, 5)]);
   const p = pinBox(b.byStrike, b.grid, { spot, atr: 4 });
-  eq('the box is ±0.5% or ±½ ATR, whichever is wider', p.half, 3.5);
-  eq('and spans the front expiry\'s strikes inside it', [p.lo, p.hi, p.pinned], [698, 702, true]);
+  // The positive run around spot in today's expiry; 720 is 2.6% beyond 702 with nothing between, so
+  // the run does not jump to it.
+  eq('the box is the contiguous positive run, not a ±% window', [p.lo, p.hi, p.pinned], [698, 702, true]);
   eq('the share is of the NEAREST expiry only', p.share, 80);
-  eq('magnets are the positive nodes above spot inside the box', p.magnets, [702]);
+  eq('magnets are the largest cells in the box, either side of spot', p.magnets, [698, 702]);
+  const neg = board([cell('2026-09-23', 699, 40), cell('2026-09-23', 698, -60), cell('2026-09-23', 697, 90), cell('2026-09-23', 701, 30)]);
+  eq('the run stops at the first negative cell', [pinBox(neg.byStrike, neg.grid, { spot }).lo, pinBox(neg.byStrike, neg.grid, { spot }).hi], [699, 701]);
+  eq('and never at a trapdoor strike — 699 excluded, the run is 701 alone', [pinBox(neg.byStrike, neg.grid, { spot, exclude: [699] }).lo, pinBox(neg.byStrike, neg.grid, { spot, exclude: [699] }).hi], [701, 701]);
+  const tail = board([cell('2026-09-23', 699, 100), cell('2026-09-23', 701, 80), cell('2026-09-23', 702, 3), cell('2026-09-23', 703, 50)]);
+  eq('nor into the tail — a cell under 5% of the peak ends it', pinBox(tail.byStrike, tail.grid, { spot }).hi, 701);
   const thin = board([cell('2026-09-23', 698, 1), cell('2026-09-23', 720, 200)]);
   const t = pinBox(thin.byStrike, thin.grid, { spot, atr: 4 });
-  ok('under a tenth of the nearest expiry is no pin, and says why', !t.pinned && /Sep-23 carries 0% inside/.test(t.reason));
+  ok('under a tenth of the nearest expiry is no pin, and says why', !t.pinned && /Sep-23's positive run 698–698 carries 0% of its gamma/.test(t.reason));
   eq('the tile carries the reason', pinText(t).startsWith('no pin — '), true);
 }
 
@@ -410,7 +429,7 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
 
   // The health sample carries the levels.
   const hs = healthSample({ ok: true, levels: lv, row: { rate: 0.038, rateStatus: 'live' }, vintage: {}, oi: {}, crossCheck: null }, { symbol: 'QQQ' });
-  eq('the health sample logs the levels', [hs.put_support_strike, hs.trapdoor_near, hs.trapdoor_deep, hs.call_wall_kind, hs.rf_status], [726, 745, 730, 'ceiling', 'live']);
+  eq('the health sample logs the levels', [hs.put_support_strike, hs.trapdoor_near, hs.trapdoor_deep, hs.call_wall_kind, hs.rf_status], [726, 743, 730, 'ceiling', 'live']);
 }
 
 // ── THE PANEL WEARS THE VOCABULARY ───────────────────────────────────────────

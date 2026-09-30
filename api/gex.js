@@ -18,7 +18,7 @@
 //                                    replaces it
 import { createHash, randomBytes } from 'node:crypto';
 import { kvConfigured, kvGetJson, kvSetJson, kvSetJsonEx, kvIncrEx, kvSetNxEx } from '../lib/kv.js';
-import { gexFeedPayload, feedLeaks, slugMatches, rateBucket, FEED_TICKERS, FEED_RECOMPUTE_MIN, FEED_RATE_PER_HOUR } from '../lib/gexFeed.js';
+import { gexFeedPayload, feedLeaks, slugMatches, rateBucket, FEED_TICKERS, FEED_RECOMPUTE_MIN, FEED_RATE_PER_HOUR, oiStaleReason, nyToday } from '../lib/gexFeed.js';
 import { crossCheckPayload } from '../lib/crossCheckFeed.js';
 import { crossCheckLeaks } from '../lib/crossCheck.js';
 import { captureGex, readGex, settledGex, observeRoll, OCC_ROLL_LOG_KEY, OCC_HEALTH_KEY, GEX_SYMBOLS, CUSTOM_ROOT_RE,
@@ -63,8 +63,11 @@ const FEED_LOCK_KEY = (sym) => `dvcap:gex:feed:lock:v1:${sym}`;
 async function feedBoard(sym, now = Date.now()) {
   const stored = await readGex(sym).catch(() => null);
   // The row a recompute is shown with on the tab: the stored row with the recompute's on top.
+  // A recompute on YESTERDAY's open interest (OCC's file not yet rolled) is served but marked, and
+  // is not written over the store — the board stays yesterday's until today's file lands.
   const fromRecord = (rec) => ({ board: { ...rec, row: { ...(stored?.latest || {}), ...rec.row } }, mode: 'live_recompute', asOf: rec.at,
-    source: rec.mode === 'repriced' ? (rec.capturedAt || rec.at) : (rec.iv?.asOf || rec.at) });
+    source: rec.mode === 'repriced' ? (rec.capturedAt || rec.at) : (rec.iv?.asOf || rec.at),
+    staleReason: oiStaleReason(rec.vintage, new Date(now)) });
   const kept = await kvGetJson(LAST_RECOMPUTE_KEY(sym)).catch(() => null);
   const age = kept?.at ? now - Date.parse(kept.at) : Infinity;
   if (age < FEED_RECOMPUTE_MIN * 60000) return fromRecord(kept);
@@ -73,7 +76,7 @@ async function feedBoard(sym, now = Date.now()) {
       const out = await settledGex(sym, { spot: await resolveSpot(sym), expiries: stored?.latest?.expiries || null });
       const rec = recomputeRecord(sym, { ...out, mode: 'settled' });
       if (rec) {
-        try { await kvSetJsonEx(LAST_RECOMPUTE_KEY(sym), rec, LAST_RECOMPUTE_TTL_SEC); } catch { /* served anyway */ }
+        if (!oiStaleReason(rec.vintage, new Date(now))) { try { await kvSetJsonEx(LAST_RECOMPUTE_KEY(sym), rec, LAST_RECOMPUTE_TTL_SEC); } catch { /* served anyway */ } }
         return fromRecord(rec);
       }
     } catch { /* fall through to what is on hand */ }
@@ -110,9 +113,9 @@ async function serveFeed(req, res) {
     return res.status(200).send(body);
   }
   if (!FEED_TICKERS.includes(sym)) return res.status(404).json({ error: 'not found' });
-  const { board, mode, asOf, source } = await feedBoard(sym);
+  const { board, mode, asOf, source, staleReason } = await feedBoard(sym);
   if (!board) return res.status(503).json({ error: 'no board yet' });
-  const body = JSON.stringify(gexFeedPayload(sym, board, { mode, asOf, sourceSnapshot: source }));
+  const body = JSON.stringify(gexFeedPayload(sym, board, { mode, asOf, sourceSnapshot: source, today: nyToday(), staleReason }));
   if (feedLeaks(body).length) return res.status(500).json({ error: 'refused' });
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   return res.status(200).send(body);
@@ -274,6 +277,9 @@ export default async function handler(req, res) {
     // panel opens on.
     // A what-if (?spot=) is never kept: it is a board at a price nobody is trading at.
     const keep = !(Number.isFinite(spotIn) && spotIn > 0) && await authorised(req);
+    // BEFORE OCC'S FILE FOR TODAY ROLLS (~06:00–07:00 ET) a recompute is yesterday's book repriced:
+    // it is returned with staleReason 'oi_not_published' and NOT kept, so the stored board stays
+    // yesterday's. The pre-open workflow (gex-recompute.yml) relies on this at 07:15 ET.
     for (const sym of syms) {
       // The stored row's expiries, so the settled map covers the same book as the series it sits
       // beside — otherwise the two disagree about the flip for reasons that are about coverage.
@@ -282,8 +288,9 @@ export default async function handler(req, res) {
         spot: await spotFor(sym),
         expiries: stored?.latest?.expiries || null,
       });
-      results.push({ symbol: sym, ...out });
-      const rec = keep ? recomputeRecord(sym, { ...out, mode: 'settled' }) : null;
+      const staleReason = oiStaleReason(out?.vintage);
+      results.push({ symbol: sym, ...out, ...(staleReason ? { staleReason } : {}) });
+      const rec = keep && !staleReason ? recomputeRecord(sym, { ...out, mode: 'settled' }) : null;
       if (rec) { try { await kvSetJsonEx(LAST_RECOMPUTE_KEY(sym), rec, LAST_RECOMPUTE_TTL_SEC); } catch { /* the board still returns */ } }
     }
     return res.status(200).json({ mode: 'settled', at: new Date().toISOString(), results });
