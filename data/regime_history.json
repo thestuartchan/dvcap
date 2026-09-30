@@ -2381,7 +2381,7 @@
       "inputs": {
         "weightedRecessionProb": 14.3,
         "cpi": 3.35302,
-        "kalshi2027": 23,
+        "kalshi2027": 22,
         "tape": {
           "gold": "up",
           "tlt": "down",
@@ -2403,7 +2403,7 @@
         "regimeVintage": "decayed"
       },
       "source": "client+cron",
-      "loggedAt": "2026-09-30T01:38:41.117Z",
+      "loggedAt": "2026-09-30T08:45:45.177Z",
       "axes": {
         "growth": {
           "state": "turning-down",
@@ -2451,6 +2451,42 @@
         },
         "quadrant": "ref",
         "quadrantRead": "growth firm, inflation cool"
+      },
+      "state": {
+        "regime": {
+          "id": "ref",
+          "probs": {
+            "ref": 29,
+            "inf": 21,
+            "stag": 21,
+            "def": 29
+          },
+          "g": 0,
+          "gDrift": -1.1,
+          "i": -0.07,
+          "iDrift": 0.33,
+          "drifting": "stag"
+        },
+        "conditions": {
+          "score": 68,
+          "band": "caution",
+          "comps": {
+            "credit": 85,
+            "equityVol": 21,
+            "ratesVol": 95,
+            "realYield": 88,
+            "funding": 34,
+            "breadth": 77,
+            "dollar": 82
+          }
+        },
+        "policy": {
+          "stance": "tightening",
+          "hikeOdds": 44,
+          "liq4w": -9
+        },
+        "sizing": 0.56,
+        "stage": 2
       }
     }
   ]
