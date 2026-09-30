@@ -28,7 +28,9 @@ import { HORIZON, HORIZON_LABEL, dispersionRead, NO_CONVERSION_NOTE } from "../l
 import { buildViews, evaluateViews, regimeCluster, divergenceRead } from "../lib/analystViews.js";
 import { fmtCcy } from "../lib/fxrates.js";
 import { realizedCurve } from "../lib/positions.js";
-import { DEFAULT_TARGET_PCT } from "../lib/sizing.js";
+import { DEFAULT_TARGET_PCT, regimeMultiplier } from "../lib/sizing.js";
+import { computeMarketState, stateLogRow } from "../lib/marketState.js";
+import { StateView, DriversView, FeedHealth, StreetCompare } from "./MarketState.jsx";
 import { observationAge } from "../lib/gates.js";
 import { trend as trendOf } from "../lib/series.js";
 
@@ -5756,11 +5758,22 @@ function AnalystViewBoard({ live, probFor, engineRegime, consensus }) {
   );
 }
 
+// The previous Market Watch tabs, reachable from a link beside the new ones for a week after the
+// rebuild, then removed.
+const LEGACY_TABS = [
+  { id: "macro",      label: "🌐 Macro (previous)"       },
+  { id: "indicators", label: "📡 Indicators (previous)"  },
+  { id: "smartmoney", label: "🏦 Smart Money (previous)" },
+];
+const LEGACY_UNTIL = "2026-10-08";
+const legacyOffered = new Date().toISOString().slice(0, 10) < LEGACY_UNTIL;
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
   // Lands on the first tab of the first group. Declaring Trade Desk first and then opening in the
   // middle of Market Watch is the kind of small incoherence that makes an ordering feel arbitrary.
   const [tab, setTab]           = useState("global");
+  const [showLegacy, setShowLegacy] = useState(false);   // the previous Market Watch tabs, while they are offered
   const [theme, setTheme]       = useTheme();
   const [pbRegions, setPbRegions] = useState(["asia", "eu", "us"]); // Global Playbook — multi-select, default All
   const toggleRegion = (r) => setPbRegions(prev => {
@@ -5877,6 +5890,33 @@ export default function App() {
   const liveRegime = REGIMES.find(r => r.id === liveRegimeId) || REGIMES[0];
   // The pin carries WHY and WHEN, so a stale override is self-explaining rather than a mystery.
   const regimeDiverged = regimePin.pinned && activeRegime.id !== liveRegime.id;
+
+  // ── THE MEASURED MARKET STATE (lib/marketState.js) ──
+  // The gauges come from /api/indicators?state=1 (half-hour KV cache on the server); the regime is
+  // combined here from the main payload's measured axes. Cached locally so the State tab paints the
+  // last read at once and replaces it when the fetch lands.
+  const [stateFeed, setStateFeed] = useState(() => cacheLoad("cache_marketstate_v1", null));
+  const [stateFeedStatus, setStateFeedStatus] = useState({ loading: true, error: null, done: false });
+  const loadStateFeed = useCallback(() => {
+    return fetch(`${PROXY_BASE_URL}/indicators?state=1`).then(r => r.json()).then(j => {
+      if (j?.ok) { setStateFeed(j); cacheSave("cache_marketstate_v1", j); setStateFeedStatus({ loading: false, error: null, done: true }); }
+      else setStateFeedStatus({ loading: false, error: j?.error || "no conditions read", done: true });
+    }).catch(e => setStateFeedStatus({ loading: false, error: String(e?.message || e), done: true }));
+  }, []);
+  useEffect(() => { loadStateFeed(); }, [loadStateFeed]);
+  const fetchStateFeed = () => { setStateFeedStatus(s => ({ ...s, loading: true })); loadStateFeed(); };
+  const mstate = useMemo(() => computeMarketState({
+    axes: liveInd ? measuredAxes(liveInd, { ism: ismEntry }) : null,
+    precomputed: stateFeed ? { conditions: stateFeed.conditions, liquidity: stateFeed.liquidity } : null,
+    stance: FED_LANGUAGE_STATUS.status, stanceAsOf: FED_LANGUAGE_STATUS.lastUpdated,
+    next: nextMeetingOdds(liveInd?.fedPathFeed ?? null), asOf: stateFeed?.at ?? null,
+  }), [liveInd, ismEntry, stateFeed]);
+  // What the Console sizes on today (the consensus engine, default multipliers) — shown beside the
+  // measured figure until sizing moves over.
+  const legacySizing = regimeMultiplier({ regimeId: liveRegime?.id, creditDanger: creditStatus(liveInd?.creditSpread) === "DANGER",
+    contested: !!derivedRegimes?.contested, pinnedDiverged: regimeDiverged, vintage: regimeVintage }).mult;
+  const streetView = { id: liveRegime?.id ?? null, vintage: CONSENSUS_VINTAGE.label,
+    probs: Object.fromEntries(["ref", "inf", "stag", "def"].map(id => [id, regimeProbFor(id)])) };
   const switchToLive = () => { setActiveRegime(liveRegime); savePin({ pinned: false, note: "", setAt: null }); };
   const keepPinned = (note) => savePin({ pinned: true, note: note ?? regimePin.note ?? "", setAt: regimePin.setAt || new Date().toISOString().slice(0, 10) });
 
@@ -5901,6 +5941,7 @@ export default function App() {
   );
   useEffect(() => {
     if (!derivedRegimes || !liveRegime) return;
+    if (!stateFeedStatus.done) return;                                 // wait for the gauges, so the row carries the measured state
     const today = new Date().toISOString().slice(0, 10);
     if (cacheLoad("regime_log_last_v1", null) === today) return;   // already logged today
     // The same row builder the cron uses, plus what only the client knows: the pinned view, the
@@ -5916,12 +5957,13 @@ export default function App() {
         ladderSpread: pbData?.us?.ladder?.spread ?? null,
         inputs: { oas: liveInd?.creditSpread ?? null, tenY: liveInd?.tenY ?? null, twoY: liveInd?.twoY ?? null },
         axes: liveInd ? axesLogRow(measuredAxes(liveInd, { ism: ismEntry })) : null,
+        state: stateLogRow(mstate),
       },
     });
     fetch("/api/regime-log", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), credentials: "include" })
       .then(r => r.ok ? cacheSave("regime_log_last_v1", today) : null)
       .catch(() => {});
-  }, [derivedRegimes?.stagflation, liveRegime?.id, activeRegime.id]);
+  }, [derivedRegimes?.stagflation, liveRegime?.id, activeRegime.id, stateFeedStatus.done]);
 
   // ── P2.5 — OAS/HYG reconciliation, run on the same daily hook ───────────────
   // Necessarily retrospective: HY OAS for date D publishes ~2 business days later, so each
@@ -5959,6 +6001,8 @@ export default function App() {
   // Fetch the Global Playbook when its tab is open or the region changes.
   useEffect(function() {
     if (tab === "global") pbRegions.forEach(r => fetchPlaybookRegion(r));
+    // Credit detail and the yen toggle on Drivers (and the previous Macro layout) read the US payload.
+    else if (tab === "drivers" || tab === "macro" || tab === "indicators") fetchPlaybookRegion("us");
   }, [tab, pbRegions, fetchPlaybookRegion]);
 
   // Load manual deploy-stage toggles + portfolio value from localStorage
@@ -6001,6 +6045,697 @@ export default function App() {
     return `${iso(d)} ${t} — ${days < 1 ? "yesterday" : days + "d old"}`;
   };
 
+  // ── SHARED MACRO BLOCKS ── rendered on the previous Macro layout and on Drivers / Street. One
+  // definition each, lifted out of the Macro tab so the new screens do not carry copies.
+  // Fed pricing, the statement, and the ZQ path (Drivers › Policy & rates).
+  const renderFedBlock = () => (
+    <>
+              {(() => {
+                const bps = liveInd?.impliedCutsBps ?? null;
+                const cf = liveInd?.currentFedFunds ?? null, tb = liveInd?.tbill6m ?? null;
+                const nx = nextMeetingOdds(liveInd?.fedPathFeed ?? null);
+                const mtgLabel = nx ? new Date(nx.meeting + "T12:00:00Z").toLocaleString("en-US", { month: "long", day: "numeric", timeZone: "UTC" }) : null;
+                const sept = nx ? nx.hikePct : null;
+                const sixDir = bps == null ? null : bps > 10 ? "dovish" : bps < 0 ? "hawkish" : "neutral";
+                const sixLean = bps == null ? null : bps > 10 ? 1 : bps < 0 ? -1 : 0;
+                const septDir = !nx ? null : nx.cutPct >= 30 || sept <= 30 ? "dovish" : sept >= 45 ? "hawkish" : "neutral";
+                const septLean = !nx ? null : septDir === "dovish" ? 1 : septDir === "hawkish" ? -1 : 0;
+                let xread, xcol;
+                if (septLean == null) { xread = "Next-meeting odds unavailable — the ZQ curve did not load."; xcol = C.muted; }
+                else if (sixLean == null) { xread = `6-month path unavailable — showing the ${mtgLabel} read only.`; xcol = C.muted; }
+                else if (sixLean !== 0 && septLean !== 0 && sixLean === septLean) { xread = `Aligned — both lean ${sixDir}. The near-term path and the ${mtgLabel} meeting point the same way.`; xcol = C.green; }
+                else if (sixLean !== 0 && septLean !== 0 && sixLean !== septLean) { xread = `Diverge — the 6-month path leans ${sixDir} but ${mtgLabel} meeting odds lean ${septDir}. Trust the meeting read for ${mtgLabel}, the path for the trajectory.`; xcol = C.amber; }
+                else { xread = "Mixed / neutral — nothing decisively priced either way."; xcol = C.muted; }
+                const dirCol = d => d === "dovish" ? C.green : d === "hawkish" ? C.red : C.muted;
+                const row = (label, big, sub, col) => (
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", padding: "6px 0", borderBottom: "1px solid " + C.bdr }}>
+                    <span style={{ minWidth: 150, fontSize: 12.5, fontWeight: 700, color: C.mid }}>{label}</span>
+                    <span style={{ fontSize: 17, fontWeight: 900, color: col }}>{big}</span>
+                    <span style={{ fontSize: 12, color: C.muted }}>{sub}</span>
+                  </div>
+                );
+                return (
+                  <Card>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                      <SLabel>Fed pricing — what's priced for the Fed</SLabel>
+                      <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>two market reads, cross-checked · ZQ futures path below</span>
+                      {/* Both rows are live now: the 6-month path from FRED, the meeting odds from the ZQ
+                          curve. The meeting row used to be copied from FedWatch by hand. */}
+                      {nx?.asOf && <span style={{ marginLeft: "auto", fontSize: 10.5, color: C.muted }}>ZQ settle {nx.asOf}</span>}
+                    </div>
+                    <div style={{ marginTop: 6 }}>
+                      {row("6-month path", bps != null ? `${bps} bps` : "—", bps != null ? `${bps > 0 ? "cuts" : bps < 0 ? "hikes" : "flat"} priced · 6M bill ${tb != null ? tb.toFixed(2) : "—"}% vs funds ${cf != null ? cf.toFixed(2) : "—"}%` : "Fed funds / T-bill not loaded", bps != null ? dirCol(sixDir) : C.muted)}
+                      {nx ? row(`${mtgLabel} meeting`, nx.cutPct > 0 ? `${nx.cutPct}% cut` : `${sept}%`, `${nx.cutPct > 0 ? "implied cut odds" : "implied hike odds"} · ${nx.contract} ZQ ${nx.impliedPost.toFixed(3)}% vs EFFR ${nx.effr.toFixed(2)}%`, dirCol(septDir))
+                          : row("Next meeting", "—", "ZQ curve not loaded", C.muted)}
+                    </div>
+                    <div style={{ marginTop: 8, padding: "8px 11px", background: xcol === C.amber ? C.aBg : xcol === C.green ? C.gBg : C.bg, border: "1px solid " + (xcol === C.amber ? C.aBdr : xcol === C.green ? C.gBdr : C.bdr), borderRadius: 8, fontSize: 12.5, fontWeight: 700, color: xcol, lineHeight: 1.5 }}>
+                      Cross-check: {xread}
+                    </div>
+                    {nx && <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 6, lineHeight: 1.5 }}>Read off {nx.method} ({nx.contract}): the post-meeting rate it implies, less today's EFFR, in quarter points. Risk-neutral, so close to — not exactly — a probability.</div>}
+                  </Card>
+                );
+              })()}
+
+              {/* Fed Language Status — manually updated after each FOMC (Update 2) */}
+              {(() => {
+                const currentState = FED_LANGUAGE_STATES[FED_LANGUAGE_STATUS.status] || FED_LANGUAGE_STATES.hawkish_hold;
+                const cell = (label, text, italic) => (
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: P.grey888, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
+                    <div style={{ fontSize: 12, marginTop: 2, color: italic ? P.grey555 : C.mid, fontStyle: italic ? "italic" : "normal", lineHeight: 1.5 }}>{text}</div>
+                  </div>
+                );
+                return (
+                  <Card style={{ borderLeft: "3px solid " + currentState.color }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
+                      <div>
+                        <SLabel>Fed Language Status</SLabel>
+                        <div style={{ color: currentState.color, fontSize: 20, fontWeight: 700, lineHeight: 1.2 }}>{currentState.label}</div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap", marginTop: 4 }}>
+                          <HandKept asOf={FED_LANGUAGE_STATUS.lastUpdated} cadenceDays={49} what="after each FOMC meeting or minutes release" />
+                          <span style={{ fontSize: 12, color: C.muted }}>{FED_LANGUAGE_STATUS.lastEvent}</span>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 11, color: P.grey888, textAlign: "right" }}>Next: {FED_LANGUAGE_STATUS.nextEvent}</div>
+                    </div>
+                    {/* Decision + vote + dissent + guidance — the meeting's actual character,
+                        not just the state label. Dissent direction is the hawkish/dovish tell. */}
+                    {FED_LANGUAGE_STATUS.decision && (
+                      <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: C.text, background: C.bg, border: "1.5px solid " + C.bdr, borderRadius: 6, padding: "4px 9px" }}>
+                          {FED_LANGUAGE_STATUS.decision}
+                        </span>
+                        {FED_LANGUAGE_STATUS.vote && (
+                          <span style={{ fontSize: 12, fontWeight: 800, color: currentState.color, background: currentState.bg, border: "1.5px solid " + alpha(currentState.color, 0x55), borderRadius: 6, padding: "4px 9px" }}>
+                            Vote {FED_LANGUAGE_STATUS.vote}
+                          </span>
+                        )}
+                        {FED_LANGUAGE_STATUS.bias && (
+                          <span style={{ fontSize: 12, fontWeight: 800, color: C.blue, background: C.blBg, border: "1.5px solid " + C.blBdr, borderRadius: 6, padding: "4px 9px" }}>
+                            {FED_LANGUAGE_STATUS.bias}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {FED_LANGUAGE_STATUS.dissents && (
+                      <div style={{ fontSize: 12, color: C.mid, marginTop: 8, lineHeight: 1.5 }}>
+                        <b style={{ color: C.muted }}>Dissents: </b>{FED_LANGUAGE_STATUS.dissents}
+                        {FED_LANGUAGE_STATUS.dissentNote && <span style={{ color: C.amber, fontWeight: 700 }}> — {FED_LANGUAGE_STATUS.dissentNote}</span>}
+                      </div>
+                    )}
+                    {FED_LANGUAGE_STATUS.guidance && (
+                      <div style={{ fontSize: 12, color: C.mid, marginTop: 5, lineHeight: 1.5 }}>
+                        <b style={{ color: C.muted }}>Guidance: </b>{FED_LANGUAGE_STATUS.guidance}
+                      </div>
+                    )}
+                    <p style={{ fontSize: 13, marginTop: 10, color: C.mid, lineHeight: 1.6 }}>{FED_LANGUAGE_STATUS.summary}</p>
+                    {/* WHAT THE STATE IS AND WHAT WOULD MOVE IT — not what to hold in it. The three
+                        instrument cells that sat here ("Rotate now. Sell USFR → Buy IEF same day.")
+                        were a fifth surface issuing instructions, keyed to a label a person sets by
+                        hand after each meeting. Fed context is the meeting's character and the tell
+                        for the next one; the stance is the tape's, in one place. */}
+                    <div style={{ marginTop: 12, background: currentState.bg, borderRadius: 8, padding: 12 }}>
+                      {cell("This state", currentState.description)}
+                      <div style={{ marginTop: 8 }}>{cell("Watch for", currentState.watchFor, true)}</div>
+                    </div>
+                  </Card>
+                );
+              })()}
+
+              {/* The DAILY EFFR from the feed, not the monthly fed funds average: after the Sep 16 hike the
+                  monthly figure still read 3.63 and a hand-entered futures price was measured against it,
+                  overstating "moves priced" by a full hike. */}
+              <FedPathCard effr={liveInd?.fedPathFeed?.effr ?? liveInd?.currentFedFunds ?? null} feed={liveInd?.fedPathFeed ?? null} />
+    </>
+  );
+  // The CPI / PCE tracker with the real-yield-on-cash read (Drivers › Inflation).
+  const renderInflationBlock = () => (
+    <>
+              {/* CPI Inflation Tracker — Headline/Core CPI + Core PCE YoY, real-yield-on-cash */}
+              {(() => {
+                // (level→colour lookup now lives in bandOf() below — the tile numbers carry their
+                // SERIES colour, and the level read moved to the band chip.)
+                const headline = liveInd ? liveInd.cpiHeadlineCurrent : null;
+                const core     = liveInd ? liveInd.cpiCoreCurrent : null;
+                const pce      = liveInd ? liveInd.pceCoreCurrent : null;
+                const hHist = liveInd && Array.isArray(liveInd.cpiHeadlineHistory) ? liveInd.cpiHeadlineHistory : [];
+                const cHist = liveInd && Array.isArray(liveInd.cpiCoreHistory)     ? liveInd.cpiCoreHistory     : [];
+                const pHist = liveInd && Array.isArray(liveInd.pceCoreHistory)     ? liveInd.pceCoreHistory     : [];
+                const hasChartData = [hHist, cHist, pHist].some(a => a.length >= 2);
+                // Merge the three monthly series onto ONE date axis, union of dates, sorted.
+                // They are published on separate schedules and do NOT always cover the same
+                // months (PCE carried 2025-10-01 while the CPI series did not). Giving each
+                // <Line> its own `data` prop makes Recharts build categories from the first
+                // series and APPEND any unmatched date to the end of the axis — which is what
+                // rendered a stray Oct-2025 point after Mar-2026. One dataset makes that
+                // structurally impossible: every row is a date, every series a column.
+                const chartData = (() => {
+                  const byDate = new Map();
+                  const put = (rows, key) => (rows || []).forEach(r => {
+                    if (!r?.date || r.value == null || !Number.isFinite(+r.value)) return;
+                    if (!byDate.has(r.date)) byDate.set(r.date, { date: r.date });
+                    byDate.get(r.date)[key] = +Number(r.value).toFixed(2);
+                  });
+                  put(hHist, "headline"); put(cHist, "core"); put(pHist, "pce");
+                  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+                })();
+                // (realYield is computed below, AFTER the cash marks — it must use the same cash
+                // basis the chart band draws, or the card contradicts its own chart.)
+                // Direction from the stored history (prior print), never asserted from one value.
+                const trendOf = h => {
+                  if (!Array.isArray(h) || h.length < 2) return null;
+                  const last = h[h.length - 1], prev = h[h.length - 2];
+                  const d = +(last.value - prev.value).toFixed(2);
+                  return { d, dir: d < 0 ? "cooling" : d > 0 ? "rising" : "flat", from: prev.value, fromDate: prev.date, toDate: last.date };
+                };
+                const pceAnn = announced("pceCore", liveInd?.asOf?.pceCoreCurrent);
+                // Same single source the posture notes and cash-ETF rows resolve through.
+                const cashYield = liveCashYield(liveInd);
+                // Cash-yield markers drawn on the chart: the two funds actually held plus the
+                // spot bill rate. Each is only included when its live value exists — a missing
+                // one is dropped, never defaulted.
+                // Aug-22 — use the 30-DAY SEC YIELD (forward, comparable), not TTM distribution yield
+                // (backward-looking, overstates, frozen between monthly ex-divs). Published figures are
+                // dated manual issuer-page values; the live DTB3 proxy reconciles them daily.
+                const dtb3 = liveInd?.tbill3m ?? null;
+                const secDiv = proxyDivergence(dtb3);
+                const cashMarks = [
+                  { key: "USFR", label: "USFR", value: SEC_YIELDS.USFR.value, color: P.sky500,
+                    detail: `SEC 30-day yield ${SEC_YIELDS.USFR.value}% — as of ${SEC_YIELDS.USFR.asOf} · ${SEC_YIELDS.USFR.src}` },
+                  { key: "SGOV", label: "SGOV", value: SEC_YIELDS.SGOV.value, color: P.indigo500,
+                    detail: `SEC 30-day yield ${SEC_YIELDS.SGOV.value}% — as of ${SEC_YIELDS.SGOV.asOf} · expense ${SEC_YIELDS.SGOV.expense}% · ${SEC_YIELDS.SGOV.src}` },
+                  cashYield && { key: "bill", label: cashYield.src, value: cashYield.value, color: P.blue500,
+                    detail: `spot policy-linked rate${cashYield.asOf ? `, as of ${cashYield.asOf}` : ""}` },
+                ].filter(Boolean);
+                // These three sit within a few bps of each other, so drawing three separate
+                // labelled lines would overprint into an unreadable smear. Draw the range as a
+                // band, and give each its exact value in the legend row beneath the chart.
+                const cashLo = cashMarks.length ? Math.min(...cashMarks.map(m => m.value)) : null;
+                const cashHi = cashMarks.length ? Math.max(...cashMarks.map(m => m.value)) : null;
+
+                // A4 — real yield is now computed PER INSTRUMENT off each SEC yield (below), not as a
+                // single Fed-funds-vs-headline figure. The per-instrument block replaces the old band.
+                const trendChip = t => t && (
+                  <span style={{ fontSize: 10.5, fontWeight: 800, color: t.dir === "cooling" ? C.green : t.dir === "rising" ? C.red : C.muted }}>
+                    {t.dir === "cooling" ? "▼" : t.dir === "rising" ? "▲" : "■"} {t.d >= 0 ? "+" : "−"}{Math.abs(t.d)}pp vs prior
+                  </span>
+                );
+                // Each headline number carries its SERIES colour, matching the chart line and the
+                // legend below, so the eye maps tile → line without a lookup. The level read
+                // (how far above target) hasn't been lost — it moves to a small band chip.
+                const bandOf = v => v == null ? null
+                  : v >= 4.0 ? { t: "well above target", c: P.red500 }
+                  : v >= 3.0 ? { t: "elevated",          c: P.orange500 }
+                  : v >= 2.5 ? { t: "above target",      c: P.yellow500 }
+                  : v >= 1.5 ? { t: "near target",       c: P.green500 }
+                  :            { t: "below target",      c: P.blue500 };
+                // WHICH MONTH. Three tiles carried a figure, a source and a delta, and never said what
+                // period any of them covered — while CPI and PCE publish two and a half weeks apart, so
+                // for half of every month they are not the same month. A reader comparing the tiles was
+                // not told they might be comparing across a release.
+                const reading = (label, val, sub, trend, seriesColor, obsDate) => {
+                  const band = bandOf(val);
+                  return (
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: P.grey888, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>{label}</div>
+                      <div style={{ fontSize: 24, fontWeight: 700, color: seriesColor }}>{val != null ? val.toFixed(1) + "%" : "—"}</div>
+                      <div style={{ fontSize: 11, color: P.grey888 }}>{sub}{obsDate ? <> · <b style={{ color: C.mid }}>{monthName(obsDate)}</b></> : null}</div>
+                      {trendChip(trend)}
+                      {band && <div style={{ fontSize: 10, fontWeight: 700, color: band.c, marginTop: 1 }}>● {band.t}</div>}
+                    </div>
+                  );
+                };
+                return (
+                  <Card>
+                    <SLabel>CPI Inflation Tracker</SLabel>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 4, marginBottom: 10 }}>
+                      {reading("Headline CPI", headline, "YoY · BLS", trendOf(hHist), CPI_SERIES.headline, liveInd?.dates?.cpiHeadlineCurrent)}
+                      {reading("Core CPI", core, "Ex food & energy · BLS", trendOf(cHist), CPI_SERIES.core, liveInd?.dates?.cpiCoreCurrent)}
+                      {reading("Core PCE", pce, "Fed's preferred · BEA", trendOf(pHist), CPI_SERIES.pce, liveInd?.dates?.pceCoreCurrent)}
+                    </div>
+                    {/* ── THE GAP BETWEEN THE TWO CORE SERIES ──
+                        Three tiles side by side invite the eye to read the smallest one, and for most
+                        of the last year that was core CPI. The two measure the same idea and disagree
+                        structurally: core PCE normally sits BELOW core CPI, because shelter is about a
+                        third of the CPI basket and a much smaller share of PCE. So the sign of the gap
+                        carries information the levels do not, and the card was not saying it.
+                        Both figures are the same vintage as the tiles above — a spread built from two
+                        release dates is a number about the calendar, not about inflation. */}
+                    {(() => {
+                      const sp = coreSpread(pce, core, {
+                        pceDate: liveInd?.dates?.pceCoreCurrent, cpiDate: liveInd?.dates?.cpiCoreCurrent,
+                      });
+                      if (!sp) return null;
+                      // ACROSS TWO MONTHS IT IS NOT A SPREAD. The comment above claims both figures
+                      // share a vintage; nothing enforced it, and CPI publishes around the 11th while
+                      // PCE publishes at month end — so for about two weeks of every month core CPI is
+                      // a month ahead. The gap would move, the card would explain the move as
+                      // inflation, and the cause would be the release calendar.
+                      if (sp.sameVintage === false) {
+                        return (
+                          <div style={{ marginBottom: 12, padding: "8px 12px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8 }}>
+                            <div style={{ display: "flex", gap: 9, alignItems: "baseline", flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 10, fontWeight: 800, color: P.grey888, textTransform: "uppercase", letterSpacing: 0.5 }}>Core PCE − Core CPI</span>
+                              <b style={{ fontSize: 15, color: C.amber }}>not comparable this week</b>
+                            </div>
+                            <div style={{ fontSize: 11.5, color: C.mid, marginTop: 4, lineHeight: 1.5 }}>
+                              {sp.vintageNote}. The two tiles above are each correct for their own month;
+                              the difference between them is not. It becomes a spread again when PCE catches up.
+                            </div>
+                          </div>
+                        );
+                      }
+                      const col = sp.tone === "warn" ? C.amber : sp.tone === "watch" ? C.mid : C.green;
+                      const bg  = sp.tone === "warn" ? C.aBg : C.bg;
+                      const bdr = sp.tone === "warn" ? C.aBdr : C.bdr;
+                      return (
+                        <div style={{ marginBottom: 12, padding: "8px 12px", background: bg, border: "1px solid " + bdr, borderRadius: 8 }}>
+                          <div style={{ display: "flex", gap: 9, alignItems: "baseline", flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 10, fontWeight: 800, color: P.grey888, textTransform: "uppercase", letterSpacing: 0.5 }}>Core PCE − Core CPI</span>
+                            <b style={{ fontSize: 15, color: col }}>{sp.pp >= 0 ? "+" : "−"}{Math.abs(sp.pp).toFixed(2)}pp</b>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: col }}>{sp.label}</span>
+                          </div>
+                          <div style={{ fontSize: 11.5, color: C.mid, marginTop: 4, lineHeight: 1.5 }}>
+                            {sp.divergent ? (
+                              <>Core CPI at <b>{sp.cpi.toFixed(2)}%</b> reads close to target; core PCE at <b>{sp.pce.toFixed(2)}%</b> does not — and
+                              {" "}<b>PCE is the series the Fed targets</b>. An inversion of this sign usually means the disinflation is concentrated
+                              in shelter, which CPI weights far more heavily. Read the CPI tile alone and the card reports progress the Fed's own
+                              gauge does not show.</>
+                            ) : sp.inverted ? (
+                              <>PCE above core CPI is the wrong way round, though both series sit near target — the usual shelter-driven discount
+                              has not just closed but reversed.</>
+                            ) : sp.inLine ? (
+                              <>The two are within a tenth of a point, so the usual PCE discount to core CPI has gone. Neither series is currently
+                              telling a different story from the other.</>
+                            ) : (
+                              <>The usual relationship: PCE below core CPI, which is what a much lighter shelter weight and a chained basket imply.
+                              Nothing to reconcile between the two.</>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    {/* Announced-but-not-yet-in-FRED print, explicitly labelled with its source.
+                        Auto-retires once FRED's own asOf reaches the same period. */}
+                    {pceAnn && (
+                      <div style={{ marginBottom: 12, padding: "8px 11px", background: C.blBg, border: "1.5px solid " + C.blBdr, borderRadius: 8 }}>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: C.blue, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                          Announced {pceAnn.released} · not yet in FRED
+                        </div>
+                        <div style={{ fontSize: 13, color: C.mid, marginTop: 3, lineHeight: 1.5 }}>
+                          <b>{pceAnn.label} {pceAnn.value}% YoY</b> ({pceAnn.mom >= 0 ? "+" : ""}{pceAnn.mom}% MoM) — {pceAnn.note}.
+                          Headline PCE {pceAnn.headline}% YoY ({pceAnn.headlineMom >= 0 ? "+" : ""}{pceAnn.headlineMom}% MoM).
+                          <span style={{ color: C.lbl }}> Source: {pceAnn.source}. The tile above still shows FRED's last ingested print ({liveInd?.asOf?.pceCoreCurrent ?? "—"}).</span>
+                        </div>
+                      </div>
+                    )}
+                    {/* A3 — DTB3 proxy reconciliation, on ONE basis and at the RIGHT DATE.
+                        DTB3 is a discount rate; a fund's SEC yield is bond-equivalent, so the bill is
+                        converted before anything is subtracted from it. The residual is fitted against
+                        the DTB3 print on the published figure's own date, so the ✓ tests the model
+                        rather than how far the bill has drifted since the fund last restated. */}
+                    {dtb3 != null && secDiv && (() => {
+                      const bey = secYieldProxy(dtb3)?.bey;
+                      return (
+                      <div style={{ marginBottom: 12, padding: "8px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, fontSize: 11.5 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
+                          <span style={{ fontWeight: 800, color: C.mid }}>3M T-bill (DTB3) <b style={{ color: C.text }}>{dtb3.toFixed(2)}%</b> <span style={{ color: C.lbl, fontWeight: 600 }}>discount</span>
+                            {bey != null && <> → <b style={{ color: C.text }}>{bey.toFixed(2)}%</b> <span style={{ color: C.lbl, fontWeight: 600 }}>bond-equivalent</span></>}
+                            <span style={{ color: C.lbl, fontWeight: 600 }}> · live · daily{liveInd?.asOf?.tbill3m ? ` · ${liveInd.asOf.tbill3m}` : ""}</span></span>
+                          <span style={{ color: C.lbl, fontStyle: "italic" }}>SGOV &amp; USFR are pass-throughs of the bill<br />
+                            <b>est</b> is a proxy for the published SEC yield — not an APY, which the comparison card computes separately</span>
+                        </div>
+                        {[["SGOV", PROXY.SGOV.formula], ["USFR", PROXY.USFR.formula]].map(([k, f]) => {
+                          const d = secDiv[k];
+                          const sign = (n) => (n >= 0 ? "+" : "") + n + "bp";
+                          return (
+                            <div key={k} style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "baseline", marginTop: 4 }}>
+                              <span style={{ minWidth: 92, fontWeight: 700, color: C.mid }}>{k} est SEC</span>
+                              <span style={{ fontWeight: 800, color: C.text }}>{d.est.toFixed(2)}%</span>
+                              <span style={{ color: C.lbl }}>{f}</span>
+                              <span style={{ color: C.muted }}>· published <b style={{ color: C.mid }}>{d.published.toFixed(2)}%</b> ({SEC_YIELDS[k].asOf}{d.ageDays != null ? `, ${d.ageDays}d ago` : ""})</span>
+                              {/* The gap, ATTRIBUTED. Charging the whole thing to the model made a
+                                  working proxy look broken every time the bill moved. */}
+                              <span style={{ color: C.muted }}>· gap {sign(d.bp)} = {sign(d.modelBp)} model {sign(d.rateBp)} bill since</span>
+                              <span style={{ fontWeight: 800, color: d.diverged ? C.amber : C.green }}>
+                                {d.diverged ? `⚠ model off ${sign(d.modelBp)} — re-fit the residual` : "✓ model fits"}</span>
+                              {d.stale && <StaleChip>published figure {d.ageDays}d old — refresh from the issuer page</StaleChip>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      );
+                    })()}
+                    {/* A4 — real yield PER INSTRUMENT off its SEC yield (funds) or spot (the bill). Each
+                        shows its cushion vs headline CPI and the CPI level that flips it negative. */}
+                    {headline != null && (
+                      <div style={{ marginBottom: 12, padding: "8px 12px", background: C.surf, border: "1px solid " + C.bdr, borderRadius: 8 }}>
+                        <div style={{ fontSize: 10.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 5 }}>Real yield on cash vs headline CPI {headline.toFixed(2)}%</div>
+                        {cashMarks.map(m => {
+                          const ry = m.value - headline;
+                          return (
+                            <div key={m.key} style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "baseline", padding: "2px 0" }}>
+                              <span style={{ minWidth: 96, fontWeight: 700, color: C.mid }}>{m.label}</span>
+                              <span style={{ fontWeight: 800, color: C.text }}>{m.value.toFixed(2)}%</span>
+                              <span style={{ fontWeight: 800, color: ry > 0 ? C.green : C.red }}>{ry >= 0 ? "+" : ""}{ry.toFixed(2)}% real</span>
+                              <span style={{ color: C.lbl }}>flips at CPI ≥ <b style={{ color: C.mid }}>{m.value.toFixed(2)}%</b></span>
+                            </div>
+                          );
+                        })}
+                        <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 5, lineHeight: 1.5 }}>
+                          SEC 30-day yields (forward) — narrower than the backward-looking TTM figures the card used to show; the SGOV cushion roughly halves. Headline is the thinnest, most energy-sensitive measure{liveInd?.oil != null ? ` (WTI ${liveInd.oil})` : ""}. USFR leads SGOV by {Math.round((SEC_YIELDS.USFR.value - SEC_YIELDS.SGOV.value) * 100)}bp on SEC yields, not the ~4bp a TTM figure showed.
+                        </div>
+                      </div>
+                    )}
+                    {hasChartData ? (
+                      <ResponsiveContainer width="100%" height={160}>
+                        <LineChart data={chartData} margin={{ top: 8, right: 46, bottom: 4, left: 0 }}>
+                          <XAxis
+                            dataKey="date"
+                            type="category"
+                            tick={{ fontSize: 10 }}
+                            tickFormatter={(d) => {
+                              // Format from the STRING parts. new Date("2024-06-01") is parsed as
+                              // UTC midnight, so toLocaleDateString in a negative-offset timezone
+                              // rolls it back a day and mislabels the month (Jun 24 → May 24).
+                              const [y, m] = String(d).split("-");
+                              const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                              return `${MON[+m - 1] ?? "?"} ${String(y).slice(2)}`;
+                            }}
+                            interval={3}
+                          />
+                          <YAxis tick={{ fontSize: 10 }} width={32} tickFormatter={(v) => `${v}%`} domain={["auto", "auto"]} />
+                          <Tooltip
+                            formatter={(value, name) => [`${Number(value).toFixed(2)}%`, name]}
+                            labelFormatter={(d) => {
+                              const [y, m] = String(d).split("-");
+                              const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                              return `${MON[+m - 1] ?? "?"} ${y}`;
+                            }}
+                          />
+                          <Legend iconType="line" iconSize={10} wrapperStyle={{ fontSize: "11px" }} />
+                          {/* NO in-chart text labels. Both previous attempts failed: position
+                              "right" clipped at the container edge, "insideRight" overprinted the
+                              data lines. Every reference is identified in the legend row beneath
+                              the chart instead, which has room for the exact value and method. */}
+                          <ReferenceLine y={2} stroke={P.green500} strokeDasharray="4 3" ifOverflow="extendDomain" />
+                          {/* Cash band: the funds and the bill rate sit within a few bps, so the
+                              range is shaded once rather than drawn as three overlapping lines. */}
+                          {cashLo != null && (
+                            <ReferenceArea y1={cashLo} y2={cashHi} ifOverflow="extendDomain"
+                              fill={P.blue500} fillOpacity={0.10} stroke={P.blue500} strokeOpacity={0.35} strokeDasharray="4 3" />
+                          )}
+                          {/* connectNulls: a series missing a single month is a publication gap
+                              (BLS/BEA schedules), not a break in the underlying series. */}
+                          <Line type="monotone" dataKey="headline" name="Headline CPI" stroke={CPI_SERIES.headline} strokeWidth={2} dot={false} activeDot={{ r: 4 }} connectNulls />
+                          <Line type="monotone" dataKey="core" name="Core CPI" stroke={CPI_SERIES.core} strokeWidth={2} dot={false} activeDot={{ r: 4 }} connectNulls />
+                          <Line type="monotone" dataKey="pce" name="Core PCE" stroke={CPI_SERIES.pce} strokeWidth={2} strokeDasharray="5 3" dot={false} activeDot={{ r: 4 }} connectNulls />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div style={{ color: C.muted, fontSize: 13, fontStyle: "italic", marginTop: 8 }}>Awaiting data</div>
+                    )}
+                    {/* Reference legend — carries the labels that used to sit (illegibly) on the
+                        plot. Each entry names the instrument, its exact live yield, and how that
+                        yield was derived, on hover. */}
+                    {hasChartData && (
+                      <div style={{ marginTop: 8, borderTop: "1px solid " + C.bdr, paddingTop: 8 }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5 }} title="The Fed's stated inflation goal">
+                            <span style={{ width: 14, height: 0, borderTop: "2px dashed " + P.green500, display: "inline-block" }} />
+                            <b style={{ color: P.green500 }}>2%</b><span style={{ color: C.muted }}>Fed target</span>
+                          </span>
+                          {cashLo != null && (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5 }}
+                              title="Shaded band spans the cash yields below — they sit within a few bps of each other">
+                              <span style={{ width: 14, height: 9, background: P.blue500, opacity: 0.18, border: "1px dashed " + P.blue500, display: "inline-block", borderRadius: 2 }} />
+                              <span style={{ color: C.muted }}>cash band {cashLo.toFixed(2)}–{cashHi.toFixed(2)}%</span>
+                            </span>
+                          )}
+                          {cashMarks.map(m => (
+                            <span key={m.key} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5 }} title={m.detail}>
+                              <span style={{ width: 8, height: 8, borderRadius: "50%", background: m.color, display: "inline-block" }} />
+                              <b style={{ color: m.color }}>{m.label}</b>
+                              <span style={{ color: C.text, fontWeight: 700 }}>{m.value.toFixed(2)}%</span>
+                            </span>
+                          ))}
+                        </div>
+                        <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 5, lineHeight: 1.55 }}>
+                          Fund yields are the <b>30-day SEC yield</b> (USFR as of {SEC_YIELDS.USFR.asOf}, SGOV {SEC_YIELDS.SGOV.asOf}) — forward and comparable, not the backward-looking TTM distribution figure;
+                          the {cashYield?.src ?? "bill"} figure is the spot rate. Where a CPI line sits <i>above</i> the band, cash is losing to inflation.
+                          {" · "}{chartData.length} monthly observations, {chartData[0]?.date} → {chartData[chartData.length - 1]?.date}.
+                        </div>
+                      </div>
+                    )}
+                  </Card>
+                );
+              })()}
+    </>
+  );
+  // The recession panel and analyst board — the Street's view (Street).
+  const renderRecessionPanel = () => (
+    <>
+              <Card>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                  <SLabel>Recession Probability — tracked panel</SLabel>
+                  {/* F.6 — the slowest input on the page, marked as such. */}
+                  <span style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>slowest input · {CONSENSUS_VINTAGE.label}, {CONSENSUS_VINTAGE.staleNote}</span>
+                </div>
+                {(() => {
+                  return (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10, fontSize: 12 }}>
+                      <span style={{ color: C.lbl }}>Last updated: <b style={{ color: C.muted }}>June 29, 2026</b> · Updated post Iran peace deal + June FOMC</span>
+                      {/* WHAT THIS IS, so the label is not read as a survey. A handful of named houses and
+                          models, updated BY HAND four times a year — see docs/recession-board.md. */}
+                      <span style={{ color: C.lbl, flexBasis: "100%", fontSize: 11, lineHeight: 1.5 }}>
+                        A hand-kept panel of named houses and models — not a survey. Refreshed quarterly, a week or two after each FOMC projection round (late Mar · late Jun · late Sep · mid Dec), which is when the houses revise.
+                      </span>
+                      <HandKept asOf="2026-06-29" cadenceDays={90} what="quarterly, a week or two after each FOMC projection round" />
+                      <span style={{ color: C.lbl, fontStyle: "italic" }}>Updating this table recalculates regime probabilities automatically.</span>
+                    </div>
+                  );
+                })()}
+                {/* ── ANALYST VIEW BOARD — the headline ──
+                    What the professionals think, which regime each view implies, and whether the
+                    live signals still agree with them. This is the section's actual purpose; the
+                    numeric consensus below is a byproduct the regime engine consumes. */}
+                <AnalystViewBoard
+                  live={{
+                    oil: liveInd?.oil ?? null,
+                    gdpGrowth: liveInd?.gdpGrowth ?? null,
+                    yieldSpread: liveInd?.yieldSpread ?? null,
+                    nextHikeOdds: nextMeetingOdds(liveInd?.fedPathFeed ?? null)?.hikePct ?? null,
+                    nextMeetingLabel: (() => { const o = nextMeetingOdds(liveInd?.fedPathFeed ?? null); return o ? new Date(o.meeting + "T12:00:00Z").toLocaleString("en-US", { month: "short", timeZone: "UTC" }) : null; })(),
+                    fedHawkish: /hawkish|tightening/i.test(FED_LANGUAGE_STATUS?.status || ""),
+                    capexRising: true,   // big-four 2026 ~$725B (+77% YoY) — Smart Money tab, sourced
+                    unemployment: laborView?.u3?.value ?? liveInd?.unemployment ?? null,
+                    // The employment SHARE, not the headline rate: U3 can fall on labour-force exit
+                    // while the employed share shrinks, which is the consumer tell these theses rest on.
+                    empPopFalling: laborView?.empPop?.delta == null ? null : laborView.empPop.delta < 0,
+                  }}
+                  probFor={(key) => {
+                    const row = effectiveRecessionSources.find(r => r.name === key);
+                    return row ? parseProbability(row.probability) : null;
+                  }}
+                  engineRegime={liveRegime?.id}
+                  consensus={recConsensus}
+                />
+
+                {/* ── TWO-HORIZON CONSENSUS — the byproduct ──
+                    These are two different questions and are never blended: a
+                    calendar-year contract resolves inside a window that shrinks toward Dec 31, so
+                    averaging it with rolling-12m forecasts pushed the consensus down for calendar
+                    reasons alone — and that number drives the regime engine and position sizing. */}
+                {(() => {
+                  const { rolling: roll, calendar: cal, calWindow: cw } = recConsensus;
+                  const disp = dispersionRead(roll);
+                  const box = (title, c, opts = {}) => (
+                    <div style={{ flex: "1 1 260px", background: opts.primary ? C.blBg : C.bg, border: "1.5px solid " + (opts.primary ? C.blBdr : C.bdr), borderRadius: 10, padding: "11px 13px" }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, color: opts.primary ? C.blue : C.muted }}>{title}</span>
+                        {opts.primary && <span style={{ fontSize: 9.5, fontWeight: 800, color: C.onFill, background: C.blue, borderRadius: 4, padding: "1px 6px" }}>DRIVES REGIME</span>}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 4 }}>
+                        <b style={{ fontSize: 24, color: c.value == null ? C.muted : C.text, lineHeight: 1.1 }}>{c.value == null ? "—" : c.value + "%"}</b>
+                        {c.spread != null && c.nSources > 1 && (
+                          <span style={{ fontSize: 12, color: C.lbl }}>range {c.lo}–{c.hi}%</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+                        {c.nSources} row{c.nSources === 1 ? "" : "s"} → <b style={{ color: c.thin ? C.amber : C.mid }}>{c.nEffective} independent view{c.nEffective === 1 ? "" : "s"}</b>
+                        {c.views?.some(v => v.isBlock) && <span> · correlated sources counted once</span>}
+                        {opts.note}
+                      </div>
+                      {c.thin && (
+                        <div style={{ marginTop: 6, fontSize: 11, color: C.amber, fontWeight: 700 }}>
+                          ⚠ Thin — resting on a single independent view. Treat as indicative.
+                        </div>
+                      )}
+                    </div>
+                  );
+                  return (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, color: C.muted, marginBottom: 6 }}>
+                        Numeric consensus <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0, color: C.lbl }}>— the scalar the regime engine needs. The board above is the read; this is the byproduct.</span>
+                      </div>
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        {box(HORIZON_LABEL[HORIZON.ROLLING], roll, { primary: true })}
+                        {box(HORIZON_LABEL[HORIZON.CALENDAR], cal, {
+                          note: cw ? <span> · <b style={{ color: cw.shrinking ? C.amber : C.mid }}>{cw.monthsLeft} months</b> of window left</span> : null,
+                        })}
+                      </div>
+                      {cw?.shrinking && (
+                        <div style={{ marginTop: 8, padding: "9px 12px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8, fontSize: 12, color: C.amber, lineHeight: 1.6 }}>
+                          ⏳ <b>Calendar effect:</b> the by-year-end contracts have only <b>{cw.monthsLeft} months</b> left to resolve in (they had 7.0 in June).
+                          Their price must fall toward zero as Dec 31 approaches <i>even if nothing changes in the economy</i> — so a decline here is not
+                          automatically falling recession risk. This is why they no longer feed the regime engine.
+                        </div>
+                      )}
+                      {disp?.wide && (
+                        <div style={{ marginTop: 8, padding: "9px 12px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8, fontSize: 12, color: C.amber, lineHeight: 1.6 }}>
+                          ⚖ <b>Wide dispersion:</b> {disp.text}.
+                        </div>
+                      )}
+                      <div style={{ marginTop: 7, fontSize: 11, color: C.lbl, lineHeight: 1.6 }}>
+                        {NO_CONVERSION_NOTE}
+                      </div>
+                    </div>
+                  );
+                })()}
+                {/* Provenance: these are hand-maintained. There is no keyless feed for broker
+                    recession odds, so they are NOT auto-refreshed — each row carries its own as-of
+                    and is flagged OVERDUE against that source's own publication cadence (not a flat
+                    threshold) rather than being silently updated. */}
+                <div style={{ marginBottom: 10, padding: "8px 11px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, fontSize: 12, color: C.mid, lineHeight: 1.55 }}>
+                  <b style={{ color: C.muted }}>Provenance: </b>
+                  three rows carry a live feed — <b>📡 Kalshi</b> and <b>Polymarket</b> (real-money markets) and the
+                  <b> NY&nbsp;Fed Yield&nbsp;Curve</b> (Estrella–Mishkin probit computed from the current 10Y-3M spread).
+                  The broker/analyst rows have no keyless feed, so they are <b>not</b> auto-refreshed — each shows its own
+                  as-of, judged against <i>that source's</i> publication cadence: <b>latest</b> (its current view — research houses
+                  publish episodically) or <b>⚠ overdue</b> (past due for a source that should have printed by now).
+                  Age still decays a row's weight in the average either way. Any row can be overridden by hand below (<b>✍️ manual</b>),
+                  which takes precedence over both the feed and the static value.
+                  <span style={{ color: C.amber, fontWeight: 700 }}> Q2 GDP at +1.5% (vs Q1 +2.1%) is the input most likely to push these up — expect revisions at the next publication, not before.</span>
+                </div>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 400 }}>
+                    <thead>
+                      <tr style={{ background: C.bg }}>
+                        {["Source", "Probability", "As of", "Timeframe", "Notes"].map(h => (
+                          <th key={h} style={{ textAlign: "left", color: C.mid, padding: "8px 12px", borderBottom: "2px solid " + C.bdr, fontSize: 13, fontWeight: 700 }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {effectiveRecessionSources.filter(r => !r.archived).map((r, i) => {
+                        const pCol = r.color === "red" ? C.red : r.color === "amber" ? C.amber : C.green;
+                        // Provenance badge: 📡 live = refreshed by an auto-feed this load; ✍️ manual =
+                        // a hand-entered override in the manual store; static rows show nothing.
+                        const prov = r.source === "auto"
+                          ? { label: "📡 live", col: C.green, bg: C.gBg, bdr: C.gBdr }
+                          : r.source === "manual"
+                          ? { label: "✍️ manual", col: C.blue, bg: C.bg, bdr: C.bdr }
+                          : null;
+                        return (
+                        <tr key={i} style={{ background: i % 2 === 0 ? C.surf : C.bg }}>
+                          <td style={{ padding: "8px 12px", color: C.text, fontSize: 14, fontWeight: 600, borderBottom: "1px solid " + C.bdr }}>
+                            {r.name}
+                            {prov && (
+                              <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: prov.col, background: prov.bg, border: "1px solid " + prov.bdr, borderRadius: 5, padding: "1px 5px", whiteSpace: "nowrap" }}>{prov.label}</span>
+                            )}
+                          </td>
+                          <td style={{ padding: "8px 12px", borderBottom: "1px solid " + C.bdr }}>
+                            <span style={{ color: pCol, fontWeight: 800, fontSize: 15 }}>{r.probability}</span>
+                          </td>
+                          {/* As-of + freshness, judged against the SOURCE'S OWN cadence. An old
+                              figure must never read as a current post-FOMC one — but neither should
+                              a research house's latest print read as a failed fetch. */}
+                          <td style={{ padding: "8px 12px", fontSize: 12, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap" }}>
+                            {(() => {
+                              const st = recessionAsOfState(r.name, r.asOf);
+                              if (!st) return <span style={{ color: C.lbl }}>—</span>;
+                              return (
+                                <span
+                                  style={{ color: st.overdue ? C.amber : C.muted, fontWeight: st.overdue ? 700 : 400 }}
+                                  title={st.overdue
+                                    ? `${r.name} publishes roughly every ${st.cadence}d; this print is ${st.days}d old — past due, worth checking for a newer one.`
+                                    : `${st.days}d old, within ${r.name}'s ~${st.cadence}d publication cadence — this is its latest print, not an overdue one. Weight still decays with age in the average.`}
+                                >
+                                  {r.asOf}
+                                  {st.overdue
+                                    ? ` · ⚠ ${st.days}d overdue`
+                                    : <span style={{ color: C.lbl }}> · latest · {st.days}d</span>}
+                                </span>
+                              );
+                            })()}
+                          </td>
+                          <td style={{ padding: "8px 12px", color: C.muted, fontSize: 13, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap" }}>{r.timeframe}</td>
+                          <td style={{ padding: "8px 12px", color: C.muted, fontSize: 13, borderBottom: "1px solid " + C.bdr }}>{r.notes}</td>
+                        </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {/* A1 — archived March vintages: condition invalidated, excluded from the weighted average.
+                    Collapsed by default; the reason (not just the date) is rendered. */}
+                {(() => {
+                  const arch = effectiveRecessionSources.filter(r => r.archived);
+                  if (!arch.length) return null;
+                  return (
+                    <details style={{ marginTop: 10, background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, padding: "6px 11px" }}>
+                      <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, color: C.muted, letterSpacing: 0.3 }}>
+                        🗄️ Historical vintage — condition invalidated ({arch.length}) · excluded from the weighted average
+                      </summary>
+                      <div style={{ fontSize: 11.5, color: C.lbl, margin: "6px 0 8px", lineHeight: 1.5 }}>
+                        A view archived here was explicitly conditional on something that did not happen. Its number is kept for the record and excluded from the weighted average; the reason is stated on each row.</div>
+                      {arch.map((r, i) => (
+                        <div key={i} style={{ padding: "6px 0", borderTop: i ? "1px solid " + C.bdr : "none", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+                          <span style={{ fontSize: 12.5, fontWeight: 700, color: C.muted, textDecoration: "line-through" }}>{r.name}</span>
+                          <span style={{ fontSize: 12.5, fontWeight: 800, color: C.lbl }}>{r.probability}</span>
+                          <span style={{ fontSize: 10.5, color: C.muted }}>({r.asOf})</span>
+                          <span style={{ fontSize: 11, color: C.lbl, fontStyle: "italic", flexBasis: "100%" }}>{r.archiveReason}</span>
+                        </div>
+                      ))}
+                    </details>
+                  );
+                })()}
+                {/* A4 — leading-indicator context feeds. Not weighted into the consensus average (they
+                    are indicators/nowcasts, not 12-month recession probabilities), but they carry the
+                    live signal the archived analyst vintages no longer can. */}
+                <div style={{ marginTop: 10, padding: "8px 11px", background: C.surf, border: "1px solid " + C.bdr, borderRadius: 8 }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>Leading indicators · context, not weighted</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 8 }}>
+                    {[
+                      { n: "Sahm Rule", src: "FRED SAHMREALTIME", read: laborView?.sahm?.value != null ? `${laborView.sahm.value.toFixed(2)} — reads away from the 0.50 trigger` : "reads away from the 0.50 trigger (see Labour module)", tone: "green" },
+                      { n: "Cleveland Fed yield-curve", src: "distinct probit from the NY Fed model", read: "add via manual entry — no keyless feed", tone: "muted" },
+                      { n: "Conference Board LEI", src: "6-month annualised rate", read: "add via manual entry — no keyless feed", tone: "muted" },
+                      { n: "Atlanta Fed GDPNow", src: "highest-frequency growth nowcast", read: "add via manual entry — no keyless feed", tone: "muted" },
+                    ].map(x => (
+                      <div key={x.n} style={{ fontSize: 11.5, lineHeight: 1.45 }}>
+                        <div style={{ fontWeight: 800, color: C.text }}>{x.n}</div>
+                        <div style={{ color: x.tone === "green" ? C.green : C.muted, fontWeight: 600 }}>{x.read}</div>
+                        <div style={{ color: C.lbl, fontSize: 10 }}>{x.src}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {/* AN ESSAY, NOT AN ALARM. This paragraph is written by hand after a data event and
+                    was styled as a live warning — amber box, warning glyph — so a three-week-old
+                    reading of the July minutes looked like something that had just fired. It keeps
+                    its content and loses the alarm: neutral surface, the chip up front, and the
+                    one live number in it (Kalshi) labelled as the only live thing here. */}
+                <div style={{ marginTop: 12, padding: "12px 14px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8 }}>
+                  <div style={{ marginBottom: 6 }}><HandKept asOf="2026-08-24" cadenceDays={30} what="after each data event that changes the recession read" /></div>
+                  <span style={{ color: C.text, fontWeight: 700, fontSize: 13 }}>The signal that matters: </span>
+                  <span style={{ color: C.mid, fontSize: 14, lineHeight: 1.65 }}>Goldman's dramatic round-trip — 15% (pre-war) → 30% (March peak) → 15% (June post-deal) — shows how oil-driven the near-term risk was. Post peace deal, 2026 recession odds have broadly normalized. The more important signal is 2027: Kalshi at {recKalshi2027 != null ? `${recKalshi2027}%` : "— (not loaded)"} (the live market) suggests markets expect delayed reckoning from debt refinancing at 5-7%, $1.3T consumer revolving credit balances, and corporate capex compression — still the higher of the two horizons. New risk to monitor: the July FOMC minutes (released Aug 19) show 'many participants' saw further tightening as likely necessary — an upgrade from June's 'only a few', so the three hike dissents understate the committee's hawkishness. If hikes materialize, recession risk reprices sharply higher.</span>
+                </div>
+              </Card>
+
+              <RecessionEntryPanel overrides={recessionOverrides} onSaved={setRecessionOverrides} />
+    </>
+  );
+
   // ── TWO LEVELS, BECAUSE NINE TABS IN ONE ROW IS A LIST, NOT A STRUCTURE ──
   // Nine peers scrolling sideways on a phone told you nothing about which of them belonged
   // together, and the one you wanted was as likely to be off-screen as not. Grouped, the top row
@@ -6009,16 +6744,22 @@ export default function App() {
   //
   // Order is deliberate: the desk you act at, then the market you read, then the longer-horizon
   // playbook you revisit rather than watch.
+  const legacyOn = LEGACY_TABS.some(t => t.id === tab) || (showLegacy && legacyOffered);
   const TAB_GROUPS = [
     { id: "desk", label: "Trade Desk", hint: "act", tabs: [
       { id: "global",     label: "🌏 Daily Overview" },
       { id: "console",    label: "🎚️ Console"        },
       { id: "gex",        label: "🌀 Gamma"          },
     ] },
+    // MARKET WATCH reads one measured state: State lands on it, Drivers shows every gauge behind it,
+    // Street puts the houses' view beside it, Data health says how old each input is. The previous
+    // tabs stay one click away (the "previous layout" link) until LEGACY_UNTIL.
     { id: "watch", label: "Market Watch", hint: "read", tabs: [
-      { id: "macro",      label: "🌐 Macro"          },
-      { id: "smartmoney", label: "🏦 Smart Money"    },
-      { id: "indicators", label: "📡 Indicators"     },
+      { id: "state",      label: "🧭 State"          },
+      { id: "drivers",    label: "📈 Drivers"        },
+      { id: "street",     label: "🏦 Street"         },
+      { id: "health",     label: "🩺 Data health"    },
+      ...(legacyOn ? LEGACY_TABS : []),
     ] },
     { id: "playbook", label: "Playbook", hint: "revisit", tabs: [
       { id: "posture",    label: "🎯 Posture"        },
@@ -6154,6 +6895,12 @@ export default function App() {
                 {t.label}
               </button>
             ))}
+            {activeGroup.id === "watch" && legacyOffered && !LEGACY_TABS.some(t => t.id === tab) && (
+              <button onClick={() => setShowLegacy(v => !v)} title={`The Macro, Indicators and Smart Money tabs as they were — offered until ${LEGACY_UNTIL}`}
+                style={{ background: "none", border: "none", color: C.muted, padding: "8px 10px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, textDecoration: "underline", marginLeft: "auto" }}>
+                {showLegacy ? "hide previous layout" : "previous layout ▸"}
+              </button>
+            )}
           </div>
           {/* T1a — always-on regime strip: the market regime at a glance, on every tab, sticky.
               Reuses the values the engine already computes; no new data. */}
@@ -6182,7 +6929,7 @@ export default function App() {
                 {chip("Fed", fedLbl || "—", fedState.color || C.mid)}
                 {derivedRegimes?.contested && flag("⚖ CONTESTED")}
                 {regimeDiverged && flag("📌 PINNED ≠ LIVE")}
-                {(ledger.counts.stale + ledger.counts.missing) > 0 && <span title={`${ledger.counts.stale} stale, ${ledger.counts.missing} never entered — see the Macro tab ledger`}>{flag(`✍ ${ledger.counts.stale + ledger.counts.missing} HAND-KEPT OUT`)}</span>}
+                {(ledger.counts.stale + ledger.counts.missing) > 0 && <span title={`${ledger.counts.stale} stale, ${ledger.counts.missing} never entered — see Market Watch › Data health`}>{flag(`✍ ${ledger.counts.stale + ledger.counts.missing} HAND-KEPT OUT`)}</span>}
                 {regimeVintage.grade !== "fresh" && <span title={regimeVintage.note}>{flag(`🗓 CONSENSUS ${regimeVintage.grade.toUpperCase()}${regimeVintage.pct != null ? ` · ${regimeVintage.pct}% ALIVE` : ""}`)}</span>}
               </div>
             );
@@ -6238,6 +6985,61 @@ export default function App() {
             fetchPrices={fetchPrices}
             pricesLoading={pricesLoading}
           />
+        )}
+
+        {/* ── MARKET WATCH: STATE / DRIVERS / DATA HEALTH (src/MarketState.jsx) ── */}
+        {tab === "state" && (
+          <StateView st={mstate} feed={stateFeed} loading={stateFeedStatus.loading || indLoading} error={stateFeedStatus.error}
+            onRefresh={() => { fetchStateFeed(); fetchIndicators(); }} legacySizing={legacySizing}
+            streetLabel={liveRegime ? `${liveRegime.label} ${regimeProbFor(liveRegime.id)}%` : null} />
+        )}
+        {tab === "drivers" && (
+          <DriversView st={mstate} feed={stateFeed}
+            deep={{
+              growth: [
+                { title: "Growth legs", hint: "market-implied, weekly claims and activity, monthly surveys", render: () => <GrowthPulsePanel growth={liveInd?.growth} market={liveInd?.growthMarket} monthly={liveInd?.growthMonthly} ism={ismEntry} onIsmChange={setIsmEntry} /> },
+                { title: "Labour", hint: "payrolls, unemployment, emp-pop, Sahm", render: () => <LaborPanel labor={laborView} extras={laborExtras} announced={laborAnnounced} /> },
+                { title: "Classic recession signals", hint: "the yield curve and the long-lead indicators", render: () => INDICATORS.filter(ind => ind.id !== "unemp" && ind.id !== "credit").map(ind => <IndicatorChart key={ind.id} ind={ind} live={liveInd} />) },
+              ],
+              inflation: [
+                { title: "Inflation legs", hint: "market-implied, Cleveland nowcast, prints", render: () => <InflationAxisPanel data={liveInd?.inflationAxis} liveInd={liveInd} /> },
+                { title: "CPI & PCE tracker", hint: "headline, core, and the real yield on cash", render: () => renderInflationBlock() },
+                { title: "Cash against inflation", render: () => <CashComparisonCard liveInd={liveInd} /> },
+              ],
+              rates: [
+                { title: "Fed pricing, statement and the futures path", hint: "bill-implied cuts, next-meeting odds, the ZQ strip", render: () => renderFedBlock() },
+              ],
+              credit: [
+                { title: "Credit detail", hint: "OAS history, HYG proxy, print reconciliation", render: () => (
+                  <CreditBlock history={liveInd?.creditHistory} credit={pbData?.us?.regime?.credit} oas={pbData?.us?.macro?.oas} hyg={pbData?.us?.hyg} reconSummary={reconSummary} />
+                ) },
+              ],
+              dollar: [
+                { title: "Yen intervention flag", hint: "marks the Daily Overview when the MoF is in the market", render: () => (
+                  <InterventionToggle
+                    jpyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "JPY=X")?.changePct ?? null}
+                    dxyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "DX-Y.NYB")?.changePct ?? null}
+                    onChange={setLiveIntervention}
+                  />
+                ) },
+              ],
+            }}
+            extra={{
+              vol: (
+                <div style={{ fontSize: 12, color: C.muted }}>
+                  Dealer gamma, CTA levels and the vol regime by session are on{" "}
+                  <button onClick={() => setTab("global")} style={{ background: "none", border: "none", padding: 0, color: C.blue, fontWeight: 700, cursor: "pointer", fontSize: 12 }}>Daily Overview</button>{" "}and{" "}
+                  <button onClick={() => setTab("gex")} style={{ background: "none", border: "none", padding: 0, color: C.blue, fontWeight: 700, cursor: "pointer", fontSize: 12 }}>Gamma</button>.
+                </div>
+              ),
+            }}
+          />
+        )}
+        {tab === "health" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <FeedHealth feed={stateFeed} indErrors={liveInd?.feedErrors} indUpdated={indUpdated ? indUpdated.toISOString() : null} />
+            <HandKeptLedgerPanel ledger={ledger} />
+          </div>
         )}
 
         {/* ── INDICATORS ── */}
@@ -7234,7 +8036,14 @@ export default function App() {
         )}
 
         {/* ── SMART MONEY ── */}
-        {tab === "smartmoney" && (
+        {tab === "street" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 14 }}>
+            <StreetCompare st={mstate} street={streetView} />
+            {renderRecessionPanel()}
+            <SLabel>Smart money — 13F filings</SLabel>
+          </div>
+        )}
+        {(tab === "smartmoney" || tab === "street") && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {/* 13F limitation header — states plainly what this data is and is NOT, so an absent
                 cell isn't read as "no position" and a non-13F row isn't read as 13F. */}
@@ -7724,122 +8533,7 @@ export default function App() {
                 6-month bill-implied path against the September-meeting odds. Folds the former standalone
                 6-month-cuts and September-odds cards; the ZQ futures path + qualitative language follow below. */}
             <div id="macro-fed" style={{ scrollMarginTop: 96 }} />
-            {(() => {
-              const bps = liveInd?.impliedCutsBps ?? null;
-              const cf = liveInd?.currentFedFunds ?? null, tb = liveInd?.tbill6m ?? null;
-              const nx = nextMeetingOdds(liveInd?.fedPathFeed ?? null);
-              const mtgLabel = nx ? new Date(nx.meeting + "T12:00:00Z").toLocaleString("en-US", { month: "long", day: "numeric", timeZone: "UTC" }) : null;
-              const sept = nx ? nx.hikePct : null;
-              const sixDir = bps == null ? null : bps > 10 ? "dovish" : bps < 0 ? "hawkish" : "neutral";
-              const sixLean = bps == null ? null : bps > 10 ? 1 : bps < 0 ? -1 : 0;
-              const septDir = !nx ? null : nx.cutPct >= 30 || sept <= 30 ? "dovish" : sept >= 45 ? "hawkish" : "neutral";
-              const septLean = !nx ? null : septDir === "dovish" ? 1 : septDir === "hawkish" ? -1 : 0;
-              let xread, xcol;
-              if (septLean == null) { xread = "Next-meeting odds unavailable — the ZQ curve did not load."; xcol = C.muted; }
-              else if (sixLean == null) { xread = `6-month path unavailable — showing the ${mtgLabel} read only.`; xcol = C.muted; }
-              else if (sixLean !== 0 && septLean !== 0 && sixLean === septLean) { xread = `Aligned — both lean ${sixDir}. The near-term path and the ${mtgLabel} meeting point the same way.`; xcol = C.green; }
-              else if (sixLean !== 0 && septLean !== 0 && sixLean !== septLean) { xread = `Diverge — the 6-month path leans ${sixDir} but ${mtgLabel} meeting odds lean ${septDir}. Trust the meeting read for ${mtgLabel}, the path for the trajectory.`; xcol = C.amber; }
-              else { xread = "Mixed / neutral — nothing decisively priced either way."; xcol = C.muted; }
-              const dirCol = d => d === "dovish" ? C.green : d === "hawkish" ? C.red : C.muted;
-              const row = (label, big, sub, col) => (
-                <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", padding: "6px 0", borderBottom: "1px solid " + C.bdr }}>
-                  <span style={{ minWidth: 150, fontSize: 12.5, fontWeight: 700, color: C.mid }}>{label}</span>
-                  <span style={{ fontSize: 17, fontWeight: 900, color: col }}>{big}</span>
-                  <span style={{ fontSize: 12, color: C.muted }}>{sub}</span>
-                </div>
-              );
-              return (
-                <Card>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                    <SLabel>Fed pricing — what's priced for the Fed</SLabel>
-                    <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>two market reads, cross-checked · ZQ futures path below</span>
-                    {/* Both rows are live now: the 6-month path from FRED, the meeting odds from the ZQ
-                        curve. The meeting row used to be copied from FedWatch by hand. */}
-                    {nx?.asOf && <span style={{ marginLeft: "auto", fontSize: 10.5, color: C.muted }}>ZQ settle {nx.asOf}</span>}
-                  </div>
-                  <div style={{ marginTop: 6 }}>
-                    {row("6-month path", bps != null ? `${bps} bps` : "—", bps != null ? `${bps > 0 ? "cuts" : bps < 0 ? "hikes" : "flat"} priced · 6M bill ${tb != null ? tb.toFixed(2) : "—"}% vs funds ${cf != null ? cf.toFixed(2) : "—"}%` : "Fed funds / T-bill not loaded", bps != null ? dirCol(sixDir) : C.muted)}
-                    {nx ? row(`${mtgLabel} meeting`, nx.cutPct > 0 ? `${nx.cutPct}% cut` : `${sept}%`, `${nx.cutPct > 0 ? "implied cut odds" : "implied hike odds"} · ${nx.contract} ZQ ${nx.impliedPost.toFixed(3)}% vs EFFR ${nx.effr.toFixed(2)}%`, dirCol(septDir))
-                        : row("Next meeting", "—", "ZQ curve not loaded", C.muted)}
-                  </div>
-                  <div style={{ marginTop: 8, padding: "8px 11px", background: xcol === C.amber ? C.aBg : xcol === C.green ? C.gBg : C.bg, border: "1px solid " + (xcol === C.amber ? C.aBdr : xcol === C.green ? C.gBdr : C.bdr), borderRadius: 8, fontSize: 12.5, fontWeight: 700, color: xcol, lineHeight: 1.5 }}>
-                    Cross-check: {xread}
-                  </div>
-                  {nx && <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 6, lineHeight: 1.5 }}>Read off {nx.method} ({nx.contract}): the post-meeting rate it implies, less today's EFFR, in quarter points. Risk-neutral, so close to — not exactly — a probability.</div>}
-                </Card>
-              );
-            })()}
-
-            {/* Fed Language Status — manually updated after each FOMC (Update 2) */}
-            {(() => {
-              const currentState = FED_LANGUAGE_STATES[FED_LANGUAGE_STATUS.status] || FED_LANGUAGE_STATES.hawkish_hold;
-              const cell = (label, text, italic) => (
-                <div>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: P.grey888, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
-                  <div style={{ fontSize: 12, marginTop: 2, color: italic ? P.grey555 : C.mid, fontStyle: italic ? "italic" : "normal", lineHeight: 1.5 }}>{text}</div>
-                </div>
-              );
-              return (
-                <Card style={{ borderLeft: "3px solid " + currentState.color }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
-                    <div>
-                      <SLabel>Fed Language Status</SLabel>
-                      <div style={{ color: currentState.color, fontSize: 20, fontWeight: 700, lineHeight: 1.2 }}>{currentState.label}</div>
-                      <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap", marginTop: 4 }}>
-                        <HandKept asOf={FED_LANGUAGE_STATUS.lastUpdated} cadenceDays={49} what="after each FOMC meeting or minutes release" />
-                        <span style={{ fontSize: 12, color: C.muted }}>{FED_LANGUAGE_STATUS.lastEvent}</span>
-                      </div>
-                    </div>
-                    <div style={{ fontSize: 11, color: P.grey888, textAlign: "right" }}>Next: {FED_LANGUAGE_STATUS.nextEvent}</div>
-                  </div>
-                  {/* Decision + vote + dissent + guidance — the meeting's actual character,
-                      not just the state label. Dissent direction is the hawkish/dovish tell. */}
-                  {FED_LANGUAGE_STATUS.decision && (
-                    <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: C.text, background: C.bg, border: "1.5px solid " + C.bdr, borderRadius: 6, padding: "4px 9px" }}>
-                        {FED_LANGUAGE_STATUS.decision}
-                      </span>
-                      {FED_LANGUAGE_STATUS.vote && (
-                        <span style={{ fontSize: 12, fontWeight: 800, color: currentState.color, background: currentState.bg, border: "1.5px solid " + alpha(currentState.color, 0x55), borderRadius: 6, padding: "4px 9px" }}>
-                          Vote {FED_LANGUAGE_STATUS.vote}
-                        </span>
-                      )}
-                      {FED_LANGUAGE_STATUS.bias && (
-                        <span style={{ fontSize: 12, fontWeight: 800, color: C.blue, background: C.blBg, border: "1.5px solid " + C.blBdr, borderRadius: 6, padding: "4px 9px" }}>
-                          {FED_LANGUAGE_STATUS.bias}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  {FED_LANGUAGE_STATUS.dissents && (
-                    <div style={{ fontSize: 12, color: C.mid, marginTop: 8, lineHeight: 1.5 }}>
-                      <b style={{ color: C.muted }}>Dissents: </b>{FED_LANGUAGE_STATUS.dissents}
-                      {FED_LANGUAGE_STATUS.dissentNote && <span style={{ color: C.amber, fontWeight: 700 }}> — {FED_LANGUAGE_STATUS.dissentNote}</span>}
-                    </div>
-                  )}
-                  {FED_LANGUAGE_STATUS.guidance && (
-                    <div style={{ fontSize: 12, color: C.mid, marginTop: 5, lineHeight: 1.5 }}>
-                      <b style={{ color: C.muted }}>Guidance: </b>{FED_LANGUAGE_STATUS.guidance}
-                    </div>
-                  )}
-                  <p style={{ fontSize: 13, marginTop: 10, color: C.mid, lineHeight: 1.6 }}>{FED_LANGUAGE_STATUS.summary}</p>
-                  {/* WHAT THE STATE IS AND WHAT WOULD MOVE IT — not what to hold in it. The three
-                      instrument cells that sat here ("Rotate now. Sell USFR → Buy IEF same day.")
-                      were a fifth surface issuing instructions, keyed to a label a person sets by
-                      hand after each meeting. Fed context is the meeting's character and the tell
-                      for the next one; the stance is the tape's, in one place. */}
-                  <div style={{ marginTop: 12, background: currentState.bg, borderRadius: 8, padding: 12 }}>
-                    {cell("This state", currentState.description)}
-                    <div style={{ marginTop: 8 }}>{cell("Watch for", currentState.watchFor, true)}</div>
-                  </div>
-                </Card>
-              );
-            })()}
-
-            {/* The DAILY EFFR from the feed, not the monthly fed funds average: after the Sep 16 hike the
-                monthly figure still read 3.63 and a hand-entered futures price was measured against it,
-                overstating "moves priced" by a full hike. */}
-            <FedPathCard effr={liveInd?.fedPathFeed?.effr ?? liveInd?.currentFedFunds ?? null} feed={liveInd?.fedPathFeed ?? null} />
+            {renderFedBlock()}
             <InterventionToggle
               jpyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "JPY=X")?.changePct ?? null}
               dxyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "DX-Y.NYB")?.changePct ?? null}
@@ -7847,325 +8541,7 @@ export default function App() {
             />
 
             <div id="macro-inflation" style={{ scrollMarginTop: 96 }} />
-            {/* CPI Inflation Tracker — Headline/Core CPI + Core PCE YoY, real-yield-on-cash */}
-            {(() => {
-              // (level→colour lookup now lives in bandOf() below — the tile numbers carry their
-              // SERIES colour, and the level read moved to the band chip.)
-              const headline = liveInd ? liveInd.cpiHeadlineCurrent : null;
-              const core     = liveInd ? liveInd.cpiCoreCurrent : null;
-              const pce      = liveInd ? liveInd.pceCoreCurrent : null;
-              const hHist = liveInd && Array.isArray(liveInd.cpiHeadlineHistory) ? liveInd.cpiHeadlineHistory : [];
-              const cHist = liveInd && Array.isArray(liveInd.cpiCoreHistory)     ? liveInd.cpiCoreHistory     : [];
-              const pHist = liveInd && Array.isArray(liveInd.pceCoreHistory)     ? liveInd.pceCoreHistory     : [];
-              const hasChartData = [hHist, cHist, pHist].some(a => a.length >= 2);
-              // Merge the three monthly series onto ONE date axis, union of dates, sorted.
-              // They are published on separate schedules and do NOT always cover the same
-              // months (PCE carried 2025-10-01 while the CPI series did not). Giving each
-              // <Line> its own `data` prop makes Recharts build categories from the first
-              // series and APPEND any unmatched date to the end of the axis — which is what
-              // rendered a stray Oct-2025 point after Mar-2026. One dataset makes that
-              // structurally impossible: every row is a date, every series a column.
-              const chartData = (() => {
-                const byDate = new Map();
-                const put = (rows, key) => (rows || []).forEach(r => {
-                  if (!r?.date || r.value == null || !Number.isFinite(+r.value)) return;
-                  if (!byDate.has(r.date)) byDate.set(r.date, { date: r.date });
-                  byDate.get(r.date)[key] = +Number(r.value).toFixed(2);
-                });
-                put(hHist, "headline"); put(cHist, "core"); put(pHist, "pce");
-                return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
-              })();
-              // (realYield is computed below, AFTER the cash marks — it must use the same cash
-              // basis the chart band draws, or the card contradicts its own chart.)
-              // Direction from the stored history (prior print), never asserted from one value.
-              const trendOf = h => {
-                if (!Array.isArray(h) || h.length < 2) return null;
-                const last = h[h.length - 1], prev = h[h.length - 2];
-                const d = +(last.value - prev.value).toFixed(2);
-                return { d, dir: d < 0 ? "cooling" : d > 0 ? "rising" : "flat", from: prev.value, fromDate: prev.date, toDate: last.date };
-              };
-              const pceAnn = announced("pceCore", liveInd?.asOf?.pceCoreCurrent);
-              // Same single source the posture notes and cash-ETF rows resolve through.
-              const cashYield = liveCashYield(liveInd);
-              // Cash-yield markers drawn on the chart: the two funds actually held plus the
-              // spot bill rate. Each is only included when its live value exists — a missing
-              // one is dropped, never defaulted.
-              // Aug-22 — use the 30-DAY SEC YIELD (forward, comparable), not TTM distribution yield
-              // (backward-looking, overstates, frozen between monthly ex-divs). Published figures are
-              // dated manual issuer-page values; the live DTB3 proxy reconciles them daily.
-              const dtb3 = liveInd?.tbill3m ?? null;
-              const secDiv = proxyDivergence(dtb3);
-              const cashMarks = [
-                { key: "USFR", label: "USFR", value: SEC_YIELDS.USFR.value, color: P.sky500,
-                  detail: `SEC 30-day yield ${SEC_YIELDS.USFR.value}% — as of ${SEC_YIELDS.USFR.asOf} · ${SEC_YIELDS.USFR.src}` },
-                { key: "SGOV", label: "SGOV", value: SEC_YIELDS.SGOV.value, color: P.indigo500,
-                  detail: `SEC 30-day yield ${SEC_YIELDS.SGOV.value}% — as of ${SEC_YIELDS.SGOV.asOf} · expense ${SEC_YIELDS.SGOV.expense}% · ${SEC_YIELDS.SGOV.src}` },
-                cashYield && { key: "bill", label: cashYield.src, value: cashYield.value, color: P.blue500,
-                  detail: `spot policy-linked rate${cashYield.asOf ? `, as of ${cashYield.asOf}` : ""}` },
-              ].filter(Boolean);
-              // These three sit within a few bps of each other, so drawing three separate
-              // labelled lines would overprint into an unreadable smear. Draw the range as a
-              // band, and give each its exact value in the legend row beneath the chart.
-              const cashLo = cashMarks.length ? Math.min(...cashMarks.map(m => m.value)) : null;
-              const cashHi = cashMarks.length ? Math.max(...cashMarks.map(m => m.value)) : null;
-
-              // A4 — real yield is now computed PER INSTRUMENT off each SEC yield (below), not as a
-              // single Fed-funds-vs-headline figure. The per-instrument block replaces the old band.
-              const trendChip = t => t && (
-                <span style={{ fontSize: 10.5, fontWeight: 800, color: t.dir === "cooling" ? C.green : t.dir === "rising" ? C.red : C.muted }}>
-                  {t.dir === "cooling" ? "▼" : t.dir === "rising" ? "▲" : "■"} {t.d >= 0 ? "+" : "−"}{Math.abs(t.d)}pp vs prior
-                </span>
-              );
-              // Each headline number carries its SERIES colour, matching the chart line and the
-              // legend below, so the eye maps tile → line without a lookup. The level read
-              // (how far above target) hasn't been lost — it moves to a small band chip.
-              const bandOf = v => v == null ? null
-                : v >= 4.0 ? { t: "well above target", c: P.red500 }
-                : v >= 3.0 ? { t: "elevated",          c: P.orange500 }
-                : v >= 2.5 ? { t: "above target",      c: P.yellow500 }
-                : v >= 1.5 ? { t: "near target",       c: P.green500 }
-                :            { t: "below target",      c: P.blue500 };
-              // WHICH MONTH. Three tiles carried a figure, a source and a delta, and never said what
-              // period any of them covered — while CPI and PCE publish two and a half weeks apart, so
-              // for half of every month they are not the same month. A reader comparing the tiles was
-              // not told they might be comparing across a release.
-              const reading = (label, val, sub, trend, seriesColor, obsDate) => {
-                const band = bandOf(val);
-                return (
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: P.grey888, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>{label}</div>
-                    <div style={{ fontSize: 24, fontWeight: 700, color: seriesColor }}>{val != null ? val.toFixed(1) + "%" : "—"}</div>
-                    <div style={{ fontSize: 11, color: P.grey888 }}>{sub}{obsDate ? <> · <b style={{ color: C.mid }}>{monthName(obsDate)}</b></> : null}</div>
-                    {trendChip(trend)}
-                    {band && <div style={{ fontSize: 10, fontWeight: 700, color: band.c, marginTop: 1 }}>● {band.t}</div>}
-                  </div>
-                );
-              };
-              return (
-                <Card>
-                  <SLabel>CPI Inflation Tracker</SLabel>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 4, marginBottom: 10 }}>
-                    {reading("Headline CPI", headline, "YoY · BLS", trendOf(hHist), CPI_SERIES.headline, liveInd?.dates?.cpiHeadlineCurrent)}
-                    {reading("Core CPI", core, "Ex food & energy · BLS", trendOf(cHist), CPI_SERIES.core, liveInd?.dates?.cpiCoreCurrent)}
-                    {reading("Core PCE", pce, "Fed's preferred · BEA", trendOf(pHist), CPI_SERIES.pce, liveInd?.dates?.pceCoreCurrent)}
-                  </div>
-                  {/* ── THE GAP BETWEEN THE TWO CORE SERIES ──
-                      Three tiles side by side invite the eye to read the smallest one, and for most
-                      of the last year that was core CPI. The two measure the same idea and disagree
-                      structurally: core PCE normally sits BELOW core CPI, because shelter is about a
-                      third of the CPI basket and a much smaller share of PCE. So the sign of the gap
-                      carries information the levels do not, and the card was not saying it.
-                      Both figures are the same vintage as the tiles above — a spread built from two
-                      release dates is a number about the calendar, not about inflation. */}
-                  {(() => {
-                    const sp = coreSpread(pce, core, {
-                      pceDate: liveInd?.dates?.pceCoreCurrent, cpiDate: liveInd?.dates?.cpiCoreCurrent,
-                    });
-                    if (!sp) return null;
-                    // ACROSS TWO MONTHS IT IS NOT A SPREAD. The comment above claims both figures
-                    // share a vintage; nothing enforced it, and CPI publishes around the 11th while
-                    // PCE publishes at month end — so for about two weeks of every month core CPI is
-                    // a month ahead. The gap would move, the card would explain the move as
-                    // inflation, and the cause would be the release calendar.
-                    if (sp.sameVintage === false) {
-                      return (
-                        <div style={{ marginBottom: 12, padding: "8px 12px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8 }}>
-                          <div style={{ display: "flex", gap: 9, alignItems: "baseline", flexWrap: "wrap" }}>
-                            <span style={{ fontSize: 10, fontWeight: 800, color: P.grey888, textTransform: "uppercase", letterSpacing: 0.5 }}>Core PCE − Core CPI</span>
-                            <b style={{ fontSize: 15, color: C.amber }}>not comparable this week</b>
-                          </div>
-                          <div style={{ fontSize: 11.5, color: C.mid, marginTop: 4, lineHeight: 1.5 }}>
-                            {sp.vintageNote}. The two tiles above are each correct for their own month;
-                            the difference between them is not. It becomes a spread again when PCE catches up.
-                          </div>
-                        </div>
-                      );
-                    }
-                    const col = sp.tone === "warn" ? C.amber : sp.tone === "watch" ? C.mid : C.green;
-                    const bg  = sp.tone === "warn" ? C.aBg : C.bg;
-                    const bdr = sp.tone === "warn" ? C.aBdr : C.bdr;
-                    return (
-                      <div style={{ marginBottom: 12, padding: "8px 12px", background: bg, border: "1px solid " + bdr, borderRadius: 8 }}>
-                        <div style={{ display: "flex", gap: 9, alignItems: "baseline", flexWrap: "wrap" }}>
-                          <span style={{ fontSize: 10, fontWeight: 800, color: P.grey888, textTransform: "uppercase", letterSpacing: 0.5 }}>Core PCE − Core CPI</span>
-                          <b style={{ fontSize: 15, color: col }}>{sp.pp >= 0 ? "+" : "−"}{Math.abs(sp.pp).toFixed(2)}pp</b>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: col }}>{sp.label}</span>
-                        </div>
-                        <div style={{ fontSize: 11.5, color: C.mid, marginTop: 4, lineHeight: 1.5 }}>
-                          {sp.divergent ? (
-                            <>Core CPI at <b>{sp.cpi.toFixed(2)}%</b> reads close to target; core PCE at <b>{sp.pce.toFixed(2)}%</b> does not — and
-                            {" "}<b>PCE is the series the Fed targets</b>. An inversion of this sign usually means the disinflation is concentrated
-                            in shelter, which CPI weights far more heavily. Read the CPI tile alone and the card reports progress the Fed's own
-                            gauge does not show.</>
-                          ) : sp.inverted ? (
-                            <>PCE above core CPI is the wrong way round, though both series sit near target — the usual shelter-driven discount
-                            has not just closed but reversed.</>
-                          ) : sp.inLine ? (
-                            <>The two are within a tenth of a point, so the usual PCE discount to core CPI has gone. Neither series is currently
-                            telling a different story from the other.</>
-                          ) : (
-                            <>The usual relationship: PCE below core CPI, which is what a much lighter shelter weight and a chained basket imply.
-                            Nothing to reconcile between the two.</>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                  {/* Announced-but-not-yet-in-FRED print, explicitly labelled with its source.
-                      Auto-retires once FRED's own asOf reaches the same period. */}
-                  {pceAnn && (
-                    <div style={{ marginBottom: 12, padding: "8px 11px", background: C.blBg, border: "1.5px solid " + C.blBdr, borderRadius: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: C.blue, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                        Announced {pceAnn.released} · not yet in FRED
-                      </div>
-                      <div style={{ fontSize: 13, color: C.mid, marginTop: 3, lineHeight: 1.5 }}>
-                        <b>{pceAnn.label} {pceAnn.value}% YoY</b> ({pceAnn.mom >= 0 ? "+" : ""}{pceAnn.mom}% MoM) — {pceAnn.note}.
-                        Headline PCE {pceAnn.headline}% YoY ({pceAnn.headlineMom >= 0 ? "+" : ""}{pceAnn.headlineMom}% MoM).
-                        <span style={{ color: C.lbl }}> Source: {pceAnn.source}. The tile above still shows FRED's last ingested print ({liveInd?.asOf?.pceCoreCurrent ?? "—"}).</span>
-                      </div>
-                    </div>
-                  )}
-                  {/* A3 — DTB3 proxy reconciliation, on ONE basis and at the RIGHT DATE.
-                      DTB3 is a discount rate; a fund's SEC yield is bond-equivalent, so the bill is
-                      converted before anything is subtracted from it. The residual is fitted against
-                      the DTB3 print on the published figure's own date, so the ✓ tests the model
-                      rather than how far the bill has drifted since the fund last restated. */}
-                  {dtb3 != null && secDiv && (() => {
-                    const bey = secYieldProxy(dtb3)?.bey;
-                    return (
-                    <div style={{ marginBottom: 12, padding: "8px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, fontSize: 11.5 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
-                        <span style={{ fontWeight: 800, color: C.mid }}>3M T-bill (DTB3) <b style={{ color: C.text }}>{dtb3.toFixed(2)}%</b> <span style={{ color: C.lbl, fontWeight: 600 }}>discount</span>
-                          {bey != null && <> → <b style={{ color: C.text }}>{bey.toFixed(2)}%</b> <span style={{ color: C.lbl, fontWeight: 600 }}>bond-equivalent</span></>}
-                          <span style={{ color: C.lbl, fontWeight: 600 }}> · live · daily{liveInd?.asOf?.tbill3m ? ` · ${liveInd.asOf.tbill3m}` : ""}</span></span>
-                        <span style={{ color: C.lbl, fontStyle: "italic" }}>SGOV &amp; USFR are pass-throughs of the bill<br />
-                          <b>est</b> is a proxy for the published SEC yield — not an APY, which the comparison card computes separately</span>
-                      </div>
-                      {[["SGOV", PROXY.SGOV.formula], ["USFR", PROXY.USFR.formula]].map(([k, f]) => {
-                        const d = secDiv[k];
-                        const sign = (n) => (n >= 0 ? "+" : "") + n + "bp";
-                        return (
-                          <div key={k} style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "baseline", marginTop: 4 }}>
-                            <span style={{ minWidth: 92, fontWeight: 700, color: C.mid }}>{k} est SEC</span>
-                            <span style={{ fontWeight: 800, color: C.text }}>{d.est.toFixed(2)}%</span>
-                            <span style={{ color: C.lbl }}>{f}</span>
-                            <span style={{ color: C.muted }}>· published <b style={{ color: C.mid }}>{d.published.toFixed(2)}%</b> ({SEC_YIELDS[k].asOf}{d.ageDays != null ? `, ${d.ageDays}d ago` : ""})</span>
-                            {/* The gap, ATTRIBUTED. Charging the whole thing to the model made a
-                                working proxy look broken every time the bill moved. */}
-                            <span style={{ color: C.muted }}>· gap {sign(d.bp)} = {sign(d.modelBp)} model {sign(d.rateBp)} bill since</span>
-                            <span style={{ fontWeight: 800, color: d.diverged ? C.amber : C.green }}>
-                              {d.diverged ? `⚠ model off ${sign(d.modelBp)} — re-fit the residual` : "✓ model fits"}</span>
-                            {d.stale && <StaleChip>published figure {d.ageDays}d old — refresh from the issuer page</StaleChip>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    );
-                  })()}
-                  {/* A4 — real yield PER INSTRUMENT off its SEC yield (funds) or spot (the bill). Each
-                      shows its cushion vs headline CPI and the CPI level that flips it negative. */}
-                  {headline != null && (
-                    <div style={{ marginBottom: 12, padding: "8px 12px", background: C.surf, border: "1px solid " + C.bdr, borderRadius: 8 }}>
-                      <div style={{ fontSize: 10.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 5 }}>Real yield on cash vs headline CPI {headline.toFixed(2)}%</div>
-                      {cashMarks.map(m => {
-                        const ry = m.value - headline;
-                        return (
-                          <div key={m.key} style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "baseline", padding: "2px 0" }}>
-                            <span style={{ minWidth: 96, fontWeight: 700, color: C.mid }}>{m.label}</span>
-                            <span style={{ fontWeight: 800, color: C.text }}>{m.value.toFixed(2)}%</span>
-                            <span style={{ fontWeight: 800, color: ry > 0 ? C.green : C.red }}>{ry >= 0 ? "+" : ""}{ry.toFixed(2)}% real</span>
-                            <span style={{ color: C.lbl }}>flips at CPI ≥ <b style={{ color: C.mid }}>{m.value.toFixed(2)}%</b></span>
-                          </div>
-                        );
-                      })}
-                      <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 5, lineHeight: 1.5 }}>
-                        SEC 30-day yields (forward) — narrower than the backward-looking TTM figures the card used to show; the SGOV cushion roughly halves. Headline is the thinnest, most energy-sensitive measure{liveInd?.oil != null ? ` (WTI ${liveInd.oil})` : ""}. USFR leads SGOV by {Math.round((SEC_YIELDS.USFR.value - SEC_YIELDS.SGOV.value) * 100)}bp on SEC yields, not the ~4bp a TTM figure showed.
-                      </div>
-                    </div>
-                  )}
-                  {hasChartData ? (
-                    <ResponsiveContainer width="100%" height={160}>
-                      <LineChart data={chartData} margin={{ top: 8, right: 46, bottom: 4, left: 0 }}>
-                        <XAxis
-                          dataKey="date"
-                          type="category"
-                          tick={{ fontSize: 10 }}
-                          tickFormatter={(d) => {
-                            // Format from the STRING parts. new Date("2024-06-01") is parsed as
-                            // UTC midnight, so toLocaleDateString in a negative-offset timezone
-                            // rolls it back a day and mislabels the month (Jun 24 → May 24).
-                            const [y, m] = String(d).split("-");
-                            const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-                            return `${MON[+m - 1] ?? "?"} ${String(y).slice(2)}`;
-                          }}
-                          interval={3}
-                        />
-                        <YAxis tick={{ fontSize: 10 }} width={32} tickFormatter={(v) => `${v}%`} domain={["auto", "auto"]} />
-                        <Tooltip
-                          formatter={(value, name) => [`${Number(value).toFixed(2)}%`, name]}
-                          labelFormatter={(d) => {
-                            const [y, m] = String(d).split("-");
-                            const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-                            return `${MON[+m - 1] ?? "?"} ${y}`;
-                          }}
-                        />
-                        <Legend iconType="line" iconSize={10} wrapperStyle={{ fontSize: "11px" }} />
-                        {/* NO in-chart text labels. Both previous attempts failed: position
-                            "right" clipped at the container edge, "insideRight" overprinted the
-                            data lines. Every reference is identified in the legend row beneath
-                            the chart instead, which has room for the exact value and method. */}
-                        <ReferenceLine y={2} stroke={P.green500} strokeDasharray="4 3" ifOverflow="extendDomain" />
-                        {/* Cash band: the funds and the bill rate sit within a few bps, so the
-                            range is shaded once rather than drawn as three overlapping lines. */}
-                        {cashLo != null && (
-                          <ReferenceArea y1={cashLo} y2={cashHi} ifOverflow="extendDomain"
-                            fill={P.blue500} fillOpacity={0.10} stroke={P.blue500} strokeOpacity={0.35} strokeDasharray="4 3" />
-                        )}
-                        {/* connectNulls: a series missing a single month is a publication gap
-                            (BLS/BEA schedules), not a break in the underlying series. */}
-                        <Line type="monotone" dataKey="headline" name="Headline CPI" stroke={CPI_SERIES.headline} strokeWidth={2} dot={false} activeDot={{ r: 4 }} connectNulls />
-                        <Line type="monotone" dataKey="core" name="Core CPI" stroke={CPI_SERIES.core} strokeWidth={2} dot={false} activeDot={{ r: 4 }} connectNulls />
-                        <Line type="monotone" dataKey="pce" name="Core PCE" stroke={CPI_SERIES.pce} strokeWidth={2} strokeDasharray="5 3" dot={false} activeDot={{ r: 4 }} connectNulls />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div style={{ color: C.muted, fontSize: 13, fontStyle: "italic", marginTop: 8 }}>Awaiting data</div>
-                  )}
-                  {/* Reference legend — carries the labels that used to sit (illegibly) on the
-                      plot. Each entry names the instrument, its exact live yield, and how that
-                      yield was derived, on hover. */}
-                  {hasChartData && (
-                    <div style={{ marginTop: 8, borderTop: "1px solid " + C.bdr, paddingTop: 8 }}>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5 }} title="The Fed's stated inflation goal">
-                          <span style={{ width: 14, height: 0, borderTop: "2px dashed " + P.green500, display: "inline-block" }} />
-                          <b style={{ color: P.green500 }}>2%</b><span style={{ color: C.muted }}>Fed target</span>
-                        </span>
-                        {cashLo != null && (
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5 }}
-                            title="Shaded band spans the cash yields below — they sit within a few bps of each other">
-                            <span style={{ width: 14, height: 9, background: P.blue500, opacity: 0.18, border: "1px dashed " + P.blue500, display: "inline-block", borderRadius: 2 }} />
-                            <span style={{ color: C.muted }}>cash band {cashLo.toFixed(2)}–{cashHi.toFixed(2)}%</span>
-                          </span>
-                        )}
-                        {cashMarks.map(m => (
-                          <span key={m.key} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5 }} title={m.detail}>
-                            <span style={{ width: 8, height: 8, borderRadius: "50%", background: m.color, display: "inline-block" }} />
-                            <b style={{ color: m.color }}>{m.label}</b>
-                            <span style={{ color: C.text, fontWeight: 700 }}>{m.value.toFixed(2)}%</span>
-                          </span>
-                        ))}
-                      </div>
-                      <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 5, lineHeight: 1.55 }}>
-                        Fund yields are the <b>30-day SEC yield</b> (USFR as of {SEC_YIELDS.USFR.asOf}, SGOV {SEC_YIELDS.SGOV.asOf}) — forward and comparable, not the backward-looking TTM distribution figure;
-                        the {cashYield?.src ?? "bill"} figure is the spot rate. Where a CPI line sits <i>above</i> the band, cash is losing to inflation.
-                        {" · "}{chartData.length} monthly observations, {chartData[0]?.date} → {chartData[chartData.length - 1]?.date}.
-                      </div>
-                    </div>
-                  )}
-                </Card>
-              );
-            })()}
+            {renderInflationBlock()}
 
             {/* Aug-22 Part B — cash-yield comparison card, adjacent to the CPI tracker's cash read. */}
             <CashComparisonCard liveInd={liveInd} />
@@ -8184,244 +8560,7 @@ export default function App() {
             <LaborPanel labor={laborView} extras={laborExtras} announced={laborAnnounced} />
 
             <div id="macro-recession" style={{ scrollMarginTop: 96 }} />
-            <Card>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                <SLabel>Recession Probability — tracked panel</SLabel>
-                {/* F.6 — the slowest input on the page, marked as such. */}
-                <span style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>slowest input · {CONSENSUS_VINTAGE.label}, {CONSENSUS_VINTAGE.staleNote}</span>
-              </div>
-              {(() => {
-                return (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10, fontSize: 12 }}>
-                    <span style={{ color: C.lbl }}>Last updated: <b style={{ color: C.muted }}>June 29, 2026</b> · Updated post Iran peace deal + June FOMC</span>
-                    {/* WHAT THIS IS, so the label is not read as a survey. A handful of named houses and
-                        models, updated BY HAND four times a year — see docs/recession-board.md. */}
-                    <span style={{ color: C.lbl, flexBasis: "100%", fontSize: 11, lineHeight: 1.5 }}>
-                      A hand-kept panel of named houses and models — not a survey. Refreshed quarterly, a week or two after each FOMC projection round (late Mar · late Jun · late Sep · mid Dec), which is when the houses revise.
-                    </span>
-                    <HandKept asOf="2026-06-29" cadenceDays={90} what="quarterly, a week or two after each FOMC projection round" />
-                    <span style={{ color: C.lbl, fontStyle: "italic" }}>Updating this table recalculates regime probabilities automatically.</span>
-                  </div>
-                );
-              })()}
-              {/* ── ANALYST VIEW BOARD — the headline ──
-                  What the professionals think, which regime each view implies, and whether the
-                  live signals still agree with them. This is the section's actual purpose; the
-                  numeric consensus below is a byproduct the regime engine consumes. */}
-              <AnalystViewBoard
-                live={{
-                  oil: liveInd?.oil ?? null,
-                  gdpGrowth: liveInd?.gdpGrowth ?? null,
-                  yieldSpread: liveInd?.yieldSpread ?? null,
-                  nextHikeOdds: nextMeetingOdds(liveInd?.fedPathFeed ?? null)?.hikePct ?? null,
-                  nextMeetingLabel: (() => { const o = nextMeetingOdds(liveInd?.fedPathFeed ?? null); return o ? new Date(o.meeting + "T12:00:00Z").toLocaleString("en-US", { month: "short", timeZone: "UTC" }) : null; })(),
-                  fedHawkish: /hawkish|tightening/i.test(FED_LANGUAGE_STATUS?.status || ""),
-                  capexRising: true,   // big-four 2026 ~$725B (+77% YoY) — Smart Money tab, sourced
-                  unemployment: laborView?.u3?.value ?? liveInd?.unemployment ?? null,
-                  // The employment SHARE, not the headline rate: U3 can fall on labour-force exit
-                  // while the employed share shrinks, which is the consumer tell these theses rest on.
-                  empPopFalling: laborView?.empPop?.delta == null ? null : laborView.empPop.delta < 0,
-                }}
-                probFor={(key) => {
-                  const row = effectiveRecessionSources.find(r => r.name === key);
-                  return row ? parseProbability(row.probability) : null;
-                }}
-                engineRegime={liveRegime?.id}
-                consensus={recConsensus}
-              />
-
-              {/* ── TWO-HORIZON CONSENSUS — the byproduct ──
-                  These are two different questions and are never blended: a
-                  calendar-year contract resolves inside a window that shrinks toward Dec 31, so
-                  averaging it with rolling-12m forecasts pushed the consensus down for calendar
-                  reasons alone — and that number drives the regime engine and position sizing. */}
-              {(() => {
-                const { rolling: roll, calendar: cal, calWindow: cw } = recConsensus;
-                const disp = dispersionRead(roll);
-                const box = (title, c, opts = {}) => (
-                  <div style={{ flex: "1 1 260px", background: opts.primary ? C.blBg : C.bg, border: "1.5px solid " + (opts.primary ? C.blBdr : C.bdr), borderRadius: 10, padding: "11px 13px" }}>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, color: opts.primary ? C.blue : C.muted }}>{title}</span>
-                      {opts.primary && <span style={{ fontSize: 9.5, fontWeight: 800, color: C.onFill, background: C.blue, borderRadius: 4, padding: "1px 6px" }}>DRIVES REGIME</span>}
-                    </div>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 4 }}>
-                      <b style={{ fontSize: 24, color: c.value == null ? C.muted : C.text, lineHeight: 1.1 }}>{c.value == null ? "—" : c.value + "%"}</b>
-                      {c.spread != null && c.nSources > 1 && (
-                        <span style={{ fontSize: 12, color: C.lbl }}>range {c.lo}–{c.hi}%</span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
-                      {c.nSources} row{c.nSources === 1 ? "" : "s"} → <b style={{ color: c.thin ? C.amber : C.mid }}>{c.nEffective} independent view{c.nEffective === 1 ? "" : "s"}</b>
-                      {c.views?.some(v => v.isBlock) && <span> · correlated sources counted once</span>}
-                      {opts.note}
-                    </div>
-                    {c.thin && (
-                      <div style={{ marginTop: 6, fontSize: 11, color: C.amber, fontWeight: 700 }}>
-                        ⚠ Thin — resting on a single independent view. Treat as indicative.
-                      </div>
-                    )}
-                  </div>
-                );
-                return (
-                  <div style={{ marginBottom: 12 }}>
-                    <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, color: C.muted, marginBottom: 6 }}>
-                      Numeric consensus <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0, color: C.lbl }}>— the scalar the regime engine needs. The board above is the read; this is the byproduct.</span>
-                    </div>
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                      {box(HORIZON_LABEL[HORIZON.ROLLING], roll, { primary: true })}
-                      {box(HORIZON_LABEL[HORIZON.CALENDAR], cal, {
-                        note: cw ? <span> · <b style={{ color: cw.shrinking ? C.amber : C.mid }}>{cw.monthsLeft} months</b> of window left</span> : null,
-                      })}
-                    </div>
-                    {cw?.shrinking && (
-                      <div style={{ marginTop: 8, padding: "9px 12px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8, fontSize: 12, color: C.amber, lineHeight: 1.6 }}>
-                        ⏳ <b>Calendar effect:</b> the by-year-end contracts have only <b>{cw.monthsLeft} months</b> left to resolve in (they had 7.0 in June).
-                        Their price must fall toward zero as Dec 31 approaches <i>even if nothing changes in the economy</i> — so a decline here is not
-                        automatically falling recession risk. This is why they no longer feed the regime engine.
-                      </div>
-                    )}
-                    {disp?.wide && (
-                      <div style={{ marginTop: 8, padding: "9px 12px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8, fontSize: 12, color: C.amber, lineHeight: 1.6 }}>
-                        ⚖ <b>Wide dispersion:</b> {disp.text}.
-                      </div>
-                    )}
-                    <div style={{ marginTop: 7, fontSize: 11, color: C.lbl, lineHeight: 1.6 }}>
-                      {NO_CONVERSION_NOTE}
-                    </div>
-                  </div>
-                );
-              })()}
-              {/* Provenance: these are hand-maintained. There is no keyless feed for broker
-                  recession odds, so they are NOT auto-refreshed — each row carries its own as-of
-                  and is flagged OVERDUE against that source's own publication cadence (not a flat
-                  threshold) rather than being silently updated. */}
-              <div style={{ marginBottom: 10, padding: "8px 11px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, fontSize: 12, color: C.mid, lineHeight: 1.55 }}>
-                <b style={{ color: C.muted }}>Provenance: </b>
-                three rows carry a live feed — <b>📡 Kalshi</b> and <b>Polymarket</b> (real-money markets) and the
-                <b> NY&nbsp;Fed Yield&nbsp;Curve</b> (Estrella–Mishkin probit computed from the current 10Y-3M spread).
-                The broker/analyst rows have no keyless feed, so they are <b>not</b> auto-refreshed — each shows its own
-                as-of, judged against <i>that source's</i> publication cadence: <b>latest</b> (its current view — research houses
-                publish episodically) or <b>⚠ overdue</b> (past due for a source that should have printed by now).
-                Age still decays a row's weight in the average either way. Any row can be overridden by hand below (<b>✍️ manual</b>),
-                which takes precedence over both the feed and the static value.
-                <span style={{ color: C.amber, fontWeight: 700 }}> Q2 GDP at +1.5% (vs Q1 +2.1%) is the input most likely to push these up — expect revisions at the next publication, not before.</span>
-              </div>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 400 }}>
-                  <thead>
-                    <tr style={{ background: C.bg }}>
-                      {["Source", "Probability", "As of", "Timeframe", "Notes"].map(h => (
-                        <th key={h} style={{ textAlign: "left", color: C.mid, padding: "8px 12px", borderBottom: "2px solid " + C.bdr, fontSize: 13, fontWeight: 700 }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {effectiveRecessionSources.filter(r => !r.archived).map((r, i) => {
-                      const pCol = r.color === "red" ? C.red : r.color === "amber" ? C.amber : C.green;
-                      // Provenance badge: 📡 live = refreshed by an auto-feed this load; ✍️ manual =
-                      // a hand-entered override in the manual store; static rows show nothing.
-                      const prov = r.source === "auto"
-                        ? { label: "📡 live", col: C.green, bg: C.gBg, bdr: C.gBdr }
-                        : r.source === "manual"
-                        ? { label: "✍️ manual", col: C.blue, bg: C.bg, bdr: C.bdr }
-                        : null;
-                      return (
-                      <tr key={i} style={{ background: i % 2 === 0 ? C.surf : C.bg }}>
-                        <td style={{ padding: "8px 12px", color: C.text, fontSize: 14, fontWeight: 600, borderBottom: "1px solid " + C.bdr }}>
-                          {r.name}
-                          {prov && (
-                            <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: prov.col, background: prov.bg, border: "1px solid " + prov.bdr, borderRadius: 5, padding: "1px 5px", whiteSpace: "nowrap" }}>{prov.label}</span>
-                          )}
-                        </td>
-                        <td style={{ padding: "8px 12px", borderBottom: "1px solid " + C.bdr }}>
-                          <span style={{ color: pCol, fontWeight: 800, fontSize: 15 }}>{r.probability}</span>
-                        </td>
-                        {/* As-of + freshness, judged against the SOURCE'S OWN cadence. An old
-                            figure must never read as a current post-FOMC one — but neither should
-                            a research house's latest print read as a failed fetch. */}
-                        <td style={{ padding: "8px 12px", fontSize: 12, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap" }}>
-                          {(() => {
-                            const st = recessionAsOfState(r.name, r.asOf);
-                            if (!st) return <span style={{ color: C.lbl }}>—</span>;
-                            return (
-                              <span
-                                style={{ color: st.overdue ? C.amber : C.muted, fontWeight: st.overdue ? 700 : 400 }}
-                                title={st.overdue
-                                  ? `${r.name} publishes roughly every ${st.cadence}d; this print is ${st.days}d old — past due, worth checking for a newer one.`
-                                  : `${st.days}d old, within ${r.name}'s ~${st.cadence}d publication cadence — this is its latest print, not an overdue one. Weight still decays with age in the average.`}
-                              >
-                                {r.asOf}
-                                {st.overdue
-                                  ? ` · ⚠ ${st.days}d overdue`
-                                  : <span style={{ color: C.lbl }}> · latest · {st.days}d</span>}
-                              </span>
-                            );
-                          })()}
-                        </td>
-                        <td style={{ padding: "8px 12px", color: C.muted, fontSize: 13, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap" }}>{r.timeframe}</td>
-                        <td style={{ padding: "8px 12px", color: C.muted, fontSize: 13, borderBottom: "1px solid " + C.bdr }}>{r.notes}</td>
-                      </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {/* A1 — archived March vintages: condition invalidated, excluded from the weighted average.
-                  Collapsed by default; the reason (not just the date) is rendered. */}
-              {(() => {
-                const arch = effectiveRecessionSources.filter(r => r.archived);
-                if (!arch.length) return null;
-                return (
-                  <details style={{ marginTop: 10, background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, padding: "6px 11px" }}>
-                    <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, color: C.muted, letterSpacing: 0.3 }}>
-                      🗄️ Historical vintage — condition invalidated ({arch.length}) · excluded from the weighted average
-                    </summary>
-                    <div style={{ fontSize: 11.5, color: C.lbl, margin: "6px 0 8px", lineHeight: 1.5 }}>
-                      A view archived here was explicitly conditional on something that did not happen. Its number is kept for the record and excluded from the weighted average; the reason is stated on each row.</div>
-                    {arch.map((r, i) => (
-                      <div key={i} style={{ padding: "6px 0", borderTop: i ? "1px solid " + C.bdr : "none", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
-                        <span style={{ fontSize: 12.5, fontWeight: 700, color: C.muted, textDecoration: "line-through" }}>{r.name}</span>
-                        <span style={{ fontSize: 12.5, fontWeight: 800, color: C.lbl }}>{r.probability}</span>
-                        <span style={{ fontSize: 10.5, color: C.muted }}>({r.asOf})</span>
-                        <span style={{ fontSize: 11, color: C.lbl, fontStyle: "italic", flexBasis: "100%" }}>{r.archiveReason}</span>
-                      </div>
-                    ))}
-                  </details>
-                );
-              })()}
-              {/* A4 — leading-indicator context feeds. Not weighted into the consensus average (they
-                  are indicators/nowcasts, not 12-month recession probabilities), but they carry the
-                  live signal the archived analyst vintages no longer can. */}
-              <div style={{ marginTop: 10, padding: "8px 11px", background: C.surf, border: "1px solid " + C.bdr, borderRadius: 8 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>Leading indicators · context, not weighted</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 8 }}>
-                  {[
-                    { n: "Sahm Rule", src: "FRED SAHMREALTIME", read: laborView?.sahm?.value != null ? `${laborView.sahm.value.toFixed(2)} — reads away from the 0.50 trigger` : "reads away from the 0.50 trigger (see Labour module)", tone: "green" },
-                    { n: "Cleveland Fed yield-curve", src: "distinct probit from the NY Fed model", read: "add via manual entry — no keyless feed", tone: "muted" },
-                    { n: "Conference Board LEI", src: "6-month annualised rate", read: "add via manual entry — no keyless feed", tone: "muted" },
-                    { n: "Atlanta Fed GDPNow", src: "highest-frequency growth nowcast", read: "add via manual entry — no keyless feed", tone: "muted" },
-                  ].map(x => (
-                    <div key={x.n} style={{ fontSize: 11.5, lineHeight: 1.45 }}>
-                      <div style={{ fontWeight: 800, color: C.text }}>{x.n}</div>
-                      <div style={{ color: x.tone === "green" ? C.green : C.muted, fontWeight: 600 }}>{x.read}</div>
-                      <div style={{ color: C.lbl, fontSize: 10 }}>{x.src}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              {/* AN ESSAY, NOT AN ALARM. This paragraph is written by hand after a data event and
-                  was styled as a live warning — amber box, warning glyph — so a three-week-old
-                  reading of the July minutes looked like something that had just fired. It keeps
-                  its content and loses the alarm: neutral surface, the chip up front, and the
-                  one live number in it (Kalshi) labelled as the only live thing here. */}
-              <div style={{ marginTop: 12, padding: "12px 14px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8 }}>
-                <div style={{ marginBottom: 6 }}><HandKept asOf="2026-08-24" cadenceDays={30} what="after each data event that changes the recession read" /></div>
-                <span style={{ color: C.text, fontWeight: 700, fontSize: 13 }}>The signal that matters: </span>
-                <span style={{ color: C.mid, fontSize: 14, lineHeight: 1.65 }}>Goldman's dramatic round-trip — 15% (pre-war) → 30% (March peak) → 15% (June post-deal) — shows how oil-driven the near-term risk was. Post peace deal, 2026 recession odds have broadly normalized. The more important signal is 2027: Kalshi at {recKalshi2027 != null ? `${recKalshi2027}%` : "— (not loaded)"} (the live market) suggests markets expect delayed reckoning from debt refinancing at 5-7%, $1.3T consumer revolving credit balances, and corporate capex compression — still the higher of the two horizons. New risk to monitor: the July FOMC minutes (released Aug 19) show 'many participants' saw further tightening as likely necessary — an upgrade from June's 'only a few', so the three hike dissents understate the committee's hawkishness. If hikes materialize, recession risk reprices sharply higher.</span>
-              </div>
-            </Card>
-
-            <RecessionEntryPanel overrides={recessionOverrides} onSaved={setRecessionOverrides} />
+            {renderRecessionPanel()}
 
             <div id="macro-transitions" style={{ scrollMarginTop: 96 }} />
             <Card>
