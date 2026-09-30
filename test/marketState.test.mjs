@@ -3,6 +3,7 @@ import { pctRank, upTo, onOrBefore, creditComponent, ratesVolComponent, equityVo
          breadthComponent, realYieldComponent, conditionsAt, conditions, liquidity, legScore, phi, axisScore, regime, axisWords,
          sizing, stage, hedgePhase, transitions, computeMarketState, stateLogRow, bandOf, STRESS_AT, CONDITION_WEIGHTS,
          CONDITION_SIZING, STAGES } from '../lib/marketState.js';
+import { seriesHealth, DRIVER_GROUPS, SERIES_META } from '../lib/marketState.js';
 import { FRED_STATE_SERIES, YAHOO_STATE_SERIES, mapToSeries, stateInputs } from '../lib/marketStateFeed.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
@@ -149,6 +150,21 @@ const calm = {
   const old = { 'dvcap:marketstate:inputs:v1': { ...full, at: '2026-09-29T09:00:00Z' } };
   const r3 = await stateInputs({ now, fetcher: async () => ({ at: now.toISOString(), series: {}, errors: [{ series: 'x' }] }), kv: kv(old) });
   eq('a failed refresh serves the last good copy, marked stale', r3.source, 'stale');
+}
+{
+  const now = new Date('2026-09-30T02:00:00Z');
+  const h = seriesHealth({
+    hyOas: { label: 'HY OAS', cadence: 'daily', date: '2026-09-28' },
+    tga: { label: 'Treasury account', cadence: 'weekly', date: '2026-09-23' },
+    move: { label: 'MOVE', cadence: 'daily', date: '2026-09-24' },
+    dxy: { label: 'DXY', cadence: 'daily', date: '2026-09-10' },
+    nil: { label: 'x', cadence: 'daily', date: null },
+  }, now);
+  eq('feed health: worst first, by cadence', h.map(r => [r.key, r.status, r.age]),
+     [['nil', 'missing', null], ['dxy', 'stale', 20], ['move', 'late', 6], ['hyOas', 'fresh', 2], ['tga', 'fresh', 7]]);
+  const all = DRIVER_GROUPS.flatMap(g => g.series);
+  eq('every driver tile is a known series, none twice', [all.every(k => SERIES_META[k]), new Set(all).size === all.length], [true, true]);
+  eq('every gauge the feed carries has a home on the Drivers tab', Object.keys(SERIES_META).filter(k => !all.includes(k)), []);
 }
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
