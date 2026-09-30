@@ -148,6 +148,14 @@ const TODAY = '2026-10-01';
   const closeUnit = processInbox({ notes: [], trades: trades(SPY_LEGS('901', '20261002', 5.7, 10.1).map(x => x.replace('buySell="BUY"', 'buySell="TMP"').replace('buySell="SELL"', 'buySell="BUY"').replace('buySell="TMP"', 'buySell="SELL"'))), today: '2026-10-02', holidays: US }).drafts[0];
   const r2 = applyDraft(r.rows, closeUnit, {}, { today: '2026-10-02' });
   eq('a closing order lands on the same row as a sell', [r2.how, r2.rowId, r2.rows[0].fills[1]?.side], ['added', row.id, 'sell']);
+  // Typed in by hand before the statement arrived: the draft adopts that fill instead of doubling it.
+  const hand = [{ id: 'SPY-hand', symbol: 'SPY', underlying: 'SPY', instrument: 'spread', side: 'long', multiplier: 100, currency: 'USD', thesis: '', levels: [], tags: [],
+    legs: [{ right: 'P', strike: 750, expiry: '2026-11-20', side: 'long', ratio: 1 }, { right: 'P', strike: 720, expiry: '2026-11-20', side: 'short', ratio: 1 }],
+    fills: [{ id: 'h1', side: 'buy', qty: 2, price: 4.40, date: '2026-09-30' }] }];
+  const r3 = applyDraft(hand, d[0], {}, { today: TODAY });
+  eq('a spread already entered by hand is adopted, not doubled', [r3.how, r3.rows[0].fills.length, r3.rows[0].fills[0].tradeId, r3.rows[0].tag], ['adopted', 1, '900', 'hedge']);
+  const handOff = [{ ...hand[0], fills: [{ id: 'h1', side: 'buy', qty: 2, price: 4.90, date: '2026-09-30' }] }];
+  eq('a hand fill at a different price is a different fill', applyDraft(handOff, d[0], {}, { today: TODAY }).how, 'added');
 }
 
 // ── CASE 2: the NFLX plan, 215 sold the next day ─────────────────────────────
@@ -165,6 +173,8 @@ const TODAY = '2026-10-01';
     fills: [{ id: 'a', side: 'buy', qty: 1000, price: 900, date: '2026-06-01' }, { id: 'b', side: 'sell', qty: 215, price: 1180.5, date: '2026-10-01', tradeId: d.fill.tradeIds[0] }] }];
   const r = applyDraft(rows, d, {}, { today: '2026-10-02' });
   eq('the sale already on the row is annotated, not doubled', [r.how, r.rows[0].fills.length, r.rows[0].tag], ['annotated', 2, 'position']);
+  const typed = [{ ...rows[0], fills: [rows[0].fills[0], { id: 'b', side: 'sell', qty: 215, price: 1180, date: '2026-10-01' }] }];
+  eq('a sale typed in by hand that the planner has not stamped is adopted too', [applyDraft(typed, d).how, applyDraft(typed, d).rows[0].fills.length], ['adopted', 2]);
   ok('the rationale is appended to the existing thesis', /^core\n— 2026-09-30 \(plan\): Single-name cap/.test(r.rows[0].thesis));
   // Out of window: a plan waits five sessions, not six.
   const late = processInbox({ notes: [n], trades: trades(NFLX_SELL('951', 215, '20261008')), today: '2026-10-08', holidays: US });
