@@ -23,12 +23,12 @@ import { regimeFlipsIf } from "../lib/regime.js";
 import { minersPairImplication } from "../lib/regimeState.js";
 import { southboundTrend, southboundLevelTrend, southboundRead, ahPremiumRead, sbStale } from "../lib/southbound.js";
 import { mergeSouthbound } from "../lib/hkexSouthbound.js";
-import { STATUS, creditStatus, deriveAction, headerSignal } from "../lib/status.js";
+import { STATUS, BAND_STATUS, creditStatus, deriveAction } from "../lib/status.js";
 import { HORIZON, HORIZON_LABEL, dispersionRead, NO_CONVERSION_NOTE } from "../lib/recession.js";
 import { buildViews, evaluateViews, regimeCluster, divergenceRead } from "../lib/analystViews.js";
 import { fmtCcy } from "../lib/fxrates.js";
 import { realizedCurve } from "../lib/positions.js";
-import { DEFAULT_TARGET_PCT, regimeMultiplier } from "../lib/sizing.js";
+import { DEFAULT_TARGET_PCT, consensusMultiplier } from "../lib/sizing.js";
 import { computeMarketState, stateLogRow } from "../lib/marketState.js";
 import { StateView, DriversView, FeedHealth, StreetCompare } from "./MarketState.jsx";
 import { PlanView } from "./PlanView.jsx";
@@ -466,7 +466,7 @@ const POSTURE_ALLOCATIONS = {
     categoryNote:    "AI infrastructure hardware (semiconductors, compute) and highest-quality compounders with pricing power.",
   },
   stag: {
-    cash:            { range: "50–60%", status: "HOLD",       note: "Preserve optionality. Real yield eroding in real terms but cash dominates over equity drawdowns. Hold USFR — floating rate means yield stays elevated as long as rates hold. With the Fed on hold, USFR continues earning {{CASH}}. Do not rotate out of USFR until Fed pivot is confirmed. Bank AED expenses only." },
+    cash:            { range: "50–60%", status: "HOLD",       note: "Preserve optionality. Real yield eroding in real terms but cash dominates over equity drawdowns. Hold USFR — floating rate resets weekly, so it earns {{CASH}} now and more if the Fed keeps tightening. Do not rotate out of USFR until a Fed pivot is confirmed. Bank AED expenses only." },
     insurance:       { range: "8–15%",  status: "ACTIVATE",   note: "Gold miners, GLD, put spreads. TLT is a trap in stagflation — avoid bonds here." },
     income:          { range: "12–18%", status: "ACCUMULATE", note: "Pipelines and utilities with inflation pass-through contracts. Real asset income only." },
     longTermHolds:   { range: "12–18%", status: "HOLD",       note: "Hardware only. Avoid high-multiple software — multiples compress with sticky inflation." },
@@ -1551,10 +1551,23 @@ const CREDIT_MARKS = [
 // tab. Keeping a second copy on Playbook would reintroduce exactly the drift section C removed
 // for the labour module, so this MOVED rather than being duplicated.
 function CreditBlock({ credit, oas, hyg, reconSummary, history, depth = "full" }) {
-  if (!hyg) return null;
+  // A missing HYG read used to return nothing, so the master gauge vanished without a word whenever
+  // the playbook payload had not loaded. It now says so.
+  if (!hyg) {
+    return (
+      <Card style={{ borderLeft: "4px solid " + C.bdr }}>
+        <SLabel>HY Credit Spread — master gauge</SLabel>
+        <div style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.55 }}>
+          The playbook feed (HYG proxy, OAS series) has not loaded{oas?.value != null ? ` — last HY OAS ${oas.value}%${oas.date ? ` (${oas.date})` : ""}` : ""}.
+          The conditions score reads HY and IG OAS directly from FRED; see Market Watch › State.
+        </div>
+      </Card>
+    );
+  }
   // I.1/I.2 — the master gauge carries a status badge, so it carries a matching accent bar.
-  const cst = creditStatus(oas?.value) ?? "BENIGN";
-  const ctok = STATUS[cst];
+  // A missing OAS is NO READ, not BENIGN: a blank used to be painted as calm credit.
+  const cst = creditStatus(oas?.value) ?? null;
+  const ctok = STATUS[cst] ?? { color: C.muted, bg: C.inset, bdr: C.bdr };
 
   // ── M.2 — glance depth for the Indicators tab ──
   // Rendered from the SAME component rather than reimplemented, so the age chip and the HYG
@@ -1572,7 +1585,7 @@ function CreditBlock({ credit, oas, hyg, reconSummary, history, depth = "full" }
               <span style={{ fontSize: 28, fontWeight: 900, letterSpacing: -1, color: ctok.color }}>
                 {obs?.awaiting ? "—" : (oas?.value ?? "—")}
               </span>
-              <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: 0.5, color: ctok.color, background: ctok.bg, border: "1px solid " + ctok.bdr, borderRadius: 5, padding: "2px 8px" }}>{cst}</span>
+              <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: 0.5, color: ctok.color, background: ctok.bg, border: "1px solid " + ctok.bdr, borderRadius: 5, padding: "2px 8px" }}>{cst ?? "NO READ"}</span>
               {obs && <span style={{ fontSize: 12, fontWeight: 800, color: chipCol }}>{obs.awaiting ? "AWAITING PUBLICATION" : obs.label}</span>}
             </div>
             <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
@@ -1635,7 +1648,7 @@ function CreditBlock({ credit, oas, hyg, reconSummary, history, depth = "full" }
     <Card style={{ borderLeft: "4px solid " + ctok.color }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 2 }}>
         <SLabel>💳 Credit — master gauge</SLabel>
-        <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: 0.5, color: ctok.color, background: ctok.bg, border: "1px solid " + ctok.bdr, borderRadius: 5, padding: "2px 8px" }}>{cst}</span>
+        <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: 0.5, color: ctok.color, background: ctok.bg, border: "1px solid " + ctok.bdr, borderRadius: 5, padding: "2px 8px" }}>{cst ?? "NO READ"}</span>
         <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>published spread + live proxy</span>
       </div>
                 <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 8 }}>
@@ -5917,9 +5930,9 @@ export default function App() {
     stance: FED_LANGUAGE_STATUS.status, stanceAsOf: FED_LANGUAGE_STATUS.lastUpdated,
     next: nextMeetingOdds(liveInd?.fedPathFeed ?? null), asOf: stateFeed?.at ?? null,
   }), [liveInd, ismEntry, stateFeed]);
-  // What the Console sizes on today (the consensus engine, default multipliers) — shown beside the
-  // measured figure until sizing moves over.
-  const legacySizing = regimeMultiplier({ regimeId: liveRegime?.id, creditDanger: creditStatus(liveInd?.creditSpread) === "DANGER",
+  // What the consensus engine it replaced would size at (default multipliers) — shown beside the
+  // measured figure while the switch is watched.
+  const legacySizing = consensusMultiplier({ regimeId: liveRegime?.id, creditDanger: creditStatus(liveInd?.creditSpread) === "DANGER",
     contested: !!derivedRegimes?.contested, pinnedDiverged: regimeDiverged, vintage: regimeVintage }).mult;
   // The Hedges tab's phase follows the measured conditions (lib/marketState.js hedgePhase). The old
   // vol-term + OAS suggestion is the fallback while the gauges have not loaded.
@@ -6822,10 +6835,10 @@ export default function App() {
                 📊 Market Watch Dashboard
               </h1>
               <p className="mwd-tagline" style={{ margin: 0, color: C.muted, fontSize: 13 }}>
-                Recession indicators · Crash insurance · Income · Smart money · Macro regime
+                Market state · Drivers · The Street · Plan · Hedges · Income
               </p>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: "100%" }}>
               <ThemeToggle theme={theme} setTheme={setTheme} />
               {/* Unified refresh — fires both prices and indicators */}
               <button
@@ -6839,45 +6852,23 @@ export default function App() {
                 {(pricesLoading || indLoading) ? "⏳ Refreshing…" : "🔄 Refresh All"}
               </button>
               {(() => {
-                // ── THE HEADER IS THE MACRO STATE, NOT THE DAILY STANCE ──────────
-                // Two different questions at two different horizons. This tile is the STRUCTURAL
-                // regime — months, consensus-derived — gated by credit's veto: headerSignal()
-                // applies the veto first, then takes the more severe of (regime, credit). The
-                // tape stance on the Daily Overview is what to make of THIS session, weeks at
-                // most. For one deploy this tile showed the tape stance instead, on the argument
-                // that "what to do" had too many surfaces — but this was never an instruction, it
-                // was a state, and merging it into the tape lost a horizon rather than removing a
-                // duplicate. The site's own scope labels separate the two; so does this.
-                //
-                // M.4 — the header is a STATED FUNCTION of named inputs, not a separate
-                // judgement. It previously ran `cs > 6.0 || labStress.severe`, so a severe
-                // labour print alone printed DANGER while HY OAS sat at 2.84 with no threshold
-                // breached at all. Credit's veto first.
-                //
-                // No `2.75` fallback: a missing spread is null, creditStatus(null) is null, and
-                // headerSignal then reads the regime alone and the subtitle says the spread did
-                // not load — never a chosen number wearing a live one's weight.
-                const cs = liveInd?.creditSpread ?? null;
-                const regimeStatus = derivedRegimes?.contested ? "WATCH"
-                  : (liveRegime?.id === "def" ? "ELEVATED" : liveRegime?.id === "stag" ? "WATCH" : "BENIGN");
-                const hs = headerSignal({ oas: cs, regimeStatus });
-                const tokH = STATUS[hs.signal] || STATUS.WATCH;
-                const lbl = hs.signal || "WATCH";
-                const col = tokH.color, bg = tokH.bg, bdr = tokH.bdr;
-                // The subtitle names the binding input rather than asserting a breach.
-                const sub = hs.credit == null
-                  ? `OAS not loaded · ${liveRegime?.label ?? "regime"}`
-                  : hs.credit === "BENIGN"
-                  ? `credit benign · ${liveRegime?.label ?? "regime"}`
-                  : `OAS ${cs} · ${liveRegime?.label ?? "regime"}`;
-                const vint = regimeVintage.grade === "fresh" ? "structural · months" : `structural · months · consensus ${regimeVintage.grade}`;
+                // ── THE HEADER IS THE MEASURED STATE (lib/marketState.js) ──
+                // It was the consensus regime with credit's veto (headerSignal) — a lookup on
+                // strategists' recession odds. It is now the stage the conditions score implies,
+                // coloured by the conditions band, with the score and the size it sets. The tape
+                // stance for this session stays on the Daily Overview.
+                const c = mstate.conditions, stg = mstate.stage;
+                const tok = STATUS[BAND_STATUS[c?.band?.id]] || { color: C.mid, bg: C.inset, bdr: C.bdr };
                 return (
-                  <div style={{ background: bg, border: "1.5px solid " + bdr, borderRadius: 10, padding: "6px 14px", textAlign: "center", minWidth: 90 }}
-                       title="The structural macro state — the consensus-derived regime with credit's veto applied. Months, not today. The tape stance for this session is on the Daily Overview.">
-                    <div style={{ color: C.lbl, fontSize: 10, letterSpacing: 2, textTransform: "uppercase", fontWeight: 700 }}>Macro signal</div>
-                    <div style={{ color: col, fontSize: 17, fontWeight: 900, lineHeight: 1 }}>{lbl}</div>
-                    <div style={{ color: col, fontSize: 10, marginTop: 2, opacity: 0.75, lineHeight: 1.2 }}>{sub}</div>
-                    <div style={{ color: regimeVintage.grade === "fresh" ? C.lbl : C.amber, fontSize: 9, marginTop: 2, letterSpacing: 0.3 }} title={regimeVintage.note}>{vint}</div>
+                  <div style={{ background: tok.bg, border: "1.5px solid " + tok.bdr, borderRadius: 10, padding: "6px 14px", textAlign: "center", minWidth: 90, cursor: "pointer" }}
+                       onClick={() => setTab("state")}
+                       title="The measured market state: the stage the conditions score implies, the score and its band, and the size multiplier (regime mix × conditions). Opens Market Watch › State.">
+                    <div style={{ color: C.lbl, fontSize: 10, letterSpacing: 2, textTransform: "uppercase", fontWeight: 700 }}>Market state</div>
+                    <div style={{ color: tok.color, fontSize: 17, fontWeight: 900, lineHeight: 1, whiteSpace: "nowrap" }} title={stg ? `Stage ${stg.n} — ${stg.label}: ${stg.plan}` : undefined}>{stg ? `${stg.n} · ${stg.id.toUpperCase()}` : "—"}</div>
+                    <div style={{ color: tok.color, fontSize: 10, marginTop: 2, opacity: 0.8, lineHeight: 1.2 }}>
+                      {c?.score != null ? `conditions ${c.score} · ${c.band.label.toLowerCase()}${c.trend && c.trend !== "steady" ? `, ${c.trend}` : ""}` : "conditions loading"}
+                    </div>
+                    <div style={{ color: C.lbl, fontSize: 9, marginTop: 2, letterSpacing: 0.3 }}>{mstate.sizing?.total != null ? `size ×${mstate.sizing.total.toFixed(2)}` : "measured"}</div>
                   </div>
                 );
               })()}
@@ -6934,35 +6925,37 @@ export default function App() {
               </button>
             )}
           </div>
-          {/* T1a — always-on regime strip: the market regime at a glance, on every tab, sticky.
-              Reuses the values the engine already computes; no new data. */}
+          {/* THE STATE STRIP — on every tab, sticky: the measured regime, conditions and policy
+              (lib/marketState.js). The consensus regime and the credit ladder it used to show are
+              on Market Watch › Street and inside the conditions score. */}
           {(() => {
-            const r = liveRegime || REGIMES[0];
-            const prob = regimeProbFor(r.id);
-            const cs = liveInd ? liveInd.creditSpread : null;
-            const cKey = cs != null ? creditStatus(cs) : "BENIGN";
-            const cTok = STATUS[cKey] || STATUS.BENIGN;
-            const cLbl = cKey === "BENIGN" ? "CALM" : cKey === "WATCH" ? "WATCHFUL" : cKey === "ELEVATED" ? "WIDENING" : "STRESSED";
-            const fedState = FED_LANGUAGE_STATES[FED_LANGUAGE_STATUS.status] || {};
-            const fedLbl = (fedState.label || "").replace(/^\S+\s/, "");
-            const chip = (k, v, col) => (
-              <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6, whiteSpace: "nowrap" }}>
+            const r = mstate.regime, c = mstate.conditions, pol = mstate.policy;
+            const chip = (k, v, col, onClick) => (
+              <span onClick={onClick} style={{ display: "inline-flex", alignItems: "baseline", gap: 6, whiteSpace: "nowrap", cursor: onClick ? "pointer" : "default" }}>
                 <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: C.lbl }}>{k}</span>
                 <span style={{ fontSize: 12.5, fontWeight: 800, color: col }}>{v}</span>
               </span>
             );
             const flag = (txt) => <span style={{ fontSize: 10, fontWeight: 800, color: C.amber, background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 5, padding: "1px 6px", whiteSpace: "nowrap" }}>{txt}</span>;
+            const pal = r.available ? REGIME_PALETTE[r.id] : null;
+            const bandCol = { calm: C.green, caution: C.amber, stress: C.orange, crisis: C.red }[c?.band?.id] || C.mid;
+            const regTxt = !r.available ? "no read" : r.contested
+              ? `Between · ${["ref", "inf", "stag", "def"].sort((a, b) => r.probs[b] - r.probs[a]).slice(0, 2).map(id => `${{ ref: "Refl", inf: "Infl", stag: "Stag", def: "Defl" }[id]} ${r.probs[id]}%`).join(" / ")}`
+              : `${REGIMES.find(x => x.id === r.id)?.label ?? r.label} ${r.probs[r.id]}%`;
+            const streetDisagrees = r.available && liveRegime && !r.contested && liveRegime.id !== r.id;
             return (
               <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "nowrap", overflowX: "auto", scrollbarWidth: "none", padding: "7px 2px 3px", borderTop: "1px solid " + C.bdr, marginTop: 4 }}>
-                {chip("Regime", `${r.label} ${prob}%`, r.color)}
+                {chip("Regime", `${regTxt}${r.available && r.drifting ? ` → ${{ ref: "refl", inf: "infl", stag: "stag", def: "defl" }[r.drifting]}` : ""}`, pal?.color || C.mid, () => setTab("state"))}
                 <span style={{ color: C.bdr }}>·</span>
-                {chip("Credit", `${cLbl}${cs != null ? ` · OAS ${cs}` : ""}`, cTok.color)}
+                {chip("Conditions", c?.score != null ? `${c.score} ${c.band.label}${c.trend === "rising" ? " ↑" : c.trend === "easing" ? " ↓" : ""}` : "—", bandCol, () => setTab("state"))}
                 <span style={{ color: C.bdr }}>·</span>
-                {chip("Fed", fedLbl || "—", fedState.color || C.mid)}
-                {derivedRegimes?.contested && flag("⚖ CONTESTED")}
+                {chip("Fed", pol?.stance ? `${pol.stance}${pol.next?.hikeOdds != null && pol.next.hikeOdds >= 10 ? ` · hike ${Math.round(pol.next.hikeOdds)}%` : pol.next?.cutOdds != null && pol.next.cutOdds >= 10 ? ` · cut ${Math.round(pol.next.cutOdds)}%` : ""}` : "—",
+                  pol?.stance === "tightening" ? C.red : pol?.stance === "easing" ? C.green : C.amber)}
+                {mstate.sizing?.total != null && <><span style={{ color: C.bdr }}>·</span>{chip("Size", `×${mstate.sizing.total.toFixed(2)}`, C.text)}</>}
+                {streetDisagrees && <span title={`The Street's consensus reads ${liveRegime.label} ${regimeProbFor(liveRegime.id)}% — see Market Watch › Street`}>{flag(`STREET: ${liveRegime.label.toUpperCase()}`)}</span>}
                 {regimeDiverged && flag("📌 PINNED ≠ LIVE")}
                 {(ledger.counts.stale + ledger.counts.missing) > 0 && <span title={`${ledger.counts.stale} stale, ${ledger.counts.missing} never entered — see Market Watch › Data health`}>{flag(`✍ ${ledger.counts.stale + ledger.counts.missing} HAND-KEPT OUT`)}</span>}
-                {regimeVintage.grade !== "fresh" && <span title={regimeVintage.note}>{flag(`🗓 CONSENSUS ${regimeVintage.grade.toUpperCase()}${regimeVintage.pct != null ? ` · ${regimeVintage.pct}% ALIVE` : ""}`)}</span>}
+                {stateFeed?.source === "stale" && flag("GAUGES: LAST GOOD COPY")}
               </div>
             );
           })()}
@@ -7013,6 +7006,7 @@ export default function App() {
             contested={!!derivedRegimes?.contested}
             regimeDiverged={regimeDiverged}
             regimeVintage={regimeVintage}
+            marketState={mstate.regime.available && mstate.conditions.band ? { probs: mstate.regime.probs, band: mstate.conditions.band.id } : null}
             prices={prices}
             fetchPrices={fetchPrices}
             pricesLoading={pricesLoading}
@@ -8298,9 +8292,13 @@ export default function App() {
         {/* ── MACRO ── */}
         {tab === "global" && (
           <GlobalPlaybook
-            /* The stance card runs the regime guard client-side, where the probability is
-               computed. Passing the label + probability rather than reimplementing the guard. */
-            regime={{ id: liveRegime?.id, label: liveRegime?.label, pct: regimeProbFor(liveRegime?.id) }}
+            /* The stance card runs the regime guard client-side. The MEASURED state: the combined
+               probability of the two hostile quadrants, and the conditions band (Stress or Crisis
+               withholds RISK-ON on its own). The consensus regime only while the axes load. */
+            regime={mstate.regime.available
+              ? { id: mstate.regime.probs.stag >= mstate.regime.probs.def ? "stag" : "def", label: "Stagflation or deflationary bust (measured)",
+                  pct: mstate.regime.probs.stag + mstate.regime.probs.def, band: mstate.conditions.band?.id ?? null, score: mstate.conditions.score }
+              : { id: liveRegime?.id, label: liveRegime?.label, pct: regimeProbFor(liveRegime?.id) }}
             liveIntervention={liveIntervention}
             reconSummary={reconSummary}
             byRegion={pbData}

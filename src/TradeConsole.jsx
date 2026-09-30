@@ -2624,7 +2624,7 @@ function Holdings({ data, title, note, open, onToggle, money, bare = false, look
   );
 }
 
-export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverged, regimeVintage = null, prices, fetchPrices, pricesLoading }) {
+export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverged, regimeVintage = null, marketState = null, prices, fetchPrices, pricesLoading }) {
   const LS = "dvcap_console_v2";
   // Dismissal is by TIMESTAMP, not a flag: the next run's news must reappear rather than being
   // permanently silenced by one click on the last one.
@@ -2992,7 +2992,9 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
     }
     return out;
   }, [settings?.sizing]);
-  const regimeCtx = { regimeId: liveRegime?.id, creditDanger, contested, pinnedDiverged: regimeDiverged, vintage: regimeVintage, sizing: mergedSizing };
+  // `state` is the measured market state ({ probs, band }); with it the multiplier is the regime mix ×
+  // conditions, and the consensus figure rides along for comparison (lib/sizing.js regimeMultiplier).
+  const regimeCtx = { regimeId: liveRegime?.id, creditDanger, contested, pinnedDiverged: regimeDiverged, vintage: regimeVintage, sizing: mergedSizing, state: marketState };
   const rm = regimeMultiplier(regimeCtx);
 
   // ── derive everything from fills ──
@@ -4189,11 +4191,17 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
           <span style={{ fontSize: 11.5, color: C.muted }}>suggestions only — shown beside your own number, never applied</span>
           {/* The regime card that used to head the tab repeated the header strip; the two flags it
               carried are kept here, beside the multiplier they cut by ×0.7. */}
-          {contested && chip("⚖ CONTESTED", C.amber, C.aBg, C.aBdr)}
-          {regimeDiverged && chip("📌 PINNED≠LIVE", C.amber, C.aBg, C.aBdr)}
-          <span style={{ marginLeft: "auto", fontSize: 12.5 }}>
-            <span style={{ color: C.lbl, fontWeight: 700 }}>regime ×</span> <b style={{ color: liveRegime?.color }}>{rm.mult.toFixed(2)}</b>
-            <span style={{ color: C.muted, fontSize: 11.5 }} title={rm.reasons.join(' · ')}> ({rm.reasons[rm.reasons.length - 1]})</span>
+          {rm.source !== "measured" && contested && chip("⚖ CONTESTED", C.amber, C.aBg, C.aBdr)}
+          {rm.source !== "measured" && regimeDiverged && chip("📌 PINNED≠LIVE", C.amber, C.aBg, C.aBdr)}
+          <span style={{ marginLeft: "auto", fontSize: 12.5 }} title={rm.reasons.join(' · ')}>
+            {rm.source === "measured" ? (<>
+              <span style={{ color: C.lbl, fontWeight: 700 }}>size ×</span> <b style={{ color: C.text }}>{rm.mult.toFixed(2)}</b>
+              <span style={{ color: C.muted, fontSize: 11.5 }}> (regime mix ×{rm.base.toFixed(2)} · conditions ×{rm.condMult})</span>
+              {rm.legacy && <span style={{ color: C.muted, fontSize: 11.5 }}> · consensus engine was ×{rm.legacy.mult.toFixed(2)}</span>}
+            </>) : (<>
+              <span style={{ color: C.lbl, fontWeight: 700 }}>regime ×</span> <b style={{ color: liveRegime?.color }}>{rm.mult.toFixed(2)}</b>
+              <span style={{ color: C.muted, fontSize: 11.5 }}> ({rm.reasons[rm.reasons.length - 1]} · consensus — the measured state has not loaded)</span>
+            </>)}
           </span>
           {/* The live multiplier stays on the header — it is the one number here you read without
               intending to change anything, and it is the reason to open the rest. */}

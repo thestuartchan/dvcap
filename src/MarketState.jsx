@@ -313,7 +313,7 @@ function PlanPanel({ st, legacy }) {
         <div style={{ fontSize: 11.5, color: C.muted, lineHeight: 1.45 }}>
           Regime multiplier is the probability-weighted average of {QORDER.map(id => `${QUADRANTS[id].short.split(" ")[0].toLowerCase()} ×${REGIME_SIZING[id].mult}`).join(", ")};
           conditions {Object.entries(CONDITION_SIZING).map(([k, v]) => `${k} ×${v}`).join(", ")}.
-          {legacy != null && <> The Console still sizes on the old engine (<b style={{ color: C.mid }}>×{legacy.toFixed(2)}</b>) until the switch.</>}
+          {legacy != null && <> The Console sizes on this figure; the consensus engine it replaced would give <b style={{ color: C.mid }}>×{legacy.toFixed(2)}</b>.</>}
         </div>
       </div>
       {h && <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.5 }}><b style={{ color: C.text }}>Hedges:</b> {PHASE_WORDS[h.id]} <span style={{ color: C.muted }}>({h.why})</span></div>}
