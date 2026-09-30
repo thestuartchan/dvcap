@@ -311,9 +311,15 @@ const TODAY = '2026-10-01';
   eq('the SPY note moved to processed', processed.map(p => [p.id, p.outcome]), [[SPY_NOTE.id, 'drafted']]);
   const g = await call(manualEntry, { method: 'GET', query: NOTE_Q, headers: TOKEN });
   eq('the pending count falls to 1', g.body, { pending: 1 });
+  // The console (session-gated) can see what is still waiting and take one out; the token route cannot.
+  const { readJournal, dropNote } = await import('../lib/journalStore.js');
+  eq('the console read lists the pending note', (await readJournal()).pendingNotes.map(x => x.id), [NFLX_NOTE.id]);
+  eq('removing it empties the inbox', [(await dropNote(NFLX_NOTE.id)).ok, (await readJournal()).pending], [true, 0]);
+  eq('removing it again says it is gone', (await dropNote(NFLX_NOTE.id)).ok, false);
+  eq('drop-note through the route needs the session, not the token', (await call(manualEntry, { method: 'POST', headers: TOKEN, body: { journalDraft: { id: 'x', action: 'drop-note' } } })).status, 401);
   const res = await resolveDraft({ id: 'd-900', action: 'confirm' });
   eq('confirm takes the draft off the list', [res.ok, res.drafts.length], [true, 0]);
-  eq('and records the outcome', JSON.parse(mem.get('dvcap:journal:processed:v1')).map(p => p.outcome), ['drafted', 'confirmed']);
+  eq('and records the outcome', JSON.parse(mem.get('dvcap:journal:processed:v1')).map(p => p.outcome), ['drafted', 'dropped', 'confirmed']);
   eq('resolving it again says it is gone', (await resolveDraft({ id: 'd-900', action: 'dismiss' })).ok, false);
   const again = await call(manualEntry, { method: 'POST', query: NOTE_Q, headers: TOKEN, body: SPY_NOTE });
   eq('a processed id cannot be re-posted', again.status, 409);

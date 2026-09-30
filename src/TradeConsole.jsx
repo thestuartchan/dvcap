@@ -3542,6 +3542,16 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
     setJournalMsg(done.ok ? { text: "Dismissed ✓" } : { err: true, text: done.error || "Dismiss failed." });
     setJournalBusy(false);
   };
+  const dropNote = async (note) => {
+    setJournalBusy(true);
+    try {
+      const res = await fetch("/api/manual-entry", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ journalDraft: { id: note.id, action: "drop-note" } }) });
+      const j = await res.json().catch(() => null);
+      if (res.ok && j?.journal) { setJournal(j.journal); setJournalMsg({ text: `Removed ${note.id} ✓` }); }
+      else setJournalMsg({ err: true, text: j?.journal?.error || "Could not remove that note." });
+    } catch { setJournalMsg({ err: true, text: "Could not remove that note." }); }
+    setJournalBusy(false);
+  };
   const chooseDraft = async (draft, orderId) => {
     setJournalBusy(true);
     const done = await resolveJournal({ id: draft.id, action: "choose", orderId }).catch(() => ({ ok: false }));
@@ -4040,7 +4050,7 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
       {/* ── JOURNAL DRAFTS ──
           Notes written from chat, matched to IBKR's fills by the daily run: drafts to confirm,
           fills that arrived with no note, and notes whose fill never came. Absent when empty. */}
-      <JournalDrafts journal={journal} onConfirm={confirmDraft} onDismiss={dismissDraft} onChoose={chooseDraft} busy={journalBusy} msg={journalMsg} />
+      <JournalDrafts journal={journal} onConfirm={confirmDraft} onDismiss={dismissDraft} onChoose={chooseDraft} onDrop={dropNote} busy={journalBusy} msg={journalMsg} />
 
       {/* ── CURRENT PORTFOLIO ──
           Same visual idiom as the Smart Money tab (donut for weight, horizontal bars for the

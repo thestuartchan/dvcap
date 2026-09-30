@@ -16,6 +16,25 @@ const GROUPS = [
   { key: "withoutFills", label: "Notes without fills", test: (d) => d.kind === "unfilled" },
 ];
 
+// A note still in the inbox, waiting for tomorrow's run. Shown so one nobody recognises can be
+// removed before it becomes a draft.
+function PendingNote({ note, onDrop, busy }) {
+  return (
+    <div style={{ border: "1.5px solid " + C.bdr, background: C.surf, borderRadius: 9, padding: "8px 10px", display: "grid", gap: 5 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+        <b style={{ fontSize: 13, color: C.text }}>{titleOf({ note })}</b>
+        <span style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase" }}>waiting</span>
+        <span style={{ fontSize: 11.5, color: C.muted }}>id {note.id} · received {String(note.received_at || "").replace("T", " ").slice(0, 16)}Z</span>
+      </div>
+      {note.expected && (note.expected.qty != null || note.expected.price != null) && (
+        <div style={{ fontSize: 12, color: C.mid }}>expects {note.expected.qty ?? "?"}{note.expected.price != null ? ` @ ${Number(note.expected.price).toFixed(2)}` : ""}</div>
+      )}
+      <NoteBody note={note} edit={null} setEdit={() => {}} />
+      <div><button style={btn()} disabled={busy} onClick={() => onDrop(note)}>Remove from inbox</button></div>
+    </div>
+  );
+}
+
 const btn = (tone) => ({ fontSize: 11.5, fontWeight: 800, padding: "4px 10px", borderRadius: 7, cursor: "pointer",
   border: "1.5px solid " + (tone === "go" ? C.blBdr : C.bdrMd), background: tone === "go" ? C.blue : C.surf, color: tone === "go" ? C.onFill : C.mid });
 
@@ -96,12 +115,13 @@ function DraftCard({ d, onConfirm, onDismiss, onChoose, busy }) {
   );
 }
 
-export default function JournalDrafts({ journal, onConfirm, onDismiss, onChoose, busy = false, msg = null }) {
+export default function JournalDrafts({ journal, onConfirm, onDismiss, onChoose, onDrop, busy = false, msg = null }) {
   const [open, setOpen] = useState(null);
   const drafts = journal?.drafts || [];
-  if (!drafts.length) return null;
+  const waiting = journal?.pendingNotes || [];
+  if (!drafts.length && !waiting.length) return null;
   const n = draftCounts(drafts);
-  const shown = open ? drafts.filter(GROUPS.find(g => g.key === open).test) : [];
+  const shown = open && open !== "waiting" ? drafts.filter(GROUPS.find(g => g.key === open).test) : [];
   return (
     <div style={{ padding: "9px 13px", borderRadius: 10, background: C.blBg, border: "1.5px solid " + C.blBdr, display: "grid", gap: 7 }}>
       <div style={{ display: "flex", gap: 14, alignItems: "baseline", flexWrap: "wrap" }}>
@@ -112,10 +132,16 @@ export default function JournalDrafts({ journal, onConfirm, onDismiss, onChoose,
             {g.label} ({n[g.key]})
           </span>
         ))}
-        {journal?.pending > 0 && <span style={{ fontSize: 11.5, color: C.muted }}>{journal.pending} note{journal.pending === 1 ? "" : "s"} waiting for a fill</span>}
+        {journal?.pending > 0 && (
+          <span onClick={() => setOpen(open === "waiting" ? null : "waiting")}
+                style={{ fontSize: 11.5, color: C.muted, cursor: "pointer", textDecoration: open === "waiting" ? "underline" : "none" }}>
+            {journal.pending} note{journal.pending === 1 ? "" : "s"} waiting for a fill
+          </span>
+        )}
         {msg && <span style={{ fontSize: 11.5, color: msg.err ? C.red : C.green, fontWeight: 700 }}>{msg.text}</span>}
       </div>
       {shown.map(d => <DraftCard key={d.id} d={d} onConfirm={onConfirm} onDismiss={onDismiss} onChoose={onChoose} busy={busy} />)}
+      {open === "waiting" && waiting.map(nt => <PendingNote key={nt.id} note={nt} onDrop={onDrop} busy={busy} />)}
     </div>
   );
 }
