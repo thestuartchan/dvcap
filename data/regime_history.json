@@ -2365,6 +2365,45 @@
       },
       "source": "client+cron",
       "loggedAt": "2026-09-29T18:18:08.666Z"
+    },
+    {
+      "date": "2026-09-30",
+      "stagflation_p": 65,
+      "reflationary_p": 17,
+      "deflationary_p": 13,
+      "inflationary_p": 5,
+      "hawkish_repricing": "STAGFLATION",
+      "live_regime": "stag",
+      "view_regime": "stag",
+      "pinned": true,
+      "hyg_chg": -0.23,
+      "hyg_qqq_divergence": -0.42,
+      "inputs": {
+        "weightedRecessionProb": 14.3,
+        "cpi": 3.35302,
+        "kalshi2027": 22,
+        "tape": {
+          "gold": "up",
+          "tlt": "down",
+          "xlu": "up",
+          "xlp": "down",
+          "spy": "down",
+          "qqq": "up",
+          "iwm": "down",
+          "btc": "up",
+          "breakevenBp": 1
+        },
+        "ladderSpread": 1.38,
+        "u3": 4.1,
+        "empPop": 59.1,
+        "oas": 3.02,
+        "tenY": 5.17,
+        "twoY": 4.81,
+        "consensusAlive": 0.728,
+        "regimeVintage": "decayed"
+      },
+      "source": "client",
+      "loggedAt": "2026-09-30T00:07:35.338Z"
     }
   ]
 }
