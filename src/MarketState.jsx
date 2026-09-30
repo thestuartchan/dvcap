@@ -633,3 +633,38 @@ export function StreetCompare({ st, street }) {
     </Card>
   );
 }
+
+// ── CROSS-CHECK SOURCES ── the status of each source behind the read-only cross-check JSON (served
+// under the gamma feed's slug). Statuses only; the data is not fetched to the dashboard.
+const XC_LABEL = {
+  credit: "HY OAS (FRED)", real_yields: "10Y TIPS + breakeven (FRED)", term_premium: "ACM term premium (NY Fed)",
+  breadth: "RSP / SPY", auctions: "Treasury auctions", positioning: "CFTC COT", gamma_independent: "DIX / GEX (SqueezeMetrics)",
+  sentiment_aaii: "AAII sentiment", put_call: "Put/call (Cboe)",
+};
+export function CrossCheckHealth({ xc }) {
+  if (!xc) return null;
+  const rows = Object.entries(xc.blocks || {});
+  return (
+    <Card style={{ display: "grid", gap: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+        <SLabel>Cross-check sources</SLabel>
+        <span style={{ fontSize: 11.5, color: C.muted }}>{xc.ok ? `checked ${fmtWhen(xc.at)}` : `not loaded${xc.error ? ` — ${xc.error}` : ""}`}</span>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 420, fontSize: 12.5 }}>
+          <tbody>
+            {rows.map(([k, b]) => (
+              <tr key={k}>
+                <td style={{ padding: "5px 8px", borderBottom: "1px solid " + C.bdr, fontWeight: 700, color: C.text }}>{XC_LABEL[k] || k}</td>
+                <td style={{ padding: "5px 8px", borderBottom: "1px solid " + C.bdr, fontFamily: MONO }}>{b.as_of ?? "—"}</td>
+                <td style={{ padding: "5px 8px", borderBottom: "1px solid " + C.bdr }}><Chip v={b.status} tone={b.status === "fresh" ? TONE.good : b.status === "stale" ? TONE.warn : TONE.bad} /></td>
+                <td style={{ padding: "5px 8px", borderBottom: "1px solid " + C.bdr, color: C.muted, fontSize: 11.5 }}>{b.error || ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5 }}>The sources the Current Market Read cross-checks against, fetched and cached server-side. Stale means older than its publication lag plus one and a half cadences.</div>
+    </Card>
+  );
+}

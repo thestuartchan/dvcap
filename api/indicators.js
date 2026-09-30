@@ -3,6 +3,8 @@ import { GROWTH_SERIES, MARKET_PAIRS, MONTHLY_SERIES } from "../lib/growth.js";
 import { INFLATION_SERIES } from "../lib/inflationAxis.js";
 import { kvGetJson, kvSetJson, kvConfigured } from "../lib/kv.js";
 import { stateInputs } from "../lib/marketStateFeed.js";
+import { crossCheckPayload } from "../lib/crossCheckFeed.js";
+import { crossCheckHealth } from "../lib/crossCheck.js";
 import { conditions, conditionsAt, liquidity, seriesStats } from "../lib/marketState.js";
 import { zqMovesPriced } from "../lib/fedpath.js";
 import { fetchSmicAHPremium } from "../lib/smicah.js";
@@ -37,6 +39,18 @@ export default async function handler(req, res) {
       });
     } catch (e) {
       return res.status(200).json({ ok: false, error: String(e?.message || e) });
+    }
+  }
+
+  // ?xc=1 — the cross-check sources' STATUS only (fresh / stale / unavailable, dates, errors) for
+  // the Data health tab. The data itself is served only under the gamma feed's slug.
+  if (String(req.query?.xc ?? '') === '1') {
+    try {
+      const p = await crossCheckPayload();
+      res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=900");
+      return res.status(200).json({ ok: true, at: p.as_of_utc, blocks: crossCheckHealth(p) });
+    } catch (e) {
+      return res.status(200).json({ ok: false, error: String(e?.message || e).slice(0, 160) });
     }
   }
 

@@ -11,11 +11,16 @@
 //   GET /api/gex?custom=INTC         one typed name, on demand, nothing stored (gated)
 //   GET /api/g/<slug>/<ticker>       the read-only gamma JSON feed (vercel.json rewrites it to
 //                                    ?feed=<slug>&symbol=<ticker>); the slug is the protection
+//   GET /api/g/<slug>/crosscheck     the cross-check JSON under the same slug and limits: credit,
+//                                    real yields, ACM term premium, breadth, auctions, CFTC, DIX,
+//                                    AAII, Cboe put/call (lib/crossCheck.js, lib/crossCheckFeed.js)
 //   GET /api/gex?feedslug=1          the feed's slug, minted on first ask (gated); POST &rotate=1
 //                                    replaces it
 import { createHash, randomBytes } from 'node:crypto';
 import { kvConfigured, kvGetJson, kvSetJson, kvSetJsonEx, kvIncrEx, kvSetNxEx } from '../lib/kv.js';
 import { gexFeedPayload, feedLeaks, slugMatches, rateBucket, FEED_TICKERS, FEED_RECOMPUTE_MIN, FEED_RATE_PER_HOUR } from '../lib/gexFeed.js';
+import { crossCheckPayload } from '../lib/crossCheckFeed.js';
+import { crossCheckLeaks } from '../lib/crossCheck.js';
 import { captureGex, readGex, settledGex, observeRoll, OCC_ROLL_LOG_KEY, OCC_HEALTH_KEY, GEX_SYMBOLS, CUSTOM_ROOT_RE,
          LAST_RECOMPUTE_KEY, LAST_RECOMPUTE_TTL_SEC, recomputeRecord, newerRecompute } from '../lib/gexStore.js';
 import { instrumentKind } from '../lib/catalyst.js';
@@ -96,6 +101,14 @@ async function serveFeed(req, res) {
   const stored = await kvGetJson(FEED_SLUG_KEY).catch(() => null);
   if (!slugMatches(req.query?.feed, stored?.slug)) return res.status(404).json({ error: 'not found' });
   const sym = String(req.query?.symbol || '').trim().toUpperCase();
+  // The cross-check rides the same slug, limit and refusal rule. Always 200: a source that fails is
+  // a block marked unavailable, never a failed response.
+  if (sym === 'CROSSCHECK') {
+    const body = JSON.stringify(await crossCheckPayload());
+    if (crossCheckLeaks(body).length) return res.status(500).json({ error: 'refused' });
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    return res.status(200).send(body);
+  }
   if (!FEED_TICKERS.includes(sym)) return res.status(404).json({ error: 'not found' });
   const { board, mode, asOf, source } = await feedBoard(sym);
   if (!board) return res.status(503).json({ error: 'no board yet' });
