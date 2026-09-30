@@ -5904,7 +5904,7 @@ export default function App() {
       consensusVintage: CONSENSUS_VINTAGE, recessionSources: effectiveRecessionSources, recessionCadence: RECESSION_SOURCE_CADENCE,
       fedLanguage: FED_LANGUAGE_STATUS, secYields: SEC_YIELDS, southboundFeed: sbFeedTop,
       fedPathFeed: liveInd?.fedPathFeed ?? null,
-      analystBoard: { asOf: "2026-06-29", cadence: 90 }, recessionProse: { asOf: "2026-08-24", cadence: 30 },
+      analystBoard: { asOf: "2026-06-29", cadence: 90 }, recessionProse: { asOf: "2026-09-30", cadence: 30 },
       announced: {
         pceCore: { ...ANNOUNCED_PRINTS.pceCore, fredAsOf: liveInd?.asOf?.pceCoreCurrent ?? null },
         gdpGrowth: { ...ANNOUNCED_PRINTS.gdpGrowth, fredAsOf: liveInd?.asOf?.gdpGrowth ?? null },
@@ -6815,9 +6815,14 @@ export default function App() {
                     its content and loses the alarm: neutral surface, the chip up front, and the
                     one live number in it (Kalshi) labelled as the only live thing here. */}
                 <div style={{ marginTop: 12, padding: "12px 14px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8 }}>
-                  <div style={{ marginBottom: 6 }}><HandKept asOf="2026-08-24" cadenceDays={30} what="after each data event that changes the recession read" /></div>
+                  <div style={{ marginBottom: 6 }}><HandKept asOf="2026-09-30" cadenceDays={30} what="after each data event that changes the recession read" /></div>
+                  {/* Rewritten 2026-09-30 after August core PCE (Sep 30) and August JOLTS (Sep 29), from
+                      /api/indicators: core PCE 3.01% y/y (Jul 2.98%), core CPI 2.45%, payrolls +162k
+                      (Jun +31k, Jul +21k), U-3 4.1%, long-term unemployed 27.0% of the jobless, quits
+                      1.9%; Kalshi 2026 5% / 2027 22%, Polymarket 9%, NY Fed curve model 14%; next
+                      meeting hike odds 36% (ZQ); HY OAS 3.02%. */}
                   <span style={{ color: C.text, fontWeight: 700, fontSize: 13 }}>The signal that matters: </span>
-                  <span style={{ color: C.mid, fontSize: 14, lineHeight: 1.65 }}>Goldman's dramatic round-trip — 15% (pre-war) → 30% (March peak) → 15% (June post-deal) — shows how oil-driven the near-term risk was. Post peace deal, 2026 recession odds have broadly normalized. The more important signal is 2027: Kalshi at {recKalshi2027 != null ? `${recKalshi2027}%` : "— (not loaded)"} (the live market) suggests markets expect delayed reckoning from debt refinancing at 5-7%, $1.3T consumer revolving credit balances, and corporate capex compression — still the higher of the two horizons. New risk to monitor: the July FOMC minutes (released Aug 19) show 'many participants' saw further tightening as likely necessary — an upgrade from June's 'only a few', so the three hike dissents understate the committee's hawkishness. If hikes materialize, recession risk reprices sharply higher.</span>
+                  <span style={{ color: C.mid, fontSize: 14, lineHeight: 1.65 }}>The hike the July minutes warned of has arrived — 25bp on Sep 16, to 3.75–4.00% — and the data since has not bent to it. August payrolls rose 162k after 31k and 21k in June and July, and unemployment held at 4.1% (4.3% a year ago). The weakness is at the edges, not the headline: the long-term unemployed rose to 27.0% of the jobless (25.5% in July, 24.9% a year ago), and JOLTS quits stayed at 1.9% in August against 2.0% a year earlier — people staying put rather than trading up. Inflation has stopped improving: core PCE was 3.01% y/y in August, up from 2.98% after three months of easing, with core CPI at 2.45% — no reason for the Fed to stop, and the futures price 36% odds of another hike on Oct 28. So the near-term recession read stays low (Kalshi 2026 5%, Polymarket 9%, the NY Fed curve model 14%, as of Sep 30), and the risk is the one tightening builds: the live 2027 market at {recKalshi2027 != null ? `${recKalshi2027}%` : "— (not loaded)"} is still the higher horizon, and credit widening into a hiking Fed (HY OAS 3.02%, up 36bp in five sessions to Sep 28) is how that horizon gets priced sooner. What would change the read: a payroll print back near zero, quits below 1.9%, or HY OAS through 3.5% (the last is on the State tab's if/then list; the labour prints are under Drivers › Growth).</span>
                 </div>
               </Card>
 
