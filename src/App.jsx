@@ -31,6 +31,8 @@ import { realizedCurve } from "../lib/positions.js";
 import { DEFAULT_TARGET_PCT, regimeMultiplier } from "../lib/sizing.js";
 import { computeMarketState, stateLogRow } from "../lib/marketState.js";
 import { StateView, DriversView, FeedHealth, StreetCompare } from "./MarketState.jsx";
+import { PlanView } from "./PlanView.jsx";
+import { expectedRank } from "../lib/plan.js";
 import { observationAge } from "../lib/gates.js";
 import { trend as trendOf } from "../lib/series.js";
 
@@ -514,6 +516,9 @@ const POSTURE_STATUS = {
   REDUCE:     { color:P.amber700, bg:C.oBg, bdr:P.orange200 },
   PAUSE:      { state:"DANGER" },
 };
+// A status resolved to its colours. Half the table names a STATUS token rather than colours, and
+// reading `.color` off those gave undefined — the Activate / Accumulate / Pause cards drew no accent.
+const postureTone = (s) => { const x = POSTURE_STATUS[s] || POSTURE_STATUS.HOLD; return x.state ? STATUS[x.state] : x; };
 // Midpoint of a "60–70%" style range, for the allocation donut.
 function postureMid(range) {
   const nums = String(range).replace(/%/g, "").split("–").map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
@@ -5758,13 +5763,19 @@ function AnalystViewBoard({ live, probFor, engineRegime, consensus }) {
   );
 }
 
-// The previous Market Watch tabs, reachable from a link beside the new ones for a week after the
+// The previous Market Watch and Posture tabs, reachable from a link beside the new ones for a week after the
 // rebuild, then removed.
-const LEGACY_TABS = [
-  { id: "macro",      label: "🌐 Macro (previous)"       },
-  { id: "indicators", label: "📡 Indicators (previous)"  },
-  { id: "smartmoney", label: "🏦 Smart Money (previous)" },
-];
+const LEGACY_BY_GROUP = {
+  watch: [
+    { id: "macro",      label: "🌐 Macro (previous)"       },
+    { id: "indicators", label: "📡 Indicators (previous)"  },
+    { id: "smartmoney", label: "🏦 Smart Money (previous)" },
+  ],
+  playbook: [
+    { id: "posture",    label: "🎯 Posture (previous)"     },
+  ],
+};
+const LEGACY_TABS = Object.values(LEGACY_BY_GROUP).flat();
 const LEGACY_UNTIL = "2026-10-08";
 const legacyOffered = new Date().toISOString().slice(0, 10) < LEGACY_UNTIL;
 
@@ -5811,11 +5822,6 @@ export default function App() {
   const { prices, loading: pricesLoading, updated: pricesUpdated, fetchPrices } = useLivePrices();
   const { live: liveInd, loading: indLoading, updated: indUpdated, error: indError, fetchIndicators } = useLiveIndicators();
   const { byRegion: pbData, loading: pbLoading, updated: pbUpdated, error: pbError, fetchRegion: fetchPlaybookRegion } = useLivePlaybook();
-  // A3 — vol-regime → Insurance-phase suggestion (declared after pbData to stay out of its TDZ).
-  const insuranceSuggest = suggestInsurancePhase(pbData?.us?.volTerm, pbData?.us?.macro?.oas?.series);
-  useEffect(() => {
-    if (!insurancePinned && insuranceSuggest?.phase && insuranceSuggest.phase !== insurancePhase) setInsurancePhase(insuranceSuggest.phase);
-  }, [insuranceSuggest?.phase, insurancePinned]);
   // Task 1a+1b — the recession table the whole app reads: manual override > auto-feed > static.
   const effectiveRecessionSources = useMemo(
     () => mergeRecessionSources(RECESSION_SOURCES, liveInd?.recessionFeeds || {}, recessionOverrides),
@@ -5915,6 +5921,23 @@ export default function App() {
   // measured figure until sizing moves over.
   const legacySizing = regimeMultiplier({ regimeId: liveRegime?.id, creditDanger: creditStatus(liveInd?.creditSpread) === "DANGER",
     contested: !!derivedRegimes?.contested, pinnedDiverged: regimeDiverged, vintage: regimeVintage }).mult;
+  // The Hedges tab's phase follows the measured conditions (lib/marketState.js hedgePhase). The old
+  // vol-term + OAS suggestion is the fallback while the gauges have not loaded.
+  const insuranceSuggest = mstate.hedgePhase
+    ? { phase: mstate.hedgePhase.id, why: `conditions: ${mstate.hedgePhase.why}` }
+    : suggestInsurancePhase(pbData?.us?.volTerm, pbData?.us?.macro?.oas?.series);
+  useEffect(() => {
+    if (!insurancePinned && insuranceSuggest?.phase && insuranceSuggest.phase !== insurancePhase) setInsurancePhase(insuranceSuggest.phase);
+  }, [insuranceSuggest?.phase, insurancePinned]);
+  // Income and hedges are ranked on the measured regime MIX (expected rank over the quadrant probabilities);
+  // the consensus regime is the fallback while the axes have not loaded.
+  const hedgeSorted = mstate.regime.available
+    ? expectedRank(ASSETS, mstate.regime.probs, INS_RANK_KEY)
+    : [...ASSETS].sort(byRank(rankKeyFor(INS_RANK_KEY, activeRegime.id)));
+  const planRegime = (mstate.regime.available && REGIMES.find(r => r.id === mstate.regime.id)) || activeRegime;
+  const incomeSorted = mstate.regime.available
+    ? expectedRank(INCOME_PLAYS, mstate.regime.probs, INCOME_RANK_KEY)
+    : [...INCOME_PLAYS].sort(byRank(rankKeyFor(INCOME_RANK_KEY, activeRegime.id)));
   const streetView = { id: liveRegime?.id ?? null, vintage: CONSENSUS_VINTAGE.label,
     probs: Object.fromEntries(["ref", "inf", "stag", "def"].map(id => [id, regimeProbFor(id)])) };
   const switchToLive = () => { setActiveRegime(liveRegime); savePin({ pinned: false, note: "", setAt: null }); };
@@ -5997,6 +6020,11 @@ export default function App() {
     fetchIndicators();
     fetchPrices(HEADER_TICKERS);
   }, [fetchIndicators, fetchPrices]);
+
+  // Income: quote the open category's tickers, so the yields shown are the feed's, not the authored ones.
+  useEffect(function() {
+    if (tab === "income") fetchPrices(activeIncome.tickers.map(t => t.t));
+  }, [tab, activeIncome, fetchPrices]);
 
   // Fetch the Global Playbook when its tab is open or the region changes.
   useEffect(function() {
@@ -6744,7 +6772,7 @@ export default function App() {
   //
   // Order is deliberate: the desk you act at, then the market you read, then the longer-horizon
   // playbook you revisit rather than watch.
-  const legacyOn = LEGACY_TABS.some(t => t.id === tab) || (showLegacy && legacyOffered);
+  const legacyOn = (g) => LEGACY_BY_GROUP[g].some(t => t.id === tab) || (showLegacy && legacyOffered);
   const TAB_GROUPS = [
     { id: "desk", label: "Trade Desk", hint: "act", tabs: [
       { id: "global",     label: "🌏 Daily Overview" },
@@ -6759,12 +6787,16 @@ export default function App() {
       { id: "drivers",    label: "📈 Drivers"        },
       { id: "street",     label: "🏦 Street"         },
       { id: "health",     label: "🩺 Data health"    },
-      ...(legacyOn ? LEGACY_TABS : []),
+      ...(legacyOn("watch") ? LEGACY_BY_GROUP.watch : []),
     ] },
+    // PLAYBOOK plans against the same state: Plan (posture by regime × conditions, the stage, and
+    // what each transition changes), Hedges (phase from the conditions), Income (ranked on the
+    // measured regime mix).
     { id: "playbook", label: "Playbook", hint: "revisit", tabs: [
-      { id: "posture",    label: "🎯 Posture"        },
-      { id: "insurance",  label: "🛡️ Insurance"      },
+      { id: "plan",       label: "🎯 Plan"           },
+      { id: "insurance",  label: "🛡️ Hedges"         },
       { id: "income",     label: "💰 Income"         },
+      ...(legacyOn("playbook") ? LEGACY_BY_GROUP.playbook : []),
     ] },
   ];
   // Flat list kept so every existing lookup — the error boundary's tab name, most of all — keeps
@@ -6895,8 +6927,8 @@ export default function App() {
                 {t.label}
               </button>
             ))}
-            {activeGroup.id === "watch" && legacyOffered && !LEGACY_TABS.some(t => t.id === tab) && (
-              <button onClick={() => setShowLegacy(v => !v)} title={`The Macro, Indicators and Smart Money tabs as they were — offered until ${LEGACY_UNTIL}`}
+            {LEGACY_BY_GROUP[activeGroup.id] && legacyOffered && !LEGACY_TABS.some(t => t.id === tab) && (
+              <button onClick={() => setShowLegacy(v => !v)} title={`${LEGACY_BY_GROUP[activeGroup.id].map(t => t.label.replace(/^\S+\s/, "").replace(" (previous)", "")).join(", ")} as they were — offered until ${LEGACY_UNTIL}`}
                 style={{ background: "none", border: "none", color: C.muted, padding: "8px 10px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, textDecoration: "underline", marginLeft: "auto" }}>
                 {showLegacy ? "hide previous layout" : "previous layout ▸"}
               </button>
@@ -7276,6 +7308,11 @@ export default function App() {
         )}
 
         {/* ── POSTURE ── */}
+        {tab === "plan" && (
+          <PlanView st={mstate} allocations={POSTURE_ALLOCATIONS} bucketMeta={POSTURE_BUCKET_META} statusTone={postureTone}
+            fillNote={(t) => fillLiveRates(t, liveCashYield(liveInd))} portfolioValue={portfolioValue} onGo={setTab} />
+        )}
+
         {tab === "posture" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {(() => {
@@ -7422,7 +7459,7 @@ export default function App() {
                   <div className="mwd-posture-row">
                     {POSTURE_BUCKET_META.map(m => {
                       const a = alloc[m.key];
-                      const sc = POSTURE_STATUS[a.status] || POSTURE_STATUS.HOLD;
+                      const sc = postureTone(a.status);
                       return (
                         <Card key={m.key} onClick={m.link ? () => setTab(m.link) : undefined} style={{ borderTop: "4px solid " + sc.color, cursor: m.link ? "pointer" : "default", minWidth: 0 }}>
                           {/* Header: title + subtitle take the full card width on their own lines; the status badge sits on its own line below — so the title never truncates or breaks beside the badge. */}
@@ -7512,26 +7549,31 @@ export default function App() {
               // Macro regimes that map to a crash-resolution column. inf (Inflationary Boom) and
               // ref (Reflationary Growth) are GROWTH regimes, not crashes — deliberately no map.
               const macroToCol = { stag: "stag", def: "def" };
-              const mappedCol = macroToCol[liveRegime?.id] || null;
+              // The MEASURED regime (its leading quadrant; the whole mix ranks the assets), with the
+              // consensus regime only while the axes have not loaded.
+              const hr = planRegime;
+              const hrPct = mstate.regime.available ? mstate.regime.probs[hr.id] : regimeProbFor(hr.id);
+              const mappedCol = macroToCol[hr?.id] || null;
               const mappedPhase = mappedCol ? INSURANCE_PHASES.find(p => p.k === mappedCol) : null;
               const tapeHawkish = pbData?.us?.marketRegime?.state === "HAWKISH_RATES_REPRICING";
               // T2b — reactive best→worst insurance ranking for the LIVE regime, so opening the tab
               // immediately answers "given the regime, what's my best insurance and what to avoid."
               // Same rankKey the best→worst bars use elsewhere; growth regimes (inf/ref) still have a
               // real-asset ordering even though they aren't crash scenarios.
-              const insRankKey = rankKeyFor(INS_RANK_KEY, liveRegime?.id);
-              const insRanked = [...ASSETS].sort(byRank(insRankKey));
+              const insRanked = mstate.regime.available
+                ? expectedRank(ASSETS, mstate.regime.probs, INS_RANK_KEY)
+                : [...ASSETS].sort(byRank(rankKeyFor(INS_RANK_KEY, hr?.id)));
               const insBest = insRanked.slice(0, 2);
               const insWorst = insRanked[insRanked.length - 1];
               return (
                 <div style={{ background: C.surf, border: "1.5px solid " + C.bdr, borderRadius: 12, padding: "12px 16px" }}>
                   <div style={{ fontSize: 13.5, color: C.mid, lineHeight: 1.55 }}>
                     <b style={{ color: C.text }}>If a crash happens from here, how does it resolve — and what works in each case?</b>
-                    <span style={{ color: C.muted }}> These columns are crash <i>outcomes</i>, not current-state regimes. (The Macro tab answers “what regime are we in right now?”)</span>
+                    <span style={{ color: C.muted }}> These columns are crash <i>outcomes</i>, not current-state regimes. (Market Watch › State answers “what regime are we in right now?”)</span>
                   </div>
                   <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 13 }}>
-                    <span style={{ color: C.lbl, fontWeight: 700 }}>Live macro regime:</span>
-                    <span style={{ color: liveRegime?.color, fontWeight: 800 }}>{liveRegime?.label} {regimeProbFor(liveRegime?.id)}%</span>
+                    <span style={{ color: C.lbl, fontWeight: 700 }}>{mstate.regime.available ? "Measured regime:" : "Consensus regime:"}</span>
+                    <span style={{ color: hr?.color, fontWeight: 800 }}>{hr?.label} {hrPct}%{mstate.regime.available && mstate.regime.contested ? " (between regimes)" : ""}</span>
                     {mappedPhase ? (
                       <>
                         <span style={{ color: C.lbl }}>→</span>
@@ -7566,7 +7608,7 @@ export default function App() {
                     <span style={{ background: C.rBg, border: "1.5px solid " + P.red200, borderRadius: 6, padding: "2px 8px", fontWeight: 800, color: P.red700 }}>
                       {insWorst.icon} {insWorst.name}
                     </span>
-                    <span style={{ color: C.muted, fontStyle: "italic", fontSize: 11.5 }}>ranked for {liveRegime?.label} — full order in the best→worst bar below</span>
+                    <span style={{ color: C.muted, fontStyle: "italic", fontSize: 11.5 }}>{mstate.regime.available ? "ranked over the measured regime mix" : `ranked for ${hr?.label}`} — full order in the best→worst bar below</span>
                   </div>
                 </div>
               );
@@ -7606,7 +7648,7 @@ export default function App() {
                 return (
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 10, padding: "7px 11px", borderRadius: 8,
                     background: diverged ? C.aBg : C.surf, border: "1px solid " + (diverged ? C.aBdr : C.bdr) }}>
-                    <span style={{ fontSize: 11.5, color: C.muted, fontWeight: 700 }}>{diverged ? "⚠️ Vol regime suggests" : "📡 Vol regime →"}</span>
+                    <span style={{ fontSize: 11.5, color: C.muted, fontWeight: 700 }}>{diverged ? "⚠️ Conditions suggest" : "📡 Conditions →"}</span>
                     <button onClick={() => pickInsurancePhase(sp.k)} style={{ cursor: "pointer", background: sp.bg, color: sp.color, border: "1.5px solid " + sp.bdr, borderRadius: 6, padding: "2px 8px", fontWeight: 800, fontSize: 11.5 }}>{sp.short}</button>
                     <span style={{ fontSize: 11, color: C.muted, fontStyle: "italic" }}>{insuranceSuggest.why}</span>
                     {!insurancePinned && <span style={{ fontSize: 10.5, color: C.green, fontWeight: 800 }}>· auto (following signal)</span>}
@@ -7719,7 +7761,7 @@ export default function App() {
               {/* Active scenario summary + live-signal lean (informational; your call) */}
               {(() => {
                 const active = INSURANCE_PHASES.find(p => p.k === insurancePhase) || INSURANCE_PHASES[0];
-                const read = getCrashSignalRead(liveInd || {}, activeRegime);
+                const read = getCrashSignalRead(liveInd || {}, planRegime);
                 return (
                   <div style={{ marginTop: 12, padding: "10px 13px", background: active.bg, border: "1.5px solid " + active.bdr, borderRadius: 8 }}>
                     <div style={{ color: active.color, fontWeight: 800, fontSize: 13, marginBottom: 3 }}>Planning for: {active.label}</div>
@@ -7772,17 +7814,15 @@ export default function App() {
 
             {/* Regime-aware context banner — best→worst ranking for the active macro regime */}
             {(() => {
-              const rankKey = rankKeyFor(INS_RANK_KEY, activeRegime.id);
-              const sorted = [...ASSETS].sort(byRank(rankKey));
+              const sorted = hedgeSorted;
               return (
-                <div style={{ background: activeRegime.bg, border: "1.5px solid " + activeRegime.bdr, borderRadius: 14, padding: "14px 18px", borderTop: "4px solid " + activeRegime.color }}>
-                  {!rankKey && <div style={{ fontSize: 11.5, color: C.amber, fontWeight: 700, marginBottom: 6 }}>Regime "{activeRegime.id}" has no ranking column — the list is in its declared order, unranked.</div>}
+                <div style={{ background: planRegime.bg, border: "1.5px solid " + planRegime.bdr, borderRadius: 14, padding: "14px 18px", borderTop: "4px solid " + planRegime.color }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
                     <div>
-                      <div style={{ fontSize: 11, letterSpacing: 2.5, textTransform: "uppercase", color: activeRegime.color, fontWeight: 700, marginBottom: 3 }}>Active Regime · context</div>
-                      <div style={{ fontSize: 17, fontWeight: 900, color: activeRegime.color }}>{activeRegime.label} — Best → Worst Insurance</div>
+                      <div style={{ fontSize: 11, letterSpacing: 2.5, textTransform: "uppercase", color: planRegime.color, fontWeight: 700, marginBottom: 3 }}>{mstate.regime.available ? "Measured regime mix · context" : "Consensus regime · context"}</div>
+                      <div style={{ fontSize: 17, fontWeight: 900, color: planRegime.color }}>{mstate.regime.available && mstate.regime.contested ? "Between regimes" : planRegime.label} — Best → Worst Insurance</div>
                     </div>
-                    <Pill label={"Switch regime on Macro tab"} color={activeRegime.color} />
+                    <Pill label={mstate.regime.available ? "expected rank over the four regimes" : "measured state not loaded"} color={planRegime.color} />
                   </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     {sorted.map((a, i) => (
@@ -7794,23 +7834,23 @@ export default function App() {
                       </button>
                     ))}
                   </div>
-                  {activeRegime.id === "stag" && (
-                    <div style={{ marginTop: 10, color: activeRegime.color, fontSize: 14, lineHeight: 1.6 }}>
+                  {planRegime.id === "stag" && (
+                    <div style={{ marginTop: 10, color: planRegime.color, fontSize: 14, lineHeight: 1.6 }}>
                       ⚠️ TLT dropped 30%+ in 2022 stagflation. Long bonds are the worst insurance when inflation is embedded. Physical gold and staples lead; the gold-linked miners follow (a cautioned, leveraged expression, not a hedge).
                     </div>
                   )}
-                  {activeRegime.id === "def" && (
-                    <div style={{ marginTop: 10, color: activeRegime.color, fontSize: 14, lineHeight: 1.6 }}>
+                  {planRegime.id === "def" && (
+                    <div style={{ marginTop: 10, color: planRegime.color, fontSize: 14, lineHeight: 1.6 }}>
                       📉 Deflation/recession: TLT is #1 insurance. Demand collapses, rates fall hard, gold acts as safe haven. Miners underperform until Fed pivots.
                     </div>
                   )}
-                  {activeRegime.id === "ref" && (
-                    <div style={{ marginTop: 10, color: activeRegime.color, fontSize: 14, lineHeight: 1.6 }}>
+                  {planRegime.id === "ref" && (
+                    <div style={{ marginTop: 10, color: planRegime.color, fontSize: 14, lineHeight: 1.6 }}>
                       🌱 Reflationary growth: Staples and farmland outperform. Miners lag as gold safe-haven bid fades. TLT vulnerable to rising rates.
                     </div>
                   )}
-                  {activeRegime.id === "inf" && (
-                    <div style={{ marginTop: 10, color: activeRegime.color, fontSize: 14, lineHeight: 1.6 }}>
+                  {planRegime.id === "inf" && (
+                    <div style={{ marginTop: 10, color: planRegime.color, fontSize: 14, lineHeight: 1.6 }}>
                       🔥 Inflationary boom: Physical gold is the best insurance; BTC and the gold-linked miners follow. Bonds are toxic. Real assets dominate — the leveraged farmland REIT lags the metals (2022: GDX −9% vs FPI −14%).
                     </div>
                   )}
@@ -7820,8 +7860,7 @@ export default function App() {
 
             {/* Asset selector — sorted by active regime rank */}
             {(() => {
-              const rankKey = rankKeyFor(INS_RANK_KEY, activeRegime.id);
-              const sorted = [...ASSETS].sort(byRank(rankKey));
+              const sorted = hedgeSorted;
               return (
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: "100%" }}>
@@ -7842,10 +7881,10 @@ export default function App() {
                       }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
                           <span style={{ fontSize: 19 }}>{a.icon}</span>
-                          <span style={{ background: activeRegime.bg, color: activeRegime.color, border: "1px solid " + activeRegime.bdr, borderRadius: 4, padding: "1px 6px", fontSize: 11, fontWeight: 800 }}>#{i + 1}</span>
+                          <span style={{ background: planRegime.bg, color: planRegime.color, border: "1px solid " + planRegime.bdr, borderRadius: 4, padding: "1px 6px", fontSize: 11, fontWeight: 800 }}>#{i + 1}</span>
                         </div>
                         <div style={{ color: a.color, fontWeight: 800, fontSize: 13 }}>{a.name}</div>
-                        <div style={{ color: C.lbl, fontSize: 11, marginTop: 3 }}>{activeRegime.label}</div>
+                        <div style={{ color: C.lbl, fontSize: 11, marginTop: 3 }}>{planRegime.label}</div>
                       </button>
                     ))}
                   </div>
@@ -7864,22 +7903,23 @@ export default function App() {
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {/* Regime-aware banner */}
             {(() => {
-              const rankKey = rankKeyFor(INCOME_RANK_KEY, activeRegime.id);
-              const sorted = [...INCOME_PLAYS].sort(byRank(rankKey));
-              const proofLabel = { stag: "stagflation-proof", def: "deflation-resilient", ref: "growth-aligned", inf: "inflation-proof" }[activeRegime.id] || "resilient";
+              const sorted = incomeSorted;
+              const ir = planRegime;
+              const measured = mstate.regime.available;
               return (
-                <div style={{ background: activeRegime.bg, border: "1.5px solid " + activeRegime.bdr, borderRadius: 14, padding: "14px 18px", borderTop: "4px solid " + activeRegime.color }}>
-                  {!rankKey && <div style={{ fontSize: 11.5, color: C.amber, fontWeight: 700, marginBottom: 6 }}>Regime "{activeRegime.id}" has no ranking column — the ladder is in its declared order, unranked.</div>}
+                <div style={{ background: ir.bg, border: "1.5px solid " + ir.bdr, borderRadius: 14, padding: "14px 18px", borderTop: "4px solid " + ir.color }}>
                   <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
                     <div>
-                      <div style={{ fontSize: 11, letterSpacing: 2.5, textTransform: "uppercase", color: activeRegime.color, fontWeight: 700, marginBottom: 3 }}>Active Regime · {activeRegime.label}</div>
-                      <div style={{ fontSize: 15, fontWeight: 900, color: activeRegime.color }}>Income ranked best → worst for this regime</div>
+                      <div style={{ fontSize: 11, letterSpacing: 2.5, textTransform: "uppercase", color: ir.color, fontWeight: 700, marginBottom: 3 }}>
+                        {measured ? `Measured regime mix · ${["ref", "inf", "stag", "def"].map(id => `${(REGIMES.find(r => r.id === id)?.label || id).split(" ")[0]} ${mstate.regime.probs[id]}%`).join(" · ")}` : `Consensus regime · ${ir.label}`}
+                      </div>
+                      <div style={{ fontSize: 15, fontWeight: 900, color: ir.color }}>Income ranked best → worst {measured ? "across the regime mix" : "for this regime"}</div>
                     </div>
-                    <Pill label={"Change regime on Macro tab"} color={activeRegime.color} />
+                    <Pill label={measured ? "expected rank over the four regimes" : "measured state not loaded"} color={ir.color} />
                   </div>
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {sorted.map((p, i) => {
-                      const rankVal = p[rankKey] || i + 1;
+                      const rankVal = i + 1;
                       const isTop = rankVal <= 2;
                       const isBottom = rankVal >= 5;
                       const dotColor = isTop ? C.green : isBottom ? C.red : C.amber;
@@ -7890,18 +7930,18 @@ export default function App() {
                           display: "flex", alignItems: "center", gap: 5,
                         }}>
                           <span style={{ fontSize: 15 }}>{isTop ? "✅" : isBottom ? "⚠️" : "◐"}</span>
-                          #{rankVal} {p.icon} {p.category.split(" / ")[0]}
+                          #{rankVal} {p.icon} {p.category.split(" / ")[0]}{p.expRank != null ? <span style={{ fontSize: 10.5, color: C.muted, fontWeight: 600 }}> ({p.expRank})</span> : null}
                         </button>
                       );
                     })}
                   </div>
-                  <div style={{ marginTop: 10, color: activeRegime.color, fontSize: 13, lineHeight: 1.6 }}>
+                  <div style={{ marginTop: 10, color: planRegime.color, fontSize: 13, lineHeight: 1.6 }}>
                     {{
                       stag: "Stagflation: pipelines + T-bills + REITs dominate. Avoid covered calls (capped upside in volatile regime). MLPs pass inflation through contracts.",
                       def:  "Deflation/recession: Cash (#1) is king — 4%+ risk-free while everything else reprices. Aristocrats (#2) hold dividends. Avoid pipelines (oil demand collapse) and covered calls.",
                       ref:  "Reflationary growth: REITs rally on rate cuts (#1). Aristocrats grow dividends with the economy (#2). Covered calls work in low-vol environment (#3).",
                       inf:  "Inflationary boom: pipelines pass through inflation via contract escalators (#1). Covered calls generate income in volatile market (#2). Cash erodes in real terms — avoid.",
-                    }[activeRegime.id]}
+                    }[ir.id]}{measured && mstate.regime.contested ? " Between regimes, the order above weighs all four columns by probability — the lead regime's note is shown." : ""}
                   </div>
                 </div>
               );
@@ -7909,13 +7949,12 @@ export default function App() {
 
             {/* Category selector + detail — sorted by active regime */}
             {(() => {
-              const rankKey = rankKeyFor(INCOME_RANK_KEY, activeRegime.id);
-              const sorted = [...INCOME_PLAYS].sort(byRank(rankKey));
+              const sorted = incomeSorted;
               return (
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: "100%" }}>
                     {sorted.map((p, i) => {
-                      const rankVal = p[rankKey] || i + 1;
+                      const rankVal = i + 1;
                       return (
                         <button key={p.category} onClick={() => setActiveIncome(p)} style={{
                           // All-longhand borders — see fund/asset selectors; the shorthand+longhand
@@ -7931,7 +7970,7 @@ export default function App() {
                         }}>
                           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
                             <span style={{ fontSize: 17 }}>{p.icon}</span>
-                            <span style={{ background: activeRegime.bg, color: activeRegime.color, border: "1px solid " + activeRegime.bdr, borderRadius: 4, padding: "1px 6px", fontSize: 11, fontWeight: 800 }}>#{rankVal}</span>
+                            <span style={{ background: planRegime.bg, color: planRegime.color, border: "1px solid " + planRegime.bdr, borderRadius: 4, padding: "1px 6px", fontSize: 11, fontWeight: 800 }}>#{rankVal}</span>
                           </div>
                           <div style={{ color: p.color, fontWeight: 700, fontSize: 12, lineHeight: 1.3 }}>{p.category}</div>
                           <div style={{ color: C.lbl, fontSize: 11, marginTop: 3 }}>{p.yieldRange}</div>
@@ -7950,13 +7989,13 @@ export default function App() {
                         </div>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                           {(() => {
-                            const rankKey = rankKeyFor(INCOME_RANK_KEY, activeRegime.id);
-                            const rv = rankKey ? (activeIncome[rankKey] || "?") : "?";
+                            const at = incomeSorted.findIndex(p => p.category === activeIncome.category);
+                            const rv = at >= 0 ? at + 1 : "?";
                             const isTop = rv <= 2; const isBot = rv >= 5;
                             const col = isTop ? C.green : isBot ? C.red : C.amber;
                             const bg  = isTop ? C.gBg  : isBot ? C.rBg  : C.aBg;
                             const bd  = isTop ? C.gBdr : isBot ? C.rBdr : C.aBdr;
-                            return <Pill label={"#" + rv + " in " + activeRegime.label} color={col} bg={bg} bdr={bd} />;
+                            return <Pill label={"#" + rv + (mstate.regime.available ? " across the regime mix" : " in " + planRegime.label)} color={col} bg={bg} bdr={bd} />;
                           })()}
                           {activeIncome.stagProof
                             ? <Pill label="✅ Stagflation-proof" color={C.green} bg={C.gBg} bdr={C.gBdr} />
@@ -7990,10 +8029,13 @@ export default function App() {
                                 Equity/MLP yields below stay authored: they aren't rate-driven. */}
                             {(() => {
                               const cy = tk.rateLinked ? liveCashYield(liveInd) : null;
-                              const txt = tk.rateLinked ? (cy ? `~${cy.value.toFixed(2)}%` : "—") : tk.yield;
+                              // The trailing dividend yield from the quote feed when it has one; the
+                              // authored figure (marked as such) when it does not.
+                              const dy = !tk.rateLinked && prices[tk.t]?.dividendYield > 0 ? prices[tk.t].dividendYield * 100 : null;
+                              const txt = tk.rateLinked ? (cy ? `~${cy.value.toFixed(2)}%` : "—") : dy != null ? `${dy.toFixed(1)}%` : tk.yield ? `${tk.yield}†` : null;
                               if (!txt) return null;
                               return (
-                                <span title={tk.rateLinked ? (cy ? `live ${cy.src}${cy.asOf ? " · " + cy.asOf : ""} — tracks the T-bill curve` : "no live short rate available") : "authored estimate"}
+                                <span title={tk.rateLinked ? (cy ? `live ${cy.src}${cy.asOf ? " · " + cy.asOf : ""} — tracks the T-bill curve` : "no live short rate available") : dy != null ? "trailing 12-month dividend yield, live quote" : "† authored estimate — no live dividend yield for this listing"}
                                   style={{ background: C.gBg, color: C.green, border: "1px solid " + C.gBdr, borderRadius: 4, padding: "1px 5px", fontSize: 11, fontWeight: 700, display: "block", textAlign: "center", marginTop: 3 }}>
                                   {txt}{tk.rateLinked && cy ? "*" : ""}
                                 </span>
@@ -8190,8 +8232,8 @@ export default function App() {
                       <tr
                         key={f.id}
                         style={{ background: i % 2 === 0 ? C.surf : C.bg, cursor: "pointer" }}
-                        onClick={() => { setTab("smartmoney"); setSelectedFund(f); }}
-                        title="Click to view on Smart Money tab"
+                        onClick={() => { setTab("street"); setSelectedFund(f); }}
+                        title="Click to view on the Street tab"
                       >
                         <td style={{ padding: "9px 12px", borderBottom: "1px solid " + C.bdr }}>
                           <span style={{ color: f.color, fontWeight: 800, fontSize: 14 }}>{f.name}</span>
