@@ -1,5 +1,5 @@
 // test/plan.test.mjs — posture by regime × conditions, blended between regimes, and where each transition moves it.
-import { rangeOf, midOf, postureGrid, blendedPosture, transitionTarget, transitionPlan, expectedRank, REGIME_KEYS, BAND_KEYS, BUCKETS } from '../lib/plan.js';
+import { rangeOf, midOf, tiltBuckets, BAND_TILTS, postureGrid, blendedPosture, transitionTarget, transitionPlan, expectedRank, REGIME_KEYS, BAND_KEYS, BUCKETS } from '../lib/plan.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
   if (a === b) { pass++; console.log(`✅ ${n}`); } else { fail++; console.log(`❌ ${n}  got ${a} want ${b}`); } };
@@ -23,7 +23,20 @@ const ALLOC = {
 const grid = postureGrid(ALLOC);
 {
   eq('sixteen cells', REGIME_KEYS.flatMap(r => BAND_KEYS.map(b => grid[r][b])).length, 16);
-  eq('SEEDED: every band of a regime equals that regime\'s allocation, so nothing moves', REGIME_KEYS.every(r => BAND_KEYS.every(b => BUCKETS.every(k => grid[r][b][k] === ALLOC[r][k]))), true);
+  eq('Calm and Caution are the regime\'s allocation as written', REGIME_KEYS.every(r => ['calm', 'caution'].every(b => BUCKETS.every(k => grid[r][b][k] === ALLOC[r][k]))), true);
+  eq('Stress adds 5pp cash and 3pp hedges to every regime', REGIME_KEYS.map(r => [midOf(grid[r].stress.cash.range) - midOf(ALLOC[r].cash.range), midOf(grid[r].stress.insurance.range) - midOf(ALLOC[r].insurance.range)]),
+     [[5, 3], [5, 3], [5, 3], [5, 3]]);
+  eq('Crisis adds 10pp and 6pp', [midOf(grid.stag.crisis.cash.range) - 55, midOf(grid.stag.crisis.insurance.range) - 11.5], [10, 6]);
+  eq('the tilt is funded, not conjured: the midpoints sum to what they did', REGIME_KEYS.every(r => ['stress', 'crisis'].every(b =>
+     Math.abs(BUCKETS.reduce((a, k) => a + midOf(grid[r][b][k].range), 0) - BUCKETS.reduce((a, k) => a + midOf(ALLOC[r][k].range), 0)) < 0.2)), true);
+  eq('deployment funds it first — reflation stress takes all 8pp from there', [grid.ref.stress.deploymentReady.range, grid.ref.stress.longTermHolds.range], ['13.6–20.4%', '25–35%']);
+  eq('then core and income share the rest in proportion — never below zero', [grid.stag.crisis.deploymentReady.range, grid.stag.crisis.longTermHolds.range, grid.stag.crisis.income.range, grid.def.crisis.longTermHolds.range],
+     ['0%', '6.6–9.9%', '6.6–9.9%', '2.2–3.3%']);
+  eq('statuses follow: hedges activate, deployment pauses, core reduces in a crisis', [grid.ref.stress.insurance.status, grid.ref.stress.deploymentReady.status, grid.ref.crisis.longTermHolds.status, grid.ref.stress.longTermHolds.status],
+     ['ACTIVATE', 'PAUSE', 'REDUCE', 'HOLD']);
+  eq('a tilted cell says what moved', grid.ref.stress.tilt, [{ bucket: 'cash', delta: 5 }, { bucket: 'insurance', delta: 3 }, { bucket: 'deploymentReady', delta: -8 }]);
+  eq('no tilt, no change', tiltBuckets(ALLOC.stag, null).buckets, ALLOC.stag);
+  eq('the tilts are the ones agreed', [BAND_TILTS.stress.add, BAND_TILTS.crisis.add], [{ cash: 5, insurance: 3 }, { cash: 10, insurance: 6 }]);
   const tuned = postureGrid(ALLOC, { 'stag.stress': { cash: { range: '60–70%', status: 'HOLD', note: 'more cash under stress' } } });
   eq('a tuned cell changes only itself', [tuned.stag.stress.cash.range, tuned.stag.stress.tuned, tuned.stag.caution.cash.range, tuned.stag.caution.tuned], ['60–70%', true, '50–60%', false]);
 }
@@ -51,7 +64,8 @@ const state = {
 }
 {
   const s = transitionPlan({ id: 'toStress' }, state, grid);
-  eq('to stress: the seeded grid moves no bucket, sizing falls from ×0.55 to ×0.41', [s.moves, s.sizeFrom, s.sizeTo], [[], 0.55, 0.41]);
+  eq('to stress: +5pp cash, +3pp hedges on the blend, sizing ×0.55 → ×0.41', [s.moves.map(m => [m.bucket, m.delta]), s.sizeFrom, s.sizeTo],
+     [[['cash', 5], ['insurance', 3], ['income', -1.7], ['longTermHolds', -1.7], ['deploymentReady', -4.7]], 0.55, 0.41]);
   const g = transitionPlan({ id: 'growthRolls', title: 'Growth rolls over → Stagflation' }, state, grid);
   eq('into stagflation: insurance up, deployment down, size ×0.48',
      [g.moves.find(m => m.bucket === 'insurance')?.delta, g.moves.find(m => m.bucket === 'deploymentReady')?.delta, g.sizeTo], [2.7, -6.8, 0.48]);

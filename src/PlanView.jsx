@@ -11,7 +11,7 @@ import { Card } from "./ui.jsx";
 import { REGIME_PALETTE } from "../lib/regimes.js";
 import { QUADRANTS, STAGES, CONDITION_SIZING } from "../lib/marketState.js";
 import { REGIME_KEYS, BAND_KEYS, BUCKETS, postureGrid, blendedPosture, transitionPlan, midOf } from "../lib/plan.js";
-import { Chip } from "./MarketState.jsx";
+import { Chip, ClosestCallout, Delta5 } from "./MarketState.jsx";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 const BAND_LABEL = { calm: "Calm", caution: "Caution", stress: "Stress", crisis: "Crisis" };
@@ -97,6 +97,7 @@ function Matrix({ grid, probs, band, sel, onSel }) {
                     {mids.map((m, i) => <span key={i} style={{ width: (m / tot * 100) + "%", background: alpha(C.text, 0.85 - i * 0.16) }} />)}
                   </div>
                   <span style={{ fontSize: 10.5, fontFamily: MONO, color: C.mid }}>cash {pct(mids[0])} · hdg {pct(mids[1])}</span>
+                  {cell.tilt && <span style={{ fontSize: 9.5, color: BAND_COLOR[b], fontWeight: 800 }}>+{cell.tilt.find(t => t.bucket === "cash")?.delta ?? 0} cash · +{cell.tilt.find(t => t.bucket === "insurance")?.delta ?? 0} hdg</span>}
                   {cell.tuned && <span style={{ fontSize: 9.5, color: C.blue, fontWeight: 800 }}>TUNED</span>}
                 </button>
               );
@@ -123,6 +124,12 @@ function CellDetail({ cell, meta, statusTone, fillNote }) {
           </div>
         );
       })}
+      {cell.tilt && (
+        <div style={{ fontSize: 12, color: BAND_COLOR[cell.band], fontWeight: 700, lineHeight: 1.5 }}>
+          {BAND_LABEL[cell.band]} tilt on the {QUADRANTS[cell.regime].short.toLowerCase()} allocation: {cell.tilt.map(t => `${BUCKET_SHORT[t.bucket].toLowerCase()} ${pp(t.delta)}`).join(", ")}.
+          <span style={{ color: C.muted, fontWeight: 500 }}> Deployment money funds it first, then core and income in proportion; the notes below are the regime's.</span>
+        </div>
+      )}
       {cell.categoryNote && <div style={{ fontSize: 11.5, color: C.muted }}>{cell.categoryNote}</div>}
     </div>
   );
@@ -164,7 +171,7 @@ export function PlanView({ st, allocations, bucketMeta, statusTone, fillNote = (
         </div>
         <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>
           Each bucket is the probability-weighted range across the four regimes at today's conditions; the status and note are the leading regime's ({QUADRANTS[lead].short}).
-          The grid below is seeded from the per-regime allocations, so the conditions columns are identical until a cell is tuned — conditions act through sizing and the stage for now.
+          In the grid below, Calm and Caution are each regime's allocation as written; Stress adds 5pp cash and 3pp hedges, Crisis 10pp and 6pp, funded from deployment first and then core and income.
         </div>
       </Card>
 
@@ -207,16 +214,19 @@ export function PlanView({ st, allocations, bucketMeta, statusTone, fillNote = (
       <Card style={{ display: "grid", gap: 8 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
           <Eyebrow>If / then — what changes, decided now</Eyebrow>
-          <span style={{ fontSize: 11, color: C.muted }}>closest first</span>
+          <span style={{ fontSize: 11, color: C.muted }}>live · closest first</span>
         </div>
+        <ClosestCallout list={st.transitions} asOf={st.conditions?.date ?? null} />
         {plans.map(({ t, p }) => (
           <div key={t.id} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "6px 14px", padding: "9px 11px", borderRadius: 9, border: "1px solid " + C.bdr, borderLeft: "4px solid " + (TONE[t.tone] || C.blue) }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
                 <span style={{ fontSize: 13.5, fontWeight: 800, color: C.text }}>{t.title}</span>
                 <span style={{ fontSize: 11, fontFamily: MONO, fontWeight: 800, color: TONE[t.tone] || C.blue }}>{t.proximity >= 100 ? "TRIGGERED" : `${t.proximity}%`}</span>
+                <Delta5 v={t.delta5} good={t.tone === "good"} />
               </div>
               <div style={{ fontSize: 11.5, color: C.muted, lineHeight: 1.45, marginTop: 2 }}>when {t.trigger}</div>
+              {t.nearest?.gapText && <div style={{ fontSize: 11.5, color: C.mid, fontFamily: MONO, marginTop: 2 }}>{t.nearest.label} {t.nearest.text} → {t.nearest.atText} · {t.nearest.gapText}</div>}
             </div>
             <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignContent: "flex-start" }}>
               {p.to.regime && <Chip k="Regime" v={QUADRANTS[p.to.regime].short} tone={REGIME_PALETTE[p.to.regime]} />}

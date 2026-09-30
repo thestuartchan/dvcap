@@ -30,7 +30,7 @@ import { fmtCcy } from "../lib/fxrates.js";
 import { realizedCurve } from "../lib/positions.js";
 import { DEFAULT_TARGET_PCT, consensusMultiplier } from "../lib/sizing.js";
 import { computeMarketState, stateLogRow } from "../lib/marketState.js";
-import { StateView, DriversView, FeedHealth, StreetCompare } from "./MarketState.jsx";
+import { StateView, DriversView, FeedHealth, StreetCompare, Fold } from "./MarketState.jsx";
 import { PlanView } from "./PlanView.jsx";
 import { expectedRank } from "../lib/plan.js";
 import { observationAge } from "../lib/gates.js";
@@ -3371,13 +3371,13 @@ function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated 
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 160, background: C.gBg, border: "1.5px solid " + C.gBdr, borderRadius: 10, padding: "12px 14px" }}>
-          <SLabel color={C.green}>Q1 Key Buys</SLabel>
+          <SLabel color={C.green}>{MATRIX_13F.label} Key Buys</SLabel>
           {fund.recentBuys.map((b, i) => (
             <div key={i} style={{ color: C.green, fontSize: 14, padding: "4px 0", borderBottom: i < fund.recentBuys.length - 1 ? "1px solid " + C.gBdr : "none" }}>↑ {b}</div>
           ))}
         </div>
         <div style={{ flex: 1, minWidth: 160, background: P.mOrange50, border: "1.5px solid " + P.mOrange200, borderRadius: 10, padding: "12px 14px" }}>
-          <SLabel color={C.amber}>Q1 Key Sells</SLabel>
+          <SLabel color={C.amber}>{MATRIX_13F.label} Key Sells</SLabel>
           {fund.recentSells.map((s, i) => (
             <div key={i} style={{ color: C.amber, fontSize: 14, padding: "4px 0", borderBottom: i < fund.recentSells.length - 1 ? "1px solid " + P.mOrange100 : "none" }}>↓ {s}</div>
           ))}
@@ -5926,7 +5926,7 @@ export default function App() {
   const fetchStateFeed = () => { setStateFeedStatus(s => ({ ...s, loading: true })); loadStateFeed(); };
   const mstate = useMemo(() => computeMarketState({
     axes: liveInd ? measuredAxes(liveInd, { ism: ismEntry }) : null,
-    precomputed: stateFeed ? { conditions: stateFeed.conditions, liquidity: stateFeed.liquidity } : null,
+    precomputed: stateFeed ? { conditions: stateFeed.conditions, conditionsWeekAgo: stateFeed.conditionsWeekAgo ?? null, liquidity: stateFeed.liquidity } : null,
     stance: FED_LANGUAGE_STATUS.status, stanceAsOf: FED_LANGUAGE_STATUS.lastUpdated,
     next: nextMeetingOdds(liveInd?.fedPathFeed ?? null), asOf: stateFeed?.at ?? null,
   }), [liveInd, ismEntry, stateFeed]);
@@ -6798,7 +6798,7 @@ export default function App() {
     { id: "watch", label: "Market Watch", hint: "read", tabs: [
       { id: "state",      label: "🧭 State"          },
       { id: "drivers",    label: "📈 Drivers"        },
-      { id: "street",     label: "🏦 Street"         },
+      { id: "street",     label: "🏦 Smart Money"    },
       { id: "health",     label: "🩺 Data health"    },
       ...(legacyOn("watch") ? LEGACY_BY_GROUP.watch : []),
     ] },
@@ -6927,7 +6927,7 @@ export default function App() {
           </div>
           {/* THE STATE STRIP — on every tab, sticky: the measured regime, conditions and policy
               (lib/marketState.js). The consensus regime and the credit ladder it used to show are
-              on Market Watch › Street and inside the conditions score. */}
+              on Market Watch › Smart Money (folded, under the 13F data) and inside the conditions score. */}
           {(() => {
             const r = mstate.regime, c = mstate.conditions, pol = mstate.policy;
             const chip = (k, v, col, onClick) => (
@@ -6952,7 +6952,7 @@ export default function App() {
                 {chip("Fed", pol?.stance ? `${pol.stance}${pol.next?.hikeOdds != null && pol.next.hikeOdds >= 10 ? ` · hike ${Math.round(pol.next.hikeOdds)}%` : pol.next?.cutOdds != null && pol.next.cutOdds >= 10 ? ` · cut ${Math.round(pol.next.cutOdds)}%` : ""}` : "—",
                   pol?.stance === "tightening" ? C.red : pol?.stance === "easing" ? C.green : C.amber)}
                 {mstate.sizing?.total != null && <><span style={{ color: C.bdr }}>·</span>{chip("Size", `×${mstate.sizing.total.toFixed(2)}`, C.text)}</>}
-                {streetDisagrees && <span title={`The Street's consensus reads ${liveRegime.label} ${regimeProbFor(liveRegime.id)}% — see Market Watch › Street`}>{flag(`STREET: ${liveRegime.label.toUpperCase()}`)}</span>}
+                {streetDisagrees && <span title={`The Street's consensus reads ${liveRegime.label} ${regimeProbFor(liveRegime.id)}% — see Market Watch › Smart Money`}>{flag(`STREET: ${liveRegime.label.toUpperCase()}`)}</span>}
                 {regimeDiverged && flag("📌 PINNED ≠ LIVE")}
                 {(ledger.counts.stale + ledger.counts.missing) > 0 && <span title={`${ledger.counts.stale} stale, ${ledger.counts.missing} never entered — see Market Watch › Data health`}>{flag(`✍ ${ledger.counts.stale + ledger.counts.missing} HAND-KEPT OUT`)}</span>}
                 {stateFeed?.source === "stale" && flag("GAUGES: LAST GOOD COPY")}
@@ -8072,13 +8072,6 @@ export default function App() {
         )}
 
         {/* ── SMART MONEY ── */}
-        {tab === "street" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 14 }}>
-            <StreetCompare st={mstate} street={streetView} />
-            {renderRecessionPanel()}
-            <SLabel>Smart money — 13F filings</SLabel>
-          </div>
-        )}
         {(tab === "smartmoney" || tab === "street") && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {/* 13F limitation header — states plainly what this data is and is NOT, so an absent
@@ -8227,7 +8220,7 @@ export default function App() {
                         key={f.id}
                         style={{ background: i % 2 === 0 ? C.surf : C.bg, cursor: "pointer" }}
                         onClick={() => { setTab("street"); setSelectedFund(f); }}
-                        title="Click to view on the Street tab"
+                        title="Click to view on the Smart Money tab"
                       >
                         <td style={{ padding: "9px 12px", borderBottom: "1px solid " + C.bdr }}>
                           <span style={{ color: f.color, fontWeight: 800, fontSize: 14 }}>{f.name}</span>
@@ -8286,6 +8279,16 @@ export default function App() {
               pricesLoading={pricesLoading}
               pricesUpdated={pricesUpdated}
             />
+          </div>
+        )}
+        {/* The Street's view, below the positioning: the measured regime beside the houses'
+            consensus, then the recession panel and analyst board — a cross-check, folded. */}
+        {tab === "street" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 14 }}>
+            <Fold title="The Street's view — analyst consensus and recession odds" hint="a cross-check on the measured regime; drives nothing">
+              <StreetCompare st={mstate} street={streetView} />
+              {renderRecessionPanel()}
+            </Fold>
           </div>
         )}
 
