@@ -62,6 +62,7 @@ jobs:
                   trades: (.trades | if . then {inStatement, verified, applied: (.applied // false),
                            toApply: (.plan.apply | length?), creates: (.plan.creates | length?), problems: (.problems | length?),
                            skipped: .plan.skipped} else null end),
+                  journal: (.journal | if . then {ok, applied, inbox, counts} else null end),
                   told: (.told | if . then {posted, reason} else null end)}' /tmp/flex.json 2>/dev/null \
             || echo '{"note":"answer was not JSON — not printed"}'
           # The endpoint answers 200 with a reason rather than failing, so "not configured yet" is

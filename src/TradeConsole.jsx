@@ -38,6 +38,8 @@ import { modelledDelta } from "../lib/blackscholes.js";
 import { stateOf, byState, afterFill, thesisOk, archivePatch, restorePatch, hoursToArchive, TABS } from "../lib/lifecycle.js";
 import { parseCommand, resolveCandidates, commandRow, commandSummary, firstFill, priceText } from "../lib/commandBar.js";
 import { actionItems } from "../lib/actions.js";
+import { applyDraft } from "../lib/journalInbox.js";
+import JournalDrafts from "./JournalDrafts.jsx";
 import { useRef } from "react";
 import { isDerivativeRow, underlyingOf, legLabel, optionDerived, exposureLines, optionRow, optionLevelVocab, hardDateCheck, defaultHardDate,
          markOf, spreadShape, INSTRUMENTS, INSTRUMENT_LABEL, LEG_RIGHTS, LEG_SIDES, MAX_LEGS, expiryLabel } from "../lib/instruments.js";
@@ -2736,6 +2738,10 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
   // What the scheduled IBKR reconciliation last did. Server-owned: it arrives beside the console
   // rather than inside it, because a save replaces the console object wholesale.
   const [flexNote, setFlexNote] = useState(null);
+  // Journal drafts: notes from chat matched to IBKR fills by the daily run (lib/journalInbox.js).
+  const [journal, setJournal] = useState(null);
+  const [journalBusy, setJournalBusy] = useState(false);
+  const [journalMsg, setJournalMsg] = useState(null);
   const [ackBusy, setAckBusy] = useState(null);
   const [ackMsg, setAckMsg] = useState(null);
   const [recheckBusy, setRecheckBusy] = useState(false);
@@ -2779,6 +2785,7 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
       setWallet(j?.wallet?.chains ? j.wallet : null);
       setPreread(Array.isArray(j?.preread) ? j.preread : null);
       setFlexNote(j?.flexSync || null);
+      setJournal(j?.journal || null);
       setChainAt(new Date().toISOString());
     })
     .catch(() => { /* leave the last good read on screen rather than blanking it */ }), []);
@@ -2814,6 +2821,7 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
       }
       setKvOn(j?.kv?.configured ?? null);
       setFlexNote(j?.flexSync || null);
+      setJournal(j?.journal || null);
       setPreread(Array.isArray(j?.preread) ? j.preread : null);
       setChainAt(new Date().toISOString());
       setLoaded(true);
@@ -3502,6 +3510,45 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
     setSaving(false); setTimeout(() => setSaveMsg(null), 6000);
   };
 
+  // ── JOURNAL DRAFTS ──
+  // Confirm writes the row the ordinary way — into the console state, then the same wholesale save
+  // every edit uses — and only once that save lands is the draft taken off the list. A failed save
+  // leaves the draft where it was, so nothing is lost between the two.
+  const resolveJournal = async (body) => {
+    const res = await fetch("/api/manual-entry", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ journalDraft: body }) });
+    const j = await res.json().catch(() => null);
+    if (res.ok && j?.journal?.drafts) setJournal(x => ({ ...(x || {}), drafts: j.journal.drafts }));
+    return { ok: res.ok, error: j?.journal?.error };
+  };
+  const confirmDraft = async (draft, edits) => {
+    const r = applyDraft(rows, draft, edits, { today: new Date().toISOString().slice(0, 10) });
+    if (r.error) { setJournalMsg({ err: true, text: r.error }); return; }
+    setJournalBusy(true); setJournalMsg(null);
+    try {
+      setRows(r.rows);
+      const res = await fetch("/api/manual-entry", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+        body: JSON.stringify({ console: { rows: r.rows, settings } }) });
+      if (!res.ok) { touch(); setJournalMsg({ err: true, text: `Row kept locally, not synced (${res.status}) — the draft stays until it is.` }); return; }
+      setDirty(false);
+      const done = await resolveJournal({ id: draft.id, action: "confirm" });
+      setJournalMsg(done.ok ? { text: `${r.how === "annotated" ? "Note attached to" : r.how === "added" ? "Fill added to" : "Opened"} ${r.rowId} ✓` } : { err: true, text: done.error || "Saved; the draft could not be cleared." });
+      const target = r.rows.find(x => x.id === r.rowId);
+      if (target) { setBookTab(derivePosition(target.fills || [], { multiplier: target.multiplier, side: target.side }).status === "closed" ? "CLOSED" : "OPEN"); setExpanded(r.rowId); }
+    } finally { setJournalBusy(false); }
+  };
+  const dismissDraft = async (draft) => {
+    setJournalBusy(true);
+    const done = await resolveJournal({ id: draft.id, action: "dismiss" }).catch(() => ({ ok: false }));
+    setJournalMsg(done.ok ? { text: "Dismissed ✓" } : { err: true, text: done.error || "Dismiss failed." });
+    setJournalBusy(false);
+  };
+  const chooseDraft = async (draft, orderId) => {
+    setJournalBusy(true);
+    const done = await resolveJournal({ id: draft.id, action: "choose", orderId }).catch(() => ({ ok: false }));
+    setJournalMsg(done.ok ? { text: "Fill chosen — now a draft to confirm." } : { err: true, text: done.error || "Could not choose that fill." });
+    setJournalBusy(false);
+  };
+
   // ── import / export ──
   const exportJson = () => JSON.stringify({ rows, settings }, null, 2);
   const doImport = (mode) => {
@@ -3990,6 +4037,10 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
         );
       })()}
 
+      {/* ── JOURNAL DRAFTS ──
+          Notes written from chat, matched to IBKR's fills by the daily run: drafts to confirm,
+          fills that arrived with no note, and notes whose fill never came. Absent when empty. */}
+      <JournalDrafts journal={journal} onConfirm={confirmDraft} onDismiss={dismissDraft} onChoose={chooseDraft} busy={journalBusy} msg={journalMsg} />
 
       {/* ── CURRENT PORTFOLIO ──
           Same visual idiom as the Smart Money tab (donut for weight, horizontal bars for the
