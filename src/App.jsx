@@ -6816,13 +6816,67 @@ export default function App() {
                     one live number in it (Kalshi) labelled as the only live thing here. */}
                 <div style={{ marginTop: 12, padding: "12px 14px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8 }}>
                   <div style={{ marginBottom: 6 }}><HandKept asOf="2026-09-30" cadenceDays={30} what="after each data event that changes the recession read" /></div>
-                  {/* Rewritten 2026-09-30 after August core PCE (Sep 30) and August JOLTS (Sep 29), from
-                      /api/indicators: core PCE 3.01% y/y (Jul 2.98%), core CPI 2.45%, payrolls +162k
-                      (Jun +31k, Jul +21k), U-3 4.1%, long-term unemployed 27.0% of the jobless, quits
-                      1.9%; Kalshi 2026 5% / 2027 22%, Polymarket 9%, NY Fed curve model 14%; next
-                      meeting hike odds 36% (ZQ); HY OAS 3.02%. */}
-                  <span style={{ color: C.text, fontWeight: 700, fontSize: 13 }}>The signal that matters: </span>
-                  <span style={{ color: C.mid, fontSize: 14, lineHeight: 1.65 }}>The hike the July minutes warned of has arrived — 25bp on Sep 16, to 3.75–4.00% — and the data since has not bent to it. August payrolls rose 162k after 31k and 21k in June and July, and unemployment held at 4.1% (4.3% a year ago). The weakness is at the edges, not the headline: the long-term unemployed rose to 27.0% of the jobless (25.5% in July, 24.9% a year ago), and JOLTS quits stayed at 1.9% in August against 2.0% a year earlier — people staying put rather than trading up. Inflation has stopped improving: core PCE was 3.01% y/y in August, up from 2.98% after three months of easing, with core CPI at 2.45% — no reason for the Fed to stop, and the futures price 36% odds of another hike on Oct 28. So the near-term recession read stays low (Kalshi 2026 5%, Polymarket 9%, the NY Fed curve model 14%, as of Sep 30), and the risk is the one tightening builds: the live 2027 market at {recKalshi2027 != null ? `${recKalshi2027}%` : "— (not loaded)"} is still the higher horizon, and credit widening into a hiking Fed (HY OAS 3.02%, up 36bp in five sessions to Sep 28) is how that horizon gets priced sooner. What would change the read: a payroll print back near zero, quits below 1.9%, or HY OAS through 3.5% (the last is on the State tab's if/then list; the labour prints are under Drivers › Growth).</span>
+                  {/* Rebuilt 2026-09-30 after August core PCE and JOLTS. EVERY NUMBER IS COMPUTED here from
+                      the live feeds — payroll changes and quits from the labour block, core CPI / PCE
+                      momentum from the index levels (lib/marketState.js inflationMomentum, FRED CPILFESL
+                      and PCEPILFE), HY OAS from the state feed, the odds from the recession feeds — so
+                      the text cannot drift from the data; only the framing is hand-kept. */}
+                  {(() => {
+                    const L = liveInd?.labor || {};
+                    const mo = (d) => (d ? new Date(d + "T12:00:00Z").toLocaleString("en-US", { month: "short", timeZone: "UTC" }) : "—");
+                    const day = (d) => (d ? new Date(d + "T12:00:00Z").toLocaleString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : "—");
+                    const pay = (L.payrolls?.history || []).slice(-4);
+                    const chg = pay.length === 4 ? pay.slice(1).map((p, i) => ({ date: p.date, k: Math.round(p.value - pay[i].value) })) : [];
+                    const avg3 = chg.length === 3 ? Math.round(chg.reduce((a, c) => a + c.k, 0) / 3) : null;
+                    const q = (L.quits?.history || []).slice(-2);
+                    const pce = stateFeed?.inflation?.pceCore ?? null, cpi = stateFeed?.inflation?.cpiCore ?? null;
+                    const hy = stateFeed?.stats?.hyOas ?? null, sp = hy?.spark || [];
+                    const hy10 = sp.length > 10 ? Math.round((sp[sp.length - 1] - sp[sp.length - 11]) * 100) : null;
+                    const rf = liveInd?.recessionFeeds || {};
+                    const odd = (k) => rf[k]?.probability != null ? `${rf[k].probability}%` : "—";
+                    const nx = nextMeetingOdds(liveInd?.fedPathFeed ?? null);
+                    const sgn = (v, u = "") => v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v)}${u}`;
+                    const B = ({ children }) => <b style={{ color: C.text }}>{children}</b>;
+                    const row = { display: "grid", gridTemplateColumns: "150px minmax(0, 1fr)", gap: "2px 10px", fontSize: 13, lineHeight: 1.55 };
+                    return (
+                      <div style={{ display: "grid", gap: 8, color: C.mid, fontSize: 13.5, lineHeight: 1.6 }}>
+                        <div>
+                          <span style={{ color: C.text, fontWeight: 700 }}>The signal that matters: </span>
+                          the hike the July minutes warned of arrived — 25bp on Sep 16, to 3.75–4.00% — and the futures price {nx?.hikePct != null ? <B>{Math.round(nx.hikePct)}%</B> : "—"} odds of another on {nx?.meeting ? day(nx.meeting) : "the next meeting"}. Near-term recession odds are low; the risk is the one tightening builds, and credit is where it would show first.
+                        </div>
+                        <div style={row}>
+                          <b style={{ color: C.text }}>Payrolls</b>
+                          <span>
+                            {chg.length ? <>{mo(chg[2].date)} <B>{sgn(chg[2].k, "k")}</B> <i style={{ color: C.muted }}>(first release)</i>, {mo(chg[1].date)} {sgn(chg[1].k, "k")}, {mo(chg[0].date)} {sgn(chg[0].k, "k")} — <B>3-month average {sgn(avg3, "k")}</B>.</> : "not loaded."}
+                            {" "}Unemployment {L.u3?.value ?? "—"}% ({L.u3?.yearAgo ?? "—"}% a year ago); long-term unemployed {L.longTerm?.value ?? "—"}% of the jobless ({L.longTerm?.prev ?? "—"}% the month before).
+                          </span>
+                          <b style={{ color: C.text }}>JOLTS quits</b>
+                          <span>{q.length === 2 ? <>{mo(q[1].date)} <B>{q[1].value}%</B>, {mo(q[0].date)} {q[0].value}%</> : "not loaded"} — people staying put rather than trading up.</span>
+                          <b style={{ color: C.text }}>Core PCE</b>
+                          <span>
+                            {pce ? <><B>{pce.yoy}% y/y</B> in {mo(pce.date)} · {sgn(pce.mom, "%")} m/m · <B>{pce.ann3m}% 3-mo annualised</B> ({pce.ann3mPrev}% the month before) — {pce.trend3m === "rising" ? "the short-run trend is rising: inflation has stopped improving." : "y/y ticked up on base effects, but the short-run trend is still easing."}</> : "momentum not loaded."}
+                            {cpi ? <span style={{ color: C.muted }}> Core CPI {cpi.yoy}% y/y, {sgn(cpi.mom, "%")} m/m, {cpi.ann3m}% 3-mo annualised. Series: FRED {pce?.id ?? "PCEPILFE"} and {cpi.id}, y/y and m/m on the index levels — checked against FRED's published levels; the core-PCE-over-core-CPI gap is in the data.</span> : null}
+                          </span>
+                          <b style={{ color: C.text }}>HY OAS</b>
+                          <span>{hy ? <><B>{hy.value.toFixed(2)}%</B> on {day(hy.date)} · {sgn(hy10, "bp")} over 10 sessions</> : "not loaded"}</span>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.8, textTransform: "uppercase", color: C.lbl, marginBottom: 3 }}>Recession odds — by horizon, not one row</div>
+                          <div style={row}>
+                            <span>Calendar 2026 <span style={{ color: C.muted }}>(one quarter left)</span></span>
+                            <span>Kalshi <B>{odd("Kalshi prediction market")}</B> · Polymarket <B>{odd("Polymarket")}</B> <span style={{ color: C.muted }}>(“by end of 2026”)</span></span>
+                            <span>Next 12 months</span>
+                            <span>NY Fed yield-curve model <B>{odd("NY Fed Yield Curve Model")}</B> <span style={{ color: C.muted }}>(probit on the 10Y–3M spread{rf["NY Fed Yield Curve Model"]?.asOf ? `, ${day(rf["NY Fed Yield Curve Model"].asOf)}` : ""})</span></span>
+                            <span>Calendar 2027</span>
+                            <span>Kalshi <B>{recKalshi2027 != null ? `${recKalshi2027}%` : odd("Kalshi prediction market 2027")}</B> — still the higher horizon</span>
+                          </div>
+                        </div>
+                        <div>
+                          <b style={{ color: C.text }}>What would change the read:</b> the payroll <B>3-month average under 50k</B>; quits at <B>1.8% or lower for two consecutive prints</B>; HY OAS through <B>3.50%</B>, or <B>+50bp in 10 sessions</B>.
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </Card>
 

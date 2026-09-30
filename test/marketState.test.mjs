@@ -3,7 +3,7 @@ import { pctRank, upTo, onOrBefore, creditComponent, ratesVolComponent, equityVo
          breadthComponent, realYieldComponent, conditionsAt, conditions, liquidity, legScore, phi, axisScore, regime, axisWords,
          sizing, stage, hedgePhase, transitions, computeMarketState, stateLogRow, bandOf, STRESS_AT, CONDITION_WEIGHTS,
          CONDITION_SIZING, STAGES } from '../lib/marketState.js';
-import { seriesHealth, DRIVER_GROUPS, SERIES_META } from '../lib/marketState.js';
+import { seriesHealth, DRIVER_GROUPS, SERIES_META, inflationMomentum } from '../lib/marketState.js';
 import { FRED_STATE_SERIES, YAHOO_STATE_SERIES, mapToSeries, stateInputs } from '../lib/marketStateFeed.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
@@ -154,7 +154,7 @@ const calm = {
   eq('no inputs, no crash', computeMarketState({}).headline, 'Regime: no read · conditions: no read');
 }
 {
-  eq('eleven FRED series, eight Yahoo', [FRED_STATE_SERIES.length, YAHOO_STATE_SERIES.length], [11, 8]);
+  eq('thirteen FRED series (two monthly index levels), eight Yahoo', [FRED_STATE_SERIES.length, YAHOO_STATE_SERIES.length], [13, 8]);
   eq('a Yahoo map becomes an ascending series', mapToSeries({ '2026-01-03': 2, '2026-01-02': 1, x: NaN }), [{ date: '2026-01-02', value: 1 }, { date: '2026-01-03', value: 2 }]);
   const kv = (store = {}) => ({ configured: () => true, get: async k => store[k], setEx: async (k, v) => { store[k] = v; } });
   const now = new Date('2026-09-30T10:00:00Z');
@@ -181,6 +181,16 @@ const calm = {
   const all = DRIVER_GROUPS.flatMap(g => g.series);
   eq('every driver tile is a known series, none twice', [all.every(k => SERIES_META[k]), new Set(all).size === all.length], [true, true]);
   eq('every gauge the feed carries has a home on the Drivers tab', Object.keys(SERIES_META).filter(k => !all.includes(k)), []);
+}
+{
+  // FRED PCEPILFE index levels, Aug 2025 – Aug 2026 (the published values).
+  const lv = [[ '2025-08-01', 126.64 ], ['2025-09-01', 126.93], ['2025-10-01', 127.2], ['2025-11-01', 127.5], ['2025-12-01', 127.8], ['2026-01-01', 128.2],
+    ['2026-02-01', 128.7], ['2026-03-01', 129.03], ['2026-04-01', 129.395], ['2026-05-01', 129.796], ['2026-06-01', 129.969], ['2026-07-01', 130.133], ['2026-08-01', 130.455]]
+    .map(([date, value]) => ({ date, value }));
+  const m = inflationMomentum({ pceCoreIdx: lv }).pceCore;
+  eq('core PCE: m/m and 3-month annualised from the index levels', [m.id, m.date, m.mom, m.ann3m, m.ann3mPrev, m.trend3m], ['PCEPILFE', '2026-08-01', 0.25, 2.05, 2.3, 'easing']);
+  eq('…y/y on the level a year earlier', m.yoy, 3.01);
+  eq('too short a series is no read', inflationMomentum({ cpiCoreIdx: lv.slice(-5) }).cpiCore, null);
 }
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
