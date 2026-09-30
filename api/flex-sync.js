@@ -36,6 +36,9 @@ import { fetchCboeGreeks, fetchCboeIndex } from '../lib/cboe.js';
 import { parseOptionSymbol, contractKey, TREND_WINDOW } from '../lib/bookExposure.js';
 import { appendRun, SIZER_RUNS_KEY, MAX_RUNS } from '../lib/sizer.js';
 import { catalystLookup } from '../lib/catalystFeed.js';
+import { runJournal } from '../lib/journalStore.js';
+import { journalLine } from '../lib/journalInbox.js';
+import HOLIDAYS from '../data/holidays.json' with { type: 'json' };
 
 // The same optional secret the card endpoint uses, so the scheduler carries one key rather than
 // two. Unset leaves both open, which is the state the project starts in.
@@ -43,15 +46,18 @@ import { catalystLookup } from '../lib/catalystFeed.js';
 // this returned the IBKR account, its positions and their summary to anyone who asked. Closed.
 const authorised = (req) => gate(req);   // async — the caller must await it
 
-async function tell(rec, asOf, tradePlan = null) {
+async function tell(rec, asOf, tradePlan = null, journal = null) {
   // A recorded trade is a real event and is announced whether or not anything else is wrong — but
   // it carries SYMBOLS and counts only. Quantities and prices never leave the console.
   const traded = tradePlan ? summariseTrades(tradePlan, { forChannel: true }) : '';
-  const sig = [signatureOf(rec), traded].filter(Boolean).join(' || ');
+  // The journal's line is built from counts and symbols alone (lib/journalInbox.js journalLine):
+  // never a note's rationale, levels, quantity or price.
+  const journaled = journal?.applied ? journalLine(journal) : '';
+  const sig = [signatureOf(rec), traded, journaled].filter(Boolean).join(' || ');
   const seen = await kvGetJson(SEEN_KEY);
   if (seen?.sig === sig) return { posted: false, reason: 'unchanged since the last run' };
   await kvSetJson(SEEN_KEY, { sig, at: new Date().toISOString() });
-  const line = [traded, summariseActionable(rec, { forChannel: true })].filter(Boolean).join(' · ');
+  const line = [traded, journaled, summariseActionable(rec, { forChannel: true })].filter(Boolean).join(' · ');
   if (!line) return { posted: false, reason: 'nothing needs acting on' };
   const hook = webhookFromEnv();
   if (!hook) return { posted: false, reason: 'no webhook configured' };
@@ -166,6 +172,25 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
     }
   }
 
+  // ── THE JOURNAL INBOX ─────────────────────────────────────────────────────
+  // Notes written from chat, matched to the statement's orders (lib/journalInbox.js). After the
+  // plan, so a fill the planner adopted from a hand entry counts as journaled; before the channel
+  // is told, so the line can say how many drafts are waiting. Drafts only — nothing here touches a
+  // console row; Stu confirms each one on the console.
+  let journal = null;
+  try {
+    const parsedAll = parseTrades(got.xml);
+    const known = new Set();
+    for (const r of rows) for (const f of (r.fills || [])) if (f.tradeId) known.add(String(f.tradeId));
+    for (const a of (tradePlan?.adopt || [])) known.add(String(a.tradeId));
+    journal = await runJournal({ trades: parsedAll, known, today: new Date().toISOString().slice(0, 10),
+      holidays: HOLIDAYS?.US?.closed || [], apply });
+    result.journal = { ok: journal.ok, applied: !!journal.applied, inbox: journal.inbox ?? null, counts: journal.counts || null, reason: journal.reason || null };
+  } catch (e) {
+    console.error('journal inbox', e?.message || e);
+    result.journal = { ok: false, reason: String(e?.message || e) };
+  }
+
   // ── ONE ROW PER POSITION ──────────────────────────────────────────────────
   // The reconciliation above ran against the console before the trade plan existed, so a position
   // the console had never seen is in BOTH rec.adds (flat, at average cost) and tradePlan.creates
@@ -235,7 +260,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   // now only an ADD reached the channel — a quantity that disagreed, or a position open here and
   // gone at the broker, sat in a JSON response nobody had a reason to open. Scheduled runs now
   // announce anything actionable, once, and again only if what is wrong changes.
-  if (apply) result.told = await tell(rec2, asOf, apply && tradeRows ? tradePlan : null);
+  if (apply) result.told = await tell(rec2, asOf, apply && tradeRows ? tradePlan : null, journal);
   const writingTrades = apply && !!tradeRows;
   if (!fresh.length && !plan.ack.length && !writingTrades && !from0) {
     if (apply) await kvSetJson(FLEX_NOTE_KEY, noteOf());

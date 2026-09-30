@@ -23,6 +23,8 @@ import { SEC_YIELD_TICKERS } from '../lib/cashyield.js';
 import { authorised, hasSessionCookie, refuse } from '../lib/apiauth.js';
 import { fetchHlAccount, fetchHlSpot, fetchSpotContext, fetchHyperliquid } from '../lib/hyperliquid.js';
 import { fetchWallets } from '../lib/wallet.js';
+import { validateNote, noteBytes, MAX_NOTE_BYTES } from '../lib/journalInbox.js';
+import { journalTokenOk, underRateLimit, appendNote, pendingCount, readJournal, resolveDraft } from '../lib/journalStore.js';
 
 const DATA_PATH = 'data/manual_entry.json';
 
@@ -199,7 +201,18 @@ function sanitizeRow(r) {
     ...(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(String(r.closedAt || '')) ? { closedAt: String(r.closedAt).slice(0, 30) } : {}),
     ...(r.archived === true || r.archived === false ? { archived: r.archived } : {}),
     ...(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(String(r.restoredAt || '')) ? { restoredAt: String(r.restoredAt).slice(0, 30) } : {}),
+    // ── WHAT THE JOURNAL NOTE SAID IT WOULD BE MANAGED BY (lib/journalInbox.js applyDraft) ──
+    // Free text, as written: "half at ~8.80 (2x)" is an instruction, not a price level, and turning
+    // it into one would be a guess. Bounded like everything else here.
+    ...(r.journal && typeof r.journal === 'object' ? { journal: sanitizeJournal(r.journal) } : {}),
   };
+}
+const JOURNAL_LEVELS = ['take_profit', 'stop', 'invalidation', 'review', 'hard_date', 'decide_by'];
+function sanitizeJournal(j) {
+  const levels = {};
+  for (const k of JOURNAL_LEVELS) if (j.levels?.[k] != null) levels[k] = cs(j.levels[k], 200);
+  return { noteId: cs(j.noteId, 80), kind: cs(j.kind, 12), at: cs(j.at, 12), levels,
+    rules: Array.isArray(j.rules) ? j.rules.map(x => cs(x, 300)).filter(Boolean).slice(0, 8) : [] };
 }
 
 // Bounded like every other stored shape. A decision arrives from the browser and is kept for ever,
@@ -256,7 +269,32 @@ function sanitizeConsoleSettings(s) {
   return out;
 }
 
+// ── THE JOURNAL INBOX: ONE NOTE IN, A COUNT OUT ──────────────────────────────
+// ?kind=journal-note is its own door with its own key. JOURNAL_INBOX_TOKEN opens this and nothing
+// else; the dashboard session and the service key do not open it (lib/journalStore.js). A POST
+// appends one validated note and echoes { id, received_at }; a GET answers { pending: n }. Neither
+// can read a note back, edit one, delete one, or see the console.
+async function journalNote(req, res) {
+  res.setHeader('Cache-Control', 'private, no-store');
+  if (!journalTokenOk(req)) return refuse(res, 'not authorised for the journal inbox');
+  if (req.method === 'GET') return res.status(200).json({ pending: await pendingCount() });
+  if (req.method !== 'POST') return res.status(405).json({ error: 'GET or POST only' });
+  let body = req.body;
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { return res.status(400).json({ error: 'the body is not JSON' }); } }
+  const len = Number(req.headers?.['content-length']);
+  if ((Number.isFinite(len) && len > MAX_NOTE_BYTES) || noteBytes(body) > MAX_NOTE_BYTES) {
+    return res.status(413).json({ error: `a note is at most ${MAX_NOTE_BYTES} bytes` });
+  }
+  if (!(await underRateLimit())) return res.status(429).json({ error: 'more than 60 notes this hour — try later' });
+  const v = validateNote(body);
+  if (!v.ok) return res.status(422).json({ error: v.error });
+  const r = await appendNote(v.note);
+  if (!r.ok) return res.status(r.status || 502).json({ error: r.error });
+  return res.status(201).json({ id: r.id, received_at: r.received_at });
+}
+
 export default async function handler(req, res) {
+  if (String(req.query?.kind || '') === 'journal-note') return journalNote(req, res);
   if (req.method === 'GET') {
     // THE MIDDLEWARE DOES NOT COVER THIS. It matches `/` only, so this route served the whole
     // trade console — fills, cost basis and settings.equity — to anyone who asked. See lib/apiauth.
@@ -349,6 +387,9 @@ export default async function handler(req, res) {
         // carries symbols, sizes and fill prices, so it is opt-in rather than riding along on
         // every page load. The response is already `private, no-store`.
         decisions: kvConfigured() ? overrideStats(await kvGetJson(DECISIONS_KEY)) : null,
+        // Journal drafts the daily run matched to fills, for the action strip. This route is the
+        // session-gated, private one; the note route itself can never read these back.
+        journal: await readJournal(),
         ...(full && kvConfigured() ? { decisionLog: fullLog } : {}),
         kv: { configured: kvConfigured() },
       });
@@ -378,6 +419,15 @@ export default async function handler(req, res) {
     const next = appendDecision(log, sanitizeDecision(decision));
     const wrote = await kvSetJson(DECISIONS_KEY, next);
     return res.status(wrote ? 200 : 502).json({ decision: { stored: wrote ? 'kv' : 'failed', n: next.length } });
+  }
+  // ── A JOURNAL DRAFT, RESOLVED ───────────────────────────────────────────────
+  // Confirm, dismiss, or choose one fill of an ambiguous match. Redis only; the console row itself
+  // arrives through the ordinary console save.
+  const { journalDraft } = req.body || {};
+  if (journalDraft && typeof journalDraft === 'object') {
+    const r = await resolveDraft({ id: String(journalDraft.id || '').slice(0, 100), action: journalDraft.action,
+      orderId: journalDraft.orderId == null ? null : String(journalDraft.orderId).slice(0, 40) });
+    return res.status(r.ok ? 200 : 409).json({ journal: r.ok ? { drafts: r.drafts } : { error: r.error } });
   }
   const { store, sha } = await readStore();
   const saved = [];
