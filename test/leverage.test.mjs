@@ -7,6 +7,7 @@ const ok = (n, c) => eq(n, !!c, true);
 {
   eq('the brief\'s seed', [LEVERAGE.TQQQ.factor, LEVERAGE.SQQQ.factor, LEVERAGE.QLD.factor, LEVERAGE.QID.factor, LEVERAGE.UPRO.factor, LEVERAGE.SPXU.factor, LEVERAGE.SSO.factor, LEVERAGE.SOXL.factor, LEVERAGE.SOXS.factor, LEVERAGE['7709.HK'].factor, LEVERAGE.UVXY.factor],
      [3, -3, 2, -2, 3, -3, 2, 3, -3, 2, 1.5]);
+  eq('CSOP Hong Kong: 7709 is 2× SK hynix, 7262 is 2× the Nikkei 225', [leverageFor('7709.hk').underlying, leverageFor('7709.HK').factor, leverageFor('7262.HK').underlying, leverageFor('7262.hk').factor], ['000660.KS', 2, '^N225', 2]);
   eq('each carries its underlying and a daily reset', [LEVERAGE.TQQQ.underlying, LEVERAGE.SOXL.underlying, LEVERAGE.TQQQ.reset], ['QQQ', 'SOXX', 'daily']);
   eq('an unknown ticker is 1, unknown, no reset', leverageFor('QQQ'), { symbol: 'QQQ', factor: 1, underlying: null, reset: 'none', known: false });
   eq('a known one is itself', [leverageFor('tqqq').factor, leverageFor('tqqq').known, isLeveraged('SQQQ'), isLeveraged('INTC')], [3, true, true, false]);
