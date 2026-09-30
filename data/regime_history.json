@@ -2381,7 +2381,7 @@
       "inputs": {
         "weightedRecessionProb": 14.3,
         "cpi": 3.35302,
-        "kalshi2027": 22,
+        "kalshi2027": 23,
         "tape": {
           "gold": "up",
           "tlt": "down",
@@ -2397,13 +2397,61 @@
         "u3": 4.1,
         "empPop": 59.1,
         "oas": 3.02,
-        "tenY": 5.17,
-        "twoY": 4.81,
-        "consensusAlive": 0.728,
+        "tenY": 5.24,
+        "twoY": 4.92,
+        "consensusAlive": 0.731,
         "regimeVintage": "decayed"
       },
-      "source": "client",
-      "loggedAt": "2026-09-30T00:07:35.338Z"
+      "source": "client+cron",
+      "loggedAt": "2026-09-30T01:38:38.632Z",
+      "axes": {
+        "growth": {
+          "state": "turning-down",
+          "lean": 1,
+          "market": {
+            "verdict": "CONTRACTING",
+            "lean": -1,
+            "usable": 5,
+            "of": 5
+          },
+          "weekly": {
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 4,
+            "of": 4
+          },
+          "monthly": {
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 4,
+            "of": 4
+          }
+        },
+        "inflation": {
+          "state": "turning-hot",
+          "lean": -1,
+          "market": {
+            "verdict": "BETWEEN",
+            "lean": 0,
+            "usable": 3,
+            "of": 3
+          },
+          "nowcast": {
+            "verdict": "BETWEEN",
+            "lean": 0,
+            "usable": 2,
+            "of": 2
+          },
+          "printed": {
+            "verdict": "COOLING",
+            "lean": -1,
+            "usable": 3,
+            "of": 3
+          }
+        },
+        "quadrant": "ref",
+        "quadrantRead": "growth firm, inflation cool"
+      }
     }
   ]
 }
