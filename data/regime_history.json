@@ -2403,7 +2403,7 @@
         "regimeVintage": "decayed"
       },
       "source": "client+cron",
-      "loggedAt": "2026-09-30T08:45:45.177Z",
+      "loggedAt": "2026-09-30T13:37:15.294Z",
       "axes": {
         "growth": {
           "state": "turning-down",
@@ -2456,13 +2456,13 @@
         "regime": {
           "id": "ref",
           "probs": {
-            "ref": 29,
-            "inf": 21,
-            "stag": 21,
-            "def": 29
+            "ref": 34,
+            "inf": 25,
+            "stag": 17,
+            "def": 24
           },
-          "g": 0,
-          "gDrift": -1.1,
+          "g": 0.09,
+          "gDrift": -0.9,
           "i": -0.07,
           "iDrift": 0.33,
           "drifting": "stag"
@@ -2472,20 +2472,20 @@
           "band": "caution",
           "comps": {
             "credit": 85,
-            "equityVol": 21,
+            "equityVol": 20,
             "ratesVol": 95,
             "realYield": 88,
-            "funding": 34,
+            "funding": 36,
             "breadth": 77,
-            "dollar": 82
+            "dollar": 80
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 44,
+          "hikeOdds": 36,
           "liq4w": -9
         },
-        "sizing": 0.56,
+        "sizing": 0.59,
         "stage": 2
       }
     }
