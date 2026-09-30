@@ -30,7 +30,7 @@ import { fmtCcy } from "../lib/fxrates.js";
 import { realizedCurve } from "../lib/positions.js";
 import { DEFAULT_TARGET_PCT, consensusMultiplier } from "../lib/sizing.js";
 import { computeMarketState, stateLogRow } from "../lib/marketState.js";
-import { StateView, DriversView, FeedHealth, StreetCompare, Fold } from "./MarketState.jsx";
+import { StateView, DriversView, FeedHealth, StreetCompare, Fold, CrossCheckHealth } from "./MarketState.jsx";
 import { PlanView } from "./PlanView.jsx";
 import { expectedRank } from "../lib/plan.js";
 import { observationAge } from "../lib/gates.js";
@@ -5965,6 +5965,12 @@ export default function App() {
     }).catch(e => setStateFeedStatus({ loading: false, error: String(e?.message || e), done: true }));
   }, []);
   useEffect(() => { loadStateFeed(); }, [loadStateFeed]);
+  // The cross-check sources' statuses, for Data health — fetched when that tab opens.
+  const [xcHealth, setXcHealth] = useState(null);
+  useEffect(() => {
+    if (tab !== "health" || xcHealth) return;
+    fetch(`${PROXY_BASE_URL}/indicators?xc=1`).then(r => r.json()).then(setXcHealth).catch(e => setXcHealth({ ok: false, error: String(e?.message || e) }));
+  }, [tab, xcHealth]);
   const fetchStateFeed = () => { setStateFeedStatus(s => ({ ...s, loading: true })); loadStateFeed(); };
   const mstate = useMemo(() => computeMarketState({
     axes: liveInd ? measuredAxes(liveInd, { ism: ismEntry }) : null,
@@ -7110,6 +7116,7 @@ export default function App() {
         {tab === "health" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <FeedHealth feed={stateFeed} indErrors={liveInd?.feedErrors} indUpdated={indUpdated ? indUpdated.toISOString() : null} />
+            <CrossCheckHealth xc={xcHealth} />
             <HandKeptLedgerPanel ledger={ledger} />
           </div>
         )}
