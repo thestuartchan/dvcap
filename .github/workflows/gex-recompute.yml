@@ -1,0 +1,91 @@
+# Pre-open gamma recompute — QQQ and SPY, 07:15 and 09:25 America/New_York on trading days.
+#
+# WHY. The read-only gamma feed (/api/g/<slug>/<ticker>) and the Gamma tab open on the last
+# recompute kept in KV (LAST_RECOMPUTE_KEY), and until now a recompute only happened when someone
+# pressed Live recompute on the tab. This keeps it current without anyone at the desk:
+#
+#   07:15 ET  catches OCC's new settled open-interest file (published ~06:00–07:00 ET).
+#   09:25 ET  prices that book at pre-open spot.
+#
+# THE GUARD IS SERVER-SIDE. /api/gex?settled=1 refuses to keep a recompute whose OCC file has not
+# rolled since the last close (staleReason "oi_not_published"): the stored board stays yesterday's
+# and the feed marks it stale_reason: "oi_not_published". Expired expiries are dropped by every
+# recompute and again by the feed, so yesterday's 0DTE never sets today's levels.
+#
+# DST. GitHub cron is UTC-only. Four entries cover both halves of the year — 11:15 and 13:25 UTC
+# are 07:15 / 09:25 EDT, 12:15 and 14:25 UTC are 07:15 / 09:25 EST — and the job runs only when New
+# York's own clock is within 20 minutes of one of the two targets, so exactly two run each day.
+#
+# NOT A VERCEL CRON, for the reason gex-snapshot.yml gives: Vercel executed only the first entries
+# of a longer cron list, and this needs the service key the settled route checks (authorised()).
+name: gex recompute
+
+on:
+  schedule:
+    - cron: '15 11 * * 1-5'   # 07:15 EDT
+    - cron: '25 13 * * 1-5'   # 09:25 EDT
+    - cron: '15 12 * * 1-5'   # 07:15 EST
+    - cron: '25 14 * * 1-5'   # 09:25 EST
+  workflow_dispatch:
+
+concurrency:
+  group: gex-recompute
+  cancel-in-progress: false
+
+jobs:
+  recompute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: data/holidays.json
+          sparse-checkout-cone-mode: false
+      - name: Gate on New York time and the US holiday list
+        id: gate
+        run: |
+          NOW_NY=$(TZ=America/New_York date +%H:%M)
+          DAY_NY=$(TZ=America/New_York date +%F)
+          MIN=$((10#$(TZ=America/New_York date +%H) * 60 + 10#$(TZ=America/New_York date +%M)))
+          RUN=0
+          for T in 435 565; do   # 07:15 and 09:25 in minutes
+            D=$((MIN - T)); [ $D -lt 0 ] && D=$((-D))
+            [ $D -le 20 ] && RUN=1
+          done
+          [ "${{ github.event_name }}" = "workflow_dispatch" ] && RUN=1
+          if python3 -c "import json,sys; d=json.load(open('data/holidays.json')); sys.exit(0 if '$DAY_NY' in (d.get('US',{}).get('closed',[])) else 1)"; then
+            echo "US market closed on $DAY_NY — skipping"; RUN=0
+          fi
+          echo "New York $DAY_NY $NOW_NY — run=$RUN"
+          echo "run=$RUN" >> "$GITHUB_OUTPUT"
+      - name: Recompute QQQ and SPY on the settled book
+        if: steps.gate.outputs.run == '1'
+        env:
+          KEY: ${{ secrets.TRADECARD_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::TRADECARD_KEY is not set — the recompute would run but not be kept."
+            echo "::error::  GitHub  -> repository secret  TRADECARD_KEY (the same value as Vercel's)"
+            exit 1
+          fi
+          code=$(curl -sS -o /tmp/rc.json -w '%{http_code}' --max-time 240 \
+            -H "x-tradecard-key: $KEY" \
+            "https://dvcap.vercel.app/api/gex?settled=1&symbols=QQQ,SPY&scheduled=1") || true
+          echo "HTTP $code"
+          # Summary fields only — the log is public.
+          python3 - <<'PY' || cat /tmp/rc.json | head -c 400
+          import json
+          d = json.load(open('/tmp/rc.json'))
+          print('at', d.get('at'))
+          for r in d.get('results', []):
+              if not r.get('ok'):
+                  print(f"  {r.get('symbol')}: FAILED — {r.get('reason')}")
+                  continue
+              lv = r.get('levels') or {}
+              cov = (r.get('oi') or {}).get('coverage')
+              print(f"  {r['symbol']}: spot {r['row'].get('spot')} | OI coverage {cov}"
+                    + (f" | NOT KEPT — {r['staleReason']}" if r.get('staleReason') else ' | kept')
+                    + f" | call wall {(lv.get('callWall') or {}).get('strike')}"
+                    + f" | trapdoor {((lv.get('trapdoor') or {}).get('near') or {}).get('strike')}")
+          PY
+          [ "$code" = "200" ] || exit 1

@@ -13,7 +13,8 @@ import {
 import { C, tint } from "./theme.js";
 import { Card, SLabel, StaleChip } from "./ui.jsx";
 import { gexRead, ageOf } from "../lib/gexRead.js";
-import { heatCells, heatAlpha, spotSlot } from "../lib/gex.js";
+import { heatCells, heatAlpha, spotSlot, withGrossShares } from "../lib/gex.js";
+import { oiSettledLabel } from "../lib/gexFeed.js";
 import { levelsOf, mustShow, rateLine, rateFarOut } from "../lib/gexLevels.js";
 import { pineFor } from "../lib/pine.js";
 
@@ -388,7 +389,9 @@ export function GexPanel() {
 
   const latest = live?.row || data?.latest || null;
   const strikeSource = live?.byStrike || data?.byStrike || null;
-  const grid = live?.grid || data?.grid || null;
+  // Expiry shares on GROSS gamma; a board stored before the grid carried it gets it from its cells.
+  const rawGrid = live?.grid || data?.grid || null;
+  const grid = useMemo(() => (rawGrid?.expiries?.some(e => e.grossGexUsd == null) ? withGrossShares(rawGrid) : rawGrid), [rawGrid]);
   const decay = live?.decay || data?.decay || null;
   const fresh = ageOf(latest?.asOf || (latest?.date ? `${latest.date}T13:00:00Z` : null));
   // ── THE THREE DOWNSIDE OBJECTS ──
@@ -402,6 +405,7 @@ export function GexPanel() {
     if (!latest?.spot || !strikeSource?.length) return null;
     return levelsOf({ byStrike: strikeSource, grid, spot: latest.spot, atr: latest.atr ?? null, callWall: latest.callWall });
   }, [live, data, latest, strikeSource, grid]);
+  const cwStrike = lv?.callWall?.strike ?? latest?.callWall ?? null;
   const read = useMemo(
     () => gexRead({ row: latest, byStrike: strikeSource || [], grid, live: !!live, kind: data?.custom ? data.kind : null, levels: lv }),
     [latest, strikeSource, grid, live, data, lv]);
@@ -474,8 +478,11 @@ export function GexPanel() {
       {latest && (
         <span style={{ fontSize: 11.5, fontWeight: 800,
                        color: live ? (live.mode === "repriced" ? C.amber : C.green) : (TONE_FOR_AGE[fresh.level] || C.muted) }}>
+          {/* ONE SOURCE OF TRUTH FOR THE MODE. A settled recompute is settled open interest repriced
+              at the current spot — the feed calls it live_recompute — so the header says both halves
+              rather than "settled book" over a body that says live. */}
           {live ? (live.mode === "repriced" ? "◐ repriced"
-                 : live.mode === "settled" ? "● settled book"
+                 : live.mode === "settled" ? `● live recompute · ${oiSettledLabel(live.vintage)}`
                  : "● live") : fresh.label}
         </span>
       )}
@@ -649,7 +656,8 @@ export function GexPanel() {
         )}
         <div style={{ marginTop: 10, display: "flex", gap: 20, flexWrap: "wrap" }}>
           <Stat label="Spot" value={fmtNum(latest.spot)} sub={latest.date} />
-          <Stat label="Net GEX" value={fmtUsd(latest.gexUsd)} sub="per 1% move"
+          <Stat label="Net GEX" value={fmtUsd(latest.gexUsd)}
+            sub={lv?.todayBook?.exToday != null ? `per 1% move · ex-today: ${fmtUsd(lv.todayBook.exToday)}` : "per 1% move"}
             color={latest.gexUsd == null ? C.muted : latest.gexUsd >= 0 ? C.green : C.purple} />
           <Stat label="Flip" value={fmtNum(latest.flipLevel)}
             color={latest.flipFragile ? C.amber : C.text}
@@ -660,15 +668,21 @@ export function GexPanel() {
               positive node above spot is a ceiling; below spot it is a magnet. The put side is
               three tiles that never share a word: support (green, the wall), trapdoor (purple,
               where a fall accelerates), pin box (grey, where price is being held). */}
-          <Stat label="Call wall" value={fmtNum(latest.callWall)} color={C.green}
-            sub={lv?.callWall?.kind
-              ? `${lv.callWall.kind} (${lv.callWall.kind === "ceiling" ? "above" : "below"} spot${lv.callWall.inPin ? ", inside the pin band" : ""})${latest.spot ? ` · ${fmtNum(((latest.callWall / latest.spot) - 1) * 100, 1)}%` : ""}`
-              : (latest.callWall && latest.spot ? `${fmtNum(((latest.callWall / latest.spot) - 1) * 100, 1)}%` : null)} />
+          {/* The largest positive node above spot (lib/gexLevels.js callWallOf); the near-spot
+              ceiling it used to name is the pin top, shown beside it. */}
+          <Stat label="Call wall" value={fmtNum(cwStrike)} color={C.green}
+            sub={[
+              lv?.callWall?.kind ? `${lv.callWall.kind} (${lv.callWall.kind === "ceiling" ? "above" : "below"} spot${lv.callWall.inPin ? ", inside the pin band" : ""})` : null,
+              cwStrike && latest.spot ? `${fmtNum(((cwStrike / latest.spot) - 1) * 100, 1)}%` : null,
+              lv?.callWall?.netGexUsd != null ? fmtUsd(lv.callWall.netGexUsd) : null,
+              lv?.callWall?.of ? `peaks ${lv.callWall.peaks} of ${lv.callWall.of}` : null,
+              lv?.pinTop != null && lv.pinTop !== cwStrike ? `pin top ${fmtNum(lv.pinTop, 0)}` : null,
+            ].filter(Boolean).join(" · ") || null} />
           <Stat label="Put support" value={lv?.support?.strike != null ? fmtNum(lv.support.strike) : "none"}
             color={lv?.support?.strike != null ? C.green : C.muted}
             sub={lv ? lv.text.support : "needs the per-strike rows"} />
           <Stat label="Trapdoor"
-            value={lv?.trapdoor?.near ? fmtNum(lv.trapdoor.near.strike) : lv?.trapdoor?.deep ? fmtNum(lv.trapdoor.deep.strike) : "—"}
+            value={lv?.trapdoor?.near ? (lv.trapdoor.near.pairLabel || fmtNum(lv.trapdoor.near.strike)) : lv?.trapdoor?.deep ? fmtNum(lv.trapdoor.deep.strike) : "—"}
             color={C.purple}
             sub={lv ? lv.text.trapdoor : null} />
           <Stat label="Pin box" value={lv?.pin?.pinned ? `${fmtNum(lv.pin.lo, 0)}–${fmtNum(lv.pin.hi, 0)}` : "none"}
@@ -755,7 +769,7 @@ export function GexPanel() {
               // matching BOTH — so on 2026-09-09 the same card read "0 of 6" and badged a row.
               // The put side's badge names the OBJECT: an expiry whose negative peak is the
               // trapdoor owns the trapdoor; one whose positive peak is the support owns the support.
-              const mC = e.peakCallStrike === latest.callWall;
+              const mC = e.peakCallStrike === cwStrike;
               const mT = lv?.trapdoor && (e.peakPutStrike === lv.trapdoor.near?.strike || e.peakPutStrike === lv.trapdoor.deep?.strike);
               const mS = lv?.support?.strike != null && e.peakCallStrike === lv.support.strike;
               const agrees = [mC ? "call wall" : null, mS ? "support" : null, mT ? "trapdoor" : null].filter(Boolean).join(" + ") || null;
@@ -773,7 +787,9 @@ export function GexPanel() {
                     <span style={{ display: "block", width: `${w}%`, height: "100%",
                                    background: (e.netGexUsd ?? 0) >= 0 ? C.green : C.purple }} />
                   </span>
-                  <span style={{ color: C.mid, minWidth: 74 }}>{fmtUsd(e.netGexUsd)}</span>
+                  <span style={{ color: C.mid, minWidth: 74 }} title="share is of GROSS gamma (Σ|cell|); net is calls less puts">
+                    net {fmtUsd(e.netGexUsd)}{e.grossGexUsd != null ? <span style={{ color: C.muted }}> · gross {fmtUsd(e.grossGexUsd)}</span> : null}
+                  </span>
                   <span style={{ color: C.muted }}>
                     peak {fmtNum(e.peakPutStrike)} / {fmtNum(e.peakCallStrike)}
                     {/* Agreement with the headline wall is the signal: several expiries pointing at

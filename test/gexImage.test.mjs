@@ -88,7 +88,9 @@ const row = { name: 'QQQ', spot, callWall: 750, putWall: lv.support.strike, flip
     ok('the bracket stops at the plot\'s foot', bracket && plot && (+bracket[1] + +bracket[2]) <= 84 + +plot[1] + 0.1);
     const footYs = [...deepSvg.matchAll(/<text x="24" y="(\d+)" font-size="15"/g)].map(m => +m[1]);
     ok('the footer lines all sit above the caption', footYs.length >= 4 && Math.max(...footYs) < IMAGE_H - 44);
-    ok('the magnet is one word beside the bars', /−534M today · magnet</.test(dense));
+    // 740 was handed in as the call wall and is −534M: the call wall is now the largest positive
+    // node above spot (lib/gexLevels.js), 745, a ceiling — never a negative strike.
+    eq('the call wall is the largest positive node above spot', [dl.callWall.strike, dl.callWall.kind], [745, 'ceiling']);
     ok('no annotation is wider than the column', [...dense.matchAll(/font-size="15" fill="(?:#2ea043|#8957e5)">([^<]*)</g)].every(m => m[1].length <= 38));
   }
   // Labels never overprint: consecutive annotation y's are at least the minimum gap apart.
