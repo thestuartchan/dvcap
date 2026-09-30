@@ -64,7 +64,11 @@ const json = JSON.stringify(p);
   eq('post-expiry pivot', p.post_expiry_pivot, { from: 738.61, to: 731.2 });
   eq('cross-check: agreements and disagreements, the spot clock left out, CBOE time', [p.cross_check.agrees.map(c => c.check), p.cross_check.disagrees, p.cross_check.cboe_snapshot_utc],
      [['call wall'], [{ check: 'put wall ↔ trapdoor', ours: 730, theirs: 725 }], '2026-09-29T01:30:23.000Z']);
-  eq('risk-free', p.risk_free, { rate: 0.0408, source: 'DTB3 2026-09-25', as_of: '2026-09-25', status: 'live' });
+  eq('risk-free: a print four days older than the board is stale, not live', p.risk_free, { rate: 0.0408, source: 'DTB3 2026-09-25', as_of: '2026-09-25', status: 'stale' });
+  const today = gexFeedPayload('QQQ', { ...board, row: { ...board.row, rateSource: 'DTB3 2026-09-29' } }, { asOf: '2026-09-29T14:02:00Z' });
+  eq('…one dated the board\'s own day is live', today.risk_free.status, 'live');
+  const failed = gexFeedPayload('QQQ', { ...board, row: { ...board.row, rateStatus: 'unavailable' } }, { asOf: '2026-09-29T14:02:00Z' });
+  eq('…and unavailable stays unavailable', failed.risk_free.status, 'unavailable');
 }
 {
   // The strikes are the heatmap's, built the way the panel builds them.
