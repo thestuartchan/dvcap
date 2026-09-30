@@ -123,6 +123,22 @@ const calm = {
   eq('a rollover into rising inflation is stagflation', t.find(x => x.id === 'growthRolls').title, 'Growth rolls over → Stagflation');
   ok('every transition carries a plan', t.every(x => x.plan && x.plan.length > 20));
   eq('no stress trigger once in stress', transitions({ ...st, conditions: { ...st.conditions, score: 75, band: bandOf(75) } }).some(x => x.id === 'toStress'), false);
+  // LIVE DISTANCE: each part says how far it is from its trigger, in its own units.
+  eq('distance to go, in each gauge\'s units', t[0].parts.map(p => p.gapText), ['+1 pt to go', '+48bp to go', '+13.4 to go', '+0.11 to go']);
+  eq('the part that decides an OR is the closest', t[0].nearest, { label: 'Conditions', text: '69', atText: '70', gapText: '+1 pt to go' });
+  eq('…and an AND the furthest', t.find(x => x.id === 'relief').nearest.label, 'MOVE');
+  eq('relief needs the OAS to fall', t.find(x => x.id === 'relief').parts[0].gapText, '−22bp to go');
+  eq('with no week-ago state there is no change to report', [t[0].delta5, t[0].parts[0].delta5], [null, null]);
+  // A WEEK AGO: conditions 38, OAS 2.66, MOVE 78.6, curve 0.84 — the same regime and policy.
+  const prior = { ...st, conditions: { score: 38, band: bandOf(38), components: { credit: { facts: { hyOas: 2.66 } }, ratesVol: { facts: { move: 78.6 } }, equityVol: { facts: { ratio: 0.84 } }, realYield: { facts: { realYield: 2.85 } } } } };
+  const w = transitions(st, { prior });
+  eq('the stress trigger moved from 0 to 96 in a week', [w[0].proximityWas, w[0].delta5], [0, 96]);
+  eq('…each part says how far it moved', w[0].parts.map(p => p.delta5), [96, 36, 62, 27]);
+  eq('a part with no week-ago read says nothing, not zero', w.find(x => x.id === 'hawkish').parts.map(p => [p.label, p.delta5]), [['Hike odds', null], ['10Y real', 6]]);
+  eq('…and its transition has no overall change', w.find(x => x.id === 'hawkish').delta5, null);
+  eq('the regime transitions carry no week-ago change', w.find(x => x.id === 'growthRolls').delta5, null);
+  const live = computeMarketState({ precomputed: { conditions: st.conditions, conditionsWeekAgo: prior.conditions, liquidity: null }, next: { hikePct: 48, cutPct: 0 } });
+  eq('the state carries the week-ago comparison when the feed sends it', live.transitions.find(x => x.id === 'toStress').delta5, 96);
 }
 {
   const pulse = (score, usable, lean) => ({ score, usable, lean });

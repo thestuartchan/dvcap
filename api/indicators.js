@@ -3,7 +3,7 @@ import { GROWTH_SERIES, MARKET_PAIRS, MONTHLY_SERIES } from "../lib/growth.js";
 import { INFLATION_SERIES } from "../lib/inflationAxis.js";
 import { kvGetJson, kvSetJson, kvConfigured } from "../lib/kv.js";
 import { stateInputs } from "../lib/marketStateFeed.js";
-import { conditions, liquidity, seriesStats } from "../lib/marketState.js";
+import { conditions, conditionsAt, liquidity, seriesStats } from "../lib/marketState.js";
 import { zqMovesPriced } from "../lib/fedpath.js";
 import { fetchSmicAHPremium } from "../lib/smicah.js";
 import { fetchSouthbound } from "../lib/hkexSouthbound.js";
@@ -32,6 +32,8 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: cond.score != null, at: inp.at, source: inp.source, errors: inp.errors || [],
         conditions: cond, liquidity: liquidity(inp.series), stats: seriesStats(inp.series),
+        // The same composite five sessions back, so the if/then list can say what moved closer.
+        conditionsWeekAgo: conditionsAt(inp.series, 5),
       });
     } catch (e) {
       return res.status(200).json({ ok: false, error: String(e?.message || e) });

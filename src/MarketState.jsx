@@ -53,12 +53,14 @@ export function Chip({ k, v, tone, title }) {
     </span>
   );
 }
-function Bar({ pct, color, height = 8, marks = [] }) {
+function Bar({ pct, color, height = 8, marks = [], ghost = null }) {
   const w = pct == null ? 0 : Math.max(0, Math.min(100, pct));
+  const g = ghost == null ? null : Math.max(0, Math.min(100, ghost));
   return (
     <div style={{ position: "relative", height, borderRadius: height / 2, background: C.inset, overflow: "hidden" }}>
       <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: w + "%", background: color, borderRadius: height / 2 }} />
       {marks.map(m => <div key={m} style={{ position: "absolute", left: m + "%", top: 0, bottom: 0, width: 1.5, background: C.bdrMd }} />)}
+      {g != null && <div title={`a week ago: ${Math.round(g)}%`} style={{ position: "absolute", left: `calc(${g}% - 1px)`, top: 0, bottom: 0, width: 2, background: C.text, opacity: 0.55 }} />}
     </div>
   );
 }
@@ -322,14 +324,68 @@ function PlanPanel({ st, legacy }) {
 }
 
 // ── IF / THEN ────────────────────────────────────────────────────────────────
-function IfThen({ list }) {
+// The week's change in how close a trigger is: up is closer.
+// Red when a warning moved closer; for a good transition (relief, easing) closer is green.
+export function Delta5({ v, good = false, title = "change in proximity over the last five sessions" }) {
+  if (v == null || v === 0) return v === 0 ? <span title={title} style={{ fontSize: 10.5, fontFamily: MONO, color: C.muted }}>± 0 5d</span> : null;
+  const up = v > 0;
+  return (
+    <span title={title} style={{ fontSize: 10.5, fontFamily: MONO, fontWeight: 800, color: up !== good ? C.red : C.green, whiteSpace: "nowrap" }}>
+      {up ? "▲" : "▼"} {up ? "+" : "−"}{Math.abs(v)} 5d
+    </span>
+  );
+}
+
+// What is closest today, and what moved the most toward its trigger this week. Read by the State
+// header, the if/then card and the Plan tab.
+function closestToday(list) {
+  if (!list?.length) return null;
+  const top = list[0];
+  // The gauge that moved furthest toward any trigger this week, other than the one already named.
+  let fastest = null;
+  for (const t of list) for (const p of t.parts) {
+    if (t.id === top.id && p.label === top.nearest?.label) continue;
+    if (p.delta5 != null && p.delta5 > 0 && (!fastest || p.delta5 > fastest.part.delta5)) fastest = { t, part: p };
+  }
+  return { top, fastest };
+}
+export function ClosestCallout({ list, asOf = null }) {
+  const c = closestToday(list);
+  if (!c) return null;
+  const { top, fastest } = c;
+  const tone = TONE[top.tone] || TONE.info;
+  return (
+    <div style={{ display: "grid", gap: 4, padding: "9px 12px", borderRadius: 9, background: tone.bg, border: "1px solid " + tone.bdr }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+        <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: 1, textTransform: "uppercase", color: tone.color }}>Closest today</span>
+        <span style={{ fontSize: 14, fontWeight: 900, color: C.text }}>{top.title}</span>
+        <span style={{ fontSize: 12, fontWeight: 800, fontFamily: MONO, color: tone.color }}>{top.proximity >= 100 ? "TRIGGERED" : `${top.proximity}%`}</span>
+        <Delta5 v={top.delta5} good={top.tone === "good"} />
+      </div>
+      {top.nearest && (
+        <div style={{ fontSize: 12.5, color: C.mid, fontFamily: MONO }}>
+          {top.nearest.label} {top.nearest.text} → {top.nearest.atText} · <b style={{ color: C.text }}>{top.nearest.gapText}</b>
+        </div>
+      )}
+      {fastest && (
+        <div style={{ fontSize: 12, color: C.muted }}>
+          Moving fastest: <b style={{ color: C.text }}>{fastest.part.label}</b> toward “{fastest.t.title}” — {fastest.part.proximityWas}% → {fastest.part.proximity}% of the way in five sessions ({fastest.part.gapText}).
+        </div>
+      )}
+      {asOf && <div style={{ fontSize: 10.5, color: C.lbl }}>live · gauges as of {fmtDay(asOf)}, recomputed on every load</div>}
+    </div>
+  );
+}
+
+function IfThen({ list, asOf = null }) {
   if (!list?.length) return null;
   return (
     <Card style={{ display: "grid", gap: 10 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
-        <Eyebrow>If / then — the transitions to prepare for</Eyebrow>
-        <span style={{ fontSize: 11, color: C.muted }}>closest first · 0 = calm reference, 100 = trigger</span>
+        <Eyebrow>If / then — live, closest first</Eyebrow>
+        <span style={{ fontSize: 11, color: C.muted }}>bar: 0 = calm reference, 100 = trigger · tick = a week ago</span>
       </div>
+      <ClosestCallout list={list} asOf={asOf} />
       {list.map(t => {
         const tone = TONE[t.tone] || TONE.info;
         const hot = t.proximity >= 100;
@@ -340,16 +396,18 @@ function IfThen({ list }) {
               <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
                 <span style={{ fontSize: 13.5, fontWeight: 800, color: C.text }}>{t.title}</span>
                 <span style={{ fontSize: 11, fontWeight: 800, fontFamily: MONO, color: tone.color }}>{hot ? "TRIGGERED" : `${t.proximity}%`}</span>
+                <Delta5 v={t.delta5} good={t.tone === "good"} />
               </div>
               <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3, lineHeight: 1.45 }}>when {t.trigger}</div>
             </div>
-            <div style={{ display: "grid", gap: 5, minWidth: 0 }}>
+            <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
               {t.parts.map(p => (
                 <div key={p.label} style={{ display: "grid", gap: 2 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 6, fontSize: 11, fontFamily: MONO }}>
-                    <span style={{ color: C.mid }}>{p.label}</span><span style={{ color: C.muted }}>{p.text} → {p.atText}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 6, fontSize: 11, fontFamily: MONO, flexWrap: "wrap" }}>
+                    <span style={{ color: C.mid }}>{p.label} <Delta5 v={p.delta5} good={t.tone === "good"} /></span>
+                    <span style={{ color: C.muted }}>{p.text} → {p.atText}{p.gapText ? <b style={{ color: p.met ? tone.color : C.text }}> · {p.gapText}</b> : null}</span>
                   </div>
-                  <Bar pct={p.proximity} color={p.proximity >= 100 ? tone.color : alpha(tone.color, 0.7)} height={6} />
+                  <Bar pct={p.proximity} color={p.proximity >= 100 ? tone.color : alpha(tone.color, 0.7)} height={6} ghost={p.proximityWas} />
                 </div>
               ))}
             </div>
@@ -357,6 +415,9 @@ function IfThen({ list }) {
           </div>
         );
       })}
+      <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
+        Every figure here is today's reading against a fixed trigger, recomputed each time the page loads. The five-session change is shown where the gauge can be re-read a week back (conditions, credit, rates vol, the VIX curve, real yields); the regime axes, futures odds and liquidity show today only.
+      </div>
     </Card>
   );
 }
@@ -383,8 +444,18 @@ export function StateView({ st, feed, loading, error, onRefresh, legacySizing = 
           {st?.sizing?.total != null && <Chip k="Size" v={`×${st.sizing.total.toFixed(2)}`} />}
           {st?.policy?.stance && <Chip k="Fed" v={`${st.policy.stance}${st.policy.next?.hikeOdds != null ? ` · hike ${Math.round(st.policy.next.hikeOdds)}%` : ""}`} tone={st.policy.stance === "tightening" ? TONE.bad : st.policy.stance === "easing" ? TONE.good : TONE.warn} />}
         </div>
+        {st?.transitions?.[0] && (() => {
+          const t = st.transitions[0];
+          return (
+            <div style={{ fontSize: 12.5, color: C.mid }}>
+              <b style={{ color: C.text }}>Closest trigger:</b> {t.title} — {t.proximity >= 100 ? "triggered" : `${t.proximity}% of the way`}
+              {t.nearest?.gapText ? <span style={{ fontFamily: MONO }}> · {t.nearest.label} {t.nearest.text} → {t.nearest.atText}, {t.nearest.gapText}</span> : null}{" "}
+              <Delta5 v={t.delta5} good={t.tone === "good"} />
+            </div>
+          );
+        })()}
         {error && <div style={{ fontSize: 12, color: C.red }}>The gauges did not load: {error}. The regime still reads from the indicators.</div>}
-        {streetLabel && <div style={{ fontSize: 11.5, color: C.muted }}>The Street's consensus reads {streetLabel} — a cross-check on the Street tab, not an input here.</div>}
+        {streetLabel && <div style={{ fontSize: 11.5, color: C.muted }}>The Street's consensus reads {streetLabel} — a cross-check under Smart Money, not an input here.</div>}
       </Card>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14, alignItems: "start" }}>
         <RegimePanel r={r} />
@@ -394,7 +465,7 @@ export function StateView({ st, feed, loading, error, onRefresh, legacySizing = 
         <PolicyPanel p={st?.policy} />
         {st && <PlanPanel st={st} legacy={legacySizing} />}
       </div>
-      <IfThen list={st?.transitions} />
+      <IfThen list={st?.transitions} asOf={c?.date ?? null} />
     </div>
   );
 }
