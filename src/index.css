@@ -458,6 +458,23 @@ button, input, textarea, select { font-family: inherit; }
   .mwd-header-title { font-size: 15px !important; }
 }
 
+/* ── CHART TOOLTIPS FOLLOW THE THEME ──
+   Recharts draws its tooltip as a white box with a #ccc border and paints the hover band #ccc,
+   whatever the page is. In dark mode that was a white card holding the page's own light-grey
+   label text, and a pale bar across the chart. One rule for every chart: the surface, border and
+   text of the active theme. Series colours on the lines are kept; an item Recharts gave no colour
+   (it falls back to black) takes the text colour instead of vanishing on a dark card. */
+.recharts-default-tooltip {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px;
+  color: var(--text-primary) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+.recharts-default-tooltip .recharts-tooltip-label { color: var(--text-primary) !important; font-weight: 700; }
+.recharts-default-tooltip .recharts-tooltip-item[style*="rgb(0, 0, 0)"] { color: var(--text-primary) !important; }
+.recharts-tooltip-cursor { fill: var(--border) !important; fill-opacity: 0.45; stroke: var(--border); }
+
 /* Charts: min-height on mobile */
 @media (max-width: 640px) {
   .recharts-wrapper { min-width: 0 !important; }
