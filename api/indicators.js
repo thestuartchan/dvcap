@@ -2,6 +2,8 @@ import { LABOR_SERIES } from "../lib/labor.js";
 import { GROWTH_SERIES, MARKET_PAIRS, MONTHLY_SERIES } from "../lib/growth.js";
 import { INFLATION_SERIES } from "../lib/inflationAxis.js";
 import { kvGetJson, kvSetJson, kvConfigured } from "../lib/kv.js";
+import { stateInputs } from "../lib/marketStateFeed.js";
+import { conditions, liquidity, seriesStats } from "../lib/marketState.js";
 import { zqMovesPriced } from "../lib/fedpath.js";
 import { fetchSmicAHPremium } from "../lib/smicah.js";
 import { fetchSouthbound } from "../lib/hkexSouthbound.js";
@@ -17,6 +19,25 @@ export default async function handler(req, res) {
 
   // ?smic=1 — the Southbound panel's one field, without the other sixty fetches. The panel used to
   // request the whole route for it, which was a second full FRED burst inside the same page load.
+  // ── ?state=1 — THE MARKET-STATE INPUTS ─────────────────────────────────────
+  // Conditions (credit, rates vol, real yields, equity vol, funding, breadth, dollar), net
+  // liquidity and one stats row per gauge, computed from lib/marketStateFeed.js's cached series by
+  // lib/marketState.js. Separate from the main payload so neither load pays for the other; the
+  // regime layer is combined in the browser from the main payload's measured axes.
+  if (String(req.query?.state ?? '') === '1') {
+    try {
+      const inp = await stateInputs();
+      const cond = conditions(inp.series);
+      res.setHeader("Cache-Control", "s-maxage=600, stale-while-revalidate=1800");
+      return res.status(200).json({
+        ok: cond.score != null, at: inp.at, source: inp.source, errors: inp.errors || [],
+        conditions: cond, liquidity: liquidity(inp.series), stats: seriesStats(inp.series),
+      });
+    } catch (e) {
+      return res.status(200).json({ ok: false, error: String(e?.message || e) });
+    }
+  }
+
   if (String(req.query?.smic ?? '') === '1') {
     try {
       res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");

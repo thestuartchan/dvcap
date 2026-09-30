@@ -23,7 +23,11 @@ import { renderGexSection, renderGexParts, mapCards, pinOf, RUNGS } from '../lib
 import { wallAgreement } from '../lib/gexRead.js';
 import { regimeSnapshot, regimeLogRow } from '../lib/regimeEngine.js';
 import { writeRegimeRow, logConfigured } from '../lib/regimeLog.js';
+import { stateInputs } from '../lib/marketStateFeed.js';
+import { computeMarketState, stateLogRow } from '../lib/marketState.js';
+import { FED_LANGUAGE_STATUS } from '../lib/fedLanguage.js';
 import { measuredAxes, axesLogRow } from '../lib/quadrant.js';
+import { nextMeetingOdds } from '../lib/fedpath.js';
 import MANUAL_STORE from '../data/manual_entry.json' with { type: 'json' };
 
 // wallAgreement answers for ONE wall at a time; the levels section needs both, each on its own
@@ -1167,9 +1171,17 @@ async function logRegime(req) {
     const snap = regimeSnapshot(ind, { overrides: MANUAL_STORE?.recession || {} });
     if (!snap.derivedRegimes) return { ok: false, error: 'no consensus — engine returned no probabilities' };
     const axes = measuredAxes(ind, { ism: MANUAL_STORE?.ism || null });
+    // The measured state beside the consensus one. Its inputs are their own cached fetch; a failure
+    // there logs the old row without it rather than failing the log.
+    let state = null;
+    try {
+      const inp = await stateInputs();
+      state = stateLogRow(computeMarketState({ axes, series: inp.series, stance: FED_LANGUAGE_STATUS.status, stanceAsOf: FED_LANGUAGE_STATUS.lastUpdated,
+                                        next: nextMeetingOdds(ind?.fedPathFeed) }));
+    } catch { state = null; }
     const row = regimeLogRow(snap, {
       source: 'cron',
-      extra: { inputs: { oas: ind?.creditSpread ?? null, tenY: ind?.tenY ?? null, twoY: ind?.twoY ?? null }, axes: axesLogRow(axes) },
+      extra: { inputs: { oas: ind?.creditSpread ?? null, tenY: ind?.tenY ?? null, twoY: ind?.twoY ?? null }, axes: axesLogRow(axes), state },
     });
     const w = await writeRegimeRow(row);
     return { ...w, live_regime: row.live_regime, vintage: snap.regimeVintage?.grade ?? null, quadrant: axes.quadrant.id, growth: axes.growth.state, inflation: axes.inflation.state };

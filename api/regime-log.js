@@ -47,6 +47,9 @@ export default async function handler(req, res) {
     hyg_chg: b.hyg_chg ?? null, hyg_qqq_divergence: b.hyg_qqq_divergence ?? null,
     // RAW CLASSIFIER INPUTS — the part that makes the log re-runnable.
     inputs: b.inputs ?? null,
+    // The measured market state (lib/marketState.js stateLogRow) — market data only.
+    state: b.state ?? null,
+    axes: b.axes ?? null,
     source: 'client',
     loggedAt: new Date().toISOString(),
   };
