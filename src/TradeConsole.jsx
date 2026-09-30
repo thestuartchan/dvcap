@@ -3531,7 +3531,7 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
       if (!res.ok) { touch(); setJournalMsg({ err: true, text: `Row kept locally, not synced (${res.status}) — the draft stays until it is.` }); return; }
       setDirty(false);
       const done = await resolveJournal({ id: draft.id, action: "confirm" });
-      setJournalMsg(done.ok ? { text: `${r.how === "annotated" ? "Note attached to" : r.how === "added" ? "Fill added to" : "Opened"} ${r.rowId} ✓` } : { err: true, text: done.error || "Saved; the draft could not be cleared." });
+      setJournalMsg(done.ok ? { text: `${r.how === "annotated" ? "Note attached to" : r.how === "adopted" ? "Matched your hand entry on" : r.how === "added" ? "Fill added to" : "Opened"} ${r.rowId} ✓` } : { err: true, text: done.error || "Saved; the draft could not be cleared." });
       const target = r.rows.find(x => x.id === r.rowId);
       if (target) { setBookTab(derivePosition(target.fills || [], { multiplier: target.multiplier, side: target.side }).status === "closed" ? "CLOSED" : "OPEN"); setExpanded(r.rowId); }
     } finally { setJournalBusy(false); }
