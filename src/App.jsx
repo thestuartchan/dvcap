@@ -1015,15 +1015,54 @@ function fillLiveRates(text, cy) {
 // ZQ is quoted as 100 − the implied average fed funds rate for the contract month.
 // F3 — coordinated FX intervention flag.
 //
-// Manual on purpose. No keyless feed reports intervention while it is happening; MOF/BOK
-// confirmations arrive days later. Inferring it from a wide daily move would manufacture
-// exactly the certainty this flag exists to withhold — so it is the operator's call, and the
-// annotation says so.
+// The yen flag now also sets itself (lib/interventionAuto.js): SUSPECTED from a fast, yen-specific
+// USD/JPY fall near its 60-day high, CONFIRMED or DENIED from the Ministry of Finance's own data.
+// Not from a wide daily move — the rule is calibrated on the 2026 operations and fires on nothing
+// else in six months. This manual toggle stays for what the scan cannot see (a smaller operation,
+// another currency) and for confirming on the day; a stored flag wins over the automatic one.
+//
+// The automatic state, as a block: what the scan found, what the MoF has published.
+const fmtMofDay = (iso) => new Date(iso + "T12:00:00Z").toLocaleDateString([], { day: "numeric", month: "short", timeZone: "UTC" });
+function InterventionAutoBlock({ auto, compact = false }) {
+  if (!auto) return null;
+  const l = auto.latest, st = l?.confirmation?.status;
+  const tok = !auto.active ? { color: C.muted, bg: C.inset, bdr: C.bdr } : st === "confirmed" ? STATUS.ELEVATED : STATUS.WATCH;
+  const grade = !l ? null : st === "confirmed" ? "CONFIRMED" : st === "denied" ? "DENIED" : "SUSPECTED";
+  const recentMonths = (auto.mof?.monthly || []).slice(0, 3);
+  return (
+    <div style={{ padding: "8px 11px", background: tok.bg, border: "1px solid " + tok.bdr, borderRadius: 8, fontSize: 11.5, lineHeight: 1.55 }}>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "baseline" }}>
+        <b style={{ color: tok.color }}>⚑ Yen intervention · automatic</b>
+        <span style={{ color: auto.active ? tok.color : C.muted, fontWeight: 700 }}>
+          {auto.active ? `${grade} ${l.firedOn}` : l ? `last signature ${l.firedOn} (${grade.toLowerCase()}), no longer live` : "no signature in the last month"}
+        </span>
+      </div>
+      {l && (auto.active || !compact) && (
+        <div style={{ color: C.mid, marginTop: 2 }}>
+          USD/JPY {l.movePct}% in {l.windowMin} min from {l.from} ({l.fromHighPct}% off its 60-day high){l.dxyPct != null ? `; DXY ${l.dxyPct}%, the yen moved ${l.yenOverDxy ?? "far more"}× as far` : ""}. {l.confirmation?.why}.
+        </div>
+      )}
+      {!compact && auto.mof && (
+        <div style={{ color: C.muted, marginTop: 3 }}>
+          MoF: {auto.mof.days.length ? `daily data through ${auto.mof.coveredThrough} — ${auto.mof.days.slice(-4).map(d => `${fmtMofDay(d.date)} ¥${(d.amount100mYen / 1e4).toFixed(2)}tn`).join(", ")}` : `no operations in the daily data through ${auto.mof.coveredThrough}`}
+          {recentMonths.length ? ` · monthly: ${recentMonths.map(m => `${fmtMofDay(m.from)}–${fmtMofDay(m.to)} ¥${m.totalBillionYen ? `${(m.totalBillionYen / 1000).toFixed(1)}tn` : "0"}`).join(", ")}` : ""}
+        </div>
+      )}
+      {!compact && (
+        <div style={{ color: C.lbl, fontSize: 10.5, marginTop: 3 }}>
+          Suspected when USD/JPY falls ≥1.0% in an hour (or ≥1.5% in three), ≥2× DXY's move, within 3% of its 60-day high; confirmed or denied from the MoF's daily CSV and monthly totals.
+          {auto.sources?.scan?.at ? ` Scan ${new Date(auto.sources.scan.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.` : auto.sources?.scan?.error ? ` Scan failed: ${auto.sources.scan.error}.` : ""}
+          {auto.sources?.mof?.error ? ` MoF fetch failed: ${auto.sources.mof.error} — events stay SUSPECTED.` : ""}
+        </div>
+      )}
+    </div>
+  );
+}
 //
 // Reads and writes the live store rather than the deployed bundle, so the flag takes effect
 // on save instead of waiting for a redeploy. That matters for a switch whose whole purpose is
 // to annotate a move that is happening right now.
-function InterventionToggle({ jpyChangePct, dxyChangePct, onChange }) {
+function InterventionToggle({ jpyChangePct, dxyChangePct, onChange, auto = null }) {
   const [iv, setIv] = useState(null);
   const [since, setSince] = useState("");
   const [note, setNote] = useState("");
@@ -1073,7 +1112,7 @@ function InterventionToggle({ jpyChangePct, dxyChangePct, onChange }) {
     <Card style={active ? { background: tok.bg, border: "1.5px solid " + tok.bdr } : undefined}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <SLabel>⚑ FX intervention flag</SLabel>
-        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>manual · no feed reports this live</span>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>manual override — the automatic flag is below</span>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
@@ -1092,9 +1131,10 @@ function InterventionToggle({ jpyChangePct, dxyChangePct, onChange }) {
         )}
       </div>
 
-      {/* C5 — prompt when USD/JPY moves >2% in a session: the condition that would have caught the
-          Jul 30–31 joint US–Japan intervention. Manual by design — this nudges, it does not auto-set. */}
-      {!active && jpyChangePct != null && Math.abs(jpyChangePct) > 2 && (
+      {auto && <div style={{ marginTop: 8 }}><InterventionAutoBlock auto={auto} /></div>}
+
+      {/* C5 — prompt when USD/JPY moves >2% in a session and the automatic scan has not flagged it. */}
+      {!active && !auto?.active && jpyChangePct != null && Math.abs(jpyChangePct) > 2 && (
         <div style={{ marginTop: 8, padding: "8px 11px", background: STATUS.WATCH.bg, border: "1.5px solid " + STATUS.WATCH.bdr, borderRadius: 8, fontSize: 12, color: STATUS.WATCH.color, fontWeight: 700, lineHeight: 1.5 }}>
           ⚑ USD/JPY moved {jpyChangePct >= 0 ? "+" : ""}{jpyChangePct.toFixed(2)}% this session (&gt;2%) — check for intervention before trusting the yen leg. The Jul 30–31 joint US–Japan action (~¥8.45tn day one, the largest single-day intervention on record) is exactly the kind of move this flag exists to catch.
         </div>
@@ -5573,6 +5613,8 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                   <div style={{ marginTop: 4, fontSize: 11, color: C.mid }}>{data.contamination.note}</div>
                 </div>
               )}
+              {/* The automatic yen flag, when it is live: what the scan saw and what the MoF says. */}
+              {data.interventionAuto?.active && <div style={{ marginBottom: 8 }}><InterventionAutoBlock auto={data.interventionAuto} compact /></div>}
               {(liveIntervention ? liveIntervention.active : data.intervention?.active) && (
                 <div style={{ marginBottom: 8, padding: "7px 10px", background: C.aBg,
                   border: "1px solid " + C.aBdr, borderRadius: 6,
@@ -6953,6 +6995,9 @@ export default function App() {
                   pol?.stance === "tightening" ? C.red : pol?.stance === "easing" ? C.green : C.amber)}
                 {mstate.sizing?.total != null && <><span style={{ color: C.bdr }}>·</span>{chip("Size", `×${mstate.sizing.total.toFixed(2)}`, C.text)}</>}
                 {streetDisagrees && <span title={`The Street's consensus reads ${liveRegime.label} ${regimeProbFor(liveRegime.id)}% — see Market Watch › Smart Money`}>{flag(`STREET: ${liveRegime.label.toUpperCase()}`)}</span>}
+                {(() => { const ia = pbData?.us?.interventionAuto; if (!ia?.active) return null;
+                  const g = ia.latest?.confirmation?.status === "confirmed" ? "CONFIRMED" : "SUSPECTED";
+                  return <span title={ia.headline}>{flag(`⚑ YEN INTERVENTION ${g}`)}</span>; })()}
                 {regimeDiverged && flag("📌 PINNED ≠ LIVE")}
                 {(ledger.counts.stale + ledger.counts.missing) > 0 && <span title={`${ledger.counts.stale} stale, ${ledger.counts.missing} never entered — see Market Watch › Data health`}>{flag(`✍ ${ledger.counts.stale + ledger.counts.missing} HAND-KEPT OUT`)}</span>}
                 {stateFeed?.source === "stale" && flag("GAUGES: LAST GOOD COPY")}
@@ -7041,11 +7086,12 @@ export default function App() {
                 ) },
               ],
               dollar: [
-                { title: "Yen intervention flag", hint: "marks the Daily Overview when the MoF is in the market", render: () => (
+                { title: "Yen intervention flag", hint: "automatic from USD/JPY and the MoF; set by hand to override", render: () => (
                   <InterventionToggle
                     jpyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "JPY=X")?.changePct ?? null}
                     dxyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "DX-Y.NYB")?.changePct ?? null}
                     onChange={setLiveIntervention}
+                    auto={pbData?.us?.interventionAuto ?? null}
                   />
                 ) },
               ],
@@ -8581,6 +8627,7 @@ export default function App() {
               jpyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "JPY=X")?.changePct ?? null}
               dxyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "DX-Y.NYB")?.changePct ?? null}
               onChange={setLiveIntervention}
+              auto={pbData?.us?.interventionAuto ?? null}
             />
 
             <div id="macro-inflation" style={{ scrollMarginTop: 96 }} />

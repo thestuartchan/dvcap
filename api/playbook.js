@@ -28,7 +28,7 @@ export default async function handler(req, res) {
   const assembled = await assembleRegion(region);
   if (!assembled) return res.status(400).json({ error: 'bad region' });
 
-  const { R, quotes, idxRaw, macro, regime, cross, hyg, leaning, csop7709, volTerm, handoff, scenarios, scenarioBoard, posture, smhSoxx, fxPnl, correlation, events, read, marketRegime, ladder, fx, won, intervention, auctions, vintages, monetization } = assembled;
+  const { R, quotes, idxRaw, macro, regime, cross, hyg, leaning, csop7709, volTerm, handoff, scenarios, scenarioBoard, posture, smhSoxx, fxPnl, correlation, events, read, marketRegime, ladder, fx, won, intervention, contamination, interventionAuto, auctions, vintages, monetization } = assembled;
 
   // Attach display metadata + structure tag to each name, and names to indices.
   // `session` = explicit phase of that symbol's OWN exchange (live/pre/post/lunch/holiday/
@@ -81,6 +81,8 @@ export default async function handler(req, res) {
     fx,                   // P4  — FX leg decomposition + DXY reliability flag
     won,                  // F4  — USD/KRW attribution: macro move vs Korea-specific (Gate 2)
     intervention,         // F3  — manual intervention flag + DXY yen-leg attribution
+    contamination,        // F3  — which FX legs carry an intervention flag (manual over automatic)
+    interventionAuto,     // F3  — the automatic yen flag: price scan + MoF confirmation (lib/interventionAuto.js)
     auctions,             // P7  — Treasury auction calendar + how the last long-end one went
     vintages,             // P4-A — every gate's observation date, and whether it is late for its own schedule
     // Announced auctions ride in the hand-maintained calendar's own shape, so every consumer of
