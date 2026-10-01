@@ -7,11 +7,13 @@
 // disagrees with its note can still be confirmed, because the fill is what happened.
 import { useState } from "react";
 import { C } from "./theme.js";
-import { draftCounts, expectationText, fmtPx, NOTE_TAGS } from "../lib/journalInbox.js";
+import { draftCounts, expectationText, fmtPx, amendRow, NOTE_TAGS } from "../lib/journalInbox.js";
 
 const LEVEL_LABEL = { take_profit: "Take profit", stop: "Stop", invalidation: "Invalidation", review: "Review", hard_date: "Hard date", decide_by: "Decide by" };
+const isRuleChange = (d) => d.kind === "amend" || (d.kind === "ambiguous" && !!d.candidates?.[0]?.row);
 const GROUPS = [
-  { key: "toConfirm", label: "Drafts to confirm", test: (d) => (d.kind === "fill" && d.note) || d.kind === "amend" || d.kind === "ambiguous" },
+  { key: "toConfirm", label: "Drafts to confirm", test: (d) => (d.kind === "fill" && d.note) || (d.kind === "ambiguous" && !isRuleChange(d)) },
+  { key: "ruleChanges", label: "Rule changes to confirm", test: isRuleChange },
   { key: "unjournaled", label: "Unjournaled fills", test: (d) => d.kind === "fill" && !d.note },
   { key: "withoutFills", label: "Notes without fills", test: (d) => d.kind === "unfilled" },
 ];
@@ -42,7 +44,7 @@ const btn = (tone) => ({ fontSize: 11.5, fontWeight: 800, padding: "4px 10px", b
   border: "1.5px solid " + (tone === "go" ? C.blBdr : C.bdrMd), background: tone === "go" ? C.blue : C.surf, color: tone === "go" ? C.onFill : C.mid });
 
 function titleOf(d) {
-  if (d.kind === "amend") return `Amend ${d.supersedes}`;
+  if (d.kind === "amend") return `Rule change · ${d.target?.label || d.supersedes}`;
   if (d.fill) return d.fill.label;
   const i = d.note?.instrument;
   if (!i) return d.note?.id || d.id;
@@ -59,8 +61,12 @@ function NoteBody({ note, edit, setEdit }) {
     <div style={{ display: "grid", gap: 3, fontSize: 12, color: C.mid }}>
       <div><b style={{ color: C.text }}>{v.tag || "no tag"}</b> · {kind}{note ? ` · noted for ${note.trade_date}` : ""}</div>
       {v.rationale && <div>{v.rationale}</div>}
-      {levels.length > 0 && <div>{levels.map(([k, x]) => <span key={k} style={{ marginRight: 12 }}><span style={{ color: C.lbl, fontWeight: 800 }}>{LEVEL_LABEL[k] || k}</span> {x}</span>)}</div>}
+      {levels.length > 0 && <div>{levels.map(([k, x]) => <span key={k} style={{ marginRight: 12 }}><span style={{ color: C.lbl, fontWeight: 800 }}>{LEVEL_LABEL[k] || k}</span> {x == null ? "(remove)" : x}</span>)}</div>}
       {(v.rules || []).map((r, i) => <div key={i}>↳ {r}</div>)}
+      {edit && kind === "amend" && (
+        <textarea value={(edit.rules || []).join("\n")} rows={3} style={{ fontSize: 12, padding: 5, marginTop: 5 }} placeholder="rules, one per line — these replace the trade's rules"
+          onChange={e => setEdit({ ...edit, rules: e.target.value.split("\n").map(x => x.trim()).filter(Boolean), rulesGiven: true })} />
+      )}
       {edit && (
         <div style={{ display: "grid", gap: 5, marginTop: 5 }}>
           <select value={edit.tag || ""} onChange={e => setEdit({ ...edit, tag: e.target.value || null })} style={{ fontSize: 12, padding: 4, width: 160 }}>
@@ -78,10 +84,44 @@ function NoteBody({ note, edit, setEdit }) {
   );
 }
 
-function DraftCard({ d, onConfirm, onDismiss, onChoose, busy }) {
+// OLD AGAINST NEW, FIELD BY FIELD — what confirming a rule change would do to the trade, computed
+// with the same function that applies it (amendRow), so the preview cannot disagree with the result.
+function AmendDiff({ d, rows, edit }) {
+  const row = (rows || []).find(r => r.id === d.supersedes);
+  if (!row) return <div style={{ fontSize: 12, color: C.amber, fontWeight: 700 }}>The trade {d.supersedes} is not in this console — confirming will say so.</div>;
+  const after = amendRow(row, { ...(d.note || {}), ...(edit || {}) });
+  const was = row.journal || {}, now = after.journal || {};
+  const keys = [...new Set([...Object.keys(was.levels || {}), ...Object.keys(now.levels || {})])];
+  const lines = [
+    ["Tag", row.tag || "—", after.tag || "—"],
+    ...keys.map(k => [LEVEL_LABEL[k] || k, was.levels?.[k] ?? "—", now.levels?.[k] ?? "— (removed)"]),
+    ["Rules", (was.rules || []).join(" · ") || "—", (now.rules || []).join(" · ") || "—"],
+    ...(after.thesis !== row.thesis ? [["Thesis", "(as now)", `adds: ${String(d.note?.rationale || edit?.rationale || "").slice(0, 160)}…`]] : []),
+  ];
+  const cell = { padding: "3px 6px", fontSize: 11.5, verticalAlign: "top", borderTop: "1px solid " + C.bdr };
+  return (
+    <table style={{ borderCollapse: "collapse", width: "100%" }}>
+      <thead><tr>{["", "Now", "After confirm"].map(h => <th key={h} style={{ ...cell, textAlign: "left", color: C.lbl, fontWeight: 800, borderTop: "none" }}>{h}</th>)}</tr></thead>
+      <tbody>
+        {lines.map(([k, a, b]) => {
+          const changed = String(a) !== String(b);
+          return (
+            <tr key={k}>
+              <td style={{ ...cell, color: C.lbl, fontWeight: 800, whiteSpace: "nowrap" }}>{k}</td>
+              <td style={{ ...cell, color: C.muted }}>{a}</td>
+              <td style={{ ...cell, color: changed ? C.text : C.muted, fontWeight: changed ? 700 : 400, background: changed ? C.blBg : "transparent" }}>{b}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function DraftCard({ d, rows, onConfirm, onDismiss, onChoose, busy }) {
   const [edit, setEdit] = useState(null);
   const exp = d.fill ? expectationText(d) : null;
-  const startEdit = () => setEdit({ tag: d.note?.tag || null, rationale: d.note?.rationale || "", levels: { ...(d.note?.levels || {}) }, rules: d.note?.rules || [] });
+  const startEdit = () => setEdit({ tag: d.note?.tag || null, rationale: d.note?.rationale || "", levels: { ...(d.note?.levels || {}) }, rules: d.note?.rules || [], rulesGiven: d.note?.rulesGiven });
   const cleaned = () => edit && { ...edit, levels: Object.fromEntries(Object.entries(edit.levels || {}).filter(([, x]) => x)) };
   return (
     <div style={{ border: "1.5px solid " + (exp && !exp.ok ? C.aBdr : C.bdr), background: exp && !exp.ok ? C.aBg : C.surf, borderRadius: 9, padding: "8px 10px", display: "grid", gap: 5 }}>
@@ -89,11 +129,23 @@ function DraftCard({ d, onConfirm, onDismiss, onChoose, busy }) {
         <b style={{ fontSize: 13, color: C.text }}>{titleOf(d)}</b>
         <span style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase" }}>{d.kind === "fill" ? (d.fill?.type || "fill") : d.kind}</span>
         {d.fill?.date && <span style={{ fontSize: 11.5, color: C.muted }}>filled {d.fill.date}</span>}
-        {d.kind === "unfilled" && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>no matching fill after {d.waited} sessions</span>}
+        {d.kind === "unfilled" && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>{d.reason || `no matching fill after ${d.waited} sessions`}</span>}
       </div>
       {exp && <div style={{ fontSize: 12.5, fontWeight: 700, color: exp.ok ? C.green : C.amber }}>{exp.text}</div>}
+      {d.kind === "amend" && <AmendDiff d={d} rows={rows} edit={edit} />}
       <NoteBody note={d.note} edit={edit} setEdit={setEdit} />
-      {d.kind === "ambiguous" && (
+      {d.kind === "ambiguous" && d.candidates?.[0]?.row && (
+        <div style={{ display: "grid", gap: 4 }}>
+          <div style={{ fontSize: 12, color: C.amber, fontWeight: 700 }}>This rule change matches {d.candidates.length} open trades — nothing was drafted. Pick the one it changes.</div>
+          {d.candidates.map(c => (
+            <div key={c.row.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, color: C.mid }}>
+              <span>{c.row.label} · {c.row.id}</span>
+              <button style={btn("go")} disabled={busy} onClick={() => onChoose(d, c.row.id)}>Use this trade</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {d.kind === "ambiguous" && !d.candidates?.[0]?.row && (
         <div style={{ display: "grid", gap: 4 }}>
           <div style={{ fontSize: 12, color: C.amber, fontWeight: 700 }}>This note matches {d.candidates.length} fills — nothing was drafted. Pick the one it describes.</div>
           {d.candidates.map(c => (
@@ -118,11 +170,12 @@ function DraftCard({ d, onConfirm, onDismiss, onChoose, busy }) {
   );
 }
 
-export default function JournalDrafts({ journal, onConfirm, onDismiss, onChoose, onDrop, busy = false, msg = null }) {
+export default function JournalDrafts({ journal, rows = [], onConfirm, onDismiss, onChoose, onDrop, busy = false, msg = null }) {
   const [open, setOpen] = useState(null);
   const drafts = journal?.drafts || [];
   const waiting = journal?.pendingNotes || [];
-  if (!drafts.length && !waiting.length) return null;
+  // The strip stays while a message is showing, so confirming the last draft still says it worked.
+  if (!drafts.length && !waiting.length && !msg) return null;
   const n = draftCounts(drafts);
   const shown = open && open !== "waiting" ? drafts.filter(GROUPS.find(g => g.key === open).test) : [];
   return (
@@ -143,7 +196,7 @@ export default function JournalDrafts({ journal, onConfirm, onDismiss, onChoose,
         )}
         {msg && <span style={{ fontSize: 11.5, color: msg.err ? C.red : C.green, fontWeight: 700 }}>{msg.text}</span>}
       </div>
-      {shown.map(d => <DraftCard key={d.id} d={d} onConfirm={onConfirm} onDismiss={onDismiss} onChoose={onChoose} busy={busy} />)}
+      {shown.map(d => <DraftCard key={d.id} d={d} rows={rows} onConfirm={onConfirm} onDismiss={onDismiss} onChoose={onChoose} busy={busy} />)}
       {open === "waiting" && waiting.map(nt => <PendingNote key={nt.id} note={nt} onDrop={onDrop} busy={busy} />)}
     </div>
   );
