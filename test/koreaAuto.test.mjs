@@ -71,7 +71,14 @@ const KRX = { output: [
 
 // ── THE STORE ──
 {
-  const real = JSON.parse(readFileSync('data/korea_kofia.json', 'utf8'));
+  // A fixed starting store (the 29 Sep readings), never the live data file — which the scheduled
+  // run keeps current, and which a test must not depend on.
+  const prior = (v, unit, asOf, delta = null, pct = null) => ({ value: v, unit, asOf, delta, pct });
+  const real = { latest: {
+    marginLoans: prior(32920005, '백만원', '2026-09-29', 61835, 0.19), deposits: prior(107725670, '백만원', '2026-09-29', 3236436, 3.1),
+    cma: prior(106573689, '백만원', '2026-09-29', -224686, -0.21), kospi: prior(6838.04, 'P', '2026-09-30', -32.77, -0.48),
+    foreignNet: { value: -2065, unit: '십억원', asOf: '2026-09-30' }, units7709: { value: 833000000, asOf: '2026-09-29', delta: -3000000 },
+  }, history: [], series: {} };
   const store = normaliseStore(real), before = JSON.parse(JSON.stringify(store)), snap = {};
   const k = kofiaFromHtml(PAGE, NOW);
   eq('the unit gate passes against the stored readings', unitProblems(k.list, store.latest), []);
