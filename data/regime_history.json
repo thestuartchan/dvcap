@@ -2504,7 +2504,7 @@
       "inputs": {
         "weightedRecessionProb": 14.3,
         "cpi": 3.35302,
-        "kalshi2027": 21,
+        "kalshi2027": 22,
         "tape": {
           "gold": "down",
           "tlt": "down",
@@ -2519,7 +2519,7 @@
         "ladderSpread": 0.54,
         "u3": 4.1,
         "empPop": 59.1,
-        "oas": 3.08,
+        "oas": 3.12,
         "tenY": 5.26,
         "twoY": 4.89,
         "consensusAlive": 0.728,
@@ -2528,7 +2528,7 @@
       "axes": {
         "growth": {
           "state": "turning-down",
-          "lean": 0,
+          "lean": 1,
           "market": {
             "verdict": "CONTRACTING",
             "lean": -1,
@@ -2536,9 +2536,9 @@
             "of": 5
           },
           "weekly": {
-            "verdict": "INSUFFICIENT",
-            "lean": null,
-            "usable": 1,
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 3,
             "of": 4
           },
           "monthly": {
@@ -2570,34 +2570,34 @@
             "of": 3
           }
         },
-        "quadrant": null,
-        "quadrantRead": "between quadrants — the growth axis is flat"
+        "quadrant": "ref",
+        "quadrantRead": "growth firm, inflation cool"
       },
       "state": {
         "regime": {
-          "id": "def",
+          "id": "ref",
           "probs": {
-            "ref": 23,
-            "inf": 16,
-            "stag": 26,
-            "def": 35
+            "ref": 31,
+            "inf": 23,
+            "stag": 19,
+            "def": 27
           },
-          "g": -0.12,
+          "g": 0.04,
           "gDrift": -0.9,
           "i": -0.07,
           "iDrift": 0.33,
           "drifting": "stag"
         },
         "conditions": {
-          "score": 69,
-          "band": "caution",
+          "score": 71.6,
+          "band": "stress",
           "comps": {
-            "credit": 89,
-            "equityVol": 25,
-            "ratesVol": 83,
+            "credit": 90,
+            "equityVol": 39,
+            "ratesVol": 74,
             "realYield": 89,
-            "funding": 36,
-            "breadth": 77,
+            "funding": 42,
+            "breadth": 79,
             "dollar": 95
           }
         },
@@ -2606,11 +2606,11 @@
           "hikeOdds": 36,
           "liq4w": -9
         },
-        "sizing": 0.52,
-        "stage": 2
+        "sizing": 0.43,
+        "stage": 3
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-01T11:00:24.383Z"
+      "loggedAt": "2026-10-01T14:25:15.148Z"
     }
   ]
 }
