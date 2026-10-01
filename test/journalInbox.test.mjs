@@ -4,7 +4,7 @@
 // what a note may do (append one, count them), what it may never do (read, edit, pass any other
 // gate), how it meets its fill, and that nothing a note says reaches the channel or the repo.
 import { validateNote, orderUnits, matchNote, processInbox, applyDraft, journalLine, draftCounts, expectationText,
-         tradingDaysBetween, chooseCandidate, appendProcessed, INBOX_KEY, DRAFTS_KEY } from '../lib/journalInbox.js';
+         tradingDaysBetween, chooseCandidate, appendProcessed, whyNot, explainWaiting, INBOX_KEY, DRAFTS_KEY } from '../lib/journalInbox.js';
 import { parseTrades } from '../lib/flexTrades.js';
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
@@ -231,6 +231,20 @@ const TODAY = '2026-10-01';
   eq('a price outside the tolerance does not', matchNote({ ...n, expected: { ...n.expected, price: 4.70 } }, u, { holidays: US }), null);
   eq('two sessions away does not', matchNote({ ...n, trade_date: '2026-09-28' }, u, { holidays: US }), null);
   ok('one session away does — Dubai and New York disagree about dates', matchNote({ ...n, trade_date: '2026-10-01' }, u, { holidays: US }));
+}
+
+// ── WHY A NOTE IS STILL WAITING ──────────────────────────────────────────────
+{
+  const n = validateNote(SPY_NOTE).note;
+  const units = (xs) => orderUnits(trades(...xs));
+  eq('no orders in the symbol says so', explainWaiting(n, units([ZERO_DTE]), { holidays: US }).startsWith('no SPY orders in the statement yet'), true);
+  const apart = SPY_LEGS('900').map((x, i) => x.replace('ibOrderID="900"', `ibOrderID="90${i}"`));
+  ok('legs filled as separate orders are named as the reason', /1 leg in IBKR's order .* 2 in the note — if a spread's legs were filled as separate orders/.test(explainWaiting(n, units([apart]), { holidays: US })));
+  ok('a price outside tolerance says by how much', /net price 4\.70, the note expects 4\.40 ±3% \(6\.8% off\)/.test(explainWaiting(n, units([SPY_LEGS('900', '20260930', 10.4, 5.7)]), { holidays: US })));
+  ok('a fill in the wrong week says the window', /filled 2026-10-07, outside 2026-09-30/.test(explainWaiting(n, units([SPY_LEGS('900', '20261007')]), { holidays: US })));
+  eq('a match explains nothing', whyNot(n, orderUnits(trades(SPY_LEGS('900')))[0], { holidays: US }), null);
+  const out = processInbox({ notes: [n, validateNote(NFLX_NOTE).note], trades: trades(ZERO_DTE), today: TODAY, holidays: US });
+  eq('the run records a reason for each waiting note', Object.keys(out.why).sort(), [NFLX_NOTE.id, SPY_NOTE.id].sort());
 }
 
 // ── AMEND ────────────────────────────────────────────────────────────────────

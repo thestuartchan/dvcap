@@ -29,6 +29,9 @@ function PendingNote({ note, onDrop, busy }) {
       {note.expected && (note.expected.qty != null || note.expected.price != null) && (
         <div style={{ fontSize: 12, color: C.mid }}>expects {note.expected.qty ?? "?"}{note.expected.price != null ? ` @ ${Number(note.expected.price).toFixed(2)}` : ""}</div>
       )}
+      {note.why?.reason && (
+        <div style={{ fontSize: 12, color: C.amber, fontWeight: 700 }}>Not matched yet — {note.why.reason}</div>
+      )}
       <NoteBody note={note} edit={null} setEdit={() => {}} />
       <div><button style={btn()} disabled={busy} onClick={() => onDrop(note)}>Remove from inbox</button></div>
     </div>
