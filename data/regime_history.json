@@ -2504,7 +2504,7 @@
       "inputs": {
         "weightedRecessionProb": 14.3,
         "cpi": 3.35302,
-        "kalshi2027": 20,
+        "kalshi2027": 21,
         "tape": null,
         "ladderSpread": null,
         "u3": 4.1,
@@ -2579,28 +2579,28 @@
           "drifting": "stag"
         },
         "conditions": {
-          "score": 69,
-          "band": "caution",
+          "score": 72,
+          "band": "stress",
           "comps": {
             "credit": 89,
-            "equityVol": 27,
+            "equityVol": 41,
             "ratesVol": 83,
             "realYield": 89,
             "funding": 36,
             "breadth": 77,
-            "dollar": 89
+            "dollar": 94
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 34,
+          "hikeOdds": 38,
           "liq4w": -9
         },
-        "sizing": 0.52,
-        "stage": 2
+        "sizing": 0.39,
+        "stage": 3
       },
       "source": "cron",
-      "loggedAt": "2026-10-01T01:36:38.162Z"
+      "loggedAt": "2026-10-01T08:45:50.544Z"
     }
   ]
 }
