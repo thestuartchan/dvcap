@@ -3,17 +3,15 @@
 // server-side Pre-Reads read one maintained series (with history). POST only.
 // Server re-parses + re-validates the blob (authoritative) before committing.
 
-import { parseKofia, toWonTrillions, unitSanity, KOFIA_CURRENCY } from '../lib/kofia.js';
-import { upsertObservation, seriesFromHistory, normalizeSeries } from '../lib/series.js';
+import { parseKofia } from '../lib/kofia.js';
+import { upsertObservation } from '../lib/series.js';
+import { normaliseStore, unitProblems as unitGate, applyKofia, applyFlows, appendSnapshot, KOFIA_KEYS } from '../lib/koreaStore.js';
 import { hasSessionCookie, refuse } from '../lib/apiauth.js';
 
 const DATA_PATH = 'data/korea_kofia.json';
-const KEYS = ['marginLoans', 'deposits', 'cma', 'kospi', 'kr3yGovt', 'kr3yCorp'];
-// Every manual-entry metric that carries a dated series (backs the charts + trend reads).
-const SERIES_KEYS = [
-  'marginLoans', 'deposits', 'cma', 'kospi', 'kr3yGovt', 'kr3yCorp',
-  'units7709', 'foreignNet', 'instNet', 'retailNet',
-];
+// The merge itself — unit gate, dated series, latest — lives in lib/koreaStore.js, shared with the
+// daily fetch (scripts/korea-fetch.mjs), so a hand paste and an automatic read land identically.
+const KEYS = KOFIA_KEYS;
 
 function ghHeaders() {
   return {
@@ -32,14 +30,9 @@ async function readStore() {
   const meta = await r.json();
   let store = { latest: {}, history: [] };
   try { store = JSON.parse(Buffer.from(meta.content, 'base64').toString('utf8')); } catch { /* keep default */ }
-  store.latest ||= {};
-  store.history ||= [];
-  // Dated per-key series is the authoritative trend store. Backfill it from the legacy
-  // savedAt-keyed snapshots on first touch — that migration also collapses the duplicate
-  // same-date rows (three 07-21 saves) that rendered the margin-loan chart as a flat line.
-  if (!store.series) store.series = seriesFromHistory(store.history, SERIES_KEYS);
-  for (const k of SERIES_KEYS) store.series[k] = normalizeSeries(store.series[k]);
-  return { store, sha: meta.sha };
+  // Dated per-key series is the authoritative trend store; normaliseStore backfills it from the
+  // legacy savedAt-keyed snapshots and collapses duplicate same-date rows.
+  return { store: normaliseStore(store), sha: meta.sha };
 }
 
 async function writeStore(store, sha, message) {
@@ -79,36 +72,15 @@ export default async function handler(req, res) {
   const snapshot = { savedAt };
   const saved = [];
 
-  // Unit-detection gate: convert each currency row to canonical ₩T with its OWN detected
-  // unit and compare against the prior stored reading. A >1000× swing is a mis-detected
-  // unit, not a market move — block the whole save rather than persist a plausible-looking
-  // 1,000×-wrong number. Also rejects a unit we cannot map at all.
-  const unitProblems = [];
-  for (const f of parsed.list) {
-    if (!KOFIA_CURRENCY.includes(f.key)) continue;
-    const canon = toWonTrillions(f.balance, f.unit);
-    if (canon == null) {
-      unitProblems.push({ key: f.key, unit: f.unit, error: `unrecognized unit "${f.unit}" — cannot convert to ₩T` });
-      continue;
-    }
-    const p = prev[f.key];
-    const warn = unitSanity(canon, toWonTrillions(p?.value, p?.unit));
-    if (warn) unitProblems.push({ key: f.key, unit: f.unit, error: warn });
-  }
-  if (unitProblems.length) {
-    return res.status(422).json({ error: 'unit check failed — nothing saved', unitProblems });
+  // Unit-detection gate (lib/koreaStore.js): a >1000× swing against the prior reading is a
+  // mis-detected unit, not a market move — block the whole save.
+  const problems = unitGate(parsed.list, prev);
+  if (problems.length) {
+    return res.status(422).json({ error: 'unit check failed — nothing saved', unitProblems: problems });
   }
 
   // Merge parsed KOFIA fields — absent fields keep their prior value+asOf (never wiped).
-  for (const f of parsed.list) {
-    store.latest[f.key] = { value: f.balance, unit: f.unit, asOf: f.asOf, delta: f.delta ?? null, pct: f.pct ?? null };
-    snapshot[f.key] = { value: f.balance, asOf: f.asOf };
-    // Dated observation keyed by the print's OWN as-of, not by save time.
-    store.series[f.key] = upsertObservation(store.series[f.key], {
-      date: f.asOf, value: f.balance, unit: f.unit, delta: f.delta ?? null, pct: f.pct ?? null,
-    });
-    saved.push(f.key);
-  }
+  saved.push(...applyKofia(store, parsed.list, snapshot));
 
   // 7709 units (separate manual field): delta vs the prior stored value.
   if (units7709 && units7709.value != null && Number.isFinite(Number(units7709.value))) {
@@ -122,25 +94,23 @@ export default async function handler(req, res) {
     saved.push('units7709');
   }
 
-  // Foreign / institutional / RETAIL net flows (십억원, manual daily) — all three actors, so
-  // absorption can be read (foreign selling that retail absorbs is a domestic unwind, not
-  // flight). Value may be negative (net sell). No delta (already a daily flow).
-  // Parsed KRX rows win; the explicit inputs are the manual fallback.
+  // Foreign / institutional / RETAIL net flows (십억원) — all three actors, so absorption can be
+  // read. Parsed KRX rows win; the explicit inputs are the manual fallback.
   const parsedFlow = k => parsed.list?.find(f => f.key === k);
+  const pick = (k, inp) => { const pf = parsedFlow(k); return pf ? { v: pf.balance, asOf: pf.asOf } : (inp && inp.value != null && Number.isFinite(Number(inp.value)) ? { v: Number(inp.value), asOf: inp.asOf } : null); };
+  const byDate = new Map();
   for (const [fk, inp] of [['foreignNet', foreignNet], ['instNet', instNet], ['retailNet', retailNet]]) {
-    const pf = parsedFlow(fk);
-    const v = pf ? pf.balance : (inp && inp.value != null && Number.isFinite(Number(inp.value)) ? Number(inp.value) : null);
-    if (v == null) continue;
-    const asOf = (pf ? pf.asOf : inp?.asOf) || prev[fk]?.asOf || null;
-    store.latest[fk] = { value: v, unit: pf?.unit || prev[fk]?.unit || '십억원', asOf };
-    snapshot[fk] = { value: v, asOf };
-    store.series[fk] = upsertObservation(store.series[fk], { date: asOf, value: v, unit: store.latest[fk].unit });
-    if (!saved.includes(fk)) saved.push(fk);
+    const got = pick(fk, inp);
+    if (!got) continue;
+    const asOf = got.asOf || prev[fk]?.asOf || null;
+    if (!byDate.has(asOf)) byDate.set(asOf, { date: asOf, unit: '십억원' });
+    byDate.get(asOf)[fk] = got.v;
   }
+  for (const flows of byDate.values()) for (const k of applyFlows(store, flows, undefined, snapshot)) if (!saved.includes(k)) saved.push(k);
 
   if (saved.length === 0) return res.status(400).json({ error: 'no recognizable fields in the paste' });
 
-  store.history = [...store.history, snapshot].slice(-400); // cap the trend series
+  appendSnapshot(store, Object.fromEntries(Object.entries(snapshot).filter(([k]) => k !== 'savedAt')), savedAt);
   const missing = KEYS.filter(k => !saved.includes(k));
 
   const w = await writeStore(store, sha, `Korea manual entry — ${saved.join(', ')} @ ${savedAt.slice(0, 10)}`);

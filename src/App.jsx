@@ -4819,7 +4819,10 @@ function KoreaManualEntry({ kofia, gate2 = null, onSaved }) {
 
   return (
     <Card>
-      <SLabel><span style={{ display: "inline-block", background: P.navy700, color: C.onFill, fontSize: 9, fontWeight: 800, padding: "1px 4px", borderRadius: 3, marginRight: 5, letterSpacing: 0 }}>KR</span>Korea Manual Entry — KOFIA paste + 7709 units + KRX flows</SLabel>
+      <SLabel><span style={{ display: "inline-block", background: P.navy700, color: C.onFill, fontSize: 9, fontWeight: 800, padding: "1px 4px", borderRadius: 3, marginRight: 5, letterSpacing: 0 }}>KR</span>Korea — KOFIA + KRX flows (automatic) · 7709 units (manual)</SLabel>
+      <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+        KOFIA and the KRX flow table are read automatically after the Seoul close (16:10 and 20:10 KST, weekdays). The paste below still works as a fallback; CSOP 7709 units stay a hand entry.
+      </div>
       <div style={{ fontSize: 11, margin: "3px 0 8px", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
         <span style={{ color: C.muted, fontWeight: 700 }}>Sources:</span>
         <a href="https://freesis.kofia.or.kr/" target="_blank" rel="noopener noreferrer" style={{ color: C.blue, textDecoration: "none", fontWeight: 700 }}>KOFIA freesis ↗</a>
@@ -4848,6 +4851,19 @@ function KoreaManualEntry({ kofia, gate2 = null, onSaved }) {
           );
         })}
       </div>
+      {/* KOSDAQ flows: one line, context only. The gate and the read use the KOSPI table — the
+          market SK hynix and Samsung trade on. KOSDAQ is where Korean retail risk appetite shows:
+          retail chasing KOSDAQ while selling KOSPI is speculation, not de-risking. */}
+      {latest.foreignNetKq && (
+        <div style={{ fontSize: 11.5, color: C.muted, margin: "-4px 0 10px" }}>
+          <b style={{ color: C.lbl, fontWeight: 800 }}>KOSDAQ</b> · {latest.foreignNetKq.asOf}
+          {[["foreign", "foreignNetKq"], ["inst", "instNetKq"], ["retail", "retailNetKq"]].map(([lab, k]) => {
+            const v = latest[k]?.value;
+            return v == null ? null : <span key={k}> · {lab} <b style={{ color: v > 0 ? C.green : v < 0 ? C.red : C.muted }}>{v > 0 ? "+" : ""}{withCommas(v)}</b></span>;
+          })}
+          <span style={{ color: C.lbl }}> ₩bn · context only, not in the gate</span>
+        </div>
+      )}
       {koreaFlowRead(latest) && (
         <div style={{ margin: "0 0 12px", padding: "8px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8 }}>
           <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.55 }}>

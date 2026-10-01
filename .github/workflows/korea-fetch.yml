@@ -1,0 +1,61 @@
+# Korea inputs, read rather than pasted: KOFIA (margin loans, deposits, CMA, KOSPI, KR 3Y) and the
+# KRX investor-flow widget (foreign / institutional / retail net, KOSPI and KOSDAQ).
+#
+# WHEN. KRX's cash market closes 15:30 Seoul and the widget is final shortly after; KOFIA posts the
+# previous day's margin loans and deposits during the next day. Two runs on Seoul weekdays:
+#   07:10 UTC = 16:10 KST  the day's flows, final
+#   11:10 UTC = 20:10 KST  a retry, and whatever KOFIA has posted since
+# Both runs are idempotent — every reading is keyed by its own date — so a second run on an
+# unchanged page commits nothing. A Korean holiday finds yesterday's figures and changes nothing.
+#
+# WHERE IT GOES. data/korea_kofia.json, the same file the hand paste commits through
+# api/korea-save.js, merged by the same code (lib/koreaStore.js). The commit redeploys, which is how
+# the Pre-Reads and the Korea panel pick it up — exactly as after a paste.
+#
+# The log prints the readings, which are public market statistics. Nothing about the account.
+name: korea fetch
+
+on:
+  schedule:
+    - cron: '10 7 * * 1-5'
+    - cron: '10 11 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: korea-fetch
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read KOFIA and KRX, merge into data/korea_kofia.json
+        run: node scripts/korea-fetch.mjs
+      - name: Commit if anything changed
+        if: always()
+        run: |
+          if git diff --quiet -- data/korea_kofia.json; then echo "no change to commit"; exit 0; fi
+          git config user.name "dvcap-bot"
+          git config user.email "dvcap-bot@users.noreply.github.com"
+          git add data/korea_kofia.json
+          git commit -m "Korea auto — KOFIA + KRX flows @ $(TZ=Asia/Seoul date +%F)"
+          # The paste writes the same file through the Contents API; if one landed meanwhile, take
+          # it and re-run the merge on top rather than overwrite it.
+          for i in 1 2 3; do
+            if git push origin HEAD:main; then exit 0; fi
+            git fetch origin main && git reset --hard origin/main && node scripts/korea-fetch.mjs || true
+            git diff --quiet -- data/korea_kofia.json && exit 0
+            git add data/korea_kofia.json && git commit -m "Korea auto — KOFIA + KRX flows @ $(TZ=Asia/Seoul date +%F)"
+            sleep $((i * 5))
+          done
+          echo "::error::could not push after three attempts"; exit 1
