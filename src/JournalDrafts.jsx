@@ -120,6 +120,8 @@ function AmendDiff({ d, rows, edit }) {
 
 function DraftCard({ d, rows, onConfirm, onDismiss, onChoose, busy }) {
   const [edit, setEdit] = useState(null);
+  const [showNote, setShowNote] = useState(false);
+  const noteFolded = d.kind === "amend" && (rows || []).some(r => r.id === d.supersedes);
   const exp = d.fill ? expectationText(d) : null;
   const startEdit = () => setEdit({ tag: d.note?.tag || null, rationale: d.note?.rationale || "", levels: { ...(d.note?.levels || {}) }, rules: d.note?.rules || [], rulesGiven: d.note?.rulesGiven });
   const cleaned = () => edit && { ...edit, levels: Object.fromEntries(Object.entries(edit.levels || {}).filter(([, x]) => x)) };
@@ -133,7 +135,12 @@ function DraftCard({ d, rows, onConfirm, onDismiss, onChoose, busy }) {
       </div>
       {exp && <div style={{ fontSize: 12.5, fontWeight: 700, color: exp.ok ? C.green : C.amber }}>{exp.text}</div>}
       {d.kind === "amend" && <AmendDiff d={d} rows={rows} edit={edit} />}
-      <NoteBody note={d.note} edit={edit} setEdit={setEdit} />
+      {/* A rule change's table already says what the note says; the note itself folds away unless
+          it is being edited, or there is no table because the trade is not in this console. */}
+      {noteFolded && !edit
+        ? <button style={{ ...btn(), justifySelf: "start", fontSize: 11 }} onClick={() => setShowNote(x => !x)}>{showNote ? "Hide note" : "Show note"}</button>
+        : null}
+      {(!noteFolded || showNote || edit) && <NoteBody note={d.note} edit={edit} setEdit={setEdit} />}
       {d.kind === "ambiguous" && d.candidates?.[0]?.row && (
         <div style={{ display: "grid", gap: 4 }}>
           <div style={{ fontSize: 12, color: C.amber, fontWeight: 700 }}>This rule change matches {d.candidates.length} open trades — nothing was drafted. Pick the one it changes.</div>
