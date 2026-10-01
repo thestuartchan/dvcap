@@ -150,5 +150,16 @@ const FX = JSON.parse(readFileSync(new URL('./fixtures-cboe-qqq.json', import.me
   ok('and the symbol is encoded', CBOE_URL('A B').includes('A%20B'));
 }
 
+// ── 2 Oct brief: the call wall compared is the payload's, the pin top is information ──
+{
+  const ours = { spot: 764, callWall: 765, putWall: 745, callOi: 1, putOi: 1, oiWeightedIv: 0.2 };
+  const theirs = { spot: 764, callWall: 785, putWall: 745, callOi: 1, putOi: 1, oiWeightedIv: 0.2 };
+  const r = compareGex(ours, theirs, { spot: 764, levels: { callWall: { strike: 785 }, pinTop: 775 } });
+  const cw = r.checks.find(c => c.name === 'call wall');
+  eq('the call wall compared is levels.callWall, not the old nearest node', [cw.ours, cw.theirs, cw.state], [785, 785, 'match']);
+  const pt = r.checks.find(c => c.name === 'pin top');
+  eq('the pin top rides alongside, unscored', [pt.ours, pt.state, pt.score], [775, 'context', false]);
+  eq('without levels the legacy value is used', compareGex(ours, theirs, { spot: 764 }).checks.find(c => c.name === 'call wall').ours, 765);
+}
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

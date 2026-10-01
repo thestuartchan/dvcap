@@ -7,7 +7,7 @@
 // disagrees with its note can still be confirmed, because the fill is what happened.
 import { useState } from "react";
 import { C } from "./theme.js";
-import { draftCounts, expectationText, NOTE_TAGS } from "../lib/journalInbox.js";
+import { draftCounts, expectationText, fmtPx, NOTE_TAGS } from "../lib/journalInbox.js";
 
 const LEVEL_LABEL = { take_profit: "Take profit", stop: "Stop", invalidation: "Invalidation", review: "Review", hard_date: "Hard date", decide_by: "Decide by" };
 const GROUPS = [
@@ -27,7 +27,7 @@ function PendingNote({ note, onDrop, busy }) {
         <span style={{ fontSize: 11.5, color: C.muted }}>id {note.id} · received {String(note.received_at || "").replace("T", " ").slice(0, 16)}Z</span>
       </div>
       {note.expected && (note.expected.qty != null || note.expected.price != null) && (
-        <div style={{ fontSize: 12, color: C.mid }}>expects {note.expected.qty ?? "?"}{note.expected.price != null ? ` @ ${Number(note.expected.price).toFixed(2)}` : ""}</div>
+        <div style={{ fontSize: 12, color: C.mid }}>expects {note.expected.qty ?? "?"}{note.expected.price != null ? ` @ ${fmtPx(note.expected.price)}` : ""}</div>
       )}
       {note.why?.reason && (
         <div style={{ fontSize: 12, color: C.amber, fontWeight: 700 }}>Not matched yet — {note.why.reason}</div>
@@ -98,7 +98,7 @@ function DraftCard({ d, onConfirm, onDismiss, onChoose, busy }) {
           <div style={{ fontSize: 12, color: C.amber, fontWeight: 700 }}>This note matches {d.candidates.length} fills — nothing was drafted. Pick the one it describes.</div>
           {d.candidates.map(c => (
             <div key={c.fill.orderId} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, color: C.mid }}>
-              <span>order {c.fill.orderId} · {c.fill.date} · {c.fill.qty} @ {Number(c.fill.rawPrice).toFixed(2)}</span>
+              <span>order {c.fill.orderId} · {c.fill.date} · {c.fill.qty} @ {fmtPx(c.fill.rawPrice)}</span>
               <button style={btn("go")} disabled={busy} onClick={() => onChoose(d, c.fill.orderId)}>Use this fill</button>
             </div>
           ))}
