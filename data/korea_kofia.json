@@ -62,6 +62,21 @@
       "value": -1410,
       "unit": "십억원",
       "asOf": "2026-10-01"
+    },
+    "foreignNetKq": {
+      "value": 229,
+      "unit": "십억원",
+      "asOf": "2026-10-01"
+    },
+    "instNetKq": {
+      "value": 568,
+      "unit": "십억원",
+      "asOf": "2026-10-01"
+    },
+    "retailNetKq": {
+      "value": -778,
+      "unit": "십억원",
+      "asOf": "2026-10-01"
     }
   },
   "history": [
@@ -2574,6 +2589,57 @@
       "units7709": {
         "value": 834500000,
         "asOf": "2026-09-30"
+      }
+    },
+    {
+      "savedAt": "2026-10-01T11:18:57.653Z",
+      "kospi": {
+        "value": 6971.35,
+        "asOf": "2026-10-01"
+      },
+      "deposits": {
+        "value": 104664400,
+        "asOf": "2026-09-30"
+      },
+      "marginLoans": {
+        "value": 33390129,
+        "asOf": "2026-09-30"
+      },
+      "cma": {
+        "value": 106605022,
+        "asOf": "2026-09-30"
+      },
+      "kr3yGovt": {
+        "value": 4.01,
+        "asOf": "2026-10-01"
+      },
+      "kr3yCorp": {
+        "value": 4.701,
+        "asOf": "2026-10-01"
+      },
+      "foreignNet": {
+        "value": 119,
+        "asOf": "2026-10-01"
+      },
+      "instNet": {
+        "value": 325,
+        "asOf": "2026-10-01"
+      },
+      "retailNet": {
+        "value": -1410,
+        "asOf": "2026-10-01"
+      },
+      "foreignNetKq": {
+        "value": 229,
+        "asOf": "2026-10-01"
+      },
+      "instNetKq": {
+        "value": 568,
+        "asOf": "2026-10-01"
+      },
+      "retailNetKq": {
+        "value": -778,
+        "asOf": "2026-10-01"
       }
     }
   ],
@@ -5365,6 +5431,33 @@
       {
         "date": "2026-10-01",
         "value": -1410,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
+      }
+    ],
+    "foreignNetKq": [
+      {
+        "date": "2026-10-01",
+        "value": 229,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
+      }
+    ],
+    "instNetKq": [
+      {
+        "date": "2026-10-01",
+        "value": 568,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
+      }
+    ],
+    "retailNetKq": [
+      {
+        "date": "2026-10-01",
+        "value": -778,
         "unit": "십억원",
         "delta": null,
         "pct": null
