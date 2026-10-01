@@ -461,11 +461,11 @@
   },
   "ism": {
     "latest": {
-      "period": "2026-08",
-      "manufacturing": 54.6,
-      "newOrders": 53.7,
-      "services": 55.4,
-      "asOf": "2026-09-01"
+      "period": "2026-09",
+      "manufacturing": 54.5,
+      "newOrders": 55.3,
+      "services": null,
+      "asOf": "2026-10-01"
     },
     "series": [
       {
@@ -481,6 +481,13 @@
         "newOrders": 53.7,
         "services": 55.4,
         "asOf": "2026-09-01"
+      },
+      {
+        "period": "2026-09",
+        "manufacturing": 54.5,
+        "newOrders": 55.3,
+        "services": null,
+        "asOf": "2026-10-01"
       }
     ]
   }
