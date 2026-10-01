@@ -39,7 +39,7 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 8
     steps:
       - name: Reconcile against the IBKR statement
         run: |
@@ -47,10 +47,20 @@ jobs:
           # out, so allow well past the usual few seconds before giving up.
           apply=1
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.apply }}" != "true" ]; then apply=0; fi
-          code=$(curl -sS -o /tmp/flex.json -w '%{http_code}' --max-time 90 \
-            -H "x-tradecard-key: ${{ secrets.TRADECARD_KEY }}" \
-            "https://dvcap.vercel.app/api/flex-sync?apply=$apply&trades=1") || true
-          echo "HTTP $code"
+          # IBKR builds the statement on request and a large window can take longer than one call
+          # waits (1 Oct: still generating after the function's ~45s of polling). That answer says
+          # `retryable`, and the request is simply made again a minute later — up to three times —
+          # instead of the day's sync, and its journal matching, quietly not happening.
+          for attempt in 1 2 3; do
+            code=$(curl -sS -o /tmp/flex.json -w '%{http_code}' --max-time 120 \
+              -H "x-tradecard-key: ${{ secrets.TRADECARD_KEY }}" \
+              "https://dvcap.vercel.app/api/flex-sync?apply=$apply&trades=1") || true
+            echo "HTTP $code (attempt $attempt)"
+            if [ "$code" = "200" ] && [ "$(jq -r '.ok == false and .retryable == true' /tmp/flex.json 2>/dev/null)" = "true" ] && [ $attempt -lt 3 ]; then
+              echo "IBKR is still generating the statement — trying again in 60s"; sleep 60; continue
+            fi
+            break
+          done
           # COUNTS ONLY. This repository is public, and so are its Actions logs: the full answer
           # carries the account number and every position with its quantity, and printing it here
           # published the book every weekday. The log says whether the sync ran and what it did —
@@ -75,3 +85,9 @@ jobs:
             exit 1
           fi
           [ "$code" = "200" ] || exit 1
+          # A 200 that says ok:false is a sync that did not happen. Red, with the reason, so it is
+          # seen — it used to finish green and the day was simply missing.
+          if [ "$(jq -r '.ok' /tmp/flex.json 2>/dev/null)" != "true" ]; then
+            echo "::error::The sync did not run: $(jq -r '.error // "no reason given"' /tmp/flex.json 2>/dev/null)"
+            exit 1
+          fi
