@@ -7,9 +7,8 @@
 // disagrees with its note can still be confirmed, because the fill is what happened.
 import { useState } from "react";
 import { C } from "./theme.js";
-import { draftCounts, expectationText, fmtPx, amendRow, NOTE_TAGS } from "../lib/journalInbox.js";
+import { draftCounts, expectationText, fmtPx, amendRow, NOTE_TAGS, LEVEL_LABEL } from "../lib/journalInbox.js";
 
-const LEVEL_LABEL = { take_profit: "Take profit", stop: "Stop", invalidation: "Invalidation", review: "Review", hard_date: "Hard date", decide_by: "Decide by" };
 const isRuleChange = (d) => d.kind === "amend" || (d.kind === "ambiguous" && !!d.candidates?.[0]?.row);
 const GROUPS = [
   { key: "toConfirm", label: "Drafts to confirm", test: (d) => (d.kind === "fill" && d.note) || (d.kind === "ambiguous" && !isRuleChange(d)) },

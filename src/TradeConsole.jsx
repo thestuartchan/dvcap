@@ -38,7 +38,7 @@ import { modelledDelta } from "../lib/blackscholes.js";
 import { stateOf, byState, afterFill, thesisOk, archivePatch, restorePatch, hoursToArchive, TABS } from "../lib/lifecycle.js";
 import { parseCommand, resolveCandidates, commandRow, commandSummary, firstFill, priceText } from "../lib/commandBar.js";
 import { actionItems } from "../lib/actions.js";
-import { applyDraft } from "../lib/journalInbox.js";
+import { applyDraft, LEVEL_LABEL as JOURNAL_LEVEL_LABEL } from "../lib/journalInbox.js";
 import JournalDrafts from "./JournalDrafts.jsx";
 import { useRef } from "react";
 import { isDerivativeRow, underlyingOf, legLabel, optionDerived, exposureLines, optionRow, optionLevelVocab, hardDateCheck, defaultHardDate,
@@ -726,8 +726,10 @@ const {
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
             <label style={{ flex: "1 1 280px", fontSize: 11.5, color: thesisOk(r.thesis) ? C.lbl : C.amber, fontWeight: 700 }}>
               Thesis {thesisOk(r.thesis) ? <span style={{ fontWeight: 400, color: C.muted }}>— why you are in, or watching</span> : <span style={{ fontWeight: 700 }}>— required before a fill is recorded (one line)</span>}<br />
-              <input value={r.thesis || ""} onChange={e => upd(r.id, { thesis: e.target.value })} placeholder="e.g. accumulate on a pullback to the 200dma"
-                style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", border: "1.5px solid " + (thesisOk(r.thesis) ? C.bdr : C.aBdr), borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
+              {/* A textarea, so a dated amend appended on its own line is read, not scrolled past. */}
+              <textarea value={r.thesis || ""} onChange={e => upd(r.id, { thesis: e.target.value })} placeholder="e.g. accumulate on a pullback to the 200dma"
+                rows={Math.min(5, String(r.thesis || "").split("\n").length + Math.floor(String(r.thesis || "").length / 140))}
+                style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", resize: "vertical", fontFamily: "inherit", lineHeight: 1.4, border: "1.5px solid " + (thesisOk(r.thesis) ? C.bdr : C.aBdr), borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
             <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Trade label<br />
               <input value={r.trade || ""} onChange={e => upd(r.id, { trade: e.target.value })} placeholder="e.g. Aug 18 entry"
                 style={{ width: 120, padding: "5px 9px", border: "1.5px solid " + C.bdr, borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} /></label>
@@ -740,6 +742,19 @@ const {
                 {TAGS.map(t => <option key={t} value={t}>{t}</option>)}
               </select></label>
           </div>
+          {/* ── WRITTEN RULES ── what a confirmed journal note or rule change set: exit levels in words
+              (not price alerts — those are under Levels) and the rules that go with them. */}
+          {(Object.keys(r.journal?.levels || {}).length > 0 || (r.journal?.rules || []).length > 0) && (
+            <div style={{ marginBottom: 10, padding: "7px 10px", border: "1px solid " + C.bdr, borderRadius: 8, background: C.bg, fontSize: 12, color: C.mid, display: "grid", gap: 3 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.lbl, textTransform: "uppercase" }}>
+                Written rules <span style={{ fontWeight: 400, textTransform: "none", color: C.muted }}>— from the journal{r.journal.at ? `, ${r.journal.at}` : ""}{r.journal.kind === "amend" ? " (rule change)" : ""} · not price alerts</span>
+              </div>
+              {Object.entries(r.journal.levels || {}).map(([k, x]) => (
+                <div key={k}><span style={{ color: C.lbl, fontWeight: 800 }}>{JOURNAL_LEVEL_LABEL[k] || k}</span> {x}</div>
+              ))}
+              {(r.journal.rules || []).map((x, i) => <div key={i}>↳ {x}</div>)}
+            </div>
+          )}
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
             {/* DIRECTION, EDITABLE — because a mislabelled row has to be FIXABLE. The geometry
                 check on the header only reports; this is the control that acts on it. Changing it
