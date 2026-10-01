@@ -135,7 +135,7 @@ eq('the leg set is the one the brief named', TAPE_LEGS, ['equity', 'gold', 'btc'
   eq('a benign regime does not', regimeBlock({ label: 'Reflationary Growth', pct: 88 }), null);
   eq('and neither does a missing probability', regimeBlock({ label: 'Stagflation' }), null);
   eq('the measured hostile share blocks above the threshold', typeof regimeBlock({ id: 'def', label: 'Stagflation or deflationary bust (measured)', pct: 62 }), 'string');
-  eq('stress conditions block whatever the mix', regimeBlock({ id: 'ref', pct: 90, band: 'stress', score: 74 }), 'market conditions read stress (74)');
+  eq('stress conditions block whatever the mix', regimeBlock({ id: 'ref', pct: 90, band: 'stress', score: 74 }), 'market conditions read stress (74.0)');
   eq('caution does not', regimeBlock({ id: 'ref', pct: 90, band: 'caution', score: 69 }), null);
   // The guard matches the ID when it has one, so a relabelled regime cannot switch it off.
   eq('an id of stag blocks whatever the label says', typeof regimeBlock({ id: 'stag', label: 'Sideways Grind', pct: 71 }), 'string');

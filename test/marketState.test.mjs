@@ -53,6 +53,10 @@ const calm = {
   eq('equity vol stays low in contango', [ev.facts.structure, ev.score < 40], ['contango', true]);
   const c = conditions(S);
   ok('the composite rises and says so', c.score > conditions(calm).score + 15 && c.trend === 'rising');
+  // ONE NUMBER: the score is rounded once, to one decimal, and that same value is banded.
+  eq('the score carries one decimal', Math.round(c.score * 10) / 10, c.score);
+  eq('and its band is the band of the number shown', c.band.id, bandOf(c.score).id);
+  ok('every history point is the same one-decimal score', c.history.every(h => Math.round(h.score * 10) / 10 === h.score));
 }
 {
   // April 2025 in miniature: everything at once, VIX inverted.
@@ -118,14 +122,22 @@ const calm = {
   const t = transitions(st);
   eq('transitions sorted by proximity, the nearest first', t[0].id, 'toStress');
   eq('the stress trigger is an OR: the nearest part sets it', t[0].proximity, 96);
-  eq('the stress trigger names its parts with live and trigger values', t[0].parts.map(p => `${p.label} ${p.text}→${p.atText}`), ['Conditions 69→70', 'HY OAS 3.02%→3.50%', 'MOVE 106.6→120.0', 'VIX / VIX3M 0.89→1.00']);
+  eq('the stress trigger names its parts with live and trigger values', t[0].parts.map(p => `${p.label} ${p.text}→${p.atText}`), ['Conditions 69.0→70.0', 'HY OAS 3.02%→3.50%', 'MOVE 106.6→120.0', 'VIX / VIX3M 0.89→1.00']);
   eq('relief is an AND: the farthest part sets it', t.find(x => x.id === 'relief').proximity, 45);
   eq('a rollover into rising inflation is stagflation', t.find(x => x.id === 'growthRolls').title, 'Growth rolls over → Stagflation');
   ok('every transition carries a plan', t.every(x => x.plan && x.plan.length > 20));
   eq('no stress trigger once in stress', transitions({ ...st, conditions: { ...st.conditions, score: 75, band: bandOf(75) } }).some(x => x.id === 'toStress'), false);
   // LIVE DISTANCE: each part says how far it is from its trigger, in its own units.
-  eq('distance to go, in each gauge\'s units', t[0].parts.map(p => p.gapText), ['+1 pt to go', '+48bp to go', '+13.4 to go', '+0.11 to go']);
-  eq('the part that decides an OR is the closest', t[0].nearest, { label: 'Conditions', text: '69', atText: '70', gapText: '+1 pt to go' });
+  eq('distance to go, in each gauge\'s units', t[0].parts.map(p => p.gapText), ['+1.0 pt to go', '+48bp to go', '+13.4 to go', '+0.11 to go']);
+  eq('the part that decides an OR is the closest', t[0].nearest, { label: 'Conditions', text: '69.0', atText: '70.0', gapText: '+1.0 pt to go' });
+  // The 1 Oct screen: 69.6 printed "70 · Caution" in the header and "70 → 70 · TRIGGERED" on this
+  // card. One number now drives both.
+  const at = (score) => ({ ...st, conditions: { ...st.conditions, score, band: bandOf(score) } });
+  const s69 = transitions(at(69.6)).find(x => x.id === 'toStress').parts[0];
+  eq('69.6 is Caution, and the stress card agrees it has not triggered', [bandOf(69.6).id, s69.met, s69.text, s69.gapText], ['caution', false, '69.6', '+0.4 pt to go']);
+  eq('70.0 is Stress, and the card that waits for stress is gone', [bandOf(70).id, transitions(at(70)).some(x => x.id === 'toStress')], ['stress', false]);
+  const hy = transitions({ ...st, conditions: { ...st.conditions, components: { ...st.conditions.components, credit: { facts: { hyOas: 3.498 } } } } }).find(x => x.id === 'toStress').parts[1];
+  eq('a gauge 99.7% of the way is not "at trigger"', [hy.met, hy.gapText], [false, '+<1bp to go']);
   eq('…and an AND the furthest', t.find(x => x.id === 'relief').nearest.label, 'MOVE');
   eq('relief needs the OAS to fall', t.find(x => x.id === 'relief').parts[0].gapText, '−22bp to go');
   eq('with no week-ago state there is no change to report', [t[0].delta5, t[0].parts[0].delta5], [null, null]);
