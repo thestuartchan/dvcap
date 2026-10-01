@@ -71,7 +71,8 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
 
   const { token, queryId } = flexEnv();
   const got = await fetchStatement({ token, queryId });
-  if (!got.ok) return { ok: false, error: got.error };
+  // `retryable` tells the workflow to try again in a minute rather than give up for the day.
+  if (!got.ok) return { ok: false, error: got.error, retryable: !!got.retryable };
 
   const stored = await kvGetJson(CONSOLE_KEY);
   const rows = Array.isArray(stored?.rows) ? stored.rows : [];

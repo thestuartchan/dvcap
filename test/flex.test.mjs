@@ -383,6 +383,18 @@ const r4 = await fetchStatement({ token: '', queryId: '', fetchImpl: responses(S
 ok('and no credentials fails before the network', !r4.ok && /IBKR_FLEX_TOKEN/.test(r4.error));
 const r5 = await fetchStatement({ token: 'T', queryId: 'Q', fetchImpl: responses(SENT, '<FlexStatementResponse><Status>Warn</Status><ErrorCode>1019</ErrorCode></FlexStatementResponse>'), sleep: async () => {}, attempts: 2 });
 ok('a statement that never arrives gives up saying so', !r5.ok && /still generating/.test(r5.error));
+ok('and marks itself retryable, so the workflow tries again', r5.retryable === true);
+{
+  // The pauses lengthen, and the whole default wait is ~45s — 1 Oct needed more than the old 12s.
+  const slept = [];
+  const gen = '<FlexStatementResponse><Status>Warn</Status><ErrorCode>1019</ErrorCode></FlexStatementResponse>';
+  const r = await fetchStatement({ token: 'T', queryId: 'Q', fetchImpl: responses(SENT, gen, gen, gen, gen, gen, gen, STMT), sleep: async (ms) => { slept.push(ms); } });
+  ok('a statement that takes six tries still arrives', r.ok);
+  eq('with lengthening pauses', slept, [3000, 3000, 4000, 5000, 6000, 7000]);
+  const all = [];
+  await fetchStatement({ token: 'T', queryId: 'Q', fetchImpl: responses(SENT, gen), sleep: async (ms) => { all.push(ms); } });
+  eq('the default patience is nine tries over 45 seconds', [all.length + 1, all.reduce((a, b) => a + b, 0)], [9, 45000]);
+}
 // A query saved WITHOUT open positions produces a statement that parses to nothing — a silent
 // no-op is the worst answer, so it is an error naming the fix.
 const r6 = await fetchStatement({ token: 'T', queryId: 'Q', fetchImpl: responses(SENT, '<FlexQueryResponse><FlexStatements count="1"></FlexStatements></FlexQueryResponse>'), sleep: async () => {} });
