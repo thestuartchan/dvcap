@@ -2,7 +2,7 @@
 import { pctRank, upTo, onOrBefore, creditComponent, ratesVolComponent, equityVolComponent, fundingComponent, dollarComponent,
          breadthComponent, realYieldComponent, conditionsAt, conditions, liquidity, legScore, phi, axisScore, regime, axisWords,
          sizing, stage, hedgePhase, transitions, computeMarketState, stateLogRow, bandOf, STRESS_AT, CONDITION_WEIGHTS,
-         CONDITION_SIZING, STAGES } from '../lib/marketState.js';
+         CONDITION_SIZING, STAGES, conditionsScore } from '../lib/marketState.js';
 import { seriesHealth, DRIVER_GROUPS, SERIES_META, inflationMomentum } from '../lib/marketState.js';
 import { FRED_STATE_SERIES, YAHOO_STATE_SERIES, mapToSeries, stateInputs } from '../lib/marketStateFeed.js';
 let pass = 0, fail = 0;
@@ -56,6 +56,9 @@ const calm = {
   // ONE NUMBER: the score is rounded once, to one decimal, and that same value is banded.
   eq('the score carries one decimal', Math.round(c.score * 10) / 10, c.score);
   eq('and its band is the band of the number shown', c.band.id, bandOf(c.score).id);
+  // Truncated, never rounded up across a line: 69.96 is not yet 70.
+  eq('69.96 shows 69.9 and stays Caution; 70.04 shows 70.0 and is Stress', [conditionsScore(69.96), bandOf(conditionsScore(69.96)).id, conditionsScore(70.04), bandOf(conditionsScore(70.04)).id], [69.9, 'caution', 70, 'stress']);
+  eq('a tenth is kept exactly', [conditionsScore(69.6), conditionsScore(45), conditionsScore(81.99)], [69.6, 45, 81.9]);
   ok('every history point is the same one-decimal score', c.history.every(h => Math.round(h.score * 10) / 10 === h.score));
 }
 {
