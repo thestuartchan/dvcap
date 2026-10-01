@@ -287,7 +287,7 @@ async function journalNote(req, res) {
   }
   if (!(await underRateLimit())) return res.status(429).json({ error: 'more than 60 notes this hour — try later' });
   const v = validateNote(body);
-  if (!v.ok) return res.status(422).json({ error: v.error });
+  if (!v.ok) return res.status(400).json({ error: v.error });
   const r = await appendNote(v.note);
   if (!r.ok) return res.status(r.status || 502).json({ error: r.error });
   return res.status(201).json({ id: r.id, received_at: r.received_at });

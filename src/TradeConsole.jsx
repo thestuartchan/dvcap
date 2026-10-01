@@ -3531,7 +3531,7 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
       if (!res.ok) { touch(); setJournalMsg({ err: true, text: `Row kept locally, not synced (${res.status}) — the draft stays until it is.` }); return; }
       setDirty(false);
       const done = await resolveJournal({ id: draft.id, action: "confirm" });
-      setJournalMsg(done.ok ? { text: `${r.how === "annotated" ? "Note attached to" : r.how === "adopted" ? "Matched your hand entry on" : r.how === "added" ? "Fill added to" : "Opened"} ${r.rowId} ✓` } : { err: true, text: done.error || "Saved; the draft could not be cleared." });
+      setJournalMsg(done.ok ? { text: `${r.how === "amended" ? "Rule change applied to" : r.how === "annotated" ? "Note attached to" : r.how === "adopted" ? "Matched your hand entry on" : r.how === "added" ? "Fill added to" : "Opened"} ${r.rowId} ✓` } : { err: true, text: done.error || "Saved; the draft could not be cleared." });
       const target = r.rows.find(x => x.id === r.rowId);
       if (target) { setBookTab(derivePosition(target.fills || [], { multiplier: target.multiplier, side: target.side }).status === "closed" ? "CLOSED" : "OPEN"); setExpanded(r.rowId); }
     } finally { setJournalBusy(false); }
@@ -4050,7 +4050,7 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
       {/* ── JOURNAL DRAFTS ──
           Notes written from chat, matched to IBKR's fills by the daily run: drafts to confirm,
           fills that arrived with no note, and notes whose fill never came. Absent when empty. */}
-      <JournalDrafts journal={journal} onConfirm={confirmDraft} onDismiss={dismissDraft} onChoose={chooseDraft} onDrop={dropNote} busy={journalBusy} msg={journalMsg} />
+      <JournalDrafts journal={journal} rows={rows} onConfirm={confirmDraft} onDismiss={dismissDraft} onChoose={chooseDraft} onDrop={dropNote} busy={journalBusy} msg={journalMsg} />
 
       {/* ── CURRENT PORTFOLIO ──
           Same visual idiom as the Smart Money tab (donut for weight, horizontal bars for the

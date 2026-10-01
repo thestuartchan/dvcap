@@ -4,7 +4,7 @@
 // what a note may do (append one, count them), what it may never do (read, edit, pass any other
 // gate), how it meets its fill, and that nothing a note says reaches the channel or the repo.
 import { validateNote, orderUnits, matchNote, processInbox, applyDraft, journalLine, draftCounts, expectationText,
-         tradingDaysBetween, chooseCandidate, appendProcessed, whyNot, explainWaiting, assembledSpreads, fmtPx, INBOX_KEY, DRAFTS_KEY } from '../lib/journalInbox.js';
+         tradingDaysBetween, chooseCandidate, appendProcessed, whyNot, explainWaiting, assembledSpreads, fmtPx, amendTargets, resolveAmend, amendRow, INBOX_KEY, DRAFTS_KEY } from '../lib/journalInbox.js';
 import { parseTrades } from '../lib/flexTrades.js';
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
@@ -87,6 +87,8 @@ const SPY_LEGS = (order, date = '20260930', buy = 10.10, sell = 5.70) => [
   O({ ibOrderID: order, conid: `${order}2`, symbol: 'SPY   261120P00720000', underlyingSymbol: 'SPY', assetCategory: 'OPT', putCall: 'P', strike: 720, expiry: '20261120', multiplier: 100, buySell: 'SELL', quantity: -2, tradePrice: sell, ibCommission: -1.3, tradeDate: date }),
 ];
 const NFLX_SELL = (order, qty = 215, date = '20261001') => O({ ibOrderID: order, conid: '15124833', symbol: 'NFLX', assetCategory: 'STK', multiplier: 1, buySell: 'SELL', quantity: -qty, tradePrice: 1180.5, ibCommission: -1, tradeDate: date });
+// A swing: bought and still open at the close — the only kind of fill offered without a note.
+const HELD = O({ ibOrderID: '888', conid: '8881', symbol: 'QQQ   261016C00750000', underlyingSymbol: 'QQQ', assetCategory: 'OPT', putCall: 'C', strike: 750, expiry: '20261016', multiplier: 100, buySell: 'BUY', quantity: 5, tradePrice: 9.1, ibCommission: -3, tradeDate: '20260930' });
 const ZERO_DTE = O({ ibOrderID: '777', conid: '7771', symbol: 'QQQ   260930C00745000', underlyingSymbol: 'QQQ', assetCategory: 'OPT', putCall: 'C', strike: 745, expiry: '20260930', multiplier: 100, buySell: 'BUY', quantity: 5, tradePrice: 1.2, ibCommission: -3, tradeDate: '20260930' });
 const trades = (...xs) => parseTrades(`<FlexQueryResponse><Orders>${xs.flat().join('')}</Orders></FlexQueryResponse>`);
 const US = JSON.parse(readFileSync('data/holidays.json', 'utf8')).US.closed;
@@ -188,18 +190,24 @@ const TODAY = '2026-10-01';
   eq('on 6 Oct it is still pending', [on6.counts.pending, on6.drafts.length], [1, 0]);
   const on7 = processInbox({ notes: [n], trades: [], today: '2026-10-07', holidays: US });
   eq('on 7 Oct it moves to notes without fills', [on7.drafts[0].kind, on7.leaving[0].outcome], ['unfilled', 'no-fill']);
-  eq('counted as one without a fill', draftCounts(on7.drafts), { toConfirm: 0, unjournaled: 0, withoutFills: 1 });
+  eq('counted as one without a fill', draftCounts(on7.drafts), { toConfirm: 0, ruleChanges: 0, unjournaled: 0, withoutFills: 1 });
 }
 
 // ── CASE 4: a fill with no note ──────────────────────────────────────────────
 {
-  const out = processInbox({ notes: [], trades: trades(ZERO_DTE), today: TODAY, holidays: US });
+  const out = processInbox({ notes: [], trades: trades(HELD), today: TODAY, holidays: US });
   const d = out.drafts[0];
-  eq('an unjournaled-fill draft', [d.kind, d.source, d.note], ['fill', 'unjournaled', null]);
+  eq('an unjournaled-fill draft for a fill held overnight', [d.kind, d.source, d.note], ['fill', 'unjournaled', null]);
   eq('counted as unjournaled', draftCounts(out.drafts).unjournaled, 1);
-  const again = processInbox({ notes: [], trades: trades(ZERO_DTE), today: TODAY, holidays: US, seen: out.seen, drafts: [] });
+  const again = processInbox({ notes: [], trades: trades(HELD), today: TODAY, holidays: US, seen: out.seen, drafts: [] });
   eq('dismissed once, it is not offered again from the same 30-day window', again.drafts.length, 0);
-  const before = processInbox({ notes: [], trades: trades(ZERO_DTE.replace('tradeDate="20260930"', 'tradeDate="20260929"')), today: TODAY, holidays: US });
+  // DAY TRADES STAY OFF THE CONSOLE (Stu, 2 Oct): a 0DTE, or a contract taken to flat in the session.
+  eq('a 0DTE fill is a day trade, not a draft', processInbox({ notes: [], trades: trades(ZERO_DTE), today: TODAY, holidays: US }).drafts.length, 0);
+  const flat = trades(HELD, HELD.replace('ibOrderID="888"', 'ibOrderID="889"').replace('buySell="BUY"', 'buySell="SELL"').replace('quantity="5"', 'quantity="-5"').replace('tradePrice="9.1"', 'tradePrice="9.6"'));
+  eq('a contract bought and sold flat the same day is a day trade', processInbox({ notes: [], trades: flat, today: TODAY, holidays: US }).drafts.length, 0);
+  eq('an unjournaled draft that is now a day trade is withdrawn', processInbox({ notes: [], trades: trades(ZERO_DTE), today: TODAY, holidays: US,
+    drafts: [{ id: 'd-777', kind: 'fill', source: 'unjournaled', fill: { orderId: '777' }, note: null, created: 'x' }] }).drafts.length, 0);
+  const before = processInbox({ notes: [], trades: trades(HELD.replace('tradeDate="20260930"', 'tradeDate="20260929"')), today: TODAY, holidays: US });
   eq('a fill from before the inbox went live is history, not a draft', before.drafts.length, 0);
   const known = processInbox({ notes: [], trades: trades(NFLX_SELL('952', 100, '20260930')), known: new Set(['952:15124833']), today: TODAY, holidays: US });
   eq('a fill already entered by hand (adopted) is journaled', known.drafts.length, 0);
@@ -288,7 +296,7 @@ const TODAY = '2026-10-01';
 
 // ── THE CHANNEL: SYMBOLS AND COUNTS ──────────────────────────────────────────
 {
-  const out = processInbox({ notes: [validateNote(SPY_NOTE).note, validateNote({ ...NFLX_NOTE, trade_date: '2026-09-22' }).note], trades: trades(SPY_LEGS('900'), ZERO_DTE), today: TODAY, holidays: US });
+  const out = processInbox({ notes: [validateNote(SPY_NOTE).note, validateNote({ ...NFLX_NOTE, trade_date: '2026-09-22' }).note], trades: trades(SPY_LEGS('900'), HELD), today: TODAY, holidays: US });
   const line = journalLine(out);
   eq('the line', line, '1 journal draft to confirm (SPY) · 1 unjournaled fill (QQQ) · 1 note without a fill (NFLX)');
   for (const bad of ['hedge', '4.4', '750', '215', 'rationale', 'NLV', 'Credit', '8.80', '785', 'position']) ok(`the line carries no "${bad}"`, !line.includes(bad));
@@ -310,7 +318,7 @@ const TODAY = '2026-10-01';
   eq('and echoes only { id, received_at }', Object.keys(r.body), ['id', 'received_at']);
   eq('the note is in the inbox list', mem.get(INBOX_KEY).length, 1);
   eq('a retry of the same id → 409, nothing appended', [(await call(manualEntry, { method: 'POST', query: NOTE_Q, headers: TOKEN, body: SPY_NOTE })).status, mem.get(INBOX_KEY).length], [409, 1]);
-  eq('an invalid note → 422', (await call(manualEntry, { method: 'POST', query: NOTE_Q, headers: TOKEN, body: { ...SPY_NOTE, id: 'x2-note', kind: 'buy' } })).status, 422);
+  eq('an invalid note → 400', (await call(manualEntry, { method: 'POST', query: NOTE_Q, headers: TOKEN, body: { ...SPY_NOTE, id: 'x2-note', kind: 'buy' } })).status, 400);
   eq('over 4 KB → 413', (await call(manualEntry, { method: 'POST', query: NOTE_Q, headers: TOKEN, body: { ...SPY_NOTE, id: 'big-note', rationale: 'x'.repeat(4200) } })).status, 413);
   const g = await call(manualEntry, { method: 'GET', query: NOTE_Q, headers: TOKEN });
   eq('GET with the token → { pending: n }, no note content', [g.status, g.body], [200, { pending: 1 }]);
@@ -366,6 +374,63 @@ const TODAY = '2026-10-01';
   eq('resolving it again says it is gone', (await resolveDraft({ id: 'd-900', action: 'dismiss' })).ok, false);
   const again = await call(manualEntry, { method: 'POST', query: NOTE_Q, headers: TOKEN, body: SPY_NOTE });
   eq('a processed id cannot be re-posted', again.status, 409);
+}
+
+// ── AMEND BY INSTRUMENT (2 Oct brief) ────────────────────────────────────────
+{
+  const brnt = { id: 'BRNT-open', symbol: 'BRNT.L', currency: 'USD', side: 'long', multiplier: 1, tag: 'hedge', thesis: 'Energy hedge.', levels: [], tags: [],
+    fills: [{ id: 'b1', side: 'buy', qty: 100, price: 95.3, date: '2026-09-02' }],
+    journal: { levels: { take_profit: 'T1 +20%', invalidation: 'ceasefire', review: 'old review' }, rules: ['old rule'] } };
+  const xle = { id: 'XLE-55c', symbol: 'XLE', underlying: 'XLE', instrument: 'option', side: 'long', multiplier: 100, currency: 'USD', thesis: '', levels: [], tags: [],
+    legs: [{ right: 'C', strike: 55, expiry: '2027-01-15', side: 'long', ratio: 1 }], fills: [{ id: 'x1', side: 'buy', qty: 2, price: 6.1, date: '2026-09-10' }] };
+  const nflxA = { id: 'NFLX-a', symbol: 'NFLX', currency: 'USD', side: 'long', multiplier: 1, levels: [], tags: [], fills: [{ id: 'n1', side: 'buy', qty: 10, price: 60, date: '2026-08-01' }] };
+  const nflxB = { ...nflxA, id: 'NFLX-b' };
+  const closed = { ...nflxA, id: 'AMD-closed', symbol: 'AMD', fills: [{ id: 'a1', side: 'buy', qty: 10, price: 1, date: '2026-08-01' }, { id: 'a2', side: 'sell', qty: 10, price: 2, date: '2026-08-05' }] };
+  const rows = [brnt, xle, nflxA, nflxB, closed];
+  const A = { id: 'claude-2026-10-02-brnt-amend-range-trim', kind: 'amend', written_at: '2026-10-01T22:20:00Z', trade_date: '2026-10-02',
+    instrument: { type: 'STK', symbol: 'BRNT' }, tag: 'hedge', rationale: 'Range-aware first trim.',
+    levels: { take_profit: 'T1: Brent front closes >= $108 or BRNT +20%', invalidation: 'unchanged', review: null },
+    rules: ['Crisis rule unchanged', 'Optional re-add <= $90', 'No stop'] };
+  const B = { id: 'claude-2026-10-02-xle-55c-amend-exit-rule', kind: 'amend', written_at: '2026-10-01T22:20:00Z', trade_date: '2026-10-02',
+    instrument: { type: 'OPT', symbol: 'XLE', legs: [{ right: 'C', strike: 55, expiry: '2027-01-15', side: 'BUY', ratio: 1 }] }, tag: 'hedge',
+    rationale: 'Paired with BRNT.', levels: { take_profit: 'Trim 1 of 2 if XLE >= $70', decide_by: '2026-12-15' }, rules: ['Roll or close by 15 Dec'] };
+  const v = (x) => validateNote(x).note;
+  eq('BRNT (STK) finds the LSE line, once', amendTargets(v(A), rows).map(r => r.id), ['BRNT-open']);
+  eq('XLE Jan27 55C (OPT) finds that option', amendTargets(v(B), rows).map(r => r.id), ['XLE-55c']);
+  const rA = resolveAmend(v(A), rows, { now: 'T' });
+  eq('one open trade → a draft edit on it', [rA.outcome, rA.item.kind, rA.item.supersedes, rA.item.target.label], ['amend-drafted', 'amend', 'BRNT-open', 'BRNT.L']);
+  const none = resolveAmend(v({ ...A, id: 'amd-amend', instrument: { type: 'STK', symbol: 'AMD' } }), rows);
+  eq('a symbol with no OPEN trade → without a fill, no draft', [none.outcome, none.item.kind, none.item.reason], ['no-target', 'unfilled', 'amend: no open trade for AMD']);
+  const two = resolveAmend(v({ ...A, id: 'nflx-amend', instrument: { type: 'STK', symbol: 'NFLX' } }), rows);
+  eq('two open trades → ambiguous, both listed, nothing drafted', [two.outcome, two.item.kind, two.item.candidates.map(c => c.row.id)], ['ambiguous', 'ambiguous', ['NFLX-a', 'NFLX-b']]);
+  eq('choosing one drafts the edit on it', chooseCandidate(two.item, 'NFLX-b').supersedes, 'NFLX-b');
+  const both = resolveAmend(v({ ...A, id: 'both-amend', supersedes: 'XLE-55c' }), rows);
+  eq('supersedes wins over the instrument', both.item.supersedes, 'XLE-55c');
+  eq('neither is refused', validateNote({ id: 'neither-amend', kind: 'amend', trade_date: '2026-10-02' }).ok, false);
+  // The merge: levels key by key (null removes), rules replace, the rationale appended.
+  const after = applyDraft(rows, rA.item, {}, { today: '2026-10-02' });
+  const j = after.rows[0].journal;
+  eq('confirm applies the rule change to that trade only', [after.how, after.rowId, after.rows[1] === xle], ['amended', 'BRNT-open', true]);
+  eq('levels merge key by key; null removes', j.levels, { take_profit: 'T1: Brent front closes >= $108 or BRNT +20%', invalidation: 'unchanged' });
+  eq('rules replace the list', j.rules, ['Crisis rule unchanged', 'Optional re-add <= $90', 'No stop']);
+  ok('the rationale is appended, dated', /^Energy hedge\.\n— 2026-10-02 \(amend\): Range-aware first trim\./.test(after.rows[0].thesis));
+  eq('an amend with no rules leaves the rules alone', amendRow(brnt, v({ ...A, id: 'norules', rules: undefined })).journal.rules, ['old rule']);
+  eq('a decide-by on an option row is a level, the hard date moves only with hard_date', [applyDraft(rows, resolveAmend(v(B), rows).item).rows[1].journal.levels.decide_by, applyDraft(rows, resolveAmend(v(B), rows).item).rows[1].hardDate], ['2026-12-15', undefined]);
+
+  // Through the route: resolved at ingest against the console in the store; the caller learns only
+  // { id, received_at }; no inbox entry is made.
+  mem.clear();
+  mem.set('dvcap:console:v1', JSON.stringify({ rows }));
+  const r = await call(manualEntry, { method: 'POST', query: NOTE_Q, headers: TOKEN, body: A });
+  eq('the amend is accepted and echoes only id and time', [r.status, Object.keys(r.body)], [201, ['id', 'received_at']]);
+  const ds = JSON.parse(mem.get(DRAFTS_KEY)).drafts;
+  eq('a rule change to confirm is waiting, with no inbox entry', [ds.map(d => [d.kind, d.supersedes]), (mem.get(INBOX_KEY) || []).length], [[['amend', 'BRNT-open']], 0]);
+  eq('the XLE amend lands on the option', (await call(manualEntry, { method: 'POST', query: NOTE_Q, headers: TOKEN, body: B })).status, 201);
+  eq('both drafted', JSON.parse(mem.get(DRAFTS_KEY)).drafts.map(d => d.supersedes), ['BRNT-open', 'XLE-55c']);
+  eq('neither supersedes nor instrument → 400', (await call(manualEntry, { method: 'POST', query: NOTE_Q, headers: TOKEN, body: { id: 'neither-2', kind: 'amend', trade_date: '2026-10-02' } })).status, 400);
+  eq('counted as rule changes', draftCounts(JSON.parse(mem.get(DRAFTS_KEY)).drafts).ruleChanges, 2);
+  const line = journalLine({ counts: { amends: 2 }, symbols: {} });
+  ok('the channel line carries no level, rule or rationale', !/108|Crisis|Range-aware|Trim|Roll/.test(line));
 }
 
 // ── PROCESSED NOTES EXPIRE ───────────────────────────────────────────────────
