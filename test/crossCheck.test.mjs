@@ -1,6 +1,7 @@
 // test/crossCheck.test.mjs — the cross-check JSON: data and simple statistics, one failing source never fails the rest.
 import { buildCrossCheck, crossCheckLeaks, scrubError, statusOf, pctRank, chg5, dir5, computeCredit, computeRealYields, computeBreadth,
-         computeAuctions, computeCotMarket, parseDixCsv, computeDix, parseCboeDaily, computePutCall, computeAaii, crossCheckHealth, BLOCKS, CADENCE } from '../lib/crossCheck.js';
+         computeAuctions, computeCotMarket, parseDixCsv, computeDix, parseCboeDaily, computePutCall, computeAaii, crossCheckHealth, BLOCKS, CADENCE,
+         weeklyDownStreak, computeOilPolicy } from '../lib/crossCheck.js';
 import { acmDate, acmSeries, tdRow, XC_COT } from '../lib/crossCheckFeed.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
@@ -95,5 +96,43 @@ const days = (vals, end = '2026-09-28') => { const out = []; let t = Date.parse(
   eq('…and not the block named "positioning", nor "monkey"', crossCheckLeaks('{"positioning":{},"x":"monkey"}'), []);
   eq('scrubbed errors', scrubError(new Error('FRED_API_KEY not set')), 'FRED_API_[redacted] not set');
 }
+// ── BREADTH: THE TREND, NOT JUST THE WEEK (2 Oct brief) ──
+{
+  // RSP's Friday closes, 14 Aug → 1 Oct (Thursday), as on the 1 Oct board; SPY near its high.
+  const fri = ['2026-08-14', '2026-08-21', '2026-08-28', '2026-09-04', '2026-09-11', '2026-09-18', '2026-09-25'];
+  const rspWk = [222.77, 221.67, 220.69, 219.00, 214.87, 212.29, 211.11];
+  const rsp = Object.fromEntries([...fri.map((d, i) => [d, rspWk[i]]), ['2026-09-30', 209.6], ['2026-10-01', 209.0]]);
+  eq('seven lower weekly closes, the current week counted and flagged', weeklyDownStreak(rsp), { weeks: 7, in_progress: true });
+  eq('a current week above last week is not counted', weeklyDownStreak({ ...rsp, '2026-10-01': 212 }), { weeks: 6, in_progress: false });
+  eq('a Friday close is a completed week', weeklyDownStreak(Object.fromEntries(fri.map((d, i) => [d, rspWk[i]]))), { weeks: 6, in_progress: false });
+  // 40 sessions: the ratio falls ~5% over the last 35 while SPY stays within 2% of its high.
+  const ds = days(Array.from({ length: 40 }, (_, i) => i)).map(o => o.date);
+  const spy = Object.fromEntries(ds.map((d, i) => [d, 770 - (i > 34 ? (i - 34) * 2 : 0)]));
+  const rsp2 = Object.fromEntries(ds.map((d, i) => [d, 220 * (1 - 0.0015 * i) * (spy[d] / 770)]));
+  const b = computeBreadth({ rsp: rsp2, spy });
+  eq('35-session ratio change and the distance from the high', [b.ratio_chg_35d_pct, b.spy_off_high_pct], [-5.28, -1.3]);
+  eq('narrowing: the equal-weight index losing ground near the high', b.narrowing, true);
+  eq('not narrowing once SPY is well off its high', computeBreadth({ rsp: rsp2, spy: { ...spy, [ds[39]]: 740 } }).narrowing, false);
+  eq('no 35-session read on a short history', computeBreadth({ rsp: { a: 1, b: 1 }, spy: { a: 1, b: 1 } }).ratio_chg_35d_pct, null);
+}
+// ── OIL POLICY ──
+{
+  const ds = days(Array.from({ length: 45 }, (_, i) => i), '2026-10-01').map(o => o.date);
+  const brent = ds.map((d, i) => ({ date: d, close: 90 + i * 0.3, high: 91 + i * 0.3, low: 89 + i * 0.3 }));
+  brent[44] = { date: ds[44], close: 102.31, high: 103, low: 101 };
+  brent[30] = { ...brent[30], high: 110.19 }; brent[20] = { ...brent[20], low: 85.33 };
+  const wti = Object.fromEntries(ds.map((d, i) => [d, brent[i].close - 9]));
+  const spr = [['2026-08-28', 286604], ['2026-09-04', 285360], ['2026-09-11', 284957], ['2026-09-18', 284552], ['2026-09-25', 283767]].map(([date, value]) => ({ date, value }));
+  const o = computeOilPolicy({ brent, wti, spr, today: '2026-10-01' });
+  eq('Brent: last, the 40-session range and where it sits in it', [o.brent_front.last, o.brent_front.range_40d, o.brent_front.range_pct_40d], [102.31, { lo: 85.33, hi: 110.19 }, 68.3]);
+  eq('SPR in million barrels, the week and four weeks', [o.spr.level_mb, o.spr.chg_wk_mb, o.spr.chg_4wk_mb, o.spr.status], [283.8, -0.8, -2.8, 'fresh']);
+  eq('SPR older than 9 days is stale', computeOilPolicy({ brent, wti, spr, today: '2026-10-08' }).spr.status, 'stale');
+  eq('Brent–WTI spread', o.brent_wti_spread.last, 9);
+  eq('positioning is linked, not duplicated', o.positioning_link, 'see positioning.markets.wti');
+  eq('no Brent, no block', computeOilPolicy({ brent: [], wti, spr }), null);
+  eq('oil_policy is a block with a cadence', [BLOCKS.includes('oil_policy'), CADENCE.oil_policy.cadence], [true, 'daily']);
+  eq('and carries nothing the scan refuses', crossCheckLeaks(JSON.stringify(o)), []);
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

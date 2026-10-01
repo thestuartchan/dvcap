@@ -60,8 +60,9 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   eq('and the peak count out of eight', [lv.support.peaks, lv.support.of], [1, 8]);
   eq('the tile text', lv.text.support, '730 · +60M Oct-16 · peaks 1 of 8 · 1.9% below');
   eq('the near trapdoor is 735, that day\'s expiry', [lv.trapdoor.near.strike, lv.trapdoor.near.netGexUsd, lv.trapdoor.near.expiry], [735, -89 * M, '2026-09-23']);
-  eq('the deep trapdoor is 700, Oct-16', [lv.trapdoor.deep.strike, lv.trapdoor.deep.netGexUsd, lv.trapdoor.deep.expiry], [700, -175 * M, '2026-10-16']);
-  eq('the trapdoor tile', lv.text.trapdoor, '735 · −89M (Sep-23) · 1.2% below · deeper: 700 · −175M (Oct-16) · 5.9% below');
+  // 2 Oct brief: 700 is 5.9% below spot — beyond the 5% the deep trapdoor is looked for in.
+  eq('a deep node more than 5% away is not a deep trapdoor', [lv.trapdoor.deep, lv.trapdoor.deepNote], [null, 'next node beyond 5%']);
+  eq('the trapdoor tile says so', lv.text.trapdoor, '735 · −89M (Sep-23) · 1.2% below · deeper: none — next node beyond 5%');
   // THE POSITIVE RUN (30 Sep brief): today's cells positive from 743 up; 735 is negative below, and
   // 760 (+10M) is under 5% of the run's 750 peak (+220M) — the tail — so the box is 743–750.
   eq('the pin box is the positive run, 743–750', [lv.pin.pinned, lv.pin.lo, lv.pin.hi], [true, 743, 750]);
@@ -76,16 +77,16 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   // −$0.14B below against +$0.41B above on this fixture: the smaller side is under 40%.
   eq('the balance is asymmetric, upside damped', lv.balance.state, 'asymmetric_up');
   ok('and says so with the direction', /asymmetric — \$0\.41B above \/ −\$0\.14B below: upside damped, downside thin/.test(lv.balance.sentence));
-  eq('the one-line summary reads the objects', lv.summary, 'Cushion at 730; acceleration below 735 and 700; pin 743–750.');
-  ok('and the detailed line carries sizes and owners', /Cushion at 730 \(\+60M, Oct-16, 1\.9% below, peaks 1 of 8\); acceleration below 735 \(−89M, Sep-23, 1\.2% below\) and 700 \(−175M, Oct-16, 5\.9% below\); pin 743–750/.test(regimeDetail(lv)));
+  eq('the one-line summary reads the objects', lv.summary, 'Cushion at 730; acceleration below 735; pin 743–750.');
+  ok('and the detailed line carries sizes and owners', /Cushion at 730 \(\+60M, Oct-16, 1\.9% below, peaks 1 of 8\); acceleration below 735 \(−89M, Sep-23, 1\.2% below\); pin 743–750/.test(regimeDetail(lv)));
   ok('the word "wall" never touches the put side', !/wall/i.test(lv.text.support + lv.text.trapdoor + lv.text.pin));
   // What is persisted.
   eq('the log row', levelsLog(lv, { rate: 0.038, rateStatus: 'live' }), {
-    put_support_strike: 730, trapdoor_near: 735, trapdoor_deep: 700, pin_lo: 743, pin_hi: 750,
+    put_support_strike: 730, trapdoor_near: 735, trapdoor_deep: null, pin_lo: 743, pin_hi: 750,
     call_wall_strike: 750, call_wall_kind: 'ceiling', balance_state: 'asymmetric_up', rf_rate: 0.038, rf_status: 'live' });
   // The strikes the table may never drop.
   const m = mustShow(lv, { flipZoneLo: 711, flipZoneHi: 736 });
-  eq('the must-show list is the level strikes', m.strikes.sort((a, b) => a - b), [700, 730, 735, 743, 745, 748, 750]);
+  eq('the must-show list is the level strikes', m.strikes.sort((a, b) => a - b), [730, 735, 743, 745, 748, 750]);
   eq('with the flip zone alongside', m.flipZone, { lo: 711, hi: 736 });
 }
 
@@ -203,8 +204,20 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   const neg = board([cell('2026-09-23', 699, 40), cell('2026-09-23', 698, -60), cell('2026-09-23', 697, 90), cell('2026-09-23', 701, 30)]);
   eq('the run stops at the first negative cell', [pinBox(neg.byStrike, neg.grid, { spot }).lo, pinBox(neg.byStrike, neg.grid, { spot }).hi], [699, 701]);
   eq('and never at a trapdoor strike — 699 excluded, the run is 701 alone', [pinBox(neg.byStrike, neg.grid, { spot, exclude: [699] }).lo, pinBox(neg.byStrike, neg.grid, { spot, exclude: [699] }).hi], [701, 701]);
-  const tail = board([cell('2026-09-23', 699, 100), cell('2026-09-23', 701, 80), cell('2026-09-23', 702, 3), cell('2026-09-23', 703, 50)]);
-  eq('nor into the tail — a cell under 5% of the peak ends it', pinBox(tail.byStrike, tail.grid, { spot }).hi, 701);
+  // 2 Oct: ONE cell under 5% of the peak is noise and is stepped over; TWO in a row are the tail.
+  const tail = board([cell('2026-09-23', 699, 100), cell('2026-09-23', 701, 80), cell('2026-09-23', 702, 3), cell('2026-09-23', 703, 50),
+                      cell('2026-09-23', 704, 2), cell('2026-09-23', 705, 1), cell('2026-09-23', 706, 40)]);
+  eq('one flat cell is stepped over, two in a row end the run', pinBox(tail.byStrike, tail.grid, { spot }).hi, 703);
+  ok('and the flat cell is not counted in the box', !pinBox(tail.byStrike, tail.grid, { spot }).strikes.includes(702));
+  // QQQ, 2 Oct (spot 742.3): 742 −1.9M and 743 −14.7M against +414M at 745 emptied the box —
+  // "negative either side of spot" — around the clearest pin on the board.
+  const q = board([cell('2026-10-02', 740, -162), cell('2026-10-02', 741, 13.6), cell('2026-10-02', 742, -1.9), cell('2026-10-02', 743, -14.7),
+                   cell('2026-10-02', 744, 21.8), cell('2026-10-02', 745, 413.7), cell('2026-10-02', 746, 43.5), cell('2026-10-02', 747, 30.4),
+                   cell('2026-10-02', 748, 76.5), cell('2026-10-02', 749, 37.3), cell('2026-10-02', 750, 266.2), cell('2026-10-02', 751, 52),
+                   cell('2026-10-02', 752, 107.1), cell('2026-10-02', 753, 32.2), cell('2026-10-02', 754, 58.6), cell('2026-10-02', 755, 127.5),
+                   cell('2026-10-02', 756, 19.1), cell('2026-10-02', 757, 7.2)]);
+  const qp = pinBox(q.byStrike, q.grid, { spot: 742.3, today: '2026-10-02' });
+  eq('QQQ 2 Oct: noise either side of spot no longer empties the box', [qp.pinned, qp.lo, qp.hi, qp.magnets], [true, 744, 755, [745, 750]]);
   const thin = board([cell('2026-09-23', 698, 1), cell('2026-09-23', 720, 200)]);
   const t = pinBox(thin.byStrike, thin.grid, { spot, atr: 4 });
   ok('under a tenth of the nearest expiry is no pin, and says why', !t.pinned && /Sep-23's positive run 698–698 carries 0% of its gamma/.test(t.reason));

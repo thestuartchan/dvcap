@@ -4,7 +4,7 @@
 // what a note may do (append one, count them), what it may never do (read, edit, pass any other
 // gate), how it meets its fill, and that nothing a note says reaches the channel or the repo.
 import { validateNote, orderUnits, matchNote, processInbox, applyDraft, journalLine, draftCounts, expectationText,
-         tradingDaysBetween, chooseCandidate, appendProcessed, whyNot, explainWaiting, INBOX_KEY, DRAFTS_KEY } from '../lib/journalInbox.js';
+         tradingDaysBetween, chooseCandidate, appendProcessed, whyNot, explainWaiting, assembledSpreads, fmtPx, INBOX_KEY, DRAFTS_KEY } from '../lib/journalInbox.js';
 import { parseTrades } from '../lib/flexTrades.js';
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
@@ -238,13 +238,42 @@ const TODAY = '2026-10-01';
   const n = validateNote(SPY_NOTE).note;
   const units = (xs) => orderUnits(trades(...xs));
   eq('no orders in the symbol says so', explainWaiting(n, units([ZERO_DTE]), { holidays: US }).startsWith('no SPY orders in the statement yet'), true);
-  const apart = SPY_LEGS('900').map((x, i) => x.replace('ibOrderID="900"', `ibOrderID="90${i}"`));
+  // Legs an hour apart: not paired, so the reason names the split.
+  const apart = SPY_LEGS('900').map((x, i) => x.replace('ibOrderID="900"', `ibOrderID="90${i}" dateTime="20260930;${i ? '110500' : '100000'}"`));
   ok('legs filled as separate orders are named as the reason', /1 leg in IBKR's order .* 2 in the note — if a spread's legs were filled as separate orders/.test(explainWaiting(n, units([apart]), { holidays: US })));
   ok('a price outside tolerance says by how much', /net price 4\.70, the note expects 4\.40 ±3% \(6\.8% off\)/.test(explainWaiting(n, units([SPY_LEGS('900', '20260930', 10.4, 5.7)]), { holidays: US })));
   ok('a fill in the wrong week says the window', /filled 2026-10-07, outside 2026-09-30/.test(explainWaiting(n, units([SPY_LEGS('900', '20261007')]), { holidays: US })));
   eq('a match explains nothing', whyNot(n, orderUnits(trades(SPY_LEGS('900')))[0], { holidays: US }), null);
   const out = processInbox({ notes: [n, validateNote(NFLX_NOTE).note], trades: trades(ZERO_DTE), today: TODAY, holidays: US });
   eq('the run records a reason for each waiting note', Object.keys(out.why).sort(), [NFLX_NOTE.id, SPY_NOTE.id].sort());
+}
+
+// ── A SPREAD IBKR REPORTED AS SEPARATE ORDERS ────────────────────────────────
+{
+  const n = validateNote(SPY_NOTE).note;
+  const legs = (t1, t2) => SPY_LEGS('900').map((x, i) => x.replace('ibOrderID="900"', `ibOrderID="91${i}" dateTime="20260930;${i ? t2 : t1}"`));
+  const apart = trades(legs('112600', '112631'));
+  eq('two single-leg orders, the same minute: one assembled spread', assembledSpreads(n, orderUnits(apart)).map(u => [u.orderId, u.type, u.qty, u.rawPrice]), [['910+911', 'COMBO', 2, 4.4]]);
+  const out = processInbox({ notes: [n], trades: apart, today: TODAY, holidays: US });
+  const d = out.drafts.filter(x => x.kind === 'fill');
+  eq('it drafts as one spread, from the note', [d.length, d[0]?.source, d[0]?.fill.legs.length], [1, 'note', 2]);
+  eq('and neither leg is also offered as unjournaled', out.counts.unjournaled, 0);
+  eq('legs filled an hour apart are not paired', assembledSpreads(n, orderUnits(trades(legs('100000', '110500')))).length, 0);
+  // The 30 Sep case: legs first offered as unjournaled, the note matched on a later run.
+  const first = processInbox({ notes: [], trades: apart, today: TODAY, holidays: US });
+  eq('before the note, two unjournaled legs', first.counts.unjournaled, 2);
+  const later = processInbox({ notes: [n], trades: apart, today: TODAY, holidays: US, seen: first.seen, drafts: first.drafts });
+  eq('the note then claims both and withdraws their unjournaled drafts', [later.drafts.map(x => x.id).sort(), later.counts.drafted], [['d-910+911'], 1]);
+  // Confirming it against the row the position sync already added adopts that fill.
+  const row = [{ id: 'SPY-flex', symbol: 'SPY', underlying: 'SPY', instrument: 'spread', side: 'long', multiplier: 100, currency: 'USD', thesis: 'Added from the IBKR statement of 2026-09-30.', levels: [], tags: [],
+    legs: [{ right: 'P', strike: 750, expiry: '2026-11-20', side: 'long', ratio: 1 }, { right: 'P', strike: 720, expiry: '2026-11-20', side: 'short', ratio: 1 }],
+    fills: [{ id: 'p1', side: 'buy', qty: 2, price: 4.4106, date: '2026-09-30' }] }];
+  const r = applyDraft(row, later.drafts[0], {}, { today: TODAY });
+  eq('confirm links the note to the existing row — no second fill', [r.how, r.rows[0].fills.length, r.rows[0].tag, r.rows[0].thesis], ['adopted', 1, 'hedge', SPY_NOTE.rationale]);
+}
+{
+  eq('an ordinary premium prints to the cent', fmtPx(4.4), '4.40');
+  eq('a yen FOP premium is not rounded to zero', fmtPx(0.00004), '0.00004');
 }
 
 // ── AMEND ────────────────────────────────────────────────────────────────────
