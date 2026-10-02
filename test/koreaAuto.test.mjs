@@ -6,6 +6,7 @@
 import { kofiaPasteFromHtml, kofiaFromHtml, krxFlowsFromJson, flowIsFinal, seoulClock } from '../lib/koreaAuto.js';
 import { normaliseStore, unitProblems, applyKofia, applyFlows, appendSnapshot, storeChanged, KOSDAQ_FLOW_KEYS } from '../lib/koreaStore.js';
 import { readFileSync } from 'node:fs';
+import { fetchKoreaInto, seoulStamp } from '../lib/koreaFetch.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const ok = (n, c) => eq(n, !!c, true);
@@ -99,6 +100,37 @@ const KRX = { output: [
   eq('an older table does not overwrite latest', older.latest.foreignNet.asOf, '2026-10-01');
   ok('but lands in the series', older.series.foreignNet.some(r => r.date === '2026-09-25' && r.value === 1));
   eq('7709 units are untouched', store.latest.units7709, real.latest.units7709);
+}
+
+// ── THE FETCH, AND ITS STAMP ──
+{
+  const base = () => normaliseStore({ latest: {
+    marginLoans: { value: 32920005, unit: '백만원', asOf: '2026-09-29' }, deposits: { value: 107725670, unit: '백만원', asOf: '2026-09-29' },
+    cma: { value: 106573689, unit: '백만원', asOf: '2026-09-29' } }, history: [], series: {} });
+  const res = (body, { json = false, cookie = null } = {}) => ({ ok: true, status: 200,
+    headers: { getSetCookie: () => (cookie ? [cookie] : []) },
+    text: async () => body, json: async () => (json ? body : JSON.parse(body)) });
+  const stub = ({ kofia = PAGE, krx = KRX, krxDown = false } = {}) => async (url) => {
+    if (url.includes('kofia')) return res(kofia);
+    if (krxDown) throw new Error('connect ETIMEDOUT');
+    if (url.includes('getJsonData')) return res(krx, { json: true });
+    return res('<html></html>', { cookie: 'JSESSIONID=abc; Path=/' });
+  };
+  const s1 = base();
+  const a = await fetchKoreaInto(s1, { now: NOW, by: 'button', fetchImpl: stub() });
+  eq('a good read: both sources, readings changed', [a.failed, a.changed, a.sources], [false, true, { kofia: 'updated', krx: 'updated' }]);
+  eq('the stamp says when, who, and that it worked', [s1.lastFetch.at, s1.lastFetch.by, s1.lastFetch.ok, s1.lastFetch.changed], [NOW.toISOString(), 'button', true, true]);
+  const later = new Date(NOW.getTime() + 3600e3);
+  const b = await fetchKoreaInto(s1, { now: later, fetchImpl: stub() });
+  eq('the same pages an hour later: nothing new, but the stamp moves', [b.changed, b.sources.kofia, s1.lastFetch.at, s1.lastFetch.by], [false, 'nothing new', later.toISOString(), 'schedule']);
+  const s2 = base();
+  const c = await fetchKoreaInto(s2, { now: NOW, fetchImpl: stub({ krxDown: true }) });
+  eq('KRX down: KOFIA still lands, the stamp records the failure', [c.failed, c.sources, s2.lastFetch.ok, !!s2.latest.marginLoans], [true, { kofia: 'updated', krx: 'failed' }, false, true]);
+  ok('…with the reason in the report', s2.lastFetch.report.some(l => /KRX FAILED — connect ETIMEDOUT/.test(l)));
+  const s3 = base();
+  const d = await fetchKoreaInto(s3, { now: new Date('2026-10-01T02:00:00Z'), fetchImpl: stub() });
+  eq('11:00 Seoul: today\'s flows are in session, skipped and said so', [d.sources.krx, s3.latest.foreignNet ?? null], ['in session', null]);
+  eq('Seoul stamp', seoulStamp('2026-10-02T07:12:00Z'), '16:12 KST, 2 Oct');
 }
 
 // ── WIRING ──

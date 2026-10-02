@@ -7,6 +7,7 @@ import { parseKofia } from '../lib/kofia.js';
 import { upsertObservation } from '../lib/series.js';
 import { normaliseStore, unitProblems as unitGate, applyKofia, applyFlows, appendSnapshot, KOFIA_KEYS } from '../lib/koreaStore.js';
 import { hasSessionCookie, refuse } from '../lib/apiauth.js';
+import { fetchKoreaInto } from '../lib/koreaFetch.js';
 
 const DATA_PATH = 'data/korea_kofia.json';
 // The merge itself — unit gate, dated series, latest — lives in lib/koreaStore.js, shared with the
@@ -54,6 +55,16 @@ export default async function handler(req, res) {
   if (!(await hasSessionCookie(req))) return refuse(res);
   if (!process.env.GITHUB_TOKEN || !process.env.GITHUB_REPO) {
     return res.status(500).json({ error: 'GITHUB_TOKEN / GITHUB_REPO not configured in Vercel' });
+  }
+
+  // ── FETCH NOW ── the panel's button: the scheduled run's fetch, on demand, committed the same
+  // way a paste is. lastFetch is stamped whether or not a reading changed, so it always writes.
+  if (String(req.query?.fetch || '') === '1') {
+    const { store, sha } = await readStore();
+    const out = await fetchKoreaInto(store, { by: 'button' });
+    const w = await writeStore(store, sha, `Korea fetch (button) — ${out.changed ? 'KOFIA + KRX flows' : 'no new readings'} @ ${new Date().toISOString().slice(0, 10)}`);
+    if (!w.ok) return res.status(502).json({ error: 'GitHub commit failed', detail: w, report: out.report });
+    return res.status(200).json({ ok: !out.failed, changed: out.changed, report: out.report, lastFetch: store.lastFetch, latest: store.latest, series: store.series });
   }
 
   const { blob, units7709, foreignNet, instNet, retailNet } = req.body || {};
