@@ -8,7 +8,7 @@ const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
   eq('it expires after a session', LAST_RECOMPUTE_TTL_SEC, 64800);
   const rec = recomputeRecord('QQQ', { ok: true, row: { flipLevel: 730 }, byStrike: [1], grid: null, iv: 'cboe', extra: 'x' }, '2026-09-28T19:00:00Z');
   eq('the record carries what the panel draws and nothing else',
-     Object.keys(rec), ['symbol', 'at', 'mode', 'row', 'byStrike', 'grid', 'decay', 'levels', 'crossCheck', 'oi', 'iv', 'vintage', 'spotSource', 'contracts']);
+     Object.keys(rec), ['symbol', 'at', 'mode', 'row', 'byStrike', 'grid', 'decay', 'levels', 'crossCheck', 'oi', 'iv', 'atmIv', 'vintage', 'spotSource', 'contracts']);
   const rp = recomputeRecord('SPY', { ok: true, mode: 'repriced', row: { flipLevel: 760 }, repricedFrom: '2026-09-25', capturedAt: '2026-09-26T00:23:49Z', liveIv: 0.02, expiredSinceCapture: 3, reason: 'OI 0%' }, '2026-09-28T14:00:00Z');
   eq('the Yahoo fallback is kept too, with what its "repriced from" note needs',
      [rp.mode, rp.repricedFrom, rp.capturedAt, rp.liveIv, rp.expiredSinceCapture, rp.reason], ['repriced', '2026-09-25', '2026-09-26T00:23:49Z', 0.02, 3, 'OI 0%']);
