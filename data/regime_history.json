@@ -2627,7 +2627,7 @@
       "inputs": {
         "weightedRecessionProb": 13.6,
         "cpi": 3.35302,
-        "kalshi2027": 21,
+        "kalshi2027": 22,
         "tape": {
           "gold": "up",
           "tlt": "down",
@@ -2712,15 +2712,15 @@
           "drifting": "stag"
         },
         "conditions": {
-          "score": 67.7,
+          "score": 68.4,
           "band": "caution",
           "comps": {
             "credit": 95,
-            "equityVol": 11,
+            "equityVol": 14,
             "ratesVol": 78,
             "realYield": 91,
             "funding": 40,
-            "breadth": 74,
+            "breadth": 75,
             "dollar": 100
           }
         },
@@ -2733,7 +2733,7 @@
         "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-02T14:59:43.590Z"
+      "loggedAt": "2026-10-02T18:03:19.382Z"
     }
   ]
 }
