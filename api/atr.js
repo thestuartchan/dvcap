@@ -104,7 +104,11 @@ export default async function handler(req, res) {
   }
   if (String(cta || '') === '1') {
     try {
-      res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=1800');
+      // NO stale-while-revalidate. Vercel's CDN serves a stale copy however old it is while it
+      // revalidates, so the first request after a quiet night got the previous morning's book —
+      // the 09:15 ET alert routine IS that first request, and on 2 Oct it was handed 1 Oct 12:57Z.
+      // The book is already cached for 30 minutes in KV (lib/ctaBook.js); five more at the edge.
+      res.setHeader('Cache-Control', 's-maxage=300');
       return res.status(200).json(await buildCta());
     } catch (e) {
       return res.status(200).json({ ok: false, reason: String(e?.message || e) });

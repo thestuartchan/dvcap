@@ -4,7 +4,7 @@
 // what a note may do (append one, count them), what it may never do (read, edit, pass any other
 // gate), how it meets its fill, and that nothing a note says reaches the channel or the repo.
 import { validateNote, orderUnits, matchNote, processInbox, applyDraft, journalLine, draftCounts, expectationText,
-         tradingDaysBetween, chooseCandidate, appendProcessed, whyNot, explainWaiting, assembledSpreads, fmtPx, amendTargets, resolveAmend, amendRow, INBOX_KEY, DRAFTS_KEY } from '../lib/journalInbox.js';
+         tradingDaysBetween, chooseCandidate, appendProcessed, whyNot, explainWaiting, assembledSpreads, fmtPx, amendTargets, productRoot, resolveAmend, amendRow, INBOX_KEY, DRAFTS_KEY } from '../lib/journalInbox.js';
 import { parseTrades } from '../lib/flexTrades.js';
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
@@ -254,6 +254,31 @@ const TODAY = '2026-10-01';
   eq('a match explains nothing', whyNot(n, orderUnits(trades(SPY_LEGS('900')))[0], { holidays: US }), null);
   const out = processInbox({ notes: [n, validateNote(NFLX_NOTE).note], trades: trades(ZERO_DTE), today: TODAY, holidays: US });
   eq('the run records a reason for each waiting note', Object.keys(out.why).sort(), [NFLX_NOTE.id, SPY_NOTE.id].sort());
+}
+
+// ── A YEN CALL SPREAD: FUTURES-OPTION NAMES, PRICES NEAR 0.00003 ─────────────
+// The 1 Oct trade: two legs as separate orders, reported under the future's month code (6JZ6),
+// priced in dollars per yen. toFixed(4) used to make both prices 0 and the note never matched.
+{
+  const leg = (order, strike, side, px, time) => O({ ibOrderID: order, conid: `${order}1`, symbol: `6JZ6 C${strike}`, underlyingSymbol: '6JZ6', assetCategory: 'FOP',
+    putCall: 'C', strike, expiry: '20261009', multiplier: 12500000, buySell: side, quantity: side === 'BUY' ? 2 : -2, tradePrice: px, ibCommission: -5.36,
+    tradeDate: '20261001', dateTime: `20261001;${time}` });
+  const legs = trades([leg('720', 0.0064, 'BUY', 0.00003, '133529'), leg('721', 0.0065, 'SELL', 0.000012, '133619')]);
+  const u = orderUnits(legs);
+  eq('each leg keeps its premium — not 0', u.map(x => x.rawPrice), [0.00003, 0.000012]);
+  eq('the 6J names agree', ['6JZ6', 'JPY', 'JPU', '6J'].map(productRoot), ['6J', '6J', '6J', '6J']);
+  for (const sym of ['JPY', '6J']) {
+    const n = validateNote({ id: `t-jpy-${sym.toLowerCase()}`, kind: 'open', written_at: '2026-10-01T13:00:00Z', trade_date: '2026-10-01',
+      instrument: { type: 'COMBO', symbol: sym, legs: [
+        { right: 'C', strike: 0.0064, expiry: '2026-10-09', side: 'BUY', ratio: 1 },
+        { right: 'C', strike: 0.0065, expiry: '2026-10-09', side: 'SELL', ratio: 1 }] },
+      expected: { qty: 2, price: 0.000018, tolerance_pct: 5 }, tag: 'swing', rationale: 'yen call spread into the 9 Oct expiry' }).note;
+    const sp = assembledSpreads(n, u);
+    eq(`a note naming ${sym}: the legs pair into one spread at the net debit`, sp.map(x => [x.type, x.qty, x.rawPrice]), [['COMBO', 2, 0.000018]]);
+    const out = processInbox({ notes: [n], trades: legs, today: '2026-10-02', holidays: US });
+    eq(`…and it drafts from the note, with no unjournaled legs (${sym})`, [out.counts.drafted, out.counts.unjournaled], [1, 0]);
+  }
+  eq('the card prints the premium', fmtPx(0.000018), '0.000018');
 }
 
 // ── A SPREAD IBKR REPORTED AS SEPARATE ORDERS ────────────────────────────────
