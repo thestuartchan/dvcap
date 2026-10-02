@@ -5729,7 +5729,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                 const cd = e.reported ? null : days <= 0 ? "today" : days === 1 ? "tomorrow" : `in ${days}d`;
                 const soon = !e.reported && days >= 0 && days <= 2;
                 return (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0", fontSize: 13, color: e.reported ? C.lbl : C.mid, opacity: e.reported ? 0.72 : 1, borderBottom: i < data.calendar.length - 1 ? "1px solid " + C.bdr : "none" }}>
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0", fontSize: 13, color: e.reported ? C.lbl : C.mid, borderBottom: i < data.calendar.length - 1 ? "1px solid " + C.bdr : "none" }}>
                   <span style={{ color: C.muted, minWidth: 92 }}>{e.date}</span>
                   <span style={{ fontWeight: 600, textDecoration: e.reported ? "line-through" : "none" }}>{e.title}</span>
                   {e.reported && <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: C.lbl, border: "1px solid " + C.bdr, borderRadius: 4, padding: "1px 4px" }}>reported</span>}
@@ -7057,7 +7057,7 @@ export default function App() {
                   cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
                 }}>
                   {g.label}
-                  <span className="mwd-group-hint" style={{ fontSize: 10, fontWeight: 700, color: on ? C.blue : C.muted, opacity: 0.7, marginLeft: 6 }}>{g.hint}</span>
+                  <span className="mwd-group-hint" style={{ fontSize: 10, fontWeight: 700, color: on ? C.blue : C.muted, marginLeft: 6 }}>{g.hint}</span>
                 </button>
               );
             })}
