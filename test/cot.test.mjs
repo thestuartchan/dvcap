@@ -1,5 +1,5 @@
 // test/cot.test.mjs — the CFTC check on the CTA replica (lib/cot.js), and the replica on a past date.
-import { cotSeries, cotRead, weekCheck, cotTrack, calibrationSummary, fetchCot, COT_MARKETS, TFF, DISAGG, Z_CLEAR, MOVE_CLEAR, TRACK_WEEKS, TRACK_MIN_HIT, TRACK_MIN_CORR } from '../lib/cot.js';
+import { cotSeries, cotRead, weekCheck, cotTrack, calibrationSummary, fetchCot, COT_MARKETS, TFF, DISAGG, Z_CLEAR, MOVE_CLEAR, TRACK_WEEKS, TRACK_MIN_HIT, TRACK_MIN_CORR, lastCotRelease, cotReleasedSince } from '../lib/cot.js';
 import { ctaMarket, positionAt, positionOn, MIN_BARS } from '../lib/cta.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -104,6 +104,19 @@ const raw = (code, date, long, short, oi, disagg = false) => ({
   eq('and the series come back per market', [f.ok, f.series.ES.length, f.series.GC[0].net], [true, 1, 4]);
   const bad = await fetchCot({ fetchImpl: async () => ({ ok: false, status: 503 }) });
   eq('a refusal is reported, not guessed', [bad.ok, bad.error], [false, 'CFTC HTTP 503']);
+}
+
+// ── THE FRIDAY RELEASE ENDS A CACHE ──
+{
+  const at = (t) => lastCotRelease(new Date(t))?.toISOString();
+  eq('Friday 15:00 ET: the latest release is still last week\'s', at('2026-10-02T19:00:00Z'), '2026-09-25T19:30:00.000Z');
+  eq('Friday 15:31 ET: this week\'s, at 15:30 EDT = 19:30 UTC', at('2026-10-02T19:31:00Z'), '2026-10-02T19:30:00.000Z');
+  eq('the weekend and Monday still point at Friday', [at('2026-10-03T03:00:00Z'), at('2026-10-05T14:00:00Z')], ['2026-10-02T19:30:00.000Z', '2026-10-02T19:30:00.000Z']);
+  eq('in winter 15:30 ET is 20:30 UTC', [at('2026-12-04T20:00:00Z'), at('2026-12-04T20:31:00Z')], ['2026-11-27T20:30:00.000Z', '2026-12-04T20:30:00.000Z']);
+  // The 2 Oct case: filled in the morning, read in the evening after the release — out of date.
+  eq('a cache filled before the release is out of date after it', cotReleasedSince('2026-10-02T17:00:00Z', new Date('2026-10-02T22:30:00Z')), true);
+  eq('one filled after it is not', cotReleasedSince('2026-10-02T20:00:00Z', new Date('2026-10-02T22:30:00Z')), false);
+  eq('nor is a morning cache read the same morning', cotReleasedSince('2026-10-02T13:00:00Z', new Date('2026-10-02T17:00:00Z')), false);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
