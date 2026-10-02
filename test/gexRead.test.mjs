@@ -324,7 +324,7 @@ const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600000).toISOString();
   const tokens = readFileSync(new URL('../lib/tokens.js', import.meta.url), 'utf8');
 
   ok('the palette defines a purple, as a token', /purple:\s*'var\(--neg\)'/.test(tokens));
-  ok('the heat cells take their tones from the tokens', /HEAT_POS\s*=\s*C\.green,\s*HEAT_NEG\s*=\s*C\.purple/.test(src));
+  ok('the heat cells take their tones from the heat tokens (deeper in dark mode, the same as green/purple elsewhere)', /HEAT_POS\s*=\s*C\.heatPos,\s*HEAT_NEG\s*=\s*C\.heatNeg/.test(src));
   ok('the cell background is a tint of the token, not an rgba literal', /tint\(v > 0 \? HEAT_POS : HEAT_NEG, a\)/.test(src));
   ok('and nothing parses a hex any more', !/rgbOf|parseInt\([^)]*16\)/.test(src));
   // The two literals this replaced, named exactly so a revert is caught rather than merely a
@@ -332,7 +332,7 @@ const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600000).toISOString();
   ok('the old green literal is gone', !src.includes('22,101,52'));
   ok('the old red literal is gone', !src.includes('153,27,27'));
   ok('the cell text follows the same pair', /v > 0 \? C\.green : C\.purple/.test(src));
-  ok('and flips to the on-fill token, not white, once the ground is dark', /a >= 0\.55 \? C\.onFill/.test(src));
+  ok('and flips to the heat-on token, not white, once the ground is strong', /a >= 0\.55 \? C\.heatOn/.test(src));
   // The WHOLE panel, not only the grid. A heatmap saying purple beside a bar chart saying red for
   // the same quantity is worse than either alone — the reader has to work out whether the two
   // colours mean two different things. Every place the SIGN OF GAMMA is drawn now uses the pair.

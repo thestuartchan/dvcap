@@ -51,7 +51,7 @@ const fmtNum = (v, d = 2) => (v == null || !Number.isFinite(+v)) ? "—" : (+v).
 // POSITIVE AND NEGATIVE GAMMA, NOT UP AND DOWN. Green/red is the wrong vocabulary here: negative
 // gamma means moves amplify, which fits a rally exactly as well as a selloff, and a red grid says
 // "bearish" to every reader before they have read a word of the caption.
-const HEAT_POS = C.green, HEAT_NEG = C.purple;
+const HEAT_POS = C.heatPos, HEAT_NEG = C.heatNeg;
 
 // Staleness is measured in HOURS, from the capture timestamp — not in days from the date.
 // The flip moved four points and its zone tripled inside ninety minutes on 2026-09-01. A row
@@ -873,7 +873,7 @@ export function GexPanel() {
                                   a blank cell stays blank, because there is nothing to print. */}
                               <span style={{ fontSize: isMax ? 11.5 : 10.5, fontWeight: 800, lineHeight: 1,
                                              fontVariantNumeric: "tabular-nums", letterSpacing: -0.2,
-                                             color: a >= 0.55 ? C.onFill : (v > 0 ? C.green : C.purple) }}>
+                                             color: a >= 0.55 ? C.heatOn : (v > 0 ? C.green : C.purple) }}>
                                 {isMax ? (v > 0 ? "▲ " : "▼ ") : ""}{fmtCell(v)}
                               </span>
                             </div>

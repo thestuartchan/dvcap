@@ -4894,7 +4894,7 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
           <div style={{ marginLeft: "auto", display: "flex", gap: 9, alignItems: "center" }}>
             {kvOn === false && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>⚠ this browser only</span>}
             {saveMsg && <span style={{ fontSize: 12, color: C.mid }}>{saveMsg}</span>}
-            <Btn onClick={saveCloud} disabled={saving} color={C.onFill} bgColor={dirty ? C.blue : C.bdrMd} label={saving ? "Saving…" : dirty ? "☁ Save to cloud" : "☁ Synced"} />
+            <Btn onClick={saveCloud} disabled={saving} color={dirty ? C.onFill : C.text} bgColor={dirty ? C.blue : C.bdrMd} label={saving ? "Saving…" : dirty ? "☁ Save to cloud" : "☁ Synced"} />
             <button onClick={() => setPortOpen(o => !o)} style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700 }}>{portOpen ? "Hide" : "Open"}</button>
           </div>
         </div>

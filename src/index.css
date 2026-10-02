@@ -26,6 +26,9 @@
   --text-muted: #8A93A0;
   --text-label: #9AA2AE;
   --on-fill: #FAFAFA;
+  --heat-pos: #2E7D5B;
+  --heat-neg: #7A4FB0;
+  --heat-on: #FAFAFA;
   --accent: #2F4FB3;
   --accent-bg: #E8ECF7;
   --accent-bdr: #BCC7EA;
@@ -131,6 +134,9 @@
   --text-muted: #7C82A0;
   --text-label: #9CA3C0;
   --on-fill: #FFFFFF;
+  --heat-pos: #166534;
+  --heat-neg: #6B21A8;
+  --heat-on: #FFFFFF;
   --accent: #1E40AF;
   --accent-bg: #EFF6FF;
   --accent-bdr: #BFDBFE;
@@ -232,10 +238,15 @@
   --border: #2E3340;
   --border-strong: #3D4352;
   --text-primary: #E6E8EE;
-  --text-secondary: #AAB1C0;
-  --text-muted: #7D8596;
-  --text-label: #6B7385;
+  --text-secondary: #B8BECB;
+  --text-muted: #A0A8B7;
+  --text-label: #959DAE;
   --on-fill: #14161B;
+  /* The gamma heatmap's fills: deeper than --pos/--neg here, so a cell at any strength keeps
+     its figure readable — light text on the strong cells, the tone colour on the faint ones. */
+  --heat-pos: #1B6142;
+  --heat-neg: #614793;
+  --heat-on: #E6E8EE;
   --accent: #8FA6EA;
   --accent-bg: #1D2540;
   --accent-bdr: #34437A;
@@ -366,6 +377,11 @@ table { font-size: 13px; line-height: 1.4; }
 
 a { color: inherit; text-decoration: none; }
 button, input, textarea, select { font-family: inherit; }
+/* THE OPEN DROPDOWN LIST. Chrome on Windows draws a native <select>'s list on the OS's own light
+   ground while the options inherit the select's text colour — in dark mode, light grey on white.
+   The options carry the theme's surface and text explicitly, in every theme. */
+select option, select optgroup { background-color: var(--bg-surface); color: var(--text-primary); }
+select option:disabled { color: var(--text-muted); }
 
 /* ── Scrollbar ──────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
