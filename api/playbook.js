@@ -96,6 +96,9 @@ export default async function handler(req, res) {
       latest: KOFIA_STORE.latest || {},
       series: KOFIA_SERIES,
       history: (KOFIA_STORE.history || []).slice(-90),
+      // When the KOFIA/KRX fetch last ran, who ran it, and whether it worked — public market
+      // statistics' provenance, nothing about the account.
+      lastFetch: KOFIA_STORE.lastFetch || null,
     },
     generatedAt: new Date().toISOString(),
   });

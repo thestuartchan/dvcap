@@ -13,6 +13,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, LabelList,
 } from "recharts";
 import { kofiaStale, parseKofia, kofiaDisplay, kofiaStoredLine, KOFIA_NAME_BY_KEY, KOFIA_CURRENCY, KOFIA_FLOWS, toWonTrillions, koreaFlowRead, koreaFlowImplication, withCommas } from "../lib/kofia.js";
+import { seoulStamp } from "../lib/koreaFetch.js";
 import { freshnessText, humanizeAge } from "../lib/sessions.js";
 import { interventionAnnotation } from "../lib/fx.js";
 import { unInversionPhase, yieldCurveStatus, NORMAL_SPREAD } from "../lib/yieldcurve.js";
@@ -4764,6 +4765,9 @@ function KoreaManualEntry({ kofia, gate2 = null, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
   const [savedLatest, setSavedLatest] = useState(null);  // optimistic: show saved values instantly
+  const [fetching, setFetching] = useState(false);
+  const [fetchedNow, setFetchedNow] = useState(null);    // the button's own lastFetch, until redeploy
+  const lastFetch = fetchedNow || kofia?.lastFetch || null;
 
   const parsed = blob.trim() ? parseKofia(blob) : { list: [], anyMismatch: false };
   const latest = savedLatest || kofia?.latest || {};
@@ -4775,6 +4779,21 @@ function KoreaManualEntry({ kofia, gate2 = null, onSaved }) {
   const hasFlow = (fNet.trim() !== "" && Number.isFinite(fv)) || (iNet.trim() !== "" && Number.isFinite(iv))
                   || (rNet.trim() !== "" && Number.isFinite(rv));
   const canSave = (parsed.list.length > 0 && !parsed.anyMismatch) || (Number.isFinite(uvNum) && uvNum > 0) || hasFlow;
+
+  // FETCH NOW — the scheduled run's KOFIA + KRX read, on demand. The readings and the stamp come
+  // back in the answer, so the panel updates now; the commit redeploys for the Pre-Reads.
+  async function fetchNow() {
+    setFetching(true); setMsg(null);
+    try {
+      const r = await fetch("/api/korea-save?fetch=1", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}", credentials: "include" });
+      const j = await r.json().catch(() => ({}));
+      if (j.latest) setSavedLatest(j.latest);
+      if (j.lastFetch) setFetchedNow(j.lastFetch);
+      if (!r.ok) setMsg({ ok: false, text: j.error || ("Fetch failed " + r.status) });
+      else setMsg({ ok: j.ok, text: (j.changed ? "Fetched — new readings below. " : "Fetched — nothing new since the last read. ") + (j.ok ? "" : (j.report || []).filter(l => /FAILED/.test(l)).join(" · ")) });
+    } catch (e) { setMsg({ ok: false, text: "Fetch error: " + e.message }); }
+    setFetching(false);
+  }
 
   async function save() {
     setSaving(true); setMsg(null);
@@ -4820,6 +4839,23 @@ function KoreaManualEntry({ kofia, gate2 = null, onSaved }) {
   return (
     <Card>
       <SLabel><span style={{ display: "inline-block", background: P.navy700, color: C.onFill, fontSize: 9, fontWeight: 800, padding: "1px 4px", borderRadius: 3, marginRight: 5, letterSpacing: 0 }}>KR</span>Korea — KOFIA + KRX flows (automatic) · 7709 units (manual)</SLabel>
+      {/* WHEN IT LAST LOOKED. Each reading's as-of date says how old the figure is; this says when
+          the fetch last ran and whether it worked, so a quiet day and a run that never happened
+          read differently. */}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 11.5, margin: "2px 0 4px" }}>
+        {lastFetch ? (
+          <span style={{ color: lastFetch.ok ? C.mid : C.red, fontWeight: 700 }} title={(lastFetch.report || []).join("\n")}>
+            Last fetched {seoulStamp(lastFetch.at) || lastFetch.at} · {lastFetch.by === "button" ? "by you" : lastFetch.by === "manual run" ? "manual run" : "scheduled"}
+            {" · "}{lastFetch.ok ? (lastFetch.changed ? "new readings" : "nothing new") : `failed — ${Object.entries(lastFetch.sources || {}).filter(([, v]) => v === "failed").map(([k]) => k.toUpperCase()).join(" + ") || "see details"}`}
+            {lastFetch.ok && lastFetch.sources?.krx === "in session" ? " · KRX still in session" : ""}
+          </span>
+        ) : <span style={{ color: C.muted }}>No automatic fetch recorded yet</span>}
+        <button onClick={fetchNow} disabled={fetching || saving}
+          style={{ background: C.surf, color: C.blue, border: "1.5px solid " + C.blue, borderRadius: 7, padding: "3px 10px", fontSize: 11.5, fontWeight: 800, cursor: fetching ? "wait" : "pointer", opacity: fetching ? 0.6 : 1 }}>
+          {fetching ? "Fetching…" : "Fetch now"}
+        </button>
+        {fetching && <span style={{ color: C.muted }}>KOFIA and KRX, up to a minute</span>}
+      </div>
       <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
         KOFIA and the KRX flow table are read automatically after the Seoul close (16:10 and 20:10 KST, weekdays). The paste below still works as a fallback; CSOP 7709 units stay a hand entry.
       </div>

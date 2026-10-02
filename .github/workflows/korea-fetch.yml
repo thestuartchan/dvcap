@@ -6,7 +6,10 @@
 #   07:10 UTC = 16:10 KST  the day's flows, final
 #   11:10 UTC = 20:10 KST  a retry, and whatever KOFIA has posted since
 # Both runs are idempotent — every reading is keyed by its own date — so a second run on an
-# unchanged page commits nothing. A Korean holiday finds yesterday's figures and changes nothing.
+# unchanged page changes no reading. It still commits: lastFetch in the file records when the
+# fetch ran and whether each source worked, which is what the Korea panel's "Last fetched" line
+# shows. A Korean holiday finds yesterday's figures and changes no reading.
+# The panel's Fetch now button runs the same fetch (lib/koreaFetch.js) through api/korea-save.js.
 #
 # WHERE IT GOES. data/korea_kofia.json, the same file the hand paste commits through
 # api/korea-save.js, merged by the same code (lib/koreaStore.js). The commit redeploys, which is how
@@ -41,7 +44,7 @@ jobs:
           node-version: '22'
       - name: Read KOFIA and KRX, merge into data/korea_kofia.json
         run: node scripts/korea-fetch.mjs
-      - name: Commit if anything changed
+      - name: Commit the readings and the lastFetch stamp
         if: always()
         run: |
           if git diff --quiet -- data/korea_kofia.json; then echo "no change to commit"; exit 0; fi
