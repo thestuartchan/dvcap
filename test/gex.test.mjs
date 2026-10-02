@@ -3,7 +3,7 @@
 // code and copying what it said.
 import {
   gexSummary, netGammaAt, flipLevel, flipFragility, walls, toDollarGex,
-  contractGamma, gammaGrid, GEX_CONVENTIONS, CONTRACT_MULTIPLIER, heatCells, heatAlpha, spotSlot, HEAT_ROWS, HEAT_PCTL, HEAT_ALPHA_FLOOR } from '../lib/gex.js';
+  contractGamma, gammaGrid, atmIvByExpiry, GEX_CONVENTIONS, CONTRACT_MULTIPLIER, heatCells, heatAlpha, spotSlot, HEAT_ROWS, HEAT_PCTL, HEAT_ALPHA_FLOOR } from '../lib/gex.js';
 import { gamma } from '../lib/blackscholes.js';
 import { wallAgreement } from '../lib/gexRead.js';
 import { CUSTOM_ROOT_RE } from '../lib/gexStore.js';
@@ -336,6 +336,29 @@ const PE = (k, oi, e, T, iv = 0.22) => ({ type: 'put', strike: k, oi, iv, T, exp
   eq('on a strike, the line is drawn above that row', spotSlot(ks, 736), 3);
   eq('above every row / below every row', [spotSlot(ks, 800), spotSlot(ks, 700)], [0, 6]);
   eq('no spot, no line', [spotSlot(ks, null), spotSlot(null, 736)], [null, null]);
+}
+// ── ATM IV PER EXPIRY ──
+{
+  const now = '2026-10-01T20:00:00Z';
+  const c = (expiry, type, strike, iv) => ({ expiry, type, strike, iv, oi: 100 });
+  const chain = [
+    c('2026-10-30', 'call', 740, 0.19), c('2026-10-30', 'put', 740, 0.21),   // mean 0.20
+    c('2026-10-30', 'call', 745, 0.17), c('2026-10-30', 'put', 745, 0.19),   // mean 0.18
+    c('2026-10-30', 'put', 700, 0.32),                                       // the skew — not ATM
+    c('2026-10-02', 'call', 742, 0.15), c('2026-10-02', 'put', 742, 1e-5),  // Yahoo's sentinel, skipped
+    c('2026-10-09', 'call', 760, 0.16),                                      // no strike below spot
+    c('2026-09-30', 'call', 740, 0.20),                                      // expired
+  ];
+  const a = atmIvByExpiry(chain, 742.5, { now });
+  eq('one row per live expiry, in date order', a.map(x => x.expiry), ['2026-10-02', '2026-10-09', '2026-10-30']);
+  eq('interpolated to spot between the two strikes that straddle it', a[2].iv, 0.19);
+  eq('…and names them', a[2].strikes, [740, 745]);
+  eq('spot past the last quoted strike: null', a[0].iv, null);
+  const at = atmIvByExpiry(chain, 742, { now });
+  eq('a strike at spot is used alone, the sentinel vol dropped', [at[0].iv, at[0].strikes], [0.15, [742]]);
+  eq('strikes that do not straddle spot: null, not the nearest wing', a[1].iv, null);
+  eq('years to the 16:00 ET close', a[2].years, +((Date.parse('2026-10-30T21:00:00Z') - Date.parse(now)) / (365 * 864e5)).toFixed(5));
+  eq('no spot, no rows', atmIvByExpiry(chain, null), []);
 }
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

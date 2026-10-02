@@ -44,7 +44,7 @@ const json = JSON.stringify(p);
 
 {
   eq('the brief\'s fields, in its order', Object.keys(p), ['ticker', 'as_of_utc', 'source_snapshot_utc', 'mode', 'spot', 'net_gex_per_1pct',
-     'net_ex_today', 'net_today', 'flip', 'call_wall', 'pin_top', 'put_support', 'trapdoor', 'pin_box', 'balance', 'expiries', 'strikes', 'post_expiry_pivot', 'cross_check', 'risk_free']);
+     'net_ex_today', 'net_today', 'flip', 'call_wall', 'pin_top', 'put_support', 'trapdoor', 'pin_box', 'balance', 'expiries', 'strikes', 'post_expiry_pivot', 'cross_check', 'risk_free', 'atm_iv_source', 'atm_iv_reason']);
   eq('ACCEPTANCE: none of the banned words', feedLeaks(json), []);
   eq('the banned list is the brief\'s', FEED_BANNED, ['position', 'qty', 'nlv', 'journal', 'alert', 'key', 'token']);
   eq('…and the check catches each of them, keys and values, any case', ['{"Position":1}', '{"a":"NLV"}', '{"token":1}', '{"k":"my key"}'].map(s => feedLeaks(s).length > 0), [true, true, true, true]);
@@ -128,6 +128,20 @@ const json = JSON.stringify(p);
   eq('once rolled, not stale', oiStaleReason({ ...v, rolledSinceClose: true }, new Date('2026-09-30T13:25:00Z')), null);
   eq('after today\'s close, not stale either', oiStaleReason({ priorClose: '2026-09-30T20:00:00.000Z', rolledSinceClose: false }, new Date('2026-09-30T22:00:00Z')), null);
   eq('the header\'s label', oiSettledLabel({ priorClose: '2026-09-29T20:00:00.000Z', rolledSinceClose: true }), 'OI settled 2026-09-29');
+}
+// ── ATM IV PER EXPIRY ──
+{
+  const withAtm = { ...board, atmIv: [{ expiry: '2026-10-02', years: 0.0089, iv: 0.172, strikes: [735, 740] },
+                                      { expiry: '2026-09-30', years: 0.0034, iv: null, strikes: null }] };
+  const q = gexFeedPayload('QQQ', withAtm, { mode: 'live_recompute', asOf: '2026-09-29T14:02:00Z', today: '2026-09-29' });
+  const e = Object.fromEntries(q.expiries.map(x => [x.date, x]));
+  eq('ATM IV on its expiry, in percent', e['2026-10-02'].atm_iv_pct, 17.2);
+  eq('one-sigma move = spot x vol x sqrt(years)', e['2026-10-02'].move_1sd, +(736.53 * 0.172 * Math.sqrt(0.0089)).toFixed(2));
+  eq('an expiry without an ATM vol says null', [e['2026-09-30'].atm_iv_pct, e['2026-09-29'].atm_iv_pct], [null, null]);
+  ok('the source is named', /CBOE/.test(q.atm_iv_source) && !('atm_iv_reason' in q));
+  const plain = gexFeedPayload('QQQ', board, { today: '2026-09-29' });
+  eq('a board with no CBOE surface: null, with the reason', [plain.expiries[0].atm_iv_pct, plain.atm_iv_source, typeof plain.atm_iv_reason], [null, null, 'string']);
+  eq('the feed scan stays clean', feedLeaks(JSON.stringify(q)), []);
 }
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
