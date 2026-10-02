@@ -87,5 +87,8 @@ jobs:
                     + (f" | NOT KEPT — {r['staleReason']}" if r.get('staleReason') else ' | kept')
                     + f" | call wall {(lv.get('callWall') or {}).get('strike')}"
                     + f" | trapdoor {((lv.get('trapdoor') or {}).get('near') or {}).get('strike')}")
+              # ATM vol per expiry (market data, CBOE's surface) — what the feed's move_1sd scales by.
+              atm = [a for a in (r.get('atmIv') or []) if a.get('iv') is not None]
+              print(f"    ATM IV: " + (', '.join(f"{a['expiry']} {a['iv']*100:.1f}%" for a in atm) or 'none'))
           PY
           [ "$code" = "200" ] || exit 1
