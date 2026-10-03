@@ -2,9 +2,9 @@
   "_README": "Korea manual-entry store (KOFIA margin loans / deposits / CMA / KOSPI / KR 3Y yields + CSOP 7709 units). Written by api/korea-save.js (dashboard paste → GitHub commit); read server-side by the Pre-Read and dashboard. `latest` = current value per field (raw units: 백만원 for currency, % for yields, points for KOSPI, integer for 7709 units) + its own asOf. `history` = append-only snapshots for the trend view. Do not hand-edit unless fixing a bad save.",
   "latest": {
     "units7709": {
-      "value": 834500000,
+      "value": 837000000,
       "asOf": "2026-10-02",
-      "delta": 0
+      "delta": 2500000
     },
     "kospi": {
       "value": 7003.74,
@@ -2750,6 +2750,13 @@
         "value": 84,
         "asOf": "2026-10-02"
       }
+    },
+    {
+      "savedAt": "2026-10-03T20:31:56.723Z",
+      "units7709": {
+        "value": 837000000,
+        "asOf": "2026-10-02"
+      }
     }
   ],
   "series": {
@@ -4714,7 +4721,7 @@
       },
       {
         "date": "2026-10-02",
-        "value": 834500000,
+        "value": 837000000,
         "unit": "units",
         "delta": null,
         "pct": null
