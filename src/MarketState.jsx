@@ -598,7 +598,7 @@ export function FeedHealth({ feed, indErrors = [], indUpdated = null }) {
           </tbody>
         </table>
       </div>
-      <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5 }}>Daily series are fresh to 4 calendar days (a weekend and FRED's one-to-two-day lag on the credit indices) and stale past 7; weekly ones fresh to 9 and stale past 16.</div>
+      <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5 }}>Daily series are fresh to 4 calendar days (a weekend and FRED's one-to-two-day lag on the credit indices) and stale past 7; weekly ones fresh to 9 and stale past 16. The term premium is daily data that FRED posts in a weekly batch, so it is judged as weekly.</div>
     </Card>
   );
 }

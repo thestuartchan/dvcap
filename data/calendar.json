@@ -495,6 +495,14 @@
   "tz": "America/New_York"
  },
  {
+  "date": "2026-10-09",
+  "title": "US UMich consumer sentiment, preliminary (Oct)",
+  "region": "US",
+  "tier": 2,
+  "time": "10:00",
+  "tz": "America/New_York"
+ },
+ {
   "date": "2026-10-14",
   "title": "China CPI + PPI (Sep)",
   "region": "ASIA",
@@ -516,6 +524,30 @@
   "region": "US",
   "tier": 1,
   "scope": "global",
+  "time": "08:30",
+  "tz": "America/New_York"
+ },
+ {
+  "date": "2026-10-14",
+  "title": "China trade balance (Sep) \u2014 exports and imports",
+  "region": "ASIA",
+  "tier": 2,
+  "time": "11:00",
+  "tz": "Asia/Shanghai"
+ },
+ {
+  "date": "2026-10-15",
+  "title": "US PPI (Sep)",
+  "region": "US",
+  "tier": 2,
+  "time": "08:30",
+  "tz": "America/New_York"
+ },
+ {
+  "date": "2026-10-15",
+  "title": "US retail sales (Sep) \u2014 advance estimate",
+  "region": "US",
+  "tier": 1,
   "time": "08:30",
   "tz": "America/New_York"
  },

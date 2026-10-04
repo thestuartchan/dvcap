@@ -193,6 +193,11 @@ const calm = {
   }, now);
   eq('feed health: worst first, by cadence', h.map(r => [r.key, r.status, r.age]),
      [['nil', 'missing', null], ['dxy', 'stale', 20], ['move', 'late', 6], ['hyOas', 'fresh', 2], ['tga', 'fresh', 7]]);
+  // Daily values published in a weekly batch (Kim-Wright on FRED): 9 days old on the Sunday before
+  // the next batch is normal, not stale — and the cadence column says so.
+  const tp = seriesHealth({ termPremium: { label: '10Y term premium', cadence: 'daily', published: 'weekly', date: '2026-09-25' } }, new Date('2026-10-04T10:00:00Z'))[0];
+  eq('a weekly-published daily series is judged on its batch', [tp.status, tp.age, tp.cadence], ['fresh', 9, 'daily, published weekly']);
+  eq('and the term premium is marked so', SERIES_META.termPremium.published, 'weekly');
   const all = DRIVER_GROUPS.flatMap(g => g.series);
   eq('every driver tile is a known series, none twice', [all.every(k => SERIES_META[k]), new Set(all).size === all.length], [true, true]);
   eq('every gauge the feed carries has a home on the Drivers tab', Object.keys(SERIES_META).filter(k => !all.includes(k)), []);
