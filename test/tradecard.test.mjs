@@ -6,6 +6,7 @@
 // appear nowhere in the serialised output. A future edit that adds "· 600 @ 18.06" to a line fails
 // here rather than on a Discord server.
 import { publicView, buildCard, buildClosedCard, closedLine, rOf, lockedPct, isOptionTrade, showsOnCard, CLOSED_WINDOW_DAYS, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, dirOf, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS, DOT } from '../lib/tradecard.js';
+import { isStaleEvent } from '../lib/tradecard.js';
 import { isWebhookUrl, alertTtlMin, mentionFromEnv, webhookFromEnv } from '../lib/discord.js';
 import { derivePosition } from '../lib/positions.js';
 import fs from 'node:fs';
@@ -494,6 +495,16 @@ eq('sorted by exit date', order[0].includes('CLOSED_LAST'), true);
 
   // A BACKFILLED STOP IS STILL A STOP for every other purpose — the level itself is unchanged.
   eq('the stop level still renders', back.stop?.at, 37.5);
+}
+
+// ── an alert is news or nothing ──
+{
+  const now = Date.parse('2026-10-06T12:00:00Z');
+  const old = { fills: [{ date: '2026-06-01' }, { date: '2026-07-10' }] }, fresh = { fills: [{ date: '2026-07-10' }, { date: '2026-10-05' }] };
+  ok('a close whose last fill is months old is not announced', isStaleEvent({ kind: 'closed' }, old, now));
+  ok('a close from yesterday is', !isStaleEvent({ kind: 'closed' }, fresh, now));
+  ok('a level hit is never stale by this rule', !isStaleEvent({ kind: 'level' }, old, now));
+  ok('a row with no dated fills is not suppressed', !isStaleEvent({ kind: 'opened' }, { fills: [] }, now));
 }
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);

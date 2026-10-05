@@ -42,6 +42,7 @@ import { actionItems } from "../lib/actions.js";
 import { applyDraft, LEVEL_LABEL as JOURNAL_LEVEL_LABEL } from "../lib/journalInbox.js";
 import JournalDrafts from "./JournalDrafts.jsx";
 import FillAudit from "./FillAudit.jsx";
+import { undoCarryOver } from "../lib/fillAudit.js";
 import { useRef } from "react";
 import { isDerivativeRow, underlyingOf, legLabel, optionDerived, exposureLines, optionRow, optionLevelVocab, hardDateCheck, defaultHardDate,
          markOf, spreadShape, INSTRUMENTS, INSTRUMENT_LABEL, LEG_RIGHTS, LEG_SIDES, MAX_LEGS, expiryLabel } from "../lib/instruments.js";
@@ -2805,6 +2806,8 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   const [flexNote, setFlexNote] = useState(null);
   // The IBKR statement's cash and cash equivalents at market (lib/flex.js cashBookOf).
   const [cashBook, setCashBook] = useState(null);
+  // Named rollback points of the console (api/manual-entry.js consoleSnapshot) — names and times only.
+  const [snapshots, setSnapshots] = useState([]);
   // Journal drafts: notes from chat matched to IBKR fills by the daily run (lib/journalInbox.js).
   const [journal, setJournal] = useState(null);
   const [journalBusy, setJournalBusy] = useState(false);
@@ -2853,6 +2856,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       setPreread(Array.isArray(j?.preread) ? j.preread : null);
       setFlexNote(j?.flexSync || null);
       setCashBook(j?.cashBook || null);
+      if (Array.isArray(j?.consoleSnapshots)) setSnapshots(j.consoleSnapshots);
       setJournal(j?.journal || null);
       setChainAt(new Date().toISOString());
     })
@@ -2890,6 +2894,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       setKvOn(j?.kv?.configured ?? null);
       setFlexNote(j?.flexSync || null);
       setCashBook(j?.cashBook || null);
+      if (Array.isArray(j?.consoleSnapshots)) setSnapshots(j.consoleSnapshots);
       setJournal(j?.journal || null);
       setPreread(Array.isArray(j?.preread) ? j.preread : null);
       setChainAt(new Date().toISOString());
@@ -3563,6 +3568,43 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     if (rows.some(x => x.id === row.id)) return;
     setRows(p => [...p, { ...row, ...archivePatch() }]); touch();
   };
+  // ── ROLLBACK ── a named copy of the console as this browser holds it, kept beside the live one.
+  const takeSnapshot = async (label) => {
+    try {
+      const r = await fetch("/api/manual-entry", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+        body: JSON.stringify({ consoleSnapshot: { label, console: { rows, settings } } }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j?.snapshot?.stored === "kv") { if (Array.isArray(j.snapshots)) setSnapshots(j.snapshots); return { ok: true, snapshot: j.snapshot }; }
+      return { ok: false, error: j?.error || (j?.snapshot?.stored === "none" ? "cloud storage is not configured" : `HTTP ${r.status}`) };
+    } catch (e) { return { ok: false, error: e.message || String(e) }; }
+  };
+  const restoreSnapshot = async (label) => {
+    try {
+      const r = await fetch(`/api/manual-entry?snapshot=${encodeURIComponent(label)}`, { credentials: "include", cache: "no-store" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j?.snapshot) return { ok: false, error: j?.error || `HTTP ${r.status}` };
+      setRows(backfillMultipliers(j.snapshot.rows || []).rows);
+      setSettings(s => ({ ...s, ...(j.snapshot.settings || {}) }));
+      touch();
+      return { ok: true, rows: (j.snapshot.rows || []).length };
+    } catch (e) { return { ok: false, error: e.message || String(e) }; }
+  };
+  // Removes exactly what the carry-over wrote (lib/fillAudit.js undoCarryOver), re-deriving the
+  // lifecycle of each row it touched.
+  const undoCarry = () => {
+    const u = undoCarryOver(rows);
+    if (!u.removedRows && !u.removedFills) return u;
+    const was = new Map(rows.map(r => [r.id, r]));
+    setRows(u.rows.map(r => {
+      if (!u.touched.includes(r.id)) return r;
+      const prev = was.get(r.id);
+      const before = derivePosition(prev.fills || [], { multiplier: r.multiplier, side: r.side });
+      const after = derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side });
+      return { ...r, ...afterFill(before, after) };
+    }));
+    touch();
+    return u;
+  };
   const undoDel = () => {
     const u = undo; if (!u) return;
     const r = rows.find(x => x.id === u.rowId); if (!r) { setUndo(null); return; }
@@ -4140,9 +4182,12 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           fills that arrived with no note, and notes whose fill never came. Absent when empty. */}
       <JournalDrafts journal={journal} rows={rows} onConfirm={confirmDraft} onDismiss={dismissDraft} onChoose={chooseDraft} onDrop={dropNote} busy={journalBusy} msg={journalMsg} />
 
-      {/* ── MISSING FILLS ── the broker's fills (the owner's trade sheet) against every console trade. */}
+      {/* ── ONE-TIME CARRY-OVER ── the old trade sheet's fills, before it is retired. Gone once marked done. */}
       <FillAudit rows={rows} sheet={settings.brokerSheet || ""} setSheet={(v) => { setSettings(s => ({ ...s, brokerSheet: v })); touch(); }}
-        onAddFill={addBrokerFill} onAddRow={addBrokerRow} />
+        onAddFill={addBrokerFill} onAddRow={addBrokerRow}
+        snapshots={snapshots} onSnapshot={takeSnapshot} onRestore={restoreSnapshot} onUndo={undoCarry}
+        retired={!!settings.sheetReconciledAt}
+        onRetire={() => { setSettings(s => ({ ...s, brokerSheet: null, sheetReconciledAt: new Date().toISOString() })); touch(); }} />
 
       {/* ── CURRENT PORTFOLIO ──
           Same visual idiom as the Smart Money tab (donut for weight, horizontal bars for the

@@ -9,7 +9,8 @@
 //     trusted by habit.
 // Both live in one endpoint to stay inside the 12-function Hobby cap (this is the 8th).
 
-import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY, CASHBOOK_KEY } from '../lib/kv.js';
+import { kvGetJson, kvSetJson, kvSetJsonEx, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY, CASHBOOK_KEY,
+         CONSOLE_SNAP_PREFIX, CONSOLE_SNAPS_KEY, CONSOLE_SNAP_TTL_S, CONSOLE_SNAPS_KEEP } from '../lib/kv.js';
 import { prereadStatus } from '../lib/preread.js';
 import { localDateIn, localMinutesOfDay } from '../lib/sessions.js';
 import { UNIVERSE } from '../data/universe.js';
@@ -258,6 +259,16 @@ function sanitizeConsoleSettings(s) {
     // the console already holds — mostly bulk averages that no individual order will ever match —
     // and are left alone. Set once, when trade ingestion is switched on.
     flexTradesFrom: cs(s.flexTradesFrom, 12),
+    // ── KEPT SINCE 6 OCT ── these were set in the console and silently dropped here, so they never
+    // reached another device: the sizer's exempt index ETFs, the swing re-note dates, the open
+    // list's order and filter, and the sheet carry-over's link and done-date.
+    ...(Array.isArray(s.sizerExempt) ? { sizerExempt: s.sizerExempt.map(x => String(x || '').toUpperCase().trim()).filter(x => /^[A-Z0-9.^-]{1,12}$/.test(x)).slice(0, 20) } : {}),
+    ...(s.swingNotes && typeof s.swingNotes === 'object' && !Array.isArray(s.swingNotes)
+      ? { swingNotes: Object.fromEntries(Object.entries(s.swingNotes).filter(([k, v]) => /^[A-Z0-9.^-]{1,24}$/i.test(k) && /^\d{4}-\d{2}-\d{2}$/.test(String(v))).slice(0, 200)) } : {}),
+    ...(['size', 'tag', 'manual'].includes(s.openSort) ? { openSort: s.openSort } : {}),
+    ...(Array.isArray(s.openFilter) ? { openFilter: s.openFilter.filter(g => ['position', 'swing', 'hedge', 'intraday', 'untagged', 'cash'].includes(g)).slice(0, 6) } : {}),
+    ...(s.brokerSheet != null ? { brokerSheet: cs(s.brokerSheet, 200) } : {}),
+    ...(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(String(s.sheetReconciledAt || '')) ? { sheetReconciledAt: String(s.sheetReconciledAt).slice(0, 30) } : {}),
   };
   if (s.sizing && typeof s.sizing === 'object') {
     out.sizing = {};
@@ -299,6 +310,14 @@ export default async function handler(req, res) {
     // THE MIDDLEWARE DOES NOT COVER THIS. It matches `/` only, so this route served the whole
     // trade console — fills, cost basis and settings.equity — to anyone who asked. See lib/apiauth.
     if (!(await authorised(req))) return refuse(res);
+    // One rollback point, whole — for the console's Restore. Same session gate as everything here.
+    const snap = String(req.query?.snapshot || '');
+    if (snap) {
+      if (!/^[a-z0-9-]{3,40}$/.test(snap)) return res.status(400).json({ error: 'bad snapshot label' });
+      const copy = kvConfigured() ? await kvGetJson(CONSOLE_SNAP_PREFIX + snap) : null;
+      res.setHeader('Cache-Control', 'private, no-store');
+      return copy ? res.status(200).json({ snapshot: copy }) : res.status(404).json({ error: 'no such snapshot (they expire after 90 days)' });
+    }
     if (!process.env.GITHUB_TOKEN || !process.env.GITHUB_REPO) {
       return res.status(200).json({ fedPath: { latest: null, series: [] }, oasRecon: [], intervention: null, note: 'store not configured' });
     }
@@ -357,6 +376,8 @@ export default async function handler(req, res) {
         // The statement's cash and cash equivalents (USFR, IB01, bills, USD cash) at market — for the
         // Cash & equivalents line and IBKR's own leverage figure. Private: this route is session-gated.
         cashBook: kvConfigured() ? await kvGetJson(CASHBOOK_KEY) : null,
+        // Rollback points: names, times and sizes only. The copy itself is read with ?snapshot=.
+        consoleSnapshots: kvConfigured() ? ((await kvGetJson(CONSOLE_SNAPS_KEY)) || []) : [],
         // ── REAL PERP POSITIONS, IF AN ADDRESS IS CONFIGURED ──────────────────────────────────
         // Served HERE and not from api/prices: this route is authenticated and `private,
         // no-store`, and a liquidation price is size and leverage restated. The price route is
@@ -416,6 +437,24 @@ export default async function handler(req, res) {
   // recorded, which is not when the console syncs — and the console object is REPLACED wholesale on
   // sync, so a log kept inside it would be destroyed by the next save. Append-only, capped, and
   // never rewritten: the point of the log is that it says what was decided at the time.
+  // ── A ROLLBACK POINT ────────────────────────────────────────────────────────
+  // The browser's console as it stands, under a name, BESIDE the live copy — never instead of it.
+  // Sanitised exactly as a save is, expires on its own, and only the newest few are listed.
+  const { consoleSnapshot } = req.body || {};
+  if (consoleSnapshot && typeof consoleSnapshot === 'object') {
+    const label = String(consoleSnapshot.label || '');
+    if (!/^[a-z0-9-]{3,40}$/.test(label)) return res.status(400).json({ error: 'snapshot label must be 3–40 of a-z, 0-9, "-"' });
+    if (!kvConfigured()) return res.status(200).json({ snapshot: { stored: 'none' } });
+    const c = consoleSnapshot.console && typeof consoleSnapshot.console === 'object' ? consoleSnapshot.console : ((await kvGetJson(CONSOLE_KEY)) || {});
+    const payload = { rows: (Array.isArray(c.rows) ? c.rows : []).map(sanitizeRow).filter(Boolean).slice(0, 200),
+                      settings: sanitizeConsoleSettings(c.settings || {}), takenAt: new Date().toISOString(), label };
+    const wrote = await kvSetJsonEx(CONSOLE_SNAP_PREFIX + label, payload, CONSOLE_SNAP_TTL_S);
+    if (!wrote) return res.status(502).json({ snapshot: { stored: 'failed' } });
+    const index = ((await kvGetJson(CONSOLE_SNAPS_KEY)) || []).filter(x => x?.label !== label);
+    const next = [{ label, at: payload.takenAt, rows: payload.rows.length, fills: payload.rows.reduce((a, r) => a + r.fills.length, 0) }, ...index].slice(0, CONSOLE_SNAPS_KEEP);
+    await kvSetJson(CONSOLE_SNAPS_KEY, next);
+    return res.status(200).json({ snapshot: { stored: 'kv', ...next[0] }, snapshots: next });
+  }
   if (decision && typeof decision === 'object') {
     if (!kvConfigured()) return res.status(200).json({ decision: { stored: 'none' } });
     const log = await kvGetJson(DECISIONS_KEY);
