@@ -10,6 +10,7 @@
 // The contract with App.jsx is the TradeConsole props below: live regime and its qualifiers, the
 // price feed, and the regime history. Everything else is derived here or imported from lib/.
 
+import { isCashEquivalent } from "../lib/cashEquivalents.js";
 import { Fragment, useState, useEffect, useMemo, useCallback } from "react";
 import { FUTURES_MULTIPLIER, multiplierFor, backfillMultipliers, quoteConvention, looksMisquoted, isUnambiguousFuture } from '../lib/futures.js';
 import { cryptoSymbolCheck, cryptoQuoteSymbol, isSpotCrypto, assetClassGroups, priceMaxDp } from '../lib/crypto.js';
@@ -1509,7 +1510,7 @@ const XpoStat = ({ label, value, sub, col, breach }) => (
 // COMPUTED ONCE, USED IN BOTH. The exposure tile reports the book and the sizer decides what may
 // be added to it; if each fetched and totalled its own, the panel could show one delta-notional
 // and refuse a trade against a different one.
-function useBookExposure(rows, nlv) {
+function useBookExposure(rows, nlv, cashBook = null) {
   const [feed, setFeed] = useState(null);
   const [err, setErr] = useState(null);
 
@@ -1543,8 +1544,8 @@ function useBookExposure(rows, nlv) {
     rows: (rows || []).map(r => ({ ...r, qty: r?.derived?.qty ?? r?.qty })),
     greeks: live?.greeks || {},
     underlyings: live?.spots || {},
-    nlv, asOf: live?.asOf || null, trend: live?.trend || [],
-  }), [rows, live, nlv]);
+    nlv, asOf: live?.asOf || null, trend: live?.trend || [], cashBook,
+  }), [rows, live, nlv, cashBook]);
 
   // ── THE DAILY POINT ────────────────────────────────────────────────────────
   // The 20d series is the most useful row on the tile and it only exists if something writes to
@@ -2455,10 +2456,39 @@ function ExposureTile({ book, err, children = null }) {
           sub={book.oneSd == null ? `target ${Math.round(L.volTargetLo * 100)}–${Math.round(L.volTargetHi * 100)}%` : `1sd ±${money(book.oneSd)}`} />
         <XpoStat label="Vega" value={book.greeksPending ? "awaiting" : money(book.vega)} sub="per vol point" />
       </div>
-      {book.cashLegs?.value > 0 && (
-        <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6 }}>
-          Cash legs {money(book.cashLegs.value)}{book.cashLegs.pctNlv != null ? ` (${book.cashLegs.pctNlv}% of NLV)` : ""} — {book.cashLegs.symbols.join(", ")} — held out of delta-notional: a T-bill wrapper does not move with the market. Counted in NLV, not in what the book is carrying.
+      {/* TWO LEVERAGE NUMBERS, NAMED. IBKR's screen (gross ÷ NLV, cash funds included) and the
+          book's (delta-notional ÷ NLV, cash at zero) are different questions; reading IBKR's 1.44×
+          as the 1.2× rule's number is what this row exists to stop. */}
+      {book.leverage && (
+        <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 8, fontSize: 12 }}>
+          <span title={book.leverage.book.basis}>
+            <span style={{ color: C.lbl, fontWeight: 800 }}>Book (1.2× rule) </span>
+            <b style={{ color: stateCol, fontSize: 14 }}>{book.leverage.book.ratio == null ? "—" : `${book.leverage.book.ratio}×`}</b>
+            <span style={{ color: C.muted }}> delta-notional ÷ NLV, cash equivalents excluded</span>
+          </span>
+          <span title={book.leverage.ibkr.basis}>
+            <span style={{ color: C.lbl, fontWeight: 800 }}>IBKR leverage </span>
+            <b style={{ fontSize: 14 }}>{book.leverage.ibkr.ratio == null ? "—" : `${book.leverage.ibkr.ratio}×`}</b>
+            <span style={{ color: C.muted }}> gross ÷ NLV, cash equivalents included — what IBKR shows</span>
+          </span>
         </div>
+      )}
+      {/* ONE CASH LINE. USD cash, T-bill funds, IB01 and bills together, broken down on expand —
+          none of it in delta-notional, the buckets or the 1.2× ceiling, and none of it on the card. */}
+      {book.cashEquivalents && (book.cashEquivalents.total > 0 || book.cashEquivalents.lines.length > 0) && (
+        <details style={{ fontSize: 11.5, color: C.muted, marginTop: 6 }}>
+          <summary style={{ cursor: "pointer" }}>
+            <b style={{ color: C.mid }}>Cash &amp; equivalents {money(book.cashEquivalents.total)}</b>
+            {book.cashEquivalents.pctNlv != null ? ` (${book.cashEquivalents.pctNlv}% of NLV)` : ""} — held out of delta-notional and the 1.2× ceiling{book.cashEquivalents.asOf ? ` · statement ${book.cashEquivalents.asOf}` : ""}
+          </summary>
+          <div style={{ display: "grid", gap: 2, marginTop: 4, paddingLeft: 12 }}>
+            <div>USD cash {book.cashEquivalents.usdCash == null ? <i>— {book.cashEquivalents.usdCashNote}</i> : money(book.cashEquivalents.usdCash)}</div>
+            {book.cashEquivalents.lines.map(l => (
+              <div key={l.symbol}>{l.kind === "bill" ? `T-bill ${l.symbol}${l.expiry ? ` (matures ${l.expiry})` : ""}` : l.symbol} {money(l.value)}
+                <span style={{ color: C.lbl }}> · {l.source === "statement" ? "IBKR statement, at market" : "console row"}</span></div>
+            ))}
+          </div>
+        </details>
       )}
 
       {/* ── POSITION BOOK AND SWING BUCKET ──
@@ -2753,6 +2783,8 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   // What the scheduled IBKR reconciliation last did. Server-owned: it arrives beside the console
   // rather than inside it, because a save replaces the console object wholesale.
   const [flexNote, setFlexNote] = useState(null);
+  // The IBKR statement's cash and cash equivalents at market (lib/flex.js cashBookOf).
+  const [cashBook, setCashBook] = useState(null);
   // Journal drafts: notes from chat matched to IBKR fills by the daily run (lib/journalInbox.js).
   const [journal, setJournal] = useState(null);
   const [journalBusy, setJournalBusy] = useState(false);
@@ -2800,6 +2832,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       setWallet(j?.wallet?.chains ? j.wallet : null);
       setPreread(Array.isArray(j?.preread) ? j.preread : null);
       setFlexNote(j?.flexSync || null);
+      setCashBook(j?.cashBook || null);
       setJournal(j?.journal || null);
       setChainAt(new Date().toISOString());
     })
@@ -2836,6 +2869,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       }
       setKvOn(j?.kv?.configured ?? null);
       setFlexNote(j?.flexSync || null);
+      setCashBook(j?.cashBook || null);
       setJournal(j?.journal || null);
       setPreread(Array.isArray(j?.preread) ? j.preread : null);
       setChainAt(new Date().toISOString());
@@ -3044,7 +3078,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   // COMPUTED ONCE, USED IN BOTH — the tile reports the book, the sizer decides what may be added
   // to it, and two separate totals on one panel would let it refuse a trade against a number it
   // is not showing.
-  const bookX = useBookExposure(exposureRows, equityBase);
+  const bookX = useBookExposure(exposureRows, equityBase, cashBook);
   const feedGreeks = bookX.live?.greeks || EMPTY_OBJ;
   const feedSpots = bookX.live?.spots || EMPTY_OBJ;
   const todayISO = new Date().toISOString().slice(0, 10);
@@ -4102,7 +4136,9 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
         const totalMv = priced.reduce((a, h) => a + h.mvBase, 0);
         const pie = priced.map(h => ({ name: h.symbol, value: +h.mvBase.toFixed(2), pct: totalMv ? +((h.mvBase / totalMv) * 100).toFixed(1) : 0 }))
           .sort((a, b) => b.value - a.value);
-        const bars = held.filter(h => h.unBase != null || h.reBase)
+        // Cash equivalents are out of the trading book's P&L: an accumulating fund's (IB01's) price
+        // drift is its yield, and USFR's is noise around its distribution — neither is a trade.
+        const bars = held.filter(h => (h.unBase != null || h.reBase) && !isCashEquivalent(h))
           .map(h => ({ name: h.symbol, unrealised: +(h.unBase ?? 0).toFixed(2), realised: +(h.reBase ?? 0).toFixed(2), total: +h.totalBase.toFixed(2) }))
           .sort((a, b) => b.total - a.total);
         const PAL = [C.blue, P.teal700, P.amber700, P.violet700, P.pink700, P.emerald700, C.orange, P.indigo700, P.cyan700, P.orange900];

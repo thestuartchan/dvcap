@@ -138,8 +138,11 @@ eq('a mention id must look like one', mentionFromEnv({ DISCORD_USER_ID: 'me' }),
 eq('and is used when it does', mentionFromEnv({ DISCORD_USER_ID: '123456789012345678' }), '123456789012345678');
 
 // ── cash is not a position ──
-for (const sym of ['USFR', 'SGOV', 'BIL', 'SHV', 'TFLO', 'TBIL', 'JPST'])
+for (const sym of ['USFR', 'SGOV', 'BIL', 'SHV', 'TFLO', 'TBIL', 'IB01.L'])
   ok(`${sym} is cash`, isCashLeg({ symbol: sym }));
+// 6 Oct: JPST and MINT are ultra-short CREDIT funds, not Treasuries — positions, on the card.
+for (const sym of ['JPST', 'MINT', 'SHY'])
+  ok(`${sym} is not cash`, !isCashLeg({ symbol: sym }));
 ok('a HK ticker suffix does not hide it', isCashLeg({ symbol: 'SGOV.US' }));
 ok('a real position is not', !isCashLeg({ symbol: 'METU' }));
 ok('nor is one that merely mentions cash flow', !isCashLeg({ symbol: 'AAPL', trade: 'cashflow compounder' }));

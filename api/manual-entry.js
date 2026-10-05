@@ -9,7 +9,7 @@
 //     trusted by habit.
 // Both live in one endpoint to stay inside the 12-function Hobby cap (this is the 8th).
 
-import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY } from '../lib/kv.js';
+import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY, CASHBOOK_KEY } from '../lib/kv.js';
 import { prereadStatus } from '../lib/preread.js';
 import { localDateIn, localMinutesOfDay } from '../lib/sessions.js';
 import { UNIVERSE } from '../data/universe.js';
@@ -354,6 +354,9 @@ export default async function handler(req, res) {
         // Served alongside the console rather than inside them: the POST replaces the console
         // object wholesale, so a note kept in there would be wiped by the next browser save.
         flexSync: kvConfigured() ? await kvGetJson(FLEX_NOTE_KEY) : null,
+        // The statement's cash and cash equivalents (USFR, IB01, bills, USD cash) at market — for the
+        // Cash & equivalents line and IBKR's own leverage figure. Private: this route is session-gated.
+        cashBook: kvConfigured() ? await kvGetJson(CASHBOOK_KEY) : null,
         // ── REAL PERP POSITIONS, IF AN ADDRESS IS CONFIGURED ──────────────────────────────────
         // Served HERE and not from api/prices: this route is authenticated and `private,
         // no-store`, and a liquidation price is size and leverage restated. The price route is
