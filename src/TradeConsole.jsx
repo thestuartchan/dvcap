@@ -4466,15 +4466,24 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
       {/* ── THE TABS ── Watching · Open · Archive · Crypto. One state on screen at a time, each
           card carrying its pill; a card that changes state moves tabs and the toast says where.
           Crypto carries no count: it is balances by venue and chain, not rows. */}
-      <div className="mwd-tabrow" style={{ display: "flex", gap: 0, overflowX: "auto", borderBottom: "2px solid " + C.bdr }}>
+      {/* PROMINENT ON PURPOSE. This used to be a row of underlined words that read as a sub-heading,
+          and a reader scrolling down from the sizer went straight past it. Now a segmented control on
+          its own panel: the active state is a filled block, every count is a badge, and the row is
+          as wide as the cards it switches between. */}
+      <div className="mwd-tabrow" role="tablist" aria-label="Book" style={{ display: "flex", gap: 6, overflowX: "auto", margin: "14px 0 12px",
+        padding: 6, background: C.inset, border: "1.5px solid " + C.bdrMd, borderRadius: 12 }}>
         {BOOK_TABS.map(t => {
           const on = bookTab === t.id;
           const n = t.id === "ARCHIVED" ? tabs.ARCHIVED.length + tabs.CLOSED.length : tabs[t.id]?.length ?? "";
           return (
-            <button key={t.id} onClick={() => setBookTab(t.id)} style={{
-              background: "none", border: "none", borderBottom: "3px solid " + (on ? C.blue : "transparent"), marginBottom: -2,
-              color: on ? C.blue : C.muted, padding: "8px 14px", fontSize: 14, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
-              {t.label} <span style={{ fontSize: 11.5, fontWeight: 700, color: on ? C.blue : C.lbl, opacity: 0.8 }}>{n}</span>
+            <button key={t.id} role="tab" aria-selected={on} onClick={() => setBookTab(t.id)} style={{
+              flex: "1 1 0", minWidth: 110, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              background: on ? C.blue : "transparent", border: "1.5px solid " + (on ? C.blue : "transparent"), borderRadius: 9,
+              color: on ? C.onFill : C.text, padding: "10px 16px", fontSize: 15.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap",
+              boxShadow: on ? "0 1px 4px rgba(0,0,0,0.18)" : "none" }}>
+              {t.label}
+              {n !== "" && <span style={{ fontSize: 12, fontWeight: 800, minWidth: 22, padding: "1px 7px", borderRadius: 999,
+                background: on ? C.surf : C.bdr, color: on ? C.blue : C.mid }}>{n}</span>}
             </button>
           );
         })}
