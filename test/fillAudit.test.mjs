@@ -1,5 +1,5 @@
 // test/fillAudit.test.mjs — the broker's fills against the console's.
-import { sheetIdOf, sheetCsvUrl, parseCsv, parseBrokerFills, brokerKey, rowKey, auditFills, planFor, impliedEntry,
+import { sheetTime, sheetIdOf, sheetCsvUrl, parseCsv, parseBrokerFills, brokerKey, rowKey, auditFills, planFor, impliedEntry,
          effectivePrice, fillFromBroker, closedTradeRow } from '../lib/fillAudit.js';
 import { derivePosition } from '../lib/positions.js';
 
@@ -31,6 +31,14 @@ eq('every fill parsed; the blank row dropped', [P.fills.length, P.dropped, P.err
 eq('a sale is a sell of a positive quantity, commas read', [P.fills[0].side, P.fills[0].qty, P.fills[0].realized], ['sell', 1000, 9825.28]);
 eq('Hyperliquid Open Long is a buy', P.fills.at(-1).side, 'buy');
 eq('a tab without the columns says so', parseBrokerFills('"a","b"\n1,2').error, 'the tab has no uid, symbol, dir, qty, price column — is it "Fills (auto)"?');
+
+// ── the sheet's clock: IBKR rows are New York time labelled Z ──
+eq('981\'s sale: 02:21 "Z" in the sheet is 06:21 UTC, as IBKR has it', sheetTime('2026-07-10T02:21:00.000Z', { venue: 'IBKR', currency: 'HKD' }), { time: '2026-07-10T06:21:00.000Z', date: '2026-07-10' });
+eq('a Hong Kong morning trade the sheet put on the previous day is back on its own', sheetTime('2026-09-16T21:45:00.000Z', { venue: 'IBKR', currency: 'HKD' }), { time: '2026-09-17T01:45:00.000Z', date: '2026-09-17' });
+eq('a US trade keeps its New York date', sheetTime('2026-10-02T15:57:00.000Z', { venue: 'IBKR', currency: 'USD' }), { time: '2026-10-02T19:57:00.000Z', date: '2026-10-02' });
+eq('in winter the shift is five hours', sheetTime('2026-12-01T10:00:00.000Z', { venue: 'IBKR', currency: 'USD' }).time, '2026-12-01T15:00:00.000Z');
+eq('Hyperliquid rows are the UTC they say', sheetTime('2026-06-06T14:24:04.102Z', { venue: 'Hyperliquid', currency: 'USDC' }), { time: '2026-06-06T14:24:04.102Z', date: '2026-06-06' });
+eq('the parser applies it', P.fills[0].time, '2026-07-10T06:21:00.000Z');
 
 // ── keys ──
 eq('981 and 0981.HK are one instrument', [brokerKey({ symbol: '981' }).key, rowKey({ symbol: '0981.HK' }).key], ['981', '981']);

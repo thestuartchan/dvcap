@@ -1,6 +1,7 @@
-// src/FillAudit.jsx — "is anything missing?": the broker's fills against the console's.
+// src/FillAudit.jsx — the ONE-TIME carry-over from the old trade sheet into the console.
 //
-// Reads the owner's trade sheet ("Fills (auto)") straight from this signed-in page — the link lives
+// The sheet is being retired and the console is the record from here on (IBKR's daily statement
+// keeps it complete). This reads the sheet's "Fills (auto)" tab straight from this signed-in page — the link lives
 // in the console's private settings, never in the bundle and never through a server function — and
 // lists, per instrument the console tracks, every broker fill it has no record of. Each one gets
 // the action lib/fillAudit.js plans for it; nothing is written until a button is pressed.
@@ -14,7 +15,7 @@ const btn = (primary = false) => ({
 });
 const fmt = (v) => (v == null ? "—" : Number(v).toLocaleString("en-US", { maximumFractionDigits: 6 }));
 
-export default function FillAudit({ rows, sheet, setSheet, onAddFill, onAddRow }) {
+export default function FillAudit({ rows, sheet, setSheet, onAddFill, onAddRow, retired, onRetire }) {
   const [draft, setDraft] = useState(sheet || "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -37,16 +38,18 @@ export default function FillAudit({ rows, sheet, setSheet, onAddFill, onAddRow }
     setBusy(false);
   };
   const rowOf = (rid) => rows.find(r => r.id === rid);
+  // Once marked done the sheet is forgotten and the panel goes away: the console is the record.
+  if (retired) return null;
   const mark = (m, what) => setDone(d => ({ ...d, [m.uid + m.qty]: what }));
 
   return (
     <details style={{ border: "1px solid " + C.bdr, borderRadius: 12, background: C.surf, padding: "10px 14px", marginBottom: 14 }}>
       <summary style={{ cursor: "pointer", fontSize: 12.5, fontWeight: 800, color: C.text }}>
-        Check fills against the broker
+        Bring over fills from the old trade sheet (one-time)
         {res && <span style={{ fontWeight: 700, color: res.missingCount ? C.amber : C.green }}> · {res.missingCount ? `${res.missingCount} missing` : "nothing missing"}</span>}
       </summary>
       <div style={{ marginTop: 9, fontSize: 12, color: C.mid, lineHeight: 1.55 }}>
-        Reads the <b>Fills (auto)</b> tab of your trade sheet from this page and lists every broker fill a console trade has no record of —
+        A one-off carry-over before the sheet is retired: reads its <b>Fills (auto)</b> tab from this page and lists every broker fill a console trade has no record of —
         matched on the IBKR trade id, otherwise the same side within a day and 1% on price. Instruments with no console row (day trades,
         FX conversions) are counted, not listed. Nothing is written until you press a button.
       </div>
@@ -106,6 +109,15 @@ export default function FillAudit({ rows, sheet, setSheet, onAddFill, onAddRow }
             </div>
           ))}
           {res.missingCount === 0 && <div style={{ fontSize: 12.5, color: C.green, fontWeight: 700 }}>Every broker fill on a console instrument is recorded.</div>}
+          <div style={{ fontSize: 11.5, color: C.muted, lineHeight: 1.5 }}>
+            The sheet's IBKR times are New York time marked UTC; they are corrected here, so a Hong Kong trade lands on its own date.
+            Its fees leave out stamp duty and exchange fees, so a fill brought over can be priced a few cents light of IBKR's.
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", paddingTop: 6, borderTop: "1px dashed " + C.bdr }}>
+            <button style={btn()} onClick={() => { if (window.confirm("Mark the carry-over done? The sheet link is forgotten and this panel goes away; the console is the record from here on.")) onRetire(); }}>
+              Done — forget the sheet</button>
+            <span style={{ fontSize: 11.5, color: C.muted }}>From here, IBKR's daily statement keeps the console complete.</span>
+          </div>
         </div>
       )}
     </details>

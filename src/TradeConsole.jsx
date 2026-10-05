@@ -4140,9 +4140,11 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           fills that arrived with no note, and notes whose fill never came. Absent when empty. */}
       <JournalDrafts journal={journal} rows={rows} onConfirm={confirmDraft} onDismiss={dismissDraft} onChoose={chooseDraft} onDrop={dropNote} busy={journalBusy} msg={journalMsg} />
 
-      {/* ── MISSING FILLS ── the broker's fills (the owner's trade sheet) against every console trade. */}
+      {/* ── ONE-TIME CARRY-OVER ── the old trade sheet's fills, before it is retired. Gone once marked done. */}
       <FillAudit rows={rows} sheet={settings.brokerSheet || ""} setSheet={(v) => { setSettings(s => ({ ...s, brokerSheet: v })); touch(); }}
-        onAddFill={addBrokerFill} onAddRow={addBrokerRow} />
+        onAddFill={addBrokerFill} onAddRow={addBrokerRow}
+        retired={!!settings.sheetReconciledAt}
+        onRetire={() => { setSettings(s => ({ ...s, brokerSheet: null, sheetReconciledAt: new Date().toISOString() })); touch(); }} />
 
       {/* ── CURRENT PORTFOLIO ──
           Same visual idiom as the Smart Money tab (donut for weight, horizontal bars for the
