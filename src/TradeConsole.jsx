@@ -1532,7 +1532,7 @@ const XpoStat = ({ label, value, sub, col, breach }) => (
 // COMPUTED ONCE, USED IN BOTH. The exposure tile reports the book and the sizer decides what may
 // be added to it; if each fetched and totalled its own, the panel could show one delta-notional
 // and refuse a trade against a different one.
-function useBookExposure(rows, nlv, cashBook = null, toBase = null) {
+function useBookExposure(rows, nlv, cashBook = null, toBase = null, exempt = null) {
   const [feed, setFeed] = useState(null);
   const [err, setErr] = useState(null);
 
@@ -1567,7 +1567,8 @@ function useBookExposure(rows, nlv, cashBook = null, toBase = null) {
     greeks: live?.greeks || {},
     underlyings: live?.spots || {},
     nlv, asOf: live?.asOf || null, trend: live?.trend || [], cashBook, toBase,
-  }), [rows, live, nlv, cashBook, toBase]);
+    ...(Array.isArray(exempt) ? { exempt } : {}),
+  }), [rows, live, nlv, cashBook, toBase, exempt]);
 
   // ── THE DAILY POINT ────────────────────────────────────────────────────────
   // The 20d series is the most useful row on the tile and it only exists if something writes to
@@ -2484,7 +2485,7 @@ function ExposureTile({ book, err, children = null }) {
       {book.leverage && (
         <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 8, fontSize: 12 }}>
           <span title={book.leverage.book.basis}>
-            <span style={{ color: C.lbl, fontWeight: 800 }}>Book (1.2× rule) </span>
+            <span style={{ color: C.lbl, fontWeight: 800 }} title="target 1.0× · position book ≤ 1.2× + swing ≤ 0.3× · ceiling 1.5× — the same limits the sizer uses">Book (1.2× + 0.3× swing · 1.5× ceiling) </span>
             <b style={{ color: stateCol, fontSize: 14 }}>{book.leverage.book.ratio == null ? "—" : `${book.leverage.book.ratio}×`}</b>
             <span style={{ color: C.muted }}> delta-notional ÷ NLV, cash equivalents excluded</span>
           </span>
@@ -2541,10 +2542,10 @@ function ExposureTile({ book, err, children = null }) {
             the rule for the whole stack; this is the half of it that is only wording. */}
         <b style={{ fontSize: 13, color: stateCol }}>{over ? "⚠ " : ""}{book.state}</b>
         {book.largest && (
-          <span style={{ fontSize: 11.5, color: (book.largest.ratio ?? 0) > L.singleCap ? C.red : C.muted, fontWeight: 700 }}>
+          <span style={{ fontSize: 11.5, color: book.largest.overCap ? C.red : C.muted, fontWeight: 700 }}>
             largest {book.largest.symbol.trim()} {money(book.largest.deltaNotional)}
             {book.largest.ratio == null ? "" : ` · ${book.largest.ratio}× NLV`}
-            {(book.largest.ratio ?? 0) > L.singleCap ? ` ⚠ over the ${L.singleCap}× cap` : ""}
+            {book.largest.overCap ? ` ⚠ over the ${L.singleNamePct}% single-name cap` : ""}
           </span>
         )}
       </div>
@@ -3106,7 +3107,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   // is not showing.
   // Every exposure figure in the base currency, at the live rate (unrealised P&L uses spot too).
   const exposureToBase = useCallback((v, ccy) => convert(v, ccy || "USD", baseCcy, fxRates), [baseCcy, fxRates]);
-  const bookX = useBookExposure(exposureRows, equityBase, cashBook, exposureToBase);
+  const bookX = useBookExposure(exposureRows, equityBase, cashBook, exposureToBase, settings.sizerExempt ?? null);
   const feedGreeks = bookX.live?.greeks || EMPTY_OBJ;
   const feedSpots = bookX.live?.spots || EMPTY_OBJ;
   const todayISO = new Date().toISOString().slice(0, 10);
