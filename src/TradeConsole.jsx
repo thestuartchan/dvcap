@@ -61,7 +61,7 @@ import { companyName } from "../lib/companyNames.js";
 import { tickerHint, resolvedLabel } from "../lib/tickerHints.js";
 import { moveGroupOnto } from "../lib/reorder.js";
 import { syncStatus } from "../lib/flexStatus.js";
-import { FACTORS, FACTOR_SYMBOLS, TAGS, tagOf, holdingsOf, factorExposure, scenarioPnl, overnightFlag } from "../lib/factorExposure.js";
+import { FACTORS, FACTOR_SYMBOLS, TAGS, tagOf, LIST_GROUPS, listGroupOf, groupCounts, sortByGroup, filterByGroups, holdingsOf, factorExposure, scenarioPnl, overnightFlag } from "../lib/factorExposure.js";
 
 // Shown in the sizing note; kept a constant so the copy and the cap cannot drift apart.
 const CREDIT_DANGER_CAP_LABEL = `×${CREDIT_DANGER_CAP.toFixed(2)}`;
@@ -495,6 +495,7 @@ const {
           {kind && <span title={kind.tag === "FUTURE" ? "a futures contract" : `an ${kind.tag === "SPREAD" ? "options spread" : "option"} on ${r.symbol}`}
             style={{ alignSelf: "center", fontSize: 9.5, fontWeight: 900, letterSpacing: 0.6, color: kind.col, background: kind.bg, border: "1px solid " + kind.bdr, borderRadius: 5, padding: "1px 5px", whiteSpace: "nowrap" }}>{kind.tag}</span>}
           <b style={{ fontSize: 15 }}>{r.symbol}</b>
+          {listGroupOf(r) === "cash" && <span title="a cash equivalent — on the one cash list, so delta 0 and out of the 1.2× rule" style={{ alignSelf: "center", fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, color: C.green, background: C.gBg, border: "1px solid " + C.gBdr, borderRadius: 5, padding: "1px 5px", whiteSpace: "nowrap" }}>CASH</span>}
           {tagOf(r) && <span title="what this line is for — set in the row" style={{ alignSelf: "center", fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, color: C.mid, background: C.bg, border: "1px solid " + C.bdr, borderRadius: 5, padding: "1px 5px", textTransform: "uppercase", whiteSpace: "nowrap" }}>{tagOf(r)}</span>}
           {overnight && <span title={`${overnight.text} — info only`} style={{ alignSelf: "center", fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, color: C.amber, background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 5, padding: "1px 5px", whiteSpace: "nowrap" }}>HELD PAST SESSION</span>}
           {/* A label that just restates the ticker ("AMD" on AMD) is noise, so it is dropped. */}
@@ -1379,7 +1380,7 @@ const groupAdjacent = (list, groupOf) => {
   return out;
 };
 
-const Section = ({ title, note, list, mode, ctx, reorder = false, sort = null, groupOf = null, groupLine = null }) => (
+const Section = ({ title, note, list, mode, ctx, reorder = false, sort = null, groupOf = null, groupLine = null, filter = null }) => (
   <Card>
     <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: list.length ? 10 : 0 }}>
       <SLabel>{title}</SLabel>
@@ -1391,7 +1392,7 @@ const Section = ({ title, note, list, mode, ctx, reorder = false, sort = null, g
       {sort && list.length > 1 && (
         <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4 }}>
           <span style={{ fontSize: 11, color: C.muted }}>order</span>
-          {[["size", "Size"], ["manual", "Custom"]].map(([v, lbl]) => (
+          {(sort.options || [["size", "Size"], ["manual", "Custom"]]).map(([v, lbl]) => (
             <button key={v} onClick={() => sort.set(v)}
               style={{ cursor: "pointer", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
                        background: sort.value === v ? C.blBg : "transparent",
@@ -1401,6 +1402,24 @@ const Section = ({ title, note, list, mode, ctx, reorder = false, sort = null, g
         </span>
       )}
     </div>
+    {/* FILTER BY GROUP — the tag, plus Cash (derived from the one cash list) and Untagged. Only
+        groups with something in them are offered; none picked shows everything. Several can be on. */}
+    {filter && filter.total > 1 && (
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 5, margin: "-2px 0 10px" }}>
+        <span style={{ fontSize: 11, color: C.muted }}>show</span>
+        {[["", "All", filter.total], ...LIST_GROUPS.filter(g => filter.counts[g] > 0).map(g => [g, g === "untagged" ? "Untagged" : g[0].toUpperCase() + g.slice(1), filter.counts[g]])].map(([g, lbl, n]) => {
+          const on = g ? filter.value.includes(g) : filter.value.length === 0;
+          return (
+            <button key={g || "all"} onClick={() => filter.set(g ? (on ? filter.value.filter(x => x !== g) : [...filter.value, g]) : [])}
+              style={{ cursor: "pointer", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
+                       background: on ? C.blBg : "transparent", color: on ? C.blue : C.muted,
+                       border: "1px solid " + (on ? C.blBdr : C.bdr) }}>
+              {lbl} <span style={{ fontWeight: 600, opacity: 0.8 }}>{n}</span></button>
+          );
+        })}
+        {filter.value.length > 0 && <span style={{ fontSize: 11, color: C.lbl }}>showing {list.length} of {filter.total}</span>}
+      </div>
+    )}
     {list.length === 0
       ? <div style={{ fontSize: 12.5, color: C.muted, fontStyle: "italic", marginTop: 8 }}>Nothing here yet.</div>
       : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{(() => {
@@ -3331,8 +3350,11 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   // carrying most of the book is the one that most deserves a second look. So manual order is an
   // opt-in per section rather than a replacement: switching to Custom stops the sort and hands the
   // order over. Setups have no such rule and are always in your order.
-  const openSort = settings.openSort === 'manual' ? 'manual' : 'size';
+  const openSort = ['manual', 'tag'].includes(settings.openSort) ? settings.openSort : 'size';
   const setOpenSort = (v) => { setSettings(s => ({ ...s, openSort: v })); touch(); };
+  // Which groups the open list shows (tag, Cash, Untagged); empty = all.
+  const openFilter = (Array.isArray(settings.openFilter) ? settings.openFilter : []).filter(g => LIST_GROUPS.includes(g));
+  const setOpenFilter = (v) => { setSettings(s => ({ ...s, openFilter: v })); touch(); };
 
   // Replace one row with one row PER TRADE, in place so the order of the book is preserved. Each
   // new row inherits the thesis and levels but gets its own id and a date-range label, because from
@@ -4537,8 +4559,15 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           look each morning is the one carrying the most of the book. Rows whose market value cannot
           be converted sort last rather than to the top as a zero. */}
       {bookTab === "OPEN" && <Section title="Open" note="spot / swing holds, scaled in and out · options and spreads under their underlying"
-        list={groupAdjacent(openSort === "manual" ? openPos : [...openPos].sort((a, b) => (convert(b.pnl.marketValue, b.currency || "USD", baseCcy, fxRates) ?? -1) - (convert(a.pnl.marketValue, a.currency || "USD", baseCcy, fxRates) ?? -1)), underlyingOf)}
-        mode="open" ctx={ctx} reorder={openSort === "manual"} sort={{ value: openSort, set: setOpenSort }}
+        list={(() => {
+          // Size order first; Tag then groups it (stable, so each group stays biggest-first).
+          const bySize = [...openPos].sort((a, b) => (convert(b.pnl.marketValue, b.currency || "USD", baseCcy, fxRates) ?? -1) - (convert(a.pnl.marketValue, a.currency || "USD", baseCcy, fxRates) ?? -1));
+          const ordered = openSort === "manual" ? openPos : openSort === "tag" ? sortByGroup(bySize) : bySize;
+          return groupAdjacent(filterByGroups(ordered, openFilter), underlyingOf);
+        })()}
+        filter={{ value: openFilter, set: setOpenFilter, counts: groupCounts(openPos), total: openPos.length }}
+        mode="open" ctx={ctx} reorder={openSort === "manual" && openFilter.length === 0}
+        sort={{ value: openSort, set: setOpenSort, options: [["size", "Size"], ["tag", "Tag"], ["manual", "Custom"]] }}
         groupOf={underlyingOf}
         groupLine={(root, members) => {
           const g = bookX.book?.byUnderlying?.[root];
