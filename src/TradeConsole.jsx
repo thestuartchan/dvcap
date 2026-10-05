@@ -4479,13 +4479,13 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
           const on = bookTab === t.id;
           const n = t.id === "ARCHIVED" ? tabs.ARCHIVED.length + tabs.CLOSED.length : tabs[t.id]?.length ?? "";
           return (
-            <button key={t.id} role="tab" aria-selected={on} onClick={() => setBookTab(t.id)} style={{
+            <button key={t.id} className="mwd-booktab" role="tab" aria-selected={on} onClick={() => setBookTab(t.id)} style={{
               flex: "1 1 0", minWidth: 110, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
               background: on ? C.blue : "transparent", border: "1.5px solid " + (on ? C.blue : "transparent"), borderRadius: 9,
               color: on ? C.onFill : C.text, padding: "10px 16px", fontSize: 15.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap",
               boxShadow: on ? "0 1px 4px rgba(0,0,0,0.18)" : "none" }}>
               {t.label}
-              {n !== "" && <span style={{ fontSize: 12, fontWeight: 800, minWidth: 22, padding: "1px 7px", borderRadius: 999,
+              {n !== "" && <span className="mwd-booktab-n" style={{ fontSize: 12, fontWeight: 800, minWidth: 22, padding: "1px 7px", borderRadius: 999,
                 background: on ? C.surf : C.bdr, color: on ? C.blue : C.mid }}>{n}</span>}
             </button>
           );

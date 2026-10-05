@@ -474,6 +474,21 @@ select option:disabled { color: var(--text-muted); }
   .mwd-header-title { font-size: 15px !important; }
 }
 
+/* ── THE CONSOLE'S BOOK TABS ON A PHONE ──
+   Four equal buttons at desktop size need ~470px; a phone has ~360 inside the gutters, which pushed
+   Crypto off the edge of the pinned bar. Below 520px they shrink to fit all four on one row. */
+@media (max-width: 520px) {
+  .mwd-tabrow[aria-label="Book"] { gap: 3px !important; padding: 5px !important; }
+  .mwd-booktab   { flex: 1 0 auto !important; min-width: 0 !important; padding: 9px 5px !important; font-size: 12.5px !important; gap: 4px !important; }
+  .mwd-booktab-n { font-size: 10px !important; padding: 0 4px !important; min-width: 0 !important; }
+}
+/* The smallest phones: tighter still. Buttons never clip their label; if a book is big enough that
+   four counts will not fit, the bar scrolls sideways rather than cutting a number in half. */
+@media (max-width: 370px) {
+  .mwd-booktab   { padding: 8px 3px !important; font-size: 12px !important; gap: 3px !important; }
+  .mwd-booktab-n { padding: 0 3px !important; }
+}
+
 /* ── CHART TOOLTIPS FOLLOW THE THEME ──
    Recharts draws its tooltip as a white box with a #ccc border and paints the hover band #ccc,
    whatever the page is. In dark mode that was a white card holding the page's own light-grey
