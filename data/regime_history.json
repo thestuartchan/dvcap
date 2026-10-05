@@ -2741,18 +2741,28 @@
       "reflationary_p": 17,
       "deflationary_p": 13,
       "inflationary_p": 5,
-      "hawkish_repricing": null,
+      "hawkish_repricing": "INSUFFICIENT_DATA",
       "live_regime": "stag",
-      "view_regime": null,
-      "pinned": null,
-      "hyg_chg": null,
-      "hyg_qqq_divergence": null,
+      "view_regime": "stag",
+      "pinned": true,
+      "hyg_chg": 0.01,
+      "hyg_qqq_divergence": -1.01,
       "inputs": {
         "weightedRecessionProb": 13.6,
         "cpi": 3.35302,
-        "kalshi2027": 20,
-        "tape": null,
-        "ladderSpread": null,
+        "kalshi2027": 22,
+        "tape": {
+          "gold": "down",
+          "tlt": "down",
+          "xlu": "up",
+          "xlp": "up",
+          "spy": "up",
+          "qqq": "up",
+          "iwm": "up",
+          "btc": "up",
+          "breakevenBp": 0
+        },
+        "ladderSpread": 2.06,
         "u3": 4.2,
         "empPop": 59.2,
         "oas": 3.24,
@@ -2825,28 +2835,28 @@
           "drifting": "stag"
         },
         "conditions": {
-          "score": 71,
+          "score": 70.6,
           "band": "stress",
           "comps": {
             "credit": 95,
             "equityVol": 28,
             "ratesVol": 79,
             "realYield": 89,
-            "funding": 40,
+            "funding": 36,
             "breadth": 75,
             "dollar": 100
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 18,
+          "hikeOdds": 20,
           "liq4w": 14
         },
         "sizing": 0.45,
         "stage": 3
       },
-      "source": "cron",
-      "loggedAt": "2026-10-05T08:45:53.004Z"
+      "source": "client+cron",
+      "loggedAt": "2026-10-05T13:12:35.616Z"
     }
   ]
 }
