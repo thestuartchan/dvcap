@@ -87,6 +87,7 @@ const XSTATE = {
   differ:  { mark: "✗", color: "purple" },
   unknown: { mark: "·", color: "muted" },
   context: { mark: "·", color: "muted" },
+  same_source: { mark: "=", color: "muted" },
 };
 // ── P8 — WHAT EXPIRES ────────────────────────────────────────────────────────
 // Every level on this panel is a statement about positioning that has an expiry date, and the
@@ -155,13 +156,13 @@ function CrossCheck({ x, of = null }) {
   }
   // A STALE CHECK HAS NO VERDICT COLOUR. Red says "this is wrong"; it cannot say that about
   // figures it never saw.
-  const tone = of ? C.muted : (x.clean ? C.green : C.purple);
+  const tone = of || x.clean == null ? C.muted : (x.clean ? C.green : C.purple);
   return (
     <div style={{ marginTop: 9, paddingTop: 8, borderTop: "1px solid " + C.bdr }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <b style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase" }}>Cross-check</b>
         <span style={{ fontSize: 11.5, fontWeight: 800, color: tone }}>
-          {x.clean ? "✓" : "✗"} {x.verdict}
+          {x.clean == null ? "=" : x.clean ? "✓" : "✗"} {x.verdict}
         </span>
         <span style={{ fontSize: 10.5, color: C.muted }}>
           CBOE · their open interest, their vols, their gamma

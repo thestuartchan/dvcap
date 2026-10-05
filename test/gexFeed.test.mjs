@@ -58,7 +58,8 @@ const json = JSON.stringify(p);
   eq('put support', p.put_support, { strike: 726, gamma: 408245943, expiry: '2026-09-30', peaks: 1, of: 6 });
   eq('trapdoors', p.trapdoor, { near: { strike: 736, gamma: -1077692644, gamma_today: null, expiry: '2026-09-29' }, deep: { strike: 730, gamma: -1214781579, gamma_today: null, expiry: '2026-09-30' } });
   eq('pin box', p.pin_box, { lo: 732, hi: 741, expiry: '2026-09-29', share_pct: 52.8, magnets: [740], magnet_gamma: {} });
-  eq('balance', p.balance, { below: -4293468683, above: 3399185846, state: 'balanced' });
+  // A stored board's own label (no rule inputs on it); a recomputed board carries them.
+  eq('balance', p.balance, { below: -4293468683, above: 3399185846, state: 'balanced', same_sign: null, ratio: null, asymmetric_at: null });
   // Shares are of GROSS gamma from the cells (Σ|cell| per expiry ÷ the board's), re-based here on the
   // fixture's trimmed cells; net and gross ride beside them.
   eq('expiry rows, with the panel\'s agreement flag', p.expiries.map(e => [e.date, e.share_pct, e.net, e.peak_put, e.peak_call, e.flag]),
@@ -67,7 +68,12 @@ const json = JSON.stringify(p);
   eq('post-expiry pivot', p.post_expiry_pivot, { from: 738.61, to: 731.2 });
   eq('cross-check: agreements and disagreements, the spot clock left out, CBOE time', [p.cross_check.agrees.map(c => c.check), p.cross_check.disagrees, p.cross_check.cboe_snapshot_utc],
      [['call wall'], [{ check: 'put wall ↔ trapdoor', ours: 730, theirs: 725 }], '2026-09-29T01:30:23.000Z']);
-  eq('risk-free: a print four days older than the board is stale, not live', p.risk_free, { rate: 0.0408, source: 'DTB3 2026-09-25', as_of: '2026-09-25', status: 'stale' });
+  // DTB3 lands a business day late; stale means more than two business days older than the board.
+  eq("risk-free: Friday's print on Tuesday's board is two business days — live", p.risk_free, { rate: 0.0408, source: 'DTB3 2026-09-25', as_of: '2026-09-25', status: 'live' });
+  const old = gexFeedPayload('QQQ', { ...board, row: { ...board.row, rateSource: 'DTB3 2026-09-24' } }, { asOf: '2026-09-29T14:02:00Z' });
+  eq("…Thursday's on Tuesday is three — stale", old.risk_free.status, 'stale');
+  const mon = gexFeedPayload('QQQ', { ...board, row: { ...board.row, rateSource: 'DTB3 2026-10-01' } }, { asOf: '2026-10-05T13:14:00Z' });
+  eq("…the 5 Oct read: Thursday's print on Monday is two — live", mon.risk_free.status, 'live');
   const today = gexFeedPayload('QQQ', { ...board, row: { ...board.row, rateSource: 'DTB3 2026-09-29' } }, { asOf: '2026-09-29T14:02:00Z' });
   eq('…one dated the board\'s own day is live', today.risk_free.status, 'live');
   const failed = gexFeedPayload('QQQ', { ...board, row: { ...board.row, rateStatus: 'unavailable' } }, { asOf: '2026-09-29T14:02:00Z' });

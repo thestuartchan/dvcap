@@ -75,15 +75,16 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   // heaviest call-gamma strike handed in (745).
   eq('the call wall tile', lv.text.callWall, '750 · ceiling (above spot, inside the pin band)');
   // −$0.14B below against +$0.41B above on this fixture: the smaller side is under 40%.
-  eq('the balance is asymmetric, upside damped', lv.balance.state, 'asymmetric_up');
-  ok('and says so with the direction', /asymmetric — \$0\.41B above \/ −\$0\.14B below: upside damped, downside thin/.test(lv.balance.sentence));
+  // Negative below, positive above: opposed (sign first), whatever the sizes.
+  eq('the balance is opposed, negative below', lv.balance.state, 'opposed_neg_below');
+  ok('and says so with the direction', /opposed — −\$0\.14B below \/ \$0\.41B above: dips amplified, rallies damped/.test(lv.balance.sentence));
   eq('the one-line summary reads the objects', lv.summary, 'Cushion at 730; acceleration below 735; pin 743–750.');
   ok('and the detailed line carries sizes and owners', /Cushion at 730 \(\+60M, Oct-16, 1\.9% below, peaks 1 of 8\); acceleration below 735 \(−89M, Sep-23, 1\.2% below\); pin 743–750/.test(regimeDetail(lv)));
   ok('the word "wall" never touches the put side', !/wall/i.test(lv.text.support + lv.text.trapdoor + lv.text.pin));
   // What is persisted.
   eq('the log row', levelsLog(lv, { rate: 0.038, rateStatus: 'live' }), {
     put_support_strike: 730, trapdoor_near: 735, trapdoor_deep: null, pin_lo: 743, pin_hi: 750,
-    call_wall_strike: 750, call_wall_kind: 'ceiling', balance_state: 'asymmetric_up', rf_rate: 0.038, rf_status: 'live' });
+    call_wall_strike: 750, call_wall_kind: 'ceiling', balance_state: 'opposed_neg_below', rf_rate: 0.038, rf_status: 'live' });
   // The strikes the table may never drop.
   const m = mustShow(lv, { flipZoneLo: 711, flipZoneHi: 736 });
   eq('the must-show list is the level strikes', m.strikes.sort((a, b) => a - b), [730, 735, 743, 745, 748, 750]);
@@ -109,9 +110,10 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   eq('the tile says so', lv2.text.callWall, '715 · magnet (below spot, inside the pin band)');
   eq('no put support inside 5%', [lv.support.strike, lv.support.reason], [null, 'no put support inside 5%']);
   eq('the tile prints the honest blank', lv.text.support, 'no put support inside 5%');
-  // 700 is 2.2% below spot — beyond the near trapdoor's 1.5% window — so it is the deep one alone.
-  eq('700 is the trapdoor, and it is deep', [lv.trapdoor.near, lv.trapdoor.deep?.strike], [null, 700]);
-  eq('logged as deep, with no near', [levelsLog(lv).trapdoor_near, levelsLog(lv).trapdoor_deep], [null, 700]);
+  // 700 is 2.2% below spot — inside the near window since the 5 Oct brief (~2%, 2.25 with a
+  // strike's slack) — so it is the near trapdoor, and with nothing else below it the deepest too.
+  eq('700 is the near trapdoor, and nothing deeper', [lv.trapdoor.near?.strike, lv.trapdoor.deep?.strike ?? null], [700, null]);
+  eq('logged as near, and as the deepest', [levelsLog(lv).trapdoor_near, levelsLog(lv).trapdoor_deep], [700, 700]);
 }
 
 // ── 18 SEP: SPOT 721 — 716 NEAR, 700 DEEP, BOTH MATTERED ─────────────────────
@@ -130,7 +132,7 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   ok('715 at −64M is material but not nearer', Math.abs(-64 * M) >= 191 * M * TRAPDOOR_MIN_FRAC);
   eq('no support', lv.support.strike, null);
   // −$0.37B below, +$0.16B above on this fixture — but the point is the wording, whichever side.
-  ok('the balance line is asymmetric with a direction', /^Gamma is asymmetric — .*: (downside amplified, upside thin|upside damped, downside thin)\.$/.test(lv.balance.sentence));
+  ok('the balance line is opposed, with a direction', /^Gamma is opposed — .*: dips amplified, rallies damped\.$/.test(lv.balance.sentence));
   ok('and never "roughly balanced"', !/roughly balanced/.test(lv.balance.sentence));
 }
 
@@ -148,8 +150,8 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   eq('700 is nobody\'s peak', peaksAt(b.grid, 700, -1).agree, 0);
   ok('and it is not the support — it is negative', lv.support.strike !== 700);
   eq('it appears as the deep trapdoor', lv.trapdoor.deep.strike, 700);
-  // 717 is 1.6% below spot: outside the near trapdoor's 1.5% window (30 Sep brief), so no near one.
-  eq('717 is outside the near window', lv.trapdoor.near, null);
+  // 717 is 1.6% below spot: inside the ~2% near window (5 Oct brief), so it is the near trapdoor.
+  eq('717 is inside the near window', lv.trapdoor.near?.strike, 717);
 }
 
 // ── THE SUPPORT TESTS, ONE AT A TIME ─────────────────────────────────────────
@@ -181,7 +183,7 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   const ty = putSupport(tiny.byStrike, tiny.grid, { spot, atr: 3 });
   ok('a node under 5% of the positive gamma below spot is out', ty.rejected.find(r => r.strike === 690)?.why?.startsWith('under 5%'));
   eq('the thresholds are stated', [SUPPORT_MIN_DIST_PCT, SUPPORT_MAX_DIST_PCT, SUPPORT_MIN_SHARE, TRAPDOOR_NEAR_PCT * 2, TRAPDOOR_DEEP_PCT, PIN_HALF_PCT, PIN_MIN_SHARE, BALANCE_MIN_RATIO],
-     [1, 5, 0.05, 3, 10, 0.5, 0.1, 0.4]);
+     [1, 5, 0.05, 4.5, 10, 0.5, 0.1, 0.5]);
   // Degenerate inputs.
   eq('no spot, no support', putSupport([], null, { spot: null }).strike, null);
   eq('no strikes below spot', putSupport([{ strike: 710, netGexUsd: 1 }], null, { spot: 700 }).reason, 'no strikes below spot');
@@ -224,28 +226,46 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   eq('the tile carries the reason', pinText(t).startsWith('no pin — '), true);
 }
 
+// ── THE NEAR TRAPDOOR IS THE CLIFF, NOT THE FIRST CELL (5 Oct brief) ─────────────
+// QQQ 2 Oct, spot 751.50: 742 (−57M, today's expiry) at 1.3% and 736 (−234M, mostly 5 Oct) at
+// 2.06%. The old 1.5% window could not see 736 and named 742.
+{
+  const M = 1e6;
+  const byStrike = [{ strike: 742, netGexUsd: -56.6 * M }, { strike: 736, netGexUsd: -234 * M }, { strike: 725, netGexUsd: -118 * M }, { strike: 760, netGexUsd: 900 * M }];
+  const grid = { expiries: [{ expiry: '2026-10-02' }, { expiry: '2026-10-05' }, { expiry: '2026-10-16' }], cells: [
+    { expiry: '2026-10-02', strike: 742, netGexUsd: -41.9 * M }, { expiry: '2026-10-05', strike: 742, netGexUsd: -14.7 * M },
+    { expiry: '2026-10-05', strike: 736, netGexUsd: -200 * M }, { expiry: '2026-10-02', strike: 736, netGexUsd: -34 * M },
+    { expiry: '2026-10-16', strike: 725, netGexUsd: -118 * M }, { expiry: '2026-10-02', strike: 760, netGexUsd: 900 * M }] };
+  const td = trapdoors(byStrike, grid, { spot: 751.5, today: '2026-10-02' });
+  eq('QQQ 2 Oct: the near trapdoor is 736, not 742', [td.near?.strike, td.near?.netGexUsd], [736, -234 * M]);
+  eq('and the deep one is 725', td.deep?.strike, 725);
+}
+
 // ── BALANCE WITH A DIRECTION ─────────────────────────────────────────────────
 {
-  // The four printed cases, every one of which the old line called "roughly balanced".
-  for (const [below, above] of [[-0.16e9, 6.97e9], [-0.34e9, 6.79e9], [-0.60e9, 6.17e9]]) {
-    const b = balanceOf({ above, below });
-    eq(`${(below / 1e9).toFixed(2)}/${(above / 1e9).toFixed(2)} is asymmetric_up`, b.state, 'asymmetric_up');
-  }
-  eq('the 22 Sep sentence', balanceOf({ above: 6.17e9, below: -0.60e9 }).sentence, 'Gamma is asymmetric — $6.17B above / −$0.60B below: upside damped, downside thin.');
-  eq('40% exactly is balanced', balanceOf({ above: 1e9, below: 0.4e9 }).state, 'balanced');
-  eq('39% is not', balanceOf({ above: 1e9, below: 0.39e9 }).state, 'asymmetric_up');
-  eq('a heavy negative below is downside amplified', balanceOf({ above: 0.2e9, below: -3e9 }).state, 'asymmetric_down');
-  ok('with the words', /downside amplified, upside thin/.test(balanceOf({ above: 0.2e9, below: -3e9 }).sentence));
+  // The 5 Oct brief's four reads: sign first, then the 2x ratio.
+  const st = (below, above) => balanceOf({ above, below }).state;
+  eq('QQQ 5 Oct −3.16B / +5.14B is opposed, not balanced', st(-3.16e9, 5.14e9), 'opposed_neg_below');
+  eq('SPY 5 Oct −9.72B / +6.96B', st(-9.72e9, 6.96e9), 'opposed_neg_below');
+  eq('SPY 2 Oct −4.76B / +11.41B', st(-4.76e9, 11.41e9), 'opposed_neg_below');
+  eq('QQQ 2 Oct +0.85B / +7.40B stays asymmetric_up', st(0.85e9, 7.40e9), 'asymmetric_up');
+  eq('the inputs travel with the label', balanceOf({ above: 5.14e9, below: -3.16e9 }).inputs, { above: 5140000000, below: -3160000000, same_sign: false, ratio: 0.61, asymmetric_at: 0.5 });
+  ok('the opposed sentence says which way', /opposed — −\$3\.16B below \/ \$5\.14B above: dips amplified, rallies damped/.test(balanceOf({ above: 5.14e9, below: -3.16e9 }).sentence));
+  eq('negative above, positive below is the mirror', st(2e9, -3e9), 'opposed_neg_above');
+  eq('same sign at exactly 2x is asymmetric', st(1e9, 2e9), 'asymmetric_up');
+  eq('same sign under 2x is balanced', st(1.1e9, 2e9), 'balanced');
+  eq('two negatives, the larger below', st(-3e9, -0.2e9), 'asymmetric_down');
+  ok('with the words', /downside amplified, upside thin/.test(balanceOf({ above: -0.2e9, below: -3e9 }).sentence));
   ok('a heavy positive below is a cushion', /downside cushioned, upside thin/.test(balanceOf({ above: 0.2e9, below: 3e9 }).sentence));
-  ok('a heavy negative above is upside amplified', /upside amplified, downside thin/.test(balanceOf({ above: -3e9, below: 0.2e9 }).sentence));
+  ok('a heavy negative above is upside amplified', /upside amplified, downside thin/.test(balanceOf({ above: -3e9, below: -0.2e9 }).sentence));
   eq('missing sides make no claim', balanceOf({}).state, null);
   eq('both zero is balanced', balanceOf({ above: 0, below: 0 }).state, 'balanced');
   // Through the read.
   const rd = gexRead({ row: { spot: 743.8, flipLevel: 720.5, flipZoneLo: 711, flipZoneHi: 736, callWall: 745, gexUsd: 5.5e9, asOf: '2026-09-22T13:40:00Z' },
     byStrike: [{ strike: 700, netGexUsd: -0.6e9 }, { strike: 760, netGexUsd: 6.17e9 }], now: new Date('2026-09-22T14:00:00Z'), live: true });
-  ok('the read prints the asymmetric sentence', rd.lines.some(l => /asymmetric — \$6\.17B above \/ −\$0\.60B below: upside damped, downside thin/.test(l)));
+  ok('the read prints the opposed sentence', rd.lines.some(l => /opposed — −\$0\.60B below \/ \$6\.17B above: dips amplified, rallies damped/.test(l)));
   ok('and never "roughly balanced" for it', !rd.lines.some(l => /roughly balanced/.test(l)));
-  eq('and exposes the state', rd.balance, 'asymmetric_up');
+  eq('and exposes the state', rd.balance, 'opposed_neg_below');
   ok('the read carries the levels', rd.levels && 'support' in rd.levels);
 }
 
@@ -399,7 +419,7 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   ok('below, nearest first, sizes and owners', /^below {2}745 \(−110M today\) · 743 \(−175M today\) · 740 \(−159M Sep-25\) · 733\.96 \(pivot after today\) · 730 \(−340M Oct-02\) · 726 \(\+60M Oct-16, cushion, peaks 1 of 5\)$/.test(line('below')));
   ok('the stack line is the new sentence', /^stack {2}negative 730–745 directly under spot: through 745 hedging accelerates, 2\.5% of air to 726 \(\+60M Oct-16\)$/.test(line('stack')));
   ok('pin and priced-for on one line', /^pin {4}none today \(11\.3% expires, away from spot\) · priced for ±10\.2 \(±1\.37%\)$/.test(line('pin')));
-  ok('the book line names what the balance does', /^book {3}−\$[\d.]+B below \/ \+\$[\d.]+B above: (balanced either side|rallies absorbed into 750, dips extend|dips accelerate, rallies thin)$/.test(line('book')));
+  ok('the book line names what the balance does', /^book {3}−\$[\d.]+B below \/ \+\$[\d.]+B above: (balanced either side|rallies absorbed into 750, dips extend|rallies absorbed into 750, dips accelerate|dips accelerate, rallies thin)$/.test(line('book')));
   ok('after: the pivot once today is gone, and Friday\'s box', /^after {2}today's expiry: pivot 740\.80 → 733\.96 · Sep-25 box 748–755, 740 \(−109M\) under it$/.test(line('after')));
   ok('never "wall" on the put side', !/put wall/i.test(L.lines.join(' ')));
 
@@ -442,7 +462,7 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
 
   // The health sample carries the levels.
   const hs = healthSample({ ok: true, levels: lv, row: { rate: 0.038, rateStatus: 'live' }, vintage: {}, oi: {}, crossCheck: null }, { symbol: 'QQQ' });
-  eq('the health sample logs the levels', [hs.put_support_strike, hs.trapdoor_near, hs.trapdoor_deep, hs.call_wall_kind, hs.rf_status], [726, 743, 730, 'ceiling', 'live']);
+  eq('the health sample logs the levels', [hs.put_support_strike, hs.trapdoor_near, hs.trapdoor_deep, hs.call_wall_kind, hs.rf_status], [726, 730, 730, 'ceiling', 'live']);
 }
 
 // ── THE PANEL WEARS THE VOCABULARY ───────────────────────────────────────────
