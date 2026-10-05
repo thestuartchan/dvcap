@@ -3077,9 +3077,8 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     return out;
   }, [settings?.sizing]);
   // `state` is the measured market state ({ probs, band }); with it the multiplier is the regime mix ×
-  // conditions, and the consensus figure rides along for comparison (lib/sizing.js regimeMultiplier).
-  // The sizing context's regime is the CONSENSUS one: it feeds the legacy multiplier shown beside the
-  // measured one (the measured path reads `state`). Everything else on the console reads liveRegime.
+  // conditions (lib/sizing.js regimeMultiplier). The CONSENSUS regime is only the fallback for when
+  // the measured state has not loaded. Everything else on the console reads liveRegime.
   const regimeCtx = { regimeId: (consensusRegime || liveRegime)?.id, creditDanger, contested, pinnedDiverged: regimeDiverged, vintage: regimeVintage, sizing: mergedSizing, state: marketState };
   const rm = regimeMultiplier(regimeCtx);
 
@@ -4407,9 +4406,6 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
             {rm.source === "measured" ? (<>
               <span style={{ color: C.lbl, fontWeight: 700 }}>size ×</span> <b style={{ color: C.text }}>{rm.mult.toFixed(2)}</b>
               <span style={{ color: C.muted, fontSize: 11.5 }}> (regime mix ×{rm.base.toFixed(2)} · conditions ×{rm.condMult}{rm.creditCapped ? ` · credit cap ×${CREDIT_DANGER_CAP_LABEL.replace(/^×/, "")}` : ""})</span>
-              {/* The retired consensus engine's figure, for comparison only — it drives nothing. Its
-                  own reasons (single regime, contested/pinned/stale haircuts) are on hover. */}
-              {rm.legacy && <span style={{ color: C.lbl, fontSize: 11 }} title={`Not used for sizing. ${rm.legacy.reasons.join(" · ")}`}> · old consensus engine, not used: ×{rm.legacy.mult.toFixed(2)}</span>}
             </>) : (<>
               <span style={{ color: C.lbl, fontWeight: 700 }}>regime ×</span> <b style={{ color: liveRegime?.color }}>{rm.mult.toFixed(2)}</b>
               <span style={{ color: C.muted, fontSize: 11.5 }}> ({rm.reasons[rm.reasons.length - 1]} · consensus — the measured state has not loaded)</span>
@@ -4494,7 +4490,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
             })}
           </div>
           <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>{rm.source === "measured"
-            ? <>The size uses all four, weighted by the measured probabilities, times the conditions band (calm ×1 · caution ×0.8 · stress ×0.6 · crisis ×0.4). Credit-DANGER caps it at {CREDIT_DANGER_CAP_LABEL}. The old consensus engine's figure is shown beside it for comparison only.</>
+            ? <>The size uses all four, weighted by the measured probabilities, times the conditions band (calm ×1 · caution ×0.8 · stress ×0.6 · crisis ×0.4). Credit-DANGER caps it at {CREDIT_DANGER_CAP_LABEL}.</>
             : <>The measured state has not loaded, so the size uses the consensus regime alone. Credit-DANGER caps the multiplier at {CREDIT_DANGER_CAP_LABEL}; a contested, pinned≠live or stale consensus takes a further haircut (×0.7 at most).</>}</div>
         </div>
         </>)}

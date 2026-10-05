@@ -290,7 +290,7 @@ const PHASE_WORDS = {
   liquidity: "Liquidity event — monetise what is on; do not add at these prices",
   recovery: "Recovery — roll hedges off and redeploy in tranches",
 };
-function PlanPanel({ st, legacy }) {
+function PlanPanel({ st }) {
   const s = st.sizing, g = st.stage, h = st.hedgePhase;
   return (
     <Card style={{ display: "grid", gap: 10, alignContent: "start", minWidth: 0 }}>
@@ -316,7 +316,6 @@ function PlanPanel({ st, legacy }) {
           Regime multiplier is the probability-weighted average of {QORDER.map(id => `${QUADRANTS[id].short.split(" ")[0].toLowerCase()} ×${REGIME_SIZING[id].mult}`).join(", ")};
           conditions {Object.entries(CONDITION_SIZING).map(([k, v]) => `${k} ×${v}`).join(", ")}.
           {" "}The Console sizes on this figure, using its own regime multipliers if you have changed them there, and caps it at ×0.40 while credit is in DANGER.
-          {legacy != null && <> The retired consensus engine would give <b style={{ color: C.mid }}>×{legacy.toFixed(2)}</b> (comparison only).</>}
         </div>
       </div>
       {h && <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.5 }}><b style={{ color: C.text }}>Hedges:</b> {PHASE_WORDS[h.id]} <span style={{ color: C.muted }}>({h.why})</span></div>}
@@ -424,7 +423,7 @@ function IfThen({ list, asOf = null }) {
 }
 
 // ── THE STATE SCREEN ─────────────────────────────────────────────────────────
-export function StateView({ st, feed, loading, error, onRefresh, legacySizing = null, streetLabel = null }) {
+export function StateView({ st, feed, loading, error, onRefresh, streetLabel = null }) {
   const c = st?.conditions, r = st?.regime;
   const bt = bandTone(c?.band?.id);
   return (
@@ -464,7 +463,7 @@ export function StateView({ st, feed, loading, error, onRefresh, legacySizing = 
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14, alignItems: "start" }}>
         <PolicyPanel p={st?.policy} />
-        {st && <PlanPanel st={st} legacy={legacySizing} />}
+        {st && <PlanPanel st={st} />}
       </div>
       <IfThen list={st?.transitions} asOf={c?.date ?? null} />
     </div>
