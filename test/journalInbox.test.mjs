@@ -4,7 +4,7 @@
 // what a note may do (append one, count them), what it may never do (read, edit, pass any other
 // gate), how it meets its fill, and that nothing a note says reaches the channel or the repo.
 import { validateNote, orderUnits, matchNote, processInbox, applyDraft, journalLine, draftCounts, expectationText,
-         tradingDaysBetween, chooseCandidate, appendProcessed, whyNot, explainWaiting, assembledSpreads, fmtPx, amendTargets, productRoot, resolveAmend, amendRow, INBOX_KEY, DRAFTS_KEY } from '../lib/journalInbox.js';
+         tradingDaysBetween, chooseCandidate, appendProcessed, whyNot, explainWaiting, assembledSpreads, fmtPx, amendTargets, productRoot, retryAmends, resolveAmend, amendRow, INBOX_KEY, DRAFTS_KEY } from '../lib/journalInbox.js';
 import { parseTrades } from '../lib/flexTrades.js';
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
@@ -478,5 +478,22 @@ const TODAY = '2026-10-01';
 }
 
 globalThis.fetch = realFetch;
+// ── HONG KONG NUMERIC ROOTS (5 Oct): "981" is 0981.HK, "8" is 0008.HK ──
+{
+  const hk = (sym, id) => ({ id, symbol: sym, side: 'long', multiplier: 1, fills: [{ side: 'buy', qty: 1000, price: 60, date: '2026-09-10' }] });
+  const rows = [hk('0981.HK', 'SMIC'), hk('0008.HK', 'PCCW')];
+  const amend = (sym) => validateNote({ id: `t-amend-${sym.toLowerCase().replace(".", "-")}`, kind: 'amend', written_at: '2026-10-05T01:00:00Z', trade_date: '2026-10-05',
+    instrument: { type: 'STK', symbol: sym }, tag: 'position', rationale: 'long hold, not a trading position', rules: ['excluded from the trim list'] }).note;
+  eq('981 finds 0981.HK, 8 finds 0008.HK', [amendTargets(amend('981'), rows).map(r => r.id), amendTargets(amend('8'), rows).map(r => r.id)], [['SMIC'], ['PCCW']]);
+  eq('the suffixed form too', amendTargets(amend('981.HK'), rows).map(r => r.id), ['SMIC']);
+  eq('and 98 is not 981', amendTargets(amend('98'), rows).length, 0);
+  // The two notes that arrived before the fix: unfilled drafts, retried on the next run.
+  const stale = [{ id: 'n-x', kind: 'unfilled', reason: 'amend: no open trade for 981', note: { ...amend('981'), kind: 'amend' } }];
+  const r = retryAmends(stale, rows);
+  eq('a stale no-target amend is retried and becomes a rule change', [r.changed, r.drafts[0].kind, r.drafts[0].supersedes], [1, 'amend', 'SMIC']);
+  eq('one that still finds nothing is left as it was', retryAmends(stale, []).drafts[0], stale[0]);
+  eq('the fill side agrees: 0981 and 981 are one product', productRoot('0981.HK'), productRoot('981'));
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
