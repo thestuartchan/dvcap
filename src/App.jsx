@@ -29,7 +29,7 @@ import { HORIZON, HORIZON_LABEL, dispersionRead, NO_CONVERSION_NOTE } from "../l
 import { buildViews, evaluateViews, regimeCluster, divergenceRead } from "../lib/analystViews.js";
 import { fmtCcy } from "../lib/fxrates.js";
 import { realizedCurve } from "../lib/positions.js";
-import { DEFAULT_TARGET_PCT, consensusMultiplier } from "../lib/sizing.js";
+import { DEFAULT_TARGET_PCT } from "../lib/sizing.js";
 import { computeMarketState, stateLogRow } from "../lib/marketState.js";
 import { StateView, DriversView, FeedHealth, StreetCompare, Fold, CrossCheckHealth } from "./MarketState.jsx";
 import { PlanView } from "./PlanView.jsx";
@@ -6042,10 +6042,6 @@ export default function App() {
     stance: FED_LANGUAGE_STATUS.status, stanceAsOf: FED_LANGUAGE_STATUS.lastUpdated,
     next: nextMeetingOdds(liveInd?.fedPathFeed ?? null), asOf: stateFeed?.at ?? null,
   }), [liveInd, ismEntry, stateFeed]);
-  // What the consensus engine it replaced would size at (default multipliers) — shown beside the
-  // measured figure while the switch is watched.
-  const legacySizing = consensusMultiplier({ regimeId: liveRegime?.id, creditDanger: creditStatus(liveInd?.creditSpread) === "DANGER",
-    contested: !!derivedRegimes?.contested, pinnedDiverged: regimeDiverged, vintage: regimeVintage }).mult;
   // The Hedges tab's phase follows the measured conditions (lib/marketState.js hedgePhase). The old
   // vol-term + OAS suggestion is the fallback while the gauges have not loaded.
   const insuranceSuggest = mstate.hedgePhase
@@ -7197,7 +7193,7 @@ export default function App() {
         {/* ── MARKET WATCH: STATE / DRIVERS / DATA HEALTH (src/MarketState.jsx) ── */}
         {tab === "state" && (
           <StateView st={mstate} feed={stateFeed} loading={stateFeedStatus.loading || indLoading} error={stateFeedStatus.error}
-            onRefresh={() => { fetchStateFeed(); fetchIndicators(); }} legacySizing={legacySizing}
+            onRefresh={() => { fetchStateFeed(); fetchIndicators(); }}
             streetLabel={liveRegime ? `${liveRegime.label} ${regimeProbFor(liveRegime.id)}%` : null} />
         )}
         {tab === "drivers" && (

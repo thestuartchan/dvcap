@@ -17,7 +17,7 @@ eq('unknown regime is conservative', regimeMultiplier({regimeId:'zzz'}).mult, 0.
   const probs = { ref: 27, inf: 20, stag: 22, def: 31 };
   const m = regimeMultiplier({ regimeId: 'stag', contested: true, creditDanger: false, state: { probs, band: 'caution' } });
   eq('measured: 0.27·1 + 0.20·0.8 + 0.22·0.6 + 0.31·0.4 = 0.686, × caution 0.8', [m.source, m.base, m.condMult, m.mult], ['measured', 0.686, 0.8, 0.549]);
-  eq('…with the consensus figure carried beside it', m.legacy.mult, 0.42);
+  eq('…and the retired consensus figure is no longer carried beside it', m.legacy, undefined);
   eq('crisis plays the credit-danger cap', regimeMultiplier({ regimeId: 'ref', state: { probs: { ref: 100 }, band: 'crisis' } }).mult, CREDIT_DANGER_CAP);
   eq('the Console\'s own regime multipliers are honoured', regimeMultiplier({ state: { probs: { stag: 100 }, band: 'calm' }, sizing: { stag: { mult: 0.5 } } }).mult, 0.5);
   eq('no measured state: the consensus path, unchanged', [regimeMultiplier({ regimeId: 'stag', state: null }).mult, regimeMultiplier({ regimeId: 'stag', state: null }).source], [0.6, 'consensus']);
