@@ -134,5 +134,24 @@ const days = (vals, end = '2026-09-28') => { const out = []; let t = Date.parse(
   eq('and carries nothing the scan refuses', crossCheckLeaks(JSON.stringify(o)), []);
 }
 
+// ── POSITIONING: TWO RANKS, NAMED; STALE ON THE REPORT'S AGE (5 Oct brief) ──
+{
+  const ok = (n, c) => eq(n, !!c, true);
+  // A year of 10Y leveraged-fund shorts between −2.38M and −1.85M, ending on the 22 Sep / 29 Sep pair.
+  const base = Array.from({ length: 50 }, (_, i) => ({ date: `2025-${String(10 + Math.floor(i / 5)).padStart(2, '0')}-0${(i % 5) + 1}`, net: -1.85e6 - ((i * 7919) % 53) * 1e4 }));
+  const wk1 = computeCotMarket([...base, { date: '2026-09-22', net: -1926947 }], { trader: 'leveraged funds' });
+  const wk2 = computeCotMarket([...base, { date: '2026-09-22', net: -1926947 }, { date: '2026-09-29', net: -2036432 }], { trader: 'leveraged funds' });
+  ok('a growing short LOWERS the signed rank', wk2.pct_rank_52w < wk1.pct_rank_52w);
+  ok('and RAISES the size rank', wk2.size_rank_52w > wk1.size_rank_52w);
+  eq('side, basis and trader are printed', [wk2.side, /^signed net/.test(wk2.rank_basis), wk2.trader], ['short', true, 'leveraged funds']);
+  // JPY: a year of shorts down to −115,400, then −14,161 — net short, yet the least short in a year.
+  const jpy = computeCotMarket([...Array.from({ length: 50 }, (_, i) => ({ date: `2025-x${i}`, net: -115400 + i * 1500 })), { date: '2026-09-22', net: 7423 }, { date: '2026-09-29', net: -14161 }], { trader: 'leveraged funds' });
+  eq('JPY: short, at the long end of its year', [jpy.side, jpy.extreme_side, jpy.extreme, jpy.size_rank_52w < 10], ['short', 'long', true, true]);
+  // Status: the report's age, not the fetch time.
+  eq('report 7 days old: fresh', statusOf('positioning', '2026-09-22', '2026-09-29'), 'fresh');
+  eq('report 10 days old (the Friday the next one lands): fresh', statusOf('positioning', '2026-09-22', '2026-10-02'), 'fresh');
+  eq('report 11 days old: stale', statusOf('positioning', '2026-09-22', '2026-10-03'), 'stale');
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

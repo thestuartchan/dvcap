@@ -161,5 +161,23 @@ const FX = JSON.parse(readFileSync(new URL('./fixtures-cboe-qqq.json', import.me
   eq('the pin top rides alongside, unscored', [pt.ours, pt.state, pt.score], [775, 'context', false]);
   eq('without levels the legacy value is used', compareGex(ours, theirs, { spot: 764 }).checks.find(c => c.name === 'call wall').ours, 765);
 }
+// ── A BOARD READ BACK TO ITSELF IS NOT A SECOND OPINION ──
+// 2 / 5 Oct: the settled board (CBOE vols on OCC's OI) matched CBOE to the unit and was called agreement.
+{
+  const board = { spot: 769.13, callWall: 785, putWall: 767, callOi: 2327423, putOi: 3100000, oiWeightedIv: 0.140 };
+  const cboe = { spot: 769.10, callWall: 785, putWall: 767, callOi: 2327423, putOi: 3100000, oiWeightedIv: 0.140 };
+  const settled = compareGex(board, cboe, { sameSource: { oi: true, iv: true, gamma: true } });
+  eq('settled path: not independent, no verdict', [settled.independent, settled.clean, settled.scored], [false, null, 0]);
+  ok('the verdict says why', /no independent check/.test(settled.verdict));
+  eq('every data row is same_source, unscored', settled.checks.filter(c => c.name !== 'spot').map(c => [c.state, c.score]),
+     [['same_source', false], ['same_source', false], ['same_source', false], ['same_source', false], ['same_source', false]]);
+  eq('the arithmetic result is kept beside the label', settled.checks.find(c => c.name === 'call OI').arithmetic, 'match');
+  // The Yahoo capture: its vols and gamma are its own; only OI is shared.
+  const capture = compareGex({ ...board, oiWeightedIv: 0.168 }, cboe, { sameSource: { oi: true } });
+  eq('capture path: independent, OI rows labelled, the rest scored', [capture.independent, capture.checks.filter(c => c.sameSource).map(c => c.name), capture.scored],
+     [true, ['call OI', 'put OI'], 3]);
+  eq('no option: the old behaviour', compareGex(board, cboe).independent, true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
