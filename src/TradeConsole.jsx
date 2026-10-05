@@ -41,6 +41,7 @@ import { parseCommand, resolveCandidates, commandRow, commandSummary, firstFill,
 import { actionItems } from "../lib/actions.js";
 import { applyDraft, LEVEL_LABEL as JOURNAL_LEVEL_LABEL } from "../lib/journalInbox.js";
 import JournalDrafts from "./JournalDrafts.jsx";
+import FillAudit from "./FillAudit.jsx";
 import { useRef } from "react";
 import { isDerivativeRow, underlyingOf, legLabel, optionDerived, exposureLines, optionRow, optionLevelVocab, hardDateCheck, defaultHardDate,
          markOf, spreadShape, INSTRUMENTS, INSTRUMENT_LABEL, LEG_RIGHTS, LEG_SIDES, MAX_LEGS, expiryLabel } from "../lib/instruments.js";
@@ -3548,6 +3549,20 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     // you is a card that looks deleted.
     if (after.status !== before.status) { setBookTab(after.status === "closed" ? "CLOSED" : after.status === "open" ? "OPEN" : "WATCHING"); setExpanded(rowId); }
   };
+  // A fill the broker had and the console did not (src/FillAudit.jsx). History, not a decision, so
+  // no decision-log entry — only the fill, and the lifecycle change it causes.
+  const addBrokerFill = (rowId, fill) => {
+    const r = rows.find(x => x.id === rowId); if (!r) return;
+    if ((r.fills || []).some(f => f.tradeId && f.tradeId === fill.tradeId)) return;
+    const before = derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side });
+    const fills = [...(r.fills || []), fill];
+    const after = derivePosition(fills, { multiplier: r.multiplier, side: r.side });
+    upd(rowId, { fills, ...afterFill(before, after) });
+  };
+  const addBrokerRow = (row) => {
+    if (rows.some(x => x.id === row.id)) return;
+    setRows(p => [...p, { ...row, ...archivePatch() }]); touch();
+  };
   const undoDel = () => {
     const u = undo; if (!u) return;
     const r = rows.find(x => x.id === u.rowId); if (!r) { setUndo(null); return; }
@@ -4124,6 +4139,10 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           Notes written from chat, matched to IBKR's fills by the daily run: drafts to confirm,
           fills that arrived with no note, and notes whose fill never came. Absent when empty. */}
       <JournalDrafts journal={journal} rows={rows} onConfirm={confirmDraft} onDismiss={dismissDraft} onChoose={chooseDraft} onDrop={dropNote} busy={journalBusy} msg={journalMsg} />
+
+      {/* ── MISSING FILLS ── the broker's fills (the owner's trade sheet) against every console trade. */}
+      <FillAudit rows={rows} sheet={settings.brokerSheet || ""} setSheet={(v) => { setSettings(s => ({ ...s, brokerSheet: v })); touch(); }}
+        onAddFill={addBrokerFill} onAddRow={addBrokerRow} />
 
       {/* ── CURRENT PORTFOLIO ──
           Same visual idiom as the Smart Money tab (donut for weight, horizontal bars for the
