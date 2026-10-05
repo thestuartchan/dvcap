@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, Component, Fragment } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Component, Fragment } from "react";
 import { C, P, alpha, THEMES, DEFAULT_THEME, THEME_KEY } from "./theme.js";
 import { SLabel, Card, Btn, StaleChip } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
@@ -5893,6 +5893,18 @@ export default function App() {
   const [tab, setTab]           = useState("global");
   const [showLegacy, setShowLegacy] = useState(false);   // the previous Market Watch tabs, while they are offered
   const [theme, setTheme]       = useTheme();
+  // THE PINNED NAV'S HEIGHT, as --nav-h on the root. Anything that pins itself below the nav (the
+  // Console's book tabs) uses it as its `top`, so the two never overlap however the nav wraps.
+  const navRef = useRef(null);
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const set = () => document.documentElement.style.setProperty("--nav-h", `${el.offsetHeight}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [pbRegions, setPbRegions] = useState(["asia", "eu", "us"]); // Global Playbook — multi-select, default All
   const toggleRegion = (r) => setPbRegions(prev => {
     const next = prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r];
@@ -7039,7 +7051,7 @@ export default function App() {
       {/* ── STICKY NAV ──
           Groups, tabs and the regime strip. Roughly a third the height of the old sticky header,
           which is what makes pinning it worth doing rather than something to scroll past. */}
-      <div className="mwd-sticky-nav" style={{ background: C.surf, borderBottom: "2px solid " + C.bdr, padding: "8px 16px 0", position: "sticky", top: 0, zIndex: 100 }}>
+      <div ref={navRef} className="mwd-sticky-nav" style={{ background: C.surf, borderBottom: "2px solid " + C.bdr, padding: "8px 16px 0", position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ maxWidth: 1080, margin: "0 auto" }}>
           {/* ── GROUP ROW ──
               Selecting a group moves to its FIRST tab rather than leaving the second row pointing

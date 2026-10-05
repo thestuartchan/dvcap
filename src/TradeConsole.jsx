@@ -4470,8 +4470,11 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
           and a reader scrolling down from the sizer went straight past it. Now a segmented control on
           its own panel: the active state is a filled block, every count is a badge, and the row is
           as wide as the cards it switches between. */}
+      {/* And PINNED: it sticks just under the app's own sticky nav (--nav-h, measured in App.jsx),
+          so the state you are reading is always on screen and one click away from the others. */}
       <div className="mwd-tabrow" role="tablist" aria-label="Book" style={{ display: "flex", gap: 6, overflowX: "auto", margin: "14px 0 12px",
-        padding: 6, background: C.inset, border: "1.5px solid " + C.bdrMd, borderRadius: 12 }}>
+        padding: 6, background: C.inset, border: "1.5px solid " + C.bdrMd, borderRadius: 12,
+        position: "sticky", top: "calc(var(--nav-h, 0px) + 6px)", zIndex: 60, boxShadow: "0 4px 12px rgba(0,0,0,0.12)" }}>
         {BOOK_TABS.map(t => {
           const on = bookTab === t.id;
           const n = t.id === "ARCHIVED" ? tabs.ARCHIVED.length + tabs.CLOSED.length : tabs[t.id]?.length ?? "";
