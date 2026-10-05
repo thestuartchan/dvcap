@@ -2835,11 +2835,11 @@
           "drifting": "stag"
         },
         "conditions": {
-          "score": 63.2,
+          "score": 63,
           "band": "caution",
           "comps": {
             "credit": 75,
-            "equityVol": 14,
+            "equityVol": 13,
             "ratesVol": 80,
             "realYield": 89,
             "funding": 36,
@@ -2856,7 +2856,7 @@
         "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-05T15:56:02.800Z"
+      "loggedAt": "2026-10-05T17:24:10.833Z"
     }
   ]
 }
