@@ -2641,7 +2641,7 @@ function Holdings({ data, title, note, open, onToggle, money, bare = false, look
   );
 }
 
-export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverged, regimeVintage = null, marketState = null, prices, fetchPrices, pricesLoading }) {
+export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger, contested, regimeDiverged, regimeVintage = null, marketState = null, prices, fetchPrices, pricesLoading }) {
   const LS = "dvcap_console_v2";
   // Dismissal is by TIMESTAMP, not a flag: the next run's news must reappear rather than being
   // permanently silenced by one click on the last one.
@@ -3017,7 +3017,9 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
   }, [settings?.sizing]);
   // `state` is the measured market state ({ probs, band }); with it the multiplier is the regime mix ×
   // conditions, and the consensus figure rides along for comparison (lib/sizing.js regimeMultiplier).
-  const regimeCtx = { regimeId: liveRegime?.id, creditDanger, contested, pinnedDiverged: regimeDiverged, vintage: regimeVintage, sizing: mergedSizing, state: marketState };
+  // The sizing context's regime is the CONSENSUS one: it feeds the legacy multiplier shown beside the
+  // measured one (the measured path reads `state`). Everything else on the console reads liveRegime.
+  const regimeCtx = { regimeId: (consensusRegime || liveRegime)?.id, creditDanger, contested, pinnedDiverged: regimeDiverged, vintage: regimeVintage, sizing: mergedSizing, state: marketState };
   const rm = regimeMultiplier(regimeCtx);
 
   // ── derive everything from fills ──
@@ -3090,7 +3092,7 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
     // WATCHING → OPEN → CLOSED → ARCHIVED, from the fills and the close stamp (lib/lifecycle.js).
     const state = stateOf(r, { now: nowMs });
     return { ...r, pnl, sug, sizeMode: mode, stopLevel: stopLevel || null, opt, state };
-  }), [baseRows, prices, feedGreeks, feedSpots, equityBase, baseRisk, targetPct, baseCcy, mergedSizing, liveRegime?.id, creditDanger, contested, regimeDiverged, todayISO]);   // eslint-disable-line
+  }), [baseRows, prices, feedGreeks, feedSpots, equityBase, baseRisk, targetPct, baseCcy, mergedSizing, liveRegime?.id, consensusRegime?.id, creditDanger, contested, regimeDiverged, todayISO]);   // eslint-disable-line
 
   const tabs     = useMemo(() => byState(derivedRows, { now: nowMs }), [derivedRows]);   // eslint-disable-line
   const setups   = tabs.WATCHING;
@@ -4350,13 +4352,14 @@ export function TradeConsole({ liveRegime, creditDanger, contested, regimeDiverg
               const isLive = liveRegime?.id === k;
               return (
                 <label key={k} style={{ fontSize: 11.5, color: isLive ? C.text : C.lbl, fontWeight: isLive ? 800 : 600, border: "1.5px solid " + (isLive ? (liveRegime?.color || C.blue) : C.bdr), borderRadius: 8, padding: "5px 9px", background: isLive ? (liveRegime?.bg || C.surf) : C.surf }}>
-                  {REGIME_SIZING[k].label}{isLive ? " ● live" : ""}<br />
+                  {/* The measured regime (as the header), and each regime's weight in the mix the size uses. */}
+                  {REGIME_SIZING[k].label}{isLive ? " ● measured" : ""}{marketState?.probs?.[k] != null ? <span style={{ fontWeight: 600, color: C.muted }}> · {marketState.probs[k]}%</span> : null}<br />
                   {nInput(settings?.sizing?.[k] ?? REGIME_SIZING[k].mult, v => { setSettings(x => ({ ...x, sizing: { ...(x.sizing || {}), [k]: v === "" ? null : v } })); touch(); }, String(REGIME_SIZING[k].mult), 60)}
                 </label>
               );
             })}
           </div>
-          <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>Credit-DANGER caps the multiplier at {CREDIT_DANGER_CAP_LABEL}; a contested or pinned≠live regime applies a further ×0.7.</div>
+          <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>{marketState?.probs ? "The size uses all four, weighted by the measured probabilities, then the conditions band. " : ""}Credit-DANGER caps the multiplier at {CREDIT_DANGER_CAP_LABEL}; a contested or pinned≠live regime applies a further ×0.7 on the consensus path.</div>
         </div>
         </>)}
         </>} />

@@ -7174,9 +7174,16 @@ export default function App() {
         {/* ── TRADE CONSOLE (Tier 3) ── */}
         {tab === "console" && (
           <TradeConsole
-            liveRegime={liveRegime}
+            // THE MEASURED REGIME, as the header shows it. The console was handed the consensus
+            // engine's pick (the Street's stagflation) while the strip above it read Reflationary
+            // Growth — so the multiplier tile marked Stagflation "live" and each card's regime fit
+            // argued from it. The consensus regime stays where it belongs, on the Street chip.
+            liveRegime={(mstate.regime.available && REGIMES.find(r => r.id === mstate.regime.id)) || liveRegime}
             liveInd={liveInd}
             creditDanger={creditStatus(liveInd?.creditSpread) === "DANGER"}
+            // The consensus engine's own pick and qualifier, for the "consensus engine was ×…"
+            // comparison the sizer prints beside the measured multiplier.
+            consensusRegime={liveRegime}
             contested={!!derivedRegimes?.contested}
             regimeDiverged={regimeDiverged}
             regimeVintage={regimeVintage}
