@@ -48,12 +48,13 @@ const book = bookExposure({ rows: ROWS, greeks: GREEKS, underlyings: SPOTS, nlv:
   eq('the assumptions behind it are stated', [book.limits.underlyingVol, book.limits.correlation], [0.18, 0.75]);
 
   // Every breach is named, with the number it was judged against.
-  ok('the ceiling breach is named', book.breaches.some(b => /over the 2× ceiling/.test(b)));
-  ok('the single-position cap too', book.breaches.some(b => /over the 0.5× single-position cap/.test(b)));
+  ok('the ceiling breach is named', book.breaches.some(b => /over the 1.5× ceiling/.test(b)));
+  ok('the single-name cap too, per underlying at 10%', book.breaches.some(b => /over the 10% single-name cap/.test(b)));
   ok('and the theta ceiling', book.breaches.some(b => /over the 0.25% ceiling/.test(b)));
   ok('and the vol target', book.breaches.some(b => /above the 20–25% target/.test(b)));
   eq('the largest line is flagged by name', book.largest.symbol.trim(), 'QQQ   261016C00730000'.trim());
-  eq('and it is the only one over the cap', book.overCap.length, 1);
+  ok('QQQ is on the exempt list: the largest line, shown and not flagged', !book.largest.overCap && !book.overCap.some(o => o.symbol === 'QQQ'));
+  eq('the names over 10% of NLV', book.overCap.map(o => o.symbol).sort(), ['AAPU', 'AVGO', 'XLE']);
   near('theta is about 0.33% of NLV per day', book.thetaPct, 0.33, 0.02);
 }
 
@@ -151,12 +152,12 @@ const book = bookExposure({ rows: ROWS, greeks: GREEKS, underlyings: SPOTS, nlv:
 // ── THRESHOLDS ARE CONFIGURABLE, AND THE READING SAYS WHICH IT USED ─────────
 // Judgement calls calibrated to a ~$210k personal account, not universal constants.
 {
-  eq('the shipped defaults are the specified ones',
-     [EXPOSURE_LIMITS.targetLo, EXPOSURE_LIMITS.targetHi, EXPOSURE_LIMITS.ceiling,
-      EXPOSURE_LIMITS.singleCap, EXPOSURE_LIMITS.thetaPctPerDay],
-     [1.1, 1.4, 2.0, 0.5, 0.25]);
+  eq('the shipped defaults are the decided ones (6 Oct): 1.0 target · 1.2 + 0.3 · 1.5 · 10% · theta 0.25%',
+     [EXPOSURE_LIMITS.target, EXPOSURE_LIMITS.positionMax, EXPOSURE_LIMITS.swingMax, EXPOSURE_LIMITS.ceiling,
+      EXPOSURE_LIMITS.singleNamePct, EXPOSURE_LIMITS.thetaPctPerDay],
+     [1.0, 1.2, 0.3, 1.5, 10, 0.25]);
   const loose = bookExposure({ rows: ROWS, greeks: GREEKS, underlyings: SPOTS, nlv: NLV,
-                               limits: { ceiling: 5.0, singleCap: 3.0, thetaPctPerDay: 1.0 }, now: NOW });
+                               limits: { ceiling: 5.0, positionMax: 5.0, swingMax: 5.0, singleNamePct: 300, thetaPctPerDay: 1.0 }, now: NOW });
   ok('a raised ceiling is respected', loose.state !== 'OVER CEILING');
   eq('and no cap breach is reported', loose.overCap.length, 0);
   eq('the reading carries the limits it was judged against', loose.limits.ceiling, 5.0);
@@ -165,9 +166,14 @@ const book = bookExposure({ rows: ROWS, greeks: GREEKS, underlyings: SPOTS, nlv:
   const at = (dn) => bookExposure({ rows: [{ symbol: 'SPY', qty: dn / 100, livePrice: 100 }],
                                     greeks: {}, underlyings: { SPY: 100 }, nlv: 100000, now: NOW }).state;
   eq('at 0.8× the book is conservative', at(80000), 'CONSERVATIVE');
-  eq('at 1.2× it is on target', at(120000), 'TARGET');
-  eq('at 1.7× it is elevated', at(170000), 'ELEVATED');
-  eq('and past 2.0× it is over the ceiling', at(250000), 'OVER CEILING');
+  eq('at 1.0× it is on target', at(100000), 'TARGET');
+  eq('at 1.2× still on target — the position limit is not crossed', at(120000), 'TARGET');
+  eq('at 1.3× the position book is over 1.2×: elevated', at(130000), 'ELEVATED');
+  eq('and past 1.5× it is over the ceiling', at(170000), 'OVER CEILING');
+  // The swing bucket over its 0.3× is amber even with the total inside 1.5×.
+  const sw = bookExposure({ rows: [{ symbol: 'SPY', qty: 1000, livePrice: 100 }, { symbol: 'TQQQ', qty: 133, livePrice: 100 }],
+                            greeks: {}, underlyings: {}, nlv: 100000, now: NOW });
+  eq('swing 0.4× over its 0.3×, total 1.4×: elevated, and said why', [sw.ratio <= 1.5, sw.state, sw.breaches.some(b => /swing bucket .* over its 0.3× limit/.test(b))], [true, 'ELEVATED', true]);
 }
 
 // ── NOTHING TO MEASURE IS NOT A ZERO ────────────────────────────────────────
