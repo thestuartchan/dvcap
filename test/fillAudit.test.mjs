@@ -1,5 +1,5 @@
 // test/fillAudit.test.mjs — the broker's fills against the console's.
-import { sheetTime, sheetIdOf, sheetCsvUrl, parseCsv, parseBrokerFills, brokerKey, rowKey, auditFills, planFor, impliedEntry,
+import { undoCarryOver, isCarryOverFill, segments, swingRow, consoleSymbolOf, sheetTime, sheetIdOf, sheetCsvUrl, parseCsv, parseBrokerFills, brokerKey, rowKey, auditFills, planFor, impliedEntry,
          effectivePrice, fillFromBroker, closedTradeRow } from '../lib/fillAudit.js';
 import { derivePosition } from '../lib/positions.js';
 
@@ -71,7 +71,8 @@ const br = A.instruments.find(i => i.key === 'BRNT');
 eq('BRNT: 100 of 170 matched a day later; 70 missing, marked partial', br.missing.map(m => [m.qty, m.partOf]), [[70, 170]]);
 eq('BRNT: a partial is added to the row, never a closed trade', br.missing[0].plan.action, 'add');
 eq('BRNT: and has no implied entry', impliedEntry(br.missing[0], BR), null);
-eq('what the console has no row for is counted, not audited', A.untracked.map(u => u.key).sort(), ['HYPE', 'TQQQ', 'opt:QQQ|2026-06-11|C|707']);
+eq('no row: options and crypto are out of scope', A.outOfScope, { options: 1, crypto: 1 });
+eq('no row, still held at the end: left to the daily sync, which adds held positions', A.heldNoRow.map(h => h.symbol), ['TQQQ']);
 eq('missing count', A.missingCount, 2);
 
 // ── the closed trade it would record reproduces IBKR's realised P&L exactly ──
@@ -91,6 +92,70 @@ eq('after adding, the audit is clean', auditFills([BR2], P.fills.filter(f => f.s
 // A sale fully inside what the row held is just added.
 const OPEN = { id: 'o', symbol: 'AAPL', side: 'long', fills: [{ id: 'f', side: 'buy', qty: 100, price: 200, date: '2026-07-01' }] };
 eq('a sale within what was held is added to the row', planFor({ side: 'sell', qty: 40, date: '2026-08-01', price: 210, realized: 400 }, [OPEN]), { action: 'add', rowId: 'o' });
+
+// ── the console's scope rules, judged as of each trade's date ──
+{
+  const f = (uid, symbol, side, qty, price, time, extra = {}) => ({ uid, venue: 'IBKR', symbol, side, qty, price, time, date: time.slice(0, 10), currency: 'USD', fee: -1, realized: 0, ...extra });
+  const BR = [
+    // AMD, no console row: a same-day round trip (day trade) and a three-day swing.
+    f('d1', 'AMD', 'buy', 100, 150, '2026-07-01T14:00:00Z'), f('d2', 'AMD', 'sell', 100, 152, '2026-07-01T19:00:00Z', { realized: 198 }),
+    f('s1', 'AMD', 'buy', 50, 140, '2026-07-06T14:00:00Z'), f('s2', 'AMD', 'sell', 50, 155, '2026-07-09T15:00:00Z', { realized: 748 }),
+    // USFR, no row: cash, out.
+    f('c1', 'USFR', 'buy', 100, 50.4, '2026-07-01T14:00:00Z'),
+    // NVDA: a June scalp before the console row existed (out), then a scalp while held (in).
+    f('n1', 'NVDA', 'buy', 10, 120, '2026-06-20T14:00:00Z'), f('n2', 'NVDA', 'sell', 10, 121, '2026-06-20T16:00:00Z', { realized: 8 }),
+    f('n3', 'NVDA', 'buy', 100, 130, '2026-08-01T14:00:00Z'),
+    f('n4', 'NVDA', 'buy', 20, 140, '2026-08-20T14:00:00Z'), f('n5', 'NVDA', 'sell', 20, 141, '2026-08-20T17:00:00Z', { realized: 18 }),
+    // 7709: three buys the console holds as one "bulk average" fill.
+    f('h1', '7709', 'buy', 300, 50, '2026-07-14T02:00:00Z', { currency: 'HKD' }), f('h2', '7709', 'buy', 300, 51, '2026-07-15T02:00:00Z', { currency: 'HKD' }),
+    f('h3', '7709', 'buy', 200, 51, '2026-07-16T02:00:00Z', { currency: 'HKD' }),
+    // XOM, no row: shares bought before the history, sold inside it — IBKR booked the P&L.
+    f('x1', 'XOM', 'sell', 40, 110, '2026-07-20T15:00:00Z', { realized: 400 }),
+  ];
+  const ROWS = [
+    { id: 'nv', symbol: 'NVDA', side: 'long', fills: [{ id: 'a', side: 'buy', qty: 100, price: 130, date: '2026-08-01' }] },
+    { id: 'hk7709', symbol: '7709.HK', currency: 'HKD', side: 'long', fills: [{ id: 'b', side: 'buy', qty: 800, price: 50.65, date: '2026-07-16', note: 'bulk average' }] },
+  ];
+  const R = auditFills(ROWS, BR);
+  eq('a same-day round trip with no position is a day trade, left out', [R.dayTrades.trades >= 1, R.instruments.some(i => i.missing.some(m => m.uid === 'd1'))], [true, false]);
+  eq('a multi-day round trip with no row is a swing, offered not filed', R.swings.map(w => [w.symbol, w.from, w.to, w.realized]), [['AMD', '2026-07-06', '2026-07-09', 748]]);
+  eq('cash with no row is out', R.outOfScope['cash equivalents'], 1);
+  const nv = R.instruments.find(i => i.key === 'NVDA');
+  eq('NVDA: the June scalp, before the console held it, is a day trade; the August scalp while held is in',
+     [nv.missing.map(m => m.uid), R.dayTrades.trades], [['n4', 'n5'], 2]);
+  eq('NVDA: the in-position scalp is added to the row', nv.missing.map(m => m.plan.action), ['add', 'add']);
+  eq('7709: three buys absorbed by the bulk-average fill — nothing to add, nothing unseen',
+     [R.instruments.find(i => i.key === '7709')?.missing.length ?? 0, R.instruments.find(i => i.key === '7709')?.unseen.length ?? 0], [0, 0]);
+  const xom = R.instruments.find(i => i.key === 'XOM');
+  eq('XOM: a sale of pre-history shares is a closed trade with an implied entry', [xom.noRow, xom.missing[0].plan.action], [true, 'closed-trade']);
+  near('…entry implied from the realised P&L', xom.missing[0].plan.impliedEntry, (110 * 40 - 1 - 400) / 40);
+  const xr = closedTradeRow(xom.missing[0], null, { from: R.from });
+  eq('…and the row it would record has the console\'s name and closes flat', [xr.symbol, derivePosition(xr.fills, { side: 'long' }).status], ['XOM', 'closed']);
+  const sw = swingRow(R.swings[0]);
+  near('the AMD swing row realises what IBKR booked', derivePosition(sw.fills, { side: 'long' }).realised ?? derivePosition(sw.fills, { side: 'long' }).realized, 748, 0.01);
+  eq('segments: flat-to-flat, a day, a swing, a pre-history close',
+     segments([BR[0], BR[1], BR[2], BR[3], BR[13]]).map(g => g.kind), ['day', 'swing', 'pre-history-close']);
+  eq('console names', [consoleSymbolOf({ symbol: '981', currency: 'HKD' }), consoleSymbolOf({ symbol: 'BRNTl' }), consoleSymbolOf({ symbol: 'MGCZ6' })], ['0981.HK', 'BRNT.L', 'MGC']);
+  ok('a futures swing with an unknown multiplier is not recorded blind', swingRow({ fills: [f('z1', 'ZZZZZ6', 'buy', 1, 10, '2026-07-01T14:00:00Z'), f('z2', 'ZZZZZ6', 'sell', 1, 11, '2026-07-03T14:00:00Z')], from: '2026-07-01', to: '2026-07-03', rowLike: null }) === null);
+}
+
+// ── undo removes exactly what the carry-over wrote ──
+{
+  const added = fillFromBroker({ uid: 'IBKR-77', venue: 'IBKR', side: 'buy', qty: 5, price: 10, fee: -1, date: '2026-07-01' });
+  const hand = { id: 'bfx', side: 'buy', qty: 1, price: 1, date: '2026-07-02', note: 'typed by hand' };   // a "bf" id, but not ours
+  const rowsIn = [
+    { id: 'keep', symbol: 'AAPL', fills: [{ id: 'f1', side: 'buy', qty: 10, price: 200, date: '2026-07-01' }, added, hand] },
+    closedTradeRow({ uid: 'IBKR-9', venue: 'IBKR', side: 'sell', qty: 10, price: 50, fee: -1, realized: 100, date: '2026-07-10', currency: 'USD', partOf: null }, { symbol: 'XOM', side: 'long', multiplier: 1 }, { from: '2026-06-06' }),
+    { id: 'other', symbol: 'MSFT', tags: ['flex'], fills: [{ id: 'g', side: 'buy', qty: 1, price: 1, date: '2026-07-01', tradeId: '123:4' }] },
+  ];
+  ok('a carry-over fill is recognised; a hand fill with a similar id is not', isCarryOverFill(added) && !isCarryOverFill(hand));
+  const u = undoCarryOver(rowsIn);
+  eq('undo drops the carried-over row and fill, keeps everything else', [u.removedRows, u.removedFills, u.touched, u.rows.map(r => r.id), u.rows[0].fills.map(f => f.id)],
+     [1, 1, ['keep'], ['keep', 'other'], ['f1', 'bfx']]);
+  eq('undo twice changes nothing more', [undoCarryOver(u.rows).removedRows, undoCarryOver(u.rows).removedFills], [0, 0]);
+  ok('a carry-over fill fits what the store keeps (id ≤16, tradeId ≤24, note ≤200)', added.id.length <= 16 && added.tradeId.length <= 24 && added.note.length <= 200
+     && rowsIn[1].fills.every(f => f.id.length <= 16 && String(f.note).length <= 200) && rowsIn[1].id.length <= 48 && rowsIn[1].thesis.length <= 600);
+}
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

@@ -15,7 +15,7 @@
 
 import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, WALLET_SNAPSHOT_KEY, WALLET_PROVENANCE_KEY, WALLET_PENDING_KEY } from '../lib/kv.js';
 import { derivePosition, positionPnl, levelHits, applyRolls } from '../lib/positions.js';
-import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard } from '../lib/tradecard.js';
+import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard, isStaleEvent } from '../lib/tradecard.js';
 import { upsertCard, post, remove, webhookFromEnv, walletWebhookFromEnv, mentionFromEnv, alertTtlMin, CARD_KEY } from '../lib/discord.js';
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
 import { fetchWallets } from '../lib/wallet.js';
@@ -98,7 +98,7 @@ export async function refresh(origin, { now = Date.now() } = {}) {
   const pending = Array.isArray(state.alerts) ? [...state.alerts] : [];
   for (const ev of events) {
     const row = rows.find(r => r.id === ev.row.id);
-    if (!row) continue;
+    if (!row || isStaleEvent(ev, row, now)) continue;
     const id = await post(webhook, buildAlert({ ...ev, row }, { mentionId: mention }));
     if (id && ttl > 0) pending.push({ id, expires: now + ttl * 60000 });
   }
@@ -118,7 +118,9 @@ export async function refresh(origin, { now = Date.now() } = {}) {
   // because one embed carrying both would hit Discord's 6000-character ceiling far sooner.
   // A rolled-out contract is not a closed trade — it was replaced, and its P&L now lives inside the
   // position that replaced it. Left here it would post as a completed winner that no longer exists.
-  const closedRows = rows.filter(r => r.derived.status === 'closed' && !r.derived.rolledInto && showsOnCard(r));
+  // A trade carried over from the old sheet (tag broker-fills) is history, not news: it stays off
+  // the public card, which would otherwise fill with months-old exits the moment it was imported.
+  const closedRows = rows.filter(r => r.derived.status === 'closed' && !r.derived.rolledInto && showsOnCard(r) && !(r.tags || []).includes('broker-fills'));
   const closed = buildClosedCard(closedRows, { updatedAt: new Date(now).toISOString() });
   const c = closedRows.length ? await upsertCard(webhook, state.closedMessageId, closed) : { id: state.closedMessageId };
 
