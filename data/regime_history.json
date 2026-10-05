@@ -2766,8 +2766,8 @@
         "u3": 4.2,
         "empPop": 59.2,
         "oas": 3.1,
-        "tenY": 5.24,
-        "twoY": 4.78,
+        "tenY": 5.28,
+        "twoY": 4.83,
         "consensusAlive": 0.711,
         "regimeVintage": "decayed"
       },
@@ -2835,13 +2835,13 @@
           "drifting": "stag"
         },
         "conditions": {
-          "score": 63,
+          "score": 63.3,
           "band": "caution",
           "comps": {
             "credit": 75,
-            "equityVol": 13,
+            "equityVol": 14,
             "ratesVol": 80,
-            "realYield": 89,
+            "realYield": 90,
             "funding": 36,
             "breadth": 77,
             "dollar": 100
@@ -2849,14 +2849,14 @@
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 24,
+          "hikeOdds": 22,
           "liq4w": 14
         },
         "sizing": 0.6,
         "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-05T17:24:10.833Z"
+      "loggedAt": "2026-10-05T20:53:39.419Z"
     }
   ]
 }
