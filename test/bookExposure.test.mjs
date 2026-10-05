@@ -1,5 +1,6 @@
 // test/bookExposure.test.mjs — what the book is carrying, in delta.
-import { bookExposure, positionExposure, parseOptionSymbol, contractKey, equityDelta, isCashLike, CASH_LIKE_ETF, byUnderlying,
+import { US_CASH_EQUIVALENTS } from '../lib/cashEquivalents.js';
+import { bookExposure, positionExposure, parseOptionSymbol, contractKey, equityDelta, isCashLike, byUnderlying,
          trendRead, EXPOSURE_LIMITS, LEVERAGED_ETF, TREND_MIN } from '../lib/bookExposure.js';
 import { pickCboeGreeks } from '../lib/cboe.js';
 
@@ -67,7 +68,7 @@ const book = bookExposure({ rows: ROWS, greeks: GREEKS, underlyings: SPOTS, nlv:
   // ── CASH LEGS CARRY NO MARKET DELTA ──
   // USFR at 1.0 delta put a quarter of NLV into delta-notional as if a T-bill wrapper moved with the market.
   eq('a cash-like ETF is 0×, and says why', equityDelta('USFR'), { delta: 0, source: 'cash-like ETF' });
-  ok('the table names the usual T-bill wrappers', ['USFR', 'SGOV', 'BIL', 'SHV'].every(isCashLike) && CASH_LIKE_ETF.length >= 8);
+  ok('the table names the usual T-bill wrappers', ['USFR', 'SGOV', 'BIL', 'SHV'].every(isCashLike) && US_CASH_EQUIVALENTS.length >= 8);
   eq('a stated delta still wins over the cash table', equityDelta('USFR', 0.1).source, 'row');
   {
     const rows = [{ symbol: 'USFR', qty: 1058, livePrice: 50.46 }, { symbol: 'QQQ', qty: 100, livePrice: 712 }];

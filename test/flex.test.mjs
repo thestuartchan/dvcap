@@ -128,7 +128,8 @@ eq('and nothing invented for the part that agrees', rec.differs[0].avg, null);
 // USFR is cash; AVGO is an option the console does not hold, expiring the day after the statement
 // with no open date given — by the 0/1DTE rule a day trade, set aside rather than announced.
 eq('nothing outside the console scope is auto-added', rec.adds, []);
-eq('cash is reported as unmatched', rec.report.filter(r => r.kind === 'unmatched').map(r => `${r.root}:${r.assetClass}`).sort(), ['USFR:cash']);
+eq('cash is reported in the cash book, not as unmatched', rec.report.filter(r => r.kind === 'cash').map(r => `${r.root}:${r.assetClass}`).sort(), ['USFR:cash']);
+eq('nothing is left unmatched', rec.report.filter(r => r.kind === 'unmatched'), []);
 eq('and the next-day option as a day trade', rec.report.filter(r => r.kind === 'daytrade-option').map(r => r.root), ['AVGO']);
 
 // A share the console has never seen IS added.
@@ -317,7 +318,7 @@ eq('a real one is not', bigDrift.differs[0].avg, { console: 90, ibkr: 98.723337 
 // ── the summary ──
 ok('a clean run says so', /all 3 positions reconcile/.test(summarise(reconcile([INTC, HK, MGC], st.positions.filter(p => ['INTC', '0981', 'MGC'].includes(p.root)), {}))));
 const line = summarise(rec);
-ok('otherwise it names what happened', /HOOD/.test(line) && /not auto-added/.test(line));
+ok('otherwise it names what happened', /HOOD/.test(line) && /in the cash book \(USFR\)/.test(line));
 // Nothing in the summary is a size or a price — it goes to a channel.
 ok('and never a quantity', !/\b(50|100|1058)\b/.test(line));
 
