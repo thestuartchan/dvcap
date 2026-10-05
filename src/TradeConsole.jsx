@@ -672,7 +672,8 @@ const {
                 // Delta-notional: the option block's for a contract, the exposure book's line for shares.
                 const dn = r.opt ? r.opt.deltaNotional : (ctx.bookX?.book?.lines || []).find(l => l.symbol === r.symbol && l.kind !== "option")?.deltaNotional ?? null;
                 const pct = r.opt ? r.opt.pctNlv : (dn != null && equityBase > 0 ? +((dn / equityBase) * 100).toFixed(1) : null);
-                return dn != null ? <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }} title="Delta-notional — what this line is carrying in the underlying">Δ {money(dn, r.currency)}{pct != null ? ` (${pct}% NLV)` : ""}</span> : null;
+                // The book's line is in the BASE currency (lib/bookExposure.js toBase); an option block's is the row's.
+                return dn != null ? <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }} title="Delta-notional — what this line is carrying in the underlying">Δ {money(dn, r.opt ? r.currency : baseCcy)}{pct != null ? ` (${pct}% of equity)` : ""}</span> : null;
               })()}
               {r.margined && mvBase != null && <span style={{ fontSize: 11, color: C.amber, whiteSpace: "nowrap" }} title="Notional controlled, not capital committed. A futures position is held on margin, so this is not a share of the book.">{money(mvBase, baseCcy)} notional</span>}
             </span>
@@ -1143,7 +1144,7 @@ const {
                       </div>
                     )}
                     <div style={{ color: C.muted, fontSize: 11.5 }}>
-                      {mode === "risk" ? `${baseRisk}%` : `${numOrNull(r.targetPct) ?? targetPct}%`} base × <b style={{ color: liveRegime?.color }}>{sug.mult}</b> regime — {sug.reasons[sug.reasons.length - 1]}
+                      {mode === "risk" ? `${baseRisk}%` : `${numOrNull(r.targetPct) ?? targetPct}%`} base × size <b style={{ color: liveRegime?.color }}>×{(+sug.mult).toFixed(2)}</b> — {sug.reasons.filter(x => !/^= ×/.test(x)).slice(-2).join(" · ")}
                       {sug.perTenPctEquity > 0 && <> · a 10% move in your equity shifts this by ~{sug.perTenPctEquity} share{sug.perTenPctEquity === 1 ? "" : "s"}</>}
                     </div>
                     {sug.warnings.map((w, i) => <div key={i} style={{ color: C.amber, fontWeight: 700, fontSize: 11.5 }}>⚠ {w}</div>)}
@@ -1359,8 +1360,8 @@ const ContractPanel = ({ r, ctx }) => {
       </div>
       {grp && (
         <div style={{ marginTop: 9, paddingTop: 7, borderTop: "1px dashed " + C.bdr, fontSize: 12, color: C.mid, lineHeight: 1.6 }}>
-          <b style={{ color: C.text }}>{o.underlying}</b> · combined delta-notional <b>{money(grp.deltaNotional, r.currency)}</b>
-          {grp.pctNlv != null && <> ({grp.pctNlv}% NLV)</>} · shares {money(grp.shares, r.currency)} · options {money(grp.options, r.currency)}
+          <b style={{ color: C.text }}>{o.underlying}</b> · combined delta-notional <b>{money(grp.deltaNotional, ctx.baseCcy)}</b>
+          {grp.pctNlv != null && <> ({grp.pctNlv}% NLV)</>} · shares {money(grp.shares, ctx.baseCcy)} · options {money(grp.options, ctx.baseCcy)}
           {grp.unpriced > 0 && <span style={{ color: C.amber }}> · {grp.unpriced} unpriced line{grp.unpriced === 1 ? "" : "s"}</span>}
           <span style={{ color: C.lbl }}> — display only, from the exposure book</span>
         </div>
@@ -1531,7 +1532,7 @@ const XpoStat = ({ label, value, sub, col, breach }) => (
 // COMPUTED ONCE, USED IN BOTH. The exposure tile reports the book and the sizer decides what may
 // be added to it; if each fetched and totalled its own, the panel could show one delta-notional
 // and refuse a trade against a different one.
-function useBookExposure(rows, nlv, cashBook = null) {
+function useBookExposure(rows, nlv, cashBook = null, toBase = null) {
   const [feed, setFeed] = useState(null);
   const [err, setErr] = useState(null);
 
@@ -1565,8 +1566,8 @@ function useBookExposure(rows, nlv, cashBook = null) {
     rows: (rows || []).map(r => ({ ...r, qty: r?.derived?.qty ?? r?.qty })),
     greeks: live?.greeks || {},
     underlyings: live?.spots || {},
-    nlv, asOf: live?.asOf || null, trend: live?.trend || [], cashBook,
-  }), [rows, live, nlv, cashBook]);
+    nlv, asOf: live?.asOf || null, trend: live?.trend || [], cashBook, toBase,
+  }), [rows, live, nlv, cashBook, toBase]);
 
   // ── THE DAILY POINT ────────────────────────────────────────────────────────
   // The 20d series is the most useful row on the tile and it only exists if something writes to
@@ -3103,7 +3104,9 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   // COMPUTED ONCE, USED IN BOTH — the tile reports the book, the sizer decides what may be added
   // to it, and two separate totals on one panel would let it refuse a trade against a number it
   // is not showing.
-  const bookX = useBookExposure(exposureRows, equityBase, cashBook);
+  // Every exposure figure in the base currency, at the live rate (unrealised P&L uses spot too).
+  const exposureToBase = useCallback((v, ccy) => convert(v, ccy || "USD", baseCcy, fxRates), [baseCcy, fxRates]);
+  const bookX = useBookExposure(exposureRows, equityBase, cashBook, exposureToBase);
   const feedGreeks = bookX.live?.greeks || EMPTY_OBJ;
   const feedSpots = bookX.live?.spots || EMPTY_OBJ;
   const todayISO = new Date().toISOString().slice(0, 10);
@@ -4205,8 +4208,10 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           </Card>
         );
         const held = openPos.map(r => {
-          const mv = r.pnl.marketValue == null ? null : toBase(r.pnl.marketValue, r);
-          const un = r.pnl.unrealized == null ? null : toBase(r.pnl.unrealized, r);
+          // Live figures at SPOT (the row's currency as a string skips its pin); the pinned rate is
+          // for realised P&L only — the rule written at rateForRow, which these two had not followed.
+          const mv = r.pnl.marketValue == null ? null : toBase(r.pnl.marketValue, r.currency || "USD");
+          const un = r.pnl.unrealized == null ? null : toBase(r.pnl.unrealized, r.currency || "USD");
           const re = toBase(r.derived.realized, r);
           return { ...r, mvBase: mv, unBase: un, reBase: re, totalBase: (un ?? 0) + (re ?? 0) };
         });
@@ -4228,16 +4233,20 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           .map(h => ({ name: h.symbol, unrealised: +(h.unBase ?? 0).toFixed(2), realised: +(h.reBase ?? 0).toFixed(2), total: +h.totalBase.toFixed(2) }))
           .sort((a, b) => b.total - a.total);
         const PAL = [C.blue, P.teal700, P.amber700, P.violet700, P.pink700, P.emerald700, C.orange, P.indigo700, P.cyan700, P.orange900];
-        const cashPct = equityBase && totalMv ? Math.max(0, +(100 - (totalMv / equityBase) * 100).toFixed(1)) : null;
+        // INVESTED is the trading book; cash equivalents (USFR, IB01, bills) are cash, so CASH counts
+        // them — the same split as the exposure tile's "Cash & equivalents". The pie still shows them.
+        const investedMv = priced.filter(h => !isCashEquivalent(h)).reduce((a, h) => a + h.mvBase, 0);
+        const cashPct = equityBase && totalMv ? Math.max(0, +(100 - (investedMv / equityBase) * 100).toFixed(1)) : null;
+        const openUn = bars.reduce((a, b) => a + b.unrealised, 0), openRe = bars.reduce((a, b) => a + b.realised, 0);
         return (
           <Card>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
               <SLabel>Current portfolio</SLabel>
               <span style={{ fontSize: 12, color: C.muted }}>{priced.length} priced position{priced.length === 1 ? "" : "s"} · {baseCcy}</span>
               <div style={{ marginLeft: "auto", display: "flex", gap: 16, alignItems: "baseline", fontSize: 13 }}>
-                <span><span style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800 }}>INVESTED </span><b>{fmtCcy(totalMv, baseCcy)}</b></span>
-                {cashPct != null && <span><span style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800 }}>CASH </span><b>{cashPct}%</b></span>}
-                <span><span style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800 }}>OPEN P&amp;L </span>
+                <span title="market value of the trading book — cash equivalents are counted as cash"><span style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800 }}>INVESTED </span><b>{fmtCcy(investedMv, baseCcy)}</b></span>
+                {cashPct != null && <span title="100% less invested ÷ equity — USD cash and cash equivalents"><span style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800 }}>CASH &amp; EQUIV. </span><b>{cashPct}%</b></span>}
+                <span title={`unrealised ${fmtCcy(openUn, baseCcy)} + realised on partial exits ${fmtCcy(openRe, baseCcy)}`}><span style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800 }}>P&amp;L ON OPEN NAMES </span>
                   <b style={{ color: pnlCol(bars.reduce((a, b) => a + b.total, 0)) }}>{fmtCcy(bars.reduce((a, b) => a + b.total, 0), baseCcy)}</b></span>
                 {/* The three figures above stay whatever this is set to — folding a section must
                     never fold away the number that says whether you need to look at it. */}
@@ -4396,8 +4405,10 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           <span style={{ marginLeft: "auto", fontSize: 12.5 }} title={rm.reasons.join(' · ')}>
             {rm.source === "measured" ? (<>
               <span style={{ color: C.lbl, fontWeight: 700 }}>size ×</span> <b style={{ color: C.text }}>{rm.mult.toFixed(2)}</b>
-              <span style={{ color: C.muted, fontSize: 11.5 }}> (regime mix ×{rm.base.toFixed(2)} · conditions ×{rm.condMult})</span>
-              {rm.legacy && <span style={{ color: C.muted, fontSize: 11.5 }}> · consensus engine was ×{rm.legacy.mult.toFixed(2)}</span>}
+              <span style={{ color: C.muted, fontSize: 11.5 }}> (regime mix ×{rm.base.toFixed(2)} · conditions ×{rm.condMult}{rm.creditCapped ? ` · credit cap ×${CREDIT_DANGER_CAP_LABEL.replace(/^×/, "")}` : ""})</span>
+              {/* The retired consensus engine's figure, for comparison only — it drives nothing. Its
+                  own reasons (single regime, contested/pinned/stale haircuts) are on hover. */}
+              {rm.legacy && <span style={{ color: C.lbl, fontSize: 11 }} title={`Not used for sizing. ${rm.legacy.reasons.join(" · ")}`}> · old consensus engine, not used: ×{rm.legacy.mult.toFixed(2)}</span>}
             </>) : (<>
               <span style={{ color: C.lbl, fontWeight: 700 }}>regime ×</span> <b style={{ color: liveRegime?.color }}>{rm.mult.toFixed(2)}</b>
               <span style={{ color: C.muted, fontSize: 11.5 }}> ({rm.reasons[rm.reasons.length - 1]} · consensus — the measured state has not loaded)</span>
@@ -4475,13 +4486,15 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
               return (
                 <label key={k} style={{ fontSize: 11.5, color: isLive ? C.text : C.lbl, fontWeight: isLive ? 800 : 600, border: "1.5px solid " + (isLive ? (liveRegime?.color || C.blue) : C.bdr), borderRadius: 8, padding: "5px 9px", background: isLive ? (liveRegime?.bg || C.surf) : C.surf }}>
                   {/* The measured regime (as the header), and each regime's weight in the mix the size uses. */}
-                  {REGIME_SIZING[k].label}{isLive ? " ● measured" : ""}{marketState?.probs?.[k] != null ? <span style={{ fontWeight: 600, color: C.muted }}> · {marketState.probs[k]}%</span> : null}<br />
+                  {REGIME_SIZING[k].label}{isLive ? (marketState?.probs ? " ● measured" : " ● consensus") : ""}{marketState?.probs?.[k] != null ? <span style={{ fontWeight: 600, color: C.muted }}> · {marketState.probs[k]}%</span> : null}<br />
                   {nInput(settings?.sizing?.[k] ?? REGIME_SIZING[k].mult, v => { setSettings(x => ({ ...x, sizing: { ...(x.sizing || {}), [k]: v === "" ? null : v } })); touch(); }, String(REGIME_SIZING[k].mult), 60)}
                 </label>
               );
             })}
           </div>
-          <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>{marketState?.probs ? "The size uses all four, weighted by the measured probabilities, then the conditions band. " : ""}Credit-DANGER caps the multiplier at {CREDIT_DANGER_CAP_LABEL}; a contested or pinned≠live regime applies a further ×0.7 on the consensus path.</div>
+          <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>{rm.source === "measured"
+            ? <>The size uses all four, weighted by the measured probabilities, times the conditions band (calm ×1 · caution ×0.8 · stress ×0.6 · crisis ×0.4). Credit-DANGER caps it at {CREDIT_DANGER_CAP_LABEL}. The old consensus engine's figure is shown beside it for comparison only.</>
+            : <>The measured state has not loaded, so the size uses the consensus regime alone. Credit-DANGER caps the multiplier at {CREDIT_DANGER_CAP_LABEL}; a contested, pinned≠live or stale consensus takes a further haircut (×0.7 at most).</>}</div>
         </div>
         </>)}
         </>} />

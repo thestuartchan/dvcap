@@ -162,5 +162,15 @@ eq('contracts round to whole units', roundQty(43, 10), 43);
 eq('shares still bucket', roundQty(43, 1), 40);
 eq('and a contract below one is none', roundQty(0.4, 10), 0);
 
+// ── the credit cap on the measured path ──
+{
+  const st = { probs: { ref: 36, inf: 26, stag: 16, def: 22 }, band: 'caution' };
+  const free = regimeMultiplier({ state: st });
+  const capped = regimeMultiplier({ state: st, creditDanger: true });
+  ok('without credit danger the measured size is the mix × conditions (×0.60)', Math.abs(free.mult - 0.6016) < 1e-3 && !free.creditCapped);
+  ok('credit DANGER caps it at ×0.40, as the console says', capped.mult === 0.4 && capped.creditCapped && /credit stress caps/.test(capped.reasons.at(-1)));
+  ok('a size already below the cap is left alone', regimeMultiplier({ state: { ...st, band: 'crisis' }, creditDanger: true }).mult < 0.4);
+}
+
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
 process.exit(fail?1:0);
