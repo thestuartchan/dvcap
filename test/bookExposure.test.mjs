@@ -278,5 +278,20 @@ const book = bookExposure({ rows: ROWS, greeks: GREEKS, underlyings: SPOTS, nlv:
   eq('a row that says position is the position book and not a reclassification', [b2.lines.find(l => l.symbol === 'TQQQ').bucket, b2.buckets.reclassified.length], ['position', 0]);
 }
 
+// ── ONE CURRENCY: an HKD line is converted before it is summed ──
+{
+  const HKD = 7.8465;
+  const toBase = (v, ccy) => (ccy === 'USD' ? v : ccy === 'HKD' ? v / HKD : null);
+  const rowsX = [{ symbol: '0981.HK', currency: 'HKD', qty: 1000, livePrice: 61.3 }, { symbol: 'AAPL', currency: 'USD', qty: 10, livePrice: 250 }];
+  const raw = bookExposure({ rows: rowsX, nlv: 215000 });
+  const fx = bookExposure({ rows: rowsX, nlv: 215000, toBase });
+  eq('without FX the HK line was summed as dollars (the bug)', raw.lines[0].deltaNotional, 61300);
+  near('with FX it is HK$61,300 ÷ 7.8465', fx.lines[0].deltaNotional, 61300 / HKD, 0.01);
+  near('…so the book ratio is the converted one', fx.ratio, +((61300 / HKD + 2500) / 215000).toFixed(2), 0.001);
+  eq('a USD line is untouched', fx.lines[1].deltaNotional, 2500);
+  const none = bookExposure({ rows: [{ symbol: '7203.T', currency: 'JPY', qty: 100, livePrice: 2500 }], nlv: 215000, toBase });
+  eq('no rate: unpriced and named, never summed unconverted', [none.lines[0].deltaNotional, none.lines[0].unpriced, none.unpriced[0]?.why, none.deltaNotional], [null, true, 'no JPY exchange rate', 0]);
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

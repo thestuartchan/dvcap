@@ -264,7 +264,7 @@ function sanitizeConsoleSettings(s) {
     // list's order and filter, and the sheet carry-over's link and done-date.
     ...(Array.isArray(s.sizerExempt) ? { sizerExempt: s.sizerExempt.map(x => String(x || '').toUpperCase().trim()).filter(x => /^[A-Z0-9.^-]{1,12}$/.test(x)).slice(0, 20) } : {}),
     ...(s.swingNotes && typeof s.swingNotes === 'object' && !Array.isArray(s.swingNotes)
-      ? { swingNotes: Object.fromEntries(Object.entries(s.swingNotes).filter(([k, v]) => /^[A-Z0-9.^-]{1,24}$/i.test(k) && /^\d{4}-\d{2}-\d{2}$/.test(String(v))).slice(0, 200)) } : {}),
+      ? { swingNotes: Object.fromEntries(Object.entries(s.swingNotes).filter(([k, v]) => /^[A-Z0-9.^ -]{1,24}$/i.test(k) && /^\d{4}-\d{2}-\d{2}$/.test(String(v))).slice(0, 200)) } : {}),
     ...(['size', 'tag', 'manual'].includes(s.openSort) ? { openSort: s.openSort } : {}),
     ...(Array.isArray(s.openFilter) ? { openFilter: s.openFilter.filter(g => ['position', 'swing', 'hedge', 'intraday', 'untagged', 'cash'].includes(g)).slice(0, 6) } : {}),
     ...(s.brokerSheet != null ? { brokerSheet: cs(s.brokerSheet, 200) } : {}),
