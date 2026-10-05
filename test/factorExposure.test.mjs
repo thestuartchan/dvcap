@@ -1,5 +1,5 @@
 // test/factorExposure.test.mjs — realised factor betas from fills × closes; the oil-shock scenario.
-import { FACTORS, OIL_SHOCK, TAGS, tagOf, closesOf, calendarOf, closeOn, factorMoves, holdingsOf, qtyAt,
+import { FACTORS, OIL_SHOCK, TAGS, tagOf, LIST_GROUPS, listGroupOf, groupCounts, sortByGroup, filterByGroups, closesOf, calendarOf, closeOn, factorMoves, holdingsOf, qtyAt,
          linePnl, ols, olsMulti, factorExposure, scenarioPnl, overnightFlag } from '../lib/factorExposure.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
@@ -139,5 +139,23 @@ const lines = [lineOf(rows.MNQ, mnq), lineOf(rows.MGC, mgc), lineOf(rows.BRNT, b
   eq('a share is not', overnightFlag({ symbol: 'QQQ', derived: { lots: [{ date: '2026-09-20' }] } }, { today }), null);
   eq('a closed line is not', overnightFlag(held, { today, open: false }), null);
 }
+// ── the open list's groups: tag, plus Cash (derived) and Untagged ──
+{
+  const R = [
+    { id: 'a', symbol: 'NVDA', tag: 'position' }, { id: 'b', symbol: 'USFR' }, { id: 'c', symbol: 'MGC', tag: 'swing' },
+    { id: 'd', symbol: 'XLE' }, { id: 'e', symbol: 'IB01.L', tag: 'position' }, { id: 'f', symbol: 'BRNT.L', tag: 'hedge' },
+    { id: 'g', symbol: 'AAPL', tag: 'position' }, { id: 'h', symbol: 'JPST' },
+  ];
+  eq('cash is derived from the list and wins over a tag', [listGroupOf(R[1]), listGroupOf(R[4])], ['cash', 'cash']);
+  eq('no tag is untagged; JPST is not cash', [listGroupOf(R[3]), listGroupOf(R[7])], ['untagged', 'untagged']);
+  eq('counts per group', groupCounts(R), { position: 2, swing: 1, hedge: 1, intraday: 0, untagged: 2, cash: 2 });
+  eq('Tag order: position, swing, hedge, intraday, untagged, cash — stable within a group',
+     sortByGroup(R).map(r => r.id), ['a', 'g', 'c', 'f', 'd', 'h', 'b', 'e']);
+  eq('a filter shows only its groups', filterByGroups(R, ['swing', 'hedge']).map(r => r.id), ['c', 'f']);
+  eq('cash alone', filterByGroups(R, ['cash']).map(r => r.id), ['b', 'e']);
+  eq('an empty or unknown filter shows everything', [filterByGroups(R, []).length, filterByGroups(R, ['bogus']).length], [8, 8]);
+  ok('every tag is a group', TAGS.every(t => LIST_GROUPS.includes(t)));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
