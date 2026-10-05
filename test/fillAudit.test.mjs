@@ -1,5 +1,5 @@
 // test/fillAudit.test.mjs — the broker's fills against the console's.
-import { undoCarryOver, isCarryOverFill, segments, swingRow, consoleSymbolOf, sheetTime, sheetIdOf, sheetCsvUrl, parseCsv, parseBrokerFills, brokerKey, rowKey, auditFills, planFor, impliedEntry,
+import { tradesOf, undoCarryOver, isCarryOverFill, segments, swingRow, consoleSymbolOf, sheetTime, sheetIdOf, sheetCsvUrl, parseCsv, parseBrokerFills, brokerKey, rowKey, auditFills, planFor, impliedEntry,
          effectivePrice, fillFromBroker, closedTradeRow } from '../lib/fillAudit.js';
 import { derivePosition } from '../lib/positions.js';
 
@@ -155,6 +155,16 @@ eq('a sale within what was held is added to the row', planFor({ side: 'sell', qt
   eq('undo twice changes nothing more', [undoCarryOver(u.rows).removedRows, undoCarryOver(u.rows).removedFills], [0, 0]);
   ok('a carry-over fill fits what the store keeps (id ≤16, tradeId ≤24, note ≤200)', added.id.length <= 16 && added.tradeId.length <= 24 && added.note.length <= 200
      && rowsIn[1].fills.every(f => f.id.length <= 16 && String(f.note).length <= 200) && rowsIn[1].id.length <= 48 && rowsIn[1].thesis.length <= 600);
+}
+
+// ── trade by trade, cut with IBKR's realised P&L ──
+{
+  const t = A.instruments.find(i => i.key === '981').trades;
+  eq('981 as trades: the 10 Jul sale is a CLOSED LONG from before the history (the sheet\'s Trades tab calls it a short), then an open buy',
+     t.map(x => [x.kind, x.side, x.from, x.qty, x.realized]), [['pre-history-close', 'long', '2026-07-10', 1000, 9825.28], ['open', 'long', '2026-09-30', 500, 0]]);
+  eq('…the missing sale sits under its trade; the recorded buy has nothing missing', t.map(x => x.missing.length), [1, 0]);
+  const mg = tradesOf([P.fills[2], P.fills[3]], []);
+  eq('a round trip is one closed trade with both averages', mg.map(x => [x.kind, x.side, x.avgIn, x.avgOut, x.realized, x.dayTrade]), [['closed', 'long', 4442.7, 4613.8, 1708.91, false]]);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
