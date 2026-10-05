@@ -69,6 +69,33 @@ export default function FillAudit({ rows, sheet, setSheet, onAddFill, onAddRow, 
     </div>
   );
   const rowOf = (rid) => rows.find(r => r.id === rid);
+  // One missing fill and what can be done about it.
+  const missingLine = (m) => {
+    const key = m.uid + m.qty, row = m.plan.rowId ? rowOf(m.plan.rowId) : null, state = done[key];
+    return (
+      <div key={key} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 6, fontSize: 12, color: C.text }}>
+        <span style={{ fontWeight: 800, color: m.side === "buy" ? C.green : C.blue, textTransform: "uppercase", fontSize: 11 }}>{m.side}</span>
+        <span>{fmt(m.qty)}{m.partOf ? ` (of ${fmt(m.partOf)})` : ""} @ {fmt(m.price)} · {m.date}</span>
+        {m.realized ? <span style={{ color: m.realized > 0 ? C.green : C.red }}>realised {m.realized > 0 ? "+" : ""}{fmt(m.realized)} {m.currency || ""}</span> : null}
+        <span style={{ color: C.muted, fontSize: 11 }}>{m.uid}</span>
+        {m.plan.action === "review" && <span style={{ color: C.amber, fontSize: 11.5 }}>{m.plan.why}</span>}
+        {state ? <span style={{ color: C.green, fontWeight: 700 }}>✓ {state}</span> : (
+          <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
+            {m.plan.action === "closed-trade" && (
+              <button style={btn(true)} title={`More than the console held then (${fmt(m.plan.heldThen)}). Records a closed trade whose entry, ${fmt(m.plan.impliedEntry)}, is implied by IBKR's realised P&L.`}
+                onClick={() => { const nr = closedTradeRow(m, row, { from: res.from }); if (nr) guarded(() => { onAddRow(nr); mark(m, "recorded as a closed trade"); }); }}>
+                Record as a closed trade</button>
+            )}
+            {row && (
+              <button style={btn(m.plan.action === "add")} onClick={() => guarded(() => { onAddFill(row.id, fillFromBroker(m, row.multiplier || 1)); mark(m, `added to ${row.symbol}`); })}>
+                Add to {row.symbol}{row.archived ? " (archived)" : ""}</button>
+            )}
+          </span>
+        )}
+      </div>
+    );
+  };
+
   // Once marked done the sheet is forgotten and the panel goes away: the console is the record.
   if (retired) return snapshots.length ? (
     <details style={{ border: "1px solid " + C.bdr, borderRadius: 12, background: C.surf, padding: "8px 14px", marginBottom: 14 }}>
@@ -119,31 +146,23 @@ export default function FillAudit({ rows, sheet, setSheet, onAddFill, onAddRow, 
                 <span style={{ fontSize: 11.5, color: C.muted }}>{i.brokerFills} broker fill{i.brokerFills === 1 ? "" : "s"}</span>
                 {i.missing.length > 0 && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 800 }}>{i.missing.length} missing</span>}
               </div>
-              {i.missing.map(m => {
-                const key = m.uid + m.qty, row = m.plan.rowId ? rowOf(m.plan.rowId) : null, state = done[key];
-                return (
-                  <div key={key} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 6, fontSize: 12, color: C.text }}>
-                    <span style={{ fontWeight: 800, color: m.side === "buy" ? C.green : C.blue, textTransform: "uppercase", fontSize: 11 }}>{m.side}</span>
-                    <span>{fmt(m.qty)}{m.partOf ? ` (of ${fmt(m.partOf)})` : ""} @ {fmt(m.price)} · {m.date}</span>
-                    {m.realized ? <span style={{ color: m.realized > 0 ? C.green : C.red }}>realised {m.realized > 0 ? "+" : ""}{fmt(m.realized)} {m.currency || ""}</span> : null}
-                    <span style={{ color: C.muted, fontSize: 11 }}>{m.uid}</span>
-                    {m.plan.action === "review" && <span style={{ color: C.amber, fontSize: 11.5 }}>{m.plan.why}</span>}
-                    {state ? <span style={{ color: C.green, fontWeight: 700 }}>✓ {state}</span> : (
-                      <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
-                        {m.plan.action === "closed-trade" && (
-                          <button style={btn(true)} title={`More than the console held then (${fmt(m.plan.heldThen)}). Records a closed trade whose entry, ${fmt(m.plan.impliedEntry)}, is implied by IBKR's realised P&L.`}
-                            onClick={() => { const nr = closedTradeRow(m, row, { from: res.from }); if (nr) guarded(() => { onAddRow(nr); mark(m, "recorded as a closed trade"); }); }}>
-                            Record as a closed trade</button>
-                        )}
-                        {row && (
-                          <button style={btn(m.plan.action === "add")} onClick={() => guarded(() => { onAddFill(row.id, fillFromBroker(m, row.multiplier || 1)); mark(m, `added to ${row.symbol}`); })}>
-                            Add to {row.symbol}{row.archived ? " (archived)" : ""}</button>
-                        )}
-                      </span>
-                    )}
+              {i.trades.filter(t => t.status === "missing").map(t => (
+                <div key={t.from + t.side + t.qty} style={{ marginTop: 7, paddingLeft: 8, borderLeft: "2px solid " + C.aBdr }}>
+                  <div style={{ fontSize: 12, color: C.mid }}>
+                    <b style={{ color: C.text, textTransform: "uppercase", fontSize: 11 }}>{t.side}</b>{" "}
+                    {t.kind === "pre-history-close"
+                      ? <>sale of {fmt(t.qty)} bought before {res.from} · {t.from}</>
+                      : <>{fmt(t.qty)}{t.avgIn != null ? ` @ ${fmt(t.avgIn)}` : ""} · {t.from}{t.kind === "closed" ? ` → ${t.to}${t.avgOut != null ? ` @ ${fmt(t.avgOut)}` : ""}` : " · still open"}</>}
+                    {t.realized ? <span style={{ color: t.realized > 0 ? C.green : C.red }}> · realised {t.realized > 0 ? "+" : ""}{fmt(t.realized)} {t.currency || ""}</span> : null}
+                    <span style={{ color: C.muted }}> · {t.missing.length} of {t.fills} fill{t.fills === 1 ? "" : "s"} missing</span>
                   </div>
-                );
-              })}
+                  {t.missing.map(missingLine)}
+                </div>
+              ))}
+              {(() => {
+                const rec = i.trades.filter(t => t.status === "recorded").length, out = i.trades.filter(t => t.status === "left-out").length;
+                return rec || out ? <div style={{ marginTop: 6, fontSize: 11.5, color: C.muted }}>{rec ? `${rec} trade${rec === 1 ? "" : "s"} fully recorded` : ""}{rec && out ? " · " : ""}{out ? `${out} left out by the console's rules (day trades while it held nothing)` : ""}</div> : null;
+              })()}
               {i.unseen.length > 0 && (
                 <div style={{ marginTop: 6, fontSize: 11.5, color: C.muted }}>
                   In the console, not among the broker's fills: {i.unseen.map(u => `${u.side} ${fmt(u.qty)} @ ${fmt(u.price)} ${u.date}`).join(" · ")}
