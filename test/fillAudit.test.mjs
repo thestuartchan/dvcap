@@ -1,5 +1,5 @@
 // test/fillAudit.test.mjs — the broker's fills against the console's.
-import { possibleDuplicates, tradesOf, undoCarryOver, isCarryOverFill, segments, swingRow, consoleSymbolOf, sheetTime, sheetIdOf, sheetCsvUrl, parseCsv, parseBrokerFills, brokerKey, rowKey, auditFills, planFor, impliedEntry,
+import { heldUnderADay, DAY_TRADE_MAX_HOURS, possibleDuplicates, tradesOf, undoCarryOver, isCarryOverFill, segments, swingRow, consoleSymbolOf, sheetTime, sheetIdOf, sheetCsvUrl, parseCsv, parseBrokerFills, brokerKey, rowKey, auditFills, planFor, impliedEntry,
          effectivePrice, fillFromBroker, closedTradeRow } from '../lib/fillAudit.js';
 import { derivePosition } from '../lib/positions.js';
 
@@ -209,8 +209,8 @@ eq('a sale within what was held is added to the row', planFor({ side: 'sell', qt
   const R = auditFills(ROWS, BR);
   const tq = R.instruments.find(i => i.key === 'TQQQ');
   eq('a bulk fill dated at the trade\'s first fill absorbs the later buy too', tq.unseen, []);
-  eq('the same-day round trip with the broker flat is a day trade; the two-day one a swing; nothing to add', [tq.missing.length, tq.trades.map(t => t.status)], [0, ['recorded', 'day', 'swing']]);
-  eq('…and the swing is offered as its own row', R.swings.map(w => [w.symbol, w.from, w.to]), [['TQQQ', '2026-09-08', '2026-09-09']]);
+  eq('the same-day round trip is a day trade, and so is the 19-hour overnight one (under 24h, 6 Oct rule)', [tq.missing.length, tq.trades.map(t => t.status)], [0, ['recorded', 'day', 'day']]);
+  eq('…so nothing is offered', R.swings.map(w => w.symbol), []);
   eq('an option kept on a share row (×100, no contract) is not held against the shares', [R.unchecked.map(u => u.rowId), R.instruments.find(i => i.key === 'AVGO')?.unseen ?? []], [['avo'], []]);
 }
 
@@ -261,6 +261,17 @@ eq('a sale within what was held is added to the row', planFor({ side: 'sell', qt
   const amd = R.swings.find(w => /AMD/.test(w.symbol));
   eq('a swing on an underlying the console traded those days names that row', amd.possibleDup.map(d => d.rowId), ['amd']);
   eq('…and one with nothing nearby names none', possibleDuplicates(ROWS, 'INTC', '2026-09-09', '2026-09-17'), []);
+}
+
+// ── under 24 hours is a day trade (6 Oct) ──
+{
+  const at = (t) => ({ time: t, date: t.slice(0, 10) });
+  eq('the limit', DAY_TRADE_MAX_HOURS, 24);
+  ok('MCL 22 Sep 00:13 → 13:36 (13.4h): a day trade', heldUnderADay([at('2026-09-22T00:13:00Z'), at('2026-09-22T13:36:00Z')]));
+  ok('IBIT 47C 8 Sep 15:00 → 9 Sep 14:49 (23.8h): a day trade', heldUnderADay([at('2026-09-08T15:00:00Z'), at('2026-09-09T14:49:00Z')]));
+  ok('SPCX 120C 28 Jul 16:16 → 30 Jul 14:45 (46.5h): a swing', !heldUnderADay([at('2026-07-28T16:16:00Z'), at('2026-07-30T14:45:00Z')]));
+  ok('exactly 24h is a full day', !heldUnderADay([at('2026-09-01T14:00:00Z'), at('2026-09-02T14:00:00Z')]));
+  ok('no times: the calendar day decides', heldUnderADay([{ date: '2026-09-01' }, { date: '2026-09-01' }]) && !heldUnderADay([{ date: '2026-09-01' }, { date: '2026-09-02' }]));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
