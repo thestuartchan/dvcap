@@ -82,19 +82,34 @@ export default function FillAudit({ rows, sheet, setSheet, onAddFill, onAddRow, 
         {state ? <span style={{ color: C.green, fontWeight: 700 }}>✓ {state}</span> : (
           <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
             {m.plan.action === "closed-trade" && (
-              <button style={btn(true)} title={`More than the console held then (${fmt(m.plan.heldThen)}). Records a closed trade whose entry, ${fmt(m.plan.impliedEntry)}, is implied by IBKR's realised P&L.`}
-                onClick={() => { const nr = closedTradeRow(m, row, { from: res.from }); if (nr) guarded(() => { onAddRow(nr); mark(m, "recorded as a closed trade"); }); }}>
+              <button style={btn(true)} title={`A new archived row with two fills: a ${m.side === "sell" ? "buy" : "sell"} of ${fmt(m.qty)} at ${fmt(m.plan.impliedEntry)} — the entry IBKR's realised P&L implies, dated on or before ${res.from} — and this ${m.side}. Closed flat; nothing is left open.`}
+                onClick={() => { if (!confirmDup(m.plan.possibleDup)) return; const nr = closedTradeRow(m, row, { from: res.from }); if (nr) guarded(() => { onAddRow(nr); mark(m, "recorded as a closed trade"); }); }}>
                 Record as a closed trade</button>
             )}
-            {row && (
+            {/* Never offered for a closed trade: adding a sale of shares the row did not hold then
+                would oversell it into a phantom short. */}
+            {row && m.plan.action !== "closed-trade" && (
               <button style={btn(m.plan.action === "add")} onClick={() => guarded(() => { onAddFill(row.id, fillFromBroker(m, row.multiplier || 1)); mark(m, `added to ${row.symbol}`); })}>
                 Add to {row.symbol}{row.archived ? " (archived)" : ""}</button>
             )}
           </span>
         )}
+        {!state && m.plan.action === "closed-trade" && (
+          <div style={{ flexBasis: "100%", fontSize: 11.5, color: C.muted, paddingLeft: 2 }}>
+            records the {m.side === "sell" ? "buy" : "sell"} it closed — {fmt(m.qty)} @ {fmt(m.plan.impliedEntry)}, implied from IBKR's realised P&L, on or before {res.from} — then this {m.side}: one closed trade, nothing left open
+          </div>
+        )}
+        {!state && dupNote(m.plan.possibleDup)}
       </div>
     );
   };
+  // A new row next to console rows on the same underlying in the same days may be the same trade.
+  const dupNote = (d) => d?.length ? (
+    <div style={{ flexBasis: "100%", fontSize: 11.5, color: C.amber, fontWeight: 700, paddingLeft: 2 }}>
+      ⚠ the console already has fills on these days in {d.map(x => `${x.symbol} (${x.instrument})`).join(", ")} — check it is not this trade before recording
+    </div>
+  ) : null;
+  const confirmDup = (d) => !d?.length || window.confirm(`The console already has ${d.map(x => x.symbol).join(", ")} fills on these days. Record this as a separate trade anyway?`);
 
   // Once marked done the sheet is forgotten and the panel goes away: the console is the record.
   if (retired) return snapshots.length ? (
@@ -137,6 +152,8 @@ export default function FillAudit({ rows, sheet, setSheet, onAddFill, onAddRow, 
             {Object.entries(res.outOfScope).map(([k, n]) => ` · ${n} ${k} fill${n === 1 ? "" : "s"}`).join("")}
             {res.heldNoRow.length ? ` · held at the broker with no console row, which the daily sync adds: ${res.heldNoRow.map(h => h.symbol).join(", ")}` : ""}.
             Inside a trade the console has, every fill counts, scalps included, so its cost matches IBKR's.
+            {res.inSpread?.length ? <> Covered by spread rows (not matched fill by fill, never offered): {res.inSpread.map(x => x.contract).join(", ")}.</> : null}
+            {res.adopted?.length ? <> Matched an option kept on a share row to its contract: {res.adopted.map(a => `${a.symbol} → ${a.contract}`).join(", ")} — give the row its contract to make that permanent.</> : null}
           </div>
           {res.instruments.filter(i => i.missing.length || i.unseen.length).map(i => (
             <div key={i.key} style={{ border: "1px solid " + (i.missing.length ? C.aBdr : C.bdr), borderRadius: 9, padding: "8px 10px", background: C.bg }}>
@@ -185,9 +202,11 @@ export default function FillAudit({ rows, sheet, setSheet, onAddFill, onAddRow, 
                     <span>{w.from} → {w.to} · {w.fills.length} fills</span>
                     {w.realized ? <span style={{ color: w.realized > 0 ? C.green : C.red }}>realised {w.realized > 0 ? "+" : ""}{fmt(w.realized)} {w.fills[0].currency || ""}</span> : null}
                     {state ? <span style={{ color: C.green, fontWeight: 700 }}>✓ {state}</span> : (
-                      <button style={btn()} onClick={() => { const nr = swingRow(w); if (nr) guarded(() => { onAddRow(nr); setDone(d => ({ ...d, [key]: "recorded as a closed trade" })); }); else setDone(d => ({ ...d, [key]: "not recorded — unknown contract size" })); }}>
+                      <button style={btn()} onClick={() => { if (!confirmDup(w.possibleDup)) return; const nr = swingRow(w); if (nr) guarded(() => { onAddRow(nr); setDone(d => ({ ...d, [key]: "recorded as a closed trade" })); }); else setDone(d => ({ ...d, [key]: "not recorded — unknown contract size" })); }}>
                         Record as a closed trade</button>
                     )}
+                    {!state && w.expired && <span style={{ fontSize: 11, color: C.muted }}>no closing fill — closed at 0 on its {w.expired} expiry</span>}
+                    {!state && dupNote(w.possibleDup)}
                   </div>
                 );
               })}
