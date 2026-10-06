@@ -2888,7 +2888,7 @@
         "ladderSpread": 0.43,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.1,
+        "oas": 3.12,
         "tenY": 5.28,
         "twoY": 4.83,
         "consensusAlive": 0.713,
@@ -2910,21 +2910,21 @@
           "drifting": "stag"
         },
         "conditions": {
-          "score": 61.8,
+          "score": 60.5,
           "band": "caution",
           "comps": {
-            "credit": 75,
-            "equityVol": 12,
-            "ratesVol": 73,
+            "credit": 71,
+            "equityVol": 11,
+            "ratesVol": 72,
             "realYield": 90,
             "funding": 34,
-            "breadth": 78,
+            "breadth": 79,
             "dollar": 100
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 20,
+          "hikeOdds": 18,
           "liq4w": 14
         },
         "sizing": 0.6,
@@ -2979,7 +2979,7 @@
         "quadrantRead": "growth firm, inflation cool"
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-06T14:08:22.583Z"
+      "loggedAt": "2026-10-06T15:26:34.390Z"
     }
   ]
 }
