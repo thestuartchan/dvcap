@@ -214,5 +214,17 @@ eq('a sale within what was held is added to the row', planFor({ side: 'sell', qt
   eq('an option kept on a share row (×100, no contract) is not held against the shares', [R.unchecked.map(u => u.rowId), R.instruments.find(i => i.key === 'AVGO')?.unseen ?? []], [['avo'], []]);
 }
 
+// ── a swing realises exactly what IBKR booked, whatever the sheet's fees ──
+{
+  const o = (uid, side, qty, price, date, fee, realized = 0) => ({ uid, venue: 'IBKR', symbol: 'INTC  261002C00115000', side, qty, price, date, time: date + 'T16:00:00Z', currency: 'USD', fee, realized });
+  const sw = { key: 'k', symbol: 'INTC 2026-10-02 115C', from: '2026-09-09', to: '2026-09-17', realized: 380.98, rowLike: null,
+               fills: [o('IBKR-119519528', 'buy', 1, 3.7, '2026-09-09', -1.03), o('IBKR-119519638', 'buy', 5, 3.7, '2026-09-09', -3.07), o('IBKR-120804132', 'sell', 6, 4.35, '2026-09-17', -4.17, 380.98)] };
+  const row = swingRow(sw);
+  const d = derivePosition(row.fills, { multiplier: 100, side: 'long' });
+  near('INTC 115C: the console realises IBKR\'s 380.98, not the sheet-fee 381.73', d.realized ?? d.realised, 380.98, 0.005);
+  ok('…and the adjusted fill says so', /adjusted -0\.75 so the trade's P&L equals IBKR's/.test(row.fills.at(-1).note) && row.fills.at(-1).note.length <= 200);
+  eq('the row: INTC, one 115 call, Oct 2, archived carry-over', [row.symbol, row.instrument, row.legs[0].strike, row.legs[0].right, row.legs[0].expiry, row.tags], ['INTC', 'option', 115, 'C', '2026-10-02', ['broker-fills']]);
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
