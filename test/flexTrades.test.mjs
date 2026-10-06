@@ -4,7 +4,7 @@
 // recorded INcorrectly cannot reach the console. Every plan is applied to a copy and held against
 // the Open Positions section of the same statement, and a batch that does not reconcile is
 // discarded whole. Most of what follows is about that gate.
-import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, fillFrom, dropCreatedAdds } from '../lib/flexTrades.js';
+import { flexTimeMs, heldUnderADay, parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, fillFrom, dropCreatedAdds } from '../lib/flexTrades.js';
 import { parseStatement } from '../lib/flex.js';
 import { readFileSync } from 'node:fs';
 import { derivePosition } from '../lib/positions.js';
@@ -170,6 +170,18 @@ eq('futures roots come back rolled up', parseTrades(T({ tradeID: '14', symbol: '
   eq('a multi-day round trip is reported', plan.report.map(r => r.kind), ['round-trip-not-recorded']);
   eq('with the days it spanned', plan.report[0].dates, ['2026-08-26', '2026-08-28']);
   eq('and nothing is filed on its own', [plan.creates.length, plan.apply.length], [0, 0]);
+}
+{
+  // UNDER 24 HOURS IS A DAY TRADE (6 Oct), on IBKR's own timestamps — not the calendar.
+  const rt = (a, b) => parseTrades(
+    T({ tradeID: '130', symbol: 'SQQQ', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'BUY', quantity: 500, tradePrice: 20, ibCommission: -1, tradeDate: a.slice(0, 8), dateTime: a }) +
+    T({ tradeID: '131', symbol: 'SQQQ', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'SELL', quantity: -500, tradePrice: 19, ibCommission: -1, tradeDate: b.slice(0, 8), dateTime: b }));
+  const overnight = planTrades([], rt('20260811;130600', '20260812;095900'), { from: '2026-08-01' });
+  eq('held overnight for 20.9h: a day trade, skipped silently', [overnight.skipped.dayTrades, overnight.report.length, overnight.creates.length], [2, 0, 0]);
+  const swing = planTrades([], rt('20260728;121600', '20260730;104500'), { from: '2026-07-01' });
+  eq('held 46.5h: a swing, reported', swing.report.map(r => r.kind), ['round-trip-not-recorded']);
+  eq('Flex times read in either form', [flexTimeMs('20260811;130600'), flexTimeMs('2026-08-11, 13:06:00')], [Date.UTC(2026, 7, 11, 13, 6, 0), Date.UTC(2026, 7, 11, 13, 6, 0)]);
+  ok('exactly 24h is a full day', !heldUnderADay([{ time: '20260901;100000' }, { time: '20260902;100000' }]));
 }
 {
   // A scalp in a symbol the console DOES hold is applied, because it moved a tracked position and
