@@ -1,5 +1,5 @@
 // test/fillAudit.test.mjs — the broker's fills against the console's.
-import { tradesOf, undoCarryOver, isCarryOverFill, segments, swingRow, consoleSymbolOf, sheetTime, sheetIdOf, sheetCsvUrl, parseCsv, parseBrokerFills, brokerKey, rowKey, auditFills, planFor, impliedEntry,
+import { possibleDuplicates, tradesOf, undoCarryOver, isCarryOverFill, segments, swingRow, consoleSymbolOf, sheetTime, sheetIdOf, sheetCsvUrl, parseCsv, parseBrokerFills, brokerKey, rowKey, auditFills, planFor, impliedEntry,
          effectivePrice, fillFromBroker, closedTradeRow } from '../lib/fillAudit.js';
 import { derivePosition } from '../lib/positions.js';
 
@@ -224,6 +224,43 @@ eq('a sale within what was held is added to the row', planFor({ side: 'sell', qt
   near('INTC 115C: the console realises IBKR\'s 380.98, not the sheet-fee 381.73', d.realized ?? d.realised, 380.98, 0.005);
   ok('…and the adjusted fill says so', /adjusted -0\.75 so the trade's P&L equals IBKR's/.test(row.fills.at(-1).note) && row.fills.at(-1).note.length <= 200);
   eq('the row: INTC, one 115 call, Oct 2, archived carry-over', [row.symbol, row.instrument, row.legs[0].strike, row.legs[0].right, row.legs[0].expiry, row.tags], ['INTC', 'option', 115, 'C', '2026-10-02', ['broker-fills']]);
+}
+
+// ── the second real run (6 Oct): spreads, a contract-less option row, bulk beside day trades ──
+{
+  const q = (uid, symbol, side, qty, price, time, extra = {}) => ({ uid, venue: 'IBKR', symbol, side, qty, price, time, date: time.slice(0, 10), currency: 'USD', fee: -1, realized: 0, ...extra });
+  const BR = [
+    // TQQQ 20 Aug: a morning round trip, then the swing the console holds as one bulk buy.
+    q('d1', 'TQQQ', 'buy', 300, 71.0, '2026-08-20T13:40:00Z'), q('d2', 'TQQQ', 'sell', 300, 71.2, '2026-08-20T14:10:00Z', { realized: 59 }),
+    q('t1', 'TQQQ', 'buy', 500, 70.55, '2026-08-20T18:00:00Z'), q('t2', 'TQQQ', 'buy', 500, 68.2395, '2026-08-24T14:00:00Z'),
+    q('t3', 'TQQQ', 'sell', 1000, 69.45, '2026-08-24T19:00:00Z', { realized: 42 }),
+    // The SOFI call spread, held as a spread row.
+    q('s1', 'SOFI  261120C00017000', 'buy', 15, 1.33, '2026-09-24T15:00:00Z'), q('s2', 'SOFI  261120C00020000', 'sell', 15, 0.47, '2026-09-24T15:00:00Z'),
+    // AVGO 360C, kept in the console on a share row at x100 with no contract.
+    q('a1', 'AVGO  260828C00360000', 'buy', 4, 2.5, '2026-08-26T15:00:00Z'), q('a2', 'AVGO  260828C00360000', 'buy', 6, 2.59, '2026-08-26T16:00:00Z'),
+    q('a3', 'AVGO  260828C00360000', 'sell', 10, 4.58, '2026-08-27T15:00:00Z', { realized: 2027 }),
+    // An AMD put swing, with a console AMD share row trading the same week.
+    q('p1', 'AMD   260821P00460000', 'buy', 1, 9.0, '2026-07-20T15:00:00Z'), q('p2', 'AMD   260821P00460000', 'sell', 1, 11.9, '2026-07-27T15:00:00Z', { realized: 283 }),
+    q('z9', 'MSFT', 'buy', 1, 1, '2026-09-30T14:00:00Z'),
+  ];
+  const ROWS = [
+    { id: 'tq', symbol: 'TQQQ', side: 'long', fills: [{ id: 'a', side: 'buy', qty: 1000, price: 69.400203, date: '2026-08-20' }, { id: 'b', side: 'sell', qty: 1000, price: 69.45, date: '2026-08-24' }] },
+    { id: 'sofi', symbol: 'SOFI', underlying: 'SOFI', instrument: 'spread', multiplier: 100, side: 'long',
+      legs: [{ right: 'C', strike: 17, expiry: '2026-11-20', side: 'long', ratio: 1 }, { right: 'C', strike: 20, expiry: '2026-11-20', side: 'short', ratio: 1 }],
+      fills: [{ id: 'c', side: 'buy', qty: 15, price: 0.86, date: '2026-09-24' }] },
+    { id: 'avo', symbol: 'AVGO', side: 'long', multiplier: 100, fills: [{ id: 'd', side: 'buy', qty: 10, price: 2.554549, date: '2026-08-26' }, { id: 'e', side: 'sell', qty: 10, price: 4.582563, date: '2026-08-27' }] },
+    { id: 'amd', symbol: 'AMD', side: 'long', fills: [{ id: 'f', side: 'buy', qty: 20, price: 150, date: '2026-07-22' }] },
+  ];
+  const R = auditFills(ROWS, BR);
+  const tq = R.instruments.find(i => i.key === 'TQQQ');
+  eq('TQQQ: the bulk buy finds its two fills inside its own trade, past the morning round trip', [tq?.missing.length ?? 0, tq?.unseen ?? []], [0, []]);
+  eq('the spread\'s legs are its own — not "no console row", not swings', [R.inSpread.map(x => x.contract).sort(), R.heldNoRow.some(h => /SOFI/.test(h.symbol)), R.swings.some(w => /SOFI/.test(w.symbol))],
+     [['SOFI 2026-11-20 17C', 'SOFI 2026-11-20 20C'], false, false]);
+  eq('the AVGO share row at x100 is that 360C — recorded, not offered again', [R.adopted.map(a => [a.rowId, a.contract]), R.swings.some(w => /AVGO/.test(w.symbol)), R.unchecked.map(u => u.rowId)],
+     [[['avo', 'AVGO 2026-08-28 360C']], false, ['sofi']]);
+  const amd = R.swings.find(w => /AMD/.test(w.symbol));
+  eq('a swing on an underlying the console traded those days names that row', amd.possibleDup.map(d => d.rowId), ['amd']);
+  eq('…and one with nothing nearby names none', possibleDuplicates(ROWS, 'INTC', '2026-09-09', '2026-09-17'), []);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
