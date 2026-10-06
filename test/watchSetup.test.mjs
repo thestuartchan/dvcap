@@ -3,7 +3,7 @@
 // Built on synthetic bars whose ATR, range and levels are known by construction, so each tag is
 // checked against a fact rather than against whatever the code said.
 import {
-  setupStats, setupTags, setupCandidates, setups, extendedLine, renderSetups,
+  setupStats, setupTags, setupCandidates, setups, extendedLine, renderSetups, watchMemory, watchSnap, BREAKOUT_MIN_ATR,
   SETUP_MAX, GAP_MIN_PCT, COIL_PCTILE_MAX, LEVEL_MAX_ATR, EXTENDED_MIN_ATR, CANDIDATE_MAX,
 } from '../lib/watchSetup.js';
 import { assertObservational } from '../lib/read.js';
@@ -134,7 +134,8 @@ const coilBars = () => bars({ last: [...Array.from({ length: 13 }, () => ({ high
 // ── WIRED IN, AND NOTHING FROM THE BOOK ──────────────────────────────────────
 {
   const src = readFileSync('api/preread.js', 'utf8');
-  ok('the pre-read renders setups, not movers', /renderSetups\(setups\(wrows/.test(src) && !/renderWatchlist\(/.test(src));
+  ok('the pre-read renders setups, not movers', /watchMemory\(setups\(wrows/.test(src) && /renderSetups\(mem\.list/.test(src) && !/renderWatchlist\(/.test(src));
+  ok('…and keeps today\'s list for tomorrow in the private snapshot', /blocks\.snap\.watch = watchSnap\(/.test(src));
   ok('the movers survive only as the extended line', /extended: extendedLine\(movers, rowsBySym\)/.test(src));
   ok('the earnings feed is asked about candidates only', /for \(const sym of setupCandidates\(wrows/.test(src));
   ok('the universe quotes come in-process, with the pre-market overlay', /getQuotes\(missing, \{ prepost: region === 'us' \}\)/.test(src));
@@ -143,6 +144,42 @@ const coilBars = () => bars({ last: [...Array.from({ length: 13 }, () => ({ high
   ok('no console, no positions, no holdings reach the setup list', !/CONSOLE_KEY|positions|holding/i.test(lib.replace(/\/\/.*$/gm, '')));
   const q = readFileSync('lib/quotes.js', 'utf8');
   ok('the quote row carries the setup stats', /setup: o\.setup \?\? null/.test(q) && /setupStats\(c\.bars, \{ today:/.test(q));
+}
+
+// ── DAY TO DAY: repeats and breakouts from yesterday's list ──
+{
+  const lvl = (name, v) => ({ kind: 'level', atr: 0.2, name, v, text: `at ${name} (${v})` });
+  const today = [
+    { sym: 'NVDA', name: 'NVDA', price: 121, tags: [lvl('yesterday\'s high', 120)] },
+    { sym: 'AMD', name: 'AMD', price: 150, tags: [{ kind: 'coil', pctile: 10, text: 'coiled: ATR 10th pct' }] },
+  ];
+  const yesterday = watchSnap([
+    { sym: 'NVDA', name: 'NVDA', price: 119, tags: [lvl('the 50-day average', 119.5)] },
+    { sym: 'MU', name: 'Micron', price: 100, tags: [lvl('the 52-week high', 101)] },
+    { sym: 'TSLA', name: 'TSLA', price: 250, tags: [{ kind: 'coil', pctile: 5, text: 'coiled' }] },
+    { sym: 'INTC', name: 'INTC', price: 30, tags: [] },
+  ], '2026-10-05');
+  eq('the snapshot keeps the level a name sat at', yesterday[0], { sym: 'NVDA', name: 'NVDA', price: 119, days: 1, date: '2026-10-05', level: { name: 'the 50-day average', v: 119.5 } });
+  const rows = new Map([
+    ['NVDA', { price: 121, setup: { atr: 3 } }],          // +2 from 119, 0.7 ATR, but through the 50-day: broke out
+    ['MU', { price: 103, setup: { atr: 2 } }],            // +3, 1.5 ATR and through the 52-week high
+    ['TSLA', { price: 244, setup: { atr: 8 } }],          // −6, 0.75 ATR, no level: not a break
+    ['INTC', { price: 28.5, setup: { atr: 1 } }],         // −1.5 ATR: broke down
+  ]);
+  const m = watchMemory(today, yesterday, rows, { today: '2026-10-06' });
+  eq('a repeat says which day it is on; a new name does not', m.list.map(r => [r.sym, r.days]), [['NVDA', 2], ['AMD', 1]]);
+  eq('a repeat that broke out says so on its own line', m.list[0].brokeOut && [m.list[0].brokeOut.up, m.list[0].brokeOut.level.name], [true, 'the 50-day average']);
+  eq('yesterday\'s names that broke out, not on today\'s list, go to the bottom, biggest first', m.breakouts.map(b => [b.sym, b.up, b.atr]), [['MU', true, 1.5], ['INTC', false, 1.5]]);
+  ok(`a ${BREAKOUT_MIN_ATR} ATR move is the bar; TSLA at 0.75 ATR with no level is not a break`, !m.breakouts.some(b => b.sym === 'TSLA'));
+  eq('a same-day re-run is not "yesterday"', watchMemory(today, watchSnap(today, '2026-10-06'), rows, { today: '2026-10-06' }).list.map(r => r.days), [1, 1]);
+  const text = renderSetups(m.list, { breakouts: m.breakouts });
+  const L = text.split('\n');
+  ok('the repeat is marked "2nd day"', /\*\*NVDA\*\* · 121.00 · _2nd day_ — /.test(L[0]));
+  ok('…with its break inline', /broke out \+1\.7% since yesterday's list \(0\.7 ATR\), through the 50-day average \(119\.50\)$/.test(L[0]));
+  eq('the bottom lines', L.slice(2), ['↗ **Micron** `MU` · 103.00 — broke out +3.0% since yesterday\'s list (1.5 ATR), through the 52-week high (101.00)',
+                                     '↘ **INTC** · 28.50 — broke down -5.0% since yesterday\'s list (1.5 ATR)']);
+  for (const l of L) ok(`observational: ${l.slice(0, 40)}`, assertObservational(l).ok);
+  eq('no snapshot, no memory', watchMemory(today, null, rows, { today: '2026-10-06' }).breakouts, []);
 }
 
 console.log(`\n${fail ? '❌' : '✅'} ${pass} passed, ${fail} failed`);

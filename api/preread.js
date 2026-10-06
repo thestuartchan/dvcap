@@ -41,7 +41,7 @@ const wallAgreementBoth = (grid, callWall, putWall) => {
 };
 import { watchlist } from '../lib/watchlist.js';
 import { ladderImages, ladderSvg, renderPng } from '../lib/gexImage.js';
-import { setups, setupCandidates, renderSetups, extendedLine } from '../lib/watchSetup.js';
+import { setups, setupCandidates, renderSetups, extendedLine, watchMemory, watchSnap } from '../lib/watchSetup.js';
 import { earningsCached } from '../lib/catalystFeed.js';
 import { WATCH_UNIVERSE } from '../data/watchUniverse.js';
 import {
@@ -1042,7 +1042,12 @@ async function runRegion(region, req) {
       const m = extraQuotes[sym];
       return m?.price != null ? { price: m.price, changePercent: m.changePercent } : null;
     });
-    blocks.watchLines = renderSetups(setups(wrows, { earnings, today, tomorrow }), { extended: extendedLine(movers, rowsBySym) });
+    // DAY TO DAY: yesterday's list from the region's last posted snapshot (private, KV) — repeats
+    // are marked with their day, and yesterday's names that have since broken out are added at the
+    // bottom. Today's list is kept in this brief's snapshot for tomorrow.
+    const mem = watchMemory(setups(wrows, { earnings, today, tomorrow }), previous?.snap?.watch || null, rowsBySym, { today });
+    if (blocks.snap) blocks.snap.watch = watchSnap(mem.list, today);
+    blocks.watchLines = renderSetups(mem.list, { extended: extendedLine(movers, rowsBySym), breakouts: mem.breakouts });
   } catch { blocks.watchLines = null; }
   // TREND FUNDS — the CTA replica's read, from the same cached book the Daily tab shows. Best-effort
   // like the sections around it: a model that cannot be read is omitted, never faked.
