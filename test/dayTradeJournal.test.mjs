@@ -35,12 +35,11 @@ const CSV = `"UID","Venue","DateTime (UTC)","Date","Symbol","Direction","Qty","P
 "HL-2","Hyperliquid","2026-09-03T11:00:00.000Z","2026-09-03","HYPE","Close Long","-10","51","10.00","0.50","USDC"`;
 const sheet = roundTripsFromSheet(parseBrokerFills(CSV).fills);
 const by = Object.fromEntries(sheet.map(t => [t.underlying, t]));
-eq('day trades and the QQQ option swing; the AMD swing and anything from the feed date are not', sheet.map(t => t.underlying).sort(), ['0981.HK', 'HYPE', 'NVDA', 'QQQ'].sort());
+eq('day trades and the QQQ option swing; the AMD swing, Hyperliquid and anything from the feed date are not', sheet.map(t => t.underlying).sort(), ['0981.HK', 'NVDA', 'QQQ'].sort());
 eq('NVDA round trip', [by.NVDA.side, by.NVDA.holdMin, by.NVDA.avgIn, by.NVDA.avgOut, by.NVDA.pnl, by.NVDA.reason], ['long', 120, 100, 101, 9, 'held under 24h']);
 eq('the QQQ option carries its contract', [by.QQQ.kind, by.QQQ.contract, by.QQQ.pnl, by.QQQ.reason], ['option', 'QQQ 2026-09-18 754C', -1001, 'QQQ options are day-trade only']);
 eq('HKD converted at the peg', [by['0981.HK'].ccy, by['0981.HK'].pnl, by['0981.HK'].pnlUsd], ['HKD', 990, 126.92]);
-eq('Hyperliquid P&L is net of its fees', [by.HYPE.kind, by.HYPE.pnl], ['crypto', 9]);
-ok('ids are stable and venue-prefixed', by.NVDA.id === 'ib-IBKR-1' && by.HYPE.id === 'hl-HL-1');
+ok('ids are stable and prefixed', by.NVDA.id === 'ib-IBKR-1');
 ok('every row is before the feed date', sheet.every(t => t.date < FEED_FROM));
 
 // ── from the IBKR feed ──
@@ -80,9 +79,9 @@ const weeks = toWeeks([...sheet, ...feed]);
 eq('one document per closing week, in order', weeks.map(w => w.week), ['2026-W36', '2026-W37', '2026-W41']);
 const w41 = weeks.at(-1);
 eq('a week totals its trades', [w41.count, w41.pnlUsd, w41.source], [2, 267, 'ibkr']);
-eq('the QQQ swing files under the week it closed', weeks[0].trades.map(t => t.underlying).sort(), ['HYPE', 'NVDA', 'QQQ'].sort());
+eq('the QQQ swing files under the week it closed', weeks[0].trades.map(t => t.underlying).sort(), ['NVDA', 'QQQ']);
 
-eq('a Sunday-evening futures close is next week\'s; Sunday crypto is this week\'s', [weekOf({ kind: 'future', closeDate: '2026-10-11' }), weekOf({ kind: 'crypto', closeDate: '2026-10-11' })], ['2026-W42', '2026-W41']);
+eq('a Sunday-evening futures close is next week\'s; a Saturday close is this week\'s', [weekOf({ kind: 'future', closeDate: '2026-10-11' }), weekOf({ kind: 'future', closeDate: '2026-10-10' })], ['2026-W42', '2026-W41']);
 const merged = mergeWeeks(weeks, [{ ...feed[1], pnl: 20, pnlUsd: 20 }, { ...feed[0], id: 'ib-99', closeDate: '2026-10-08' }]);
 eq('a merge replaces by id and adds the new', [merged.at(-1).count, merged.at(-1).pnlUsd, merged.length], [3, 516, 3]);
 
