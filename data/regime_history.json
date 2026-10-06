@@ -2873,7 +2873,7 @@
       "inputs": {
         "weightedRecessionProb": 13.6,
         "cpi": 3.35302,
-        "kalshi2027": 21,
+        "kalshi2027": 20,
         "tape": {
           "gold": "down",
           "tlt": "down",
@@ -2910,11 +2910,11 @@
           "drifting": "stag"
         },
         "conditions": {
-          "score": 63.3,
+          "score": 62.9,
           "band": "caution",
           "comps": {
             "credit": 75,
-            "equityVol": 14,
+            "equityVol": 12,
             "ratesVol": 80,
             "realYield": 90,
             "funding": 36,
@@ -2979,7 +2979,7 @@
         "quadrantRead": "growth firm, inflation cool"
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-06T02:32:06.109Z"
+      "loggedAt": "2026-10-06T08:45:53.844Z"
     }
   ]
 }
