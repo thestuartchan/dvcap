@@ -18,21 +18,21 @@ const now = new Date('2026-09-25T12:30:00Z');
 const s = ctaSection(book, { now });
 const lines = s.split('\n');
 {
-  eq('four lines', lines.length, 4);
-  eq('where they sit, with an arrow for a big week', lines[0],
-     '• **Where they sit:** S&P **long** 76% ▲ · Nasdaq **max long** 82% ▲ · 10Y note **max short** 100% · dollar **long** 54% · crude **max long** 84% · gold **neutral**');
-  eq('crowded names the fuel', lines[1], '• **Crowded:** Nasdaq, 10Y note, crude — the most fuel if the trend turns');
-  eq('the two nearest triggers, stated as what they do', lines[2],
-     '• **Nearest triggers:** gold **4,273.95** (−1.4%) — tips net short below it · S&P **7,690** (−1.3%) — model selling starts below it');
-  eq('and it says what it is', lines[3], '• _A model of trend funds, not their orders; levels apply to the close._');
+  eq('one line per market, biggest first, then the note', lines.length, 7);
+  eq('the crowded short leads', lines[0], '• **10Y note** max short 100% · crowded');
+  eq('a crowded long, with its week\'s arrow', lines[2], '• **Nasdaq** max long 82% ▲ · crowded');
+  eq('a near trigger sits on its own market\'s line', lines[3], '• **S&P** long 76% ▲ — model selling starts below **7,690** (−1.3%)');
+  eq('a far trigger is not shown', lines[1], '• **crude** max long 84% · crowded');
+  eq('neutral, with the level that tips it', lines[5], '• **gold** neutral — tips net short below **4,273.95** (−1.4%)');
+  eq('and it says what it is, and what the marks mean', lines[6], '• _A model of trend funds, not their orders · levels apply to the close · crowded = 80%+ · ▲▼ = a 20-point move this week_'.slice(2));
   for (const l of lines) ok(`observational: "${l.replace(/\*/g, '').slice(2, 40)}"`, assertObservational(l).ok);
 }
 {
   const short = ctaSection({ at: book.at, markets: [{ key: 'ZN', ok: true, position: -1, stance: 'max short', change: 0, cut: { label: '1m', flip: 106, flipPct: 1.1, flipSigmas: 1.2 } }] }, { now });
-  ok('a short is covering, above', /10Y note \*\*106\*\* \(\+1\.1%\) — short covering starts above it/.test(short));
+  ok('a short is covering, above', /\*\*10Y note\*\* max short 100% · crowded — short covering starts above \*\*106\*\* \(\+1\.1%\)/.test(short));
   const far = ctaSection({ at: book.at, markets: [book.markets[2]] }, { now });
-  ok(`nothing within ${CTA_TRIGGER_SIGMAS} normal days says so`, /none within 3 normal days of price/.test(far));
-  ok('no crowded line when nothing is crowded', !/Crowded/.test(ctaSection({ at: book.at, markets: [book.markets[5]] }, { now })));
+  ok(`nothing within ${CTA_TRIGGER_SIGMAS} normal days says so`, /no trigger within 3 normal days of price/.test(far));
+  ok('nothing is marked crowded under 80%', !/· crowded(?! =)/.test(ctaSection({ at: book.at, markets: [book.markets[5]] }, { now })));
   ok('an old model says so', /⚠️ model from 08:00Z/.test(ctaSection({ ...book, at: '2026-09-25T08:00:00Z' }, { now })));
   eq('no book, no section', ctaSection(null), null);
   eq('a book with no usable market, no section', ctaSection({ markets: [{ key: 'ES', ok: false }] }), null);

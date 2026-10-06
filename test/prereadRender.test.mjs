@@ -249,7 +249,7 @@ for (const region of REGIONS) {
   ] };
   const text = assembleDiscord('us', 'US', { watchLines: '• one', ctaLines: ctaSection(book, { now: new Date('2026-09-25T12:30:00Z') }) });
   rendered._cta = text;
-  ok('the trend-fund section renders under its heading', /📐 \*\*TREND FUNDS \(CTA MODEL\)\*\*\n• \*\*Where they sit:\*\* S&P \*\*long\*\* 76% ▲/.test(text));
+  ok('the trend-fund section renders under its heading', /📐 \*\*TREND FUNDS \(CTA MODEL\)\*\*\n• \*\*S&P\*\* long 76% ▲ — model selling starts below \*\*7,690\*\*/.test(text));
   ok('right after the watchlist', text.indexOf('TODAY\'S WATCHLIST') < text.indexOf('TREND FUNDS'));
   ok('and is absent when there is no model', !/TREND FUNDS/.test(assembleDiscord('us', 'US', { ctaLines: null })));
 }
