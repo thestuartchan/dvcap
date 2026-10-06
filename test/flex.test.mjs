@@ -5,7 +5,7 @@
 // "still generating" reply, a lot-level statement that would double every quantity if read naively,
 // and the two symbol conventions (futures month codes, Hong Kong numerics) that make raw string
 // matching fail.
-import { parseFlexResponse, parseStatement, reconcile, rootOf, classOf, autoAddable, summarise, summariseActionable, actionable, signatureOf, isoDate, matchKey, planAck, sendRequestUrl, statementUrl, fetchStatement, elements, attrs, COST_TOLERANCE_PCT, asOfState } from '../lib/flex.js';
+import { parseFlexResponse, parseStatement, reconcile, rootOf, classOf, autoAddable, summarise, summariseActionable, actionable, signatureOf, isoDate, matchKey, planAck, sendRequestUrl, statementUrl, fetchStatement, elements, attrs, COST_TOLERANCE_PCT, asOfState, optionMarksOf } from '../lib/flex.js';
 import { derivePosition } from '../lib/positions.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -626,6 +626,18 @@ eq('elements are found whether or not they self-close', elements('<A x="1"/><A x
   const L17near = '<OpenPosition currency="USD" assetCategory="OPT" symbol="SOFI  260925C00017000" underlyingSymbol="SOFI" multiplier="100" position="15" costBasisPrice="1" strike="17" putCall="C" expiry="20260925" levelOfDetail="SUMMARY" />';
   eq('a swing option the console holds still matches the day before expiry', run(SH + L17near, [share, nearExp]).agree.map(a => a.contract || a.root).sort(), ['SOFI', 'SOFI 2026-09-25 17C']);
   eq('a 1DTE line is set aside, not matched or announced', [dt.report.filter(r => r.kind === 'daytrade-option').map(r => r.contract), actionable(dt)], [['QQQ 2026-09-25 740P'], []]);
+}
+
+// ── IBKR'S CLOSE MARKS (the card's price for what CBOE does not list) ──
+{
+  const m = optionMarksOf({ toDate: '20261005', positions: [
+    { assetCategory: 'FOP', root: 'JPU', strike: 0.0064, putCall: 'C', expiry: '20261009', markPrice: 0.0000215, qty: 2 },
+    { assetCategory: 'FOP', root: 'JPU', strike: 0.0065, putCall: 'C', expiry: '20261009', markPrice: 0, qty: -2 },
+    { assetCategory: 'STK', root: 'AMZN', markPrice: 256.29, qty: 10 },
+    { assetCategory: 'OPT', root: 'WFC', strike: 89, putCall: 'C', expiry: '20261023', markPrice: null, qty: 30 },
+  ] });
+  eq('close marks: options only, keyed by contract, a zero kept', m, { asOf: '2026-10-05', marks: { 'JPU|2026-10-09|C|0.0064': 0.0000215, 'JPU|2026-10-09|C|0.0065': 0 } });
+  ok('and never a quantity', !/"qty"|position/.test(JSON.stringify(m)));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

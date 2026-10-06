@@ -21,14 +21,14 @@
 // The statement's own numbers are in the RESPONSE, which goes to the caller. The only thing that
 // reaches Discord is lib/flex.js's summary, which carries symbols and counts and no sizes.
 
-import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY, CASHBOOK_KEY } from '../lib/kv.js';
+import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY, CASHBOOK_KEY, OPTION_MARKS_KEY } from '../lib/kv.js';
 
 // What the channel was last told. Only the SIGNATURE, so this can never become a second copy of
 // the book.
 const SEEN_KEY = 'dvcap:flex:seen:v1';
 import { derivePosition, splitIntoTrades } from '../lib/positions.js';
 import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, unrecordedTrades, dropCreatedAdds } from '../lib/flexTrades.js';
-import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf, planAck, reconcilingFill, flexEnv, flexConfigured, isoDate, optionFindings, addLabel, cashBookOf } from '../lib/flex.js';
+import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf, planAck, reconcilingFill, flexEnv, flexConfigured, isoDate, optionFindings, addLabel, cashBookOf, optionMarksOf } from '../lib/flex.js';
 import { post, webhookFromEnv } from '../lib/discord.js';
 import { refresh } from './tradecard.js';
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
@@ -86,6 +86,9 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   // THE CASH BOOK — values only, to a private key the console reads on its signed-in load. Never in
   // this response (the workflow log is public) and never rows.
   if (apply) { try { await kvSetJson(CASHBOOK_KEY, { ...cashBookOf(got.statement), fetchedAt: new Date().toISOString() }); } catch { /* the console keeps the last one */ } }
+  // IBKR's close mark per option contract — the price of record for anything CBOE does not list
+  // (an option on a future). Contract → mark only, private key, never in this response.
+  if (apply) { try { await kvSetJson(OPTION_MARKS_KEY, { ...optionMarksOf(got.statement), fetchedAt: new Date().toISOString() }); } catch { /* the card falls back to no mark */ } }
   // The deriver goes in so reconcile can ask what a row looked like on the statement's own day —
   // the same function that produced `derived` above, so the two can never drift apart.
   const deriveRow = (r) => derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side });
