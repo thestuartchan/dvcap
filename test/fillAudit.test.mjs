@@ -64,14 +64,14 @@ const hk = A.instruments.find(i => i.key === '981');
 eq('the window is the sheet\'s', [A.from, A.to], ['2026-06-06', '2026-09-30']);
 eq('981: the 10 Jul sale is missing; the 30 Sep buy matched on trade id', hk.missing.map(m => `${m.side} ${m.qty} ${m.date}`), ['sell 1000 2026-07-10']);
 eq('981: the bulk-average buy is reported as not seen at the broker', hk.unseen.map(u => u.fillId), ['a']);
-eq('981: it closes more than the console held, so it is a closed trade', [hk.missing[0].plan.action, hk.missing[0].plan.heldThen], ['closed-trade', 500]);
+eq('981: a trade of its own — none of it in the console — so it is a closed trade', [hk.missing[0].plan.action, hk.missing[0].plan.heldThen], ['closed-trade', 0]);
 near('981: the entry implied from IBKR\'s realised P&L', hk.missing[0].plan.impliedEntry, (83750 - 67 - 9825.28) / 1000);
 eq('MGC: both fills match within a day and 1%', A.instruments.find(i => i.key === 'fut:MGC').missing, []);
 const br = A.instruments.find(i => i.key === 'BRNT');
 eq('BRNT: 100 of 170 matched a day later; 70 missing, marked partial', br.missing.map(m => [m.qty, m.partOf]), [[70, 170]]);
 eq('BRNT: a partial is added to the row, never a closed trade', br.missing[0].plan.action, 'add');
 eq('BRNT: and has no implied entry', impliedEntry(br.missing[0], BR), null);
-eq('no row: options and crypto are out of scope', A.outOfScope, { options: 1, crypto: 1 });
+eq('no row: crypto is out of scope; a 0DTE option bought and expired the same day is a day trade', [A.outOfScope, A.dayTrades.trades >= 1], [{ crypto: 1 }, true]);
 eq('no row, still held at the end: left to the daily sync, which adds held positions', A.heldNoRow.map(h => h.symbol), ['TQQQ']);
 eq('missing count', A.missingCount, 2);
 
@@ -165,6 +165,53 @@ eq('a sale within what was held is added to the row', planFor({ side: 'sell', qt
   eq('…the missing sale sits under its trade; the recorded buy has nothing missing', t.map(x => x.missing.length), [1, 0]);
   const mg = tradesOf([P.fills[2], P.fills[3]], []);
   eq('a round trip is one closed trade with both averages', mg.map(x => [x.kind, x.side, x.avgIn, x.avgOut, x.realized, x.dayTrade]), [['closed', 'long', 4442.7, 4613.8, 1708.91, false]]);
+}
+
+// ── options with no console row: the console's option rules ──
+{
+  const o = (uid, sym, side, qty, price, time, extra = {}) => ({ uid, venue: 'IBKR', symbol: sym, side, qty, price, time, date: time.slice(0, 10), currency: 'USD', fee: -1, realized: 0, ...extra });
+  const SW = 'AMD   260821C00180000', ODTE = 'SPY   260709P00600000', EXP = 'XOP   260918C00150000';
+  const R = auditFills([], [
+    o('a1', SW, 'buy', 5, 4.0, '2026-07-20T14:00:00Z'), o('a2', SW, 'sell', 5, 6.5, '2026-07-27T15:00:00Z', { realized: 1248 }),   // a 5-week call, 1 week held
+    o('b1', ODTE, 'buy', 10, 1.2, '2026-07-08T19:00:00Z'), o('b2', ODTE, 'sell', 10, 1.5, '2026-07-09T14:00:00Z', { realized: 298 }),   // 1DTE held overnight
+    o('c1', EXP, 'buy', 2, 3.0, '2026-08-20T14:00:00Z'),                                                                                  // expired, no close
+    o('z9', 'MSFT', 'buy', 1, 1, '2026-09-30T14:00:00Z'),                                                                                 // sets the history's end
+  ]);
+  eq('a multi-day option swing is offered; the 1DTE one held overnight is a day trade', [R.swings.map(w => w.symbol), R.dayTrades.trades], [['AMD 2026-08-21 180C', 'XOP 2026-09-18 150C'], 1]);
+  const amd = swingRow(R.swings[0]);
+  eq('…as the console builds an option row: underlying, one long leg, ×100', [amd.symbol, amd.instrument, amd.legs.map(l => [l.right, l.strike, l.expiry, l.side]), amd.multiplier, amd.side],
+     ['AMD', 'option', [['C', 180, '2026-08-21', 'long']], 100, 'long']);
+  near('…and realises what IBKR booked', derivePosition(amd.fills, { multiplier: 100, side: 'long' }).realised ?? derivePosition(amd.fills, { multiplier: 100, side: 'long' }).realized, 1248, 0.02);
+  const xop = swingRow(R.swings[1]);
+  eq('an option past expiry with no close is closed at zero on its expiry, and says so', [xop.fills.at(-1).side, xop.fills.at(-1).price, xop.fills.at(-1).date, /expired 2026-09-18/.test(xop.fills.at(-1).note), isCarryOverFill(xop.fills.at(-1))],
+     ['sell', 0, '2026-09-18', true, true]);
+  eq('…closed, at the premium paid lost', [derivePosition(xop.fills, { multiplier: 100, side: 'long' }).status, Math.round(derivePosition(xop.fills, { multiplier: 100, side: 'long' }).realized ?? derivePosition(xop.fills, { multiplier: 100, side: 'long' }).realised)], ['closed', -601]);
+}
+
+// ── what the first real run showed (6 Oct) ──
+{
+  const q = (uid, symbol, side, qty, price, time, extra = {}) => ({ uid, venue: 'IBKR', symbol, side, qty, price, time, date: time.slice(0, 10), currency: 'USD', fee: -1, realized: 0, ...extra });
+  const BR = [
+    // TQQQ: two buys four days apart that the console holds as one "1,000 @ 69.40" dated the first day…
+    q('t1', 'TQQQ', 'buy', 500, 70.55, '2026-08-20T14:00:00Z'), q('t2', 'TQQQ', 'buy', 500, 68.2395, '2026-08-24T14:00:00Z'),
+    q('t3', 'TQQQ', 'sell', 1000, 69.45, '2026-08-24T19:00:00Z', { realized: 42 }),
+    // …then a same-day round trip while the broker was flat, and a two-day swing.
+    q('t4', 'TQQQ', 'buy', 1000, 72.85, '2026-08-27T14:00:00Z'), q('t5', 'TQQQ', 'sell', 1000, 73.2, '2026-08-27T18:00:00Z', { realized: 350 }),
+    q('t6', 'TQQQ', 'buy', 700, 72.02, '2026-09-08T19:00:00Z'), q('t7', 'TQQQ', 'sell', 700, 71.75, '2026-09-09T14:00:00Z', { realized: -190 }),
+    // AVGO shares, and a share-typed AVGO row holding option fills.
+    q('v1', 'AVGO', 'buy', 25, 355.19, '2026-10-02T15:57:00Z'),
+  ];
+  const ROWS = [
+    { id: 'tq', symbol: 'TQQQ', side: 'long', fills: [{ id: 'a', side: 'buy', qty: 1000, price: 69.400203, date: '2026-08-20' }, { id: 'b', side: 'sell', qty: 1000, price: 69.45, date: '2026-08-24' }] },
+    { id: 'av', symbol: 'AVGO', side: 'long', fills: [{ id: 'c', side: 'buy', qty: 25, price: 355.23, date: '2026-10-02' }] },
+    { id: 'avo', symbol: 'AVGO', side: 'long', multiplier: 100, fills: [{ id: 'd', side: 'buy', qty: 10, price: 2.554549, date: '2026-08-26' }, { id: 'e', side: 'sell', qty: 10, price: 4.582563, date: '2026-08-27' }] },
+  ];
+  const R = auditFills(ROWS, BR);
+  const tq = R.instruments.find(i => i.key === 'TQQQ');
+  eq('a bulk fill dated at the trade\'s first fill absorbs the later buy too', tq.unseen, []);
+  eq('the same-day round trip with the broker flat is a day trade; the two-day one a swing; nothing to add', [tq.missing.length, tq.trades.map(t => t.status)], [0, ['recorded', 'day', 'swing']]);
+  eq('…and the swing is offered as its own row', R.swings.map(w => [w.symbol, w.from, w.to]), [['TQQQ', '2026-09-08', '2026-09-09']]);
+  eq('an option kept on a share row (×100, no contract) is not held against the shares', [R.unchecked.map(u => u.rowId), R.instruments.find(i => i.key === 'AVGO')?.unseen ?? []], [['avo'], []]);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

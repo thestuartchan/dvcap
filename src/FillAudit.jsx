@@ -129,14 +129,14 @@ export default function FillAudit({ rows, sheet, setSheet, onAddFill, onAddRow, 
           <div style={{ fontSize: 11.5, color: C.lbl }}>
             {res.read} broker fills, {res.from} → {res.to}{res.dropped ? ` · ${res.dropped} rows not fills` : ""} ·
             {" "}{res.instruments.length} instruments to look at
-            {res.unchecked.length ? ` · ${res.unchecked.length} spread${res.unchecked.length === 1 ? "" : "s"} not checked` : ""}
+            {res.unchecked.length ? <span title={res.unchecked.map(u => `${u.symbol}: ${u.why}`).join("\n")} style={{ textDecoration: "underline dotted", cursor: "help" }}>{` · ${res.unchecked.length} row${res.unchecked.length === 1 ? "" : "s"} not checked`}</span> : ""}
           </div>
           {/* THE CONSOLE'S SCOPE, as the daily sync applies it, judged on each trade's own date. */}
           <div style={{ fontSize: 11.5, color: C.muted, lineHeight: 1.5 }}>
-            Left out by the console's rules: {res.dayTrades.trades} day trade{res.dayTrades.trades === 1 ? "" : "s"} ({res.dayTrades.fills} fills, opened and closed the same day while the console held nothing)
+            Left out by the console's rules: {res.dayTrades.trades} day trade{res.dayTrades.trades === 1 ? "" : "s"} ({res.dayTrades.fills} fills — round trips with the broker flat either side, or options opened at 0–1 DTE)
             {Object.entries(res.outOfScope).map(([k, n]) => ` · ${n} ${k} fill${n === 1 ? "" : "s"}`).join("")}
             {res.heldNoRow.length ? ` · held at the broker with no console row, which the daily sync adds: ${res.heldNoRow.map(h => h.symbol).join(", ")}` : ""}.
-            While the console holds a name, every fill in it counts, scalps included, so its cost matches IBKR's.
+            Inside a trade the console has, every fill counts, scalps included, so its cost matches IBKR's.
           </div>
           {res.instruments.filter(i => i.missing.length || i.unseen.length).map(i => (
             <div key={i.key} style={{ border: "1px solid " + (i.missing.length ? C.aBdr : C.bdr), borderRadius: 9, padding: "8px 10px", background: C.bg }}>
@@ -160,8 +160,10 @@ export default function FillAudit({ rows, sheet, setSheet, onAddFill, onAddRow, 
                 </div>
               ))}
               {(() => {
-                const rec = i.trades.filter(t => t.status === "recorded").length, out = i.trades.filter(t => t.status === "left-out").length;
-                return rec || out ? <div style={{ marginTop: 6, fontSize: 11.5, color: C.muted }}>{rec ? `${rec} trade${rec === 1 ? "" : "s"} fully recorded` : ""}{rec && out ? " · " : ""}{out ? `${out} left out by the console's rules (day trades while it held nothing)` : ""}</div> : null;
+                const n = (st) => i.trades.filter(t => t.status === st).length;
+                const bits = [[n("recorded"), "fully recorded"], [n("day"), "day trade$ left out (the broker was flat either side)"], [n("swing"), "offered below as a swing"], [n("held-no-row"), "held at the broker with no row — the daily sync adds it"]]
+                  .filter(([k]) => k > 0).map(([k, w]) => `${k} ${w.replace("$", k === 1 ? "" : "s")}`);
+                return bits.length ? <div style={{ marginTop: 6, fontSize: 11.5, color: C.muted }}>{bits.join(" · ")}</div> : null;
               })()}
               {i.unseen.length > 0 && (
                 <div style={{ marginTop: 6, fontSize: 11.5, color: C.muted }}>
