@@ -7,7 +7,7 @@
 import {
   instrumentOf, isDerivativeRow, legsOf, underlyingOf, legLabel, spreadShape, comboMark, markOf, comboGreeks,
   definedRisk, defaultHardDate, hardDateLimit, hardDateCheck, dteOf, optionDerived, exposureLines, optionRow,
-  optionLevelVocab, normalizeLeg, MAX_LEGS, OPTION_MULTIPLIER, LEVEL_ON,
+  optionLevelVocab, normalizeLeg, contractsByRoot, MAX_LEGS, OPTION_MULTIPLIER, LEVEL_ON,
 } from '../lib/instruments.js';
 import { derivePosition, positionPnl, levelHits } from '../lib/positions.js';
 import { bookExposure } from '../lib/bookExposure.js';
@@ -215,7 +215,7 @@ const TODAY = '2026-09-24';
 {
   const spread = { id: 's', symbol: 'SOFI', instrument: 'spread', legs: SOFI_LEGS, multiplier: 100, derived: { status: 'open', qty: 15 }, fills: [] };
   ok('a spread is an option trade to the card', isOptionTrade(spread));
-  ok('and does not show on it', !showsOnCard(spread));
+  ok('and shows on it, in its section\'s Options block (6 Oct)', showsOnCard(spread));
   ok('a share row still does', showsOnCard({ symbol: 'SOFI', multiplier: 1 }));
   // The statement's SOFI share trade must land on the share row, not the spread.
   const shares = { id: 'sh', symbol: 'SOFI', currency: 'USD', derived: { status: 'open', qty: 500 }, fills: [{ id: 'f', side: 'buy', qty: 500, price: 16.675, date: '2026-09-20' }] };
@@ -223,6 +223,20 @@ const TODAY = '2026-09-24';
   const plan = planTrades([shares, spread], [trade], { today: '2026-09-26' });
   eq('applied to the share row, not refused as ambiguous', plan.apply.map(a => a.rowId), ['sh']);
   eq('nothing reported', plan.report.length, 0);
+}
+
+// ── IBKR'S CLOSE MARK, SECOND TO THE LIVE FEED ──
+{
+  const jpy = { symbol: 'JPU', instrument: 'spread', multiplier: 12500000, legs: [
+    { right: 'C', strike: 0.0064, expiry: '2026-10-09', side: 'long', ratio: 1 }, { right: 'C', strike: 0.0065, expiry: '2026-10-09', side: 'short', ratio: 1 }],
+    fills: [{ date: '2026-10-02', side: 'buy', qty: 2, price: 0.0000184 }] };
+  const close = { asOf: '2026-10-05', marks: { 'JPU|2026-10-09|C|0.0064': 0.0000215, 'JPU|2026-10-09|C|0.0065': 0 } };
+  const m = markOf(jpy, { greeks: {}, close });
+  eq('no live quote: priced at IBKR\'s close, a worthless short leg included', [m.source, m.value, m.asOf], ['close', 0.0000215, '2026-10-05']);
+  eq('without it, the last fill — which the card does not show as a price', markOf(jpy, { greeks: {} }).source, 'fill');
+  eq('a live quote still wins', markOf(jpy, { close, greeks: { 'JPU|2026-10-09|C|0.0064': { mark: 0.00003 }, 'JPU|2026-10-09|C|0.0065': { mark: 0.000005 } } }).source, 'live');
+  eq('a sub-cent strike keeps its digits', legLabel(jpy.legs, { year: false }), 'Oct9 0.0064/0.0065 C');
+  eq('contracts grouped by underlying for the feed', [...contractsByRoot([jpy, { symbol: 'AMZN', multiplier: 1 }])], [['JPU', ['JPU|2026-10-09|C|0.0064', 'JPU|2026-10-09|C|0.0065']]]);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

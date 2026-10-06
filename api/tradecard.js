@@ -13,9 +13,11 @@
 // lib/tradecard.js from a whitelisted projection of a row, so a size or a dollar figure cannot
 // reach Discord even by accident. See the header of that file.
 
-import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, WALLET_SNAPSHOT_KEY, WALLET_PROVENANCE_KEY, WALLET_PENDING_KEY } from '../lib/kv.js';
+import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, OPTION_MARKS_KEY, WALLET_SNAPSHOT_KEY, WALLET_PROVENANCE_KEY, WALLET_PENDING_KEY } from '../lib/kv.js';
+import { contractsByRoot, markOf } from '../lib/instruments.js';
+import { fetchCboeGreeks } from '../lib/cboe.js';
 import { derivePosition, positionPnl, levelHits, applyRolls } from '../lib/positions.js';
-import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard, isStaleEvent } from '../lib/tradecard.js';
+import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard, isStaleEvent, isOptionTrade } from '../lib/tradecard.js';
 import { upsertCard, post, remove, webhookFromEnv, walletWebhookFromEnv, mentionFromEnv, alertTtlMin, CARD_KEY } from '../lib/discord.js';
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
 import { fetchWallets } from '../lib/wallet.js';
@@ -57,16 +59,44 @@ export async function snapshot(origin) {
   const stored = await kvGetJson(CONSOLE_KEY);
   const rows = Array.isArray(stored?.rows) ? stored.rows : [];
   const live = rows.filter(r => derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side }).status !== 'closed');
-  const prices = await quotesFor([...new Set(live.map(quoteSym).filter(Boolean))], origin);
+  // ── OPTION MARKS ── An option row's symbol is its UNDERLYING, so the quote above prices the
+  // underlying, not the contract. The contract comes from CBOE's delayed feed (the one the console's
+  // greeks use), one request per root; what CBOE does not list — an option on a future — from
+  // IBKR's own close mark, kept by the daily statement sync. Neither: no mark, and the line says so.
+  const optRows = live.filter(isOptionTrade);
+  const [prices, cboe, close] = await Promise.all([
+    quotesFor([...new Set(live.map(quoteSym).filter(Boolean))], origin),
+    optionGreeks(optRows),
+    optRows.length ? kvGetJson(OPTION_MARKS_KEY).catch(() => null) : null,
+  ]);
   // applyRolls BEFORE the P&L: a rolled contract's entry is back-adjusted through the legs behind
   // it, so a percentage computed first would be the contract's rather than the trade's.
   return applyRolls(rows.map(r => ({ ...r, derived: derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side }) })))
     .map(r => {
-      const price = prices?.[quoteSym(r)]?.price ?? null;
-      const hits = levelHits([r], () => price)
-        .map(h => `${h.level.kind} ${h.level.at}${h.level.to ? `–${h.level.to}` : ''} reached`);
-      return { ...r, price, pnl: positionPnl(r.derived, price), levelHits: hits };
+      const quoted = prices?.[quoteSym(r)]?.price ?? null;
+      if (!isOptionTrade(r) || r.derived.status === 'closed') {
+        const hits = levelHits([r], () => quoted)
+          .map(h => `${h.level.kind} ${h.level.at}${h.level.to ? `–${h.level.to}` : ''} reached`);
+        return { ...r, price: quoted, pnl: positionPnl(r.derived, quoted), levelHits: hits };
+      }
+      // A typed mark or the last fill is NOT a price for the card — a spread marked at its own
+      // entry is a P&L of zero that reads as flat. Live or IBKR's close, or nothing.
+      const m = markOf(r, { greeks: cboe, close });
+      const price = m.source === 'live' || m.source === 'close' ? m.value : null;
+      const hits = levelHits([r], (_p, lv) => (lv?.on === 'underlying' ? quoted : price))
+        .map(h => `${h.level.kind} ${h.level.on === 'underlying' ? `${r.symbol} ` : ''}${h.level.at}${h.level.to ? `–${h.level.to}` : ''} reached`);
+      return { ...r, price, underlyingPx: quoted, markSource: price == null ? null : m.source, markAsOf: m.asOf || null,
+               pnl: positionPnl(r.derived, price), levelHits: hits };
     });
+}
+
+// Published marks for the contracts the open option rows hold, keyed as lib/instruments.js keys
+// them. Only contract identifiers go out; a root CBOE does not list just comes back empty.
+async function optionGreeks(optRows) {
+  const want = contractsByRoot(optRows);
+  if (!want.size) return {};
+  const got = await Promise.all([...want].map(([root, keys]) => fetchCboeGreeks(root, keys, { timeoutMs: 8000 })));
+  return Object.assign({}, ...got.filter(g => g.ok).map(g => g.greeks));
 }
 
 export async function refresh(origin, { now = Date.now() } = {}) {
@@ -92,7 +122,11 @@ export async function refresh(origin, { now = Date.now() } = {}) {
   // announced the entire book — nine notifications for trades that were weeks old. A first run
   // seeds the state silently; a channel's history should begin with the card, not with a backlog.
   const firstRun = !state.rows;
-  const events = firstRun ? [] : diffRows(state.rows, announceable.map(shape));
+  // THE DAY OPTIONS JOINED THE CARD (6 Oct) every option already held would look newly opened.
+  // The first run that sees them takes them in silently, exactly as a cold start does.
+  const optionsJoining = !state.optionsOn;
+  const isOptId = (id) => isOptionTrade(rows.find(r => r.id === id));
+  const events = firstRun ? [] : diffRows(state.rows, announceable.map(shape)).filter(ev => !(optionsJoining && isOptId(ev.row.id)));
   const mention = mentionFromEnv();
   const ttl = alertTtlMin();
   const pending = Array.isArray(state.alerts) ? [...state.alerts] : [];
@@ -130,6 +164,7 @@ export async function refresh(origin, { now = Date.now() } = {}) {
     alerts: kept,
     // Only what diffRows needs, so the stored snapshot cannot become a second copy of the book.
     rows: announceable.map(shape),
+    optionsOn: true,
     updatedAt: new Date(now).toISOString(),
   });
 

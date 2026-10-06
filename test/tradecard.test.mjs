@@ -5,7 +5,7 @@
 // building rows whose private values are distinctive digit strings and asserting those strings
 // appear nowhere in the serialised output. A future edit that adds "· 600 @ 18.06" to a line fails
 // here rather than on a Discord server.
-import { publicView, buildCard, buildClosedCard, closedLine, rOf, lockedPct, isOptionTrade, showsOnCard, CLOSED_WINDOW_DAYS, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, dirOf, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS, DOT } from '../lib/tradecard.js';
+import { optPx, sectionsOf, fitSections, CARD_SECTIONS, publicView, buildCard, buildClosedCard, closedLine, rOf, lockedPct, isOptionTrade, showsOnCard, CLOSED_WINDOW_DAYS, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, dirOf, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS, DOT } from '../lib/tradecard.js';
 import { isStaleEvent } from '../lib/tradecard.js';
 import { isWebhookUrl, alertTtlMin, mentionFromEnv, webhookFromEnv } from '../lib/discord.js';
 import { derivePosition } from '../lib/positions.js';
@@ -320,7 +320,8 @@ ok('futures are not', !isOptionTrade({ multiplier: 10, margined: true }));
 // "If it does not make it onto the portfolio card it does not belong on the closed card" is only
 // true if ONE function decides for both.
 ok('cash is off both', !showsOnCard({ symbol: 'SGOV' }));
-ok('options are off both', !showsOnCard({ symbol: 'SPCX', tags: ['option'] }));
+ok('options are on both (6 Oct)', showsOnCard({ symbol: 'SPCX', tags: ['option'] }));
+ok('intraday is off both', !showsOnCard({ symbol: 'MNQ', multiplier: 2, margined: true, tag: 'intraday' }));
 ok('a share swing is on both', showsOnCard({ symbol: 'METU', multiplier: 1 }));
 ok('a futures hold is on both', showsOnCard({ symbol: 'MGC', multiplier: 10, margined: true }));
 
@@ -505,6 +506,49 @@ eq('sorted by exit date', order[0].includes('CLOSED_LAST'), true);
   ok('a close from yesterday is', !isStaleEvent({ kind: 'closed' }, fresh, now));
   ok('a level hit is never stale by this rule', !isStaleEvent({ kind: 'level' }, old, now));
   ok('a row with no dated fills is not suppressed', !isStaleEvent({ kind: 'opened' }, { fills: [] }, now));
+}
+
+// ── SECTIONS AND OPTIONS (6 Oct) ─────────────────────────────────────────────
+{
+  const today = '2026-10-06';
+  const share = (sym, pct, tag) => ({ id: sym, symbol: sym, trade: '', price: 100 * (1 + pct / 100), tag, levels: [], multiplier: 1,
+    derived: { status: 'open', avgCost: 100, side: 'long', firstDate: '2026-09-01', scaleOuts: [] }, pnl: { unrealizedPct: pct } });
+  const spread = (sym, tag, mark, extra = {}) => ({ id: sym + 'S', symbol: sym, trade: '', instrument: 'spread', multiplier: 100, tag,
+    legs: [{ right: 'P', strike: 750, expiry: '2026-11-20', side: 'long', ratio: 1 }, { right: 'P', strike: 720, expiry: '2026-11-20', side: 'short', ratio: 1 }],
+    price: mark, underlyingPx: 668.12, markSource: mark == null ? null : 'live', levels: [],
+    derived: { status: 'open', avgCost: 4.02, side: 'long', firstDate: '2026-09-22', scaleOuts: [] },
+    pnl: { unrealizedPct: mark == null ? null : +((mark - 4.02) / 4.02 * 100).toFixed(2) }, ...extra });
+
+  eq('sections in the console\'s order, empty ones dropped', sectionsOf([share('A', 1, 'hedge'), share('B', 2, 'position'), share('C', 3, null)].map(r => publicView(r, { today }))).map(s => s.key), ['position', 'hedge', 'untagged']);
+  eq('Intraday is not a section', CARD_SECTIONS.map(([k]) => k), ['position', 'swing', 'hedge', 'untagged']);
+  eq('an unknown group falls to Untagged', sectionsOf([{ ...publicView(share('Z', 1, null), { today }), group: 'intraday' }]).map(s => s.key), ['untagged']);
+
+  const card = buildCard([share('AMZN', 9, 'position'), share('MCD', -2, 'position'), share('RKLB', 16, 'swing'), share('BRNT', 3, 'hedge'), spread('SPY', 'hedge', 5.1)]);
+  const body = card.embeds[0].description;
+  ok('a heading per section, with its count', /__\*\*Positions\*\*__ · 2/.test(body) && /__\*\*Hedges\*\*__ · 2/.test(body));
+  ok('best to worst inside a section', body.indexOf('**AMZN**') < body.indexOf('**MCD**'));
+  ok('options sit in their own sub-block, after the shares', /\*\*BRNT\*\*[^\n]*\n_Options_\n[^\n]*\*\*SPY\*\* Nov20 720\/750 P/.test(body));
+  ok('the title counts options', /5 positions/.test(card.embeds[0].title));
+  const one = buildCard([share('AMZN', 9, 'position'), share('MCD', -2, 'position')]).embeds[0].description;
+  ok('a book of one kind has no headings', !/__\*\*/.test(one) && !/_Options_/.test(one));
+
+  const v = publicView(spread('SPY', 'hedge', 5.1), { today });
+  eq('an option carries its contract, underlying and clock', [v.opt, v.contract, v.under, v.dte, v.mark], [true, 'Nov20 720/750 P', 668.12, 45, 'live']);
+  const line = tradeLine(v);
+  ok('the option line', /\*\*SPY\*\* Nov20 720\/750 P 5\.10 · cost 4\.02 · \*\*\+26\.87%\*\* · SPY 668\.12 · 45 DTE · held 14d/.test(line));
+  ok('never a contract count', !/×|contracts|qty/i.test(line));
+  const unpriced = tradeLine(publicView(spread('SPY', 'hedge', null), { today }));
+  eq('premiums in cents; sub-cent ones in significant figures', [optPx(2.7368), optPx(0.4763), optPx(0.00000495)], ['2.74', '0.48', '0.00000495']);
+  ok('no mark says so, and prints no percentage', /_no live mark_/.test(unpriced) && !/%/.test(unpriced));
+  ok('an IBKR close mark is labelled', /\(IBKR close\)/.test(tradeLine(publicView(spread('SPY', 'hedge', 5.1, { markSource: 'close' }), { today }))));
+  ok('inside a week of expiry the clock is flagged', /⏳ 3 DTE/.test(tradeLine({ ...v, dte: 3 })));
+  const uStop = publicView(spread('SPY', 'hedge', 5.1, { levels: [{ kind: 'stop', at: 690, on: 'underlying' }] }), { today });
+  eq('a stop on the underlying measures against the underlying, with no R', [uStop.stop.at, uStop.stop.dist, uStop.stop.locked, uStop.r], [690, 3.3, null, null]);
+  ok('and names it', /SL SPY 690\.00/.test(tradeLine(uStop)));
+  ok('the alert names the contract', /\*\*SPY\*\* Nov20 720\/750 P/.test(buildAlert({ kind: 'opened', row: spread('SPY', 'hedge', 5.1) }).content));
+  const big = Array.from({ length: 70 }, (_, i) => share('S' + i, i - 30, ['position', 'swing', 'hedge'][i % 3]));
+  const fitted = fitSections(sectionsOf(big.map(r => publicView(r, { today }))));
+  ok('a book too big for full detail still fits', fitted.body.length <= DESC_BUDGET);
 }
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
