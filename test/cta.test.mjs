@@ -1,6 +1,7 @@
 // test/cta.test.mjs — the CTA replica (lib/cta.js), on synthetic series whose answers are known.
 import { ctaMarket, sigmaDaily, windowScore, blend, blendedFlip, stanceOf, nearestCut, ctaSummary,
-         LOOKBACKS, MIN_BARS, CTA_MARKETS, CROWDED, NEUTRAL, priceDp } from '../lib/cta.js';
+         LOOKBACKS, MIN_BARS, CTA_MARKETS, CROWDED, NEUTRAL, priceDp, globexTradeDate, closesForModel } from '../lib/cta.js';
+import { closeBeforeFrom } from '../lib/yahoo.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const ok = (n, c) => eq(n, !!c, true);
@@ -112,6 +113,41 @@ const N = MIN_BARS + 20;
   eq('crowded names both', s.crowded, ['ES', 'ZN']);
   ok('and names the nearest flip', ['ES', 'ZN'].includes(s.nearest.key));
   eq('nothing usable, no summary', ctaSummary([{ ok: false }]), null);
+}
+
+
+// ── THE GLOBEX EVENING (7 Oct 2026) ──────────────────────────────────────────
+// From 18:00 New York Yahoo keeps updating the finished day's bar with the live price. The model
+// must read the live price as the NEXT session's, so its references are the ones the settled run
+// already quoted for the next close.
+{
+  eq('before 18:00 New York the trade date is today', globexTradeDate(new Date('2026-10-07T21:30:00Z')), '2026-10-07');
+  eq('from 18:00 it is the next day', globexTradeDate(new Date('2026-10-07T22:48:00Z')), '2026-10-08');
+  eq('Sunday evening is Monday', globexTradeDate(new Date('2026-10-11T22:30:00Z')), '2026-10-12');
+  eq('in winter too (EST)', globexTradeDate(new Date('2026-12-02T23:30:00Z')), '2026-12-03');
+
+  const c = series(N, { drift: 0.001 });
+  const bars = c.map((x, i) => ({ date: new Date(Date.UTC(2025, 0, 1) + i * 86400000).toISOString().slice(0, 10), close: x }));
+  const lastDate = bars.at(-1).date, next = new Date(Date.parse(lastDate) + 86400000).toISOString().slice(0, 10);
+  const settledRun = ctaMarket(c, { live: false });                  // after the 17:00 close
+  const livePx = c.at(-1) * 0.998;                                   // the evening's live price
+  const yahoo = [...bars.slice(0, -1), { ...bars.at(-1), close: livePx }];  // the bar Yahoo serves
+  const m = closesForModel(yahoo, { live: true, tradeDate: next, settled: c.at(-1) });
+  eq('the evening: live price appended as the next session, the day put back to its close', [m.evening, m.date, m.closes.length, m.closes.at(-2), m.closes.at(-1)], [true, next, N + 1, c.at(-1), livePx]);
+  const evening = ctaMarket(m.closes, { live: true });
+  eq('…so every window flips at the level the settled run quoted for the next close', evening.windows.map(w => w.flip), settledRun.windows.map(w => w.flip));
+  const naive = ctaMarket(yahoo.map(b => b.close), { live: true });
+  ok('(read as Yahoo serves it, the references were a day stale)', naive.windows[1].flip !== settledRun.windows[1].flip);
+  eq('without the 17:00 close the bar is kept as served', closesForModel(yahoo, { live: true, tradeDate: next }).closes.at(-2), livePx);
+  eq('in the day session nothing changes', closesForModel(bars, { live: true, tradeDate: lastDate }).evening, false);
+  eq('nor when the market is shut', closesForModel(bars, { live: false, tradeDate: next }).evening, false);
+
+  // The hourly series: the last bar of the day that started before 17:00 New York (EDT, −4h).
+  const t = (iso) => Date.parse(iso) / 1000;
+  const result = { meta: { gmtoffset: -14400 }, timestamp: [t('2026-10-07T19:00:00Z'), t('2026-10-07T20:00:00Z'), t('2026-10-07T22:00:00Z'), t('2026-10-07T23:00:00Z')],
+    indicators: { quote: [{ close: [4135.5, 4136.7, 4133.1, 4134.4] }] } };
+  eq('the 17:00 close from the hourly bars', closeBeforeFrom(result, '2026-10-07'), 4136.7);
+  eq('none for a day the series lacks', closeBeforeFrom(result, '2026-10-06'), null);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
