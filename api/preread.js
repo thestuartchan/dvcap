@@ -1054,7 +1054,8 @@ async function runRegion(region, req) {
     // are marked with their day, and yesterday's names that have since broken out are added at the
     // bottom. Today's list is kept in this brief's snapshot for tomorrow.
     const mem = watchMemory(setups(wrows, { earnings, today, tomorrow }), previous?.snap?.watch || null, rowsBySym, { today });
-    if (blocks.snap) blocks.snap.watch = watchSnap(mem.list, today);
+    // Today's list, plus yesterday's names that dropped off unmoved — carried one more brief.
+    if (blocks.snap) blocks.snap.watch = watchSnap(mem.list, today, { carry: mem.carry });
     blocks.watchLines = renderSetups(mem.list, { extended: extendedLine(movers, rowsBySym), breakouts: mem.breakouts });
   } catch { blocks.watchLines = null; }
   // TREND FUNDS — the CTA replica's read, from the same cached book the Daily tab shows. Best-effort

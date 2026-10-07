@@ -159,7 +159,7 @@ const coilBars = () => bars({ last: [...Array.from({ length: 13 }, () => ({ high
     { sym: 'TSLA', name: 'TSLA', price: 250, tags: [{ kind: 'coil', pctile: 5, text: 'coiled' }] },
     { sym: 'INTC', name: 'INTC', price: 30, tags: [] },
   ], '2026-10-05');
-  eq('the snapshot keeps the level a name sat at', yesterday[0], { sym: 'NVDA', name: 'NVDA', price: 119, days: 1, date: '2026-10-05', level: { name: 'the 50-day average', v: 119.5 } });
+  eq('the snapshot keeps the level a name sat at', yesterday[0], { sym: 'NVDA', name: 'NVDA', price: 119, days: 1, date: '2026-10-05', listedOn: '2026-10-05', level: { name: 'the 50-day average', v: 119.5 } });
   const rows = new Map([
     ['NVDA', { price: 121, setup: { atr: 3 } }],          // +2 from 119, 0.7 ATR, but through the 50-day: broke out
     ['MU', { price: 103, setup: { atr: 2 } }],            // +3, 1.5 ATR and through the 52-week high
@@ -176,8 +176,22 @@ const coilBars = () => bars({ last: [...Array.from({ length: 13 }, () => ({ high
   const L = text.split('\n');
   ok('the repeat is marked "2nd day"', /\*\*NVDA\*\* · 121.00 · _2nd day_ — /.test(L[0]));
   ok('…with its break inline', /broke out \+1\.7% since yesterday's list \(0\.7 ATR\), through the 50-day average \(119\.50\)$/.test(L[0]));
-  eq('the bottom lines', L.slice(2), ['↗ **Micron** `MU` · 103.00 — broke out +3.0% since yesterday\'s list (1.5 ATR), through the 52-week high (101.00)',
+  eq('breakouts sit apart from the list, under their own heading', L.slice(2), ['', '__Moved since listed__',
+                                     '↗ **Micron** `MU` · 103.00 — broke out +3.0% since yesterday\'s list (1.5 ATR), through the 52-week high (101.00)',
                                      '↘ **INTC** · 28.50 — broke down -5.0% since yesterday\'s list (1.5 ATR)']);
+  ok('a repeat that broke out stays in the list, not the mini-section', !/NVDA/.test(L.slice(2).join('\n')));
+  // ── TWO DAYS (7 Oct): TSLA dropped off unmoved, so it is carried one more brief ──
+  eq('the unmoved name that dropped off is carried', m.carry.map(c => [c.sym, c.price, c.listedOn]), [['TSLA', 250, '2026-10-05']]);
+  const snap2 = watchSnap(m.list, '2026-10-06', { carry: m.carry });
+  eq('today\'s snapshot is the list plus the carried name', snap2.map(x => [x.sym, !!x.carried]), [['NVDA', false], ['AMD', false], ['TSLA', true]]);
+  const day3 = [{ sym: 'AMD', name: 'AMD', price: 151, tags: [] }];
+  const rows3 = new Map([['TSLA', { price: 230, setup: { atr: 8 } }], ['AMD', { price: 151, setup: { atr: 4 } }], ['NVDA', { price: 121.5, setup: { atr: 3 } }]]);
+  const m3 = watchMemory(day3, snap2, rows3, { today: '2026-10-07' });
+  eq('a carried name that breaks down on day two is caught', m3.breakouts.map(b => [b.sym, b.up, b.atr]), [['TSLA', false, 2.5]]);
+  ok('and says which list it was on', /broke down -8\.0% since the 5 Oct list \(2\.5 ATR\)/.test(renderSetups(m3.list, { breakouts: m3.breakouts })));
+  eq('a name carried once is let go, not carried again', watchSnap(m3.list, '2026-10-07', { carry: m3.carry }).filter(x => x.carried).map(x => x.sym), ['NVDA']);
+  const back = watchMemory([{ sym: 'TSLA', name: 'TSLA', price: 250, tags: [] }], snap2, new Map([['TSLA', { price: 250, setup: { atr: 8 } }]]), { today: '2026-10-07' });
+  eq('a carried name back on the list starts again at day one', back.list[0].days, 1);
   for (const l of L) ok(`observational: ${l.slice(0, 40)}`, assertObservational(l).ok);
   eq('no snapshot, no memory', watchMemory(today, null, rows, { today: '2026-10-06' }).breakouts, []);
 }
