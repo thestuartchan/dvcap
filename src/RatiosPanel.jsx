@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { C, alpha } from "./theme.js";
 import { Card } from "./ui.jsx";
-import { CARDS, LEGS, LEGEND, buildCard, summaryLine } from "../lib/ratios.js";
+import { CARDS, LEGS, LEGEND, buildCard, summaryRead, turning } from "../lib/ratios.js";
 
 const TONE = { boom: C.blue, caution: C.amber, healthy: C.green, unhealthy: C.red, neutral: C.muted };
 const signedPct = (v, dp = 1) => (v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v * 100).toFixed(dp)}%`);
@@ -49,6 +49,7 @@ function HowTo() {
           <div style={{ marginTop: 6 }}>⬆ <b style={{ color: C.text }}>Line rising:</b> the first one is beating the second (it went up more, or fell less).</div>
           <div>⬇ <b style={{ color: C.text }}>Line falling:</b> the second one is winning.</div>
           <div style={{ marginTop: 6 }}>Both can be falling in dollars while the ratio rises. The ratio only shows who is <i>winning</i>.</div>
+          <div style={{ marginTop: 6 }}><b style={{ color: C.text }}>Colours:</b> <span style={{ color: C.blue, fontWeight: 700 }}>blue</span> or <span style={{ color: C.green, fontWeight: 700 }}>green</span> = the line is rising, the first name is winning; <span style={{ color: C.amber, fontWeight: 700 }}>amber</span> or <span style={{ color: C.red, fontWeight: 700 }}>red</span> = falling, the second name is winning. The AI cards use blue/amber because neither side is good or bad; the risk cards use green/red because rising is the healthier reading.</div>
           <div style={{ marginTop: 6, color: C.muted, fontSize: 12.5 }}>Each card's shaded band is where the ratio traded over the previous 60 sessions. A close outside it is a range break; the 1-year bar shows where today sits between the year's low (0%) and high (100%).</div>
         </div>
       )}
@@ -138,7 +139,9 @@ function RatioCard({ b }) {
             <YearBar s={s} colour={colour} />
           </div>
           <RatioChart chart={s.chart} colour={colour} card={card} />
-          <div style={{ fontSize: 14, color: C.text, lineHeight: 1.5 }}><b style={{ color: colour }}>NOW:</b> {b.now}</div>
+          <div style={{ fontSize: 14, color: C.text, lineHeight: 1.5 }}><b style={{ color: colour }}>NOW:</b> {b.now}
+            {turning(s) && <div style={{ fontSize: 12.5, color: C.mid, marginTop: 2 }}>↻ {turning(s)}</div>}
+          </div>
           <div style={{ fontSize: 13, color: C.mid, lineHeight: 1.55 }}>
             <div>⬆ <b>Rising</b> = <Rich text={card.up} /></div>
             <div>⬇ <b>Falling</b> = <Rich text={card.down} /></div>
@@ -152,20 +155,52 @@ function RatioCard({ b }) {
   );
 }
 
+// The key: each colour named, in words, next to its swatch.
+const Swatch = ({ c }) => <span style={{ width: 14, height: 4, borderRadius: 2, background: c, display: "inline-block", flex: "0 0 auto" }} />;
 function Group({ title, legend, swatches, cards }) {
   return (
     <div style={{ marginBottom: 18 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", margin: "4px 2px 10px" }}>
-        <span style={{ fontSize: 13, letterSpacing: 2, textTransform: "uppercase", fontWeight: 800, color: C.lbl }}>{title}</span>
-        <span style={{ fontSize: 12.5, color: C.mid, display: "inline-flex", alignItems: "center", gap: 6 }}>
-          {swatches.map(c => <span key={c} style={{ width: 12, height: 4, borderRadius: 2, background: c, display: "inline-block" }} />)}
-          {legend}
-        </span>
+      <div style={{ margin: "4px 2px 10px" }}>
+        <div style={{ fontSize: 13, letterSpacing: 2, textTransform: "uppercase", fontWeight: 800, color: C.lbl }}>{title}</div>
+        <div style={{ display: "flex", gap: "4px 18px", flexWrap: "wrap", marginTop: 5, fontSize: 12.5, color: C.mid }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><Swatch c={swatches[0]} />{legend.up}</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><Swatch c={swatches[1]} />{legend.down}</span>
+          {legend.note && <span style={{ color: C.muted }}>{legend.note}</span>}
+        </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 420px), 1fr))", gap: 14 }}>
         {cards.map(b => <RatioCard key={b.card.id} b={b} />)}
       </div>
     </div>
+  );
+}
+
+// ── THE READ ── a headline, then per group: what is happening, and what it implies.
+function Summary({ built }) {
+  const r = summaryRead(built);
+  return (
+    <Card style={{ marginBottom: 16, padding: "13px 16px", background: C.metricBg }}>
+      {r.headline && <div style={{ fontSize: 15.5, fontWeight: 800, color: C.text, lineHeight: 1.45 }}>{r.headline}</div>}
+      <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+        {r.rows.map(row => (
+          <div key={row.key} style={{ display: "flex", gap: 10 }}>
+            <span style={{ width: 4, borderRadius: 2, background: TONE[row.tone] || C.muted, flex: "0 0 auto" }} />
+            <div style={{ fontSize: 13.5, lineHeight: 1.55, color: C.mid }}>
+              <b style={{ color: C.text }}>{row.label}</b> <span style={{ color: TONE[row.tone] || C.muted, fontWeight: 700 }}>· {row.count}</span>
+              <div style={{ color: C.text }}>{row.read}</div>
+              <div><b style={{ color: C.text }}>So what:</b> {row.soWhat}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 12.5, color: C.mid, marginTop: 10 }}>
+        {r.breaks.length
+          ? <><b style={{ color: C.text }}>Range breaks today:</b> {r.breaks.join(", ")}: closed outside the previous 60 sessions' range, so the move is speeding up.</>
+          : "No range breaks today: every ratio closed inside its previous 60 sessions' range."}
+        {r.stale ? ` ${r.stale} card${r.stale === 1 ? " is" : "s are"} waiting on data.` : ""}
+      </div>
+      <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Daily closes through {dayY(built.find(b => b.stats)?.stats.date)} · rising and falling are the 20-day move · refreshed after the US close</div>
+    </Card>
   );
 }
 
@@ -193,10 +228,7 @@ export function RatiosPanel() {
       {!built && !err && <Card style={{ marginBottom: 14, color: C.muted }}>Loading two years of daily closes…</Card>}
       {built && (
         <>
-          <Card style={{ marginBottom: 16, padding: "12px 16px", background: C.metricBg }}>
-            <div style={{ fontSize: 14.5, fontWeight: 800, color: C.text, lineHeight: 1.5 }}>{summaryLine(built)}</div>
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>Daily closes through {dayY(built.find(b => b.stats)?.stats.date)} · rising and falling are the 20-day move · refreshed after the US close</div>
-          </Card>
+          <Summary built={built} />
           <Group title="AI cycle" legend={LEGEND.ai} swatches={[C.blue, C.amber]} cards={built.filter(b => b.card.group === "ai")} />
           <Group title="Risk appetite" legend={LEGEND.risk} swatches={[C.green, C.red]} cards={built.filter(b => b.card.group === "risk")} />
         </>
