@@ -4409,7 +4409,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           <span style={{ marginLeft: "auto", fontSize: 12.5 }} title={rm.reasons.join(' · ')}>
             {rm.source === "measured" ? (<>
               <span style={{ color: C.lbl, fontWeight: 700 }}>size ×</span> <b style={{ color: C.text }}>{rm.mult.toFixed(2)}</b>
-              <span style={{ color: C.muted, fontSize: 11.5 }}> (regime mix ×{rm.base.toFixed(2)} · conditions ×{rm.condMult}{rm.creditCapped ? ` · credit cap ×${CREDIT_DANGER_CAP_LABEL.replace(/^×/, "")}` : ""})</span>
+              <span style={{ color: C.muted, fontSize: 11.5 }}> = regime mix ×{rm.base.toFixed(2)} × conditions ×{rm.condMult} ({rm.band}){rm.creditCapped ? ` · credit cap ×${CREDIT_DANGER_CAP_LABEL.replace(/^×/, "")}` : ""}</span>
             </>) : (<>
               <span style={{ color: C.lbl, fontWeight: 700 }}>regime ×</span> <b style={{ color: liveRegime?.color }}>{rm.mult.toFixed(2)}</b>
               <span style={{ color: C.muted, fontSize: 11.5 }}> ({rm.reasons[rm.reasons.length - 1]} · consensus — the measured state has not loaded)</span>
@@ -4494,7 +4494,10 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
             })}
           </div>
           <div style={{ fontSize: 11, color: C.lbl, marginTop: 6 }}>{rm.source === "measured"
-            ? <>The size uses all four, weighted by the measured probabilities, times the conditions band (calm ×1 · caution ×0.8 · stress ×0.6 · crisis ×0.4). Credit-DANGER caps it at {CREDIT_DANGER_CAP_LABEL}.</>
+            ? <>Each box is that regime's own multiplier; the highlighted one is the most likely regime, not the size. The size blends all four by their measured odds, then applies the conditions band (calm ×1 · caution ×0.8 · stress ×0.6 · crisis ×0.4). Credit-DANGER caps it at {CREDIT_DANGER_CAP_LABEL}.
+              {rm.mix && <div style={{ marginTop: 4, color: C.mid, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                Today: {rm.mix.map(t => `${t.prob}% × ${+t.mult.toFixed(2)}`).join(" + ")} = ×{rm.base.toFixed(2)} · × {rm.condMult} ({rm.band}) = <span style={{ color: C.text }}>×{(rm.base * rm.condMult).toFixed(2)}</span>{rm.creditCapped ? ` → capped at ${CREDIT_DANGER_CAP_LABEL} (credit danger)` : ""}
+              </div>}</>
             : <>The measured state has not loaded, so the size uses the consensus regime alone. Credit-DANGER caps the multiplier at {CREDIT_DANGER_CAP_LABEL}; a contested, pinned≠live or stale consensus takes a further haircut (×0.7 at most).</>}</div>
         </div>
         </>)}

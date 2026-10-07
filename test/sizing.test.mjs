@@ -19,6 +19,10 @@ eq('unknown regime is conservative', regimeMultiplier({regimeId:'zzz'}).mult, 0.
   eq('measured: 0.27·1 + 0.20·0.8 + 0.22·0.6 + 0.31·0.4 = 0.686, × caution 0.8', [m.source, m.base, m.condMult, m.mult], ['measured', 0.686, 0.8, 0.549]);
   eq('…and the retired consensus figure is no longer carried beside it', m.legacy, undefined);
   eq('crisis plays the credit-danger cap', regimeMultiplier({ regimeId: 'ref', state: { probs: { ref: 100 }, band: 'crisis' } }).mult, CREDIT_DANGER_CAP);
+  // 8 Oct: Reflationary Growth's box reads 1, the size reads ×0.60 — the mix and the band.
+  const today = regimeMultiplier({ state: { probs: { ref: 36, inf: 26, stag: 16, def: 22 }, band: 'caution' } });
+  eq('the mix on 8 Oct: 36%×1 + 26%×0.8 + 16%×0.6 + 22%×0.4 = ×0.75, × caution 0.8 = ×0.60', [today.base, today.condMult, today.band, today.mult], [0.752, 0.8, 'caution', 0.602]);
+  eq('…with every term carried for the screen', today.mix.map(t => [t.id, t.prob, t.mult]), [['ref', 36, 1], ['inf', 26, 0.8], ['stag', 16, 0.6], ['def', 22, 0.4]]);
   eq('the Console\'s own regime multipliers are honoured', regimeMultiplier({ state: { probs: { stag: 100 }, band: 'calm' }, sizing: { stag: { mult: 0.5 } } }).mult, 0.5);
   eq('no measured state: the consensus path, unchanged', [regimeMultiplier({ regimeId: 'stag', state: null }).mult, regimeMultiplier({ regimeId: 'stag', state: null }).source], [0.6, 'consensus']);
   eq('…nor with a band it does not know', regimeMultiplier({ regimeId: 'stag', state: { probs, band: 'zzz' } }).source, 'consensus');
