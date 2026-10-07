@@ -18,13 +18,14 @@ const now = new Date('2026-09-25T12:30:00Z');
 const s = ctaSection(book, { now });
 const lines = s.split('\n');
 {
-  eq('one line per market, biggest first, then the note', lines.length, 7);
+  eq('one line per market, biggest first, then the two-line key', lines.length, 8);
   eq('the crowded short leads', lines[0], '• **10Y note** max short 100% · crowded');
   eq('a crowded long, with its week\'s arrow', lines[2], '• **Nasdaq** max long 82% ▲ · crowded');
   eq('a near trigger sits on its own market\'s line', lines[3], '• **S&P** long 76% ▲ — model selling starts below **7,690** (−1.3%)');
   eq('a far trigger is not shown', lines[1], '• **crude** max long 84% · crowded');
   eq('neutral, with the level that tips it', lines[5], '• **gold** neutral — tips net short below **4,273.95** (−1.4%)');
-  eq('and it says what it is, and what the marks mean', lines[6], '• _A model of trend funds, not their orders · levels apply to the close · crowded = 80%+ · ▲▼ = a 20-point move this week_'.slice(2));
+  eq('the key says what the numbers and marks mean', lines[6], '_How to read: % = share of the model\'s maximum long or short · crowded = 80%+ (little left to add, the most to unwind if the trend turns) · ▲▼ = a 20-point move this week_');
+  eq('then what a level is, and what it is not', lines[7], '_A level = the daily close that sets the funds trading the other way, shown when within 3 normal days; an intraday poke through it does not count · a model of trend funds, not their orders_');
   for (const l of lines) ok(`observational: "${l.replace(/\*/g, '').slice(2, 40)}"`, assertObservational(l).ok);
 }
 {
