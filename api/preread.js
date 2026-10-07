@@ -42,6 +42,7 @@ const wallAgreementBoth = (grid, callWall, putWall) => {
 import { watchlist } from '../lib/watchlist.js';
 import { ladderImages, ladderSvg, renderPng } from '../lib/gexImage.js';
 import { setups, setupCandidates, renderSetups, extendedLine, watchMemory, watchSnap } from '../lib/watchSetup.js';
+import { regionTapes } from '../lib/regionTape.js';
 import { earningsCached } from '../lib/catalystFeed.js';
 import { WATCH_UNIVERSE } from '../data/watchUniverse.js';
 import {
@@ -775,6 +776,7 @@ export function assembleDiscord(region, label, blocks) {
     `${emoji} **DAILY PRE-READ · ${label} · ${now}Z**`,
     // Prominent half-day warning right under the header (only when applicable).
     ...(blocks.halfDayNote ? [blocks.halfDayNote] : []),
+    ...(blocks.regionTapeLine ? [blocks.regionTapeLine] : []),
     ...sections.flatMap(s => [RULE, s]),
     RULE,
     `*👉 = what the arrangement is consistent with, never what to do · "prior close" = that market was shut when the price was taken*`,
@@ -967,6 +969,12 @@ async function runRegion(region, req) {
 
   const blocks = buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox,
     { leaning, composed, auctions, monetization, handoff, smicAH, foreign: extraQuotes, prevSnap: previous?.snap || null });
+  // THE REGION'S OWN TAPE, FIRST (lib/regionTape.js). A pre-read fires before its market opens, so
+  // this is the LAST session, dated. Omitted rather than faked if the bars do not come back.
+  try {
+    const rt = (await regionTapes([region]))?.[region];
+    if (rt && rt.direction !== 'unavailable') blocks.regionTapeLine = `🧭 **LAST SESSION** · ${rt.line}${rt.asOf ? ` · ${rt.asOf.slice(5)}` : ''}`;
+  } catch { /* the brief goes out without it */ }
 
   // ── THE TWO NEW SECTIONS ───────────────────────────────────────────────────
   // Both are best-effort and both are omitted rather than faked. The option book is the same in

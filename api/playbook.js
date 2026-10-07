@@ -28,7 +28,7 @@ export default async function handler(req, res) {
   const assembled = await assembleRegion(region);
   if (!assembled) return res.status(400).json({ error: 'bad region' });
 
-  const { R, quotes, idxRaw, macro, regime, cross, hyg, leaning, csop7709, volTerm, handoff, scenarios, scenarioBoard, posture, smhSoxx, fxPnl, correlation, events, read, marketRegime, ladder, fx, won, intervention, contamination, interventionAuto, auctions, vintages, monetization } = assembled;
+  const { R, quotes, idxRaw, macro, regime, cross, hyg, leaning, csop7709, volTerm, handoff, scenarios, scenarioBoard, posture, regionTape, smhSoxx, fxPnl, correlation, events, read, marketRegime, ladder, fx, won, intervention, contamination, interventionAuto, auctions, vintages, monetization } = assembled;
 
   // Attach display metadata + structure tag to each name, and names to indices.
   // `session` = explicit phase of that symbol's OWN exchange (live/pre/post/lunch/holiday/
@@ -70,6 +70,7 @@ export default async function handler(req, res) {
     scenarios,            // the scenario board — nine on settled 20-session trends, plus Korea and China from their feeds
     scenarioBoard,        // its as-of close, one-line summary and groups
     posture,              // A1 — headline POSTURE card (deterministic synthesis)
+    regionTape,           // each region's own tape, the strip beside the master board
     read,                 // Stage 4 — composed deterministic READ (no model call)
     marketRegime,         // P0.1 — cross-asset regime read (incl. HAWKISH_RATES_REPRICING)
     ladder,               // P5  — concentration ladder + single-theme alert

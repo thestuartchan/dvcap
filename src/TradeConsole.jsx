@@ -62,6 +62,7 @@ import { REGIME_SIZING, regimeMultiplier, sizeSuggestion, equityFreshness, EQUIT
 import { companyName } from "../lib/companyNames.js";
 import { tickerHint, resolvedLabel } from "../lib/tickerHints.js";
 import { moveGroupOnto } from "../lib/reorder.js";
+import { snapshotOf, writeSnapshot } from "../lib/bookSnapshot.js";
 import { syncStatus } from "../lib/flexStatus.js";
 import { FACTORS, FACTOR_SYMBOLS, TAGS, tagOf, LIST_GROUPS, listGroupOf, groupCounts, sortByGroup, filterByGroups, holdingsOf, factorExposure, scenarioPnl, overnightFlag } from "../lib/factorExposure.js";
 
@@ -3107,6 +3108,9 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   // Every exposure figure in the base currency, at the live rate (unrealised P&L uses spot too).
   const exposureToBase = useCallback((v, ccy) => convert(v, ccy || "USD", baseCcy, fxRates), [baseCcy, fxRates]);
   const bookX = useBookExposure(exposureRows, equityBase, cashBook, exposureToBase, settings.sizerExempt ?? null);
+  // THE BOOK, SUMMARISED FOR THE READ-ONLY SCREENS (lib/bookSnapshot.js): the Market State
+  // playbooks and the stance card measure their stage against it. This browser's storage only.
+  useEffect(() => { const snap = snapshotOf(bookX.book, baseRows); if (snap) writeSnapshot(snap); }, [bookX.book, baseRows]);
   const feedGreeks = bookX.live?.greeks || EMPTY_OBJ;
   const feedSpots = bookX.live?.spots || EMPTY_OBJ;
   const todayISO = new Date().toISOString().slice(0, 10);

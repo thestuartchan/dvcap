@@ -21,6 +21,7 @@ import { unInversionPhase, yieldCurveStatus, NORMAL_SPREAD } from "../lib/yieldc
 import { pendingReconciliations, reconStats } from "../lib/recon.js";
 import {  } from "../lib/regimeProb.js";
 import { applyRegimeGuard } from "../lib/posture.js";
+import { readSnapshot, bookLine, ageText } from "../lib/bookSnapshot.js";
 import { regimeFlipsIf } from "../lib/regime.js";
 import { minersPairImplication } from "../lib/regimeState.js";
 import { southboundTrend, southboundLevelTrend, southboundRead, ahPremiumRead, sbStale } from "../lib/southbound.js";
@@ -31,7 +32,7 @@ import { buildViews, evaluateViews, regimeCluster, divergenceRead } from "../lib
 import { fmtCcy } from "../lib/fxrates.js";
 import { realizedCurve } from "../lib/positions.js";
 import { DEFAULT_TARGET_PCT } from "../lib/sizing.js";
-import { computeMarketState, stateLogRow } from "../lib/marketState.js";
+import { computeMarketState, stateLogRow, STAGE_LABEL } from "../lib/marketState.js";
 import { StateView, DriversView, FeedHealth, StreetCompare, Fold, CrossCheckHealth } from "./MarketState.jsx";
 import { PlanView } from "./PlanView.jsx";
 import { expectedRank } from "../lib/plan.js";
@@ -3771,7 +3772,31 @@ const PostureRow = ({ label, children, color }) => (
   </div>
 );
 
-function PostureCard({ p: raw, regime = null, tape = null }) {
+// The tie-breaker between the two gold-down/bonds-down states. On any other day it decides nothing,
+// and on 2026-10-07 it printed "defensives BID → flight to safety" beside "Reflationary growth".
+const DISCRIMINATES = new Set(["HAWKISH_RATES_REPRICING", "DEFLATIONARY_RECESSION"]);
+const TAPE_TONE = { "risk-off": C.red, "risk-on": C.green, mixed: C.amber };
+function RegionChips({ rt }) {
+  const order = ["asia", "eu", "us"].filter(k => rt?.[k]);
+  if (!order.length) return null;
+  return (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+      {order.map(k => {
+        const r = rt[k], col = TAPE_TONE[r.direction] || C.muted;
+        return (
+          <span key={k} title={`${r.line}${r.asOf ? ` · session of ${r.asOf}` : ""}`} style={{ fontSize: 11.5, fontWeight: 700, color: C.mid, background: C.surf,
+            border: "1px solid " + (TAPE_TONE[r.direction] ? alpha(col, 0.45) : C.bdr), borderRadius: 999, padding: "2px 10px", maxWidth: "100%" }}>
+            <b style={{ color: C.text }}>{r.label}</b> <b style={{ color: col }}>{r.direction}</b>
+            {r.direction !== "unavailable" && r.direction !== "quiet" ? <span> · {r.text}</span> : null}
+            {r.fx ? <span style={{ color: r.fx.weak ? C.amber : C.muted }}> · {r.fx.text}</span> : null}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function PostureCard({ p: raw, regime = null, tape = null, layers = null, regionTape = null }) {
   // The regime probability is computed HERE, in the client, off user-set recession weights — so
   // it arrives after composePosture has already run on the server. The guard is therefore applied
   // to the composed object rather than reimplemented: "Stagflation 71%" and "RISK-ON" cannot both
@@ -3796,6 +3821,17 @@ function PostureCard({ p: raw, regime = null, tape = null }) {
           </span>
         )}
       </div>
+      {/* WHERE THE STRESS SITS — each region's own tape, beside the one board (lib/regionTape.js). */}
+      <RegionChips rt={regionTape} />
+      {/* THREE LAYERS, EACH WITH ITS CLOCK. On 2026-10-07 a weeks-long regime, a days-long scenario
+          and today's tape sat on one card unlabelled, and read as a contradiction. */}
+      {(layers?.regime || layers?.conditions || p.tape?.pattern) && (
+        <div style={{ display: "flex", gap: "4px 14px", flexWrap: "wrap", marginTop: 8, fontSize: 12, color: C.mid }}>
+          {layers?.regime && <span><b style={{ fontSize: 10, color: C.muted, letterSpacing: 0.5, textTransform: "uppercase" }}>Regime · weeks</b> <b style={{ color: C.text }}>{layers.regime}</b></span>}
+          {layers?.conditions && <span><b style={{ fontSize: 10, color: C.muted, letterSpacing: 0.5, textTransform: "uppercase" }}>Conditions · days</b> <b style={{ color: C.text }}>{layers.conditions}</b></span>}
+          {p.tape?.pattern && <span><b style={{ fontSize: 10, color: C.muted, letterSpacing: 0.5, textTransform: "uppercase" }}>Tape · today</b> <b style={{ color: TAPE_TONE[p.tape.direction] || C.text }}>{p.tape.pattern.label}</b></span>}
+        </div>
+      )}
       {/* THE TAPE, SHOWN AS LEGS. A stance whose inputs are not visible is one nobody can check
           against their own screen — which is how RISK-ON survived a render that contradicted it
           in eleven places. Each leg carries its own daily range, so a tick that was too small to
@@ -3803,6 +3839,7 @@ function PostureCard({ p: raw, regime = null, tape = null }) {
       {p.tape?.legs?.length > 0 && (
         <PostureRow label="Tape" color={p.tape.direction === "risk-off" ? C.red : p.tape.direction === "risk-on" ? C.green : C.mid}>
           <span style={{ fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.3 }}>{p.tape.direction}</span>
+          {p.tape.unconfirmed && <span style={{ color: C.muted, fontWeight: 600 }}> (equities not confirming)</span>}
           {p.tape.legs.map(l => (
             <span key={l.name} title={l.why || undefined} style={{ marginLeft: 8, fontVariantNumeric: "tabular-nums",
               color: l.vote == null ? C.lbl : l.vote < 0 ? C.red : l.vote > 0 ? C.green : C.lbl }}>
@@ -3820,7 +3857,8 @@ function PostureCard({ p: raw, regime = null, tape = null }) {
       {tape && tape.state !== "INSUFFICIENT_DATA" && (
         <PostureRow label="Read" color={tape.color || C.mid}>
           <span style={{ fontWeight: 800 }}>{tape.label}</span>
-          {tape.discriminator ? <span style={{ color: C.mid, fontWeight: 600 }}> — {tape.discriminator}</span> : null}
+          <span style={{ color: C.muted, fontWeight: 600 }}> · today's rotation</span>
+          {tape.discriminator && DISCRIMINATES.has(tape.state) ? <span style={{ color: C.mid, fontWeight: 600 }}> — {tape.discriminator}</span> : null}
           {tape.reasons?.length > 0 && <div style={{ color: C.muted, fontWeight: 500, marginTop: 2, lineHeight: 1.45 }}>{tape.reasons.join(" · ")}</div>}
           {tape.corroboration && !tape.corroboration.available && (
             <div style={{ color: C.amber, fontWeight: 700, marginTop: 2 }}>{tape.corroboration.note}</div>
@@ -3841,11 +3879,29 @@ function PostureCard({ p: raw, regime = null, tape = null }) {
           {p.blockedBy.map((b, i) => <div key={i} style={{ marginTop: i ? 2 : 0 }}>· {b}</div>)}
         </PostureRow>
       )}
-      {p.do?.length > 0 && (
-        <PostureRow label="Do">
-          {p.do.map((d, i) => <div key={i} style={{ marginTop: i ? 2 : 0 }}>→ {d}</div>)}
-        </PostureRow>
-      )}
+      {/* THE SCORE, ITEMISED — every point and its source, against the thresholds that decide. */}
+      {p.scoreText && <PostureRow label="Score">{p.scoreText}</PostureRow>}
+      {/* DO, AS INSTRUCTIONS: new risk, the book against the limits, the hedge — then the closest
+          IF/THEN playbook's current stage, the live book (this browser), and the scenario context. */}
+      {(p.plan || p.do?.length > 0) && (() => {
+        const t = (layers?.transitions || []).find(x => x.playbook && x.stage && x.stage !== "watch");
+        const snap = readSnapshot();
+        const bl = t && snap ? bookLine(t.id === "growthRolls" && !/Stagflation/.test(t.title) ? "growthBust" : t.id, snap) : null;
+        return (
+          <PostureRow label="Do">
+            {p.plan?.newRisk && <div><b style={{ color: C.text }}>New risk:</b> {p.plan.newRisk}</div>}
+            {p.plan?.book && <div style={{ marginTop: 2 }}><b style={{ color: C.text }}>Book:</b> {p.plan.book}{snap ? <span style={{ color: C.text }}> Now: gross {snap.gross?.toFixed(2)}× · swing {snap.swingX == null ? "—" : `${snap.swingX.toFixed(2)}×`} <span style={{ color: C.lbl, fontWeight: 500 }}>({ageText(snap)})</span></span> : null}</div>}
+            {p.plan?.hedge && <div style={{ marginTop: 2 }}><b style={{ color: C.text }}>Hedge:</b> {p.plan.hedge}{snap?.hedges?.length ? <span style={{ color: C.text }}> Held: {snap.hedges.join(", ")}.</span> : null}</div>}
+            {t && (
+              <div style={{ marginTop: 4 }}>
+                <b style={{ color: C.text }}>{t.title} · {STAGE_LABEL[t.stage]} ({t.proximity >= 100 ? "triggered" : `${t.proximity}%`}):</b> {t.playbook[t.stage]?.[0]}
+                {bl ? <span style={{ color: C.text }}> — {bl}</span> : null}
+              </div>
+            )}
+            {p.do?.length > 0 && <div style={{ marginTop: 4, color: C.muted, fontWeight: 500 }}>Context: {p.do.join(" · ")}</div>}
+          </PostureRow>
+        );
+      })()}
       {p.watch && <PostureRow label="Watch" color={C.amber}>{p.watch}</PostureRow>}
       {/* FLIPS IF — the condition, in the stance's own terms, from the same branches that chose
           it. WATCH is what to look at; this is what has to happen. It used to exist only on the
@@ -5080,7 +5136,7 @@ function DataFold({ children }) {
   );
 }
 
-function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updated, onRefresh, fmtTime, reconSummary, liveIntervention, regime = null }) {
+function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updated, onRefresh, fmtTime, reconSummary, liveIntervention, regime = null, layers = null }) {
   // Both All and single-region are filtered views of ONE spine. `active` = loaded data for
   // the selected region(s); `data` (= first active) backs the global macro strip + calendar.
   const active = regions.map(r => byRegion[r]).filter(Boolean);
@@ -5154,7 +5210,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
               Rates → everything else. The synthesis cluster leads; raw data and the book-specific
               tell cards (handoff / correlation / FX / events) drop to "everything else" below. */}
           {/* A1 — POSTURE headline: the single "what to do" card, above everything. */}
-          {data.posture && <PostureCard p={data.posture} regime={regime} tape={data.marketRegime} />}
+          {data.posture && <PostureCard p={data.posture} regime={regime} tape={data.marketRegime} layers={layers} regionTape={data.regionTape} />}
           {/* 1 — Scenario board (synthesis). */}
           {data.scenarios && <ScenarioBoard scenarios={data.scenarios} board={data.scenarioBoard} />}
           {/* P7 — Treasury supply. Sits directly under the scenario board because three of the six
@@ -8485,6 +8541,13 @@ export default function App() {
               ? { id: mstate.regime.probs.stag >= mstate.regime.probs.def ? "stag" : "def", label: "Stagflation or deflationary bust (measured)",
                   pct: mstate.regime.probs.stag + mstate.regime.probs.def, band: mstate.conditions.band?.id ?? null, score: mstate.conditions.score }
               : { id: liveRegime?.id, label: liveRegime?.label, pct: regimeProbFor(liveRegime?.id) }}
+            /* The two slower layers the stance card names beside today's tape, and the IF/THEN
+               transitions whose stage feeds its DO — the same measured state the Market State tab shows. */
+            layers={{
+              regime: mstate.regime.available ? mstate.regime.headline : null,
+              conditions: mstate.conditions.band ? `${mstate.conditions.band.label}${mstate.conditions.score != null ? ` (${mstate.conditions.score})` : ""}` : null,
+              transitions: mstate.transitions || [],
+            }}
             liveIntervention={liveIntervention}
             reconSummary={reconSummary}
             byRegion={pbData}

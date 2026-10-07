@@ -1,5 +1,5 @@
 // test/posture.test.mjs — the tape stance card, and the day it printed RISK-ON on a risk-off tape.
-import { composePosture, tapeRead, regimeBlock, applyRegimeGuard,
+import { composePosture, tapeRead, regimeBlock, applyRegimeGuard, doPlan, TAPE_PATTERNS,
          REGIME_BLOCK_PCT, TAPE_LEGS } from '../lib/posture.js';
 
 let pass = 0, fail = 0;
@@ -238,6 +238,46 @@ eq('the leg set is the one the brief named', TAPE_LEGS, ['equity', 'gold', 'btc'
   ok('and even that has a flip', /any input arrives/.test(none.flipsIf));
   // EVERY STANCE CARRIES ONE — an empty flip row is the row that went missing on 2026-09-10.
   for (const p of [mixed, off, held, on, mid, none]) ok(`${p.posture} has a flip condition`, typeof p.flipsIf === 'string' && p.flipsIf.length > 20);
+}
+
+
+// ── 2026-10-07: EQUITIES AND BONDS UP, DOLLAR BID, CRYPTO SOLD — NOT RISK-OFF ─────────
+{
+  const TAPE_1007 = { equity: { value: 0.46, atr: 1.2 }, gold: { value: 0.72, atr: 1.0 },
+                      btc: { value: -2.17, atr: 2.4 }, dxy: { value: 0.48, atr: 0.35 }, bonds: { value: 0.22, atr: 0.8 } };
+  const t = tapeRead(TAPE_1007);
+  eq('without equities agreeing it is not risk-off', t.direction, 'mixed');
+  ok('and says the equities did not confirm', t.unconfirmed && /equities not confirming/.test(t.phrase));
+  eq('it is named for what it is', t.pattern.id, 'squeeze');
+  ok('a dollar squeeze', /dollar squeeze/.test(t.pattern.label));
+  const hawk = { id: 'H', name: 'Hawkish repricing', side: 'adverse', confirmed: true, weight: 2, met: 3, total: 3, consequence: 'Stay in bills.' };
+  const p = composePosture({ scenarios: [hawk], leaning: { tripped: 2, usable: 6, unavailable: [] }, volTerm: { regime: 'CONTANGO' },
+    credit: { effective: 'watch' }, tape: TAPE_1007, now: new Date('2026-10-07T13:00:00Z') });
+  ok('the stance is not RISK-OFF', p.posture !== 'RISK-OFF');
+  eq('in amber', p.tone, 'amber');
+  eq('every point is accounted for', p.scoreParts.map(x => [x.label, x.pts]), [['credit on watch', 0.5], ['Hawkish repricing', 1], ['tape mixed (dollar squeeze)', 0.5]]);
+  ok('and the parts add up to the score', Math.abs(p.scoreParts.reduce((a, x) => a + x.pts, 0) - p.score) < 1e-9);
+  ok('the score line says where the thresholds are', /= 2\.0 · risk-off at ≥ 2\.5, risk-on at ≤ 0/.test(p.scoreText));
+  ok('DO is three instructions', ['newRisk', 'book', 'hedge'].every(k => typeof p.plan[k] === 'string' && p.plan[k].length > 10));
+  ok('the scenario consequence is still there as context', p.do.includes('Stay in bills.'));
+}
+// The same tape with equities falling is risk-off, and named by gold.
+{
+  const flight = tapeRead({ equity: { value: -1.5, atr: 1.2 }, gold: { value: 1.0, atr: 1.0 }, btc: { value: -3, atr: 2.4 }, dxy: { value: 0.5, atr: 0.35 } });
+  eq('equities down with gold bid is a flight', [flight.direction, flight.pattern.id], ['risk-off', 'flight']);
+  const rates = tapeRead({ equity: { value: -1.5, atr: 1.2 }, gold: { value: -1.0, atr: 1.0 } });
+  eq('equities and gold down together is rates-driven', rates.pattern.id, 'rates-sell');
+  const gl = tapeRead({ equity: { value: 1.5, atr: 1.2 }, btc: { value: 3, atr: 2.4 }, bonds: { value: 0.8, atr: 0.8 } });
+  eq('stocks and bonds bid is goldilocks', [gl.direction, gl.pattern.id], ['risk-on', 'goldilocks']);
+  const up = tapeRead({ equity: { value: 0.1, atr: 1.2 }, btc: { value: 3, atr: 2.4 } });
+  eq('crypto up alone, equities flat, is not risk-on', [up.direction, up.pattern.id], ['mixed', 'crypto-on']);
+  eq('an unreadable equity leg leaves the majority standing', tapeRead({ btc: { value: -3, atr: 2.4 }, dxy: { value: 0.5, atr: 0.35 } }).direction, 'risk-off');
+  ok('every pattern has words', Object.values(TAPE_PATTERNS).every(x => x.length > 5));
+}
+// The regime guard swaps the plan with the stance.
+{
+  const g = applyRegimeGuard({ posture: 'RISK-ON', tone: 'green', plan: doPlan('RISK-ON'), blockedBy: [] }, { label: 'Stagflation', pct: 71 });
+  eq('a withheld RISK-ON takes the neutral plan', g.plan, doPlan('NEUTRAL, SELECTIVE'));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
