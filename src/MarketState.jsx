@@ -12,7 +12,8 @@ import { useState } from "react";
 import { C, alpha } from "./theme.js";
 import { Card, SLabel, StaleChip } from "./ui.jsx";
 import { REGIME_PALETTE } from "../lib/regimes.js";
-import { QUADRANTS, BANDS, STRESS_AT, CONDITION_SIZING, DRIVER_GROUPS, seriesHealth } from "../lib/marketState.js";
+import { QUADRANTS, BANDS, STRESS_AT, CONDITION_SIZING, DRIVER_GROUPS, seriesHealth, STAGE_AT, STAGE_LABEL } from "../lib/marketState.js";
+import { readSnapshot, bookLine, ageText } from "../lib/bookSnapshot.js";
 import { REGIME_SIZING } from "../lib/sizing.js";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
@@ -377,8 +378,63 @@ export function ClosestCallout({ list, asOf = null }) {
   );
 }
 
+// ── THE PLAYBOOK ── Prep → Arm → Triggered, with the stage this gauge is in opened and the rest
+// one click away; the speculative idea beside Arm and Triggered; the unwind always named; and the
+// live book measured against what the stage sets (lib/bookSnapshot.js — this browser only).
+const LADDER = ["prep", "arm", "triggered", "unwind"];
+function PbList({ k, items, dim, cur, tone }) {
+  return (
+    <div style={{ display: "grid", gap: 3 }}>
+      <div style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: 0.8, textTransform: "uppercase", color: k === "spec" ? C.orange : k === cur ? tone.color : C.lbl }}>
+        {STAGE_LABEL[k]}{k === cur ? " · you are here" : ""}{k === "spec" ? " · small, opportunistic" : ""}
+      </div>
+      {items.map((x, i) => <div key={i} style={{ fontSize: 12.5, color: dim ? C.muted : C.mid, lineHeight: 1.5, paddingLeft: 12, textIndent: -12 }}>→ {x}</div>)}
+    </div>
+  );
+}
+function Playbook({ t, tone, snap }) {
+  const pb = t.playbook;
+  const [all, setAll] = useState(false);
+  if (!pb) return <div style={{ fontSize: 12.5, color: C.mid }}><b style={{ color: C.text }}>Then:</b> {t.plan}</div>;
+  const cur = t.stage;
+  const shown = all ? LADDER : cur === "watch" ? [] : [cur];
+  const spec = all || cur === "arm" || cur === "triggered";
+  const book = snap ? bookLine(t.id === "growthRolls" && !/Stagflation/.test(t.title) ? "growthBust" : t.id, snap) : null;
+  return (
+    <div style={{ gridColumn: "1 / -1", display: "grid", gap: 8, paddingTop: 8, borderTop: "1px dashed " + C.bdr }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+        {LADDER.slice(0, 3).map((k, i) => {
+          const on = k === cur, past = LADDER.indexOf(cur) > i && cur !== "unwind";
+          return (
+            <span key={k} style={{ fontSize: 11, fontWeight: 800, padding: "2px 9px", borderRadius: 999, fontFamily: MONO,
+              color: on ? C.onFill : past ? tone.color : C.muted, background: on ? tone.color : past ? alpha(tone.color, 0.12) : C.inset,
+              border: "1px solid " + (on || past ? alpha(tone.color, 0.5) : C.bdr) }}>
+              {STAGE_LABEL[k]} {k === "triggered" ? "100%" : `${STAGE_AT[k]}%+`}
+            </span>
+          );
+        })}
+        <span style={{ fontSize: 11.5, color: C.muted }}>{cur === "watch" ? `watching — Prep starts at ${STAGE_AT.prep}%` : ""}</span>
+        <button onClick={() => setAll(a => !a)} style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700, color: C.blue, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+          {all ? "Show this stage" : "All stages"}
+        </button>
+      </div>
+      {cur === "watch" && !all && <PbList k="prep" items={pb.prep} dim cur={cur} tone={tone} />}
+      {shown.map(k => <PbList key={k} k={k} items={pb[k]} cur={cur} tone={tone} />)}
+      {spec && <PbList k="spec" items={pb.spec} cur={cur} tone={tone} />}
+      {!all && cur !== "watch" && <div style={{ fontSize: 11.5, color: C.muted }}><b style={{ color: C.mid }}>Unwind:</b> {pb.unwind.join(" ")}</div>}
+      {book && (
+        <div style={{ fontSize: 12, color: C.text, background: C.metricBg, border: "1px solid " + C.bdr, borderRadius: 7, padding: "6px 9px" }}>
+          <b>Your book here:</b> {book} <span style={{ color: C.lbl }}>· {ageText(snap)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function IfThen({ list, asOf = null }) {
   if (!list?.length) return null;
+  // Read once per render from this browser's storage; absent until the Console has been opened here.
+  const snap = readSnapshot();
   return (
     <Card style={{ display: "grid", gap: 10 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
@@ -411,11 +467,13 @@ function IfThen({ list, asOf = null }) {
                 </div>
               ))}
             </div>
-            <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.5, minWidth: 0 }}><b style={{ color: C.text }}>Then:</b> {t.plan}</div>
+            <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.5, minWidth: 0 }}><b style={{ color: C.text }}>Then, on trigger:</b> {t.plan}</div>
+            <Playbook t={t} tone={tone} snap={snap} />
           </div>
         );
       })}
       <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
+        Each playbook opens at the stage its gauge has reached: Prep from {STAGE_AT.prep}%, Arm from {STAGE_AT.arm}%, Triggered at 100%. Sizes are against the standing limits (target 1.0×, position ≤ 1.2× + swing ≤ 0.3×, ceiling 1.5×). Speculative ideas are small and optional. "Your book here" is read from the Console on this device{snap ? "" : " — open the Console once to see it"}.
         Every figure here is today's reading against a fixed trigger, recomputed each time the page loads. The five-session change is shown where the gauge can be re-read a week back (conditions, credit, rates vol, the VIX curve, real yields); the regime axes, futures odds and liquidity show today only.
       </div>
     </Card>

@@ -3,7 +3,7 @@ import { pctRank, upTo, onOrBefore, creditComponent, ratesVolComponent, equityVo
          breadthComponent, realYieldComponent, conditionsAt, conditions, liquidity, legScore, phi, axisScore, regime, axisWords,
          sizing, stage, hedgePhase, transitions, computeMarketState, stateLogRow, bandOf, STRESS_AT, CONDITION_WEIGHTS,
          CONDITION_SIZING, STAGES, conditionsScore } from '../lib/marketState.js';
-import { seriesHealth, DRIVER_GROUPS, SERIES_META, inflationMomentum } from '../lib/marketState.js';
+import { seriesHealth, DRIVER_GROUPS, SERIES_META, inflationMomentum, PLAYBOOKS, stageOf, STAGE_AT } from '../lib/marketState.js';
 import { FRED_STATE_SERIES, YAHOO_STATE_SERIES, mapToSeries, stateInputs } from '../lib/marketStateFeed.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
@@ -211,6 +211,19 @@ const calm = {
   eq('core PCE: m/m and 3-month annualised from the index levels', [m.id, m.date, m.mom, m.ann3m, m.ann3mPrev, m.trend3m], ['PCEPILFE', '2026-08-01', 0.25, 2.05, 2.3, 'easing']);
   eq('…y/y on the level a year earlier', m.yoy, 3.01);
   eq('too short a series is no read', inflationMomentum({ cpiCoreIdx: lv.slice(-5) }).cpiCore, null);
+}
+
+// ── THE PLAYBOOKS (7 Oct) ── every transition prepares, arms, executes, speculates and unwinds.
+{
+  const STAGES = ['prep', 'arm', 'triggered', 'spec', 'unwind'];
+  for (const [id, pb] of Object.entries(PLAYBOOKS)) {
+    ok(`${id}: every stage written`, STAGES.every(k => Array.isArray(pb[k]) && pb[k].length && pb[k].every(x => typeof x === 'string' && x.length > 10)));
+  }
+  ok('stages keyed to proximity', stageOf(59) === 'watch' && stageOf(60) === 'prep' && stageOf(85) === 'arm' && stageOf(99) === 'arm' && stageOf(100) === 'triggered' && stageOf(null) === 'watch');
+  ok('thresholds as documented', STAGE_AT.prep === 60 && STAGE_AT.arm === 85 && STAGE_AT.triggered === 100);
+  // The copy ships in the page's script: sizes are against the limits, never a named holding.
+  const all = JSON.stringify(PLAYBOOKS);
+  ok('no holding named', !/7709|AVGO|INTC|SOFI|NFLX|CRCL|HOOD|RKLB|0981|PUR\b/.test(all));
 }
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

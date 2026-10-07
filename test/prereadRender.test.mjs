@@ -33,6 +33,7 @@
 // live/delayed boundary — so the golden would have described a freshness that never existed.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { buildBlocks, assembleDiscord } from '../api/preread.js';
+import { regionTapeRead } from '../lib/regionTape.js';
 import { ctaSection } from '../lib/briefSections.js';
 import { UNIVERSE } from '../data/universe.js';
 import { gaugesLeaning } from '../lib/gates.js';
@@ -252,6 +253,21 @@ for (const region of REGIONS) {
   ok('the trend-fund section renders under its heading', /📐 \*\*TREND FUNDS \(CTA MODEL\)\*\*\n• \*\*S&P\*\* long 76% ▲ — model selling starts below \*\*7,690\*\*/.test(text));
   ok('right after the watchlist', text.indexOf('TODAY\'S WATCHLIST') < text.indexOf('TREND FUNDS'));
   ok('and is absent when there is no model', !/TREND FUNDS/.test(assembleDiscord('us', 'US', { ctaLines: null })));
+}
+
+// ── THE REGION'S LAST SESSION, FIRST ─────────────────────────────────────────
+// The fixtures were captured before the chip existed and carry no index bars, so it is rendered
+// here through the real reader on the Asia session of 2026-10-07 (KOSPI −1.98% on a 2.85% ATR,
+// Hang Seng −0.62% on 1.31%, Nikkei −0.92% on 1.81%; USD/KRW inside its range).
+{
+  const rt = regionTapeRead('asia', { asOf: '2026-10-07', indices: [
+    { name: 'KOSPI', value: -1.98, atr: 2.85 }, { name: 'Hang Seng', value: -0.62, atr: 1.31 }, { name: 'Nikkei', value: -0.92, atr: 1.81 }],
+    fx: { value: 0.3, atr: 0.7 } });
+  const line = `🧭 **LAST SESSION** · ${rt.line} · ${rt.asOf.slice(5)}`;
+  const text = assembleDiscord('asia', 'Asia', { regionTapeLine: line, watchLines: '• one' });
+  rendered._regionTape = text;
+  ok('the region chip renders', /🧭 \*\*LAST SESSION\*\* · Asia: risk-off \(KOSPI −1\.98%, Nikkei −0\.92%\) · 10-07/.test(text));
+  ok('directly under the header, before the first section', text.indexOf('LAST SESSION') < text.indexOf('───'));
 }
 
 // ── NO LINE SHIPS UNRENDERED ─────────────────────────────────────────────────
