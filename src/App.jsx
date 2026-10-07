@@ -6,6 +6,7 @@ import { REGIMES, REGIME_PALETTE } from "../lib/regimes.js";
 import { TradeConsole } from "./TradeConsole.jsx";
 import { GexPanel } from "./GexPanel.jsx";
 import { CtaPanel } from "./CtaPanel.jsx";
+import { RatiosPanel } from "./RatiosPanel.jsx";
 import { ScenarioBoard } from "./ScenarioBoard.jsx";
 import {
   AreaChart, Area, BarChart, Bar, RadarChart, PolarGrid,
@@ -6960,11 +6961,13 @@ export default function App() {
       { id: "gex",        label: "🌀 Gamma"          },
     ] },
     // MARKET WATCH reads one measured state: State lands on it, Drivers shows every gauge behind it,
+    // Ratios shows who is winning in seven pairs (src/RatiosPanel.jsx),
     // Street puts the houses' view beside it, Data health says how old each input is. The previous
     // tabs stay one click away (the "previous layout" link) until LEGACY_UNTIL.
     { id: "watch", label: "Market Watch", hint: "read", tabs: [
       { id: "state",      label: "🧭 State"          },
       { id: "drivers",    label: "📈 Drivers"        },
+      { id: "ratios",     label: "⚖️ Ratios"         },
       { id: "street",     label: "🏦 Smart Money"    },
       { id: "health",     label: "🩺 Data health"    },
       ...(legacyOn("watch") ? LEGACY_BY_GROUP.watch : []),
@@ -7166,6 +7169,7 @@ export default function App() {
             Self-contained: its own tab, its own endpoints, its own state. Nothing about it lives
             in this file beyond the mount, which is the whole point of building it separately. */}
         {tab === "gex" && <GexPanel />}
+        {tab === "ratios" && <RatiosPanel />}
 
         {/* ── TRADE CONSOLE (Tier 3) ── */}
         {tab === "console" && (

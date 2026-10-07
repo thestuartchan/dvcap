@@ -9,7 +9,7 @@
 // is a discontinuity between two different instruments and true range scores it as a real day's
 // move — measured, it inflates ATR to 2.4x on the day and is still a third too wide a trading
 // month later, which is exactly the month the new contract is being sized in.
-import { yahooDailyOHLCDetailed } from '../lib/yahoo.js';
+import { yahooDailyOHLCDetailed, yahooDailyCloses } from '../lib/yahoo.js';
 import { atrSummary, ATR_PERIOD } from '../lib/atr.js';
 import { FAMILIES, MULTIPLIER, familyOf, parentFamily, isIndexFamily, contractMonths, frontMonth } from '../lib/futuresContracts.js';
 import { kvGetJson, kvSetJsonEx, kvConfigured } from '../lib/kv.js';
@@ -73,16 +73,20 @@ const MAX_SYMBOLS = 24;   // the console asks for its open rows, not a universe
 // here says what is held or how much. Three at a time: the keyless feed refuses a burst of thirty,
 // and one at a time is thirty round trips.
 const HISTORY_MAX = 40;
-const HISTORY_RANGES = new Set(['3mo', '6mo', '1y']);
+// 2y for the ratio cards (lib/ratios.js), whose 1-year percentile and 1-year z-score of 20-day
+// changes need a full year of history BEFORE the first day they describe.
+const HISTORY_RANGES = new Set(['3mo', '6mo', '1y', '2y']);
 async function closeHistory(list, range) {
   const out = {};
   for (let i = 0; i < list.length; i += 3) {
     if (i > 0) await new Promise(r => setTimeout(r, 120));
     await Promise.all(list.slice(i, i + 3).map(async (sym) => {
       try {
-        const d = await yahooDailyOHLCDetailed(sym, range);
+        // Closes only, settled only: a finished day the feed left blank is filled from its official
+        // close, and a session still trading is left out (lib/yahoo.js yahooDailyCloses).
+        const d = await yahooDailyCloses(sym, range);
         out[sym] = d.ok
-          ? { status: 'ok', closes: d.bars.map(b => [b.date, b.close]), name: d.name ?? null }
+          ? { status: 'ok', closes: d.closes, name: d.name ?? null }
           : { status: d.status, httpStatus: d.httpStatus ?? null };
       } catch (e) {
         out[sym] = { status: 'fetch-failed', error: String(e?.name || e).slice(0, 60) };
