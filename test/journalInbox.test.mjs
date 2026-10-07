@@ -279,6 +279,32 @@ const TODAY = '2026-10-01';
     eq(`…and it drafts from the note, with no unjournaled legs (${sym})`, [out.counts.drafted, out.counts.unjournaled], [1, 0]);
   }
   eq('the card prints the premium', fmtPx(0.000018), '0.000018');
+
+  // 7 Oct: the close, legged out — the short 0.0065C bought back at 0.0000005 (18:58Z), then the long
+  // 0.0064C sold at 0.0000035 (19:08Z): a 0.000003 credit. The close note arrived at 19:14Z, before
+  // IBKR's report had the legs, and explained itself by the opening order its open note had claimed.
+  const open = validateNote({ id: 't-jpy-open', kind: 'open', written_at: '2026-10-01T13:00:00Z', trade_date: '2026-10-01',
+    instrument: { type: 'COMBO', symbol: 'JPY', legs: [
+      { right: 'C', strike: 0.0064, expiry: '2026-10-09', side: 'BUY', ratio: 1 },
+      { right: 'C', strike: 0.0065, expiry: '2026-10-09', side: 'SELL', ratio: 1 }] },
+    expected: { qty: 2, price: 0.000018, tolerance_pct: 5 }, tag: 'swing', rationale: 'yen call spread into the 9 Oct expiry' }).note;
+  const close = validateNote({ id: 't-jpy-close', kind: 'close', written_at: '2026-10-07T19:14:00Z', trade_date: '2026-10-07',
+    instrument: { type: 'COMBO', symbol: 'JPY', legs: [
+      { right: 'C', strike: 0.0065, expiry: '2026-10-09', side: 'BUY', ratio: 1 },
+      { right: 'C', strike: 0.0064, expiry: '2026-10-09', side: 'SELL', ratio: 1 }] },
+    expected: { qty: 2, price: 0.000003 }, rationale: 'closed two days before expiry' }).note;
+  const opened = processInbox({ notes: [open], trades: legs, today: '2026-10-02', holidays: US });
+  const before = processInbox({ notes: [close], trades: legs, today: '2026-10-07', holidays: US, seen: opened.seen, drafts: opened.drafts });
+  eq('before the closing legs are reported: waiting, and it says why', before.why['t-jpy-close']?.reason,
+    'no new JPY order in the statement yet (the 2026-10-01 orders belong to other notes) — a fill reaches IBKR\'s report the morning after it trades');
+  const shut = (order, strike, side, px, time) => O({ ibOrderID: order, conid: `${order}1`, symbol: `6JZ6 C${strike}`, underlyingSymbol: '6JZ6', assetCategory: 'FOP',
+    putCall: 'C', strike, expiry: '20261009', multiplier: 12500000, buySell: side, quantity: side === 'BUY' ? 2 : -2, tradePrice: px, ibCommission: -5.36,
+    tradeDate: '20261007', dateTime: `20261007;${time}` });
+  const all = trades([leg('720', 0.0064, 'BUY', 0.00003, '133529'), leg('721', 0.0065, 'SELL', 0.000012, '133619'),
+    shut('730', 0.0065, 'BUY', 0.0000005, '145846'), shut('731', 0.0064, 'SELL', 0.0000035, '150833')]);
+  const after = processInbox({ notes: [close], trades: all, today: '2026-10-08', holidays: US, seen: opened.seen, drafts: opened.drafts });
+  const d = after.drafts.find(x => x.id === 'd-730+731');
+  eq('the next morning the legs pair into the close, at the 0.000003 credit', [after.counts.drafted, d?.fill.side, d?.fill.qty, d?.fill.rawPrice], [1, 'SELL', 2, 0.000003]);
 }
 
 // ── A SPREAD IBKR REPORTED AS SEPARATE ORDERS ────────────────────────────────
