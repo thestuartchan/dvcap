@@ -2996,7 +2996,7 @@
       "inputs": {
         "weightedRecessionProb": 13.6,
         "cpi": 3.35302,
-        "kalshi2027": 21,
+        "kalshi2027": 15,
         "tape": null,
         "ladderSpread": null,
         "u3": 4.2,
@@ -3071,11 +3071,11 @@
           "drifting": "stag"
         },
         "conditions": {
-          "score": 59.3,
+          "score": 60.3,
           "band": "caution",
           "comps": {
             "credit": 71,
-            "equityVol": 7,
+            "equityVol": 12,
             "ratesVol": 68,
             "realYield": 91,
             "funding": 34,
@@ -3092,7 +3092,7 @@
         "stage": 2
       },
       "source": "cron",
-      "loggedAt": "2026-10-07T01:50:32.075Z"
+      "loggedAt": "2026-10-07T08:45:54.014Z"
     }
   ]
 }
