@@ -61,7 +61,9 @@ for (const [m, ws] of Object.entries(byMonth).sort()) {
 fs.mkdirSync(outDir, { recursive: true });
 const manifest = {};
 for (const [name, body] of Object.entries(files)) {
-  const text = JSON.stringify(body);   // compact: it is pasted into the upload call
+  // Compact, one trade per line: short lines can be read back and pasted into the upload call
+  // exactly, and a month reads in Drive's preview. Whitespace between tokens: still the same JSON.
+  const text = JSON.stringify(body).replace(/\},\{"avgIn"/g, '},\n{"avgIn"');
   fs.writeFileSync(path.join(outDir, name), text);
   manifest[name] = { title: `dvcap day journal · ${name}`, sha256: crypto.createHash('sha256').update(text).digest('hex'),
     bytes: Buffer.byteLength(text), weeks: body.weeks ? Object.keys(body.weeks) : [] };
