@@ -1055,7 +1055,7 @@ export function GammaDays({ symbol, series }) {
               <ReferenceLine y={WIDE_RANGE} stroke={C.bdrMd} strokeDasharray="4 3" label={{ value: `wide ${WIDE_RANGE}`, fontSize: 9.5, fill: C.lbl, position: "insideTopRight" }} />
               <Tooltip contentStyle={{ fontSize: 11.5, borderRadius: 8, border: "1px solid " + C.bdr }}
                 formatter={(v, n) => [`${v} ATR`, n]}
-                labelFormatter={(l, p) => { const d = p?.[0]?.payload; return d ? `${d.date} · ${d.regime} gamma (${d.cushionPct > 0 ? "+" : ""}${d.cushionPct}% vs flip) · ${d.ret > 0 ? "+" : ""}${d.ret}%${d.trend ? " · trend day" : ""}${d.brokeWall ? " · through a wall" : ""}` : l; }} />
+                labelFormatter={(l, p) => { const d = p?.[0]?.payload; return d ? `${d.date} · opened ${d.cushionPct > 0 ? "+" : ""}${d.cushionPct}% vs the prior flip ${d.flip?.toFixed(2)} (${d.regime} gamma) · ${d.ret > 0 ? "+" : ""}${d.ret}%${d.trend ? " · trend day" : ""}${d.brokeWall ? " · through a wall" : ""}` : l; }} />
               <Bar dataKey="range" name="Range" isAnimationActive={false} barSize={14}>
                 {rows.map((d, i) => <Cell key={i} fill={col(d)} fillOpacity={0.28} stroke={d.brokeWall ? col(d) : "none"} strokeDasharray={d.brokeWall ? "2 2" : undefined} />)}
               </Bar>
@@ -1069,8 +1069,8 @@ export function GammaDays({ symbol, series }) {
       )}
       <div style={{ fontSize: 11, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
         Each session: the pale bar is the day's range, the solid bar how much of it was kept open→close, both in ATRs of the 14 sessions before.
-        <span style={{ color: C.purple, fontWeight: 700 }}> Purple</span> = captured below the flip (short gamma),
-        <span style={{ color: C.green, fontWeight: 700 }}> green</span> = above (long gamma). ▲T / ▼T = a trend day (≥{TREND_MOVE} ATR open→close, keeping ≥{Math.round(TREND_EFF * 100)}% of the range); a dashed outline = price went through a wall.
+        <span style={{ color: C.purple, fontWeight: 700 }}> Purple</span> = opened below the previous session's flip (short gamma),
+        <span style={{ color: C.green, fontWeight: 700 }}> green</span> = opened above it (long gamma) — what was known before the bell. ▲T / ▼T = a trend day (≥{TREND_MOVE} ATR open→close, keeping ≥{Math.round(TREND_EFF * 100)}% of the range); a dashed outline = price went through the previous session's call or put wall.
       </div>
       {sb.all.n > 0 && (
         <div style={{ overflowX: "auto", marginTop: 8 }}>
