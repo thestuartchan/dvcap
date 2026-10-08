@@ -16,6 +16,8 @@ import { kvGetJson, kvSetJsonEx, kvConfigured } from '../lib/kv.js';
 import holidays from '../data/holidays.json' with { type: 'json' };
 import { buildCta } from '../lib/ctaBook.js';
 import { readBreakLog, updateBreakLog } from '../lib/ratioBreakLog.js';
+import { fetchEarningsHistory } from '../lib/earnings.js';
+import { earningsReactions } from '../lib/holdTypes.js';
 import { authorised, refusalReason } from '../lib/apiauth.js';
 
 
@@ -99,7 +101,19 @@ async function closeHistory(list, range) {
 }
 
 export default async function handler(req, res) {
-  const { tickers, period, future, cta, history, range, ratios } = req.query || {};
+  const { tickers, period, future, cta, history, range, ratios, reactions } = req.query || {};
+  // ── ?reactions=SYM — THE LAST FOUR EARNINGS MOVES (the sizer's Event hold type) ──
+  // Report dates from Nasdaq's earnings-surprise table; each move measured from daily closes
+  // (lib/holdTypes.js earningsReactions). Market data only.
+  if (reactions) {
+    const sym = String(reactions).trim().toUpperCase().slice(0, 20);
+    res.setHeader('Cache-Control', 's-maxage=21600, stale-while-revalidate=86400');
+    const [h, d] = await Promise.all([fetchEarningsHistory(sym), yahooDailyOHLCDetailed(sym, '2y').catch(() => null)]);
+    if (!h.ok) return res.status(200).json({ ok: false, symbol: sym, why: h.why });
+    if (!d?.ok) return res.status(200).json({ ok: false, symbol: sym, dates: h.dates, why: `no daily bars — ${d?.status || 'fetch failed'}` });
+    const r = earningsReactions(d.bars, h.dates);
+    return res.status(200).json({ ok: r.reactions.length > 0, symbol: sym, ...r, dates: h.dates, source: `${h.source} dates · daily closes` });
+  }
   // ── ?ratios=1 — THE RATIOS BREAK LOG (lib/ratioBreakLog.js) ──
   // GET: the stored log, market data only. &write=1 recomputes every break from two years of closes
   // and merges it in — the daily run (.github/workflows/ratio-breaks.yml), key-gated because it

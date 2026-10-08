@@ -63,6 +63,7 @@ import { companyName } from "../lib/companyNames.js";
 import { tickerHint, resolvedLabel } from "../lib/tickerHints.js";
 import { moveGroupOnto } from "../lib/reorder.js";
 import { snapshotOf, writeSnapshot } from "../lib/bookSnapshot.js";
+import { HOLD_TYPES, HOLD_LABEL, anA, holdSettings, defaultDrawdown, otherTypesLine, leveragedLongHoldNote, ccyOfSymbol, exposureRootOf, correlationTable, effectiveExposure, exposureStrip } from "../lib/holdTypes.js";
 import { syncStatus } from "../lib/flexStatus.js";
 import { FACTORS, FACTOR_SYMBOLS, TAGS, tagOf, LIST_GROUPS, listGroupOf, groupCounts, sortByGroup, filterByGroups, holdingsOf, factorExposure, scenarioPnl, overnightFlag } from "../lib/factorExposure.js";
 
@@ -1598,7 +1599,7 @@ function useBookExposure(rows, nlv, cashBook = null, toBase = null, exempt = nul
 // everything — size so that one ATR of adverse movement costs 1% of NLV — then the concentration
 // caps, then the smallest result. See lib/sizer.js for the worked example this was built from: the
 // QQQ line where both tests said five contracts and the position was twenty.
-function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], exempt = null, holds = [], head = null }) {
+function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], exempt = null, holds = [], head = null, holdCfg = null, toBase = null }) {
   const [tkr, setTkr] = useState("");
   const [kind, setKind] = useState("option");
   // CALL OR PUT. The chain key was hard-coded to the call, so a put at the same strike was priced
@@ -1640,6 +1641,16 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
   // The quantity actually intended. Free-form and never required — the panel computes and renders
   // everything with it blank, and it changes what is REPORTED rather than what is allowed.
   const [qty, setQty] = useState("");
+  // ── THE HOLD TYPE (lib/holdTypes.js) ── Trade by default. The inputs each test needs are optional;
+  // blank takes the default the line beside it names. `react` is the last four earnings moves.
+  const [holdType, setHoldType] = useState("trade");
+  const [entryIn, setEntryIn] = useState("");
+  const [stopIn, setStopIn] = useState("");
+  const [atrMultIn, setAtrMultIn] = useState("");
+  const [ddIn, setDdIn] = useState("");
+  const [gapIn, setGapIn] = useState("");
+  const [react, setReact] = useState(null);
+  const [corr, setCorr] = useState(null);
 
   // Recorded runs, read back once so the reconciliation survives a reload. A run is the QUESTION;
   // lib/decisions.js records the answer. Both are wanted — see the note in lib/sizer.js.
@@ -1687,6 +1698,9 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
     const catQ = kind === "option"
       ? `catalyst=${encodeURIComponent(root)}&expiry=${encodeURIComponent(expiry)}&kind=option`
       : `catalyst=${encodeURIComponent(root)}&kind=stock`;
+    // The last four earnings moves, for the Event test's default gap. Best-effort.
+    setReact(null);
+    fetch(`/api/atr?reactions=${encodeURIComponent(root)}`).then(r => (r.ok ? r.json() : null)).then(j => setReact(j?.ok ? j : null)).catch(() => {});
     fetch(`/api/flex-sync?${catQ}`, { credentials: "include" })
       .then(r => r.ok ? r.json() : null)
       .then(j => setCat(j?.ok ? j : { ok: false, reason: j?.reason || "the catalyst lookup did not answer" }))
@@ -1747,9 +1761,20 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
   // range is the underlying's × |factor|, labelled on the test.
   const lvHere = kind === "stock" ? leverageFor(root) : null;
   const pxEff = useMemo(() => {
-    if (!px || px.atr != null || !under?.atr || !lvHere?.known) return px;
-    return { ...px, atr: +(under.atr * Math.abs(lvHere.factor)).toFixed(4), atrPct: px.price ? +((under.atr * Math.abs(lvHere.factor) / px.price) * 100).toFixed(3) : null, derived: true };
-  }, [px, under, lvHere]);
+    const lv = kind === "stock" ? leverageFor(root) : null;
+    if (!px || px.atr != null || !under?.atr || !lv?.known) return px;
+    return { ...px, atr: +(under.atr * Math.abs(lv.factor)).toFixed(4), atrPct: px.price ? +((under.atr * Math.abs(lv.factor) / px.price) * 100).toFixed(3) : null, derived: true };
+  }, [px, under, kind, root]);
+
+  // ── THE HOLD TYPE'S INPUTS ── the settings (one place, the Sizing card), the currency the price
+  // is quoted in (1R and the budgets are dollars; a Hong Kong price is not), and what was typed.
+  const hs = useMemo(() => holdSettings(holdCfg || {}), [holdCfg]);
+  const ccy = kind === "future" ? "USD" : ccyOfSymbol(root);
+  const fx = ccy !== "USD" && toBase ? (toBase(1, ccy) || 1) : 1;
+  const numOr = (v) => (v === "" || v == null || !Number.isFinite(Number(v)) ? null : Number(v));
+  const ddDefault = defaultDrawdown({ atrPct: pxEff?.atrPct, leverage: kind === "stock" ? leverageFor(root).factor : 1 }, hs);
+  const holdArg = useMemo(() => ({ type: holdType, entry: numOr(entryIn), stop: numOr(stopIn), atrMult: numOr(atrMultIn), ddPct: numOr(ddIn),
+    gapPct: numOr(gapIn) ?? react?.avgAbsPct ?? null, fx, settings: hs }), [holdType, entryIn, stopIn, atrMultIn, ddIn, gapIn, react, fx, hs]);
 
   // The month being sized, and the future's whole answer (both contracts, the three lines).
   const month = useMemo(() => (fut?.ok ? (fut.months || []).find(m => m.code === monthCode) || fut.front || null : null), [fut, monthCode]);
@@ -1767,8 +1792,9 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
       underlyingOptions: heldFut ? heldFut.options : (book?.available ? 0 : null),
       underlyingUnpriced: heldFut?.unpriced ?? 0,
       exempt: Array.isArray(exempt) ? exempt : SINGLE_NAME_EXEMPT,
+      hold: holdArg,
     });
-  }, [kind, ready, px, fut, root, multIn, month, nlv, qty, book, heldFut, exempt]);
+  }, [kind, ready, px, fut, root, multIn, month, nlv, qty, book, heldFut, exempt, holdArg]);
 
   const result = useMemo(() => kind === "future" ? (futRes?.ok ? futRes.chosen : (futRes ? { ok: false, why: futRes.why } : null)) : (!ready || !pxEff?.atr) ? null : sizeTrade({
     kind, symbol: kind === "option" ? `${root} ${expiry} ${right}${strike}` : root,
@@ -1786,6 +1812,7 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
     // fallback, and neither being present reads as "not checked", never as "none".
     catalysts: cat?.ok && Array.isArray(cat.macro) ? cat.macro : calendar, indicative: !!greek?.indicative, asOf: greek?.asOf ?? null,
     entered: Number(qty) > 0 ? Number(qty) : null,
+    hold: holdArg,
     // The factor: typed if typed, else the table's, else 1. A missing ETF ATR falls back to the
     // underlying's × |factor| and is labelled derived. The bucket follows the hold intent.
     ...(kind === "stock" ? (() => {
@@ -1795,7 +1822,48 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
                bucket: holdBeyond ? "position" : null, holdBeyond,
                positionBookUsd: book?.buckets?.positionUsd ?? null, swingUsedUsd: book?.buckets?.swingUsd ?? null };
     })() : {}),
-  }), [ready, kind, right, root, expiry, strike, px, pxEff, greek, nlv, book, calendar, qty, cat, deltaEff, markEff, deltaSource, held, exempt, futRes, levIn, under, holdBeyond]);
+  }), [ready, kind, right, root, expiry, strike, px, pxEff, greek, nlv, book, calendar, qty, cat, deltaEff, markEff, deltaSource, held, exempt, futRes, levIn, under, holdBeyond, holdArg]);
+
+  // ── EXPOSURE, CORRELATION-AWARE (lib/holdTypes.js) ──────────────────────────
+  // The book's exposure per UNDERLYING (a leveraged ETF summed under what it tracks, at ρ 1.0),
+  // with this trade added at the size the panel is reporting — the entered one if typed. ρ is
+  // daily returns over 120 sessions, kept in this browser and recomputed weekly.
+  const candKey = kind === "future" ? (fut?.parent || root) : exposureRootOf(root);
+  const candUsd = result?.ok ? Math.abs((result.entered != null ? result.enteredDelta : result.deltaAdded) || 0) * (kind === "future" ? 1 : fx) : 0;
+  const exposures = useMemo(() => {
+    if (!result?.ok || !candKey) return null;
+    const m = {};
+    for (const [r, u] of Object.entries(book?.byUnderlying || {})) { const k = exposureRootOf(r); m[k] = (m[k] || 0) + Math.abs(u.deltaNotional || 0); }
+    m[candKey] = (m[candKey] || 0) + candUsd;
+    return m;
+  }, [book, result, candKey, candUsd]);
+  const corrSyms = useMemo(() => (exposures ? Object.entries(exposures).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k]) => k).sort() : []), [exposures]);
+  // The table kept in this browser, if it is under a week old and covers every name; else fetched.
+  const corrKey = corrSyms.join(",");
+  const [mountedAt] = useState(() => Date.now());
+  const cachedCorr = useMemo(() => {
+    if (!corrKey) return null;
+    let c = null;
+    try { c = JSON.parse(localStorage.getItem("dvcap_corr_v1") || "null"); } catch { c = null; }
+    const fresh = c?.at && (mountedAt - Date.parse(c.at)) / 86400000 < hs.corrMaxAgeDays;
+    return fresh && corrKey.split(",").every(x => c.syms?.includes(x)) ? c : null;
+  }, [corrKey, hs.corrMaxAgeDays, mountedAt]);
+  useEffect(() => {
+    if (!corrKey || cachedCorr) return;
+    let cancelled = false;
+    fetch(`/api/atr?history=1&range=1y&tickers=${encodeURIComponent(corrKey)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => {
+        if (cancelled || !j?.symbols) return;
+        const closes = Object.fromEntries(Object.entries(j.symbols).filter(([, v]) => v?.status === "ok").map(([k, v]) => [k, v.closes]));
+        const next = { at: new Date().toISOString(), syms: corrKey.split(","), table: correlationTable(closes, hs.corrSessions) };
+        try { localStorage.setItem("dvcap_corr_v1", JSON.stringify(next)); } catch { /* private window */ }
+        setCorr(next);
+      }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [corrKey, cachedCorr, hs.corrSessions]);
+  const corrUsed = cachedCorr || (corr && corrKey.split(",").every(x => corr.syms?.includes(x)) ? corr : null);
+  const strip = useMemo(() => (exposures && corrUsed ? exposureStrip(effectiveExposure(candKey, exposures, corrUsed.table, hs), nlv, hs) : null), [exposures, corrUsed, candKey, hs, nlv]);
 
   // "4 of 11 option entries were MISMATCH" — the monthly line the window exists for — and
   // "3 of 11 exceeded the single-name cap on delta-notional", the line the cap exists for.
@@ -1824,7 +1892,7 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
       {head && <div style={{ marginBottom: 12, paddingBottom: 11, borderBottom: "1px solid " + C.bdr }}>{head}</div>}
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <SLabel>Position sizer</SLabel>
-        <span style={{ fontSize: 11.5, color: C.muted }}>one ATR against you costs {SIZER_LIMITS.riskPct}% of NLV</span>
+        <span style={{ fontSize: 11.5, color: C.muted }}>sized by hold type — Trade: a stop-out costs 1R · Long hold: the bad case costs the drawdown budget · Event: the typical gap costs 1R</span>
         <span style={{ marginLeft: "auto", fontSize: 11, color: C.lbl, fontWeight: 700 }}>NLV {money(nlv)}</span>
       </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
@@ -1835,6 +1903,16 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
             <option value="stock">Stock</option><option value="option">Option</option><option value="future">Future</option>
           </select>
         </SzFld>
+        <SzFld label="Hold type">
+          <select value={holdType} onChange={e => setHoldType(e.target.value)} style={SZ_IN}>
+            {HOLD_TYPES.map(t => <option key={t} value={t}>{HOLD_LABEL[t]}</option>)}
+          </select>
+        </SzFld>
+        {holdType === "trade" && <SzFld label={kind === "option" ? "Entry (underlying)" : "Entry"}><input value={entryIn} inputMode="decimal" onChange={e => setEntryIn(e.target.value)} style={{ ...SZ_IN, minWidth: 70 }} placeholder={pxEff?.price != null ? String(+pxEff.price.toFixed(2)) : "price"} /></SzFld>}
+        {holdType === "trade" && <SzFld label="Stop"><input value={stopIn} inputMode="decimal" onChange={e => setStopIn(e.target.value)} style={{ ...SZ_IN, minWidth: 70 }} placeholder="—" title="Blank uses the ATR multiple" /></SzFld>}
+        {holdType === "trade" && !stopIn && <SzFld label="or ATR ×"><input value={atrMultIn} inputMode="decimal" onChange={e => setAtrMultIn(e.target.value)} style={{ ...SZ_IN, minWidth: 50, width: 60 }} placeholder={String(hs.atrMult)} /></SzFld>}
+        {holdType === "long" && <SzFld label="Bad-case drawdown %"><input value={ddIn} inputMode="decimal" onChange={e => setDdIn(e.target.value)} style={{ ...SZ_IN, minWidth: 60, width: 70 }} placeholder={String(ddDefault.pct)} title={`Default ${ddDefault.pct}%: ${ddDefault.highBeta ? "high-beta" : "not high-beta"} (${ddDefault.why})`} /></SzFld>}
+        {holdType === "event" && <SzFld label="Event gap %"><input value={gapIn} inputMode="decimal" onChange={e => setGapIn(e.target.value)} style={{ ...SZ_IN, minWidth: 60, width: 70 }} placeholder={react?.avgAbsPct != null ? String(react.avgAbsPct) : "—"} title="Default: the average absolute move of the last four earnings reactions" /></SzFld>}
         {kind === "option" && <SzFld label="Right">
           <select value={right} onChange={e => { setRight(e.target.value); setGreek(null); }} style={SZ_IN}>
             <option value="C">Call</option><option value="P">Put</option>
@@ -1921,7 +1999,7 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
       )}
       {px?.atr != null && (
         <div style={{ fontSize: 11.5, color: C.muted, marginTop: 5 }}>
-          ATR(20){kind === "future" ? " realised" : ""} {px.atr.toFixed(2)}{px.atrPct != null ? ` (${px.atrPct.toFixed(2)}%)` : ""}{kind === "future" && px.atr != null && futRes?.ok ? ` · $${Math.round(px.atr * (futRes.chosen.multiplier || 0)).toLocaleString("en-US")} per ${futRes.chosen.symbol?.split(" ")[0]} contract` : ""}
+          ATR(14){kind === "future" ? " realised" : ""} {px.atr.toFixed(2)}{px.atrPct != null ? ` (${px.atrPct.toFixed(2)}%)` : ""}{kind === "future" && px.atr != null && futRes?.ok ? ` · $${Math.round(px.atr * (futRes.chosen.multiplier || 0)).toLocaleString("en-US")} per ${futRes.chosen.symbol?.split(" ")[0]} contract` : ""}
           {px.price != null ? ` · ${root} ${px.price.toFixed(2)}` : ""}
           {greek?.delta != null ? ` · ${strike}${right === "P" ? "P" : "C"} δ ${greek.delta.toFixed(2)} (live) · mark ${Number(greek.mark).toFixed(2)}`
             : modelled ? ` · ${strike}${right === "P" ? "P" : "C"} δ ${modelled.delta.toFixed(2)} (modelled, IV ${(modelled.sigma * 100).toFixed(0)}%) · mark ${Number(markEff).toFixed(2)}${greek?.mark != null ? "" : " typed"}` : ""}
@@ -1988,6 +2066,22 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
               </div>
             </div>
           )}
+          {/* ── THE HOLD TYPE: its suggestion in bold, the other two muted beneath, so a mismatch shows. */}
+          {result.hold && (() => {
+            const ht = result.hold.tests, t = result.hold.type, unitWord = result.kind === "stock" ? "shares" : "contracts";
+            const lev = kind === "stock" ? leveragedLongHoldNote(root, t) : null;
+            return (
+              <div style={{ fontSize: 12, color: C.mid, marginBottom: 6, paddingBottom: 6, borderBottom: "1px solid " + C.bdr, lineHeight: 1.55 }}>
+                <div><span style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>As {anA(HOLD_LABEL[t])} </span>
+                  <b style={{ fontSize: 14, color: C.text }}>{ht[t].size == null ? "—" : `${ht[t].size.toLocaleString("en-US")} ${unitWord}`}</b>
+                  <span style={{ color: C.lbl }}> · {ht[t].detail}</span></div>
+                <div style={{ color: C.muted }}>{otherTypesLine(ht, t, unitWord)}</div>
+                {t === "event" && react?.reactions?.length > 0 && <div style={{ color: C.lbl }}>Last {react.reactions.length} earnings moves: {react.reactions.map(r => `${r.movePct > 0 ? "+" : ""}${r.movePct}% (${r.date})`).join(" · ")} · average {react.avgAbsPct}%{gapIn ? " · you typed your own" : ""}</div>}
+                {lev && <div style={{ color: C.amber }}>ⓘ {lev}</div>}
+                <div style={{ color: C.lbl, fontSize: 11 }}>Uses: 1R {money(hs.oneR)} (trading sleeve) · drawdown budget {hs.ddBudgetPct}% of the family book {hs.familyBook ? money(hs.familyBook) : "(not set)"} · caps on this account's NLV {money(nlv)}{fx !== 1 ? ` · ${ccy} at ${fx.toFixed(4)} USD` : ""}. The suggestion below is the smaller of this test and the caps.</div>
+              </div>
+            );
+          })()}
           {!(result.kind === "future" && futRes?.microUsed) && result.tests.map((t, i) => (
             <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 12,
                                   color: t.binds ? C.text : C.muted, fontWeight: t.binds ? 800 : 600 }}>
@@ -2121,6 +2215,29 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
                   {futRes.roll.amber ? "⚠ " : ""}{futRes.roll.text}</div>
               )}
               {futRes.notes.map((n, i) => <div key={i} style={{ color: C.lbl }}>· {n}</div>)}
+            </div>
+          )}
+
+          {/* ── EXPOSURE, CORRELATION-AWARE ── the name alone, its near-duplicate group, and the
+              correlation-weighted cluster, each against its own guide. Never blocks. */}
+          {strip && (
+            <div style={{ fontSize: 11.5, color: C.mid, marginTop: 7, lineHeight: 1.55 }}>
+              <div style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Exposure{candKey !== root ? ` · attributed to ${candKey}` : ""}</div>
+              {strip.bars.map(b => {
+                const col = { green: C.green, amber: C.amber, red: C.red }[b.tone] || C.muted;
+                return (
+                  <div key={b.key} style={{ display: "grid", gridTemplateColumns: "minmax(140px, 1.3fr) 2fr auto", gap: 8, alignItems: "center", marginTop: 3 }}>
+                    <span>{b.label}</span>
+                    <div style={{ position: "relative", height: 8, background: C.inset, border: "1px solid " + C.bdr, borderRadius: 4 }}>
+                      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${Math.min(100, (b.pct / (b.cap * 1.5)) * 100)}%`, background: col, borderRadius: 4 }} />
+                      <div title={b.guide} style={{ position: "absolute", left: `${100 / 1.5}%`, top: -3, bottom: -3, width: 2, background: C.text, opacity: 0.6 }} />
+                    </div>
+                    <span style={{ whiteSpace: "nowrap" }}><b style={{ color: col }}>{b.pct}%</b> <span style={{ color: C.lbl }}>{money(b.usd)} · vs {b.guide}</span></span>
+                  </div>
+                );
+              })}
+              {strip.warnings.map((w, i) => <div key={i} style={{ color: w.level === "cluster" ? C.amber : C.red, marginTop: 3 }}>⚠ {w.text}</div>)}
+              <div style={{ color: C.lbl, fontSize: 11, marginTop: 2 }}>ρ: daily returns over {hs.corrSessions} sessions, computed {corrUsed?.at ? corrUsed.at.slice(0, 10) : "—"}, refreshed weekly · near-duplicate ρ ≥ {hs.nearDupRho} summed in full · cluster ρ ≥ {hs.clusterRho} counted at ρ × exposure · information only</div>
             </div>
           )}
 
@@ -4397,7 +4514,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
 
       {/* ── SIZING, ONE CARD ── The master settings (equity, risk, allocation, regime multipliers)
           head the calculator that uses them; they were two cards reading the same inputs. */}
-      <PositionSizer book={bookX.book} nlv={equityBase} fills={openingFills} exempt={settings.sizerExempt ?? null} holds={holds}
+      <PositionSizer book={bookX.book} nlv={equityBase} fills={openingFills} exempt={settings.sizerExempt ?? null} holds={holds} holdCfg={settings.hold ?? null} toBase={exposureToBase}
         head={<>
         <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
           <SLabel>Sizing</SLabel>
@@ -4470,6 +4587,15 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           </label>
           <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Default allocation (%)<br />
             {nInput(settings.targetPct, v => { setSettings(x => ({ ...x, targetPct: v === "" ? null : v })); touch(); }, "5", 64)}</label>
+          {/* ── THE HOLD-TYPE SETTINGS, IN ONE PLACE (lib/holdTypes.js) ──
+              1R is the trading sleeve's unit of risk (Trade and Event tests); the drawdown budget is a
+              % of the FAMILY book, not this account (Long hold test); the caps are on this account's
+              NLV. Each number says which base it uses. */}
+          {[["oneR", "1R ($, trading sleeve)", "2000", 80], ["familyBook", "Family book ($)", "e.g. 550000", 100], ["ddBudgetPct", "Drawdown budget (% of family book)", "2.5", 64],
+            ["singleNamePct", "Single-name cap (% NLV)", "10", 64], ["clusterPct", "Cluster guide (% NLV)", "15", 64]].map(([k, label, ph, w]) => (
+            <label key={k} style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>{label}<br />
+              {nInput(settings.hold?.[k], v => { setSettings(x => ({ ...x, hold: { ...(x.hold || {}), [k]: v === "" ? null : v } })); touch(); }, ph, w)}</label>
+          ))}
           <div style={{ fontSize: 11.5, color: C.muted, flex: "1 1 240px", lineHeight: 1.55 }}>
             <b style={{ color: C.mid }}>Equity is meant to be approximate.</b> Sizing is linear in it, so a figure 5% out moves a
             suggestion by 5% — which never changes a swing decision. Refresh it when the book has moved materially, not daily;
