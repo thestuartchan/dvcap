@@ -65,6 +65,7 @@ import { moveGroupOnto } from "../lib/reorder.js";
 import { snapshotOf, writeSnapshot } from "../lib/bookSnapshot.js";
 import { HOLD_TYPES, HOLD_LABEL, anA, holdSettings, defaultDrawdown, otherTypesLine, leveragedLongHoldNote, ccyOfSymbol, exposureRootOf, correlationTable, effectiveExposure, exposureStrip } from "../lib/holdTypes.js";
 import { syncStatus } from "../lib/flexStatus.js";
+import { searchBook } from "../lib/positionSearch.js";
 import { FACTORS, FACTOR_SYMBOLS, TAGS, tagOf, LIST_GROUPS, listGroupOf, groupCounts, sortByGroup, filterByGroups, holdingsOf, factorExposure, scenarioPnl, overnightFlag } from "../lib/factorExposure.js";
 
 // Shown in the sizing note; kept a constant so the copy and the cap cannot drift apart.
@@ -3279,6 +3280,13 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
 
   const tabs     = useMemo(() => byState(derivedRows, { now: nowMs }), [derivedRows]);   // eslint-disable-line
   const setups   = tabs.WATCHING;
+  // ── SEARCH ── one box across Watching, Open, Closed and the Archive; crypto has its own tab and
+  // is not searched (lib/positionSearch.js). While a query is in the box the results replace the
+  // tab's list; picking a tab clears it.
+  const [bookQuery, setBookQuery] = useState("");
+  const searching = bookQuery.trim() !== "";
+  const found = useMemo(() => searchBook(tabs, bookQuery), [tabs, bookQuery]);
+  const shownTab = searching ? null : bookTab;
   const openPos  = tabs.OPEN;
   // A rolled-out contract is not a closed trade — it was replaced, and its P&L now sits inside the
   // position that replaced it. Listing it in the archive would count the same gain twice.
@@ -4744,10 +4752,10 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
         padding: 6, background: C.inset, border: "1.5px solid " + C.bdrMd, borderRadius: 12,
         position: "sticky", top: "calc(var(--nav-h, 0px) + 6px)", zIndex: 60, boxShadow: "0 4px 12px rgba(0,0,0,0.12)" }}>
         {BOOK_TABS.map(t => {
-          const on = bookTab === t.id;
+          const on = !searching && bookTab === t.id;
           const n = t.id === "ARCHIVED" ? tabs.ARCHIVED.length + tabs.CLOSED.length : tabs[t.id]?.length ?? "";
           return (
-            <button key={t.id} className="mwd-booktab" role="tab" aria-selected={on} onClick={() => setBookTab(t.id)} style={{
+            <button key={t.id} className="mwd-booktab" role="tab" aria-selected={on} onClick={() => { setBookTab(t.id); setBookQuery(""); }} style={{
               flex: "1 1 0", minWidth: 110, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
               background: on ? C.blue : "transparent", border: "1.5px solid " + (on ? C.blue : "transparent"), borderRadius: 9,
               color: on ? C.onFill : C.text, padding: "10px 16px", fontSize: 15.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap",
@@ -4759,13 +4767,36 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           );
         })}
       </div>
+      {/* ── SEARCH ── by ticker, company, tag, an option's contract or the thesis. Every word has
+          to match, so "nvda put" narrows rather than widens. Esc clears. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "-4px 0 12px" }}>
+        <input type="search" value={bookQuery} onChange={e => setBookQuery(e.target.value)}
+          onKeyDown={e => { if (e.key === "Escape") setBookQuery(""); }}
+          placeholder="Search positions — ticker, company, tag, contract, thesis (not crypto)" aria-label="Search positions"
+          style={{ flex: "1 1 auto", minWidth: 0, fontSize: 14, padding: "8px 11px", borderRadius: 9, background: C.surf, color: C.text,
+                   border: "1.5px solid " + (searching ? C.blue : C.bdrMd), outline: "none" }} />
+        {searching && <button onClick={() => setBookQuery("")} style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, padding: "7px 11px",
+          borderRadius: 8, background: "transparent", color: C.muted, border: "1px solid " + C.bdr, whiteSpace: "nowrap" }}>Clear</button>}
+      </div>
+      {searching && (
+        <>
+          <div style={{ fontSize: 12, color: C.lbl, margin: "0 2px 10px" }}>
+            {found.total ? `${found.total} match${found.total === 1 ? "" : "es"} for “${bookQuery.trim()}” across Watching, Open and the Archive` : `Nothing in Watching, Open or the Archive matches “${bookQuery.trim()}”.`}
+            {found.cryptoSkipped > 0 && <> · {found.cryptoSkipped} crypto row{found.cryptoSkipped === 1 ? " also matches" : "s also match"} — crypto isn't searched; it's on the Crypto tab.</>}
+          </div>
+          {found.groups.map(g => (
+            <Section key={g.state} title={g.label} list={g.rows} ctx={ctx}
+              mode={{ WATCHING: "setup", OPEN: "open", CLOSED: "closed", ARCHIVED: "archived" }[g.state]} />
+          ))}
+        </>
+      )}
       {/* Setups have no size to sort by and no rule worth keeping, so they are simply in your
           order, always. */}
-      {bookTab === "WATCHING" && <Section title="Watching" note="no position yet; levels are being watched · record the first fill inside the card" list={setups} mode="setup" ctx={ctx} reorder />}
+      {shownTab === "WATCHING" && <Section title="Watching" note="no position yet; levels are being watched · record the first fill inside the card" list={setups} mode="setup" ctx={ctx} reorder />}
       {/* Biggest first. Import order is meaningless, and the position that most deserves a second
           look each morning is the one carrying the most of the book. Rows whose market value cannot
           be converted sort last rather than to the top as a zero. */}
-      {bookTab === "OPEN" && <Section title="Open" note="spot / swing holds, scaled in and out · options and spreads under their underlying"
+      {shownTab === "OPEN" && <Section title="Open" note="spot / swing holds, scaled in and out · options and spreads under their underlying"
         list={(() => {
           // Size order first; Tag then groups it (stable, so each group stays biggest-first).
           const bySize = [...openPos].sort((a, b) => (convert(b.pnl.marketValue, b.currency || "USD", baseCcy, fxRates) ?? -1) - (convert(a.pnl.marketValue, a.currency || "USD", baseCcy, fxRates) ?? -1));
@@ -4803,10 +4834,10 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           exchange ledger is not the wallet, so there is still no grand total and still one section
           per chain — the header carries the two figures that are separately meaningful rather than
           a sum that would describe a position you cannot take. */}
-      {bookTab === "CRYPTO" && !(livePerps.length > 0 || hlSpot?.rows?.length > 0 || wallet?.chains?.some(c => c.ok && c.rows.length > 0)) && (
+      {shownTab === "CRYPTO" && !(livePerps.length > 0 || hlSpot?.rows?.length > 0 || wallet?.chains?.some(c => c.ok && c.rows.length > 0)) && (
         <Card><div style={{ fontSize: 12.5, color: C.muted }}>Nothing read yet — no perps, exchange balances or on-chain holdings for the configured address. Refresh prices to read again.</div></Card>
       )}
-      {bookTab === "CRYPTO" && (livePerps.length > 0 || hlSpot?.rows?.length > 0 || wallet?.chains?.some(c => c.ok && c.rows.length > 0)) && (
+      {shownTab === "CRYPTO" && (livePerps.length > 0 || hlSpot?.rows?.length > 0 || wallet?.chains?.some(c => c.ok && c.rows.length > 0)) && (
       <Card>
         <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap",
                       paddingBottom: 9, borderBottom: "1.5px solid " + C.bdrMd }}>
@@ -4963,8 +4994,8 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           layout for a phone. */}
       {/* Closed within the last 24 hours: still editable (a mistyped fill, a wrong exit), so it
           heads the archive rather than hiding in a tab that was empty most days. */}
-      {bookTab === "ARCHIVED" && tabs.CLOSED.length > 0 && <Section title="Closed in the last 24h" note="still editable · realised P&L frozen · moves into the archive below after a day, or now" list={tabs.CLOSED} mode="closed" ctx={ctx} />}
-      {bookTab === "ARCHIVED" && <Card>
+      {shownTab === "ARCHIVED" && tabs.CLOSED.length > 0 && <Section title="Closed in the last 24h" note="still editable · realised P&L frozen · moves into the archive below after a day, or now" list={tabs.CLOSED} mode="closed" ctx={ctx} />}
+      {shownTab === "ARCHIVED" && <Card>
         <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
           <SLabel>Archive — closed</SLabel>
           <span style={{ fontSize: 12, color: C.muted }}>{archived.length}</span>
