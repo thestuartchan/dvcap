@@ -3,7 +3,7 @@ import { pctRank, upTo, onOrBefore, creditComponent, ratesVolComponent, equityVo
          breadthComponent, realYieldComponent, conditionsAt, conditions, liquidity, legScore, phi, axisScore, regime, axisWords,
          sizing, stage, hedgePhase, transitions, computeMarketState, stateLogRow, bandOf, STRESS_AT, CONDITION_WEIGHTS,
          CONDITION_SIZING, STAGES, conditionsScore } from '../lib/marketState.js';
-import { seriesHealth, DRIVER_GROUPS, SERIES_META, inflationMomentum, PLAYBOOKS, stageOf, STAGE_AT } from '../lib/marketState.js';
+import { seriesHealth, DRIVER_GROUPS, SERIES_META, inflationMomentum, PLAYBOOKS, INSTRUMENTS, stageOf, STAGE_AT } from '../lib/marketState.js';
 import { FRED_STATE_SERIES, YAHOO_STATE_SERIES, mapToSeries, stateInputs } from '../lib/marketStateFeed.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
@@ -223,7 +223,15 @@ const calm = {
   ok('thresholds as documented', STAGE_AT.prep === 60 && STAGE_AT.arm === 85 && STAGE_AT.triggered === 100);
   // The copy ships in the page's script: sizes are against the limits, never a named holding.
   const all = JSON.stringify(PLAYBOOKS);
-  ok('no holding named', !/7709|AVGO|INTC|SOFI|NFLX|CRCL|HOOD|RKLB|0981|PUR\b/.test(all));
+  ok('no holding named', !/7709|AVGO|INTC|SOFI|NFLX|CRCL|HOOD|RKLB|0981|PUR\b|BRNT/.test(all));
+  // 8 Oct: the playbooks use the instruments Stu picked from the menu, and nothing he left out.
+  const picked = ['A1', 'A2', 'A3', 'A4', 'B1', 'B2', 'B4', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'D1', 'D2', 'E1', 'E2', 'E4', 'F1', 'F3', 'G1', 'G2',
+    'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'I1', 'I2', 'I3', 'I4', 'I6', 'J1', 'J3', 'K1', 'K2'];
+  eq('the menu is the picks', Object.keys(INSTRUMENTS), picked);
+  const used = new Set(Object.values(PLAYBOOKS).flatMap(p => p.kit));
+  eq('every pick is used by a playbook', picked.filter(c => !used.has(c)), []);
+  eq('every kit code is a pick', [...used].filter(c => !INSTRUMENTS[c]), []);
+  ok('nothing left out is named', !/\bSQQQ\b|\bSH\b|NVDA put|\bSHY\b|\bFXY\b|\bVXM\b|UVXY|VIXY|\bLQD\b|\bJNK\b|\bDBC\b|PDBC|\bQUAL\b|USMV|\bMHI\b|XLY/.test(all));
 }
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

@@ -12,7 +12,7 @@ import { useState } from "react";
 import { C, alpha } from "./theme.js";
 import { Card, SLabel, StaleChip } from "./ui.jsx";
 import { REGIME_PALETTE } from "../lib/regimes.js";
-import { QUADRANTS, BANDS, STRESS_AT, CONDITION_SIZING, DRIVER_GROUPS, seriesHealth, STAGE_AT, STAGE_LABEL } from "../lib/marketState.js";
+import { QUADRANTS, BANDS, STRESS_AT, CONDITION_SIZING, DRIVER_GROUPS, seriesHealth, STAGE_AT, STAGE_LABEL, INSTRUMENTS } from "../lib/marketState.js";
 import { readSnapshot, bookLine, ageText } from "../lib/bookSnapshot.js";
 import { REGIME_SIZING } from "../lib/sizing.js";
 
@@ -418,6 +418,12 @@ function Playbook({ t, tone, snap }) {
           {all ? "Show this stage" : "All stages"}
         </button>
       </div>
+      {/* THE KIT: the picked instruments this playbook uses, by menu code. */}
+      {pb.kit?.length > 0 && (
+        <div style={{ fontSize: 11.5, color: C.muted, lineHeight: 1.6 }}>
+          <b style={{ color: C.mid }}>Kit:</b> {pb.kit.map((c, i) => <span key={c}>{i ? " · " : ""}<span style={{ fontFamily: MONO, color: C.lbl }}>{c}</span> {INSTRUMENTS[c]}</span>)}
+        </div>
+      )}
       {cur === "watch" && !all && <PbList k="prep" items={pb.prep} dim cur={cur} tone={tone} />}
       {shown.map(k => <PbList key={k} k={k} items={pb[k]} cur={cur} tone={tone} />)}
       {spec && <PbList k="spec" items={pb.spec} cur={cur} tone={tone} />}
