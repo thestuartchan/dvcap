@@ -1,7 +1,8 @@
 // test/cta.test.mjs — the CTA replica (lib/cta.js), on synthetic series whose answers are known.
 import { ctaMarket, sigmaDaily, windowScore, blend, blendedFlip, stanceOf, nearestCut, ctaSummary,
-         LOOKBACKS, MIN_BARS, CTA_MARKETS, CROWDED, NEUTRAL, priceDp, globexTradeDate, closesForModel } from '../lib/cta.js';
+         LOOKBACKS, MIN_BARS, CTA_MARKETS, CROWDED, NEUTRAL, priceDp, globexTradeDate, closesForModel, isWeekendDate } from '../lib/cta.js';
 import { closeBeforeFrom } from '../lib/yahoo.js';
+import { marketState } from '../lib/sessions.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const ok = (n, c) => eq(n, !!c, true);
@@ -148,6 +149,44 @@ const N = MIN_BARS + 20;
     indicators: { quote: [{ close: [4135.5, 4136.7, 4133.1, 4134.4] }] } };
   eq('the 17:00 close from the hourly bars', closeBeforeFrom(result, '2026-10-07'), 4136.7);
   eq('none for a day the series lacks', closeBeforeFrom(result, '2026-10-06'), null);
+}
+
+// ── SUNDAY EVENING: A WEEKEND-DATED BAR IS NEVER A SESSION ───────────────────
+// Sunday's 18:00 reopen trades for Monday. If Yahoo dates that evening's bar Sunday, keeping it as a
+// finished day would append the live price twice and push every reference one session too far back.
+{
+  // Weekday-dated closes ending Friday 9 Oct 2026, as Yahoo's history is (no weekend bars).
+  const c = series(N, { drift: 0.001 });
+  const dates = [];
+  for (let t = Date.UTC(2026, 9, 9); dates.length < N; t -= 86400000) { const d = new Date(t); if (d.getUTCDay() % 6) dates.unshift(d.toISOString().slice(0, 10)); }
+  const bars = c.map((close, i) => ({ date: dates[i], close }));
+  const fri = c.at(-1), livePx = fri * 1.003;
+  const sunday = new Date('2026-10-11T23:00:00Z');                  // 19:00 New York, Sunday
+  const tradeDate = globexTradeDate(sunday);
+  eq('Sunday 19:00 New York is Monday\'s session, and the market is open', [tradeDate, marketState('GC=F', sunday)], ['2026-10-12', 'open']);
+  eq('weekend dates', [isWeekendDate('2026-10-10'), isWeekendDate('2026-10-11'), isWeekendDate('2026-10-09'), isWeekendDate(null)], [true, true, false, false]);
+
+  // With no Sunday bar: Friday is put back to its close and the live price follows once.
+  const noSun = closesForModel([...bars.slice(0, -1), { ...bars.at(-1), close: livePx }], { live: true, tradeDate, settled: fri });
+  eq('no Sunday bar: Friday\'s close, then the live price', [noSun.closes.length, noSun.closes.at(-2), noSun.closes.at(-1)], [N + 1, fri, livePx]);
+  // With a Sunday-dated bar carrying the live price: dropped as a session, the same closes result.
+  const sun = closesForModel([...bars, { date: '2026-10-11', close: livePx }], { live: true, tradeDate });
+  eq('a Sunday bar gives the same closes as none', sun.closes, noSun.closes);
+  eq('the live price appears once', sun.closes.filter(x => x === livePx).length, 1);
+  eq('and it is Monday\'s session', [sun.evening, sun.date, sun.settled], [true, '2026-10-12', null]);
+  eq('a stray 17:00 close never replaces Friday under a Sunday bar', closesForModel([...bars, { date: '2026-10-11', close: livePx }], { live: true, tradeDate, settled: fri * 0.9 }).closes, noSun.closes);
+  eq('so the flips are Monday\'s — the ones Friday\'s settled run quoted for the next close',
+     ctaMarket(sun.closes, { live: true }).windows.map(w => w.flip), ctaMarket(c, { live: false }).windows.map(w => w.flip));
+  const kept = ctaMarket([...c, livePx, livePx], { live: true });
+  ok('(kept as a session, every reference was a day too far back)', kept.windows[1].flip !== ctaMarket(sun.closes, { live: true }).windows[1].flip);
+
+  // A normal Tuesday evening is unchanged: the day put back to its close, the live price appended.
+  const tue = bars.findLastIndex(b => b.date === '2026-10-06');
+  const tueBars = bars.slice(0, tue + 1);
+  const tueEve = closesForModel([...tueBars.slice(0, -1), { ...tueBars.at(-1), close: livePx }],
+                                { live: true, tradeDate: globexTradeDate(new Date('2026-10-06T23:00:00Z')), settled: c[tue] });
+  eq('Tuesday evening: Tuesday\'s close, then the live price, as Wednesday\'s session',
+     [tueEve.evening, tueEve.date, tueEve.closes.length, tueEve.closes.at(-2), tueEve.closes.at(-1), tueEve.settled], [true, '2026-10-07', tue + 2, c[tue], livePx, c[tue]]);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
