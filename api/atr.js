@@ -15,6 +15,8 @@ import { FAMILIES, MULTIPLIER, familyOf, parentFamily, isIndexFamily, contractMo
 import { kvGetJson, kvSetJsonEx, kvConfigured } from '../lib/kv.js';
 import holidays from '../data/holidays.json' with { type: 'json' };
 import { buildCta } from '../lib/ctaBook.js';
+import { readBreakLog, updateBreakLog } from '../lib/ratioBreakLog.js';
+import { authorised, refusalReason } from '../lib/apiauth.js';
 
 
 // ── ?future=CL — A CONTRACT FAMILY, RESOLVED ─────────────────────────────────
@@ -97,7 +99,21 @@ async function closeHistory(list, range) {
 }
 
 export default async function handler(req, res) {
-  const { tickers, period, future, cta, history, range } = req.query || {};
+  const { tickers, period, future, cta, history, range, ratios } = req.query || {};
+  // ── ?ratios=1 — THE RATIOS BREAK LOG (lib/ratioBreakLog.js) ──
+  // GET: the stored log, market data only. &write=1 recomputes every break from two years of closes
+  // and merges it in — the daily run (.github/workflows/ratio-breaks.yml), key-gated because it
+  // writes.
+  if (String(ratios || '') === '1') {
+    if (String(req.query?.write || '') === '1') {
+      res.setHeader('Cache-Control', 'private, no-store');
+      if (!(await authorised(req))) return res.status(401).json({ ok: false, error: 'unauthorised', why: refusalReason(req) });
+      try { return res.status(200).json(await updateBreakLog()); }
+      catch (e) { return res.status(200).json({ ok: false, reason: String(e?.message || e).slice(0, 160) }); }
+    }
+    res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=3600');
+    return res.status(200).json(await readBreakLog());
+  }
   if (String(history || '') === '1') {
     if (!tickers) return res.status(400).json({ error: 'Missing tickers' });
     const list = [...new Set(String(tickers).split(',').map(t => t.trim()).filter(Boolean))].slice(0, HISTORY_MAX);
