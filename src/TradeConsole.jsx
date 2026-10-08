@@ -3287,6 +3287,23 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   const searching = bookQuery.trim() !== "";
   const found = useMemo(() => searchBook(tabs, bookQuery), [tabs, bookQuery]);
   const shownTab = searching ? null : bookTab;
+  // "/" jumps to the box from anywhere on the console, as on GitHub or YouTube — unless the key is
+  // being typed into a field, where it is just a slash.
+  const searchRef = useRef(null);
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target;
+      if (t?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t?.tagName || "")) return;
+      const el = searchRef.current;
+      if (!el) return;
+      e.preventDefault();
+      el.focus({ preventScroll: true });
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const openPos  = tabs.OPEN;
   // A rolled-out contract is not a closed trade — it was replaced, and its P&L now sits inside the
   // position that replaced it. Listing it in the archive would count the same gain twice.
@@ -4768,11 +4785,11 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
         })}
       </div>
       {/* ── SEARCH ── by ticker, company, tag, an option's contract or the thesis. Every word has
-          to match, so "nvda put" narrows rather than widens. Esc clears. */}
+          to match, so "nvda put" narrows rather than widens. / jumps here; Esc clears. */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "-4px 0 12px" }}>
-        <input type="search" value={bookQuery} onChange={e => setBookQuery(e.target.value)}
-          onKeyDown={e => { if (e.key === "Escape") setBookQuery(""); }}
-          placeholder="Search positions — ticker, company, tag, contract, thesis (not crypto)" aria-label="Search positions"
+        <input ref={searchRef} type="search" value={bookQuery} onChange={e => setBookQuery(e.target.value)}
+          onKeyDown={e => { if (e.key === "Escape") { setBookQuery(""); e.currentTarget.blur(); } }}
+          placeholder="Search positions — ticker, company, tag, contract, thesis (not crypto) · press / to jump here" aria-label="Search positions"
           style={{ flex: "1 1 auto", minWidth: 0, fontSize: 14, padding: "8px 11px", borderRadius: 9, background: C.surf, color: C.text,
                    border: "1.5px solid " + (searching ? C.blue : C.bdrMd), outline: "none" }} />
         {searching && <button onClick={() => setBookQuery("")} style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, padding: "7px 11px",
