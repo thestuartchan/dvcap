@@ -1,0 +1,42 @@
+name: ratio breaks
+
+# The Ratios panel's break log (lib/ratioBreakLog.js): after each US close, every ratio's breaks are
+# recomputed from two years of daily closes and merged into the append-only log in Redis — the
+# first run is the backfill, later runs fill the forward d5/d10/d20 fields as the days pass.
+#
+# 21:40 UTC is after the 16:00 New York close in both halves of the year (20:00 UTC summer, 21:00
+# winter). A missed run heals itself: the next one recomputes from the same closes.
+#
+# Market data only — the log holds ratios of public prices — but the write is key-gated, and the
+# log below prints summary counts only, because Actions logs are public.
+
+on:
+  schedule:
+    - cron: '40 21 * * 1-5'
+  workflow_dispatch:
+
+concurrency:
+  group: ratio-breaks
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Merge today's breaks into the log
+        env:
+          KEY: ${{ secrets.TRADECARD_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then echo "::error::TRADECARD_KEY is not set"; exit 1; fi
+          code=$(curl -sS -o /tmp/rb.json -w '%{http_code}' --max-time 120 \
+            -H "x-tradecard-key: $KEY" \
+            "https://dvcap.vercel.app/api/atr?ratios=1&write=1") || true
+          echo "HTTP $code"
+          python3 - <<'PY' || head -c 300 /tmp/rb.json
+          import json
+          d = json.load(open('/tmp/rb.json'))
+          print('ok', d.get('ok'), '| at', d.get('at'), '| fresh', d.get('fresh'), '| stored before', d.get('stored'),
+                '| total', d.get('total'), '| written', d.get('written'), '| skipped', d.get('skipped'))
+          PY
+          [ "$code" = "200" ]

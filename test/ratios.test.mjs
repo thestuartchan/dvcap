@@ -1,5 +1,5 @@
 // test/ratios.test.mjs — the Ratios panel's arithmetic (lib/ratios.js), on synthetic series.
-import { CARDS, LEGS, ratioSeries, cardStats, staleness, buildCard, nowSentence, statusOf, toneOf, summaryLine, summaryRead, turning, lastSettledSession, sessionsBetween, BAND_SESSIONS } from '../lib/ratios.js';
+import { CARDS, LEGS, ratioSeries, cardStats, staleness, buildCard, nowSentence, statusFor, toneOf, summaryLine, summaryRead, turning, lastSettledSession, sessionsBetween, BAND_SESSIONS } from '../lib/ratios.js';
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; console.log(`✅ ${n}`); } else { fail++; console.log(`❌ ${n}`); } };
@@ -47,11 +47,11 @@ eq('basket: says from when', r2.base, D[0]);
 
 // ── breaks (acceptance 2) ──
 const up = cardStats(D.map((d, i) => ({ d, v: i === 299 ? 1.2 : 1 + 0.01 * Math.sin(i) })));
-eq('a close above the prior 60-session high', [up.broke, statusOf(up)[0].text], ['above', '▲ Broke ABOVE its 60-day range']);
+eq('a close above the prior 60-session high', up.broke, 'above');
 const dn = cardStats(D.map((d, i) => ({ d, v: i === 299 ? 0.8 : 1 + 0.01 * Math.sin(i) })));
-eq('below the prior 60-session low', statusOf(dn)[0].text, '▼ Broke BELOW its 60-day range');
+eq('below the prior 60-session low', dn.broke, 'below');
 const inside = cardStats(D.map((d, i) => ({ d, v: 1 + 0.01 * Math.sin(i) })));
-eq('inside', statusOf(inside).map(s => s.kind), ['inside']);
+eq('inside', [inside.broke, statusFor({ stage: 'inside' }, inside).map(s => s.kind)], [null, ['inside']]);
 ok('the band is the 60 sessions BEFORE today', up.bandHi < 1.2 && up.chart.at(-1).hi === up.bandHi);
 eq('chart is six months', up.chart.length, 126);
 
@@ -59,8 +59,8 @@ eq('chart is six months', up.chart.length, 126);
 const calm = D.map((d, i) => ({ d, v: 1 + 0.002 * Math.sin(i / 3) }));
 calm[299] = { d: D[299], v: calm[279].v * 1.15 };
 const fast = cardStats(calm);
-ok(`a 20-session move far outside a year of them is flagged (z ${fast.z?.toFixed(1)})`, fast.fast && statusOf(fast).some(s => s.kind === 'fast'));
-ok('and shows beside a break chip', statusOf(fast).length === 2);
+ok(`a 20-session move far outside a year of them is flagged (z ${fast.z?.toFixed(1)})`, fast.fast && statusFor({ stage: 'inside' }, fast).some(s => s.kind === 'fast'));
+eq('and shows beside a break chip and its tag', statusFor({ stage: 'confirmed', dir: 'below', day: 2, tag: 'price move' }, fast).map(s => s.text), ['▼ Confirmed · day 2 of 5', 'price move', '⚡ Unusually fast 20-day move']);
 ok('an ordinary series is not', !inside.fast);
 
 // ── changes and the year ──
@@ -93,25 +93,26 @@ eq('a missing leg is stale', staleness(c1, { NVDA: flat }, { now: NOW })?.legs, 
 // ── the summary line ──
 const built = [
   { card: CARDS[0], stats: { ch20: -0.1, broke: null } }, { card: CARDS[1], stats: { ch20: -0.1, broke: null } },
-  { card: CARDS[2], stats: { ch20: -0.1, broke: 'below' } }, { card: CARDS[3], stats: { ch20: 0.1, broke: null } },
+  { card: CARDS[2], stats: { ch20: -0.1, broke: 'below' }, track: { stage: 'confirmed', dir: 'below', day: 3, tag: 'price move' } }, { card: CARDS[3], stats: { ch20: 0.1, broke: null } },
   { card: CARDS[4], stats: { ch20: 0.1, broke: null } }, { card: CARDS[5], stats: { ch20: 0.1, broke: null } }, { card: CARDS[6], stats: { ch20: -0.1, broke: null } },
 ];
-eq('the summary line', summaryLine(built), 'Risk appetite: 2 of 3 rising · AI cycle: caution side leading on 3 of 4 · 1 range break today (MU ÷ SMH ▼)');
+eq('the summary line', summaryLine(built), 'Risk appetite: 2 of 3 rising · AI cycle: caution side leading on 3 of 4 · Breaks: MU ÷ SMH ▼ Confirmed (day 3)');
 // The read on 7 Oct, as the panel showed it: risk 1 of 3 (RSP and IWM below their ranges), AI
 // caution on 3 of 4 with NVDA ÷ META turning up over 5 days and CRWV ÷ NVDA at 11% of its year.
 {
-  const at = (id, ch20, ch5, extra = {}) => ({ card: CARDS.find(c => c.id === id), stats: { ch20, ch5, yearPos: 0.5, broke: null, ...extra } });
+  const at = (id, ch20, ch5, extra = {}, track = { stage: 'inside' }) => ({ card: CARDS.find(c => c.id === id), stats: { ch20, ch5, yearPos: 0.5, ...extra }, track });
   const r = summaryRead([at('nvda-meta', -0.038, 0.045, { yearPos: 0.53 }), at('smh-spenders', 0.022, 0.004), at('mu-smh', -0.027, -0.005, { yearPos: 0.88 }),
-    at('crwv-nvda', -0.122, -0.024, { yearPos: 0.11 }), at('rsp-spy', -0.038, -0.007, { yearPos: 0, broke: 'below' }),
-    at('iwm-spy', -0.063, -0.019, { yearPos: 0.12, broke: 'below' }), at('xly-xlp', 0.007, 0.009, { yearPos: 0.27 })]);
+    at('crwv-nvda', -0.122, -0.024, { yearPos: 0.11 }), at('rsp-spy', -0.038, -0.007, { yearPos: 0 }, { stage: 'day1', dir: 'below', day: 1, tag: 'price move' }),
+    at('iwm-spy', -0.063, -0.019, { yearPos: 0.12 }, { stage: 'confirmed', dir: 'below', day: 2, tag: 'price move' }), at('xly-xlp', 0.007, 0.009, { yearPos: 0.27 })]);
   eq('the headline', r.headline, 'Defensive underneath: breadth is narrowing and the AI trade is cooling.');
-  eq('risk appetite: what and which', r.rows[0].read, 'Narrow: the average stock and small caps are losing to the giants; only spending is holding up. The average stock and small caps broke below their 60-day range today, so this is speeding up, not drifting.');
+  eq('risk appetite: what and which', r.rows[0].read, 'Narrow: the average stock and small caps are losing to the giants; only spending is holding up. The average stock and small caps are breaking below their 60-day range (small caps confirmed), so this is speeding up, not drifting.');
   eq('…and so what', r.rows[0].soWhat.startsWith('A few mega-caps are carrying the index.'), true);
   eq('AI cycle: the lead, the exception, the turn, the canary', r.rows[1].read, 'Caution side leads on 3 of 4: the market is paying the AI spenders over the suppliers. Only chip makers vs spenders still favours the build-out. NVDA vs META has turned the other way over the last 5 days. The GPU clouds are near their 1-year low against NVDA: the funding-stress tell is lit.');
   eq('the counts', r.rows.map(x => x.count), ['1 of 3 rising', '3 of 4 caution']);
-  eq('the breaks', r.breaks, ['RSP ÷ SPY ▼', 'IWM ÷ SPY ▼']);
+  eq('the breaks, by stage', r.breaks, ['RSP ÷ SPY ▼ day 1', 'IWM ÷ SPY ▼ Confirmed (day 2)']);
 }
-eq('quiet day', summaryLine(built.map(x => ({ ...x, stats: { ...x.stats, broke: null } }))).endsWith('no range breaks today'), true);
+eq('quiet day', summaryLine(built.map(x => ({ ...x, track: { stage: 'inside' } }))).endsWith('no breaks'), true);
+eq('a window-roll day 1 says so', summaryLine([{ card: CARDS[3], stats: { ch20: -0.1 }, track: { stage: 'day1', dir: 'below', day: 1, tag: 'window roll' } }]), 'AI cycle: caution side leading on 1 of 1 · Breaks: CRWV ÷ NVDA ▼ day 1 (window roll)');
 ok('a short history is not a card', cardStats(D.slice(0, BAND_SESSIONS).map(d => ({ d, v: 1 }))) === null);
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
