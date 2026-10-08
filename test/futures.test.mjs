@@ -1,5 +1,7 @@
 // test/futures.test.mjs — the contract sizes, and the promise that an unknown one stays unknown.
-import { FUTURES_MULTIPLIER, futuresRoot, multiplierFor, backfillMultipliers, EQUITY_AMBIGUOUS, isUnambiguousFuture, quoteConvention, looksMisquoted, FX_MISQUOTE_RATIO } from '../lib/futures.js';
+import { derivePosition } from '../lib/positions.js';
+import { optionRow } from '../lib/instruments.js';
+import { FUTURES_MULTIPLIER, futuresRoot, multiplierFor, backfillMultipliers, optionContractMultiplier, EQUITY_AMBIGUOUS, isUnambiguousFuture, quoteConvention, looksMisquoted, FX_MISQUOTE_RATIO } from '../lib/futures.js';
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log(`✅ ${name}`); } else { fail++; console.log(`❌ ${name}`); } };
@@ -249,6 +251,25 @@ const eq = (name, got, want) => { const g = JSON.stringify(got), w = JSON.string
   eq('a non-FX contract is not checked', looksMisquoted('MGC', 45000, 4500), null);
   eq('missing inputs say nothing', looksMisquoted('MJY', null, 0.00641), null);
   eq('nor a zero price', looksMisquoted('MJY', 0, 0.00641), null);
+}
+
+
+// ── AN OPTION ON A FUTURE (7 Oct) ── the yen call spread on 6JZ6 was built at the stock-option ×100,
+// and closed showing $0 against IBKR's −$395.56 (2 in at 0.000018, out at 0.000003, $21.45 fees).
+{
+  eq('a contract month gives the future\'s size', [optionContractMultiplier('6JZ6'), optionContractMultiplier('ESZ26'), optionContractMultiplier('SPY'), optionContractMultiplier('6J')], [12500000, 50, null, null]);
+  const legs = [{ right: 'C', strike: 0.0064, expiry: '2026-10-09', side: 'long' }, { right: 'C', strike: 0.0065, expiry: '2026-10-09', side: 'short' }];
+  eq('a new spread on 6JZ6 is built at ¥12.5m', optionRow({ underlying: '6JZ6', legs }).row.multiplier, 12500000);
+  eq('the broker\'s stated figure wins', optionRow({ underlying: '6JZ6', legs, multiplier: 12500000 }).row.multiplier, 12500000);
+  eq('a stock option stays ×100', optionRow({ underlying: 'SPY', legs: [{ right: 'P', strike: 700, expiry: '2026-12-18', side: 'long' }] }).row.multiplier, 100);
+  const old = { id: 'jpy', symbol: '6JZ6', underlying: '6JZ6', instrument: 'spread', legs, side: 'long', multiplier: 100,
+    fills: [{ side: 'buy', qty: 2, price: 0.000018, date: '2026-10-01' }, { side: 'sell', qty: 2, price: 0.000003, date: '2026-10-07' }] };
+  const back = backfillMultipliers([old, { id: 'spy', symbol: 'SPY', underlying: 'SPY', instrument: 'option', legs: [legs[0]], multiplier: 100 }]);
+  eq('the load repair resizes the ×100 option-on-future row, and only it', back.fixed.map(f => [f.id, f.from, f.to, f.by]), [['jpy', 100, 12500000, 'option on a future']]);
+  ok('not marked margined', !back.rows[0].margined);
+  const d = derivePosition(back.rows[0].fills, { multiplier: back.rows[0].multiplier, side: 'long' });
+  ok(`realised before fees is −$375 (${d.realized ?? d.realised ?? d.realizedPnl})`, Math.abs((d.realized ?? d.realised ?? d.realizedPnl) + 375) < 0.01);
+  eq('a row already at the broker\'s figure is left alone', backfillMultipliers([{ ...old, multiplier: 12500000 }]).fixed.length, 0);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
