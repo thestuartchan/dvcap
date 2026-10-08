@@ -1,5 +1,5 @@
 // test/gexDays.test.mjs — gamma regime against the day's price action (lib/gexDays.js).
-import { gexDays, scoreboard, gexSummary, ATR_SESSIONS } from '../lib/gexDays.js';
+import { gexDays, scoreboard, gexSummary, todayTellInputs, ATR_SESSIONS } from '../lib/gexDays.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
@@ -52,6 +52,18 @@ ok('how much of a record it is', /^18 sessions — too few sessions to read yet/
 eq('one regime too thin: no comparison drawn', gexSummary(set.slice(0, 12)).headline, null);
 ok('…and it says why', /Not enough days in both regimes to compare: 9 below the flip, 3 above/.test(gexSummary(set.slice(0, 12)).lines[0]));
 ok('walls that break most days are called magnets at most', /have not held as intraday limits/.test(gexSummary(set.map(x => ({ ...x, brokeWall: true }))).lines[2]));
+
+
+// The tells per session, and today's.
+{
+  const vix = { [day(19)]: 15, [day(20)]: 17 }, vix3m = { [day(19)]: 18, [day(20)]: 18 };
+  const firstHour = { [day(21)]: { open: 100, close: 101.5 }, [day(60)]: { open: 101, close: 99 } };
+  const rows = gexDays([cap(19, 100, 101), cap(20, 100, 99), cap(21, 101, 102)], bars, { vix, vix3m, firstHour });
+  const d21 = rows.find(r => r.date === day(21));
+  eq('a session carries its pre-open tells', [d21.vixPrev, d21.vix3mPrev, d21.curve, d21.firstHourAtr, d21.openVsFlipAtr], [17, 18, 0.944, 0.64, 0.42]);
+  const t = todayTellInputs({ bars: bars.slice(0, 60), vix: { [day(59)]: 15.08 }, vix3m: { [day(59)]: 17.72 }, firstHour, captures: [cap(59, 100, 98), cap(60, 99, 100)] });
+  eq('today: the prior close, today\'s open and first hour, the flip from before today', [t.asOf, t.today, t.vixPrev, t.firstHourAtr, t.flip, t.flipDate], [day(59), day(60), 15.08, -1, 98, day(59)]);
+}
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

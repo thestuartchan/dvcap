@@ -9,7 +9,8 @@
 // is a discontinuity between two different instruments and true range scores it as a real day's
 // move — measured, it inflates ATR to 2.4x on the day and is still a third too wide a trading
 // month later, which is exactly the month the new contract is being sized in.
-import { yahooDailyOHLCDetailed, yahooDailyCloses } from '../lib/yahoo.js';
+import { yahooDailyOHLCDetailed, yahooDailyCloses, yahooFirstHour } from '../lib/yahoo.js';
+import { fetchSqueezeGex } from '../lib/squeeze.js';
 import { atrSummary, ATR_PERIOD } from '../lib/atr.js';
 import { FAMILIES, MULTIPLIER, familyOf, parentFamily, isIndexFamily, contractMonths, frontMonth } from '../lib/futuresContracts.js';
 import { kvGetJson, kvSetJsonEx, kvConfigured } from '../lib/kv.js';
@@ -129,6 +130,13 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=3600');
     return res.status(200).json(await readBreakLog());
   }
+  // ── ?squeeze=1 — SqueezeMetrics' daily SPX dealer-gamma estimate (lib/squeeze.js), the last
+  // ~2 years, for the Gamma tab's percentile tell. Market data only.
+  if (String(req.query?.squeeze || '') === '1') {
+    res.setHeader('Cache-Control', 's-maxage=21600, stale-while-revalidate=86400');
+    const sq = await fetchSqueezeGex();
+    return res.status(200).json({ ok: sq.ok, why: sq.why ?? null, source: sq.source ?? null, rows: sq.rows.slice(-520) });
+  }
   if (String(history || '') === '1') {
     if (!tickers) return res.status(400).json({ error: 'Missing tickers' });
     const list = [...new Set(String(tickers).split(',').map(t => t.trim()).filter(Boolean))].slice(0, HISTORY_MAX);
@@ -142,6 +150,8 @@ export default async function handler(req, res) {
       for (const sym of list.slice(0, 6)) {
         const d = await yahooDailyOHLCDetailed(sym, rg).catch(() => null);
         out[sym] = d?.ok ? { status: 'ok', bars: d.bars.filter(b => b.date <= settled && b.open != null).map(b => [b.date, b.open, b.high, b.low, b.close]) } : { status: d?.status || 'fetch-failed' };
+        // &firsthour=1: each session's 09:30–10:30 bar, today's included once it exists.
+        if (String(req.query?.firsthour || '') === '1' && !sym.startsWith('^') && out[sym].status === 'ok') out[sym].firstHour = await yahooFirstHour(sym, '3mo');
       }
       return res.status(200).json({ range: rg, settled, at: new Date().toISOString(), symbols: out });
     }
