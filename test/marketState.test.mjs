@@ -226,7 +226,7 @@ const calm = {
   ok('no holding named', !/7709|AVGO|INTC|SOFI|NFLX|CRCL|HOOD|RKLB|0981|PUR\b|BRNT/.test(all));
   // 8 Oct: the playbooks use the instruments Stu picked from the menu, and nothing he left out.
   const picked = ['A1', 'A2', 'A3', 'A4', 'B1', 'B2', 'B4', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'D1', 'D2', 'E1', 'E2', 'E4', 'F1', 'F3', 'G1', 'G2',
-    'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'I1', 'I2', 'I3', 'I4', 'I6', 'J1', 'J3', 'K1', 'K2'];
+    'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H8', 'I1', 'I2', 'I3', 'I4', 'I6', 'J1', 'J3', 'K1', 'K2'];
   eq('the menu is the picks', Object.keys(INSTRUMENTS), picked);
   const used = new Set(Object.values(PLAYBOOKS).flatMap(p => p.kit));
   eq('every pick is used by a playbook', picked.filter(c => !used.has(c)), []);
