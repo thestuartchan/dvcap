@@ -1,6 +1,7 @@
 // test/cta.test.mjs — the CTA replica (lib/cta.js), on synthetic series whose answers are known.
 import { ctaMarket, sigmaDaily, windowScore, blend, blendedFlip, stanceOf, nearestCut, ctaSummary,
-         LOOKBACKS, MIN_BARS, CTA_MARKETS, CROWDED, NEUTRAL, priceDp } from '../lib/cta.js';
+         LOOKBACKS, MIN_BARS, CTA_MARKETS, CROWDED, NEUTRAL, priceDp, ctaSeries, positionOn } from '../lib/cta.js';
+import { globexEvening, marketState } from '../lib/sessions.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const ok = (n, c) => eq(n, !!c, true);
@@ -101,6 +102,61 @@ const N = MIN_BARS + 20;
   const gold = nearestCut({ ...m, position: 0.07, price: 4339.6, flip: 4274.23, flipPct: -1.51, flipSigmas: -1.2 });
   eq('a neutral market is cut at its net-flat level', [gold.label, gold.net, gold.flip, gold.side, gold.tips], ['net', true, 4274.23, 'below', 'short']);
   eq('and from below, it tips long above it', nearestCut({ ...m, position: -0.1, price: 4200, flip: 4274.23 }).tips, 'long');
+}
+
+// ── THE CME EVENING: A LIVE PRICE ON A SETTLED SESSION'S BAR ─────────────────
+// Yahoo dates futures bars by the New York calendar day, so from the 18:00 reopen to midnight the
+// live Globex price sits on the bar of the session that settled at 17:00 — gold on 7 Oct 2026 read
+// 4134.4 on the 7th's bar, which COMEX had settled at 4140.7. Rebuilt here with dated bars.
+{
+  const c = series(N, { drift: 0.002 });              // settled closes, the last one the 7th's
+  const n = c.length;
+  const day0 = Date.parse('2026-10-07T00:00:00Z');
+  const bars = c.map((close, i) => ({ date: new Date(day0 - (n - 1 - i) * 86400000).toISOString().slice(0, 10), close }));
+  const settle = c.at(-1);
+  const livePx = settle * Math.exp(-0.0015);          // the evening's Globex print, below the settle
+  const yahoo = [...bars.slice(0, -1), { ...bars.at(-1), close: livePx }];   // what the feed serves at 23:30 UTC
+
+  // The clock: 19:30 New York on the 7th is the evening of the 7th; 16:30 and 00:30 are not.
+  eq('23:30 UTC on 7 Oct is the evening of the 7th, and the market is open',
+     [globexEvening(new Date('2026-10-07T23:30:00Z')), marketState('GC=F', new Date('2026-10-07T23:30:00Z'))], ['2026-10-07', 'open']);
+  eq('the day session is not the evening', globexEvening(new Date('2026-10-07T20:30:00Z')), null);
+  eq('nor is after midnight New York, when Yahoo has opened the 8th\'s bar', globexEvening(new Date('2026-10-08T04:30:00Z')), null);
+  eq('nor Sunday\'s reopen, which closed no session', globexEvening(new Date('2026-10-11T23:00:00Z')), null);
+
+  // What the route reported between 17:00 and 18:00, live: false — the references for the 8th.
+  const halt = ctaMarket(c, { live: false });
+  const want = LOOKBACKS.map(w => +c[n - w.days].toFixed(2));
+  eq('the halt hour already had it right: the 8th is measured L sessions back from the 8th', halt.windows.map(w => w.flip), want);
+
+  // THE BUG: the live price taken as the 7th's close, so the flips are the 7th's references.
+  const bug = ctaMarket(yahoo.map(b => b.close), { live: true });
+  eq('as served, the evening measured a session that had already settled', bug.windows.map(w => w.flip), LOOKBACKS.map(w => +c[n - 1 - w.days].toFixed(2)));
+
+  // THE FIX, with the settle recovered: the 7th's bar back to its settle, the live price the 8th's.
+  const s = ctaSeries(yahoo, { live: true, evening: '2026-10-07', settle });
+  eq('the series gains a session: the settle, then the live price', [s.closes.length, s.closes.at(-2), s.closes.at(-1)], [n + 1, settle, livePx]);
+  eq('and says so', s.evening, { date: '2026-10-07', settle });
+  const fixed = ctaMarket(s.closes, { live: true });
+  eq('the evening\'s flips are the 8th\'s — the same levels the halt hour gave', fixed.windows.map(w => w.flip), want);
+  ok('which are not the ones it printed', fixed.windows.every((w, i) => w.flip !== bug.windows[i].flip));
+  eq('the price is still the live one', fixed.price, +livePx.toFixed(2));
+  ok('the blended flip is the zero of the 8th\'s references', Math.abs(fixed.flip - blendedFlip(LOOKBACKS.map(w => c[n - w.days]), sigmaDaily([...c, livePx]))) < 0.01);
+  eq('the dated bars carry the settle again, for the CFTC Tuesday check', s.bars.at(-1), bars.at(-1));
+  ok('so the position on the 7th is the settled one', positionOn(s.bars, '2026-10-07') === positionOn(bars, '2026-10-07'));
+
+  // No settle to be had: the levels are still right; only σ carries the live price a day early.
+  const blind = ctaSeries(yahoo, { live: true, evening: '2026-10-07' });
+  eq('without a settle the overwritten bar keeps the live price', [blind.closes.at(-2), blind.closes.at(-1), blind.evening.settle], [livePx, livePx, null]);
+  eq('and every window flip is still the 8th\'s', ctaMarket(blind.closes, { live: true }).windows.map(w => w.flip), want);
+  eq('its dated bars are left as served', blind.bars, yahoo);
+
+  // Anything else passes straight through.
+  const unchanged = (o) => { const r = ctaSeries(yahoo, o); return r.evening === null && r.closes.length === n && r.bars === yahoo; };
+  ok('settled (the halt hour, the weekend): unchanged', unchanged({ live: false, evening: '2026-10-07', settle }));
+  ok('the day session: unchanged', unchanged({ live: true, evening: null, settle }));
+  ok('a last bar not dated the evening: unchanged', unchanged({ live: true, evening: '2026-10-06', settle }));
+  eq('no bars, no crash', ctaSeries(null, { live: true, evening: '2026-10-07' }).closes, []);
 }
 
 // ── THE BOOK LINE ────────────────────────────────────────────────────────────
