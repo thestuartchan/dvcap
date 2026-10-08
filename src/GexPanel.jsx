@@ -17,7 +17,8 @@ import { heatCells, heatAlpha, spotSlot, withGrossShares } from "../lib/gex.js";
 import { oiSettledLabel } from "../lib/gexFeed.js";
 import { levelsOf, mustShow, rateLine, rateFarOut } from "../lib/gexLevels.js";
 import { pineFor } from "../lib/pine.js";
-import { gexDays, gexSummary, TREND_MOVE, TREND_EFF, WIDE_RANGE } from "../lib/gexDays.js";
+import { gexDays, gexSummary, todayTellInputs, TREND_MOVE, TREND_EFF, WIDE_RANGE } from "../lib/gexDays.js";
+import { tellsFor, tellsHeadline, BACKTEST, BASE_RATE, FIRST_HOUR_BASE } from "../lib/trendTells.js";
 
 const fmtUsd = (v) => {
   if (v == null || !Number.isFinite(+v)) return "—";
@@ -1016,16 +1017,27 @@ export function GexPanel() {
 // how much of a record it is. Settled sessions from the public history route; market data only.
 export function GammaDays({ symbol, series }) {
   const [bars, setBars] = useState(null);
+  const [extra, setExtra] = useState({});
   useEffect(() => {
     if (!symbol) return;
     let cancelled = false;
-    fetch(`/api/atr?history=1&ohlc=1&range=1y&tickers=${encodeURIComponent(symbol)}`)
+    // The symbol's bars and first hours, VIX and VIX3M, and SqueezeMetrics' SPX gamma — the tells.
+    fetch(`/api/atr?history=1&ohlc=1&firsthour=1&range=1y&tickers=${encodeURIComponent(`${symbol},^VIX,^VIX3M`)}`)
       .then(r => (r.ok ? r.json() : null))
-      .then(j => { if (!cancelled) setBars((j?.symbols?.[symbol]?.bars || []).map(([date, open, high, low, close]) => ({ date, open, high, low, close }))); })
+      .then(j => {
+        if (cancelled) return;
+        const sy = j?.symbols || {};
+        const closes = (k) => Object.fromEntries((sy[k]?.bars || []).map(b => [b[0], b[4]]));
+        setBars((sy[symbol]?.bars || []).map(([date, open, high, low, close]) => ({ date, open, high, low, close })));
+        setExtra(x => ({ ...x, vix: closes("^VIX"), vix3m: closes("^VIX3M"), firstHour: sy[symbol]?.firstHour || {} }));
+      })
       .catch(() => { if (!cancelled) setBars([]); });
+    fetch("/api/atr?squeeze=1").then(r => (r.ok ? r.json() : null)).then(j => { if (!cancelled && j?.ok) setExtra(x => ({ ...x, squeeze: j.rows })); }).catch(() => {});
     return () => { cancelled = true; };
   }, [symbol]);
-  const days = useMemo(() => (bars ? gexDays(series || [], bars) : []), [bars, series]);
+  const days = useMemo(() => (bars ? gexDays(series || [], bars, extra) : []), [bars, series, extra]);
+  const today = useMemo(() => (bars ? todayTellInputs({ bars, ...extra, captures: series || [] }) : null), [bars, extra, series]);
+  const tells = useMemo(() => (today ? tellsFor(today) : []), [today]);
   const sum = useMemo(() => gexSummary(days, (series || []).at(-1) || null, { symbol }), [days, series, symbol]);
   if (!bars) return <Card><SLabel>Gamma against the day</SLabel><div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Loading the daily bars…</div></Card>;
   const rows = days.map(d => ({ ...d, label: d.date.slice(5) }));
@@ -1045,6 +1057,37 @@ export function GammaDays({ symbol, series }) {
         {sum.now && <div style={{ marginTop: 4, color: C.text }}><b>{sum.now}</b></div>}
         <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>{sum.confidence}</div>
       </div>
+      {/* TODAY'S TELLS — each reading, the fifteen-year bucket it falls in, and how often such days
+          were clean trend days. Information only; the tells overlap, so no combined probability. */}
+      {today && (
+        <div style={{ marginTop: 12, padding: "10px 12px", border: "1px solid " + C.bdr, borderRadius: 9, background: C.metricBg }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+            <b style={{ fontSize: 13, color: C.text }}>Today's tells</b>
+            <span style={{ fontSize: 11.5, color: C.muted }}>{today.today ? `${today.today} · open and first hour in` : `before ${symbol}'s open · prior close ${today.asOf}`} · ATR {today.atr}</span>
+          </div>
+          <div style={{ fontSize: 13, color: C.text, marginTop: 5, lineHeight: 1.5 }}>{tellsHeadline(tells)}</div>
+          <div style={{ overflowX: "auto", marginTop: 6 }}>
+            <table style={{ borderCollapse: "collapse", fontSize: 12, color: C.text, width: "100%" }}>
+              <thead><tr>{["Tell", "Reading", "15-year bucket", "Trend days in that bucket"].map(h => <th key={h} style={{ ...cell, textAlign: "left", fontSize: 10.5, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>{h}</th>)}</tr></thead>
+              <tbody>{tells.map(t => {
+                const c = t.rate == null ? C.muted : t.lift >= 1.1 ? C.green : t.lift <= 0.9 ? C.amber : C.mid;
+                const base = t.key === "firstHour" ? FIRST_HOUR_BASE : BASE_RATE;
+                return (
+                  <tr key={t.key}>
+                    <td style={{ ...cell, fontWeight: 700 }}>{t.label}</td>
+                    <td style={{ ...cell, whiteSpace: "normal", color: t.value == null ? C.muted : C.text }}>{t.text}</td>
+                    <td style={cell}>{t.bucket ?? "—"}</td>
+                    <td style={{ ...cell, color: c, fontWeight: 700 }}>{t.rate == null ? "—" : `${t.rate}% vs ${base}% base · ${t.word}`}</td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          </div>
+          <div style={{ fontSize: 11, color: C.muted, marginTop: 5, lineHeight: 1.5 }}>
+            Rates from {BACKTEST.source}. Run 8 Oct: only the first hour held up from our own 25 days; low VIX, a steep curve, quiet opens and high gamma all went with FEWER trend days over fifteen years. Curve = VIX ÷ VIX3M: lower is steeper; above 1 is inverted. Gamma for the long test is SqueezeMetrics' SPX estimate{today.gexDate ? ` (latest ${today.gexDate})` : ""}.
+          </div>
+        </div>
+      )}
       {rows.length > 0 && (
         <div style={{ height: 200, marginTop: 10 }}>
           <ResponsiveContainer width="100%" height="100%">
@@ -1083,6 +1126,40 @@ export function GammaDays({ symbol, series }) {
           </table>
         </div>
       )}
+      {rows.length > 0 && <SessionTells rows={rows} cell={cell} />}
     </Card>
+  );
+}
+
+// EVERY SESSION'S TELLS AGAINST WHAT THE DAY DID — folded by default; newest first.
+function SessionTells({ rows, cell }) {
+  const [open, setOpen] = useState(false);
+  const f = (v, dp = 2) => (v == null ? "—" : (+v).toFixed(dp));
+  const sg = (v) => (v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(2)}`);
+  return (
+    <div style={{ marginTop: 10 }}>
+      <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: "none", color: C.blue, fontWeight: 700, fontSize: 12.5, cursor: "pointer", padding: 0 }}>
+        {open ? "Hide" : "Show"} the tells for every session ({rows.length})
+      </button>
+      {open && (
+        <div style={{ overflowX: "auto", marginTop: 6 }}>
+          <table style={{ borderCollapse: "collapse", fontSize: 12, color: C.text }}>
+            <thead><tr>{["Date", "Opened", "VIX", "Curve", "SPX gamma pctile", "Gap", "Open vs flip", "Prior close in range", "First hour", "Day", "Open→close"].map(h => <th key={h} style={{ ...cell, textAlign: "left", fontSize: 10.5, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>{h}</th>)}</tr></thead>
+            <tbody>{[...rows].reverse().map(d => (
+              <tr key={d.date}>
+                <td style={cell}>{d.date}</td>
+                <td style={{ ...cell, color: d.regime === "short" ? C.purple : C.green, fontWeight: 700 }}>{d.regime} γ</td>
+                <td style={cell}>{f(d.vixPrev)}</td><td style={cell}>{f(d.curve, 3)}</td>
+                <td style={cell}>{d.gexPct == null ? "—" : `${Math.round(d.gexPct * 100)}%`}</td>
+                <td style={cell}>{f(d.gapAtr)} ATR</td><td style={cell}>{sg(d.openVsFlipAtr)} ATR</td>
+                <td style={cell}>{d.prevLoc == null ? "—" : `${Math.round(d.prevLoc * 100)}%`}</td>
+                <td style={cell}>{sg(d.firstHourAtr)} ATR</td>
+                <td style={{ ...cell, fontWeight: 800, color: d.trend ? (d.up ? C.green : C.amber) : C.muted }}>{d.trend ? `${d.up ? "▲" : "▼"} trend` : d.wide ? "wide" : "—"}</td>
+                <td style={cell}>{f(d.move)} ATR</td>
+              </tr>))}</tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
