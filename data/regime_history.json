@@ -3153,7 +3153,7 @@
           "weekly": {
             "verdict": "EXPANDING",
             "lean": 1,
-            "usable": 3,
+            "usable": 4,
             "of": 4
           },
           "monthly": {
@@ -3164,11 +3164,11 @@
           }
         },
         "inflation": {
-          "state": "split",
+          "state": "turning-hot",
           "lean": -1,
           "market": {
-            "verdict": "COOLING",
-            "lean": -1,
+            "verdict": "BETWEEN",
+            "lean": 0,
             "usable": 3,
             "of": 3
           },
@@ -3192,24 +3192,24 @@
         "regime": {
           "id": "ref",
           "probs": {
-            "ref": 49,
-            "inf": 18,
-            "stag": 9,
-            "def": 24
+            "ref": 40,
+            "inf": 29,
+            "stag": 13,
+            "def": 18
           },
-          "g": 0.2,
+          "g": 0.23,
           "gDrift": -1.15,
-          "i": -0.22,
-          "iDrift": 0,
-          "drifting": "def"
+          "i": -0.07,
+          "iDrift": 0.33,
+          "drifting": "stag"
         },
         "conditions": {
-          "score": 57,
+          "score": 57.3,
           "band": "caution",
           "comps": {
             "credit": 62,
-            "equityVol": 11,
-            "ratesVol": 64,
+            "equityVol": 13,
+            "ratesVol": 63,
             "realYield": 89,
             "funding": 34,
             "breadth": 80,
@@ -3225,7 +3225,7 @@
         "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-08T14:32:15.175Z"
+      "loggedAt": "2026-10-08T15:51:22.088Z"
     }
   ]
 }
