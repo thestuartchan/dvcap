@@ -3194,11 +3194,11 @@
           "drifting": null
         },
         "conditions": {
-          "score": 55.6,
+          "score": 57.6,
           "band": "caution",
           "comps": {
             "credit": 59,
-            "equityVol": 7,
+            "equityVol": 17,
             "ratesVol": 62,
             "realYield": 89,
             "funding": 38,
@@ -3215,7 +3215,7 @@
         "stage": 2
       },
       "source": "cron",
-      "loggedAt": "2026-10-08T02:18:03.740Z"
+      "loggedAt": "2026-10-08T08:45:55.650Z"
     }
   ]
 }
