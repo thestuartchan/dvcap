@@ -4158,8 +4158,8 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           {multNote.fixed.length > 0 && (
             <div style={{ fontSize: 12, color: C.text, marginTop: 6, lineHeight: 1.6 }}>
               Set on {multNote.fixed.length} row{multNote.fixed.length === 1 ? "" : "s"}:{" "}
-              {multNote.fixed.map(f => `${f.symbol} ×${f.to}${f.alsoMargined ? " (also marked margined)" : ""}`).join(", ")}. Every money figure on
-              {multNote.fixed.length === 1 ? " it was" : " them was"} previously computed at ×1, so
+              {multNote.fixed.map(f => `${f.symbol} ×${Number(f.to).toLocaleString("en-US")} (was ×${f.from ?? 1}${f.by === "option on a future" ? ", an option on a future" : ""})${f.alsoMargined ? " (also marked margined)" : ""}`).join(", ")}. Every money figure on
+              {multNote.fixed.length === 1 ? " it was" : " them was"} previously computed at the old size, so
               realised P&L and the archive total have changed — the percentages have not, because a
               percentage is multiplier-free.
             </div>
