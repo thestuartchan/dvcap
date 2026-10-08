@@ -17,6 +17,7 @@ import { heatCells, heatAlpha, spotSlot, withGrossShares } from "../lib/gex.js";
 import { oiSettledLabel } from "../lib/gexFeed.js";
 import { levelsOf, mustShow, rateLine, rateFarOut } from "../lib/gexLevels.js";
 import { pineFor } from "../lib/pine.js";
+import { gexDays, gexSummary, TREND_MOVE, TREND_EFF, WIDE_RANGE } from "../lib/gexDays.js";
 
 const fmtUsd = (v) => {
   if (v == null || !Number.isFinite(+v)) return "—";
@@ -1005,6 +1006,83 @@ export function GexPanel() {
         </div>
       </Card>
       )}
+      {!data.custom && data.days >= 3 && <GammaDays symbol={data.symbol} series={data.series} />}
     </div>
+  );
+}
+
+// ── GAMMA AGAINST THE DAY (lib/gexDays.js) ── each captured session's own price action, in ATRs,
+// coloured by the regime it was captured in, and a summary that says what the record shows and
+// how much of a record it is. Settled sessions from the public history route; market data only.
+export function GammaDays({ symbol, series }) {
+  const [bars, setBars] = useState(null);
+  useEffect(() => {
+    if (!symbol) return;
+    let cancelled = false;
+    fetch(`/api/atr?history=1&ohlc=1&range=1y&tickers=${encodeURIComponent(symbol)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (!cancelled) setBars((j?.symbols?.[symbol]?.bars || []).map(([date, open, high, low, close]) => ({ date, open, high, low, close }))); })
+      .catch(() => { if (!cancelled) setBars([]); });
+    return () => { cancelled = true; };
+  }, [symbol]);
+  const days = useMemo(() => (bars ? gexDays(series || [], bars) : []), [bars, series]);
+  const sum = useMemo(() => gexSummary(days, (series || []).at(-1) || null, { symbol }), [days, series, symbol]);
+  if (!bars) return <Card><SLabel>Gamma against the day</SLabel><div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Loading the daily bars…</div></Card>;
+  const rows = days.map(d => ({ ...d, label: d.date.slice(5) }));
+  const col = (d) => (d.regime === "short" ? C.purple : C.green);
+  const sb = sum.scoreboard;
+  const cell = { padding: "3px 8px", borderBottom: "1px solid " + C.bdr, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" };
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+        <SLabel>Gamma against the day</SLabel>
+        <span style={{ fontSize: 11.5, color: C.muted }}>did the regime show up in the session's price action?</span>
+      </div>
+      {/* THE SUMMARY: rebuilt from the record on every load. */}
+      <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.55, color: C.mid }}>
+        {sum.headline && <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>{sum.headline}</div>}
+        {sum.lines.map((l, i) => <div key={i}>{l}</div>)}
+        {sum.now && <div style={{ marginTop: 4, color: C.text }}><b>{sum.now}</b></div>}
+        <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>{sum.confidence}</div>
+      </div>
+      {rows.length > 0 && (
+        <div style={{ height: 200, marginTop: 10 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={rows} margin={{ top: 14, right: 12, bottom: 4, left: 4 }} barGap={-14} barCategoryGap="25%">
+              <CartesianGrid strokeDasharray="2 3" stroke={C.bdr} vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: C.lbl }} />
+              <YAxis tick={{ fontSize: 10, fill: C.lbl }} tickFormatter={v => `${v}`} label={{ value: "ATR", angle: -90, position: "insideLeft", fontSize: 10, fill: C.lbl }} />
+              <ReferenceLine y={WIDE_RANGE} stroke={C.bdrMd} strokeDasharray="4 3" label={{ value: `wide ${WIDE_RANGE}`, fontSize: 9.5, fill: C.lbl, position: "insideTopRight" }} />
+              <Tooltip contentStyle={{ fontSize: 11.5, borderRadius: 8, border: "1px solid " + C.bdr }}
+                formatter={(v, n) => [`${v} ATR`, n]}
+                labelFormatter={(l, p) => { const d = p?.[0]?.payload; return d ? `${d.date} · ${d.regime} gamma (${d.cushionPct > 0 ? "+" : ""}${d.cushionPct}% vs flip) · ${d.ret > 0 ? "+" : ""}${d.ret}%${d.trend ? " · trend day" : ""}${d.brokeWall ? " · through a wall" : ""}` : l; }} />
+              <Bar dataKey="range" name="Range" isAnimationActive={false} barSize={14}>
+                {rows.map((d, i) => <Cell key={i} fill={col(d)} fillOpacity={0.28} stroke={d.brokeWall ? col(d) : "none"} strokeDasharray={d.brokeWall ? "2 2" : undefined} />)}
+              </Bar>
+              <Bar dataKey="move" name="Open→close" isAnimationActive={false} barSize={14}
+                label={({ x, y, width, index }) => rows[index]?.trend ? <text key={index} x={x + width / 2} y={y - 3} textAnchor="middle" fontSize="10" fontWeight="800" fill={col(rows[index])}>{rows[index].up ? "▲" : "▼"}T</text> : null}>
+                {rows.map((d, i) => <Cell key={i} fill={col(d)} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+      <div style={{ fontSize: 11, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+        Each session: the pale bar is the day's range, the solid bar how much of it was kept open→close, both in ATRs of the 14 sessions before.
+        <span style={{ color: C.purple, fontWeight: 700 }}> Purple</span> = captured below the flip (short gamma),
+        <span style={{ color: C.green, fontWeight: 700 }}> green</span> = above (long gamma). ▲T / ▼T = a trend day (≥{TREND_MOVE} ATR open→close, keeping ≥{Math.round(TREND_EFF * 100)}% of the range); a dashed outline = price went through a wall.
+      </div>
+      {sb.all.n > 0 && (
+        <div style={{ overflowX: "auto", marginTop: 8 }}>
+          <table style={{ borderCollapse: "collapse", fontSize: 12, color: C.text }}>
+            <thead><tr>{["", "Sessions", "Median range", "Median open→close", "Kept", "Trend days", "Wide days", "Through a wall"].map(h => <th key={h} style={{ ...cell, textAlign: "left", fontSize: 10.5, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>{h}</th>)}</tr></thead>
+            <tbody>{[["Short gamma", sb.short, C.purple], ["Long gamma", sb.long, C.green], ["All", sb.all, C.mid]].map(([name, g, c]) => (
+              <tr key={name}><td style={{ ...cell, fontWeight: 800, color: c }}>{name}</td><td style={cell}>{g.n}</td>
+                <td style={cell}>{g.range ?? "—"} ATR</td><td style={cell}>{g.move ?? "—"} ATR</td><td style={cell}>{g.eff != null ? `${Math.round(g.eff * 100)}%` : "—"}</td>
+                <td style={cell}>{g.trend}</td><td style={cell}>{g.wide}</td><td style={cell}>{g.walls}</td></tr>))}</tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }

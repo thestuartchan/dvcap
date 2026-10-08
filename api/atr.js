@@ -18,6 +18,7 @@ import { buildCta } from '../lib/ctaBook.js';
 import { readBreakLog, updateBreakLog } from '../lib/ratioBreakLog.js';
 import { fetchEarningsHistory } from '../lib/earnings.js';
 import { earningsReactions } from '../lib/holdTypes.js';
+import { lastSettledSession } from '../lib/ratios.js';
 import { authorised, refusalReason } from '../lib/apiauth.js';
 
 
@@ -132,6 +133,18 @@ export default async function handler(req, res) {
     if (!tickers) return res.status(400).json({ error: 'Missing tickers' });
     const list = [...new Set(String(tickers).split(',').map(t => t.trim()).filter(Boolean))].slice(0, HISTORY_MAX);
     const rg = HISTORY_RANGES.has(String(range)) ? String(range) : '6mo';
+    // &ohlc=1 — the whole bar, [date, open, high, low, close], for the Gamma tab's day measures
+    // (lib/gexDays.js). US sessions settled only: a session still trading has no range yet.
+    if (String(req.query?.ohlc || '') === '1') {
+      res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=21600');
+      const settled = lastSettledSession();
+      const out = {};
+      for (const sym of list.slice(0, 6)) {
+        const d = await yahooDailyOHLCDetailed(sym, rg).catch(() => null);
+        out[sym] = d?.ok ? { status: 'ok', bars: d.bars.filter(b => b.date <= settled && b.open != null).map(b => [b.date, b.open, b.high, b.low, b.close]) } : { status: d?.status || 'fetch-failed' };
+      }
+      return res.status(200).json({ range: rg, settled, at: new Date().toISOString(), symbols: out });
+    }
     // An hour: the last bar is today's and moves until the close; the rest never will.
     res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=21600');
     return res.status(200).json({ range: rg, at: new Date().toISOString(), symbols: await closeHistory(list, rg) });
