@@ -3110,18 +3110,28 @@
       "reflationary_p": 17,
       "deflationary_p": 13,
       "inflationary_p": 5,
-      "hawkish_repricing": null,
+      "hawkish_repricing": "HAWKISH_RATES_REPRICING",
       "live_regime": "stag",
-      "view_regime": null,
-      "pinned": null,
-      "hyg_chg": null,
-      "hyg_qqq_divergence": null,
+      "view_regime": "stag",
+      "pinned": true,
+      "hyg_chg": -0.12,
+      "hyg_qqq_divergence": 0.13,
       "inputs": {
         "weightedRecessionProb": 13.6,
         "cpi": 3.35302,
         "kalshi2027": 19,
-        "tape": null,
-        "ladderSpread": null,
+        "tape": {
+          "gold": "down",
+          "tlt": "down",
+          "xlu": "flat",
+          "xlp": "down",
+          "spy": "down",
+          "qqq": "down",
+          "iwm": "down",
+          "btc": "down",
+          "breakevenBp": 0
+        },
+        "ladderSpread": -1.06,
         "u3": 4.2,
         "empPop": 59.2,
         "oas": 3.03,
@@ -3149,7 +3159,7 @@
           "monthly": {
             "verdict": "EXPANDING",
             "lean": 1,
-            "usable": 4,
+            "usable": 3,
             "of": 4
           }
         },
@@ -3182,13 +3192,13 @@
         "regime": {
           "id": "def",
           "probs": {
-            "ref": 34,
+            "ref": 32,
             "inf": 12,
-            "stag": 14,
-            "def": 40
+            "stag": 15,
+            "def": 41
           },
-          "g": -0.05,
-          "gDrift": -1.15,
+          "g": -0.07,
+          "gDrift": -1.07,
           "i": -0.22,
           "iDrift": 0,
           "drifting": null
@@ -3214,8 +3224,8 @@
         "sizing": 0.54,
         "stage": 2
       },
-      "source": "cron",
-      "loggedAt": "2026-10-08T08:45:55.650Z"
+      "source": "client+cron",
+      "loggedAt": "2026-10-08T09:01:43.802Z"
     }
   ]
 }
