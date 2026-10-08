@@ -1,5 +1,5 @@
 // test/trendTells.test.mjs — the trend-day tells and their fifteen-year rates (lib/trendTells.js).
-import { tellsFor, tellsHeadline, BACKTEST, BASE_RATE } from '../lib/trendTells.js';
+import { tellsFor, tellsHeadline, shownTells, firstHourBands, BACKTEST, BASE_RATE } from '../lib/trendTells.js';
 import { parseDix, gexPercentile } from '../lib/squeeze.js';
 import { firstHourFrom } from '../lib/yahoo.js';
 
@@ -18,14 +18,17 @@ const ok = (n, c) => eq(n, !!c, true);
   eq('high dealer gamma: fewer trend days', [by.gex.bucket, by.gex.rate, by.gex.word], ['0.8–1.01', 18.4, 'less often']);
   eq('the gap and the first hour wait for their time', [by.gap.text, by.firstHour.text], ['known at the open', 'known at 10:30 New York']);
   ok('the flip says it has no long record', /no long record/.test(by.flip.text) || by.flip.text === 'known at the open');
-  eq('the headline before the open', tellsHeadline(t), 'Before the open: nothing points to more trend days than usual; Dealer gamma (SPX, SqueezeMetrics) points to fewer. The first hour decides more than any of these.');
+  eq('the headline before the open: the lean, then the first hour in points', tellsHeadline(t, { atr: 9.15, symbol: 'QQQ' }),
+    'Before the open the lean is toward fewer trend days than usual — range more likely. The first hour decides: QQQ ±4.58 or more from the open by 10:30 → 59% trend days; inside ±1.83 → 8%.');
+  eq('only the tells that move the odds are shown', shownTells(t).map(x => x.key), ['firstHour', 'curve', 'gex', 'gap']);
+  eq('the bands in points', firstHourBands(9.15), { trend: 4.58, range: 1.83 });
 }
 // After 10:30: the first hour leads.
 {
   const t = tellsFor({ vixPrev: 18, vix3mPrev: 19, firstHourAtr: -0.62, gapAtr: 0.3, openVsFlipAtr: 1.1 });
   const fh = t.find(x => x.key === 'firstHour');
   eq('a 0.62 ATR first hour', [fh.bucket, fh.rate, fh.word], ['0.5–0.75 ATR', 59.4, 'strong']);
-  eq('the headline is the first hour', tellsHeadline(t), 'The first hour moved 0.5–0.75 ATR: in the last two years 59.4% of such days became trend days (2.86× the 20.8% base). The strongest tell there is.');
+  eq('the headline is the first hour', tellsHeadline(t), 'The first hour moved 0.5–0.75 ATR: 59.4% of such days became trend days (2.86× the 20.8% base), and trend days have gone the first hour\'s way 96–100% of the time.');
   ok('the open against the flip, in ATR, with its caveat', /\+1\.10 ATR above — no long record/.test(t.find(x => x.key === 'flip').text));
   eq('a quiet first hour reads as a range day', tellsHeadline(tellsFor({ firstHourAtr: 0.05 })).startsWith('A quiet first hour'), true);
   eq('an inverted curve', tellsFor({ vixPrev: 30, vix3mPrev: 27 }).find(x => x.key === 'curve').rate, 31.6);

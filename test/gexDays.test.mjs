@@ -36,7 +36,7 @@ eq('trend days counted by regime', [sb.long.trend, sb.short.trend], [2, 0]);
 const s = gexSummary(set, { spot: 757.73, flipLevel: 751.06 }, { symbol: 'QQQ' });
 eq('the headline: wider and choppier in short gamma', s.headline, 'Short gamma has meant wider, choppier days; long gamma, steadier direction.');
 ok('the numbers behind it', /^Median range: 0\.95 ATR on short-gamma days vs 0\.78 on long-gamma days \(\+22%\)/.test(s.lines[0]));
-eq('where today sits, and what days like it did', s.now, 'Now: QQQ 757.73 is 0.9% above the flip (751.06), so long gamma — a thin cushion; a 0.9% move down changes the regime. Long-gamma days so far: median range 0.78 ATR, open→close 0.4.');
+eq('where today sits — the regime and its cushion, no in-sample stats', s.now, 'Now: QQQ 757.73 is 0.9% above the flip (751.06), so long gamma — a thin cushion; a 0.9% move down changes the regime.');
 ok('how much of a record it is', /^18 sessions — too few sessions to read yet/.test(s.confidence));
 // 8 Oct, QQQ labelled at the open: medians alike; trend days 5 of 17 long opens, 1 of 8 short.
 {
