@@ -18,6 +18,10 @@
     {
       "source": "/api/g/:slug/:ticker",
       "destination": "/api/gex?feed=:slug&symbol=:ticker"
+    },
+    {
+      "source": "/api/mcp/:token",
+      "destination": "/api/gex?mcp=:token"
     }
   ]
 }

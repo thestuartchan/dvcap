@@ -16,10 +16,14 @@
 //                                    AAII, Cboe put/call (lib/crossCheck.js, lib/crossCheckFeed.js)
 //   GET /api/gex?feedslug=1          the feed's slug, minted on first ask (gated); POST &rotate=1
 //                                    replaces it
+//   POST /api/mcp/<token>            the gamma board as a read-only MCP connector for claude.ai
+//                                    (vercel.json rewrites it to ?mcp=<token>; lib/gammaMcp.js). Its
+//                                    own secret, MCP_CONNECTOR_TOKEN; a wrong one is a 404
 import { createHash, randomBytes } from 'node:crypto';
 import { kvConfigured, kvGetJson, kvSetJson, kvSetJsonEx, kvIncrEx, kvSetNxEx } from '../lib/kv.js';
 import { gexFeedPayload, feedLeaks, slugMatches, rateBucket, FEED_TICKERS, FEED_RECOMPUTE_MIN, FEED_RATE_PER_HOUR, oiStaleReason, nyToday } from '../lib/gexFeed.js';
 import { crossCheckPayload } from '../lib/crossCheckFeed.js';
+import { handleRpc, dashboardFor, dashboardLeaks, tokenMatches, mcpRateBucket, toolOk, toolError, MCP_RATE_PER_MIN, MCP_TOKEN_ENV } from '../lib/gammaMcp.js';
 import { crossCheckLeaks } from '../lib/crossCheck.js';
 import { captureGex, readGex, settledGex, observeRoll, OCC_ROLL_LOG_KEY, OCC_HEALTH_KEY, GEX_SYMBOLS, CUSTOM_ROOT_RE,
          LAST_RECOMPUTE_KEY, LAST_RECOMPUTE_TTL_SEC, recomputeRecord, newerRecompute } from '../lib/gexStore.js';
@@ -121,8 +125,58 @@ async function serveFeed(req, res) {
   return res.status(200).send(body);
 }
 
+// ── THE MCP CONNECTOR ────────────────────────────────────────────────────────
+// Streamable HTTP, stateless: each POST carries one JSON-RPC message (or a batch) and gets JSON
+// back; there is no session and no server-sent stream, so GET and DELETE are 405. Rate-limited per
+// IP before the token is checked, as the feed is; a wrong or unset token is a plain 404. The tools
+// call feedBoard and the feed's payload builder in-process — the same board, the same numbers.
+async function mcpTool(name, args) {
+  const today = nyToday();
+  if (name === 'get_gamma_board') {
+    const { board, mode, asOf, source, staleReason } = await feedBoard(args.ticker);
+    if (!board) return toolError('board unavailable');
+    const out = gexFeedPayload(args.ticker, board, { mode, asOf, sourceSnapshot: source, today, staleReason });
+    return feedLeaks(JSON.stringify(out)).length ? toolError('board unavailable') : toolOk(out);
+  }
+  // get_gamma_dashboard: the tickers in parallel; one that has no board is named in meta and the
+  // rest still answer. Only when none do is it an error.
+  const parts = await Promise.all(args.tickers.map(async (t) => {
+    try {
+      const { board, mode, asOf, source, staleReason } = await feedBoard(t);
+      return board ? [t, dashboardFor(t, board, { mode, asOf, sourceSnapshot: source, today, staleReason, bandPct: args.band_pct })] : [t, null];
+    } catch { return [t, null]; }
+  }));
+  if (!parts.some(([, d]) => d)) return toolError('board unavailable');
+  const out = { levels: [], ladder: [], meta: {} };
+  for (const [t, d] of parts) {
+    if (!d) { out.meta[t] = { unavailable: 'board unavailable' }; continue; }
+    out.levels.push(...d.levels); out.ladder.push(...d.ladder); out.meta[t] = d.meta;
+  }
+  return dashboardLeaks(out).length ? toolError('board unavailable') : toolOk(out);
+}
+
+async function serveMcp(req, res) {
+  if (kvConfigured()) {
+    const ip = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim() || String(req.headers?.['x-real-ip'] || '') || 'unknown';
+    const n = await kvIncrEx(mcpRateBucket(createHash('sha256').update(ip).digest('hex').slice(0, 16)), 60).catch(() => null);
+    if (n != null && n > MCP_RATE_PER_MIN) { res.setHeader('Retry-After', '60'); return res.status(429).json({ error: `limit is ${MCP_RATE_PER_MIN} requests a minute` }); }
+  }
+  if (!tokenMatches(req.query?.mcp, process.env[MCP_TOKEN_ENV])) return res.status(404).json({ error: 'not found' });
+  if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return res.status(405).json({ error: 'POST only' }); }
+  let body = req.body;
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { return res.status(400).json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }); } }
+  const callTool = (name, args) => (kvConfigured() ? mcpTool(name, args) : Promise.resolve(toolError('board unavailable')));
+  const msgs = Array.isArray(body) ? body : [body];
+  const out = (await Promise.all(msgs.map(m => handleRpc(m, { callTool })))).filter(Boolean);
+  if (!out.length) return res.status(202).end();    // notifications only
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  return res.status(200).send(JSON.stringify(Array.isArray(body) ? out : out[0]));
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'private, no-store');
+  // Before the KV check: a wrong token is a 404 whether or not the store is configured.
+  if (req.query?.mcp != null) return serveMcp(req, res);
   if (!kvConfigured()) return res.status(200).json({ available: false, ok: false, reason: 'KV not configured' });
 
   if (req.query?.feed != null) return serveFeed(req, res);
