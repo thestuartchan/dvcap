@@ -19,7 +19,8 @@ const ok = (n, c) => eq(n, !!c, true);
   eq('the gap and the first hour wait for their time', [by.gap.text, by.firstHour.text], ['known at the open', 'known at 10:30 New York']);
   ok('the flip says it has no long record', /no long record/.test(by.flip.text) || by.flip.text === 'known at the open');
   eq('the headline before the open: the lean, then the first hour in points', tellsHeadline(t, { atr: 9.15, symbol: 'QQQ' }),
-    'Before the open the lean is toward fewer trend days than usual — range more likely. The first hour decides: QQQ ±4.58 or more from the open by 10:30 → 59% trend days; inside ±1.83 → 8%.');
+    'Before the open the lean is toward fewer trend days than usual — range more likely. The first hour decides: QQQ ±4.58 or more from the open by 10:30 → 55% trend days; inside ±1.83 → 8%.');
+  ok('SPY uses its own rates', /→ 48% trend days; inside ±1\.33 → 11%/.test(tellsHeadline(t, { atr: 6.66, symbol: 'SPY' })));
   eq('only the tells that move the odds are shown', shownTells(t).map(x => x.key), ['firstHour', 'curve', 'gex', 'gap']);
   eq('the bands in points', firstHourBands(9.15), { trend: 4.58, range: 1.83 });
 }
