@@ -3327,12 +3327,12 @@
           "drifting": "stag"
         },
         "conditions": {
-          "score": 54.8,
+          "score": 54.1,
           "band": "caution",
           "comps": {
             "credit": 61,
-            "equityVol": 6,
-            "ratesVol": 62,
+            "equityVol": 5,
+            "ratesVol": 59,
             "realYield": 89,
             "funding": 34,
             "breadth": 73,
@@ -3341,14 +3341,14 @@
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 20,
+          "hikeOdds": 18,
           "liq4w": 8
         },
         "sizing": 0.63,
         "stage": 4
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-09T15:33:42.931Z"
+      "loggedAt": "2026-10-09T18:31:44.135Z"
     }
   ]
 }
