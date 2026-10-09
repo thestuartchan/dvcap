@@ -3257,16 +3257,16 @@
         "ladderSpread": -1.06,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.03,
-        "tenY": 5.27,
-        "twoY": 4.79,
-        "consensusAlive": 0.703,
+        "oas": 3.15,
+        "tenY": 5.28,
+        "twoY": 4.77,
+        "consensusAlive": 0.706,
         "regimeVintage": "decayed"
       },
       "axes": {
         "growth": {
           "state": "turning-down",
-          "lean": 0,
+          "lean": 1,
           "market": {
             "verdict": "CONTRACTING",
             "lean": -1,
@@ -3274,9 +3274,9 @@
             "of": 5
           },
           "weekly": {
-            "verdict": "INSUFFICIENT",
-            "lean": null,
-            "usable": 1,
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 4,
             "of": 4
           },
           "monthly": {
@@ -3287,11 +3287,11 @@
           }
         },
         "inflation": {
-          "state": "split",
+          "state": "turning-hot",
           "lean": -1,
           "market": {
-            "verdict": "COOLING",
-            "lean": -1,
+            "verdict": "BETWEEN",
+            "lean": 0,
             "usable": 3,
             "of": 3
           },
@@ -3308,47 +3308,47 @@
             "of": 3
           }
         },
-        "quadrant": null,
-        "quadrantRead": "between quadrants — the growth axis is flat"
+        "quadrant": "ref",
+        "quadrantRead": "growth firm, inflation cool"
       },
       "state": {
         "regime": {
-          "id": "def",
+          "id": "ref",
           "probs": {
-            "ref": 34,
-            "inf": 12,
-            "stag": 14,
-            "def": 40
+            "ref": 40,
+            "inf": 29,
+            "stag": 13,
+            "def": 18
           },
-          "g": -0.05,
+          "g": 0.23,
           "gDrift": -1.15,
-          "i": -0.22,
-          "iDrift": 0,
-          "drifting": null
+          "i": -0.07,
+          "iDrift": 0.33,
+          "drifting": "stag"
         },
         "conditions": {
-          "score": 55.5,
+          "score": 54.8,
           "band": "caution",
           "comps": {
-            "credit": 62,
-            "equityVol": 8,
+            "credit": 61,
+            "equityVol": 7,
             "ratesVol": 61,
             "realYield": 89,
             "funding": 34,
-            "breadth": 75,
+            "breadth": 73,
             "dollar": 100
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 18,
+          "hikeOdds": 20,
           "liq4w": 8
         },
-        "sizing": 0.54,
-        "stage": 2
+        "sizing": 0.63,
+        "stage": 4
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-09T12:39:07.406Z"
+      "loggedAt": "2026-10-09T14:19:35.159Z"
     }
   ]
 }
