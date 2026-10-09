@@ -25,7 +25,7 @@ import { ASSETS } from "../lib/assets.js";
 import { derivePosition, applyRolls, splitIntoTrades, collapseFills, oversellSplit, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, realizedCurve } from "../lib/positions.js";
 import { sideOf, isShort, openSideFor, closeSideFor, geometryCheck, levelVocab, fillVerb, SIDES, SIDE_LABEL, DEFAULT_SIDE } from "../lib/side.js";
 import { fmtPrice } from "../lib/price.js";
-import { archivePeriods, hiddenSummary, GRAINS } from "../lib/archive.js";
+import { archivePeriods, hiddenSummary, returnStats, GRAINS } from "../lib/archive.js";
 import { CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy, resolveRowCurrency } from "../lib/fxrates.js";
 import { addToLoser } from "../lib/discipline.js";
 import { decisionEntry, lastClosedWasWin, overrideTrend, guardOutcomes } from "../lib/decisions.js";
@@ -3346,6 +3346,8 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       losses: ok.filter(c => c.v < 0).length,
       winRate: ok.length ? Math.round((ok.filter(c => c.v > 0).length / ok.length) * 100) : null,
       avgPct: pcts.length ? +(pcts.reduce((a, b) => a + b, 0) / pcts.length).toFixed(2) : null,
+      // The same returns three ways — equal-weighted, median, and on the money (lib/archive.js).
+      ret: returnStats(archived, { toBase, labelOf: (r) => r.symbol }),
       counted: ok.length, unconverted: conv.length - ok.length,
       // Every non-base currency in the archive and the rate each one was converted at.
       ccys: [...new Set(archived.map(r => r.currency || "USD"))].filter(c => c !== baseCcy).map(code => {
@@ -5021,7 +5023,23 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
                 Average return replaces it: the figure that says whether the trades were any good,
                 which a total cannot, since it is dominated by whichever was largest. */}
             <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>REALISED </span><b style={{ color: pnlCol(archiveStats.realized) }}>{fmtCcy(archiveStats.realized, baseCcy)}</b></span>
-            <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>AVG RETURN </span><b style={{ color: pnlCol(archiveStats.avgPct) }}>{archiveStats.avgPct == null ? "—" : (archiveStats.avgPct > 0 ? "+" : "") + archiveStats.avgPct + "%"}</b></span>
+            {/* TWO RETURNS, AND WHY THEY DIFFER, ON HOVER. The average counts every trade the same, so
+                one small option that lost 86% moves it two points; dollar-weighted is the return on
+                the money actually put to work, every currency converted first. */}
+            {(() => {
+              const rt = archiveStats.ret;
+              const pc = (v) => v == null ? "—" : (v > 0 ? "+" : "") + v + "%";
+              const tip = [
+                `Average return ${pc(rt.avgPct)}: each closed trade's % return, every trade counted equally (${rt.n} trades).`,
+                `Median ${pc(rt.medianPct)}: the middle trade.`,
+                `Dollar-weighted ${pc(rt.weightedPct)}: ${fmtCcy(rt.weightedRealised, baseCcy)} realised on ${fmtCcy(rt.capital, baseCcy)} of capital, every currency converted to ${baseCcy} first${rt.unconverted ? ` (${rt.unconverted} trade${rt.unconverted === 1 ? "" : "s"} with no FX rate left out)` : ""}.`,
+                rt.worst && rt.best ? `Pulling hardest: ${rt.worst.label} ${pc(rt.worst.pct)} · ${rt.best.label} ${pc(rt.best.pct)}.` : null,
+              ].filter(Boolean).join("\n");
+              return (<>
+                <span title={tip} style={{ cursor: "help" }}><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>AVG RETURN </span><b style={{ color: pnlCol(archiveStats.avgPct) }}>{pc(archiveStats.avgPct)}</b></span>
+                <span title={tip} style={{ cursor: "help" }}><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>$-WEIGHTED </span><b style={{ color: pnlCol(rt.weightedPct) }}>{pc(rt.weightedPct)}</b></span>
+              </>);
+            })()}
             <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>WIN RATE </span><b style={{ color: C.text }}>{archiveStats.winRate == null ? "—" : archiveStats.winRate + "%"}</b></span>
 
           </div>

@@ -3,7 +3,8 @@
 // 21 closed trades fit on a screen. 300 do not, and the flat list gets worse the longer it runs:
 // it answers "what did I close most recently" and nothing else. Periods carry subtotals, so the
 // shape of a whole history is legible as headers without rendering a single row.
-import { periodKey, periodLabel, summarise, archivePeriods, hiddenSummary, OPEN_PERIODS } from '../lib/archive.js';
+import { periodKey, periodLabel, summarise, archivePeriods, hiddenSummary, returnStats, OPEN_PERIODS } from '../lib/archive.js';
+import { derivePosition } from '../lib/positions.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `\n     got  ${JSON.stringify(g)}\n     want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -133,6 +134,29 @@ eq('a year as itself', periodLabel('2026', 'year'), '2026');
 // An empty archive renders nothing rather than a header over nothing.
 eq('empty stays empty', archivePeriods([]), []);
 eq('and summarises to zero without dividing by it', hiddenSummary([]).realised, 0);
+
+// ── RETURNS THREE WAYS (9 Oct) ── 42 trades averaging 5.39% and one 6JZ6 spread at −85.83% read 3.27%.
+{
+  const t = (sym, pct, cost, ccy = 'USD') => ({ symbol: sym, currency: ccy, derived: { realizedPct: pct, realized: +(cost * pct / 100).toFixed(2), costOut: cost } });
+  const book = [...Array.from({ length: 42 }, (_, i) => t(`S${i}`, 5.39, 10000)), t('6JZ6', -85.83, 460.86)];
+  const s = returnStats(book);
+  eq('the equal-weighted mean: one small loss drags it — your 3.27%', s.avgPct, 3.27);
+  eq('the median is the typical trade', s.medianPct, 5.39);
+  eq('dollar-weighted: Σ realised ÷ Σ capital', s.weightedPct, +(((42 * 539 - 395.56) / (420000 + 460.86)) * 100).toFixed(2));
+  eq('the outliers, named', [s.worst, s.best.pct], [{ label: '6JZ6', pct: -85.83 }, 5.39]);
+  // Currencies: a HKD trade's money is converted per row, at that row's rate, before it is summed.
+  const toBase = (v, r) => (r.currency === 'HKD' ? (r.fxRate ? v / r.fxRate : null) : v);
+  const mixed = [t('SPY', 10, 1000), { ...t('7747.HK', 10, 78000, 'HKD'), fxRate: 7.8 }];
+  const m = returnStats(mixed, { toBase });
+  eq('HKD converted before summing: $10k capital, $1k realised, 10%', [m.capital, m.weightedRealised, m.weightedPct], [11000, 1100, 10]);
+  const noRate = returnStats([t('SPY', 10, 1000), t('0700.HK', 50, 78000, 'HKD')], { toBase });
+  eq('a row with no rate is counted apart, never added at face value', [noRate.weightedPct, noRate.weightedCount, noRate.unconverted], [10, 1, 1]);
+  eq('the % figures need no rate', noRate.avgPct, 30);
+  eq('empty', returnStats([]).weightedPct, null);
+  // costOut is the money the return is measured on: the 6JZ6 spread at the yen contract's ¥12.5m.
+  const d = derivePosition([{ side: 'buy', qty: 2, price: 0.000018, date: '2026-10-01' }, { side: 'sell', qty: 2, price: 0.000003, date: '2026-10-07' }], { multiplier: 12500000 });
+  eq('derivePosition exposes costOut in money', [d.costOut, d.realized], [450, -375]);
+}
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
