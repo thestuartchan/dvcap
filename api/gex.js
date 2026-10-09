@@ -155,13 +155,34 @@ async function mcpTool(name, args) {
   return dashboardLeaks(out).length ? toolError('board unavailable') : toolOk(out);
 }
 
+// THE LAST 20 CONNECTOR REQUESTS, AS SHAPES. claude.ai's connector check answered "404" while a
+// POST with the right token listed both tools (9 Oct), so what the checker actually sends has to be
+// seen rather than guessed. Recorded: time, method, whether the token matched, any path after it,
+// the JSON-RPC method and a few headers. Never the token, never an IP. Read with ?mcpcheck=1.
+const MCP_LOG_KEY = 'dvcap:mcp:requests:v1';
+async function logMcp(req, matched) {
+  if (!kvConfigured()) return;
+  try {
+    const h = (k) => String(req.headers?.[k] || '').slice(0, 80) || null;
+    const b = req.body && typeof req.body === 'object' ? req.body : null;
+    const rpc = Array.isArray(b) ? b.map(x => x?.method).join(',') : b?.method ?? null;
+    const entry = { at: new Date().toISOString(), method: req.method, matched, rest: String(req.query?.mcprest || '') || null, rpc,
+                    accept: h('accept'), contentType: h('content-type'), protocol: h('mcp-protocol-version'), session: !!req.headers?.['mcp-session-id'],
+                    auth: !!req.headers?.authorization, ua: h('user-agent') };
+    const log = (await kvGetJson(MCP_LOG_KEY).catch(() => null)) || [];
+    await kvSetJsonEx(MCP_LOG_KEY, [...log, entry].slice(-20), 7 * 86400);
+  } catch { /* a log that fails must not fail the request */ }
+}
+
 async function serveMcp(req, res) {
   if (kvConfigured()) {
     const ip = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim() || String(req.headers?.['x-real-ip'] || '') || 'unknown';
     const n = await kvIncrEx(mcpRateBucket(createHash('sha256').update(ip).digest('hex').slice(0, 16)), 60).catch(() => null);
     if (n != null && n > MCP_RATE_PER_MIN) { res.setHeader('Retry-After', '60'); return res.status(429).json({ error: `limit is ${MCP_RATE_PER_MIN} requests a minute` }); }
   }
-  if (!tokenMatches(req.query?.mcp, process.env[MCP_TOKEN_ENV])) return res.status(404).json({ error: 'not found' });
+  const matched = tokenMatches(req.query?.mcp, process.env[MCP_TOKEN_ENV]);
+  await logMcp(req, matched);
+  if (!matched) return res.status(404).json({ error: 'not found' });
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return res.status(405).json({ error: 'POST only' }); }
   let body = req.body;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { return res.status(400).json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }); } }
@@ -183,7 +204,8 @@ export default async function handler(req, res) {
   if (String(req.query?.mcpcheck || '') === '1') {
     const t = String(process.env[MCP_TOKEN_ENV] || '').trim();
     return res.status(200).json({ configured: t.length > 0, length: t.length, long_enough: t.length >= MCP_TOKEN_MIN,
-      sha256_prefix: t ? createHash('sha256').update(t).digest('hex').slice(0, 8) : null });
+      sha256_prefix: t ? createHash('sha256').update(t).digest('hex').slice(0, 8) : null,
+      recent: kvConfigured() ? ((await kvGetJson(MCP_LOG_KEY).catch(() => null)) || []).slice(-20).reverse() : null });
   }
   if (!kvConfigured()) return res.status(200).json({ available: false, ok: false, reason: 'KV not configured' });
 
