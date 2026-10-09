@@ -37,6 +37,15 @@ eq('a batch gets a batch back', batch.body.map(x => x.id), [1, 2]);
 const nostore = await call({ token: TOKEN, body: { jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'get_gamma_board', arguments: { ticker: 'SPY' } } } });
 eq('no store: the tool says so plainly', [nostore.body.result.isError, nostore.body.result.content[0].text], [true, 'board unavailable']);
 eq('nothing is cached on the way', r.headers['cache-control'], 'private, no-store');
+{
+  const chk = await new Promise((resolve) => {
+    const res = { headers: {}, setHeader(k, v) { this.headers[k] = v; }, status(c) { this.code = c; return this; }, json(o) { this.body = o; resolve(this); return this; } };
+    handler({ method: 'GET', query: { mcpcheck: '1' }, headers: {} }, res);
+  });
+  const { createHash } = await import('node:crypto');
+  eq('the token check: set, its length, a fingerprint prefix — never the token', [chk.body.configured, chk.body.length, chk.body.sha256_prefix, JSON.stringify(chk.body).includes(TOKEN)],
+    [true, TOKEN.length, createHash('sha256').update(TOKEN).digest('hex').slice(0, 8), false]);
+}
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

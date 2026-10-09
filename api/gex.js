@@ -23,7 +23,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { kvConfigured, kvGetJson, kvSetJson, kvSetJsonEx, kvIncrEx, kvSetNxEx } from '../lib/kv.js';
 import { gexFeedPayload, feedLeaks, slugMatches, rateBucket, FEED_TICKERS, FEED_RECOMPUTE_MIN, FEED_RATE_PER_HOUR, oiStaleReason, nyToday } from '../lib/gexFeed.js';
 import { crossCheckPayload } from '../lib/crossCheckFeed.js';
-import { handleRpc, dashboardFor, dashboardLeaks, tokenMatches, mcpRateBucket, toolOk, toolError, MCP_RATE_PER_MIN, MCP_TOKEN_ENV } from '../lib/gammaMcp.js';
+import { handleRpc, dashboardFor, dashboardLeaks, tokenMatches, mcpRateBucket, toolOk, toolError, MCP_RATE_PER_MIN, MCP_TOKEN_ENV, MCP_TOKEN_MIN } from '../lib/gammaMcp.js';
 import { crossCheckLeaks } from '../lib/crossCheck.js';
 import { captureGex, readGex, settledGex, observeRoll, OCC_ROLL_LOG_KEY, OCC_HEALTH_KEY, GEX_SYMBOLS, CUSTOM_ROOT_RE,
          LAST_RECOMPUTE_KEY, LAST_RECOMPUTE_TTL_SEC, recomputeRecord, newerRecompute } from '../lib/gexStore.js';
@@ -177,6 +177,14 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'private, no-store');
   // Before the KV check: a wrong token is a 404 whether or not the store is configured.
   if (req.query?.mcp != null) return serveMcp(req, res);
+  // ?mcpcheck=1 — is a connector token deployed, and is it the one you hold? Answers whether it is
+  // set, its length and the first 8 hex of its SHA-256: enough to compare with a hash computed on
+  // your own machine, never enough to recover or use the token.
+  if (String(req.query?.mcpcheck || '') === '1') {
+    const t = String(process.env[MCP_TOKEN_ENV] || '').trim();
+    return res.status(200).json({ configured: t.length > 0, length: t.length, long_enough: t.length >= MCP_TOKEN_MIN,
+      sha256_prefix: t ? createHash('sha256').update(t).digest('hex').slice(0, 8) : null });
+  }
   if (!kvConfigured()) return res.status(200).json({ available: false, ok: false, reason: 'KV not configured' });
 
   if (req.query?.feed != null) return serveFeed(req, res);
