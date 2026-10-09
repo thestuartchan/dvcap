@@ -24,6 +24,10 @@
       "destination": "/api/gex?mcp=:token"
     },
     {
+      "source": "/api/mcp/:token/",
+      "destination": "/api/gex?mcp=:token&mcprest=/"
+    },
+    {
       "source": "/api/mcp/:token/:rest*",
       "destination": "/api/gex?mcp=:token&mcprest=:rest*"
     }
