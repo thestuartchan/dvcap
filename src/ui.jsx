@@ -8,8 +8,8 @@
 // hot-reloaded reliably, so every edit to a colour forced a full remount and lost page state.
 import { C, alpha } from "./theme.js";
 
-export function SLabel({ children, color }) {
-  return <div style={{ fontSize: 12, letterSpacing: 2.5, color: color || C.lbl, textTransform: "uppercase", fontWeight: 700, marginBottom: 10 }}>{children}</div>;
+export function SLabel({ children, color, style }) {
+  return <div style={{ fontSize: 12, letterSpacing: 2.5, color: color || C.lbl, textTransform: "uppercase", fontWeight: 700, marginBottom: 10, ...style }}>{children}</div>;
 }
 
 export function Card({ children, style, onClick, id }) {

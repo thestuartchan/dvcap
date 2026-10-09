@@ -446,78 +446,90 @@ export function GexPanel() {
     callWall: r.callWall, putWall: r.putWall,
   })), [data]);
 
+  // ONE ROW ON A DESKTOP. Left: title, tickers, Look up and the status, which shrinks to an
+  // ellipsis before anything moves. Right: the three actions as one block that never splits. At
+  // ~1,130px "Live recompute" used to drop onto a line of its own; below 900px the right block wraps
+  // under the left as a unit (index.css, .gex-head).
   const header = (
-    <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-      <SLabel>🌀 Gamma exposure</SLabel>
-      <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
-        {(data?.symbols || ["QQQ", "SPY"]).map(s => {
-          const on = !custom && s === symbol;
-          return (
-            <button key={s} onClick={() => pickBook(s)}
-              style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, padding: "3px 10px", borderRadius: 7,
-                       border: "1.5px solid " + (on ? C.blue : C.bdr),
-                       background: on ? C.blBg : C.surf, color: on ? C.blue : C.mid }}>{s}</button>
-          );
-        })}
-        {/* ANY OPTIONS ROOT, TO PLAN A TRADE. Enter runs it; the result is badged custom and is
-            not captured, not on the pre-read, and not sampled — the tabs are the book. */}
-        <input value={customInput} onChange={e => setCustomInput(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter" && !customBusy) lookUpCustom(customInput); }}
-          placeholder="INTC" aria-label="Custom ticker" title="Any US options root — one settled-book read, nothing stored"
-          style={{ width: 64, background: "transparent", border: "1.5px solid " + (custom ? C.blue : C.bdr), borderRadius: 7,
-                   padding: "3px 8px", fontSize: 12, fontWeight: 800, color: custom ? C.blue : C.text, textTransform: "uppercase" }} />
-        <button onClick={() => lookUpCustom(customInput)} disabled={customBusy || !customInput.trim()}
-          style={{ cursor: customBusy ? "wait" : "pointer", fontSize: 12, fontWeight: 800, padding: "3px 10px", borderRadius: 7,
-                   border: "1.5px solid " + C.bdr, background: C.surf, color: C.mid, opacity: customBusy || !customInput.trim() ? 0.6 : 1 }}>
-          {customBusy ? "…" : "Look up"}
-        </button>
-        {custom && (
-          <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: C.blue,
-                         background: C.blBg, border: "1px solid " + C.blue, borderRadius: 5, padding: "1px 7px" }}>
-            custom · {data?.kind === "single-name" || data?.kind === "single-name-etf" ? "single name" : data?.kind === "etf" ? "ETF" : custom}
-          </span>
-        )}
-      </div>
-      {latest && (
-        <span style={{ fontSize: 11.5, fontWeight: 800,
-                       color: live ? (live.mode === "repriced" ? C.amber : C.green) : (TONE_FOR_AGE[fresh.level] || C.muted) }}>
-          {/* ONE SOURCE OF TRUTH FOR THE MODE. A settled recompute is settled open interest repriced
-              at the current spot — the feed calls it live_recompute — so the header says both halves
-              rather than "settled book" over a body that says live. */}
-          {live ? (live.mode === "repriced" ? "◐ repriced"
-                 : live.mode === "settled" ? `● live recompute · ${oiSettledLabel(live.vintage)}`
-                 : "● live") : fresh.label}
+    <div className="gex-head" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "nowrap" }}>
+      <div className="gex-head-left" style={{ flex: "1 1 auto", minWidth: 0, display: "flex", alignItems: "center", gap: 10, flexWrap: "nowrap" }}>
+        <SLabel style={{ marginBottom: 0, flex: "none", whiteSpace: "nowrap" }}>🌀 Gamma exposure</SLabel>
+        <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap", flex: "none" }}>
+          {(data?.symbols || ["QQQ", "SPY"]).map(s => {
+            const on = !custom && s === symbol;
+            return (
+              <button key={s} onClick={() => pickBook(s)}
+                style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, padding: "3px 10px", borderRadius: 7,
+                         border: "1.5px solid " + (on ? C.blue : C.bdr),
+                         background: on ? C.blBg : C.surf, color: on ? C.blue : C.mid }}>{s}</button>
+            );
+          })}
+          {/* ANY OPTIONS ROOT, TO PLAN A TRADE. Enter runs it; the result is badged custom and is
+              not captured, not on the pre-read, and not sampled — the tabs are the book. */}
+          <input value={customInput} onChange={e => setCustomInput(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && !customBusy) lookUpCustom(customInput); }}
+            placeholder="INTC" aria-label="Custom ticker" title="Any US options root — one settled-book read, nothing stored"
+            style={{ width: 64, background: "transparent", border: "1.5px solid " + (custom ? C.blue : C.bdr), borderRadius: 7,
+                     padding: "3px 8px", fontSize: 12, fontWeight: 800, color: custom ? C.blue : C.text, textTransform: "uppercase" }} />
+          <button onClick={() => lookUpCustom(customInput)} disabled={customBusy || !customInput.trim()}
+            style={{ cursor: customBusy ? "wait" : "pointer", fontSize: 12, fontWeight: 800, padding: "3px 10px", borderRadius: 7,
+                     border: "1.5px solid " + C.bdr, background: C.surf, color: C.mid, opacity: customBusy || !customInput.trim() ? 0.6 : 1 }}>
+            {customBusy ? "…" : "Look up"}
+          </button>
+          {custom && (
+            <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: C.blue,
+                           background: C.blBg, border: "1px solid " + C.blue, borderRadius: 5, padding: "1px 7px" }}>
+              custom · {data?.kind === "single-name" || data?.kind === "single-name-etf" ? "single name" : data?.kind === "etf" ? "ETF" : custom}
+            </span>
+          )}
+        </div>
+        {/* The status as one line that gives way first: an ellipsis, never a push onto line two. */}
+        <span className="gex-head-status" title={pineMsg || undefined}
+          style={{ flex: "1 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {latest && (
+            <span style={{ fontSize: 11.5, fontWeight: 800,
+                           color: live ? (live.mode === "repriced" ? C.amber : C.green) : (TONE_FOR_AGE[fresh.level] || C.muted) }}>
+              {/* ONE SOURCE OF TRUTH FOR THE MODE. A settled recompute is settled open interest repriced
+                  at the current spot — the feed calls it live_recompute — so the header says both halves
+                  rather than "settled book" over a body that says live. */}
+              {live ? (live.mode === "repriced" ? "◐ repriced"
+                     : live.mode === "settled" ? `● live recompute · ${oiSettledLabel(live.vintage)}`
+                     : "● live") : fresh.label}
+            </span>
+          )}
+          {latest && live && <span style={{ fontSize: 11, color: C.muted, fontWeight: 700, marginLeft: 8 }}>{fresh.label}</span>}
+          {latest && fresh.stale && <StaleChip />}
+          {pineMsg && <span style={{ fontSize: 11.5, color: C.mid, fontWeight: 700, marginLeft: 8 }}>{pineMsg}</span>}
         </span>
-      )}
-      {latest && live && <span style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>{fresh.label}</span>}
-      {latest && fresh.stale && <StaleChip />}
-      <button onClick={async () => {
-          const made = pineFor({ symbol: latest?.symbol || data?.symbol, latest, levels: lv, byStrike: strikeSource || [], grid, today: latest?.date || null });
-          if (!made) { setPineMsg("no board to export"); setTimeout(() => setPineMsg(null), 3000); return; }
-          try { await navigator.clipboard.writeText(made.source); setPineMsg("copied — paste into TradingView's Pine editor"); setPineShown(null); }
-          catch { setPineShown(made.source); setPineMsg("select and copy the script below"); }
-          setTimeout(() => setPineMsg(null), 6000);
-        }} disabled={!latest}
-        style={{ marginLeft: "auto", cursor: latest ? "pointer" : "default", background: C.surf, color: C.mid,
-                 border: "1.5px solid " + C.bdr, borderRadius: 8, padding: "4px 11px", fontSize: 12, fontWeight: 800,
-                 opacity: latest ? 1 : 0.6, whiteSpace: "nowrap" }}
-        title="Copy today's levels as a TradingView indicator: flip zone and pin box as bands, call wall, put support, trapdoors and the ladder nodes as lines. Paste into Pine Editor → Add to chart. Levels only.">
-        ⧉ Copy Pine
-      </button>
-      {pineMsg && <span style={{ fontSize: 11.5, color: C.mid, fontWeight: 700 }}>{pineMsg}</span>}
-      <button onClick={() => (feed?.paths ? setFeed(null) : loadFeed())}
-        style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 8,
-                 padding: "4px 11px", fontSize: 12, fontWeight: 800, whiteSpace: "nowrap" }}
-        title="The read-only gamma JSON for QQQ and SPY, for a tool that cannot log in. The URL is the password — keep it private.">
-        {"{ }"} JSON feed
-      </button>
-      <button onClick={refreshLive} disabled={liveBusy}
-        style={{ cursor: liveBusy ? "wait" : "pointer", background: C.surf, color: C.blue,
-                 border: "1.5px solid " + C.blue, borderRadius: 8, padding: "4px 11px", fontSize: 12, fontWeight: 800,
-                 opacity: liveBusy ? 0.6 : 1, whiteSpace: "nowrap" }}
-        title="Recompute today's settled positioning at the current spot and time decay. The daily series is untouched; the recompute is kept so the next page load opens on it.">
-        {liveBusy ? "Recomputing…" : "↻ Live recompute"}
-      </button>
+      </div>
+      <div className="gex-head-right" style={{ flex: "none", display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}>
+        <button onClick={refreshLive} disabled={liveBusy}
+          style={{ cursor: liveBusy ? "wait" : "pointer", background: C.surf, color: C.blue,
+                   border: "1.5px solid " + C.blue, borderRadius: 8, padding: "4px 11px", fontSize: 12, fontWeight: 800,
+                   opacity: liveBusy ? 0.6 : 1, whiteSpace: "nowrap" }}
+          title="Recompute today's settled positioning at the current spot and time decay. The daily series is untouched; the recompute is kept so the next page load opens on it.">
+          {liveBusy ? "Recomputing…" : "↻ Live recompute"}
+        </button>
+        <button onClick={async () => {
+            const made = pineFor({ symbol: latest?.symbol || data?.symbol, latest, levels: lv, byStrike: strikeSource || [], grid, today: latest?.date || null });
+            if (!made) { setPineMsg("no board to export"); setTimeout(() => setPineMsg(null), 3000); return; }
+            try { await navigator.clipboard.writeText(made.source); setPineMsg("copied — paste into TradingView's Pine editor"); setPineShown(null); }
+            catch { setPineShown(made.source); setPineMsg("select and copy the script below"); }
+            setTimeout(() => setPineMsg(null), 6000);
+          }} disabled={!latest}
+          style={{ cursor: latest ? "pointer" : "default", background: C.surf, color: C.mid,
+                   border: "1.5px solid " + C.bdr, borderRadius: 8, padding: "4px 11px", fontSize: 12, fontWeight: 800,
+                   opacity: latest ? 1 : 0.6, whiteSpace: "nowrap" }}
+          title="Copy today's levels as a TradingView indicator: flip zone and pin box as bands, call wall, put support, trapdoors and the ladder nodes as lines. Paste into Pine Editor → Add to chart. Levels only.">
+          ⧉ Copy Pine
+        </button>
+        <button onClick={() => (feed?.paths ? setFeed(null) : loadFeed())}
+          style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 8,
+                   padding: "4px 11px", fontSize: 12, fontWeight: 800, whiteSpace: "nowrap" }}
+          title="The read-only gamma JSON for QQQ and SPY, for a tool that cannot log in. The URL is the password — keep it private.">
+          {"{ }"} JSON feed
+        </button>
+      </div>
     </div>
   );
 
