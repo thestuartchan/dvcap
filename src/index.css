@@ -418,6 +418,22 @@ select option:disabled { color: var(--text-muted); }
   .dvcap-row-head .dvcap-row-actions { flex-basis: 100% !important; margin-left: 0 !important; justify-content: flex-start; padding-top: 4px; }
 }
 
+/* Gamma panel header: one row on a desktop — the left group shrinks (its status line ellipsises),
+   the action group never does. Below 900px the actions wrap under the left group AS ONE BLOCK, never
+   a lone button; the left group may then wrap its own chips and status. !important because the
+   layout is inline on the elements (src/GexPanel.jsx). */
+@media (max-width: 900px) {
+  .gex-head { flex-wrap: wrap !important; row-gap: 8px; }
+  .gex-head .gex-head-left { flex-wrap: wrap !important; flex-basis: 100% !important; row-gap: 6px; }
+  .gex-head .gex-head-status { flex-basis: 100% !important; }
+}
+/* On a phone the three actions share the full width, tighter, so they stay one row together
+   rather than overflow the card or split into two lines with one button alone. */
+@media (max-width: 480px) {
+  .gex-head .gex-head-right { flex-basis: 100% !important; }
+  .gex-head .gex-head-right button { flex: 1 1 auto; padding: 4px 6px !important; font-size: 11.5px !important; }
+}
+
 /* Regime probability cards: 4-col → 2-col → 1-col */
 .mwd-regime-grid {
   display: grid;
