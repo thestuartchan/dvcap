@@ -270,6 +270,13 @@ const eq = (name, got, want) => { const g = JSON.stringify(got), w = JSON.string
   const d = derivePosition(back.rows[0].fills, { multiplier: back.rows[0].multiplier, side: 'long' });
   ok(`realised before fees is −$375 (${d.realized ?? d.realised ?? d.realizedPnl})`, Math.abs((d.realized ?? d.realised ?? d.realizedPnl) + 375) < 0.01);
   eq('a row already at the broker\'s figure is left alone', backfillMultipliers([{ ...old, multiplier: 12500000 }]).fixed.length, 0);
+  // 9 Oct: the same trade still read $0 — a ×1 row, or an underlying stored as the bare root.
+  eq('a ×1 option-on-future row is resized', backfillMultipliers([{ ...old, multiplier: 1 }]).fixed.map(f => [f.from, f.to]), [[1, 12500000]]);
+  eq('…an underlying stored as the bare root 6J too', backfillMultipliers([{ ...old, underlying: '6J', symbol: '6J', multiplier: 100 }]).fixed.map(f => f.to), [12500000]);
+  eq('…or with the month only on the symbol', backfillMultipliers([{ ...old, underlying: '6J', symbol: '6JZ6', multiplier: 1 }]).fixed.map(f => f.to), [12500000]);
+  eq('a bare root that is also a share (ES) is not touched', backfillMultipliers([{ ...old, underlying: 'ES', symbol: 'ES', multiplier: 100 }]).fixed.length, 0);
+  eq('a stock option is still not touched', backfillMultipliers([{ id: 's', symbol: 'SPY', underlying: 'SPY', legs: [legs[0]], multiplier: 100 }]).fixed.length, 0);
+  eq('a GC option at its own ×100 is left alone', backfillMultipliers([{ ...old, underlying: 'GCZ6', symbol: 'GCZ6', multiplier: 100 }]).fixed.length, 0);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
