@@ -76,6 +76,7 @@ eq('…a banned word in a value is', dashboardLeaks({ levels: [{ key: 'net', lab
 const T = 'x'.repeat(43);
 eq('token: right, wrong, wrong length, unset, short secret', [tokenMatches(T, T), tokenMatches('y'.repeat(43), T), tokenMatches('x', T), tokenMatches(T, undefined), tokenMatches('abc', 'abc')],
   [true, false, false, false, false]);
+eq('a trailing newline or space on the stored value still matches', [tokenMatches(T, T + '\n'), tokenMatches(T, ' ' + T + ' ')], [true, true]);
 
 // ── JSON-RPC ──
 {
