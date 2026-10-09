@@ -1,6 +1,6 @@
 // test/gammaMcp.test.mjs — the gamma MCP connector: levels and ladder from a board, the rules, the RPC.
 import fs from 'node:fs';
-import { dashboardFor, dashboardLeaks, isStandardMonthly, checkArgs, tokenMatches, handleRpc, TOOLS, CONNECTOR_TICKERS, toolOk } from '../lib/gammaMcp.js';
+import { dashboardFor, levelsFromPayload, dashboardLeaks, isStandardMonthly, checkArgs, tokenMatches, handleRpc, TOOLS, CONNECTOR_TICKERS, toolOk } from '../lib/gammaMcp.js';
 import { gexFeedPayload } from '../lib/gexFeed.js';
 
 let pass = 0, fail = 0;
@@ -15,10 +15,30 @@ const d = dashboardFor('SPY', board, opts);
 const feed = gexFeedPayload('SPY', board, opts);
 
 // ── Levels ──
-eq('the seven level keys, in order', d.levels.map(l => l.key), ['spot', 'flip', 'wall', 'trap_near', 'trap_deep', 'pivot', 'net']);
+eq('the level keys, in order (no pin box on this board)', d.levels.map(l => l.key), ['spot', 'flip', 'wall', 'trap_near', 'trap_deep', 'pivot', 'em_hi', 'em_lo', 'net']);
+{
+  const em = d.levels.filter(l => l.key.startsWith('em_'));
+  const e0 = feed.expiries[0];
+  eq('±1σ: spot ± the nearest expiry\'s move, with its vol and date', em.map(l => [l.strike, l.expiry, l.atm_iv_pct, l.move_1sd]),
+    [[+(774.64 + e0.move_1sd).toFixed(2), e0.date, e0.atm_iv_pct, e0.move_1sd], [+(774.64 - e0.move_1sd).toFixed(2), e0.date, e0.atm_iv_pct, e0.move_1sd]]);
+}
+// A board with a pin box: top, bottom and a row per magnet, each magnet with its gamma in $bn.
+{
+  const p = { spot: 751.3, as_of_utc: 't', mode: 'live_recompute', flip: { line: 750.83, usable: false, zone_lo: 745, zone_hi: 750.83 },
+    call_wall: { strike: 760, gamma: 1.25e9 }, pin_box: { lo: 751, hi: 753, expiry: '2026-10-09', magnets: [751, 752], magnet_gamma: { 751: 2.1e8, 752: 3.9e8 } },
+    trapdoor: { near: { strike: 750, gamma: -8.1e8, expiry: '2026-10-09' }, deep: null }, post_expiry_pivot: { to: 746.33 },
+    expiries: [{ date: '2026-10-12', atm_iv_pct: 11.2, move_1sd: 5.86 }], net_gex_per_1pct: 1.92e9 };
+  const L = levelsFromPayload('QQQ', p);
+  eq('pin box and magnets, in reading order', L.map(l => [l.key, l.strike, l.gamma_bn]),
+    [['spot', 751.3, null], ['flip', 750.83, null], ['wall', 760, 1.25], ['pin_hi', 753, null], ['pin_lo', 751, null], ['magnet', 751, 0.21], ['magnet', 752, 0.39],
+     ['trap_near', 750, -0.81], ['pivot', 746.33, null], ['em_hi', 757.16, null], ['em_lo', 745.44, null], ['net', null, 1.92]]);
+  eq('the pin rows carry the front expiry', L.filter(l => l.key.startsWith('pin') || l.key === 'magnet').every(l => l.expiry === '2026-10-09'), true);
+  eq('no ATM vol (a stored capture): no ±1σ rows, never zeros', levelsFromPayload('QQQ', { ...p, expiries: [{ date: '2026-10-12', atm_iv_pct: null, move_1sd: null }] }).some(l => l.key.startsWith('em_')), false);
+  eq('no pin box: no pin or magnet rows', levelsFromPayload('QQQ', { ...p, pin_box: null }).some(l => l.key.startsWith('pin') || l.key === 'magnet'), false);
+}
 eq('the same numbers as the gamma feed', d.levels.map(l => [l.key, l.strike]),
   [['spot', feed.spot], ['flip', feed.flip.line], ['wall', feed.call_wall.strike], ['trap_near', feed.trapdoor.near.strike],
-   ['trap_deep', feed.trapdoor.deep.strike], ['pivot', feed.post_expiry_pivot.to], ['net', null]]);
+   ['trap_deep', feed.trapdoor.deep.strike], ['pivot', feed.post_expiry_pivot.to], ['em_hi', d.levels[6].strike], ['em_lo', d.levels[7].strike], ['net', null]]);
 eq('gamma in $bn per 1%, two places', d.levels.filter(l => l.gamma_bn != null).map(l => [l.key, l.gamma_bn]),
   [['wall', +(feed.call_wall.gamma / 1e9).toFixed(2)], ['trap_near', +(feed.trapdoor.near.gamma / 1e9).toFixed(2)],
    ['trap_deep', +(feed.trapdoor.deep.gamma / 1e9).toFixed(2)], ['net', +(feed.net_gex_per_1pct / 1e9).toFixed(2)]]);
