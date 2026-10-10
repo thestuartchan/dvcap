@@ -4238,9 +4238,20 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
                 this asks for one. Same call the schedule makes; it writes only what reconciles. */}
             <button disabled={recheckBusy} onClick={async () => {
               setRecheckBusy(true); setAckMsg(null);
+              // STILL BUILDING IS NOT A FAILURE. IBKR builds the statement on request and a slow day
+              // outlasts one call's ~45s; the server keeps the statement it asked for, so asking
+              // again a little later collects it rather than starting over. Three tries, said plainly.
               try {
-                const j = await fetch("/api/flex-sync?apply=1&trades=1", { credentials: "include" }).then(r => r.json());
-                setAckMsg({ ok: !j?.error, text: j?.error || `re-checked against the ${j?.asOf || "latest"} statement` });
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                  const j = await fetch("/api/flex-sync?apply=1&trades=1", { credentials: "include" }).then(r => r.json());
+                  if (j?.retryable && attempt < 3) {
+                    setAckMsg({ ok: true, text: `IBKR is still building the statement — asking again in 30s (try ${attempt + 1} of 3)…` });
+                    await new Promise(r => setTimeout(r, 30000));
+                    continue;
+                  }
+                  setAckMsg({ ok: !j?.error, text: j?.error ? (j.retryable ? `IBKR is still building the statement after three tries — the morning run will pick it up, or try again in a few minutes (${j.error})` : j.error) : `re-checked against the ${j?.asOf || "latest"} statement` });
+                  break;
+                }
                 refreshLive();
               } catch (e) { setAckMsg({ ok: false, text: String(e.message || e) }); }
               setRecheckBusy(false);
