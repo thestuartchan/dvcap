@@ -25,7 +25,8 @@ import { ASSETS } from "../lib/assets.js";
 import { derivePosition, applyRolls, splitIntoTrades, collapseFills, oversellSplit, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, archiveCurve } from "../lib/positions.js";
 import { sideOf, isShort, openSideFor, closeSideFor, geometryCheck, levelVocab, fillVerb, SIDES, SIDE_LABEL, DEFAULT_SIDE } from "../lib/side.js";
 import { fmtPrice } from "../lib/price.js";
-import { archivePeriods, hiddenSummary, returnStats, GRAINS } from "../lib/archive.js";
+import { archivePeriods, hiddenSummary, returnStats, splitReturns, GRAINS } from "../lib/archive.js";
+import { isOptionTrade } from "../lib/tradecard.js";
 import { CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy, resolveRowCurrency } from "../lib/fxrates.js";
 import { addToLoser } from "../lib/discipline.js";
 import { decisionEntry, lastClosedWasWin, overrideTrend, guardOutcomes } from "../lib/decisions.js";
@@ -3348,6 +3349,8 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       avgPct: pcts.length ? +(pcts.reduce((a, b) => a + b, 0) / pcts.length).toFixed(2) : null,
       // The same returns three ways — equal-weighted, median, and on the money (lib/archive.js).
       ret: returnStats(archived, { toBase, labelOf: (r) => r.symbol }),
+      // Options apart: a premium sized to be lost is not a share trade that went badly (lib/archive.js).
+      split: splitReturns(archived, { toBase, labelOf: (r) => r.symbol, isOption: isOptionTrade }),
       counted: ok.length, unconverted: conv.length - ok.length,
       // Every non-base currency in the archive and the rate each one was converted at.
       ccys: [...new Set(archived.map(r => r.currency || "USD"))].filter(c => c !== baseCcy).map(code => {
@@ -5018,7 +5021,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
         <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
           <SLabel>Archive — closed</SLabel>
           <span style={{ fontSize: 12, color: C.muted }}>{archived.length}</span>
-          <div style={{ marginLeft: "auto", display: "flex", gap: 14, alignItems: "baseline", fontSize: 13 }}>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 14, alignItems: "baseline", fontSize: 13, flexWrap: "wrap", rowGap: 4 }}>
             {/* Closed trades have no unrealised P&L by definition — every one of them is flat.
                 Average return replaces it: the figure that says whether the trades were any good,
                 which a total cannot, since it is dominated by whichever was largest. */}
@@ -5035,9 +5038,32 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
                 `Dollar-weighted ${pc(rt.weightedPct)}: ${fmtCcy(rt.weightedRealised, baseCcy)} realised on ${fmtCcy(rt.capital, baseCcy)} of capital, every currency converted to ${baseCcy} first${rt.unconverted ? ` (${rt.unconverted} trade${rt.unconverted === 1 ? "" : "s"} with no FX rate left out)` : ""}.`,
                 rt.worst && rt.best ? `Pulling hardest: ${rt.worst.label} ${pc(rt.worst.pct)} · ${rt.best.label} ${pc(rt.best.pct)}.` : null,
               ].filter(Boolean).join("\n");
+              const lbl = { color: C.lbl, fontSize: 11, fontWeight: 700 };
+              const weighted = <span title={tip} style={{ cursor: "help" }}><span style={lbl}>$-WEIGHTED </span><b style={{ color: pnlCol(rt.weightedPct) }}>{pc(rt.weightedPct)}</b></span>;
+              // OPTIONS APART. With both kinds in the archive, shares and futures get their own
+              // average, and options are read by their payoff — how often they win, how big a win
+              // is against a loss — on the premium. With only one kind, one average says it all.
+              const { other: sh, options: op } = archiveStats.split;
+              if (!(op.n > 0 && sh.n > 0)) return (<>
+                <span title={tip} style={{ cursor: "help" }}><span style={lbl}>AVG RETURN </span><b style={{ color: pnlCol(archiveStats.avgPct) }}>{pc(archiveStats.avgPct)}</b></span>
+                {weighted}
+              </>);
+              const shTip = [
+                `Shares & futures, ${sh.n} trades — return on the money put in.`,
+                `Average ${pc(sh.avgPct)} · median ${pc(sh.medianPct)} · dollar-weighted ${pc(sh.weightedPct)} (${fmtCcy(sh.weightedRealised, baseCcy)} on ${fmtCcy(sh.capital, baseCcy)}).`,
+                sh.worst && sh.best ? `Pulling hardest: ${sh.worst.label} ${pc(sh.worst.pct)} · ${sh.best.label} ${pc(sh.best.pct)}.` : null,
+              ].filter(Boolean).join("\n");
+              const opTip = [
+                `Options, ${op.n} trades — every figure is a % of the premium paid.`,
+                `Won ${op.wins}, lost ${op.losses}${op.n - op.wins - op.losses ? `, ${op.n - op.wins - op.losses} flat` : ""}: ${op.winRate == null ? "—" : op.winRate + "%"} won.`,
+                `Average win ${pc(op.avgWinPct)} · average loss ${pc(op.avgLossPct)}. A premium sized to be lost reads −100% when it expires; what matters is that the wins pay for the losses.`,
+                `On all premium: ${pc(op.weightedPct)} (${fmtCcy(op.weightedRealised, baseCcy)} on ${fmtCcy(op.capital, baseCcy)}).`,
+              ].join("\n");
               return (<>
-                <span title={tip} style={{ cursor: "help" }}><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>AVG RETURN </span><b style={{ color: pnlCol(archiveStats.avgPct) }}>{pc(archiveStats.avgPct)}</b></span>
-                <span title={tip} style={{ cursor: "help" }}><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>$-WEIGHTED </span><b style={{ color: pnlCol(rt.weightedPct) }}>{pc(rt.weightedPct)}</b></span>
+                <span title={shTip} style={{ cursor: "help" }}><span style={lbl}>SHARES &amp; FUT AVG </span><b style={{ color: pnlCol(sh.avgPct) }}>{pc(sh.avgPct)}</b></span>
+                <span title={opTip} style={{ cursor: "help" }}><span style={lbl}>OPTIONS </span><b style={{ color: C.text }}>{op.winRate == null ? "—" : op.winRate + "% won"}</b>
+                  <span style={{ color: C.muted }}> · </span><b style={{ color: pnlCol(op.avgWinPct) }}>{pc(op.avgWinPct)}</b><span style={{ color: C.muted }}> / </span><b style={{ color: pnlCol(op.avgLossPct) }}>{pc(op.avgLossPct)}</b></span>
+                {weighted}
               </>);
             })()}
             <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>WIN RATE </span><b style={{ color: C.text }}>{archiveStats.winRate == null ? "—" : archiveStats.winRate + "%"}</b></span>
