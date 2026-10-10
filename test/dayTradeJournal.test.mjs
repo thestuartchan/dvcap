@@ -82,8 +82,19 @@ eq('a week totals its trades', [w41.count, w41.pnlUsd, w41.source], [2, 267, 'ib
 eq('the QQQ swing files under the week it closed', weeks[0].trades.map(t => t.underlying).sort(), ['NVDA', 'QQQ']);
 
 eq('a Sunday-evening futures close is next week\'s; a Saturday close is this week\'s', [weekOf({ kind: 'future', closeDate: '2026-10-11' }), weekOf({ kind: 'future', closeDate: '2026-10-10' })], ['2026-W42', '2026-W41']);
-const merged = mergeWeeks(weeks, [{ ...feed[1], pnl: 20, pnlUsd: 20 }, { ...feed[0], id: 'ib-99', closeDate: '2026-10-08' }]);
+const merged = mergeWeeks(weeks, [{ ...feed[1], pnl: 20, pnlUsd: 20 }, { ...feed[0], id: 'ib-99', closeDate: '2026-10-08', openedAt: '2026-10-08T14:00:00Z', closedAt: '2026-10-08T15:00:00Z' }]);
 eq('a merge replaces by id and adds the new', [merged.at(-1).count, merged.at(-1).pnlUsd, merged.length], [3, 516, 3]);
+const again = mergeWeeks(weeks, [{ ...feed[0], id: 'ib-77', pnl: 250, pnlUsd: 250 }]);
+eq('the same feed round trip under another id replaces the stored copy and keeps its id', [again.at(-1).count, again.at(-1).trades.map(t => t.id), again.at(-1).pnlUsd], [2, ['ib-1', feed[1].id], 269]);
+{
+  // One order filled on two exchanges in the same second, listed in either order: the same id.
+  const split = (order) => roundTripsFromIbkr({ positions: [], trades: order([
+    T(40, 'QQQ', 'OPT', 'BUY', 15, 0.97, '2026-10-06T14:48:05Z', 0, 70), T(31, 'QQQ', 'OPT', 'BUY', 15, 0.97, '2026-10-06T14:48:05Z', 0, 70),
+    T(52, 'QQQ', 'OPT', 'SELL', 30, 1.28, '2026-10-06T15:23:39Z', 900, 71)]) }).map(t => t.id);
+  eq('a spread\'s legs closed as two orders are not a round trip', roundTripsFromIbkr({ positions: [], trades: [
+    T(60, 'JPY', 'FOP', 'BUY', 2, 5e-7, '2026-10-07T18:58:46Z', 277.22, 80), T(61, 'JPY', 'FOP', 'SELL', 2, 3.5e-6, '2026-10-07T19:08:33Z', -672.78, 81)] }), []);
+  eq('a split fill gives one id whichever way the broker lists it', [split(x => x), split(x => [x[1], x[0], x[2]])], [['ib-31'], ['ib-31']]);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
