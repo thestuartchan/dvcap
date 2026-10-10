@@ -13,7 +13,7 @@
 import { isCashEquivalent } from "../lib/cashEquivalents.js";
 import { Fragment, useState, useEffect, useMemo, useCallback } from "react";
 import { FUTURES_MULTIPLIER, multiplierFor, backfillMultipliers, quoteConvention, looksMisquoted, isUnambiguousFuture } from '../lib/futures.js';
-import { cryptoSymbolCheck, cryptoQuoteSymbol, isSpotCrypto, assetClassGroups, priceMaxDp } from '../lib/crypto.js';
+import { cryptoSymbolCheck, cryptoQuoteSymbol, isSpotCrypto, isCryptoAsset, assetClassGroups, priceMaxDp } from '../lib/crypto.js';
 import { fundingRead, basisRead, isHlPerp, hlPerpCoin, estimateLiquidation, liquidationVsStop } from '../lib/hyperliquid.js';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
@@ -25,7 +25,7 @@ import { ASSETS } from "../lib/assets.js";
 import { derivePosition, applyRolls, splitIntoTrades, collapseFills, oversellSplit, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, archiveCurve } from "../lib/positions.js";
 import { sideOf, isShort, openSideFor, closeSideFor, geometryCheck, levelVocab, fillVerb, SIDES, SIDE_LABEL, DEFAULT_SIDE } from "../lib/side.js";
 import { fmtPrice } from "../lib/price.js";
-import { archivePeriods, hiddenSummary, returnStats, splitReturns, GRAINS } from "../lib/archive.js";
+import { archivePeriods, hiddenSummary, returnStats, splitReturns, archiveKindOf, archiveSorter, ARCHIVE_KINDS, ARCHIVE_SORTS, GRAINS } from "../lib/archive.js";
 import { isOptionTrade } from "../lib/tradecard.js";
 import { CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy, resolveRowCurrency } from "../lib/fxrates.js";
 import { addToLoser } from "../lib/discipline.js";
@@ -46,7 +46,7 @@ import FillAudit from "./FillAudit.jsx";
 import { undoCarryOver } from "../lib/fillAudit.js";
 import { useRef } from "react";
 import { isDerivativeRow, underlyingOf, legLabel, optionDerived, exposureLines, optionRow, optionLevelVocab, hardDateCheck, defaultHardDate,
-         markOf, spreadShape, INSTRUMENTS, INSTRUMENT_LABEL, LEG_RIGHTS, LEG_SIDES, MAX_LEGS, expiryLabel } from "../lib/instruments.js";
+         markOf, spreadShape, INSTRUMENTS, INSTRUMENT_LABEL, LEG_RIGHTS, LEG_SIDES, MAX_LEGS, expiryLabel, instrumentOf } from "../lib/instruments.js";
 // A stable empty object for memo dependencies: a fresh `{}` on every render would recompute the
 // whole book each time the feed had nothing to say.
 const EMPTY_OBJ = Object.freeze({});
@@ -2907,6 +2907,9 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   // the default (the most recent few) keeps applying to periods that did not exist when the page
   // loaded — a map seeded with every key would freeze the archive as it was at load.
   const [grain, setGrain] = useState("month");
+  // The archive's filter and order, remembered per browser like the sections are.
+  const [archKind, setArchKind] = useRemembered("archiveKind", "all");
+  const [archSort, setArchSort] = useRemembered("archiveSort", "newest");
   const [hlSpot, setHlSpot] = useState(null);
   const [showSpot, setShowSpot] = useRemembered("hlspot", false);
   const [wallet, setWallet] = useState(null);
@@ -3308,7 +3311,16 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   const openPos  = tabs.OPEN;
   // A rolled-out contract is not a closed trade — it was replaced, and its P&L now sits inside the
   // position that replaced it. Listing it in the archive would count the same gain twice.
-  const archived = derivedRows.filter(r => r.derived.status === "closed" && !r.derived.rolledInto);
+  const archivedAll = derivedRows.filter(r => r.derived.status === "closed" && !r.derived.rolledInto);
+  // ── WHICH KIND, AND IN WHAT ORDER ──
+  // The filter narrows EVERYTHING the archive shows — header figures, curve, periods and their
+  // subtotals — so "Options" reads as an options record rather than a list beside book-wide numbers.
+  // A kind that has no trades is never offered, and a remembered one that has since gone is ignored.
+  const kindOfRow = (r) => archiveKindOf(r, { isOption: isOptionTrade, isCrypto: (x) => isCryptoAsset(x.symbol),
+    isFuture: (x) => instrumentOf(x) === "future" });
+  const kindCounts = archivedAll.reduce((m, r) => { const k = kindOfRow(r); m[k] = (m[k] || 0) + 1; return m; }, {});
+  const kindNow = archKind !== "all" && kindCounts[archKind] ? archKind : "all";
+  const archived = kindNow === "all" ? archivedAll : archivedAll.filter(r => kindOfRow(r) === kindNow);
   // ── THE ARCHIVE IS TWO RECORDS ───────────────────────────────────────────────────────────────
   // A crypto trade and an equity trade do not share a session, a settlement or a volatility
   // regime, so a single list sorted by close date invites a comparison between them that means
@@ -3317,7 +3329,6 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   //
   // Split only when both are present — the same rule the Discord card follows. A heading over an
   // all-equity archive is a label that never varies.
-  const byClose = (a, b) => String(b.derived.lastDate || "").localeCompare(String(a.derived.lastDate || ""));
   // What a row may declare it was rolled out of: a FINISHED contract in the same symbol that no
   // other row has already claimed. Restricting it to the same symbol is not pedantry — a roll is
   // the same instrument in a later month, and offering the whole archive would make the commonest
@@ -3383,7 +3394,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     () => hiddenSummary(shownPeriods.map(p => ({ ...p, open: p.shown })), (r) => toBase(r.derived.realized, r)),
     [shownPeriods, fxRates, baseCcy]);
 
-  const curve    = useMemo(() => archiveCurve(archived, derivedRows, toBase), [derivedRows, fxRates, baseCcy]);
+  const curve    = useMemo(() => archiveCurve(archived, derivedRows, toBase), [derivedRows, fxRates, baseCcy, kindNow]);
 
   // ── currency, taken from the exchange rather than assumed ──
   // Every new row was seeded USD, so a non-US listing was valued in the wrong unit until someone
@@ -5020,7 +5031,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       {shownTab === "ARCHIVED" && <Card>
         <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
           <SLabel>Archive — closed</SLabel>
-          <span style={{ fontSize: 12, color: C.muted }}>{archived.length}</span>
+          <span style={{ fontSize: 12, color: C.muted }}>{archived.length}{kindNow !== "all" ? ` of ${archivedAll.length}` : ""}</span>
           <div style={{ marginLeft: "auto", display: "flex", gap: 14, alignItems: "baseline", fontSize: 13, flexWrap: "wrap", rowGap: 4 }}>
             {/* Closed trades have no unrealised P&L by definition — every one of them is flat.
                 Average return replaces it: the figure that says whether the trades were any good,
@@ -5039,34 +5050,45 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
                 rt.worst && rt.best ? `Pulling hardest: ${rt.worst.label} ${pc(rt.worst.pct)} · ${rt.best.label} ${pc(rt.best.pct)}.` : null,
               ].filter(Boolean).join("\n");
               const lbl = { color: C.lbl, fontSize: 11, fontWeight: 700 };
+              const won = (w) => w == null ? "" : ` · ${w}% won`;
+              const pf = (v) => v == null ? "—" : v === Infinity ? "∞" : v.toFixed(2);
               const weighted = <span title={tip} style={{ cursor: "help" }}><span style={lbl}>$-WEIGHTED </span><b style={{ color: pnlCol(rt.weightedPct) }}>{pc(rt.weightedPct)}</b></span>;
-              // OPTIONS APART. With both kinds in the archive, shares and futures get their own
-              // average, and options are read by their payoff — how often they win, how big a win
+              // PROFIT FACTOR, NOT A BLENDED WIN RATE. A win rate mixing shares (meant to win often)
+              // with options (meant to win rarely, and big) describes neither; dollars won over dollars
+              // lost is weighted by the money, like $-weighted beside it. Win rates live per kind.
+              const pfTip = [
+                `Profit factor ${pf(rt.profitFactor)}: ${fmtCcy(rt.grossWon, baseCcy)} won ÷ ${fmtCcy(rt.grossLost, baseCcy)} lost, every currency converted first.`,
+                "Above 1 the trades made money; 1.5 is good, 2 is very good.",
+                `Win rate across every trade: ${rt.winRate == null ? "—" : rt.winRate + "%"} (${rt.wins} won, ${rt.losses} lost).`,
+              ].join("\n");
+              const factor = <span title={pfTip} style={{ cursor: "help" }}><span style={lbl}>PROFIT FACTOR </span><b style={{ color: rt.profitFactor == null ? C.text : rt.profitFactor >= 1 ? C.green : C.red }}>{pf(rt.profitFactor)}</b></span>;
+              // OPTIONS APART. With both kinds in view, shares and futures get their own average and
+              // win rate, and options are read by their payoff — how often they win, how big a win
               // is against a loss — on the premium. With only one kind, one average says it all.
               const { other: sh, options: op } = archiveStats.split;
               if (!(op.n > 0 && sh.n > 0)) return (<>
-                <span title={tip} style={{ cursor: "help" }}><span style={lbl}>AVG RETURN </span><b style={{ color: pnlCol(archiveStats.avgPct) }}>{pc(archiveStats.avgPct)}</b></span>
-                {weighted}
+                <span title={tip} style={{ cursor: "help" }}><span style={lbl}>AVG RETURN </span><b style={{ color: pnlCol(rt.avgPct) }}>{pc(rt.avgPct)}</b><span style={{ color: C.mid }}>{won(rt.winRate)}</span></span>
+                {weighted}{factor}
               </>);
               const shTip = [
                 `Shares & futures, ${sh.n} trades — return on the money put in.`,
                 `Average ${pc(sh.avgPct)} · median ${pc(sh.medianPct)} · dollar-weighted ${pc(sh.weightedPct)} (${fmtCcy(sh.weightedRealised, baseCcy)} on ${fmtCcy(sh.capital, baseCcy)}).`,
+                `Won ${sh.wins}, lost ${sh.losses} · profit factor ${pf(sh.profitFactor)}.`,
                 sh.worst && sh.best ? `Pulling hardest: ${sh.worst.label} ${pc(sh.worst.pct)} · ${sh.best.label} ${pc(sh.best.pct)}.` : null,
               ].filter(Boolean).join("\n");
               const opTip = [
                 `Options, ${op.n} trades — every figure is a % of the premium paid.`,
-                `Won ${op.wins}, lost ${op.losses}${op.n - op.wins - op.losses ? `, ${op.n - op.wins - op.losses} flat` : ""}: ${op.winRate == null ? "—" : op.winRate + "%"} won.`,
+                `Won ${op.wins}, lost ${op.losses}${op.n - op.wins - op.losses ? `, ${op.n - op.wins - op.losses} flat` : ""}: ${op.winRate == null ? "—" : op.winRate + "%"} won · profit factor ${pf(op.profitFactor)}.`,
                 `Average win ${pc(op.avgWinPct)} · average loss ${pc(op.avgLossPct)}. A premium sized to be lost reads −100% when it expires; what matters is that the wins pay for the losses.`,
                 `On all premium: ${pc(op.weightedPct)} (${fmtCcy(op.weightedRealised, baseCcy)} on ${fmtCcy(op.capital, baseCcy)}).`,
               ].join("\n");
               return (<>
-                <span title={shTip} style={{ cursor: "help" }}><span style={lbl}>SHARES &amp; FUT AVG </span><b style={{ color: pnlCol(sh.avgPct) }}>{pc(sh.avgPct)}</b></span>
+                <span title={shTip} style={{ cursor: "help" }}><span style={lbl}>SHARES &amp; FUT </span><b style={{ color: pnlCol(sh.avgPct) }}>{pc(sh.avgPct)}</b><span style={{ color: C.mid }}>{won(sh.winRate)}</span></span>
                 <span title={opTip} style={{ cursor: "help" }}><span style={lbl}>OPTIONS </span><b style={{ color: C.text }}>{op.winRate == null ? "—" : op.winRate + "% won"}</b>
                   <span style={{ color: C.muted }}> · </span><b style={{ color: pnlCol(op.avgWinPct) }}>{pc(op.avgWinPct)}</b><span style={{ color: C.muted }}> / </span><b style={{ color: pnlCol(op.avgLossPct) }}>{pc(op.avgLossPct)}</b></span>
-                {weighted}
+                {weighted}{factor}
               </>);
             })()}
-            <span><span style={{ color: C.lbl, fontSize: 11, fontWeight: 700 }}>WIN RATE </span><b style={{ color: C.text }}>{archiveStats.winRate == null ? "—" : archiveStats.winRate + "%"}</b></span>
 
           </div>
         </div>
@@ -5084,6 +5106,26 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
                          borderRadius: 7, padding: "3px 9px", fontSize: 11.5, fontWeight: 700 }}>{g}</button>
             ))}
             <span style={{ color: C.muted }}>{periods.length} period{periods.length === 1 ? "" : "s"}</span>
+            {/* TYPE: only the kinds the archive actually holds, and only when there is a choice. */}
+            {Object.keys(kindCounts).length > 1 && <>
+              <span style={{ color: C.lbl, fontWeight: 700, letterSpacing: 0.5, marginLeft: 6 }}>TYPE</span>
+              {ARCHIVE_KINDS.filter(([k]) => k === "all" || kindCounts[k]).map(([k, label]) => (
+                <button key={k} onClick={() => { setArchKind(k); setPeriodOpen({}); }}
+                  style={{ cursor: "pointer", background: kindNow === k ? C.blBg : C.surf,
+                           color: kindNow === k ? C.blue : C.mid, border: "1.5px solid " + (kindNow === k ? C.blBdr : C.bdr),
+                           borderRadius: 7, padding: "3px 9px", fontSize: 11.5, fontWeight: 700 }}>
+                  {label} <span style={{ fontWeight: 600, opacity: 0.75 }}>{k === "all" ? archivedAll.length : kindCounts[k]}</span>
+                </button>
+              ))}
+            </>}
+            <label style={{ display: "flex", alignItems: "center", gap: 5, color: C.lbl, fontWeight: 700, letterSpacing: 0.5, marginLeft: 6 }}
+                   title="Order within each period">
+              SORT
+              <select value={archSort} onChange={e => setArchSort(e.target.value)}
+                style={{ background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 7, padding: "3px 6px", fontSize: 11.5, fontWeight: 700 }}>
+                {ARCHIVE_SORTS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+              </select>
+            </label>
             <button onClick={() => setPeriodOpen(Object.fromEntries(periods.map(pp => [pp.key, hidden.periods > 0])))}
               style={{ marginLeft: "auto", cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr,
                        borderRadius: 7, padding: "3px 10px", fontSize: 11.5, fontWeight: 700 }}>
@@ -5160,7 +5202,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
                 </div>
               );
               if (!p.shown) return [head];
-              return [head, ...assetClassGroups(rowsHere, { sort: byClose }).flatMap(g => [
+              return [head, ...assetClassGroups(rowsHere, { sort: archiveSorter(archSort, (r) => toBase(r.derived.realized, r)) }).flatMap(g => [
                 ...(g.label ? [(
                   <div key={`h-${p.key}-${g.label}`} style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: C.muted, margin: "12px 0 6px" }}>
                     {g.label} · {g.rows.length}

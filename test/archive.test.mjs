@@ -3,7 +3,7 @@
 // 21 closed trades fit on a screen. 300 do not, and the flat list gets worse the longer it runs:
 // it answers "what did I close most recently" and nothing else. Periods carry subtotals, so the
 // shape of a whole history is legible as headers without rendering a single row.
-import { periodKey, periodLabel, summarise, archivePeriods, hiddenSummary, returnStats, splitReturns, OPEN_PERIODS } from '../lib/archive.js';
+import { periodKey, periodLabel, summarise, archivePeriods, hiddenSummary, returnStats, splitReturns, archiveKindOf, archiveSorter, OPEN_PERIODS } from '../lib/archive.js';
 import { derivePosition } from '../lib/positions.js';
 
 let pass = 0, fail = 0;
@@ -170,6 +170,32 @@ eq('and summarises to zero without dividing by it', hiddenSummary([]).realised, 
   eq('options: what the premium earned overall', s.options.weightedPct, +(((1500 - 395.56 - 500) / (460.86 + 1000 + 500 + 300)) * 100).toFixed(2));
   const none = splitReturns(book.filter(r => !r.opt), { isOption: (r) => r.opt });
   eq('no options: nothing to show for them', [none.options.n, none.options.winRate, none.options.avgWinPct], [0, null, null]);
+}
+
+// ── WIN RATE PER KIND, PROFIT FACTOR ON THE MONEY ──
+{
+  const t = (sym, pnl, ccy = 'USD') => ({ symbol: sym, currency: ccy, derived: { realized: pnl, realizedPct: pnl / 10, costOut: 1000 } });
+  const s = returnStats([t('A', 300), t('B', 200), t('C', -100), t('D', 0), t('E', -150)]);
+  eq('win rate: wins over decided trades, a flat one in neither', [s.wins, s.losses, s.winRate], [2, 2, 50]);
+  eq('profit factor: $500 won over $250 lost', [s.grossWon, s.grossLost, s.profitFactor], [500, 250, 2]);
+  eq('no losses: unbounded, not a division by zero', returnStats([t('A', 10)]).profitFactor, Infinity);
+  eq('nothing decided: no factor', returnStats([t('A', 0)]).profitFactor, null);
+  const toBase = (v, r) => (r.currency === 'HKD' ? v / 7.8 : v);
+  eq('profit factor converts each currency first', returnStats([t('A', 780, 'HKD'), t('B', -50)], { toBase }).profitFactor, 2);
+  const sp = splitReturns([t('A', 300), { ...t('O', -100), opt: true }], { isOption: (r) => r.opt });
+  eq('each kind carries its own win rate', [sp.other.winRate, sp.options.winRate], [100, 0]);
+}
+
+// ── FILTER AND SORT ──
+{
+  const deps = { isOption: (r) => r.instrument === 'option' || r.instrument === 'spread', isCrypto: (r) => /-USD$/.test(r.symbol), isFuture: (r) => !!r.margined };
+  eq('kinds: option, spread, crypto perp, gold future, shares', [
+    { symbol: 'SPY P', instrument: 'option' }, { symbol: '6JZ6', instrument: 'spread', margined: true }, { symbol: 'BTC-USD', margined: true },
+    { symbol: 'GC', margined: true, multiplier: 100 }, { symbol: 'AAPL' }].map(r => archiveKindOf(r, deps)), ['options', 'options', 'crypto', 'futures', 'shares']);
+  const r = (id, pnl, pct, date) => ({ id, derived: { realized: pnl, realizedPct: pct, lastDate: date } });
+  const rows = [r('a', 100, 5, '2026-09-01'), r('b', -50, -20, '2026-09-03'), r('c', 300, 2, '2026-09-02'), r('d', null, null, '2026-09-04')];
+  const order = (k) => [...rows].sort(archiveSorter(k)).map(x => x.id).join('');
+  eq('sorts: newest, oldest, best $, worst $, best %, worst % — nothing-to-sort-on last', ['newest', 'oldest', 'best', 'worst', 'bestPct', 'worstPct'].map(order), ['dbca', 'acbd', 'cabd', 'bacd', 'acbd', 'bcad']);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
