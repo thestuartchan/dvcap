@@ -1,5 +1,5 @@
 // Regression tests for lib/positions.js — fill-based accounting for scaled spot/swing positions.
-import { splitIntoTrades, collapseFills, derivePosition, positionPnl, levelHit, distancePct, summarize, realizedCurve, applyRolls, oversellSplit } from '../lib/positions.js';
+import { splitIntoTrades, collapseFills, derivePosition, positionPnl, levelHit, distancePct, summarize, realizedCurve, archiveCurve, applyRolls, oversellSplit } from '../lib/positions.js';
 let pass=0,fail=0;
 const eq=(n,g,w)=>{const ok=JSON.stringify(g)===JSON.stringify(w);console.log(`${ok?'✅':'❌'} ${n}`+(ok?'':`  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`));ok?pass++:fail++;};
 
@@ -470,6 +470,28 @@ eq('negative quotes are refused too', positionPnl(zeroed, -5).marketValue, null)
   eq('over-covering a short closes the 100', sc.closeQty, 100);
   eq('and opens a long with the rest', [sc.excessQty, sc.side, sc.fillSide], [150, 'long', 'buy']);
   eq('a sell on a short is not an oversell', oversellSplit(short100, { side: 'sell', qty: 9999 }), null);
+}
+
+// ── the archive's curve ends on the archive's realised ──
+{
+  const derive = (r) => ({ ...r, derived: derivePosition(r.fills, { multiplier: r.multiplier }) });
+  const won = derive({ id: 'W', symbol: 'W', fills: [
+    { side: 'buy', qty: 10, price: 100, date: '2026-09-01' }, { side: 'sell', qty: 10, price: 110, date: '2026-09-03' }] });
+  // Still open, 50 already taken off: the book's realised has it, the archive does not.
+  const open = derive({ id: 'O', symbol: 'O', fills: [
+    { side: 'buy', qty: 20, price: 50, date: '2026-09-02' }, { side: 'sell', qty: 10, price: 55, date: '2026-09-04' }] });
+  // A rolled future, now closed: its realised is both contracts'.
+  const [leg, tip] = applyRolls([
+    { id: 'R1', symbol: 'MGC', multiplier: 10, fills: [{ side: 'buy', qty: 1, price: 4000, date: '2026-09-01' }, { side: 'sell', qty: 1, price: 4100, date: '2026-09-10' }] },
+    { id: 'R2', symbol: 'MGC', multiplier: 10, rolledFrom: 'R1', fills: [{ side: 'buy', qty: 1, price: 4120, date: '2026-09-10' }, { side: 'sell', qty: 1, price: 4150, date: '2026-09-20' }] },
+  ].map(derive));
+  const all = [won, open, leg, tip];
+  const closed = all.filter(r => r.derived.status === 'closed' && !r.derived.rolledInto);
+  const archiveRealised = closed.reduce((a, r) => a + r.derived.realized, 0);
+  const c = archiveCurve(closed, all);
+  eq('the archive curve ends on the archive realised', [c.at(-1).cumulative, archiveRealised], [1400, 1400]);
+  eq('the rolled leg is drawn on the day it was sold', c.map(p => p.date), ['2026-09-03', '2026-09-10', '2026-09-20']);
+  eq('the book-wide curve disagreed both ways: the open partial in, the rolled leg out', realizedCurve(all).at(-1).cumulative, 100 + 50 + 300);
 }
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);

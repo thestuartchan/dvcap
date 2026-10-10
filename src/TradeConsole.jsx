@@ -22,7 +22,7 @@ import {
 import { C, P } from "./theme.js";
 import { SLabel, Card, Btn, StaleChip } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
-import { derivePosition, applyRolls, splitIntoTrades, collapseFills, oversellSplit, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, realizedCurve } from "../lib/positions.js";
+import { derivePosition, applyRolls, splitIntoTrades, collapseFills, oversellSplit, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, archiveCurve } from "../lib/positions.js";
 import { sideOf, isShort, openSideFor, closeSideFor, geometryCheck, levelVocab, fillVerb, SIDES, SIDE_LABEL, DEFAULT_SIDE } from "../lib/side.js";
 import { fmtPrice } from "../lib/price.js";
 import { archivePeriods, hiddenSummary, returnStats, GRAINS } from "../lib/archive.js";
@@ -3380,7 +3380,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     () => hiddenSummary(shownPeriods.map(p => ({ ...p, open: p.shown })), (r) => toBase(r.derived.realized, r)),
     [shownPeriods, fxRates, baseCcy]);
 
-  const curve    = useMemo(() => realizedCurve(derivedRows, toBase), [derivedRows, fxRates, baseCcy]);
+  const curve    = useMemo(() => archiveCurve(archived, derivedRows, toBase), [derivedRows, fxRates, baseCcy]);
 
   // ── currency, taken from the exchange rather than assumed ──
   // Every new row was seeded USD, so a non-US listing was valued in the wrong unit until someone
@@ -5105,7 +5105,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
               </AreaChart>
             </ResponsiveContainer>
           </div>
-            <div style={{ fontSize: 11, color: C.lbl, textAlign: "center", marginTop: 6 }}>Cumulative realised P&amp;L in {baseCcy} — one step per sell fill, so the curve marks when profit was actually taken.</div>
+            <div style={{ fontSize: 11, color: C.lbl, textAlign: "center", marginTop: 6 }}>Cumulative realised P&amp;L on these closed trades in {baseCcy}, before fees — one step per sell fill, so the curve marks when profit was actually taken and ends on the realised total.</div>
           </div>
         )}
 
