@@ -3,7 +3,7 @@
 // 21 closed trades fit on a screen. 300 do not, and the flat list gets worse the longer it runs:
 // it answers "what did I close most recently" and nothing else. Periods carry subtotals, so the
 // shape of a whole history is legible as headers without rendering a single row.
-import { periodKey, periodLabel, summarise, archivePeriods, hiddenSummary, returnStats, OPEN_PERIODS } from '../lib/archive.js';
+import { periodKey, periodLabel, summarise, archivePeriods, hiddenSummary, returnStats, splitReturns, OPEN_PERIODS } from '../lib/archive.js';
 import { derivePosition } from '../lib/positions.js';
 
 let pass = 0, fail = 0;
@@ -156,6 +156,20 @@ eq('and summarises to zero without dividing by it', hiddenSummary([]).realised, 
   // costOut is the money the return is measured on: the 6JZ6 spread at the yen contract's ¥12.5m.
   const d = derivePosition([{ side: 'buy', qty: 2, price: 0.000018, date: '2026-10-01' }, { side: 'sell', qty: 2, price: 0.000003, date: '2026-10-07' }], { multiplier: 12500000 });
   eq('derivePosition exposes costOut in money', [d.costOut, d.realized], [450, -375]);
+}
+
+// ── OPTIONS APART (10 Oct) ── the same book: the share trades read 5.39% once the spread is apart.
+{
+  const t = (sym, pct, cost, opt = false) => ({ symbol: sym, opt, derived: { realizedPct: pct, realized: +(cost * pct / 100).toFixed(2), costOut: cost } });
+  const book = [...Array.from({ length: 42 }, (_, i) => t(`S${i}`, 5.39, 10000)), t('6JZ6', -85.83, 460.86, true),
+    t('SPY P', 150, 1000, true), t('QQQ C', -100, 500, true), t('NVDA C', 0, 300, true)];
+  const s = splitReturns(book, { isOption: (r) => r.opt });
+  eq('shares and futures on their own: 5.39%, nothing dragging', [s.other.n, s.other.avgPct, s.other.medianPct], [42, 5.39, 5.39]);
+  eq('options: wins, losses, a scratch counted in neither', [s.options.n, s.options.wins, s.options.losses, s.options.winRate], [4, 1, 2, 33]);
+  eq('options: an average win and an average loss, each as % of premium', [s.options.avgWinPct, s.options.avgLossPct], [150, -92.91]);
+  eq('options: what the premium earned overall', s.options.weightedPct, +(((1500 - 395.56 - 500) / (460.86 + 1000 + 500 + 300)) * 100).toFixed(2));
+  const none = splitReturns(book.filter(r => !r.opt), { isOption: (r) => r.opt });
+  eq('no options: nothing to show for them', [none.options.n, none.options.winRate, none.options.avgWinPct], [0, null, null]);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
