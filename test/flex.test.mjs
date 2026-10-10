@@ -396,6 +396,24 @@ ok('and marks itself retryable, so the workflow tries again', r5.retryable === t
   await fetchStatement({ token: 'T', queryId: 'Q', fetchImpl: responses(SENT, gen), sleep: async (ms) => { all.push(ms); } });
   eq('the default patience is nine tries over 45 seconds', [all.length + 1, all.reduce((a, b) => a + b, 0)], [9, 45000]);
 }
+{
+  // A call that runs out hands back the statement it was waiting for, and the next call polls THAT
+  // one rather than asking for a new one (which made IBKR start again, every retry, on 10 Oct).
+  const gen = '<FlexStatementResponse><Status>Warn</Status><ErrorCode>1019</ErrorCode></FlexStatementResponse>';
+  const SENT2 = SENT.replace(/<ReferenceCode>[^<]*<\/ReferenceCode>/, '<ReferenceCode>R1</ReferenceCode>');
+  const out = await fetchStatement({ token: 'T', queryId: 'Q', fetchImpl: responses(SENT2, gen), sleep: async () => {}, attempts: 2 });
+  eq('running out hands back the reference it was waiting on, no token in it', [out.retryable, out.pending?.referenceCode, JSON.stringify(out.pending).includes('T&')], [true, 'R1', false]);
+  const urls = [];
+  const rec = (...bodies) => { let i = 0; return async (u) => { urls.push(u); const b = bodies[Math.min(i++, bodies.length - 1)]; return { ok: true, status: 200, text: async () => b }; }; };
+  const next = await fetchStatement({ token: 'T', queryId: 'Q', fetchImpl: rec(STMT), sleep: async () => {}, pending: out.pending });
+  eq('the next call collects that statement, with no new SendRequest', [next.ok, next.resumed, urls.some(u => /SendRequest/.test(u)), /q=R1/.test(urls[0])], [true, true, false, true]);
+  urls.length = 0;
+  const still = await fetchStatement({ token: 'T', queryId: 'Q', fetchImpl: rec(gen), sleep: async () => {}, attempts: 2, pending: out.pending });
+  eq('still building: says so, keeps the reference, never starts a second wait', [still.ok, still.retryable, still.pending?.referenceCode, urls.some(u => /SendRequest/.test(u))], [false, true, 'R1', false]);
+  urls.length = 0;
+  const gone = await fetchStatement({ token: 'T', queryId: 'Q', fetchImpl: rec('<FlexStatementResponse><Status>Fail</Status><ErrorCode>1018</ErrorCode><ErrorMessage>expired</ErrorMessage></FlexStatementResponse>', SENT, STMT), sleep: async () => {}, pending: out.pending });
+  eq('a forgotten reference: starts fresh and still gets the statement', [gone.ok, urls.some(u => /SendRequest/.test(u))], [true, true]);
+}
 // A query saved WITHOUT open positions produces a statement that parses to nothing — a silent
 // no-op is the worst answer, so it is an error naming the fix.
 const r6 = await fetchStatement({ token: 'T', queryId: 'Q', fetchImpl: responses(SENT, '<FlexQueryResponse><FlexStatements count="1"></FlexStatements></FlexQueryResponse>'), sleep: async () => {} });

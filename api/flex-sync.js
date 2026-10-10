@@ -21,11 +21,17 @@
 // The statement's own numbers are in the RESPONSE, which goes to the caller. The only thing that
 // reaches Discord is lib/flex.js's summary, which carries symbols and counts and no sizes.
 
-import { kvGetJson, kvSetJson, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY, CASHBOOK_KEY, OPTION_MARKS_KEY } from '../lib/kv.js';
+import { kvGetJson, kvSetJson, kvSetJsonEx, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY, CASHBOOK_KEY, OPTION_MARKS_KEY } from '../lib/kv.js';
 
 // What the channel was last told. Only the SIGNATURE, so this can never become a second copy of
 // the book.
 const SEEN_KEY = 'dvcap:flex:seen:v1';
+// The statement IBKR is still building, so the next call (the workflow's retry, or Re-check) polls
+// it instead of asking for a new one and restarting the wait (lib/flex.js fetchStatement). Only the
+// reference and the URL — never the token, never in a response — and it expires on its own: IBKR
+// keeps a reference for minutes, not hours.
+const PENDING_KEY = 'dvcap:flex:pending:v1';
+const PENDING_TTL_S = 15 * 60;
 import { derivePosition, splitIntoTrades } from '../lib/positions.js';
 import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, unrecordedTrades, dropCreatedAdds } from '../lib/flexTrades.js';
 import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf, planAck, reconcilingFill, flexEnv, flexConfigured, isoDate, optionFindings, addLabel, cashBookOf, optionMarksOf } from '../lib/flex.js';
@@ -70,8 +76,16 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   if (!kvConfigured()) return { ok: false, error: 'Redis not configured — there is nowhere to read the console from' };
 
   const { token, queryId } = flexEnv();
-  const got = await fetchStatement({ token, queryId });
-  // `retryable` tells the workflow to try again in a minute rather than give up for the day.
+  let pending = null;
+  try { pending = await kvGetJson(PENDING_KEY); } catch { /* start fresh */ }
+  const got = await fetchStatement({ token, queryId, pending });
+  // Kept while IBKR is still building it; cleared once a statement arrives or IBKR has forgotten it.
+  try {
+    if (got.pending) await kvSetJsonEx(PENDING_KEY, got.pending, PENDING_TTL_S);
+    else if (pending) await kvSetJsonEx(PENDING_KEY, null, 1);
+  } catch { /* the next call simply starts fresh */ }
+  // `retryable` tells the workflow (and the console's Re-check) to try again in a minute rather than
+  // give up for the day. `pending` itself never leaves the server.
   if (!got.ok) return { ok: false, error: got.error, retryable: !!got.retryable };
 
   const stored = await kvGetJson(CONSOLE_KEY);
