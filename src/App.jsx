@@ -7,6 +7,7 @@ import { TradeConsole } from "./TradeConsole.jsx";
 import { GexPanel } from "./GexPanel.jsx";
 import { CtaPanel } from "./CtaPanel.jsx";
 import { RatiosPanel } from "./RatiosPanel.jsx";
+import { CorrelationPanel } from "./CorrelationPanel.jsx";
 import { ScenarioBoard } from "./ScenarioBoard.jsx";
 import {
   AreaChart, Area, BarChart, Bar, RadarChart, PolarGrid,
@@ -7290,11 +7291,14 @@ export default function App() {
             }}
             extra={{
               vol: (
-                <div style={{ fontSize: 12, color: C.muted }}>
+                <>
+                <CorrelationPanel />
+                <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>
                   Dealer gamma, CTA levels and the vol regime by session are on{" "}
                   <button onClick={() => setTab("global")} style={{ background: "none", border: "none", padding: 0, color: C.blue, fontWeight: 700, cursor: "pointer", fontSize: 12 }}>Daily Overview</button>{" "}and{" "}
                   <button onClick={() => setTab("gex")} style={{ background: "none", border: "none", padding: 0, color: C.blue, fontWeight: 700, cursor: "pointer", fontSize: 12 }}>Gamma</button>.
                 </div>
+                </>
               ),
             }}
           />
