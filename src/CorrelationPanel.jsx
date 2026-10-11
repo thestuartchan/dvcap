@@ -48,6 +48,12 @@ function Row({ r }) {
           <b style={{ fontSize: 13, color: C.text }}>{r.label}</b>
           <b style={{ fontSize: 15, color: col, fontVariantNumeric: "tabular-nums" }}>{r.latest.toFixed(2)}{r.unit}</b>
           <span style={{ fontSize: 11, color: C.muted }}>{day(r.date)}</span>
+          {r.low10 && (
+            <span title="under a tenth of the past year's closes sit below today's — the backtest's low-correlation bucket"
+              style={{ fontSize: 10.5, fontWeight: 800, color: C.amber, border: "1px solid " + C.amber, borderRadius: 999, padding: "0 7px" }}>
+              bottom 10% of the year
+            </span>
+          )}
           {r.brk && (
             <span title="today's close is outside the previous 60 sessions' range"
               style={{ fontSize: 10.5, fontWeight: 800, color: col, border: "1px solid " + col, borderRadius: 999, padding: "0 7px" }}>
@@ -89,11 +95,20 @@ export function CorrelationPanel() {
       </div>
       {!data && !err && <div style={{ fontSize: 12, color: C.muted }}>reading Cboe…</div>}
       {err && <div style={{ fontSize: 12, color: C.amber }}>not available — {err}</div>}
+      {/* ── WHAT IT SAYS ── state now, what the backtest found, what would turn it red. Built from the
+          live rows each day (lib/impliedCorrelation.js correlationSummary); it describes. */}
+      {data?.summary && (
+        <div style={{ fontSize: 12.5, lineHeight: 1.55, color: C.mid, background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, padding: "8px 10px", margin: "6px 0 4px" }}>
+          <div><b style={{ color: C.text }}>Now:</b> {data.summary.now}</div>
+          <div style={{ marginTop: 3 }}><b style={{ color: C.text }}>History:</b> {data.summary.history}</div>
+          {data.summary.red && <div style={{ marginTop: 3 }}><b style={{ color: C.red }}>Turns red if:</b> {data.summary.red}</div>}
+        </div>
+      )}
       {data?.rows?.map(r => <Row key={r.id} r={r} />)}
       {data && (
         <div style={{ fontSize: 10.5, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
-          Red = bad, green = good; the range is the previous 60 sessions. Information only — not part of the regime score
-          (it has not shown an effect beyond VIX in the backtest). Source: {src || "—"}.
+          Red = bad, green = good; the range is the previous 60 sessions. Information only — not part of the regime score,
+          because the backtest found nothing beyond VIX (scripts/correlation-backtest.py). Source: {src || "—"}.
         </div>
       )}
     </div>

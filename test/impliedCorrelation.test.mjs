@@ -1,6 +1,6 @@
 // test/impliedCorrelation.test.mjs — COR1M, VIXEQ − VIX and DSPX rows (lib/impliedCorrelation.js).
 // Environment-independent: every read goes through an injected fetch, nothing touches the network.
-import { parseCboeHistory, parseYahooChart, fetchSeries, gapSeries, gaugeStats, correlationRows, correlationPayload,
+import { parseCboeHistory, parseYahooChart, fetchSeries, gapSeries, gaugeStats, correlationRows, correlationPayload, correlationSummary, BACKTEST,
   CBOE_HISTORY_URL, MIN_SESSIONS } from '../lib/impliedCorrelation.js';
 
 let pass = 0, fail = 0;
@@ -46,6 +46,18 @@ eq('the gap row says what it was built from', [gap(eqUp, vixFlat).parts, gap(eqU
 const dsp = correlationRows({ cor1m: ok(flatThenUp), vixeq: ok(eqUp), vix: ok(vixFlat), dspx: ok(eqFall) })[2];
 eq('DSPX is the cross-check: neutral, and says when it disagrees with the gap', [dsp.tone, /disagrees with the gap/.test(dsp.read)], ['neutral', true]);
 
+// ── the summary: now, history, what turns it red ──
+const corFall = series(i => (i < 295 ? 20 : 20 - (i - 294)));      // falls to the year's low
+const calm = correlationSummary(correlationRows({ cor1m: ok(corFall), vixeq: ok(eqUp), vix: ok(vixFlat), dspx: ok(eqUp) }));
+eq('low and falling correlation, gap widening, DSPX agreeing: the index calm because its stocks diverge',
+  calm.now, 'Correlation low (bottom 10% of the year) and falling; stocks offsetting more (gap widening, DSPX agrees). The index is calm partly because its stocks are moving apart.');
+eq('the bottom-10% flag comes from the unrounded share', [gaugeStats(corFall).low10, gaugeStats(flatThenUp).low10], [true, false]);
+eq('the history line is the backtest\'s', calm.history.startsWith(`${BACKTEST.span}: `) && calm.history.includes('not by deeper drawdowns'), true);
+eq('what turns it red names the live 60-day high', calm.red, 'COR1M closes above 20.00 (its 60-day high), or the gap closes while VIX rises.');
+const stress = correlationSummary(correlationRows({ cor1m: ok(flatThenUp), vixeq: ok(eqFlat), vix: ok(vixUp), dspx: ok(eqFall) }));
+eq('correlation breaking out while the gap closes with VIX up: the case the gauges watch for', /moving together more while volatility rises/.test(stress.now) && /the gap closing while VIX rises \(DSPX agrees\)/.test(stress.now), true);
+eq('nothing readable: no summary', correlationSummary([{ id: 'cor1m', available: false }]), null);
+
 // ── not available is a reason, never an estimate ──
 const missing = correlationRows({ cor1m: { ok: false, error: 'Cboe: HTTP 503; Yahoo: 1 session, not a history' }, vixeq: ok(eqFlat), vix: { ok: false, error: 'Cboe: HTTP 404' }, dspx: ok(eqFlat) });
 eq('a series that cannot be read says why', [missing[0].available, missing[0].reason], [false, 'Cboe: HTTP 503; Yahoo: 1 session, not a history']);
@@ -68,7 +80,7 @@ eq('Cboe fails: Yahoo answers and says so', [viaYahoo.ok, viaYahoo.source], [tru
 const neither = await fetchSeries('COR1M', { fetchImpl: fake({ 'finance.yahoo.com': { chart: { result: [{ timestamp: [1], indicators: { quote: [{ close: [6.9] }] } }] } } }) });
 eq('a one-point Yahoo answer is not a history: not available, both reasons given', [neither.ok, neither.error], [false, 'Cboe: HTTP 404; Yahoo: 1 session, not a history']);
 const pay = await correlationPayload({ fetchImpl: fake({ 'COR1M_History': csv, 'VIXEQ_History': csv, 'VIX_History': csv, 'DSPX_History': csv }) });
-eq('the payload: three rows, every source named', [pay.ok, pay.rows.map(r => r.id), Object.values(pay.sources).map(x => x.source)], [true, ['cor1m', 'gap', 'dspx'], ['Cboe', 'Cboe', 'Cboe', 'Cboe']]);
+eq('the payload: three rows, every source named, and the summary', [pay.ok, pay.rows.map(r => r.id), Object.values(pay.sources).map(x => x.source), !!pay.summary?.now], [true, ['cor1m', 'gap', 'dspx'], ['Cboe', 'Cboe', 'Cboe', 'Cboe'], true]);
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
