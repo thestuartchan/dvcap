@@ -11,8 +11,22 @@ import { fetchSmicAHPremium } from "../lib/smicah.js";
 import { fetchSouthbound } from "../lib/hkexSouthbound.js";
 import { fredJsonEx } from '../lib/fred.js';
 import { fetchIsharesSecYield } from '../lib/fundYield.js';
+import { correlationPayload } from '../lib/impliedCorrelation.js';
 
 export default async function handler(req, res) {
+  // ── ?impliedcorr=1 — COR1M, VIXEQ − VIX and DSPX (lib/impliedCorrelation.js) ──────────────────
+  // Market Watch › Drivers, beside the volatility gauges. Cboe's daily history CSVs, Yahoo where
+  // Cboe fails; no FRED, so it answers before the FRED key is checked. Daily data: cached for hours
+  // like the other daily drivers.
+  if (String(req.query?.impliedcorr ?? '') === '1') {
+    try {
+      const out = await correlationPayload();
+      res.setHeader("Cache-Control", out.ok ? "s-maxage=10800, stale-while-revalidate=21600" : "s-maxage=300");
+      return res.status(200).json(out);
+    } catch (e) {
+      return res.status(200).json({ ok: false, error: String(e?.message || e), rows: [] });
+    }
+  }
   const FRED_KEY = process.env.FRED_API_KEY;
 
   if (!FRED_KEY) {
