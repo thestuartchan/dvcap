@@ -503,6 +503,28 @@
   "tz": "America/New_York"
  },
  {
+  "date": "2026-10-12",
+  "title": "Fed holiday (Columbus Day) \u2014 the Fed's daily and weekly releases move to Oct 13; stocks trade",
+  "region": "US",
+  "tier": 2
+ },
+ {
+  "date": "2026-10-13",
+  "title": "Big-bank Q3 earnings (BMO) \u2014 JPM, GS, WFC, C; also UNH, JNJ",
+  "region": "US",
+  "tier": 1,
+  "scope": "global"
+ },
+ {
+  "date": "2026-10-13",
+  "title": "Fed's Waller speaks \u2014 Economic Outlook (Istanbul)",
+  "region": "US",
+  "tier": 1,
+  "scope": "global",
+  "time": "04:30",
+  "tz": "America/New_York"
+ },
+ {
   "date": "2026-10-14",
   "title": "China CPI + PPI (Sep)",
   "region": "ASIA",
@@ -536,6 +558,19 @@
   "tz": "Asia/Shanghai"
  },
  {
+  "date": "2026-10-14",
+  "title": "BAC, MS Q3 earnings (BMO)",
+  "region": "US",
+  "tier": 2
+ },
+ {
+  "date": "2026-10-14",
+  "title": "ASML Q3 earnings (BMO) \u2014 semi-equipment orders",
+  "region": "EU",
+  "tier": 1,
+  "scope": "global"
+ },
+ {
   "date": "2026-10-15",
   "title": "US PPI (Sep)",
   "region": "US",
@@ -550,6 +585,36 @@
   "tier": 1,
   "time": "08:30",
   "tz": "America/New_York"
+ },
+ {
+  "date": "2026-10-15",
+  "title": "TSMC Q3 earnings (BMO US time) \u2014 the AI-demand read",
+  "region": "ASIA",
+  "tier": 1,
+  "scope": "global"
+ },
+ {
+  "date": "2026-10-15",
+  "title": "Warsh in conversation with IMF MD Georgieva (Bangkok)",
+  "region": "US",
+  "tier": 1,
+  "scope": "global",
+  "time": "23:30",
+  "tz": "America/New_York"
+ },
+ {
+  "date": "2026-10-16",
+  "title": "US industrial production + capacity utilisation (Sep) \u2014 Fed G.17",
+  "region": "US",
+  "tier": 2,
+  "time": "09:15",
+  "tz": "America/New_York"
+ },
+ {
+  "date": "2026-10-17",
+  "title": "FOMC blackout begins (Oct 27\u201328 meeting)",
+  "region": "US",
+  "tier": 2
  },
  {
   "date": "2026-10-19",
@@ -575,6 +640,30 @@
   "tier": 2,
   "time": "09:15",
   "tz": "Asia/Shanghai"
+ },
+ {
+  "date": "2026-10-20",
+  "title": "Netflix Q3 earnings (AC)",
+  "region": "US",
+  "tier": 2
+ },
+ {
+  "date": "2026-10-21",
+  "title": "Tesla Q3 earnings (AC)",
+  "region": "US",
+  "tier": 1
+ },
+ {
+  "date": "2026-10-21",
+  "title": "Texas Instruments + Lam Research Q3 earnings (AC) \u2014 analog and semi-equipment",
+  "region": "US",
+  "tier": 1
+ },
+ {
+  "date": "2026-10-21",
+  "title": "IBM Q3 earnings (AC)",
+  "region": "US",
+  "tier": 2
  },
  {
   "date": "2026-10-22",
