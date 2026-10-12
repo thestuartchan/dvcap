@@ -366,10 +366,11 @@ const PE = (k, oi, e, T, iv = 0.22) => ({ type: 'put', strike: k, oi, iv, T, exp
   const cells = days.flatMap((e, i) => [{ expiry: e, strike: 7800, netGexUsd: 100 + i }, { expiry: e, strike: 7900, netGexUsd: -(10 + i) }]);
   const rows = days.map((e, i) => ({ expiry: e, netGexUsd: 90 - i, grossGexUsd: 110 + 2 * i, shareOfAbs: 9, callOi: 1, putOi: 1 }));
   const g = foldGrid({ expiries: rows, cells, note: 'n' }, { today: '2026-10-12', keepDays: 35, keepMin: 8 });
-  eq('near expiries kept, the rest one column dated by its last expiry', [g.expiries.length, g.expiries.at(-1).expiry, g.folded], [9, '2027-12-17', { from: '2026-12-18', to: '2027-12-17', count: 3 }]);
+  eq('near expiries and the monthlies inside 100 days (Dec, as SPY reads it) kept, the rest one column dated by its last expiry',
+    [g.expiries.length, g.expiries.some(e => e.expiry === '2026-12-18'), g.expiries.at(-1).expiry, g.folded], [10, true, '2027-12-17', { from: '2027-03-19', to: '2027-12-17', count: 2 }]);
   const tot = (cs) => { const m = {}; for (const c of cs) m[c.strike] = (m[c.strike] || 0) + c.netGexUsd; return m; };
   eq('every per-strike total is unchanged', tot(g.cells), tot(cells));
-  eq('the folded row is the sum of what it replaced', [g.expiries.at(-1).netGexUsd, g.expiries.at(-1).callOi], [(90 - 8) + (90 - 9) + (90 - 10), 3]);
+  eq('the folded row is the sum of what it replaced', [g.expiries.at(-1).netGexUsd, g.expiries.at(-1).callOi], [(90 - 9) + (90 - 10), 2]);
   eq('shares from the cells still add to 100', Math.round(withGrossShares(g).expiries.reduce((a, e) => a + e.shareOfAbs, 0)), 100);
   eq('nothing to fold: the grid comes back as it was', foldGrid({ expiries: rows.slice(0, 5), cells }, { today: '2026-10-12' }).expiries.length, 5);
 }

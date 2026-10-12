@@ -27,7 +27,7 @@ import { handleRpc, dashboardFor, dashboardLeaks, tokenMatches, mcpRateBucket, t
 import { crossCheckLeaks } from '../lib/crossCheck.js';
 import { captureGex, readGex, settledGex, observeRoll, OCC_ROLL_LOG_KEY, OCC_HEALTH_KEY, GEX_SYMBOLS, CUSTOM_ROOT_RE,
          LAST_RECOMPUTE_KEY, LAST_RECOMPUTE_TTL_SEC, recomputeRecord, newerRecompute, YAHOO_SYMBOL } from '../lib/gexStore.js';
-import { spxRatio, esBasis, spMap, spMapBlock, dualLadder, fetchSpRates, BAND_PCT as SP_BAND_PCT, LADDER_BAND_PCT } from '../lib/spMap.js';
+import { spxRatio, esBasis, spMap, spMapBlock, dualLadder, fetchSpRates, BAND_PCT as SP_BAND_PCT, LADDER_BAND_PCT, spHeatGrid } from '../lib/spMap.js';
 import { instrumentKind } from '../lib/catalyst.js';
 import { authorised, refusalReason } from '../lib/apiauth.js';
 import { getQuotes } from '../lib/quotes.js';
@@ -246,6 +246,20 @@ export default async function handler(req, res) {
   // SPXW) converted into SPY prices, the dual ladder rows, both flips and the agreement flags. Market
   // data only; the SPX board is the feed's, recomputed at most once per FEED_RECOMPUTE_MIN.
   if (String(req.query?.spmap || '') === '1') {
+    // &heat=spx|combined — the strike × expiry grid in SPY prices, asked for only when the panel's
+    // heatmap is switched off SPY. The same two cached boards; no extra recompute.
+    const heatQ = String(req.query?.heat || '');
+    if (heatQ === 'spx' || heatQ === 'combined') {
+      try {
+        const [spyF, spxF, rates] = await Promise.all([feedBoard('SPY'), feedBoard('SPX'), fetchSpRates({ getQuotes, marketState })]);
+        const r = spxRatio(rates);
+        const spot = spyF?.board?.row?.spot ?? rates?.spy?.price ?? null;
+        const heat = spHeatGrid({ spyGrid: spyF?.board?.grid, spxGrid: spxF?.board?.grid, ratio: r.ratio, spot, view: heatQ });
+        return res.status(200).json({ ...heat, at: new Date().toISOString(), ratioAsOf: r.asof ?? null, spxAsOf: spxF?.asOf ?? null });
+      } catch (e) {
+        return res.status(200).json({ ok: false, reason: String(e?.message || e) });
+      }
+    }
     try {
       const { map, spyDash, spxDash, spxF, spyF } = await spMapNow();
       if (!map.ok) return res.status(200).json({ ok: false, reason: map.reason });

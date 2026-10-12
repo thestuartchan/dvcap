@@ -1,5 +1,5 @@
 // test/spMap.test.mjs — the S&P map: SPX gamma in SPY prices and ES equivalents (lib/spMap.js).
-import { spxRatio, esBasis, spyEq, esEq, spMap, spMapBlock, dualLadder, RATIO_GAP_WARN_MIN, GREY_ZONE_PCT } from '../lib/spMap.js';
+import { spxRatio, esBasis, spyEq, esEq, spMap, spMapBlock, dualLadder, spHeatGrid, RATIO_GAP_WARN_MIN, GREY_ZONE_PCT } from '../lib/spMap.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
@@ -53,6 +53,23 @@ eq('the block: the brief\'s keys, rows without the internal kind', [Object.keys(
 const dl = dualLadder(m, spyDash);
 eq('the dual ladder: both books per SPY strike, gold ★ and blue ◆ marked', dl.filter(x => x.mark).map(x => [x.spy_strike, x.mark]), [[787, 'spx_only'], [782, 'spx_only'], [780, 'agree'], [767, 'spx_only'], [757, 'spx_only']]);
 eq('a missing board is said, not drawn', spMap({ spyDash, spxDash: null, ratio: r, basis: b }).ok, false);
+
+// ── the heatmap in SPY prices ──
+{
+  const spyGrid = { expiries: [{ expiry: '2026-10-12' }, { expiry: '2026-10-16' }], cells: [{ expiry: '2026-10-12', strike: 780, netGexUsd: 2000 }, { expiry: '2026-10-16', strike: 772, netGexUsd: -600 }] };
+  const spxGrid = { expiries: [], cells: [
+    { expiry: '2026-10-12', strike: 7825, netGexUsd: 7000 }, { expiry: '2026-10-12', strike: 7830, netGexUsd: 100 },
+    { expiry: '2026-10-15', strike: 7900, netGexUsd: 5000 }, { expiry: '2027-12-17', strike: 7600, netGexUsd: -3000 },
+    { expiry: '2026-10-16', strike: 9000, netGexUsd: 999 } ] };
+  const h = spHeatGrid({ spyGrid, spxGrid, ratio: 0.09967, spot: 778.57, view: 'spx' });
+  const cell = (g, e, k) => g.cells.find(c => c.expiry === e && c.strike === k)?.netGexUsd ?? null;
+  eq('SPX strikes land on SPY $1 rows and add: 7825 and 7830 both → 780', cell(h, '2026-10-12', 780), 7100);
+  eq('an SPX expiry SPY\'s board does not read goes to one "other" column', [cell(h, 'other', 787), cell(h, 'other', 757), h.expiries.map(e => e.expiry)], [5000, -3000, ['2026-10-12', '2026-10-16', 'other']]);
+  eq('outside ±10% of spot is not carried', h.cells.some(c => c.strike > 850), false);
+  const c = spHeatGrid({ spyGrid, spxGrid, ratio: 0.09967, spot: 778.57, view: 'combined' });
+  eq('combined adds SPY\'s own cells', [cell(c, '2026-10-12', 780), cell(c, '2026-10-16', 772)], [9100, -600]);
+  eq('no ratio, no grid — said', spHeatGrid({ spyGrid, spxGrid, ratio: null, spot: 778 }).ok, false);
+}
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
