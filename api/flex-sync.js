@@ -44,7 +44,7 @@ import { appendRun, SIZER_RUNS_KEY, MAX_RUNS } from '../lib/sizer.js';
 import { catalystLookup } from '../lib/catalystFeed.js';
 import { runJournal } from '../lib/journalStore.js';
 import { journalLine, orderUnits } from '../lib/journalInbox.js';
-import { parseTradeConfirms } from '../lib/flexTrades.js';
+import { parseTradeConfirms, tcSections } from '../lib/flexTrades.js';
 import { adoptProvisional, tcQueryId, TC_QUERY_ENV, TC_WAITS_MS, SYNC_NOW_MIN_INTERVAL_S, skipOnSameDay, syncNowLine, recordLag, lagText } from '../lib/sameDayFills.js';
 import { hasSessionCookie } from '../lib/apiauth.js';
 import { readJournal } from '../lib/journalStore.js';
@@ -378,8 +378,8 @@ export async function syncNow({ now = new Date(), fetchImpl = fetch, sleep } = {
     await kvSetJson(TC_LAG_KEY, store);
     if (lags.length) lag = lagText(lags.sort((a, b) => b.upToMin - a.upToMin)[0]);
   } catch { /* the lag is a measurement, never a reason to fail the sync */ }
-  const line = syncNowLine({ fate: journal.fate, units: journal.units, waitingToday: journal.waitingToday })
-    + (!trades.length && got.xml && !/<TradeConfirm\b/.test(got.xml) && !/<TradeConfirms\b/.test(got.xml) ? ' (the report has no Trade Confirmations section — check the query)' : '');
+  const line = syncNowLine({ fate: journal.fate, units: journal.units, waitingToday: journal.waitingToday, sections: trades.length ? null : tcSections(got.xml) })
+    + (!trades.length && got.xml && !/<TradeConfirms?\b/.test(got.xml) && !/<Order\b/.test(got.xml) ? ' (the report has no Trade Confirmations section — check the query)' : '');
   return { ok: true, at, line, lag, journal: await readJournal() };
 }
 

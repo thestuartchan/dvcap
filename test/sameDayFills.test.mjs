@@ -1,9 +1,9 @@
 // test/sameDayFills.test.mjs — "Sync now" (IBKR's same-day Trade Confirmation report) and
 // "Confirm all exact matches". Fake order ids and a fake account throughout; a Redis stand-in and a
 // Flex stand-in answer through fetch, so nothing touches the network.
-import { parseTradeConfirms, parseTrades, planTrades } from '../lib/flexTrades.js';
+import { parseTradeConfirms, parseTrades, planTrades, tcSections } from '../lib/flexTrades.js';
 import { orderUnits, matchNote, processInbox, applyDraft, validateNote, exactMatch, bulkCandidates, bulkLabel, bulkSummary, DRAFTS_KEY, PROCESSED_KEY, INBOX_KEY } from '../lib/journalInbox.js';
-import { adoptProvisional, upgradeDrafts, skipOnSameDay, syncNowLine, recordLag, lagText, nyEpochMs, provisionalBadge } from '../lib/sameDayFills.js';
+import { adoptProvisional, upgradeDrafts, skipOnSameDay, syncNowLine, skippedNote, recordLag, lagText, nyEpochMs, provisionalBadge } from '../lib/sameDayFills.js';
 import { fillOf } from '../lib/journalInbox.js';
 import { derivePosition } from '../lib/positions.js';
 import { mintSession, sessionCookie } from '../lib/session.js';
@@ -54,6 +54,24 @@ const MES = [stk({ sym: 'MESZ6', u: 'MES', cat: 'FUT', conid: 6001, m: 5, side: 
   const fut = orderUnits(parseTradeConfirms(tc(MES)));
   eq('a future: one FUT unit under its product root', [fut[0].type, fut[0].root, fut[0].qty, fut[0].multiplier, fut[0].side], ['FUT', 'MES', 1, 5, 'BUY']);
   eq('an empty report is no trades, not an error', parseTradeConfirms(tc([])), []);
+}
+
+// ── WHAT A QUERY SET TO "ORDER" ACTUALLY SENDS (12 Oct, first live run) ──────
+// <Order> rows, plus <SymbolSummary> totals — not <TradeConfirm>. Reading only <TradeConfirm> said
+// "no fills" over a report of filled orders.
+{
+  const asOrder = (row) => row.replace('<TradeConfirm ', '<Order ').replace('levelOfDetail="ORDER"', '');
+  const summary = '<SymbolSummary accountId="U0000000" currency="USD" assetCategory="OPT" symbol="FCX x" underlyingSymbol="FCX" buySell="BUY" quantity="8" price="5.10" levelOfDetail="SYMBOL_SUMMARY" />';
+  const xml = tc([summary, ...FCX.map(asOrder), asOrder(stk({ sym: 'SOFI', conid: 7001, side: 'BUY', q: 150, px: 20.01, oid: 900002 }))]);
+  const got = parseTradeConfirms(xml);
+  eq('Order-level rows are read; the symbol summary is not a fill', [got.length, got.map(t => t.tradeId)], [3, ['900001:9001', '900001:9002', '900002:7001']]);
+  eq('… and make the same units as before', orderUnits(got).map(u => [u.type, u.orderId, u.qty]), [['COMBO', '900001', 8], ['STK', '900002', 150]]);
+  const onlySummary = tc([summary]);
+  eq('only symbol summaries: nothing parsed, and the line says to set the level to Order', [parseTradeConfirms(onlySummary).length, skippedNote(tcSections(onlySummary))],
+    [0, ' — the report has only symbol summaries; set the query\'s level of detail to Order']);
+  const noIds = tc(FCX.map(asOrder).map(r => r.replace(/orderID="\d+"/, '')));
+  eq('rows that cannot be read are counted by reason, never shown', syncNowLine({ fate: {}, units: [], sections: tcSections(noIds) }),
+    'No fills in IBKR\'s same-day report yet — but the report had 2 rows and none could be read (2 no order id); check the query\'s fields');
 }
 
 // ── THE SAME-DAY PATH DRAFTS ONLY, AND LEAVES DAY TRADES OUT ─────────────────
