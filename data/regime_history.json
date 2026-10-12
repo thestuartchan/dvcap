@@ -3475,28 +3475,38 @@
     },
     {
       "date": "2026-10-12",
-      "stagflation_p": 55,
-      "reflationary_p": 20,
-      "deflationary_p": 20,
+      "stagflation_p": 65,
+      "reflationary_p": 17,
+      "deflationary_p": 13,
       "inflationary_p": 5,
-      "hawkish_repricing": null,
+      "hawkish_repricing": "INSUFFICIENT_DATA",
       "live_regime": "stag",
       "view_regime": "stag",
-      "pinned": false,
-      "hyg_chg": null,
-      "hyg_qqq_divergence": null,
+      "pinned": true,
+      "hyg_chg": -0.01,
+      "hyg_qqq_divergence": 0.38,
       "inputs": {
-        "weightedRecessionProb": 15,
+        "weightedRecessionProb": 13.6,
         "cpi": 3.35302,
-        "kalshi2027": 25,
-        "tape": null,
-        "ladderSpread": null,
+        "kalshi2027": 20,
+        "tape": {
+          "gold": "down",
+          "tlt": "flat",
+          "xlu": "flat",
+          "xlp": "up",
+          "spy": "flat",
+          "qqq": "down",
+          "iwm": "down",
+          "btc": "down",
+          "breakevenBp": -2
+        },
+        "ladderSpread": -1.38,
         "u3": 4.2,
         "empPop": 59.2,
         "oas": 3.15,
         "tenY": 5.22,
         "twoY": 4.75,
-        "consensusAlive": 0.595,
+        "consensusAlive": 0.692,
         "regimeVintage": "decayed"
       },
       "axes": {
@@ -3548,30 +3558,43 @@
         "quadrantRead": "growth firm, inflation cool"
       },
       "state": {
-        "regime": null,
+        "regime": {
+          "id": "ref",
+          "probs": {
+            "ref": 40,
+            "inf": 29,
+            "stag": 13,
+            "def": 18
+          },
+          "g": 0.23,
+          "gDrift": -1.15,
+          "i": -0.07,
+          "iDrift": 0.33,
+          "drifting": "stag"
+        },
         "conditions": {
-          "score": 55.3,
+          "score": 54.4,
           "band": "caution",
           "comps": {
             "credit": 61,
-            "equityVol": 11,
+            "equityVol": 7,
             "ratesVol": 58,
             "realYield": 88,
             "funding": 34,
-            "breadth": 76,
+            "breadth": 75,
             "dollar": 100
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": null,
+          "hikeOdds": 20,
           "liq4w": 8
         },
-        "sizing": 0.8,
+        "sizing": 0.63,
         "stage": 4
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-12T13:52:07.219Z"
+      "loggedAt": "2026-10-12T16:22:50.255Z"
     }
   ]
 }
