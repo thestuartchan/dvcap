@@ -10,6 +10,7 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ReferenceLine, ReferenceArea, ResponsiveContainer, Cell,
 } from "recharts";
+import { SpMapCard } from "./SpMapCard.jsx";
 import { C, tint } from "./theme.js";
 import { Card, SLabel, StaleChip } from "./ui.jsx";
 import { gexRead, ageOf } from "../lib/gexRead.js";
@@ -225,6 +226,10 @@ export function GexPanel() {
   // — which is the question you are actually asking when you look at it mid-session. It writes
   // nothing: the stored series stays the clean scheduled record.
   const [live, setLive] = useState(null);
+  // THE S&P HEATMAP (SPY tab only): SPY's own grid, SPX's in SPY prices, or the two added. The SPX
+  // grids are fetched on the click that asks for them (/api/gex?spmap=1&heat=…), never on load.
+  const [heatView, setHeatView] = useState("spy");
+  const [spHeat, setSpHeat] = useState({});
   const [liveBusy, setLiveBusy] = useState(false);
   // ── THE LEVELS AS A TRADINGVIEW SCRIPT ──
   // Pine cannot fetch, so the board travels as source (lib/pine.js). Copied to the clipboard; on a
@@ -421,10 +426,22 @@ export function GexPanel() {
   // lib/gex.js, where it is tested. The panel only draws what comes back.
   // Per-column ranking, plus the strikes the tiles are about: the flip-zone edges, the trapdoor,
   // the support, the call wall and the pin box can never be dropped from the table.
+  const spView = symbol === "SPY" && !custom ? heatView : "spy";
+  const altHeat = spView !== "spy" && spHeat[spView]?.ok ? spHeat[spView] : null;
+  const pickHeat = async (v) => {
+    setHeatView(v);
+    if (v === "spy" || spHeat[v]?.ok) return;
+    setSpHeat(x => ({ ...x, [v]: { loading: true } }));
+    try {
+      const r = await fetch(`/api/gex?spmap=1&heat=${v}`, { credentials: "include" });
+      const j = await r.json().catch(() => null);
+      setSpHeat(x => ({ ...x, [v]: j?.ok ? j : { ok: false, reason: j?.reason || `HTTP ${r.status}` } }));
+    } catch (e) { setSpHeat(x => ({ ...x, [v]: { ok: false, reason: String(e?.message || e) } })); }
+  };
   const heat = useMemo(() => {
     const m = mustShow(lv, { flipZoneLo: latest?.flipZoneLo, flipZoneHi: latest?.flipZoneHi });
-    return heatCells(grid, { must: m.strikes, flipZone: m.flipZone });
-  }, [grid, lv, latest]);
+    return heatCells(altHeat || grid, { must: m.strikes, flipZone: m.flipZone });
+  }, [altHeat, grid, lv, latest]);
   const spotAt = heat ? spotSlot(heat.strikes, latest?.spot) : null;
   const spotLine = heat && spotAt != null ? (
     <Fragment key="spot">
@@ -825,12 +842,29 @@ export function GexPanel() {
             <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid " + C.bdr }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
                 <SLabel>Strike × expiry</SLabel>
+                {symbol === "SPY" && !custom && (
+                  <span style={{ display: "inline-flex", gap: 4 }} role="group" aria-label="which book">
+                    {[["spy", "SPY"], ["spx", "SPX in SPY prices"], ["combined", "Combined"]].map(([v, label]) => (
+                      <button key={v} onClick={() => pickHeat(v)}
+                        style={{ fontSize: 11, fontWeight: 800, padding: "2px 9px", borderRadius: 999, cursor: "pointer",
+                                 border: "1.5px solid " + (spView === v ? C.blBdr : C.bdr), background: spView === v ? C.blBg : C.surf,
+                                 color: spView === v ? C.blue : C.mid }}>{label}</button>
+                    ))}
+                  </span>
+                )}
                 <span style={{ fontSize: 11.5, color: C.muted }}>
                   each expiry's {heat.perColumn} heaviest strikes, {heat.shown} of {heat.total}
                   {heat.added?.length ? ` · plus the flip-zone edges and the level strikes (${heat.added.length} forced in)` : " · the flip-zone edges and the level strikes are always kept"}
                   {" "}· green = positive gamma, purple = negative
                 </span>
               </div>
+              {spView !== "spy" && (
+                <div style={{ fontSize: 11.5, color: spHeat[spView]?.ok === false ? C.amber : C.mid, marginTop: 4 }}>
+                  {spHeat[spView]?.loading ? "reading the SPX book…"
+                    : spHeat[spView]?.ok === false ? `SPX grid not available — ${spHeat[spView].reason}; showing SPY's`
+                    : altHeat ? `${altHeat.note}. SPY's columns; spot, flip zone and the level strikes are SPY's.${spView === "combined" ? " SPX is ~94% of S&P gamma, so this reads close to the SPX view." : ""}` : null}
+                </div>
+              )}
               {/* Scrolls on its own rather than widening the page — the strike column is pinned so a
                   row stays identifiable once the expiries run off the right on a phone. */}
               <div style={{ marginTop: 8, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
@@ -841,7 +875,7 @@ export function GexPanel() {
                     <div key={e} title={rateOut && rateFarOut(e) ? "priced with no risk-free rate" : undefined}
                          style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textAlign: "center",
                                   letterSpacing: 0.2, paddingBottom: 2, opacity: rateOut && rateFarOut(e) ? 0.4 : 1 }}>
-                      {e.slice(5)}{rateOut && rateFarOut(e) ? " r?" : ""}
+                      {/^\d{4}-/.test(e) ? e.slice(5) : e}{rateOut && rateFarOut(e) ? " r?" : ""}
                     </div>
                   ))}
                   {heat.strikes.map((k, row) => {
@@ -916,40 +950,48 @@ export function GexPanel() {
         </Card>
       )}
 
-      {/* 2 — net gamma by strike, read in the light of the breakdown above */}
-      <Card>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
-          <SLabel>Net gamma by strike</SLabel>
-          <span style={{ fontSize: 11.5, color: C.muted }}>dollars per 1% move · {latest.date}</span>
-        </div>
-        {!strikeRows.length ? (
-          <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>No raw chain stored for this date — it prunes after 30 days.</div>
-        ) : (
-          <div style={{ height: Math.max(260, strikeRows.length * 15), marginTop: 8 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={strikeRows} layout="vertical" margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
-                <CartesianGrid strokeDasharray="2 3" stroke={C.bdr} />
-                <XAxis type="number" tick={{ fontSize: 10, fill: C.lbl }} tickFormatter={fmtUsd} />
-                <YAxis type="category" dataKey="strike" tick={{ fontSize: 9.5, fill: C.lbl }} width={46} reversed />
-                <Tooltip formatter={(v) => fmtUsd(v)} labelFormatter={(l) => `Strike ${l}`}
-                  contentStyle={{ fontSize: 11.5, borderRadius: 8, border: "1px solid " + C.bdr }} />
-                {/* The flip drawn as a BAND, not a line — its width is the measured sensitivity to
-                    the dealer put assumption. A line would claim precision the data cannot carry. */}
-                {latest.flipZoneLo != null && latest.flipZoneHi != null && (
-                  <ReferenceArea y1={latest.flipZoneLo} y2={latest.flipZoneHi} fill={C.amber} fillOpacity={0.12} />
-                )}
-                {latest.flipLevel != null && <ReferenceLine y={latest.flipLevel} stroke={C.amber} strokeDasharray="4 3"
-                  label={{ value: `flip ${fmtNum(latest.flipLevel)}`, fontSize: 10, fill: C.amber, position: "insideTopRight" }} />}
-                {latest.spot != null && <ReferenceLine y={latest.spot} stroke={C.blue} strokeWidth={1.5}
-                  label={{ value: `spot ${fmtNum(latest.spot)}`, fontSize: 10, fill: C.blue, position: "insideBottomRight" }} />}
-                <Bar dataKey="net" name="Net GEX" isAnimationActive={false}>
-                  {strikeRows.map((r, i) => <Cell key={i} fill={(r.net ?? 0) >= 0 ? C.green : C.purple} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+      {/* 2 — net gamma by strike, read in the light of the breakdown above.
+          THE S&P SIDE (12 Oct): on the SPY tab the ladder is the S&P map — SPY's board with SPX's
+          (SPX + SPXW, ~94% of S&P options gamma) converted into SPY prices beside it (src/SpMapCard.jsx).
+          QQQ keeps its own ladder, unchanged; if the map cannot be built the SPY-only ladder is drawn. */}
+      {(() => {
+        const ladderCard = (
+        <Card>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+            <SLabel>Net gamma by strike</SLabel>
+            <span style={{ fontSize: 11.5, color: C.muted }}>dollars per 1% move · {latest.date}</span>
           </div>
-        )}
-      </Card>
+          {!strikeRows.length ? (
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>No raw chain stored for this date — it prunes after 30 days.</div>
+          ) : (
+            <div style={{ height: Math.max(260, strikeRows.length * 15), marginTop: 8 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={strikeRows} layout="vertical" margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
+                  <CartesianGrid strokeDasharray="2 3" stroke={C.bdr} />
+                  <XAxis type="number" tick={{ fontSize: 10, fill: C.lbl }} tickFormatter={fmtUsd} />
+                  <YAxis type="category" dataKey="strike" tick={{ fontSize: 9.5, fill: C.lbl }} width={46} reversed />
+                  <Tooltip formatter={(v) => fmtUsd(v)} labelFormatter={(l) => `Strike ${l}`}
+                    contentStyle={{ fontSize: 11.5, borderRadius: 8, border: "1px solid " + C.bdr }} />
+                  {/* The flip drawn as a BAND, not a line — its width is the measured sensitivity to
+                      the dealer put assumption. A line would claim precision the data cannot carry. */}
+                  {latest.flipZoneLo != null && latest.flipZoneHi != null && (
+                    <ReferenceArea y1={latest.flipZoneLo} y2={latest.flipZoneHi} fill={C.amber} fillOpacity={0.12} />
+                  )}
+                  {latest.flipLevel != null && <ReferenceLine y={latest.flipLevel} stroke={C.amber} strokeDasharray="4 3"
+                    label={{ value: `flip ${fmtNum(latest.flipLevel)}`, fontSize: 10, fill: C.amber, position: "insideTopRight" }} />}
+                  {latest.spot != null && <ReferenceLine y={latest.spot} stroke={C.blue} strokeWidth={1.5}
+                    label={{ value: `spot ${fmtNum(latest.spot)}`, fontSize: 10, fill: C.blue, position: "insideBottomRight" }} />}
+                  <Bar dataKey="net" name="Net GEX" isAnimationActive={false}>
+                    {strikeRows.map((r, i) => <Cell key={i} fill={(r.net ?? 0) >= 0 ? C.green : C.purple} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </Card>
+        );
+        return symbol === "SPY" && !custom ? <SpMapCard fallback={ladderCard} refreshKey={live?.row?.asOf || 0} /> : ladderCard;
+      })()}
 
       {/* 3 — the history, which is the reason any of this is stored. A custom name has none and
           is not going to: it is read on demand and not captured, and saying so beats an empty

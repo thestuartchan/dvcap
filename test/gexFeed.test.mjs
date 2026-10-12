@@ -99,7 +99,7 @@ const json = JSON.stringify(p);
   eq('a wrong one, a short one, a missing one do not', [slugMatches('y'.repeat(43), slug), slugMatches('x'.repeat(42), slug), slugMatches(null, slug), slugMatches(slug, null)], [false, false, false, false]);
   eq('a stored slug under 32 characters never matches', slugMatches('a'.repeat(20), 'a'.repeat(20)), false);
   eq('an hourly bucket per hashed IP', rateBucket('ab12', new Date('2026-09-29T14:37:00Z')), 'dvcap:gex:feed:rl:v1:ab12:2026-09-29T14');
-  eq('QQQ and SPY; five minutes; thirty an hour', [FEED_TICKERS, FEED_RECOMPUTE_MIN, FEED_RATE_PER_HOUR], [['QQQ', 'SPY'], 5, 30]);
+  eq('QQQ, SPY and (12 Oct) SPX; five minutes; thirty an hour', [FEED_TICKERS, FEED_RECOMPUTE_MIN, FEED_RATE_PER_HOUR], [['QQQ', 'SPY', 'SPX'], 5, 30]);
   eq('the flag needs a matching peak', expiryFlag({ peakCallStrike: 1, peakPutStrike: 2 }, { callWall: 760, levels: board.levels }), null);
 }
 {

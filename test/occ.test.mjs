@@ -11,7 +11,7 @@
 // It was a property of the HOUR it ran in.
 import { readFileSync } from 'node:fs';
 import { parseOccSeries, mergeOccIv, occKey, defaultExpiries, refreshExpiries, MIN_OCC_COVERAGE, DEFAULT_NEAR_COUNT, DEFAULT_FRIDAY_COUNT,
-         seenRecord, rollEntry, appendRoll, rollSummary, ROLL_LOG_MAX, occVintage } from '../lib/occ.js';
+         seenRecord, rollEntry, appendRoll, rollSummary, ROLL_LOG_MAX, occVintage, occRootsFor, OCC_ROOTS } from '../lib/occ.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -378,6 +378,19 @@ const FIX = readFileSync(new URL('./fixtures-occ-qqq.txt', import.meta.url), 'ut
 
   eq('an empty log reports nothing rather than guessing', rollSummary([]).n, 0);
   ok('and says why', /no roll observed yet/.test(rollSummary([]).note));
+}
+
+// ── SPX: two roots under one underlying (12 Oct) ──
+{
+  const row = (root, y, m, d, k, c, p) => `${root}\t\t${y}\t${m}\t${d}\t${k}\t000\tC\t${c}\t${p}\t0`;
+  const TXT = [row('SPX', 2026, 10, 16, 7800, 100, 200), row('SPXW', 2026, 10, 16, 7800, 30, 40), row('SPXW', 2026, 10, 12, 7805, 5, 6), row('2SPX', 2026, 10, 16, 7800, 999, 999)].join('\n');
+  const one = parseOccSeries(TXT, occRootsFor('SPX'));
+  eq('SPX is read as SPX + SPXW; the adjusted 2SPX is not', [occRootsFor('SPX'), one.roots, one.rooted, one.totalOi], [['SPX', 'SPXW'], ['SPX', 'SPXW'], true, 381]);
+  eq('the third Friday keeps the AM and the PM contract apart', [one.oi.get(occKey('2026-10-16', 'call', 7800, 'SPX')), one.oi.get(occKey('2026-10-16', 'call', 7800, 'SPXW'))], [100, 30]);
+  eq('a single-root book keeps its three-part key', [occRootsFor('SPY'), occKey('2026-10-16', 'call', 780)], [['SPY'], '2026-10-16|call|780']);
+  const m = mergeOccIv(one, [{ expiry: '2026-10-16', type: 'call', strike: 7800, oi: 90, iv: 0.12, root: 'SPX' }, { expiry: '2026-10-16', type: 'call', strike: 7800, oi: 25, iv: 0.13, root: 'SPXW' }]);
+  eq('the join matches each root to its own open interest, and keeps the root', m.contracts.map(c => [c.root, c.oi, c.iv]), [['SPX', 100, 0.12], ['SPXW', 30, 0.13]]);
+  ok('only SPX is multi-root', Object.keys(OCC_ROOTS).join() === 'SPX');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

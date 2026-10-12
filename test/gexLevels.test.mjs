@@ -472,7 +472,7 @@ const filler = (spot, skip = []) => EXP.filter(e => !skip.includes(e)).flatMap(e
   ok('the call wall tile carries its kind', /lv\.callWall\.kind/.test(src));
   ok('the rate line comes from the tested helper', /\{rateLine\(latest\)\}/.test(src) && !/No risk-free rate on this row/.test(src));
   ok('far-dated columns grey when the rate is unavailable', /rateOut && rateFarOut\(e\)/.test(src));
-  ok('the heatmap is fed the must-show strikes and the flip zone', /heatCells\(grid, \{ must: m\.strikes, flipZone: m\.flipZone \}\)/.test(src));
+  ok('the heatmap is fed the must-show strikes and the flip zone', /heatCells\((altHeat \|\| )?grid, \{ must: m\.strikes, flipZone: m\.flipZone \}\)/.test(src));
   ok('the expiry badge names the object', /"trapdoor"/.test(src) && /"support"/.test(src) && !/"put wall"/.test(src));
   eq('helpers', [shortExpiry('2026-10-16'), fmtM(-89e6), fmtM(1.2e9), supportText(null), trapdoorText(null), callWallText(null)],
      ['Oct-16', '−89M', '+1.20B', 'no put support', 'no negative node below spot inside 10%', '—']);
