@@ -3472,6 +3472,119 @@
       },
       "source": "client",
       "loggedAt": "2026-10-10T08:06:10.051Z"
+    },
+    {
+      "date": "2026-10-12",
+      "stagflation_p": 65,
+      "reflationary_p": 17,
+      "deflationary_p": 13,
+      "inflationary_p": 5,
+      "hawkish_repricing": null,
+      "live_regime": "stag",
+      "view_regime": null,
+      "pinned": null,
+      "hyg_chg": null,
+      "hyg_qqq_divergence": null,
+      "inputs": {
+        "weightedRecessionProb": 13.6,
+        "cpi": 3.35302,
+        "kalshi2027": 21,
+        "tape": null,
+        "ladderSpread": null,
+        "u3": 4.2,
+        "empPop": 59.2,
+        "oas": 3.15,
+        "tenY": 5.22,
+        "twoY": 4.75,
+        "consensusAlive": 0.692,
+        "regimeVintage": "decayed"
+      },
+      "axes": {
+        "growth": {
+          "state": "turning-down",
+          "lean": 1,
+          "market": {
+            "verdict": "CONTRACTING",
+            "lean": -1,
+            "usable": 5,
+            "of": 5
+          },
+          "weekly": {
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 4,
+            "of": 4
+          },
+          "monthly": {
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 4,
+            "of": 4
+          }
+        },
+        "inflation": {
+          "state": "split",
+          "lean": -1,
+          "market": {
+            "verdict": "COOLING",
+            "lean": -1,
+            "usable": 3,
+            "of": 3
+          },
+          "nowcast": {
+            "verdict": "BETWEEN",
+            "lean": 0,
+            "usable": 2,
+            "of": 2
+          },
+          "printed": {
+            "verdict": "COOLING",
+            "lean": -1,
+            "usable": 3,
+            "of": 3
+          }
+        },
+        "quadrant": "ref",
+        "quadrantRead": "growth firm, inflation cool"
+      },
+      "state": {
+        "regime": {
+          "id": "ref",
+          "probs": {
+            "ref": 51,
+            "inf": 18,
+            "stag": 8,
+            "def": 23
+          },
+          "g": 0.23,
+          "gDrift": -1.15,
+          "i": -0.22,
+          "iDrift": 0,
+          "drifting": "def"
+        },
+        "conditions": {
+          "score": 53.9,
+          "band": "caution",
+          "comps": {
+            "credit": 61,
+            "equityVol": 5,
+            "ratesVol": 58,
+            "realYield": 88,
+            "funding": 34,
+            "breadth": 74,
+            "dollar": 100
+          }
+        },
+        "policy": {
+          "stance": "tightening",
+          "hikeOdds": 18,
+          "liq4w": 8
+        },
+        "sizing": 0.64,
+        "stage": 4
+      },
+      "source": "cron",
+      "loggedAt": "2026-10-12T01:49:49.166Z"
     }
   ]
 }
