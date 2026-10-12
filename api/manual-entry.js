@@ -25,7 +25,7 @@ import { authorised, hasSessionCookie, refuse } from '../lib/apiauth.js';
 import { fetchHlAccount, fetchHlSpot, fetchSpotContext, fetchHyperliquid } from '../lib/hyperliquid.js';
 import { fetchWallets } from '../lib/wallet.js';
 import { validateNote, noteBytes, MAX_NOTE_BYTES } from '../lib/journalInbox.js';
-import { journalTokenOk, underRateLimit, appendNote, pendingCount, readJournal, resolveDraft, dropNote } from '../lib/journalStore.js';
+import { journalTokenOk, underRateLimit, appendNote, pendingCount, readJournal, resolveDraft, resolveMany, dropNote } from '../lib/journalStore.js';
 
 const DATA_PATH = 'data/manual_entry.json';
 
@@ -135,7 +135,9 @@ function sanitizeFill(f) {
     // IBKR's own trade id, when the fill came from a statement rather than a keystroke. It is what
     // makes ingestion idempotent — a trade already carrying its id is never applied twice, which is
     // what allows the Flex query to use a 30-day window and heal a missed run.
-    tradeId: cs(f.tradeId, 24) || null };
+    tradeId: cs(f.tradeId, 24) || null,
+    // From IBKR's SAME-DAY report, until the next statement adopts it (lib/sameDayFills.js).
+    ...(f.provisional && typeof f.provisional === 'object' ? { provisional: { since: cs(f.provisional.since, 12) } } : {}) };
 }
 function sanitizeRow(r) {
   if (!r || typeof r !== 'object') return null;
@@ -469,6 +471,12 @@ export default async function handler(req, res) {
   if (journalDraft && typeof journalDraft === 'object' && journalDraft.action === 'drop-note') {
     const r = await dropNote(String(journalDraft.id || '').slice(0, 100));
     return res.status(r.ok ? 200 : 409).json({ journal: r.ok ? await readJournal() : { error: r.error } });
+  }
+  // Confirm all exact matches: the console has saved the rows; this clears the drafts in one write.
+  if (journalDraft && typeof journalDraft === 'object' && journalDraft.action === 'confirm-many') {
+    const ids = (Array.isArray(journalDraft.ids) ? journalDraft.ids : []).map(x => String(x).slice(0, 100)).slice(0, 50);
+    const r = await resolveMany({ ids });
+    return res.status(r.ok ? 200 : 409).json({ journal: r.ok ? { drafts: r.drafts, confirmed: r.confirmed, refused: r.refused } : { error: r.error, refused: r.refused } });
   }
   if (journalDraft && typeof journalDraft === 'object') {
     const r = await resolveDraft({ id: String(journalDraft.id || '').slice(0, 100), action: journalDraft.action,
