@@ -3488,7 +3488,7 @@
       "inputs": {
         "weightedRecessionProb": 13.6,
         "cpi": 3.35302,
-        "kalshi2027": 20,
+        "kalshi2027": 18,
         "tape": {
           "gold": "down",
           "tlt": "flat",
@@ -3587,14 +3587,14 @@
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 20,
+          "hikeOdds": 22,
           "liq4w": 8
         },
         "sizing": 0.63,
         "stage": 4
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-12T16:22:50.255Z"
+      "loggedAt": "2026-10-12T16:40:58.161Z"
     }
   ]
 }
