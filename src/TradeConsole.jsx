@@ -41,6 +41,7 @@ import { stateOf, byState, afterFill, thesisOk, archivePatch, restorePatch, hour
 import { parseCommand, resolveCandidates, commandRow, commandSummary, firstFill, priceText } from "../lib/commandBar.js";
 import { actionItems } from "../lib/actions.js";
 import { applyDraft, LEVEL_LABEL as JOURNAL_LEVEL_LABEL } from "../lib/journalInbox.js";
+import { provisionalBadge } from "../lib/sameDayFills.js";
 import JournalDrafts from "./JournalDrafts.jsx";
 import FillAudit from "./FillAudit.jsx";
 import { undoCarryOver } from "../lib/fillAudit.js";
@@ -382,7 +383,7 @@ const {
   delFill, sizeOpen, setSizeOpen, justMoved, drafts, setDraft, clearDraft, chip, ccyChip, fitChip,
   kindCol, money, pnlCol,
   equityBase, baseCcy, fxRates, baseRisk, targetPct, numOrNull,
-  livePositions,
+  livePositions, sameDayMissing,
 } = ctx;
   const price = priceOf(r);
   const q = prices?.[quoteSym(r)];
@@ -1041,7 +1042,10 @@ const {
                   not the same kind of fact, and once the statement starts writing fills the
                   difference stops being obvious. The id is the broker's own, which is also what
                   stops the same trade being recorded twice. */}
-              {f.tradeId && <span title={`recorded from the IBKR statement — trade ${f.tradeId}`} style={{ fontSize: 10, fontWeight: 800, color: C.blue, border: "1px solid " + C.bdr, borderRadius: 5, padding: "1px 5px", background: C.surf }}>IBKR</span>}
+              {f.tradeId && !f.provisional && <span title={`recorded from the IBKR statement — trade ${f.tradeId}`} style={{ fontSize: 10, fontWeight: 800, color: C.blue, border: "1px solid " + C.bdr, borderRadius: 5, padding: "1px 5px", background: C.surf }}>IBKR</span>}
+              {(() => { const b = provisionalBadge(f, sameDayMissing); return b && (
+                <span title={b.title} style={{ fontSize: 10, fontWeight: 800, color: b.warn ? C.amber : C.blue, border: "1px solid " + (b.warn ? C.aBdr : C.blBdr), borderRadius: 5, padding: "1px 5px", background: b.warn ? C.aBg : C.surf }}>{b.text}</span>
+              ); })()}
               <NumCommit dk={`fq:${f.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={f.qty} placeholder="qty" width={78}
                 onCommit={q => { if (q != null && q > 0) upd(r.id, { fills: (r.fills || []).map(x => x.id === f.id ? { ...x, qty: q } : x) }); }} />
               <span style={{ color: C.lbl }}>@</span>
@@ -2937,6 +2941,8 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   const [journal, setJournal] = useState(null);
   const [journalBusy, setJournalBusy] = useState(false);
   const [journalMsg, setJournalMsg] = useState(null);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncMsg, setSyncMsg] = useState(null);
   const [ackBusy, setAckBusy] = useState(null);
   const [ackMsg, setAckMsg] = useState(null);
   const [recheckBusy, setRecheckBusy] = useState(false);
@@ -3831,6 +3837,45 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       if (target) { setBookTab(derivePosition(target.fills || [], { multiplier: target.multiplier, side: target.side }).status === "closed" ? "CLOSED" : "OPEN"); setExpanded(r.rowId); }
     } finally { setJournalBusy(false); }
   };
+  // CONFIRM ALL EXACT MATCHES. Every row written the ordinary way — each draft applied in turn to the
+  // console's rows, ONE save — and only once that save lands are the drafts taken off the list, in
+  // one write that logs each confirmation with `bulk: true`. A draft that cannot be applied is left
+  // as it was and named; the rest go through.
+  const confirmMany = async (list) => {
+    let next = rows; const done = [], skipped = [];
+    for (const d of list) {
+      const r = applyDraft(next, d, {}, { today: new Date().toISOString().slice(0, 10) });
+      if (r.error) { skipped.push(`${d.fill?.label || d.id}: ${r.error}`); continue; }
+      next = r.rows; done.push(d.id);
+    }
+    if (!done.length) { setJournalMsg({ err: true, text: `Nothing confirmed — ${skipped.join("; ")}` }); return; }
+    setJournalBusy(true); setJournalMsg(null);
+    try {
+      setRows(next);
+      const res = await fetch("/api/manual-entry", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+        body: JSON.stringify({ console: { rows: next, settings } }) });
+      if (!res.ok) { touch(); setJournalMsg({ err: true, text: `Rows kept locally, not synced (${res.status}) — the drafts stay until they are.` }); return; }
+      setDirty(false);
+      const r2 = await fetch("/api/manual-entry", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ journalDraft: { action: "confirm-many", ids: done } }) });
+      const j = await r2.json().catch(() => null);
+      if (r2.ok && j?.journal?.drafts) setJournal(x => ({ ...(x || {}), drafts: j.journal.drafts }));
+      setJournalMsg(r2.ok
+        ? { text: `${done.length} confirmed ✓${skipped.length ? ` · ${skipped.length} left one by one (${skipped.join("; ")})` : ""}` }
+        : { err: true, text: j?.journal?.error || "Saved; the drafts could not be cleared." });
+    } finally { setJournalBusy(false); }
+  };
+  // SYNC NOW — IBKR's same-day report, matched to the notes. Drafts only; the answer is one line.
+  const syncNow = async () => {
+    setSyncBusy(true); setSyncMsg(null);
+    try {
+      const res = await fetch("/api/flex-sync?tc=1", { method: "POST", credentials: "include" });
+      const j = await res.json().catch(() => null);
+      if (j?.journal) setJournal(j.journal);
+      setSyncMsg({ err: !(res.ok && j?.ok), text: j?.line || `Sync now failed (${res.status}) — nothing changed.`, lag: j?.lag || null });
+    } catch { setSyncMsg({ err: true, text: "Sync now could not reach the server — nothing changed." }); }
+    setSyncBusy(false);
+  };
   const dismissDraft = async (draft) => {
     setJournalBusy(true);
     const done = await resolveJournal({ id: draft.id, action: "dismiss" }).catch(() => ({ ok: false }));
@@ -4054,6 +4099,8 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel,
     delFill, draftFill, fillFor, setFillFor, saveFill, declineFill, archiveRow, restoreRow, sizeOpen, setSizeOpen, justMoved: moved?.id ?? null, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip, kindCol, money, pnlCol,
     equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
+    // Same-day fills the last statement did not contain, flagged on their fill (lib/sameDayFills.js).
+    sameDayMissing: flexNote?.sameDay?.missing || [],
     // So a row can show the name the feed resolved its symbol to when the static map has none.
     atrFor,
     rollCandidates, guardPanel, coverage,
@@ -4356,7 +4403,8 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       {/* ── JOURNAL DRAFTS ──
           Notes written from chat, matched to IBKR's fills by the daily run: drafts to confirm,
           fills that arrived with no note, and notes whose fill never came. Absent when empty. */}
-      <JournalDrafts journal={journal} rows={rows} onConfirm={confirmDraft} onDismiss={dismissDraft} onChoose={chooseDraft} onDrop={dropNote} busy={journalBusy} msg={journalMsg} />
+      <JournalDrafts journal={journal} rows={rows} onConfirm={confirmDraft} onDismiss={dismissDraft} onChoose={chooseDraft} onDrop={dropNote}
+        onConfirmMany={confirmMany} onSyncNow={kvOn ? syncNow : null} syncBusy={syncBusy} syncMsg={syncMsg} busy={journalBusy} msg={journalMsg} />
 
       {/* ── ONE-TIME CARRY-OVER ── the old trade sheet's fills, before it is retired. Gone once marked done. */}
       <FillAudit rows={rows} sheet={settings.brokerSheet || ""} setSheet={(v) => { setSettings(s => ({ ...s, brokerSheet: v })); touch(); }}

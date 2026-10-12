@@ -43,7 +43,12 @@ import { parseOptionSymbol, contractKey, TREND_WINDOW } from '../lib/bookExposur
 import { appendRun, SIZER_RUNS_KEY, MAX_RUNS } from '../lib/sizer.js';
 import { catalystLookup } from '../lib/catalystFeed.js';
 import { runJournal } from '../lib/journalStore.js';
-import { journalLine } from '../lib/journalInbox.js';
+import { journalLine, orderUnits } from '../lib/journalInbox.js';
+import { parseTradeConfirms } from '../lib/flexTrades.js';
+import { adoptProvisional, tcQueryId, TC_QUERY_ENV, TC_WAITS_MS, SYNC_NOW_MIN_INTERVAL_S, skipOnSameDay, syncNowLine, recordLag, lagText } from '../lib/sameDayFills.js';
+import { hasSessionCookie } from '../lib/apiauth.js';
+import { readJournal } from '../lib/journalStore.js';
+import { kvSetNxEx } from '../lib/kv.js';
 import HOLIDAYS from '../data/holidays.json' with { type: 'json' };
 
 // The same optional secret the card endpoint uses, so the scheduler carries one key rather than
@@ -97,6 +102,17 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   const withDerived = rows.map(r => ({ ...r, derived: derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side }) }));
 
   const asOf = isoDate(got.statement.toDate);
+  // ── SAME-DAY FILLS, TAKEN OVER BY THE STATEMENT ───────────────────────────
+  // A fill confirmed from the same-day report (?tc=1) is provisional. Here the statement adopts it
+  // by IBKR's order id — clearing the mark, correcting quantity or price to the statement's — so
+  // the planner below sees it as already recorded and never applies it a second time. The adoption
+  // is part of the batch: written only with it, and a share or futures root it CORRECTED is held to
+  // the same Open Positions check as everything the batch changes. A provisional fill the statement
+  // does not contain is flagged, never deleted.
+  const adoption = adoptProvisional(rows, orderUnits(parseTrades(got.xml)), { asOf });
+  const adoptedDerived = adoption.changed
+    ? adoption.rows.map(r => ({ ...r, derived: derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side }) }))
+    : withDerived;
   // THE CASH BOOK — values only, to a private key the console reads on its signed-in load. Never in
   // this response (the workflow log is public) and never rows.
   if (apply) { try { await kvSetJson(CASHBOOK_KEY, { ...cashBookOf(got.statement), fetchedAt: new Date().toISOString() }); } catch { /* the console keeps the last one */ } }
@@ -158,15 +174,15 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
       // ?peek=1 returns the in-scope trades as parsed. Three times now a shape assumption has been
       // wrong in a way that only real data could show, and each cost a round trip to find.
       if (peek) result.trades.sample = parsed.filter(t => t.date >= from).slice(0, 25);
-      tradePlan = planTrades(withDerived, parsed, { from, positions: got.statement.positions });
-      const after = applyPlan(rows, tradePlan);
+      tradePlan = planTrades(adoptedDerived, parsed, { from, positions: got.statement.positions });
+      const after = applyPlan(adoption.rows, tradePlan);
       gate = verify(after, got.statement.positions, {
         derive: deriveRow,
-        roots: planTouches(tradePlan),
+        roots: [...new Set([...planTouches(tradePlan), ...adoption.roots])],
         asOf,
       });
       result.trades = { ...result.trades, plan: tradePlan, verified: gate.ok, problems: gate.problems, summary: summariseTrades(tradePlan) };
-      const changes = tradePlan.adopt.length + tradePlan.apply.length + tradePlan.creates.length;
+      const changes = tradePlan.adopt.length + tradePlan.apply.length + tradePlan.creates.length + adoption.adopted.length;
       if (changes && gate.ok) tradeRows = after;
       else if (changes) {
         // NAME THE ROOTS. "The batch did not reconcile" sent the reader to every position; the gate
@@ -202,11 +218,13 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   try {
     const parsedAll = parseTrades(got.xml);
     const known = new Set();
-    for (const r of rows) for (const f of (r.fills || [])) if (f.tradeId) known.add(String(f.tradeId));
+    for (const r of adoption.rows) for (const f of (r.fills || [])) if (f.tradeId) known.add(String(f.tradeId));
     for (const a of (tradePlan?.adopt || [])) known.add(String(a.tradeId));
     journal = await runJournal({ trades: parsedAll, known, today: new Date().toISOString().slice(0, 10),
-      holidays: HOLIDAYS?.US?.closed || [], apply });
+      holidays: HOLIDAYS?.US?.closed || [], apply, asOf });
     result.journal = { ok: journal.ok, applied: !!journal.applied, inbox: journal.inbox ?? null, counts: journal.counts || null, reason: journal.reason || null };
+    // Counts only: which fills were adopted, corrected or are missing is the console's to show.
+    result.sameDay = { adopted: adoption.adopted.length, corrected: adoption.corrected.length, missing: adoption.missing.length, ambiguous: adoption.ambiguous.length };
   } catch (e) {
     console.error('journal inbox', e?.message || e);
     result.journal = { ok: false, reason: String(e?.message || e) };
@@ -252,6 +270,11 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
     opened: tradePlan ? tradePlan.creates.map(c => c.symbol) : [],
     discarded: result.trades?.discarded || null,
     suggestedFrom: result.trades?.suggestedFrom || null,
+    // Same-day fills the statement took over, and the ones it did not contain — the card flags
+    // those by fill id (lib/sameDayFills.js provisionalBadge). Ids and dates, no sizes.
+    sameDay: { adopted: adoption.adopted.length, corrected: adoption.corrected.length,
+      written: !!(apply && tradeRows && adoption.changed),
+      missing: [...adoption.missing, ...adoption.ambiguous.map(a => ({ ...a, asOf, ambiguous: true }))] },
     // Everything that a human has to decide, flattened into one list the banner can render.
     needsYou: [
       // WHICH kind of disagreement, so the banner can offer the one-click acknowledgement only where
@@ -273,6 +296,8 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
                                             : o.kind === 'option-not-in-console' ? `${o.contract}: held at IBKR, not in the console`
                                             : `${o.contract}: in the console, not at IBKR`, root: o.root, id: o.ids?.[0] || null })),
       ...((tradePlan?.report) || []).map(r => ({ what: r.kind.replace(/-/g, ' '), root: r.root })),
+      ...adoption.missing.map(m => ({ what: `same-day fill of ${m.date} is not in this statement — kept, provisional; check it against IBKR`, root: m.symbol, id: m.rowId })),
+      ...adoption.ambiguous.map(m => ({ what: `same-day fill of ${m.date} matches more than one statement order — kept, provisional`, root: m.symbol, id: m.rowId })),
     ].slice(0, 12),
     summary: [tradePlan ? summariseTrades(tradePlan) : '', summariseActionable(rec)].filter(Boolean).join(' · ') || 'everything reconciles',
   });
@@ -307,6 +332,55 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   try { result.card = await refresh(origin); } catch (e) { result.card = { error: String(e?.message || e) }; }
   if (apply) await kvSetJson(FLEX_NOTE_KEY, noteOf());
   return result;
+}
+
+// ── SYNC NOW: TODAY'S FILLS, MINUTES AFTER THEY TRADE ─────────────────────────
+// The console's button. Reads the Trade Confirmation query (IBKR_FLEX_TC_QUERY_ID, the same Flex
+// token) and runs the journal matcher over it — DRAFTS ONLY. No planner, no auto-add, no console
+// row: a same-day report has no Open Positions section to reconcile a write against, so it never
+// writes one. What Stu confirms from it is provisional until tomorrow's statement adopts it.
+//
+// The answer is one line for the console and nothing more. The fills themselves are already in the
+// drafts Stu is looking at; nothing here is logged, and the lag record keeps timings and order ids.
+const TC_PENDING_KEY = 'dvcap:flex:tc:pending:v1';
+const TC_LOCK_KEY = 'dvcap:flex:tc:lock:v1';
+export const TC_LAG_KEY = 'dvcap:flex:tc:lag:v1';
+const nyToday = (d = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(d);
+
+export async function syncNow({ now = new Date(), fetchImpl = fetch, sleep } = {}) {
+  const token = flexEnv().token, queryId = tcQueryId();
+  if (!token || !queryId) return { ok: false, setup: true, line: `Same-day fills are not set up — ${!token ? 'IBKR_FLEX_TOKEN' : TC_QUERY_ENV} is not set in the deployment (the PR describes the IBKR steps).` };
+  if (!kvConfigured()) return { ok: false, line: 'Redis is not configured — there is nowhere to put the drafts.' };
+  let pending = null;
+  try { pending = await kvGetJson(TC_PENDING_KEY); } catch { /* start fresh */ }
+  const got = await fetchStatement({ token, queryId, pending, fetchImpl, waits: TC_WAITS_MS, attempts: TC_WAITS_MS.length + 1, ...(sleep ? { sleep } : {}) });
+  try {
+    if (got.pending) await kvSetJsonEx(TC_PENDING_KEY, got.pending, PENDING_TTL_S);
+    else if (pending) await kvSetJsonEx(TC_PENDING_KEY, null, 1);
+  } catch { /* the next click starts fresh */ }
+  if (!got.ok) {
+    return { ok: false, retryable: !!got.retryable,
+      line: got.retryable ? 'IBKR is still building the same-day report — click Sync now again in a minute.' : `IBKR's same-day report could not be read: ${got.error}` };
+  }
+  const trades = parseTradeConfirms(got.xml);
+  const at = now.toISOString(), today = nyToday(now);
+  const stored = await kvGetJson(CONSOLE_KEY);
+  const known = new Set();
+  for (const r of (Array.isArray(stored?.rows) ? stored.rows : [])) for (const f of (r.fills || [])) if (f.tradeId) known.add(String(f.tradeId));
+  const holidays = HOLIDAYS?.US?.closed || [];
+  const journal = await runJournal({ trades, known, today, holidays, apply: true, provisional: true,
+    skipUnjournaled: (u) => skipOnSameDay(u, { holidays }) });
+  if (!journal.ok) return { ok: false, line: `The fills were read but the drafts could not be written: ${journal.reason}` };
+  // How far behind IBKR's report runs, measured on this account rather than assumed.
+  let lag = null;
+  try {
+    const { store, lags } = recordLag((await kvGetJson(TC_LAG_KEY)) || {}, { trades, at });
+    await kvSetJson(TC_LAG_KEY, store);
+    if (lags.length) lag = lagText(lags.sort((a, b) => b.upToMin - a.upToMin)[0]);
+  } catch { /* the lag is a measurement, never a reason to fail the sync */ }
+  const line = syncNowLine({ fate: journal.fate, units: journal.units, waitingToday: journal.waitingToday })
+    + (!trades.length && got.xml && !/<TradeConfirm\b/.test(got.xml) && !/<TradeConfirms\b/.test(got.xml) ? ' (the report has no Trade Confirmations section — check the query)' : '');
+  return { ok: true, at, line, lag, journal: await readJournal() };
 }
 
 // ── EXPOSURE: PUBLISHED GREEKS FOR CONTRACTS THE BOOK HOLDS ──────────────────
@@ -400,6 +474,24 @@ export async function sizerRuns(run = null) {
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') { res.status(405).json({ error: 'method not allowed' }); return; }
   if (!(await authorised(req))) { res.status(401).json({ error: 'unauthorised', why: refusalReason(req) }); return; }
+  // ?tc=1 — Sync now. THE CONSOLE'S OWN SESSION ONLY: not the cron's service key, and never the
+  // journal token (which passes nothing anywhere — lib/apiauth.js). About one a minute: a click
+  // inside the window is answered with how long to wait, not queued.
+  if (String(req.query?.tc ?? '') === '1') {
+    res.setHeader('Cache-Control', 'private, no-store');
+    if (req.method !== 'POST') { res.status(405).json({ ok: false, line: 'Sync now is a POST from the console.' }); return; }
+    if (!(await hasSessionCookie(req))) { res.status(401).json({ ok: false, line: 'Sync now needs the console\'s signed-in session.' }); return; }
+    try {
+      if (kvConfigured() && !(await kvSetNxEx(TC_LOCK_KEY, Date.now(), SYNC_NOW_MIN_INTERVAL_S))) {
+        res.status(429).json({ ok: false, line: 'Sync now ran under a minute ago — try again in a minute.' }); return;
+      }
+      res.status(200).json(await syncNow());
+    } catch (e) {
+      console.error('sync-now failed');   // no detail: the error text could carry report content
+      res.status(200).json({ ok: false, line: `Sync now failed: ${String(e?.message || e).slice(0, 160)}` });
+    }
+    return;
+  }
   const proto = req.headers['x-forwarded-proto'] || 'https';
   const origin = `${proto}://${req.headers.host}`;
   const apply = String(req.query?.apply ?? '') === '1';

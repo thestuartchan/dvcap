@@ -7,7 +7,7 @@
 // disagrees with its note can still be confirmed, because the fill is what happened.
 import { useState } from "react";
 import { C } from "./theme.js";
-import { draftCounts, expectationText, fmtPx, amendRow, NOTE_TAGS, LEVEL_LABEL } from "../lib/journalInbox.js";
+import { draftCounts, expectationText, fmtPx, amendRow, NOTE_TAGS, LEVEL_LABEL, bulkCandidates, bulkLabel } from "../lib/journalInbox.js";
 
 const isRuleChange = (d) => d.kind === "amend" || (d.kind === "ambiguous" && !!d.candidates?.[0]?.row);
 const GROUPS = [
@@ -130,6 +130,14 @@ function DraftCard({ d, rows, onConfirm, onDismiss, onChoose, busy }) {
         <b style={{ fontSize: 13, color: C.text }}>{titleOf(d)}</b>
         <span style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase" }}>{d.kind === "fill" ? (d.fill?.type || "fill") : d.kind}</span>
         {d.fill?.date && <span style={{ fontSize: 11.5, color: C.muted }}>filled {d.fill.date}</span>}
+        {/* SAME-DAY: drafted from IBKR's Trade Confirmation report. Confirming writes it provisional
+            until the next statement adopts it; the statement's own numbers replace these if they differ. */}
+        {d.fill?.provisional && (
+          <span title="From IBKR's same-day report — confirming writes it provisional until tomorrow's statement adopts it"
+                style={{ fontSize: 10.5, fontWeight: 800, color: C.blue, border: "1px solid " + C.blBdr, borderRadius: 999, padding: "0 7px" }}>same-day</span>
+        )}
+        {d.fill?.statementMissing && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>not in IBKR's {d.fill.statementMissing} statement</span>}
+        {d.fill?.statementDiffers && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>⚠ the statement's numbers no longer match the note</span>}
         {d.kind === "unfilled" && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>{d.reason || `no matching fill after ${d.waited} sessions`}</span>}
       </div>
       {exp && <div style={{ fontSize: 12.5, fontWeight: 700, color: exp.ok ? C.green : C.amber }}>{exp.text}</div>}
@@ -176,12 +184,38 @@ function DraftCard({ d, rows, onConfirm, onDismiss, onChoose, busy }) {
   );
 }
 
-export default function JournalDrafts({ journal, rows = [], onConfirm, onDismiss, onChoose, onDrop, busy = false, msg = null }) {
+// CONFIRM ALL EXACT MATCHES — what will be confirmed, named, with one Confirm. Information, not a
+// gate: every draft stays individually confirmable or dismissible, and only exact matches are listed
+// (lib/journalInbox.js exactMatch).
+function BulkConfirm({ drafts, onConfirmMany, busy }) {
+  const [open, setOpen] = useState(false);
+  const list = bulkCandidates(drafts);
+  if (!list.length || !onConfirmMany) return null;
+  if (!open) return <button style={btn("go")} disabled={busy} onClick={() => setOpen(true)}>Confirm all exact matches ({list.length})</button>;
+  return (
+    <div style={{ flexBasis: "100%", border: "1.5px solid " + C.blBdr, background: C.surf, borderRadius: 9, padding: "8px 10px", display: "grid", gap: 6 }}>
+      <div style={{ fontSize: 12.5, color: C.text }}>
+        <b>{list.length} trade{list.length === 1 ? "" : "s"}:</b> {list.map(bulkLabel).join(", ")}
+      </div>
+      <div style={{ fontSize: 11.5, color: C.muted }}>
+        Each is a fill with a note that matched exactly — legs, side, quantity, price within the note's tolerance, same day.
+        Rule changes, ambiguous drafts, unjournaled fills and anything amber stay one by one.
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button style={btn("go")} disabled={busy} onClick={() => { setOpen(false); onConfirmMany(list); }}>Confirm</button>
+        <button style={btn()} onClick={() => setOpen(false)}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+export default function JournalDrafts({ journal, rows = [], onConfirm, onDismiss, onChoose, onDrop, onConfirmMany, onSyncNow, syncBusy = false, syncMsg = null, busy = false, msg = null }) {
   const [open, setOpen] = useState(null);
   const drafts = journal?.drafts || [];
   const waiting = journal?.pendingNotes || [];
-  // The strip stays while a message is showing, so confirming the last draft still says it worked.
-  if (!drafts.length && !waiting.length && !msg) return null;
+  // The strip stays while a message is showing, so confirming the last draft still says it worked —
+  // and whenever Sync now is available, since the button is how today's fills get here at all.
+  if (!drafts.length && !waiting.length && !msg && !onSyncNow) return null;
   const n = draftCounts(drafts);
   const shown = open && open !== "waiting" ? drafts.filter(GROUPS.find(g => g.key === open).test) : [];
   return (
@@ -200,8 +234,20 @@ export default function JournalDrafts({ journal, rows = [], onConfirm, onDismiss
             {journal.pending} note{journal.pending === 1 ? "" : "s"} waiting for a fill
           </span>
         )}
+        {onSyncNow && (
+          <button style={btn()} disabled={syncBusy} onClick={onSyncNow}
+                  title="Read IBKR's same-day report and match today's fills to your notes. Drafts only — nothing is added to the book until you confirm.">
+            {syncBusy ? "Syncing…" : "Sync now"}
+          </button>
+        )}
+        <BulkConfirm drafts={drafts} onConfirmMany={onConfirmMany} busy={busy} />
         {msg && <span style={{ fontSize: 11.5, color: msg.err ? C.red : C.green, fontWeight: 700 }}>{msg.text}</span>}
       </div>
+      {syncMsg && (
+        <div style={{ fontSize: 12, fontWeight: 700, color: syncMsg.err ? C.amber : C.text }}>
+          {syncMsg.text}{syncMsg.lag ? <span style={{ fontWeight: 400, color: C.muted }}> · {syncMsg.lag}</span> : null}
+        </div>
+      )}
       {shown.map(d => <DraftCard key={d.id} d={d} rows={rows} onConfirm={onConfirm} onDismiss={onDismiss} onChoose={onChoose} busy={busy} />)}
       {open === "waiting" && waiting.map(nt => <PendingNote key={nt.id} note={nt} onDrop={onDrop} busy={busy} />)}
     </div>
