@@ -125,7 +125,7 @@ function DraftCard({ d, rows, onConfirm, onDismiss, onChoose, busy }) {
   const startEdit = () => setEdit({ tag: d.note?.tag || null, rationale: d.note?.rationale || "", levels: { ...(d.note?.levels || {}) }, rules: d.note?.rules || [], rulesGiven: d.note?.rulesGiven });
   const cleaned = () => edit && { ...edit, levels: Object.fromEntries(Object.entries(edit.levels || {}).filter(([, x]) => x)) };
   return (
-    <div style={{ border: "1.5px solid " + (exp && !exp.ok ? C.aBdr : C.bdr), background: exp && !exp.ok ? C.aBg : C.surf, borderRadius: 9, padding: "8px 10px", display: "grid", gap: 5 }}>
+    <div style={{ border: "1.5px solid " + ((exp && !exp.ok) || d.recordedParts?.length ? C.aBdr : C.bdr), background: (exp && !exp.ok) || d.recordedParts?.length ? C.aBg : C.surf, borderRadius: 9, padding: "8px 10px", display: "grid", gap: 5 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
         <b style={{ fontSize: 13, color: C.text }}>{titleOf(d)}</b>
         <span style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase" }}>{d.kind === "fill" ? (d.fill?.type || "fill") : d.kind}</span>
@@ -137,6 +137,7 @@ function DraftCard({ d, rows, onConfirm, onDismiss, onChoose, busy }) {
                 style={{ fontSize: 10.5, fontWeight: 800, color: C.blue, border: "1px solid " + C.blBdr, borderRadius: 999, padding: "0 7px" }}>same-day</span>
         )}
         {d.fill?.statementMissing && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>not in IBKR's {d.fill.statementMissing} statement</span>}
+        {d.recordedParts?.length > 0 && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>⚠ one leg (IBKR order {d.recordedParts.join(", ")}) is already on the console as its own trade — delete that row, then confirm, or it would be recorded twice</span>}
         {d.fill?.statementDiffers && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>⚠ the statement's numbers no longer match the note</span>}
         {d.kind === "unfilled" && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>{d.reason || `no matching fill after ${d.waited} sessions`}</span>}
       </div>

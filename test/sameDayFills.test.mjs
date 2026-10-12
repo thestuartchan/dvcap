@@ -145,6 +145,45 @@ const stmtOrders = (sofiPx = '20.01') => '<FlexStatement toDate="20261012">' +
   eq('a waiting same-day draft takes the statement\'s numbers and is no longer provisional', [s.fill.provisional, s.fill.rawPrice, up.changed], [undefined, 20.05, 2]);
 }
 
+// ── A SPREAD LEGGED IN (12 Oct): one leg reaches the report before the other ─
+{
+  const legBuy = opt({ u: 'XYZ', conid: 9301, k: 85, exp: '20261023', r: 'C', side: 'BUY', q: 4, px: 1.75, oid: 700001, t: '103000' });
+  const legSell = opt({ u: 'XYZ', conid: 9302, k: 89, exp: '20261023', r: 'C', side: 'SELL', q: 4, px: 0.54, oid: 700002, t: '102000' });
+  const note = validateNote({ id: 'xyz-85-89c', kind: 'open', trade_date: '2026-10-12', instrument: { type: 'COMBO', symbol: 'XYZ',
+    legs: [{ right: 'C', strike: 85, expiry: '2026-10-23', side: 'BUY', ratio: 1 }, { right: 'C', strike: 89, expiry: '2026-10-23', side: 'SELL', ratio: 1 }] },
+    expected: { qty: 4, price: 1.21 } }).note;
+  const first = processInbox({ notes: [note], trades: parseTradeConfirms(tc([legSell])), today: '2026-10-12', provisional: true });
+  eq('one leg in the report: held for its pair, not offered as an unjournaled fill', [first.drafts.length, first.fate['700002'], syncNowLine({ fate: first.fate, units: first.units })],
+    [0, 'awaitingPair', '1 fill found, 0 matched a note, 1 spread leg held for the other leg, 0 unjournaled']);
+  const stale = [{ id: 'd-700002', kind: 'fill', source: 'unjournaled', note: null, checks: [], fill: { orderId: '700002' } }];
+  const withdrawn = processInbox({ notes: [note], trades: parseTradeConfirms(tc([legSell])), today: '2026-10-12', drafts: stale, seen: { 700002: { date: '2026-10-12', note: null } } });
+  eq('a leg offered alone before this rule is withdrawn while its note waits', withdrawn.drafts.length, 0);
+  const both = processInbox({ notes: [note], trades: parseTradeConfirms(tc([legSell, legBuy])), today: '2026-10-12', seen: first.seen, provisional: true });
+  const spread = both.drafts[0];
+  eq('both legs in: one spread draft from the two orders', [both.drafts.length, spread.fill.orderId, spread.fill.type, spread.fill.rawPrice], [1, '700001+700002', 'COMBO', 1.21]);
+
+  // The WFC case: the first leg had already been confirmed on its own before the spread was drafted.
+  const legRow = applyDraft([], { id: 'd-700002', kind: 'fill', source: 'unjournaled', note: null, checks: [],
+    fill: { ...fillOf(orderUnits(parseTradeConfirms(tc([legSell])))[0]), provisional: true } }, {}, { today: '2026-10-12' }).rows;
+  const again = processInbox({ notes: [note], trades: parseTradeConfirms(tc([legSell, legBuy])), today: '2026-10-12', known: new Set(['700002']) });
+  const d2 = again.drafts[0];
+  eq('a spread whose leg is already on the console says so, and is never an exact match', [d2.recordedParts, exactMatch(d2).ok], [['700002'], false]);
+  const refused = applyDraft(legRow, d2, {}, { today: '2026-10-12' });
+  eq('… and confirming it is refused, naming the row, instead of recording the leg twice', [!!refused.error, refused.error?.includes(legRow[0].id)], [true, true]);
+
+  // Confirmed whole, then the next morning: the statement has two single-leg orders, adopted as one.
+  const made = applyDraft([], spread, {}, { today: '2026-10-12' });
+  eq('the spread is written once, provisional, keyed by both orders', made.rows.map(r => [r.fills.length, r.fills[0].tradeId, !!r.fills[0].provisional]), [[1, '700001+700002', true]]);
+  const stmt = '<FlexStatement toDate="20261012">' +
+    '<Order ibOrderID="700001" conid="9301" symbol="XYZ a" underlyingSymbol="XYZ" assetCategory="OPT" currency="USD" multiplier="100" strike="85" expiry="20261023" putCall="C" buySell="BUY" quantity="4" tradePrice="1.75" ibCommission="-5.2" tradeDate="20261012" />' +
+    '<Order ibOrderID="700002" conid="9302" symbol="XYZ b" underlyingSymbol="XYZ" assetCategory="OPT" currency="USD" multiplier="100" strike="89" expiry="20261023" putCall="C" buySell="SELL" quantity="-4" tradePrice="0.54" ibCommission="-5.2" tradeDate="20261012" />' +
+    '</FlexStatement>';
+  const ad = adoptProvisional(made.rows, orderUnits(parseTrades(stmt)), { asOf: '2026-10-12' });
+  eq('the statement adopts the legged spread from its two orders, nothing flagged missing', [ad.adopted.length, ad.missing.length, !!ad.rows[0].fills[0].provisional], [1, 0, false]);
+  const up = upgradeDrafts([spread], orderUnits(parseTrades(stmt)), { asOf: '2026-10-12', fillOf, rematch: (n, u) => matchNote(n, u) });
+  eq('a waiting legged-spread draft takes the statement\'s numbers too', [up.changed, up.drafts[0].fill.provisional, up.drafts[0].fill.statementMissing], [1, undefined, undefined]);
+}
+
 // ── CONFIRM ALL EXACT MATCHES ────────────────────────────────────────────────
 {
   const base = { kind: 'fill', state: 'DRAFT', source: 'note' };
