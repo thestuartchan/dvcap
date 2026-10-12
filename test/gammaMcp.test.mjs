@@ -1,6 +1,6 @@
 // test/gammaMcp.test.mjs — the gamma MCP connector: levels and ladder from a board, the rules, the RPC.
 import fs from 'node:fs';
-import { dashboardFor, levelsFromPayload, dashboardLeaks, isStandardMonthly, checkArgs, tokenMatches, handleRpc, TOOLS, CONNECTOR_TICKERS, toolOk } from '../lib/gammaMcp.js';
+import { dashboardFor, levelsFromPayload, dashboardLeaks, isStandardMonthly, checkArgs, tokenMatches, handleRpc, TOOLS, CONNECTOR_TICKERS, DEFAULT_TICKERS, toolOk } from '../lib/gammaMcp.js';
 import { gexFeedPayload } from '../lib/gexFeed.js';
 
 let pass = 0, fail = 0;
@@ -82,7 +82,10 @@ eq('third Fridays', ['2026-10-16', '2026-11-20', '2026-12-18'].map(isStandardMon
 eq('not monthlies', ['2026-10-09', '2026-10-15', '2026-10-23', 'nonsense'].map(isStandardMonthly), [false, false, false, false]);
 
 // ── Arguments ──
-eq('the allowlist', CONNECTOR_TICKERS, ['SPY', 'QQQ']);
+eq('the allowlist: SPY, QQQ and (12 Oct) SPX', CONNECTOR_TICKERS, ['SPY', 'QQQ', 'SPX']);
+eq('the default is still SPY and QQQ — SPX is opt-in', [DEFAULT_TICKERS, checkArgs('get_gamma_dashboard', {}).args.tickers], [['SPY', 'QQQ'], ['SPY', 'QQQ']]);
+eq('SPX is accepted when asked for', [checkArgs('get_gamma_dashboard', { tickers: ['spy', 'SPX'] }).args.tickers, checkArgs('get_gamma_board', { ticker: 'spx' }).args.ticker], [['SPY', 'SPX'], 'SPX']);
+eq('the enum carries SPX', TOOLS[0].inputSchema.properties.tickers.items.enum, ['SPY', 'QQQ', 'SPX']);
 eq('a ticker that is not allowed', checkArgs('get_gamma_board', { ticker: 'tsla' }), { error: 'ticker not allowed: TSLA' });
 eq('…in a dashboard list too', checkArgs('get_gamma_dashboard', { tickers: ['SPY', 'IWM'] }), { error: 'ticker not allowed: IWM' });
 eq('defaults', checkArgs('get_gamma_dashboard', {}), { args: { tickers: ['SPY', 'QQQ'], band_pct: 3.5 } });

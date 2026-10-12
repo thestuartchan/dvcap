@@ -3,7 +3,7 @@
 // code and copying what it said.
 import {
   gexSummary, netGammaAt, flipLevel, flipFragility, walls, toDollarGex,
-  contractGamma, gammaGrid, atmIvByExpiry, GEX_CONVENTIONS, CONTRACT_MULTIPLIER, heatCells, heatAlpha, spotSlot, HEAT_ROWS, HEAT_PCTL, HEAT_ALPHA_FLOOR } from '../lib/gex.js';
+  contractGamma, gammaGrid, atmIvByExpiry, GEX_CONVENTIONS, CONTRACT_MULTIPLIER, heatCells, heatAlpha, spotSlot, HEAT_ROWS, HEAT_PCTL, HEAT_ALPHA_FLOOR, foldGrid, withGrossShares } from '../lib/gex.js';
 import { gamma } from '../lib/blackscholes.js';
 import { wallAgreement } from '../lib/gexRead.js';
 import { CUSTOM_ROOT_RE } from '../lib/gexStore.js';
@@ -359,6 +359,19 @@ const PE = (k, oi, e, T, iv = 0.22) => ({ type: 'put', strike: k, oi, iv, T, exp
   eq('strikes that do not straddle spot: null, not the nearest wing', a[1].iv, null);
   eq('years to the 16:00 ET close', a[2].years, +((Date.parse('2026-10-30T21:00:00Z') - Date.parse(now)) / (365 * 864e5)).toFixed(5));
   eq('no spot, no rows', atmIvByExpiry(chain, null), []);
+}
+// ── SPX's grid, folded: near expiries as they are, the rest one column (12 Oct) ──
+{
+  const days = ['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-16', '2026-10-19', '2026-10-23', '2026-10-30', '2026-11-20', '2026-12-18', '2027-03-19', '2027-12-17'];
+  const cells = days.flatMap((e, i) => [{ expiry: e, strike: 7800, netGexUsd: 100 + i }, { expiry: e, strike: 7900, netGexUsd: -(10 + i) }]);
+  const rows = days.map((e, i) => ({ expiry: e, netGexUsd: 90 - i, grossGexUsd: 110 + 2 * i, shareOfAbs: 9, callOi: 1, putOi: 1 }));
+  const g = foldGrid({ expiries: rows, cells, note: 'n' }, { today: '2026-10-12', keepDays: 35, keepMin: 8 });
+  eq('near expiries kept, the rest one column dated by its last expiry', [g.expiries.length, g.expiries.at(-1).expiry, g.folded], [9, '2027-12-17', { from: '2026-12-18', to: '2027-12-17', count: 3 }]);
+  const tot = (cs) => { const m = {}; for (const c of cs) m[c.strike] = (m[c.strike] || 0) + c.netGexUsd; return m; };
+  eq('every per-strike total is unchanged', tot(g.cells), tot(cells));
+  eq('the folded row is the sum of what it replaced', [g.expiries.at(-1).netGexUsd, g.expiries.at(-1).callOi], [(90 - 8) + (90 - 9) + (90 - 10), 3]);
+  eq('shares from the cells still add to 100', Math.round(withGrossShares(g).expiries.reduce((a, e) => a + e.shareOfAbs, 0)), 100);
+  eq('nothing to fold: the grid comes back as it was', foldGrid({ expiries: rows.slice(0, 5), cells }, { today: '2026-10-12' }).expiries.length, 5);
 }
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

@@ -179,5 +179,17 @@ const FX = JSON.parse(readFileSync(new URL('./fixtures-cboe-qqq.json', import.me
   eq('no option: the old behaviour', compareGex(board, cboe).independent, true);
 }
 
+// ── SPX: the index chain is _SPX, both roots in one file (12 Oct) ──
+{
+  eq('the index chain is published under an underscore', CBOE_URL('SPX'), 'https://cdn.cboe.com/api/global/delayed_quotes/options/_SPX.json');
+  const J = { data: { current_price: 7800, options: [
+    { option: 'SPX261016C07800000', open_interest: 10, iv: 0.12, gamma: 0.001 },
+    { option: 'SPXW261016C07800000', open_interest: 20, iv: 0.13, gamma: 0.001 },
+    { option: 'SPXPM261016C07800000', open_interest: 5, iv: 0.1, gamma: 0.001 } ] } };
+  const p = parseCboe(J, { roots: ['SPX', 'SPXW'] });
+  eq('a multi-root parse keeps SPX and SPXW, each with its root', p.contracts.map(c => [c.root, c.oi]), [['SPX', 10], ['SPXW', 20]]);
+  eq('a single-root parse is unchanged — no root field', Object.keys(parseCboe(J).contracts[0]).includes('root'), false);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

@@ -10,6 +10,7 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ReferenceLine, ReferenceArea, ResponsiveContainer, Cell,
 } from "recharts";
+import { SpMapCard } from "./SpMapCard.jsx";
 import { C, tint } from "./theme.js";
 import { Card, SLabel, StaleChip } from "./ui.jsx";
 import { gexRead, ageOf } from "../lib/gexRead.js";
@@ -916,40 +917,48 @@ export function GexPanel() {
         </Card>
       )}
 
-      {/* 2 — net gamma by strike, read in the light of the breakdown above */}
-      <Card>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
-          <SLabel>Net gamma by strike</SLabel>
-          <span style={{ fontSize: 11.5, color: C.muted }}>dollars per 1% move · {latest.date}</span>
-        </div>
-        {!strikeRows.length ? (
-          <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>No raw chain stored for this date — it prunes after 30 days.</div>
-        ) : (
-          <div style={{ height: Math.max(260, strikeRows.length * 15), marginTop: 8 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={strikeRows} layout="vertical" margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
-                <CartesianGrid strokeDasharray="2 3" stroke={C.bdr} />
-                <XAxis type="number" tick={{ fontSize: 10, fill: C.lbl }} tickFormatter={fmtUsd} />
-                <YAxis type="category" dataKey="strike" tick={{ fontSize: 9.5, fill: C.lbl }} width={46} reversed />
-                <Tooltip formatter={(v) => fmtUsd(v)} labelFormatter={(l) => `Strike ${l}`}
-                  contentStyle={{ fontSize: 11.5, borderRadius: 8, border: "1px solid " + C.bdr }} />
-                {/* The flip drawn as a BAND, not a line — its width is the measured sensitivity to
-                    the dealer put assumption. A line would claim precision the data cannot carry. */}
-                {latest.flipZoneLo != null && latest.flipZoneHi != null && (
-                  <ReferenceArea y1={latest.flipZoneLo} y2={latest.flipZoneHi} fill={C.amber} fillOpacity={0.12} />
-                )}
-                {latest.flipLevel != null && <ReferenceLine y={latest.flipLevel} stroke={C.amber} strokeDasharray="4 3"
-                  label={{ value: `flip ${fmtNum(latest.flipLevel)}`, fontSize: 10, fill: C.amber, position: "insideTopRight" }} />}
-                {latest.spot != null && <ReferenceLine y={latest.spot} stroke={C.blue} strokeWidth={1.5}
-                  label={{ value: `spot ${fmtNum(latest.spot)}`, fontSize: 10, fill: C.blue, position: "insideBottomRight" }} />}
-                <Bar dataKey="net" name="Net GEX" isAnimationActive={false}>
-                  {strikeRows.map((r, i) => <Cell key={i} fill={(r.net ?? 0) >= 0 ? C.green : C.purple} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+      {/* 2 — net gamma by strike, read in the light of the breakdown above.
+          THE S&P SIDE (12 Oct): on the SPY tab the ladder is the S&P map — SPY's board with SPX's
+          (SPX + SPXW, ~94% of S&P options gamma) converted into SPY prices beside it (src/SpMapCard.jsx).
+          QQQ keeps its own ladder, unchanged; if the map cannot be built the SPY-only ladder is drawn. */}
+      {(() => {
+        const ladderCard = (
+        <Card>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+            <SLabel>Net gamma by strike</SLabel>
+            <span style={{ fontSize: 11.5, color: C.muted }}>dollars per 1% move · {latest.date}</span>
           </div>
-        )}
-      </Card>
+          {!strikeRows.length ? (
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>No raw chain stored for this date — it prunes after 30 days.</div>
+          ) : (
+            <div style={{ height: Math.max(260, strikeRows.length * 15), marginTop: 8 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={strikeRows} layout="vertical" margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
+                  <CartesianGrid strokeDasharray="2 3" stroke={C.bdr} />
+                  <XAxis type="number" tick={{ fontSize: 10, fill: C.lbl }} tickFormatter={fmtUsd} />
+                  <YAxis type="category" dataKey="strike" tick={{ fontSize: 9.5, fill: C.lbl }} width={46} reversed />
+                  <Tooltip formatter={(v) => fmtUsd(v)} labelFormatter={(l) => `Strike ${l}`}
+                    contentStyle={{ fontSize: 11.5, borderRadius: 8, border: "1px solid " + C.bdr }} />
+                  {/* The flip drawn as a BAND, not a line — its width is the measured sensitivity to
+                      the dealer put assumption. A line would claim precision the data cannot carry. */}
+                  {latest.flipZoneLo != null && latest.flipZoneHi != null && (
+                    <ReferenceArea y1={latest.flipZoneLo} y2={latest.flipZoneHi} fill={C.amber} fillOpacity={0.12} />
+                  )}
+                  {latest.flipLevel != null && <ReferenceLine y={latest.flipLevel} stroke={C.amber} strokeDasharray="4 3"
+                    label={{ value: `flip ${fmtNum(latest.flipLevel)}`, fontSize: 10, fill: C.amber, position: "insideTopRight" }} />}
+                  {latest.spot != null && <ReferenceLine y={latest.spot} stroke={C.blue} strokeWidth={1.5}
+                    label={{ value: `spot ${fmtNum(latest.spot)}`, fontSize: 10, fill: C.blue, position: "insideBottomRight" }} />}
+                  <Bar dataKey="net" name="Net GEX" isAnimationActive={false}>
+                    {strikeRows.map((r, i) => <Cell key={i} fill={(r.net ?? 0) >= 0 ? C.green : C.purple} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </Card>
+        );
+        return symbol === "SPY" && !custom ? <SpMapCard fallback={ladderCard} refreshKey={live?.row?.asOf || 0} /> : ladderCard;
+      })()}
 
       {/* 3 — the history, which is the reason any of this is stored. A custom name has none and
           is not going to: it is read on demand and not captured, and saying so beats an empty

@@ -26,7 +26,8 @@ import { crossCheckPayload } from '../lib/crossCheckFeed.js';
 import { handleRpc, dashboardFor, dashboardLeaks, tokenMatches, mcpRateBucket, toolOk, toolError, MCP_RATE_PER_MIN, MCP_TOKEN_ENV, MCP_TOKEN_MIN } from '../lib/gammaMcp.js';
 import { crossCheckLeaks } from '../lib/crossCheck.js';
 import { captureGex, readGex, settledGex, observeRoll, OCC_ROLL_LOG_KEY, OCC_HEALTH_KEY, GEX_SYMBOLS, CUSTOM_ROOT_RE,
-         LAST_RECOMPUTE_KEY, LAST_RECOMPUTE_TTL_SEC, recomputeRecord, newerRecompute } from '../lib/gexStore.js';
+         LAST_RECOMPUTE_KEY, LAST_RECOMPUTE_TTL_SEC, recomputeRecord, newerRecompute, YAHOO_SYMBOL } from '../lib/gexStore.js';
+import { spxRatio, esBasis, spMap, spMapBlock, dualLadder, fetchSpRates, BAND_PCT as SP_BAND_PCT, LADDER_BAND_PCT } from '../lib/spMap.js';
 import { instrumentKind } from '../lib/catalyst.js';
 import { authorised, refusalReason } from '../lib/apiauth.js';
 import { getQuotes } from '../lib/quotes.js';
@@ -40,7 +41,10 @@ import { healthSummary, transitionRuns, confirmMinVerdict } from '../lib/occHeal
 // against a live pre-market 707.94 on 2026-09-10, a 1.2% error, labelled `spotSource: caller`
 // and therefore reported in the footer as the live spot. So the spot is resolved here, with the
 // same getQuotes({ prepost }) call the pre-read uses: one definition of the current price.
-async function resolveSpot(sym) {
+async function resolveSpot(sym0) {
+  // SPX is the index; its quote is ^GSPC. An index has no extended session, so outside the session
+  // its last print is the close.
+  const sym = YAHOO_SYMBOL[sym0] || sym0;
   try {
     const [q] = await getQuotes([sym], { prepost: true });
     // Outside regular hours the extended print is the live one and the regular is yesterday's.
@@ -152,7 +156,34 @@ async function mcpTool(name, args) {
     if (!d) { out.meta[t] = { unavailable: 'board unavailable' }; continue; }
     out.levels.push(...d.levels); out.ladder.push(...d.ladder); out.meta[t] = d.meta;
   }
+  // ── THE S&P MAP, ONLY WHEN BOTH BOOKS WERE ASKED FOR ──
+  // A caller that never names SPX gets the answer it always got, byte for byte.
+  if (args.tickers.includes('SPY') && args.tickers.includes('SPX')) {
+    try {
+      const m = await spMapNow({ ladderBandPct: args.band_pct });
+      out.sp_map = spMapBlock(m.map);
+    } catch { out.sp_map = { unavailable: 'map unavailable' }; }
+  }
   return dashboardLeaks(out).length ? toolError('board unavailable') : toolOk(out);
+}
+
+// ── THE S&P MAP (lib/spMap.js) ───────────────────────────────────────────────
+// The feed's SPY and SPX boards — the same two the connector and the slug feed serve — read side by
+// side: SPX converted into SPY prices at a ratio read now, ES at the live (or last regular-session)
+// basis, and the agreement flags. Market data only.
+async function spMapNow({ ladderBandPct = LADDER_BAND_PCT } = {}) {
+  const today = nyToday();
+  const [spyF, spxF, rates] = await Promise.all([feedBoard('SPY'), feedBoard('SPX'), fetchSpRates({ getQuotes, marketState })]);
+  if (!spyF?.board || !spxF?.board) return { map: { ok: false, reason: !spyF?.board ? 'no SPY board' : 'no SPX board' } };
+  const band = Math.max(SP_BAND_PCT, ladderBandPct);
+  const dash = (t, f) => dashboardFor(t, f.board, { mode: f.mode, asOf: f.asOf, sourceSnapshot: f.source, today, staleReason: f.staleReason, bandPct: band });
+  const spyDash = dash('SPY', spyF), spxDash = dash('SPX', spxF);
+  const map = spMap({ spyDash, spxDash, ratio: spxRatio(rates), basis: esBasis(rates), today });
+  if (map.ok) {
+    const s = map.spy.spot;
+    map.spx_ladder_spy = map.spx_ladder_spy.filter(r => Math.abs(r.spy_strike / s - 1) * 100 <= ladderBandPct + 1e-9);
+  }
+  return { map, spyDash, spxDash, spyF, spxF };
 }
 
 // THE LAST 20 CONNECTOR REQUESTS, AS SHAPES. claude.ai's connector check answered "404" while a
@@ -210,6 +241,23 @@ export default async function handler(req, res) {
   if (!kvConfigured()) return res.status(200).json({ available: false, ok: false, reason: 'KV not configured' });
 
   if (req.query?.feed != null) return serveFeed(req, res);
+
+  // GET /api/gex?spmap=1 — the S&P map for the Gamma panel's S&P side: SPY's board and SPX's (SPX +
+  // SPXW) converted into SPY prices, the dual ladder rows, both flips and the agreement flags. Market
+  // data only; the SPX board is the feed's, recomputed at most once per FEED_RECOMPUTE_MIN.
+  if (String(req.query?.spmap || '') === '1') {
+    try {
+      const { map, spyDash, spxDash, spxF, spyF } = await spMapNow();
+      if (!map.ok) return res.status(200).json({ ok: false, reason: map.reason });
+      const meta = (f, d) => ({ mode: f.mode, asOf: f.asOf, staleReason: f.staleReason ?? null, spot: d.meta.spot,
+        contracts: f.board?.contracts ?? null, expiries: f.board?.row?.expiries?.length ?? null,
+        crossCheck: f.board?.crossCheck ? { verdict: f.board.crossCheck.verdict ?? null, agree: f.board.crossCheck.agree ?? null, scored: f.board.crossCheck.scored ?? null } : null });
+      return res.status(200).json({ ok: true, at: new Date().toISOString(), map, ladder: dualLadder(map, spyDash),
+        spy: meta(spyF, spyDash), spx: meta(spxF, spxDash) });
+    } catch (e) {
+      return res.status(200).json({ ok: false, reason: String(e?.message || e) });
+    }
+  }
 
   // The feed's slug, for the signed-in Gamma tab to show. Minted on first ask; POST &rotate=1
   // replaces it, which retires the old URL at once.
