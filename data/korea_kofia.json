@@ -6426,13 +6426,13 @@
     ]
   },
   "lastFetch": {
-    "at": "2026-10-13T14:58:30.533Z",
+    "at": "2026-10-13T18:16:32.514Z",
     "by": "schedule",
     "ok": true,
-    "changed": true,
+    "changed": false,
     "sources": {
       "kofia": "nothing new",
-      "krx": "updated"
+      "krx": "nothing new"
     },
     "report": [
       "KOFIA: kospi 2026-10-13, deposits 2026-10-12, marginLoans 2026-10-12, cma 2026-10-12, kr3yGovt 2026-10-13, kr3yCorp 2026-10-13",
