@@ -3611,7 +3611,7 @@
       "inputs": {
         "weightedRecessionProb": 13.6,
         "cpi": 3.35302,
-        "kalshi2027": 19,
+        "kalshi2027": 20,
         "tape": {
           "gold": "down",
           "tlt": "flat",
@@ -3626,7 +3626,7 @@
         "ladderSpread": -2.33,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.15,
+        "oas": 3.11,
         "tenY": 5.22,
         "twoY": 4.75,
         "consensusAlive": 0.686,
@@ -3648,21 +3648,21 @@
           "drifting": "def"
         },
         "conditions": {
-          "score": 55.5,
+          "score": 55.7,
           "band": "caution",
           "comps": {
-            "credit": 61,
-            "equityVol": 12,
+            "credit": 65,
+            "equityVol": 9,
             "ratesVol": 58,
             "realYield": 88,
-            "funding": 34,
+            "funding": 32,
             "breadth": 76,
             "dollar": 100
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 18,
+          "hikeOdds": 24,
           "liq4w": 8
         },
         "sizing": 0.64,
@@ -3717,7 +3717,7 @@
         "quadrantRead": "growth firm, inflation cool"
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-13T08:45:54.226Z"
+      "loggedAt": "2026-10-13T14:58:01.611Z"
     }
   ]
 }
