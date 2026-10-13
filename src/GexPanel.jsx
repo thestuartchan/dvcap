@@ -14,12 +14,14 @@ import { SpMapCard } from "./SpMapCard.jsx";
 import { C, tint } from "./theme.js";
 import { Card, SLabel, StaleChip } from "./ui.jsx";
 import { gexRead, ageOf } from "../lib/gexRead.js";
-import { heatCells, heatAlpha, spotSlot, withGrossShares } from "../lib/gex.js";
+import { heatCells, heatAlpha, spotSlot, withGrossShares, horizonGrid, isMonthlyOpex } from "../lib/gex.js";
 import { oiSettledLabel } from "../lib/gexFeed.js";
 import { levelsOf, mustShow, rateLine, rateFarOut } from "../lib/gexLevels.js";
 import { pineFor } from "../lib/pine.js";
 import { gexDays, gexSummary, todayTellInputs, TREND_MOVE, TREND_EFF, WIDE_RANGE } from "../lib/gexDays.js";
 import { tellsFor, tellsHeadline, shownTells, BACKTEST, BASE_RATE, FIRST_HOUR_BASE, CUSHION, CUSHION_SOURCE } from "../lib/trendTells.js";
+// The New York date, for which expiries are already today's (the week view hides them).
+const NY_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
 
 const fmtUsd = (v) => {
   if (v == null || !Number.isFinite(+v)) return "—";
@@ -229,6 +231,8 @@ export function GexPanel() {
   // THE S&P HEATMAP (SPY tab only): SPY's own grid, SPX's in SPY prices, or the two added. The SPX
   // grids are fetched on the click that asks for them (/api/gex?spmap=1&heat=…), never on load.
   const [heatView, setHeatView] = useState("spy");
+  // THE HORIZON: "day" is every column; "week" keeps what outlives the week (lib/gex.js horizonGrid).
+  const [horizon, setHorizon] = useState("day");
   const [spHeat, setSpHeat] = useState({});
   const [liveBusy, setLiveBusy] = useState(false);
   // ── THE LEVELS AS A TRADINGVIEW SCRIPT ──
@@ -438,10 +442,13 @@ export function GexPanel() {
       setSpHeat(x => ({ ...x, [v]: j?.ok ? j : { ok: false, reason: j?.reason || `HTTP ${r.status}` } }));
     } catch (e) { setSpHeat(x => ({ ...x, [v]: { ok: false, reason: String(e?.message || e) } })); }
   };
+  const shownGrid = useMemo(() => horizonGrid(altHeat || grid, { view: horizon, today: NY_DAY.format(new Date()) }),
+    [altHeat, grid, horizon]);
   const heat = useMemo(() => {
     const m = mustShow(lv, { flipZoneLo: latest?.flipZoneLo, flipZoneHi: latest?.flipZoneHi });
-    return heatCells(altHeat || grid, { must: m.strikes, flipZone: m.flipZone });
-  }, [altHeat, grid, lv, latest]);
+    return heatCells(shownGrid, { must: m.strikes, flipZone: m.flipZone });
+  }, [shownGrid, lv, latest]);
+  const listedExpiries = useMemo(() => new Set((grid?.expiries || []).map(e => e.expiry)), [grid]);
   const spotAt = heat ? spotSlot(heat.strikes, latest?.spot) : null;
   const spotLine = heat && spotAt != null ? (
     <Fragment key="spot">
@@ -852,12 +859,28 @@ export function GexPanel() {
                     ))}
                   </span>
                 )}
+                <span style={{ display: "inline-flex", gap: 4 }} role="group" aria-label="horizon">
+                  {[["day", "Day"], ["week", "Week+"]].map(([v, label]) => (
+                    <button key={v} onClick={() => setHorizon(v)}
+                      title={v === "week" ? "Hide today's expiry and the Mon–Thu dailies: what is left outlives the week" : "Every expiry, today's included"}
+                      style={{ fontSize: 11, fontWeight: 800, padding: "2px 9px", borderRadius: 999, cursor: "pointer",
+                               border: "1.5px solid " + (horizon === v ? C.blBdr : C.bdr), background: horizon === v ? C.blBg : C.surf,
+                               color: horizon === v ? C.blue : C.mid }}>{label}</button>
+                  ))}
+                </span>
                 <span style={{ fontSize: 11.5, color: C.muted }}>
                   each expiry's {heat.perColumn} heaviest strikes, {heat.shown} of {heat.total}
                   {heat.added?.length ? ` · plus the flip-zone edges and the level strikes (${heat.added.length} forced in)` : " · the flip-zone edges and the level strikes are always kept"}
                   {" "}· green = positive gamma, purple = negative
                 </span>
               </div>
+              {horizon === "week" && (
+                <div style={{ fontSize: 11.5, color: shownGrid?.horizon?.view === "week" ? C.mid : C.amber, marginTop: 4 }}>
+                  {shownGrid?.horizon?.view === "week"
+                    ? `Week+: ${shownGrid.horizon.hidden.length} expiries hidden (today's and the Mon–Thu dailies, ${shownGrid.horizon.hiddenShare}% of the gamma). What is left is the positioning that outlives the week; OPEX marks the monthlies, where the board resets. Shading is re-scaled to these columns. The tiles, levels and by-strike chart still read the whole book.`
+                    : `Week+: ${shownGrid?.horizon?.reason || "no grid"} — showing every column`}
+                </div>
+              )}
               {spView !== "spy" && (
                 <div style={{ fontSize: 11.5, color: spHeat[spView]?.ok === false ? C.amber : C.mid, marginTop: 4 }}>
                   {spHeat[spView]?.loading ? "reading the SPX book…"
@@ -876,6 +899,10 @@ export function GexPanel() {
                          style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textAlign: "center",
                                   letterSpacing: 0.2, paddingBottom: 2, opacity: rateOut && rateFarOut(e) ? 0.4 : 1 }}>
                       {/^\d{4}-/.test(e) ? e.slice(5) : e}{rateOut && rateFarOut(e) ? " r?" : ""}
+                      {isMonthlyOpex(e, listedExpiries) && (
+                        <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 0.6, color: C.amber }}
+                             title="Standard monthly expiry: the board resets after it">OPEX</div>
+                      )}
                     </div>
                   ))}
                   {heat.strikes.map((k, row) => {

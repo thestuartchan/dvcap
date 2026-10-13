@@ -3,7 +3,7 @@
 // code and copying what it said.
 import {
   gexSummary, netGammaAt, flipLevel, flipFragility, walls, toDollarGex,
-  contractGamma, gammaGrid, atmIvByExpiry, GEX_CONVENTIONS, CONTRACT_MULTIPLIER, heatCells, heatAlpha, spotSlot, HEAT_ROWS, HEAT_PCTL, HEAT_ALPHA_FLOOR, foldGrid, withGrossShares } from '../lib/gex.js';
+  contractGamma, gammaGrid, atmIvByExpiry, GEX_CONVENTIONS, CONTRACT_MULTIPLIER, heatCells, heatAlpha, spotSlot, HEAT_ROWS, HEAT_PCTL, HEAT_ALPHA_FLOOR, foldGrid, withGrossShares, horizonGrid, isMonthlyOpex, WEEK_KEEP_SHARE } from '../lib/gex.js';
 import { gamma } from '../lib/blackscholes.js';
 import { wallAgreement } from '../lib/gexRead.js';
 import { CUSTOM_ROOT_RE } from '../lib/gexStore.js';
@@ -373,6 +373,29 @@ const PE = (k, oi, e, T, iv = 0.22) => ({ type: 'put', strike: k, oi, iv, T, exp
   eq('the folded row is the sum of what it replaced', [g.expiries.at(-1).netGexUsd, g.expiries.at(-1).callOi], [(90 - 9) + (90 - 10), 2]);
   eq('shares from the cells still add to 100', Math.round(withGrossShares(g).expiries.reduce((a, e) => a + e.shareOfAbs, 0)), 100);
   eq('nothing to fold: the grid comes back as it was', foldGrid({ expiries: rows.slice(0, 5), cells }, { today: '2026-10-12' }).expiries.length, 5);
+}
+// ── The week view: what outlives the week, not today's tape (13 Oct) ──
+{
+  const days = ['2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16', '2026-10-20', '2026-10-23', '2026-10-28', '2026-10-30', '2026-11-20', '2026-12-18', '2026-12-31'];
+  const big = { '2026-10-13': 500, '2026-10-28': 300 };   // a heavy 0DTE, and a mid-week expiry carrying a quarter-end-sized share
+  const cells = days.flatMap(e => [{ expiry: e, strike: 700, netGexUsd: big[e] ?? 20 }, { expiry: e, strike: 690, netGexUsd: -(big[e] ?? 20) / 2 }]);
+  const g = { expiries: days.map(e => ({ expiry: e })), cells };
+  const w = horizonGrid(g, { view: 'week', today: '2026-10-13' });
+  eq('week view: today and the Mon–Thu dailies go; week-ending expiries, monthlies and a ≥10% expiry stay',
+    w.expiries.map(e => e.expiry), ['2026-10-16', '2026-10-23', '2026-10-28', '2026-10-30', '2026-11-20', '2026-12-18', '2026-12-31']);
+  eq('…the cells go with their columns', w.cells.every(c => w.expiries.some(e => e.expiry === c.expiry)), true);
+  eq('…and it says what it hid, with that share of the book', [w.horizon.hidden, w.horizon.hiddenShare > 50], [['2026-10-13', '2026-10-14', '2026-10-15', '2026-10-20'], true]);
+  eq('a Thursday is week-ending when nothing is listed after it that week (31 Dec, 1 Jan closed)', w.expiries.some(e => e.expiry === '2026-12-31'), true);
+  eq('the day view is the grid untouched', horizonGrid(g, { view: 'day', today: '2026-10-13' }), g);
+  const folded = { expiries: [{ expiry: '2026-10-13' }, { expiry: 'other' }, { expiry: '2027-12-17', folded: { count: 3 } }], cells: [{ expiry: '2026-10-13', strike: 1, netGexUsd: 1 }, { expiry: 'other', strike: 1, netGexUsd: 1 }, { expiry: '2027-12-17', strike: 1, netGexUsd: 1 }] };
+  eq('a folded column and a non-date column stay as they are', horizonGrid(folded, { view: 'week', today: '2026-10-13' }).expiries.map(e => e.expiry), ['other', '2027-12-17']);
+  const only = horizonGrid({ expiries: [{ expiry: '2026-10-13' }], cells: [{ expiry: '2026-10-13', strike: 1, netGexUsd: 1 }] }, { view: 'week', today: '2026-10-13' });
+  eq('nothing outlives the week: the whole grid, saying so', [only.expiries.length, only.horizon.view], [1, 'day']);
+  eq('monthly: the third Friday', isMonthlyOpex('2026-10-16'), true);
+  eq('monthly: the Thursday before a holiday third Friday (Juneteenth 2026)', isMonthlyOpex('2026-06-18', new Set(['2026-06-18', '2026-06-22'])), true);
+  eq('…but not a third-week Thursday when the Friday is listed', isMonthlyOpex('2026-10-15', new Set(['2026-10-15', '2026-10-16'])), false);
+  eq('not monthly: a weekly Friday, or a non-date', [isMonthlyOpex('2026-10-23'), isMonthlyOpex('other')], [false, false]);
+  eq('the share bar for keeping a mid-week expiry', WEEK_KEEP_SHARE, 10);
 }
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
