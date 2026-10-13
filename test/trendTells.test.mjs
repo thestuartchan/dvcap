@@ -1,5 +1,5 @@
 // test/trendTells.test.mjs — the trend-day tells and their fifteen-year rates (lib/trendTells.js).
-import { tellsFor, tellsHeadline, shownTells, firstHourBands, BACKTEST, BASE_RATE } from '../lib/trendTells.js';
+import { tellsFor, tellsHeadline, shownTells, firstHourBands, BACKTEST, BASE_RATE, cushionBand, CUSHION } from '../lib/trendTells.js';
 import { parseDix, gexPercentile } from '../lib/squeeze.js';
 import { firstHourFrom } from '../lib/yahoo.js';
 
@@ -53,6 +53,18 @@ const ok = (n, c) => eq(n, !!c, true);
   const res = { meta: { gmtoffset: -14400 }, timestamp: [t('2026-10-07T13:30:00Z'), t('2026-10-07T14:30:00Z'), t('2026-10-08T13:30:00Z')],
     indicators: { quote: [{ open: [753.79, 755, 757], close: [755.2, 756, 754.1] }] } };
   eq('09:30 bars only, by date', firstHourFrom(res), { '2026-10-07': { open: 753.79, close: 755.2 }, '2026-10-08': { open: 757, close: 754.1 } });
+}
+
+// ── THE CUSHION BANDS (13 Oct) ──
+eq('the bands: negative GEX first, then by percentile, with the lean', [cushionBand(0.05, -1e9).key, cushionBand(0.1, 3e9).lean, cushionBand(0.3, 5e9).lean, cushionBand(0.5, 6e9).lean, cushionBand(0.77, 7.3e9).lean, cushionBand(0.95, 9e9).lean],
+  ['neg', 'trade', 'selective', 'selective', 'lean skip', 'lean skip']);
+eq('range ÷ implied falls band by band, on both symbols', [CUSHION.every((b, i) => i === 0 || b.spx <= CUSHION[i - 1].spx), CUSHION.every((b, i) => i === 0 || b.qqq <= CUSHION[i - 1].qqq)], [true, true]);
+{
+  const g = tellsFor({ gexPct: 0.77, gexValue: 7.34e9 }).find(t => t.key === 'gex');
+  eq('the gamma row says the band, the lean and how such days moved against what was priced', [g.cushion, /77th percentile of the trailing year \(\$7\.3bn\) — high cushion — lean skip: days like this moved 0\.76× their implied range \(SPX\), 0\.88× \(QQQ\)/.test(g.text)],
+    [{ band: 'p60', lean: 'lean skip' }, true]);
+  const n = tellsFor({ gexPct: 0.01, gexValue: -2e9 }).find(t => t.key === 'gex');
+  eq('negative GEX is named as such and is a trade day', [n.cushion.band, n.text.startsWith('negative — ')], ['neg', true]);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

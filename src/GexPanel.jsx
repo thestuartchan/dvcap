@@ -19,7 +19,7 @@ import { oiSettledLabel } from "../lib/gexFeed.js";
 import { levelsOf, mustShow, rateLine, rateFarOut } from "../lib/gexLevels.js";
 import { pineFor } from "../lib/pine.js";
 import { gexDays, gexSummary, todayTellInputs, TREND_MOVE, TREND_EFF, WIDE_RANGE } from "../lib/gexDays.js";
-import { tellsFor, tellsHeadline, shownTells, BACKTEST, BASE_RATE, FIRST_HOUR_BASE } from "../lib/trendTells.js";
+import { tellsFor, tellsHeadline, shownTells, BACKTEST, BASE_RATE, FIRST_HOUR_BASE, CUSHION, CUSHION_SOURCE } from "../lib/trendTells.js";
 
 const fmtUsd = (v) => {
   if (v == null || !Number.isFinite(+v)) return "—";
@@ -1124,12 +1124,40 @@ export function GammaDays({ symbol, series }) {
                 const c = t.rate == null ? C.muted : t.lift >= 1.1 ? C.green : t.lift <= 0.9 ? C.amber : C.mid;
                 const base = t.key === "firstHour" ? FIRST_HOUR_BASE : BASE_RATE;
                 return (
-                  <tr key={t.key}>
-                    <td style={{ ...cell, fontWeight: 700 }}>{t.label}</td>
-                    <td style={{ ...cell, whiteSpace: "normal", color: t.value == null ? C.muted : C.text }}>{t.text}</td>
-                    <td style={cell}>{t.bucket ?? "—"}</td>
-                    <td style={{ ...cell, color: c, fontWeight: 700 }}>{t.rate == null ? "—" : `${t.rate}% vs ${base}% base · ${t.word}`}</td>
-                  </tr>
+                  <Fragment key={t.key}>
+                    <tr>
+                      <td style={{ ...cell, fontWeight: 700 }}>{t.label}</td>
+                      <td style={{ ...cell, whiteSpace: "normal", color: t.value == null ? C.muted : C.text }}>{t.text}</td>
+                      <td style={cell}>{t.bucket ?? "—"}</td>
+                      <td style={{ ...cell, color: c, fontWeight: 700 }}>{t.rate == null ? "—" : `${t.rate}% vs ${base}% base · ${t.word}`}</td>
+                    </tr>
+                    {/* THE CUSHION BANDS (13 Oct): every band, today's ringed — how much days in it moved
+                        against what options priced, and the morning call's lean. Information only. */}
+                    {t.key === "gex" && t.cushion && (
+                      <tr>
+                        <td colSpan={4} style={{ ...cell, whiteSpace: "normal", paddingBottom: 8 }}>
+                          <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}>
+                            <span style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4, marginRight: 2 }}>Cushion bands</span>
+                            {CUSHION.map(bd => {
+                              const on = bd.key === t.cushion.band;
+                              const tone = bd.lean === "trade" ? C.green : bd.lean === "lean skip" ? C.amber : C.mid;
+                              return (
+                                <span key={bd.key} title={`${bd.label}: days moved ${bd.spx}× their implied range (SPX), ${bd.qqq}× (QQQ) · ${bd.lean}`}
+                                      style={{ fontSize: 11, padding: "2px 8px", borderRadius: 999, fontVariantNumeric: "tabular-nums",
+                                               border: `${on ? 2 : 1}px solid ${on ? tone : C.bdr}`, background: on ? C.surf : "transparent",
+                                               color: on ? tone : C.muted, fontWeight: on ? 800 : 600 }}>
+                                  {bd.label} · {bd.lean} · {bd.spx.toFixed(2)}× / {bd.qqq.toFixed(2)}×
+                                </span>
+                              );
+                            })}
+                          </div>
+                          <div style={{ fontSize: 10.5, color: C.muted, marginTop: 4 }}>
+                            × = the day's range against the move options priced the evening before (SPX / QQQ). Above 1 pays an option buyer; below 1 premium bleeds. {CUSHION_SOURCE}.
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}</tbody>
             </table>
