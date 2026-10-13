@@ -3648,11 +3648,11 @@
           "drifting": "def"
         },
         "conditions": {
-          "score": 55.7,
+          "score": 56.3,
           "band": "caution",
           "comps": {
-            "credit": 65,
-            "equityVol": 9,
+            "credit": 64,
+            "equityVol": 13,
             "ratesVol": 58,
             "realYield": 88,
             "funding": 32,
@@ -3717,7 +3717,7 @@
         "quadrantRead": "growth firm, inflation cool"
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-13T14:58:05.520Z"
+      "loggedAt": "2026-10-13T16:26:21.495Z"
     }
   ]
 }
