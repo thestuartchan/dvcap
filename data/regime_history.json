@@ -3605,28 +3605,28 @@
       "hawkish_repricing": "INSUFFICIENT_DATA",
       "live_regime": "stag",
       "view_regime": "stag",
-      "pinned": false,
-      "hyg_chg": 0.12,
+      "pinned": true,
+      "hyg_chg": 0.08,
       "hyg_qqq_divergence": 0.78,
       "inputs": {
         "weightedRecessionProb": 13.6,
         "cpi": 3.35302,
-        "kalshi2027": 20,
+        "kalshi2027": 21,
         "tape": {
           "gold": "down",
-          "tlt": "flat",
+          "tlt": "up",
           "xlu": "up",
           "xlp": "up",
-          "spy": "flat",
+          "spy": "down",
           "qqq": "down",
           "iwm": "down",
-          "btc": "down",
+          "btc": "up",
           "breakevenBp": -2
         },
-        "ladderSpread": -2.33,
+        "ladderSpread": -2.13,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.11,
+        "oas": 3.15,
         "tenY": 5.22,
         "twoY": 4.75,
         "consensusAlive": 0.686,
@@ -3636,16 +3636,16 @@
         "regime": {
           "id": "ref",
           "probs": {
-            "ref": 51,
-            "inf": 18,
-            "stag": 8,
-            "def": 23
+            "ref": 40,
+            "inf": 29,
+            "stag": 13,
+            "def": 18
           },
           "g": 0.23,
           "gDrift": -1.15,
-          "i": -0.22,
-          "iDrift": 0,
-          "drifting": "def"
+          "i": -0.07,
+          "iDrift": 0.33,
+          "drifting": "stag"
         },
         "conditions": {
           "score": 56.3,
@@ -3662,10 +3662,10 @@
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 24,
+          "hikeOdds": 20,
           "liq4w": 8
         },
-        "sizing": 0.64,
+        "sizing": 0.63,
         "stage": 2
       },
       "axes": {
@@ -3692,11 +3692,11 @@
           }
         },
         "inflation": {
-          "state": "split",
+          "state": "turning-hot",
           "lean": -1,
           "market": {
-            "verdict": "COOLING",
-            "lean": -1,
+            "verdict": "BETWEEN",
+            "lean": 0,
             "usable": 3,
             "of": 3
           },
@@ -3717,7 +3717,7 @@
         "quadrantRead": "growth firm, inflation cool"
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-13T16:26:21.495Z"
+      "loggedAt": "2026-10-13T17:22:22.012Z"
     }
   ]
 }
