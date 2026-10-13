@@ -3892,6 +3892,17 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     } catch { setJournalMsg({ err: true, text: "Could not remove that note." }); }
     setJournalBusy(false);
   };
+  // A waiting note that describes a trade already held, turned into a rule change on that trade.
+  const noteToAmend = async (note, rowId) => {
+    setJournalBusy(true);
+    try {
+      const res = await fetch("/api/manual-entry", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ journalDraft: { id: note.id, rowId, action: "note-to-amend" } }) });
+      const j = await res.json().catch(() => null);
+      if (res.ok && j?.journal) { setJournal(j.journal); setJournalMsg({ text: `Now a rule change on ${rowId} — confirm it under "Rule changes to confirm" ✓` }); }
+      else setJournalMsg({ err: true, text: j?.journal?.error || "Could not turn that note into a rule change." });
+    } catch { setJournalMsg({ err: true, text: "Could not turn that note into a rule change." }); }
+    setJournalBusy(false);
+  };
   const chooseDraft = async (draft, orderId) => {
     setJournalBusy(true);
     const done = await resolveJournal({ id: draft.id, action: "choose", orderId }).catch(() => ({ ok: false }));
@@ -4403,7 +4414,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       {/* ── JOURNAL DRAFTS ──
           Notes written from chat, matched to IBKR's fills by the daily run: drafts to confirm,
           fills that arrived with no note, and notes whose fill never came. Absent when empty. */}
-      <JournalDrafts journal={journal} rows={rows} onConfirm={confirmDraft} onDismiss={dismissDraft} onChoose={chooseDraft} onDrop={dropNote}
+      <JournalDrafts journal={journal} rows={rows} onConfirm={confirmDraft} onDismiss={dismissDraft} onChoose={chooseDraft} onDrop={dropNote} onToAmend={noteToAmend}
         onConfirmMany={confirmMany} onSyncNow={kvOn ? syncNow : null} syncBusy={syncBusy} syncMsg={syncMsg} busy={journalBusy} msg={journalMsg} />
 
       {/* ── ONE-TIME CARRY-OVER ── the old trade sheet's fills, before it is retired. Gone once marked done. */}

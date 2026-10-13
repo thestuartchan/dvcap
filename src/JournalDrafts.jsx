@@ -19,7 +19,7 @@ const GROUPS = [
 
 // A note still in the inbox, waiting for tomorrow's run. Shown so one nobody recognises can be
 // removed before it becomes a draft.
-function PendingNote({ note, onDrop, busy }) {
+function PendingNote({ note, onDrop, onToAmend, busy }) {
   return (
     <div style={{ border: "1.5px solid " + C.bdr, background: C.surf, borderRadius: 9, padding: "8px 10px", display: "grid", gap: 5 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
@@ -34,7 +34,14 @@ function PendingNote({ note, onDrop, busy }) {
         <div style={{ fontSize: 12, color: C.amber, fontWeight: 700 }}>Not matched yet — {note.why.reason}</div>
       )}
       <NoteBody note={note} edit={null} setEdit={() => {}} />
-      <div><button style={btn()} disabled={busy} onClick={() => onDrop(note)}>Remove from inbox</button></div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {/* Already held: the note is probably that trade's updated plan. One click turns it into a rule
+            change on the trade — drafted, then confirmed or dismissed like any other. */}
+        {onToAmend && (note.why?.held || []).map(h => (
+          <button key={h.id} style={btn("go")} disabled={busy} onClick={() => onToAmend(note, h.id)}>Treat as rule change on {h.label}</button>
+        ))}
+        <button style={btn()} disabled={busy} onClick={() => onDrop(note)}>Remove from inbox</button>
+      </div>
     </div>
   );
 }
@@ -210,7 +217,7 @@ function BulkConfirm({ drafts, onConfirmMany, busy }) {
   );
 }
 
-export default function JournalDrafts({ journal, rows = [], onConfirm, onDismiss, onChoose, onDrop, onConfirmMany, onSyncNow, syncBusy = false, syncMsg = null, busy = false, msg = null }) {
+export default function JournalDrafts({ journal, rows = [], onConfirm, onDismiss, onChoose, onDrop, onToAmend, onConfirmMany, onSyncNow, syncBusy = false, syncMsg = null, busy = false, msg = null }) {
   const [open, setOpen] = useState(null);
   const drafts = journal?.drafts || [];
   const waiting = journal?.pendingNotes || [];
@@ -250,7 +257,7 @@ export default function JournalDrafts({ journal, rows = [], onConfirm, onDismiss
         </div>
       )}
       {shown.map(d => <DraftCard key={d.id} d={d} rows={rows} onConfirm={onConfirm} onDismiss={onDismiss} onChoose={onChoose} busy={busy} />)}
-      {open === "waiting" && waiting.map(nt => <PendingNote key={nt.id} note={nt} onDrop={onDrop} busy={busy} />)}
+      {open === "waiting" && waiting.map(nt => <PendingNote key={nt.id} note={nt} onDrop={onDrop} onToAmend={onToAmend} busy={busy} />)}
     </div>
   );
 }

@@ -283,6 +283,33 @@ eq('bulk confirm clears the exact match, refuses the amend, and logs one entry p
   [bulk.code, bulk.body.journal.confirmed, bulk.body.journal.refused, bulk.body.journal.drafts.map(d => d.id), log.map(e => [e.id, e.outcome, e.bulk])],
   [200, ['d-900001'], ['m-x'], ['m-x'], [['fcx-nov-75-85c', 'confirmed', true]]]);
 
+// ── A PLAN NOTE FOR A TRADE ALREADY HELD (SPY, 9 Oct) ─────────────────────────
+{
+  const { CONSOLE_KEY } = await import('../lib/kv.js');
+  const held = applyDraft([], { id: 'd-1', kind: 'fill', source: 'unjournaled', note: null, checks: [], fill: { orderId: '800001', type: 'COMBO', root: 'XYZ', currency: 'USD',
+    date: '2026-10-01', side: 'BUY', qty: 3, rawPrice: 2.10, price: 2.13, multiplier: 100, tradeIds: ['800001:1', '800001:2'],
+    legs: [{ right: 'P', strike: 500, expiry: '2026-12-18', side: 'BUY', ratio: 1 }, { right: 'P', strike: 480, expiry: '2026-12-18', side: 'SELL', ratio: 1 }] } }, {}, { today: '2026-10-01' }).rows;
+  const plan = validateNote({ id: 'xyz-500-480p-plan', kind: 'plan', trade_date: '2026-10-09', rationale: 'take half off at the review',
+    instrument: { type: 'COMBO', symbol: 'XYZ', legs: [{ right: 'P', strike: 500, expiry: '2026-12-18', side: 'BUY', ratio: 1 }, { right: 'P', strike: 480, expiry: '2026-12-18', side: 'SELL', ratio: 1 }] },
+    levels: { review: '2026-10-30', hard_date: '2026-12-11' }, rules: ['take half off'] }).note;
+  const zeroDte = opt({ u: 'XYZ', conid: 9401, k: 510, exp: '20261009', r: 'P', side: 'BUY', q: 1, px: 1.1, oid: 800009 }).replace(/20261012/g, '20261009');
+  const r = processInbox({ notes: [plan], trades: parseTradeConfirms(tc([zeroDte])), today: '2026-10-09', rows: held });
+  const w = r.why[plan.id];
+  eq('a plan for a spread already held says so and names the trade', [w.held?.map(h => h.id), /you already hold this/.test(w.reason)], [[held[0].id], true]);
+  eq('… and a same-day option is never offered as its nearest order', /800009/.test(w.reason), false);
+  eq('a close note for a held trade is not flagged (closing it is the point)', processInbox({ notes: [{ ...plan, id: 'xyz-close', kind: 'close' }], trades: [], today: '2026-10-09', rows: held }).why['xyz-close'].held, undefined);
+
+  mem.set(CONSOLE_KEY, JSON.stringify({ rows: held }));
+  mem.set(INBOX_KEY, [JSON.stringify({ ...plan, received_at: '2026-10-09T15:00:00Z' })]);
+  const wrong = await callEntry({ journalDraft: { action: 'note-to-amend', id: plan.id, rowId: 'NOT-A-ROW' } });
+  eq('treating it as a rule change on a trade it does not describe is refused, nothing changed', [wrong.code, mem.get(INBOX_KEY).length], [409, 1]);
+  const ok = await callEntry({ journalDraft: { action: 'note-to-amend', id: plan.id, rowId: held[0].id } });
+  const amend = ok.body.journal?.drafts?.find(d => d.id === `m-${plan.id}`);
+  eq('treated as a rule change: the note leaves the inbox and becomes an amend draft on that trade',
+    [ok.code, amend?.kind, amend?.supersedes, ok.body.journal.pending, JSON.parse(mem.get(PROCESSED_KEY)).some(e => e.id === plan.id && e.outcome === 'converted-to-amend')],
+    [200, 'amend', held[0].id, 0, true]);
+}
+
 // ── THE LAG ──────────────────────────────────────────────────────────────────
 {
   eq('Flex times are New York time', new Date(nyEpochMs('20261012;101200')).toISOString(), '2026-10-12T14:12:00.000Z');
