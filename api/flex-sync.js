@@ -49,6 +49,10 @@ import { adoptProvisional, tcQueryId, TC_QUERY_ENV, TC_WAITS_MS, SYNC_NOW_MIN_IN
 import { hasSessionCookie } from '../lib/apiauth.js';
 import { readJournal } from '../lib/journalStore.js';
 import { kvSetNxEx } from '../lib/kv.js';
+import { analyse as analyseDayTrades } from '../lib/dayTradeRegime.js';
+import { fetchMarket } from '../lib/dayTradeRegimeData.js';
+import { SERIES_KEY } from '../lib/gexStore.js';
+import CALENDAR from '../data/calendar.json' with { type: 'json' };
 import HOLIDAYS from '../data/holidays.json' with { type: 'json' };
 
 // The same optional secret the card endpoint uses, so the scheduler carries one key rather than
@@ -383,6 +387,36 @@ export async function syncNow({ now = new Date(), fetchImpl = fetch, sleep } = {
   return { ok: true, at, line, lag, journal: await readJournal() };
 }
 
+// ── DAY TRADES BY GAMMA REGIME (analysis, 13 Oct) ─────────────────────────────
+// lib/dayTradeRegime.js over IBKR's own fills. PRIVATE: the console's session only, the result kept
+// under a private key the same session reads back. Never logged, never posted, never in the repo.
+// The history query (IBKR_FLEX_HIST_QUERY_ID — an Activity query, Trades, last 365 days, the same
+// Flex token) when it is set; otherwise the daily statement query, whose window is shorter.
+const DTR_KEY = 'dvcap:analysis:dtregime:v1';
+const DTR_PENDING_KEY = 'dvcap:flex:hist:pending:v1';
+const DTR_LOCK_KEY = 'dvcap:analysis:dtregime:lock:v1';
+export async function dayTradeRegime({ fetchImpl = fetch } = {}) {
+  const { token, queryId: dailyId } = flexEnv();
+  const histId = String(process.env.IBKR_FLEX_HIST_QUERY_ID || '').trim();
+  const queryId = histId || dailyId;
+  if (!token || !queryId) return { ok: false, reason: 'IBKR Flex is not configured' };
+  let pending = null;
+  try { pending = await kvGetJson(DTR_PENDING_KEY); } catch { /* fresh */ }
+  const got = await fetchStatement({ token, queryId, pending, fetchImpl });
+  try { if (got.pending) await kvSetJsonEx(DTR_PENDING_KEY, got.pending, PENDING_TTL_S); else if (pending) await kvSetJsonEx(DTR_PENDING_KEY, null, 1); } catch { /* fresh next time */ }
+  if (!got.ok) return { ok: false, retryable: !!got.retryable, reason: got.retryable ? 'IBKR is still building the statement — run it again in a minute' : `IBKR Flex: ${got.error}` };
+  const trades = parseTrades(got.xml);
+  if (!trades.length) return { ok: false, reason: 'the statement has no Trades section rows — check the query includes Trades', sections: tradeSections(got.xml) };
+  const series = (await kvGetJson(SERIES_KEY)) || {};
+  const dates = [...new Set(trades.map(t => t.date).filter(Boolean))].sort();
+  const { m, under, sources } = await fetchMarket({ from: dates[0], dates, fetchImpl, captures: { QQQ: series.QQQ || [], SPY: series.SPY || [] }, calendar: CALENDAR });
+  const { result, trades: rows } = analyseDayTrades(trades, m, { holidays: HOLIDAYS?.US?.closed || [], lastDate: isoDate(got.statement.toDate), under });
+  const out = { ok: true, at: new Date().toISOString(), query: histId ? 'history (IBKR_FLEX_HIST_QUERY_ID)' : 'daily statement (shorter window — set IBKR_FLEX_HIST_QUERY_ID for 365 days)',
+    statement: { from: isoDate(got.statement.fromDate), to: isoDate(got.statement.toDate), trades: trades.length }, sources, result, trades: rows };
+  try { await kvSetJson(DTR_KEY, out); } catch { /* the caller still gets it */ }
+  return out;
+}
+
 // ── EXPOSURE: PUBLISHED GREEKS FOR CONTRACTS THE BOOK HOLDS ──────────────────
 // GATED, and it lives on this route rather than the public /api/gex for one reason: the LIST of
 // contracts asked about is itself a statement about the book. /api/gex is declared public because
@@ -489,6 +523,21 @@ export default async function handler(req, res) {
     } catch (e) {
       console.error('sync-now failed');   // no detail: the error text could carry report content
       res.status(200).json({ ok: false, line: `Sync now failed: ${String(e?.message || e).slice(0, 160)}` });
+    }
+    return;
+  }
+  // ?regimepnl=1 — day trades by gamma regime. The console's session only; GET reads the last run,
+  // POST runs it (about one a minute). Nothing about it is logged.
+  if (String(req.query?.regimepnl ?? '') === '1') {
+    res.setHeader('Cache-Control', 'private, no-store');
+    if (!(await hasSessionCookie(req))) { res.status(401).json({ ok: false, reason: 'needs the console\'s signed-in session' }); return; }
+    try {
+      if (req.method === 'GET') { res.status(200).json((await kvGetJson(DTR_KEY)) || { ok: false, reason: 'not run yet' }); return; }
+      if (kvConfigured() && !(await kvSetNxEx(DTR_LOCK_KEY, Date.now(), 60))) { res.status(429).json({ ok: false, reason: 'ran under a minute ago — try again in a minute' }); return; }
+      res.status(200).json(await dayTradeRegime());
+    } catch (e) {
+      console.error('day-trade regime failed');   // no detail: it could carry account content
+      res.status(200).json({ ok: false, reason: String(e?.message || e).slice(0, 160) });
     }
     return;
   }

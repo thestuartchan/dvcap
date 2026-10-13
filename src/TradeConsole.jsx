@@ -43,6 +43,7 @@ import { actionItems } from "../lib/actions.js";
 import { applyDraft, LEVEL_LABEL as JOURNAL_LEVEL_LABEL } from "../lib/journalInbox.js";
 import { provisionalBadge } from "../lib/sameDayFills.js";
 import JournalDrafts from "./JournalDrafts.jsx";
+import DayTradeRegime from "./DayTradeRegime.jsx";
 import FillAudit from "./FillAudit.jsx";
 import { undoCarryOver } from "../lib/fillAudit.js";
 import { useRef } from "react";
@@ -4416,6 +4417,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           fills that arrived with no note, and notes whose fill never came. Absent when empty. */}
       <JournalDrafts journal={journal} rows={rows} onConfirm={confirmDraft} onDismiss={dismissDraft} onChoose={chooseDraft} onDrop={dropNote} onToAmend={noteToAmend}
         onConfirmMany={confirmMany} onSyncNow={kvOn ? syncNow : null} syncBusy={syncBusy} syncMsg={syncMsg} busy={journalBusy} msg={journalMsg} />
+      {kvOn && <DayTradeRegime />}
 
       {/* ── ONE-TIME CARRY-OVER ── the old trade sheet's fills, before it is retired. Gone once marked done. */}
       <FillAudit rows={rows} sheet={settings.brokerSheet || ""} setSheet={(v) => { setSettings(s => ({ ...s, brokerSheet: v })); touch(); }}
