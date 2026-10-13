@@ -13,6 +13,7 @@ import {
 import { SpMapCard } from "./SpMapCard.jsx";
 import { C, tint } from "./theme.js";
 import { Card, SLabel, StaleChip } from "./ui.jsx";
+import { WallRollCard } from "./WallRollCard.jsx";
 import { gexRead, ageOf } from "../lib/gexRead.js";
 import { heatCells, heatAlpha, spotSlot, withGrossShares, horizonGrid, isMonthlyOpex } from "../lib/gex.js";
 import { oiSettledLabel } from "../lib/gexFeed.js";
@@ -976,6 +977,9 @@ export function GexPanel() {
           )}
         </Card>
       )}
+
+      {/* THE WALL ROLL (13 Oct): where each monthly's walls have moved, read for the week and beyond. */}
+      {!custom && data?.available && <WallRollCard symbol={symbol} series={data.series} />}
 
       {/* 2 — net gamma by strike, read in the light of the breakdown above.
           THE S&P SIDE (12 Oct): on the SPY tab the ladder is the S&P map — SPY's board with SPX's

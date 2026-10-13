@@ -29,6 +29,7 @@ import { captureGex, readGex, settledGex, observeRoll, OCC_ROLL_LOG_KEY, OCC_HEA
          LAST_RECOMPUTE_KEY, LAST_RECOMPUTE_TTL_SEC, recomputeRecord, newerRecompute, YAHOO_SYMBOL } from '../lib/gexStore.js';
 import { spxRatio, esBasis, spMap, spMapBlock, dualLadder, fetchSpRates, BAND_PCT as SP_BAND_PCT, LADDER_BAND_PCT, spHeatGrid } from '../lib/spMap.js';
 import { instrumentKind } from '../lib/catalyst.js';
+import { wallRoll } from '../lib/wallRoll.js';
 import { authorised, refusalReason } from '../lib/apiauth.js';
 import { getQuotes } from '../lib/quotes.js';
 import { marketState } from '../lib/sessions.js';
@@ -69,6 +70,10 @@ const FEED_LOCK_KEY = (sym) => `dvcap:gex:feed:lock:v1:${sym}`;
 // or this route's, they share LAST_RECOMPUTE_KEY — else a new one if the lock allows (at most one
 // per ticker per FEED_RECOMPUTE_MIN, however many callers), else the newest thing on hand.
 async function feedBoard(sym, now = Date.now()) {
+  const out = await feedBoardOnly(sym, now);
+  return { ...out, wallRoll: out.stored?.series?.length ? wallRoll(out.stored.series, { today: nyToday(), symbol: sym }) : null };
+}
+async function feedBoardOnly(sym, now) {
   const stored = await readGex(sym).catch(() => null);
   // The row a recompute is shown with on the tab: the stored row with the recompute's on top.
   // A recompute on YESTERDAY's open interest (OCC's file not yet rolled) is served but marked, and
@@ -78,23 +83,23 @@ async function feedBoard(sym, now = Date.now()) {
     staleReason: oiStaleReason(rec.vintage, new Date(now)) });
   const kept = await kvGetJson(LAST_RECOMPUTE_KEY(sym)).catch(() => null);
   const age = kept?.at ? now - Date.parse(kept.at) : Infinity;
-  if (age < FEED_RECOMPUTE_MIN * 60000) return fromRecord(kept);
+  if (age < FEED_RECOMPUTE_MIN * 60000) return { ...fromRecord(kept), stored };
   if (await kvSetNxEx(FEED_LOCK_KEY(sym), { at: new Date(now).toISOString() }, FEED_RECOMPUTE_MIN * 60)) {
     try {
       const out = await settledGex(sym, { spot: await resolveSpot(sym), expiries: stored?.latest?.expiries || null });
       const rec = recomputeRecord(sym, { ...out, mode: 'settled' });
       if (rec) {
         if (!oiStaleReason(rec.vintage, new Date(now))) { try { await kvSetJsonEx(LAST_RECOMPUTE_KEY(sym), rec, LAST_RECOMPUTE_TTL_SEC); } catch { /* served anyway */ } }
-        return fromRecord(rec);
+        return { ...fromRecord(rec), stored };
       }
     } catch { /* fall through to what is on hand */ }
   }
   const rec = newerRecompute(stored?.latest, kept);
-  if (rec) return fromRecord(rec);
+  if (rec) return { ...fromRecord(rec), stored };
   if (stored?.latest) {
     return { board: { row: stored.latest, levels: stored.levels, grid: stored.grid, byStrike: stored.byStrike,
                       decay: null, crossCheck: stored.latest.crossCheck ?? null },
-             mode: 'settled', asOf: stored.latest.asOf, source: stored.latest.asOf };
+             mode: 'settled', asOf: stored.latest.asOf, source: stored.latest.asOf, stored };
   }
   return { board: null };
 }
@@ -121,9 +126,9 @@ async function serveFeed(req, res) {
     return res.status(200).send(body);
   }
   if (!FEED_TICKERS.includes(sym)) return res.status(404).json({ error: 'not found' });
-  const { board, mode, asOf, source, staleReason } = await feedBoard(sym);
+  const { board, mode, asOf, source, staleReason, wallRoll: roll } = await feedBoard(sym);
   if (!board) return res.status(503).json({ error: 'no board yet' });
-  const body = JSON.stringify(gexFeedPayload(sym, board, { mode, asOf, sourceSnapshot: source, today: nyToday(), staleReason }));
+  const body = JSON.stringify(gexFeedPayload(sym, board, { mode, asOf, sourceSnapshot: source, today: nyToday(), staleReason, wallRoll: roll }));
   if (feedLeaks(body).length) return res.status(500).json({ error: 'refused' });
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   return res.status(200).send(body);
@@ -137,9 +142,9 @@ async function serveFeed(req, res) {
 async function mcpTool(name, args) {
   const today = nyToday();
   if (name === 'get_gamma_board') {
-    const { board, mode, asOf, source, staleReason } = await feedBoard(args.ticker);
+    const { board, mode, asOf, source, staleReason, wallRoll: roll } = await feedBoard(args.ticker);
     if (!board) return toolError('board unavailable');
-    const out = gexFeedPayload(args.ticker, board, { mode, asOf, sourceSnapshot: source, today, staleReason });
+    const out = gexFeedPayload(args.ticker, board, { mode, asOf, sourceSnapshot: source, today, staleReason, wallRoll: roll });
     return feedLeaks(JSON.stringify(out)).length ? toolError('board unavailable') : toolOk(out);
   }
   // get_gamma_dashboard: the tickers in parallel; one that has no board is named in meta and the
