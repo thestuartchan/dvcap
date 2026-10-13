@@ -25,7 +25,7 @@ import { authorised, hasSessionCookie, refuse } from '../lib/apiauth.js';
 import { fetchHlAccount, fetchHlSpot, fetchSpotContext, fetchHyperliquid } from '../lib/hyperliquid.js';
 import { fetchWallets } from '../lib/wallet.js';
 import { validateNote, noteBytes, MAX_NOTE_BYTES } from '../lib/journalInbox.js';
-import { journalTokenOk, underRateLimit, appendNote, pendingCount, readJournal, resolveDraft, resolveMany, dropNote } from '../lib/journalStore.js';
+import { journalTokenOk, underRateLimit, appendNote, pendingCount, readJournal, resolveDraft, resolveMany, dropNote, noteToAmend } from '../lib/journalStore.js';
 
 const DATA_PATH = 'data/manual_entry.json';
 
@@ -468,6 +468,10 @@ export default async function handler(req, res) {
   // Confirm, dismiss, or choose one fill of an ambiguous match. Redis only; the console row itself
   // arrives through the ordinary console save.
   const { journalDraft } = req.body || {};
+  if (journalDraft && typeof journalDraft === 'object' && journalDraft.action === 'note-to-amend') {
+    const r = await noteToAmend(String(journalDraft.id || '').slice(0, 100), String(journalDraft.rowId || '').slice(0, 48));
+    return res.status(r.ok ? 200 : 409).json({ journal: r.ok ? await readJournal() : { error: r.error } });
+  }
   if (journalDraft && typeof journalDraft === 'object' && journalDraft.action === 'drop-note') {
     const r = await dropNote(String(journalDraft.id || '').slice(0, 100));
     return res.status(r.ok ? 200 : 409).json({ journal: r.ok ? await readJournal() : { error: r.error } });
