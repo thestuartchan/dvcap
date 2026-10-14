@@ -3721,28 +3721,38 @@
     },
     {
       "date": "2026-10-14",
-      "stagflation_p": 66,
+      "stagflation_p": 65,
       "reflationary_p": 17,
-      "deflationary_p": 12,
+      "deflationary_p": 13,
       "inflationary_p": 5,
-      "hawkish_repricing": null,
+      "hawkish_repricing": "INSUFFICIENT_DATA",
       "live_regime": "stag",
-      "view_regime": null,
-      "pinned": null,
-      "hyg_chg": null,
-      "hyg_qqq_divergence": null,
+      "view_regime": "stag",
+      "pinned": false,
+      "hyg_chg": -0.29,
+      "hyg_qqq_divergence": 0.3,
       "inputs": {
         "weightedRecessionProb": 13.6,
-        "cpi": 3.71725,
+        "cpi": 3.35302,
         "kalshi2027": 20,
-        "tape": null,
-        "ladderSpread": null,
+        "tape": {
+          "gold": "down",
+          "tlt": "up",
+          "xlu": "down",
+          "xlp": "down",
+          "spy": "down",
+          "qqq": "down",
+          "iwm": "down",
+          "btc": "up",
+          "breakevenBp": -2
+        },
+        "ladderSpread": -1.49,
         "u3": 4.2,
         "empPop": 59.2,
         "oas": 3.11,
-        "tenY": 5.24,
-        "twoY": 4.8,
-        "consensusAlive": 0.692,
+        "tenY": 5.22,
+        "twoY": 4.75,
+        "consensusAlive": 0.68,
         "regimeVintage": "decayed"
       },
       "axes": {
@@ -3764,16 +3774,16 @@
           "monthly": {
             "verdict": "EXPANDING",
             "lean": 1,
-            "usable": 4,
+            "usable": 3,
             "of": 4
           }
         },
         "inflation": {
           "state": "turning-cool",
-          "lean": 1,
+          "lean": -1,
           "market": {
-            "verdict": "BETWEEN",
-            "lean": 0,
+            "verdict": "COOLING",
+            "lean": -1,
             "usable": 3,
             "of": 3
           },
@@ -3784,28 +3794,28 @@
             "of": 2
           },
           "printed": {
-            "verdict": "HOT",
-            "lean": 1,
-            "usable": 3,
+            "verdict": "BETWEEN",
+            "lean": 0,
+            "usable": 2,
             "of": 3
           }
         },
-        "quadrant": "inf",
-        "quadrantRead": "growth firm, inflation hot"
+        "quadrant": "ref",
+        "quadrantRead": "growth firm, inflation cool"
       },
       "state": {
         "regime": {
-          "id": "inf",
+          "id": "ref",
           "probs": {
-            "ref": 26,
-            "inf": 44,
-            "stag": 19,
-            "def": 11
+            "ref": 46,
+            "inf": 23,
+            "stag": 10,
+            "def": 21
           },
-          "g": 0.23,
-          "gDrift": -1.15,
-          "i": 0.13,
-          "iDrift": -0.67,
+          "g": 0.22,
+          "gDrift": -1.07,
+          "i": -0.15,
+          "iDrift": -0.33,
           "drifting": "def"
         },
         "conditions": {
@@ -3823,14 +3833,14 @@
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 48,
+          "hikeOdds": 24,
           "liq4w": 8
         },
-        "sizing": 0.62,
+        "sizing": 0.63,
         "stage": 2
       },
-      "source": "cron",
-      "loggedAt": "2026-10-14T14:02:08.241Z"
+      "source": "client+cron",
+      "loggedAt": "2026-10-14T14:03:45.115Z"
     }
   ]
 }
