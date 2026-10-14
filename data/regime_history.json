@@ -3721,9 +3721,9 @@
     },
     {
       "date": "2026-10-14",
-      "stagflation_p": 65,
+      "stagflation_p": 66,
       "reflationary_p": 17,
-      "deflationary_p": 13,
+      "deflationary_p": 12,
       "inflationary_p": 5,
       "hawkish_repricing": "INSUFFICIENT_DATA",
       "live_regime": "stag",
@@ -3733,7 +3733,7 @@
       "hyg_qqq_divergence": 0.3,
       "inputs": {
         "weightedRecessionProb": 13.6,
-        "cpi": 3.35302,
+        "cpi": 3.71725,
         "kalshi2027": 20,
         "tape": {
           "gold": "down",
@@ -3750,9 +3750,9 @@
         "u3": 4.2,
         "empPop": 59.2,
         "oas": 3.11,
-        "tenY": 5.22,
-        "twoY": 4.75,
-        "consensusAlive": 0.68,
+        "tenY": 5.24,
+        "twoY": 4.8,
+        "consensusAlive": 0.692,
         "regimeVintage": "decayed"
       },
       "axes": {
@@ -3780,10 +3780,10 @@
         },
         "inflation": {
           "state": "turning-cool",
-          "lean": -1,
+          "lean": 1,
           "market": {
-            "verdict": "COOLING",
-            "lean": -1,
+            "verdict": "BETWEEN",
+            "lean": 0,
             "usable": 3,
             "of": 3
           },
@@ -3794,28 +3794,28 @@
             "of": 2
           },
           "printed": {
-            "verdict": "BETWEEN",
-            "lean": 0,
-            "usable": 2,
+            "verdict": "HOT",
+            "lean": 1,
+            "usable": 3,
             "of": 3
           }
         },
-        "quadrant": "ref",
-        "quadrantRead": "growth firm, inflation cool"
+        "quadrant": "inf",
+        "quadrantRead": "growth firm, inflation hot"
       },
       "state": {
         "regime": {
-          "id": "ref",
+          "id": "inf",
           "probs": {
-            "ref": 46,
-            "inf": 23,
-            "stag": 10,
-            "def": 21
+            "ref": 25,
+            "inf": 43,
+            "stag": 20,
+            "def": 12
           },
           "g": 0.22,
           "gDrift": -1.07,
-          "i": -0.15,
-          "iDrift": -0.33,
+          "i": 0.13,
+          "iDrift": -0.67,
           "drifting": "def"
         },
         "conditions": {
@@ -3833,14 +3833,14 @@
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 24,
+          "hikeOdds": 48,
           "liq4w": 8
         },
-        "sizing": 0.63,
+        "sizing": 0.61,
         "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-14T14:03:45.115Z"
+      "loggedAt": "2026-10-14T14:03:46.475Z"
     }
   ]
 }
