@@ -4,7 +4,11 @@
 // what a note may do (append one, count them), what it may never do (read, edit, pass any other
 // gate), how it meets its fill, and that nothing a note says reaches the channel or the repo.
 import { validateNote, orderUnits, matchNote, processInbox, applyDraft, journalLine, draftCounts, expectationText,
-         tradingDaysBetween, chooseCandidate, appendProcessed, whyNot, explainWaiting, assembledSpreads, fmtPx, amendTargets, productRoot, retryAmends, resolveAmend, amendRow, INBOX_KEY, DRAFTS_KEY } from '../lib/journalInbox.js';
+         tradingDaysBetween, chooseCandidate, appendProcessed, whyNot, explainWaiting, assembledSpreads, fmtPx, amendTargets, productRoot, retryAmends, resolveAmend, amendRow, INBOX_KEY, DRAFTS_KEY,
+         legTargets, pairLegOuts, legOutOf } from '../lib/journalInbox.js';
+import { derivePosition } from '../lib/positions.js';
+import { upgradeDrafts } from '../lib/sameDayFills.js';
+import { fillOf } from '../lib/journalInbox.js';
 import { parseTrades } from '../lib/flexTrades.js';
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
@@ -132,7 +136,7 @@ const TODAY = '2026-10-01';
   eq('a combo, from the note, in state DRAFT', [d[0].fill.type, d[0].source, d[0].state], ['COMBO', 'note', 'DRAFT']);
   eq('tag and levels come from the note', [d[0].note.tag, d[0].note.levels.take_profit, d[0].note.levels.hard_date], ['hedge', 'half at ~8.80 (2x)', '2026-11-20']);
   eq('the fill numbers come from IBKR', [d[0].fill.qty, d[0].fill.rawPrice, d[0].fill.date], [2, 4.4, '2026-09-30']);
-  eq('the card reads "note expected 2 @ 4.40, IBKR filled 2 @ 4.40 ✓"', expectationText(d[0]).text, 'note expected 2 @ 4.40, IBKR filled 2 @ 4.40 ✓');
+  eq('the card reads "note expected 2 @ 4.40, IBKR bought 2 @ 4.40 ✓"', expectationText(d[0]).text, 'note expected 2 @ 4.40, IBKR bought 2 @ 4.40 ✓');
   eq('the note left the inbox as drafted', out.leaving.map(l => l.outcome), ['drafted']);
   eq('and the combo was not also offered as unjournaled', out.counts.unjournaled, 0);
 
@@ -167,7 +171,7 @@ const TODAY = '2026-10-01';
   const d = out.drafts[0];
   eq('a draft trim of 215', [d.kind, d.fill.root, d.fill.side, d.fill.qty], ['fill', 'NFLX', 'SELL', 215]);
   eq('flagged against the note\'s ~200', d.checks.find(c => c.field === 'qty'), { field: 'qty', note: 200, ibkr: 215, ok: false });
-  eq('the card says so', expectationText(d).text, 'note expected 200, IBKR filled 215 @ 1180.50 — note said ~200');
+  eq('the card says so', expectationText(d).text, 'note expected 200, IBKR sold 215 @ 1180.50 — note said ~200');
   ok('one day after the note, inside ±1', d.checks.some(c => c.field === 'date' && c.ibkr === '2026-10-01'));
   // The planner records share fills itself; confirming annotates that row rather than adding a
   // second copy of the same sale.
@@ -521,5 +525,58 @@ globalThis.fetch = realFetch;
   eq('the fill side agrees: 0981 and 981 are one product', productRoot('0981.HK'), productRoot('981'));
 }
 
+
+// ── LEGGING OUT OF AN OPEN SPREAD (14 Oct) ────────────────────────────────────
+// A straddle held as ONE console row; IBKR reports its exit one single-leg order per leg, and the rest
+// of the puts sold on their own. Made-up name and numbers.
+{
+  const XYZ = (id, right, qty, px, time) => O({ ibOrderID: id, conid: `${id}1`, symbol: `XYZ   261120${right}00040000`, underlyingSymbol: 'XYZ', assetCategory: 'OPT',
+    putCall: right, strike: 40, expiry: '20261120', multiplier: 100, buySell: 'SELL', quantity: -qty, tradePrice: px, ibCommission: -1.5, tradeDate: '20261014', dateTime: `20261014;${time}` });
+  const STRADDLE = { id: 'XYZ-st', symbol: 'XYZ', underlying: 'XYZ', instrument: 'spread', side: 'long', multiplier: 100, currency: 'USD', hardDate: '2026-11-19',
+    legs: [{ right: 'C', strike: 40, expiry: '2026-11-20', side: 'long', ratio: 1 }, { right: 'P', strike: 40, expiry: '2026-11-20', side: 'long', ratio: 1 }],
+    fills: [{ id: 'f1', side: 'buy', qty: 6, price: 1.80, date: '2026-10-09' }], thesis: 'long vol into the print', journal: { rules: ['hold the calls'] }, tags: ['journal'] };
+  const T = trades(XYZ('901', 'C', 3, 0.20, '100500'), XYZ('902', 'P', 3, 2.90, '100500'), XYZ('903', 'P', 3, 2.70, '113000'));
+  const out = processInbox({ trades: T, today: '2026-10-14', holidays: US, rows: [STRADDLE], provisional: true });
+  const pair = out.drafts.find(d => d.paired), leg = out.drafts.find(d => d.legOut);
+  eq('three single-leg fills become two cards: the pair sold together, and the put sold alone', [out.drafts.length, pair?.fill.orderId, leg?.fill.orderId], [2, '901+902', '903']);
+  eq('…the pair is one sale of 3 straddles at the legs\' net, on the straddle row', [pair.fill.type, pair.fill.side, pair.fill.qty, pair.fill.rawPrice, pair.paired.rowId], ['COMBO', 'SELL', 3, 3.1, 'XYZ-st']);
+  eq('…and says which way it went', expectationText(pair).text, 'IBKR sold 3 @ 3.10');
+  eq('the put left over knows the row it splits and the prices to split it at (the pair\'s)', [leg.legOut.rowId, leg.legOut.ref.prices, leg.legOut.units], ['XYZ-st', [0.2, 2.9], 6]);
+  eq('fate: the paired orders say so', [out.fate['901'], out.fate['902'], out.fate['903']], ['paired', 'paired', 'unjournaled']);
+  const again = processInbox({ trades: T, today: '2026-10-14', holidays: US, rows: [STRADDLE], provisional: true, drafts: out.drafts, seen: out.seen });
+  eq('a second run changes nothing', again.drafts.map(d => d.id).sort(), out.drafts.map(d => d.id).sort());
+  eq('no rows given: the three single-leg cards, as before', processInbox({ trades: T, today: '2026-10-14', holidays: US }).drafts.length, 3);
+  eq('legTargets: a sale of the put reduces the straddle\'s put leg; a purchase would add to it', [legTargets(leg.fill, [STRADDLE]).map(t => [t.rowId, t.leg]), legTargets({ ...leg.fill, side: 'BUY' }, [STRADDLE]).length], [[['XYZ-st', 1]], 0]);
+
+  // Confirmed in order: the pair, then the put alone.
+  const a = applyDraft([STRADDLE], pair, {}, { today: '2026-10-14' });
+  const pa = derivePosition(a.rows[0].fills, { multiplier: 100, side: 'long' });
+  eq('the pair closes 3 straddles on the straddle row', [a.how, a.rowId, pa.qty], ['added', 'XYZ-st', 3]);
+  const b = applyDraft(a.rows, leg, {}, { today: '2026-10-14' });
+  const [st, c, p] = ['XYZ-st', 'XYZ-st-40C', 'XYZ-st-40P'].map(id => b.rows.find(r => r.id === id));
+  const D = (r) => derivePosition(r.fills, { multiplier: 100, side: r.side });
+  eq('the put alone splits the rest: the straddle closes, one row per leg', [b.how, b.rowId, D(st).status, D(c).qty, D(p).status], ['split', 'XYZ-st-40P', 'closed', 3, 'closed']);
+  eq('…the transfer out is at the straddle\'s own average: its realised P&L is the pair\'s sale alone', +D(st).realized.toFixed(2), +pa.realized.toFixed(2));
+  eq('…the legs carry its cost, divided 0.20 : 2.90 and summing to it exactly', [+c.fills[0].price.toFixed(4), +p.fills[0].price.toFixed(4), +(c.fills[0].price + p.fills[0].price).toFixed(6)], [0.1161, 1.6839, 1.8]);
+  eq('…transfer entries are marked, carry no IBKR id, and the leg rows keep the trade\'s rules', [st.fills.at(-1).transfer, c.fills[0].transfer, c.fills[0].tradeId ?? null, c.journal.rules, c.tags.includes('split')], [true, true, null, ['hold the calls'], true]);
+  eq('…the sale itself is IBKR\'s, on the put row', [p.fills.at(-1).tradeId, p.fills.at(-1).transfer ?? false], ['903', false]);
+  eq('…and the contracts held are what IBKR holds: 3 calls, no puts', [D(c).qty * 1, D(p).qty], [3, 0]);
+
+  // Confirmed the other way round: the put alone first, then the pair onto the rows it split into.
+  const x = applyDraft([STRADDLE], leg, {}, { today: '2026-10-14' });
+  const y = applyDraft(x.rows, pair, {}, { today: '2026-10-14' });
+  const [c2, p2] = ['XYZ-st-40C', 'XYZ-st-40P'].map(id => y.rows.find(r => r.id === id));
+  eq('reverse order: split 6, then the pair lands leg by leg — 3 calls left, puts closed', [x.how, y.how, D(c2).qty, D(p2).status, y.rows.length], ['split', 'added', 3, 'closed', 3]);
+
+  // Refused rather than guessed.
+  eq('no price for every leg: nothing is split, and it says why', /can't split XYZ-st yet/.test(applyDraft([STRADDLE], { ...leg, legOut: { rowId: 'XYZ-st', ref: null, missing: ['40C'] } }).error || ''), true);
+  eq('more than the leg holds: refused', /holds 6/.test(applyDraft([STRADDLE], { ...leg, fill: { ...leg.fill, qty: 9 } }).error || ''), true);
+  const buys = out.drafts.filter(d => d.legOut).map(d => ({ ...d, fill: { ...d.fill, side: 'BUY' } }));
+  eq('pairLegOuts never pairs legs bought the same way as held', pairLegOuts(buys, [STRADDLE]).made.length, 0);
+  const up = upgradeDrafts(out.drafts, orderUnits(T), { asOf: '2026-10-14', fillOf });
+  const upPair = up.drafts.find(d => d.paired);
+  eq('tomorrow\'s statement takes over the pair and keeps its per-leg parts, at the statement\'s numbers', [up.changed, upPair.fill.provisional ?? false, upPair.fill.parts.map(x => [x.orderId, x.rawPrice]), upPair.paired.rowId], [2, false, [['901', 0.2], ['902', 2.9]], 'XYZ-st']);
+  eq('legOutOf without a pair: the other leg\'s nearest same-day fill', legOutOf(leg, [leg, { fill: { ...leg.fill, orderId: '9', legs: [{ ...leg.fill.legs[0], right: 'C' }], rawPrice: 0.3 } }], [STRADDLE]).ref.prices, [0.3, 2.7]);
+}
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

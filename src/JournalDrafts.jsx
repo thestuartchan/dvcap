@@ -7,7 +7,7 @@
 // disagrees with its note can still be confirmed, because the fill is what happened.
 import { useState } from "react";
 import { C } from "./theme.js";
-import { draftCounts, expectationText, fmtPx, amendRow, NOTE_TAGS, LEVEL_LABEL, bulkCandidates, bulkLabel } from "../lib/journalInbox.js";
+import { draftCounts, expectationText, fmtPx, amendRow, NOTE_TAGS, LEVEL_LABEL, bulkCandidates, bulkLabel, legTargets } from "../lib/journalInbox.js";
 
 const isRuleChange = (d) => d.kind === "amend" || (d.kind === "ambiguous" && !!d.candidates?.[0]?.row);
 const GROUPS = [
@@ -149,6 +149,32 @@ function DraftCard({ d, rows, onConfirm, onDismiss, onChoose, busy }) {
         {d.kind === "unfilled" && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>{d.reason || `no matching fill after ${d.waited} sessions`}</span>}
       </div>
       {exp && <div style={{ fontSize: 12.5, fontWeight: 700, color: exp.ok ? C.green : C.amber }}>{exp.text}</div>}
+      {/* LEGGING OUT (14 Oct): what this fill does to a trade already open — the card used to read the
+          same for an opening buy and a closing sale. Live against the console's rows. */}
+      {d.paired && (
+        <div style={{ fontSize: 12, color: C.mid, lineHeight: 1.45 }}>
+          Closes {d.fill.qty} of <b>{d.paired.label}</b> ({d.paired.rowId}). IBKR reported the legs as separate orders
+          ({(d.fill.parts || []).map(p => p.orderId).join(" + ")}); they were sold together, so confirming records one sale on that trade.
+        </div>
+      )}
+      {!d.paired && d.legOut?.ambiguous && (
+        <div style={{ fontSize: 12, color: C.amber, fontWeight: 700 }}>
+          This leg belongs to {d.legOut.ambiguous.length} open trades ({d.legOut.ambiguous.map(x => x.rowId).join(", ")}) — nothing will be split.
+        </div>
+      )}
+      {!d.paired && d.legOut?.rowId && (() => {
+        const live = legTargets(d.fill, rows || []).find(t => t.rowId === d.legOut.rowId);
+        const units = live?.units ?? d.legOut.units;
+        const side = d.legOut.right === "P" ? "puts" : "calls", one = d.legOut.right === "P" ? "put" : "call";
+        return (
+          <div style={{ fontSize: 12, color: d.legOut.ref ? C.mid : C.amber, lineHeight: 1.45, fontWeight: d.legOut.ref ? 400 : 700 }}>
+            Sells the {side} of <b>{d.legOut.label}</b> ({d.legOut.rowId}) on their own.{" "}
+            {d.legOut.ref
+              ? <>Confirming splits its {units} remaining into one trade per leg — its cost divided by {d.legOut.ref.from}, as a transfer with no profit or loss — then records this sale on the {one} trade.</>
+              : <>It can't be split yet: there is no same-day price for {(d.legOut.missing || []).join(", ") || "every leg"} to divide the cost. Confirm the order that sold the legs together first, or sync again.</>}
+          </div>
+        );
+      })()}
       {d.kind === "amend" && <AmendDiff d={d} rows={rows} edit={edit} />}
       {/* A rule change's table already says what the note says; the note itself folds away unless
           it is being edited, or there is no table because the trade is not in this console. */}
