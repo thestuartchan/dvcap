@@ -3873,7 +3873,7 @@
           "state": "turning-down",
           "lean": 1,
           "market": {
-            "verdict": "CONTRACTING",
+            "verdict": "SOFTENING",
             "lean": -1,
             "usable": 5,
             "of": 5
@@ -3920,40 +3920,40 @@
         "regime": {
           "id": "inf",
           "probs": {
-            "ref": 22,
-            "inf": 37,
-            "stag": 26,
-            "def": 15
+            "ref": 28,
+            "inf": 47,
+            "stag": 16,
+            "def": 9
           },
-          "g": 0.11,
-          "gDrift": -1.35,
+          "g": 0.29,
+          "gDrift": -0.95,
           "i": 0.13,
           "iDrift": -0.67,
           "drifting": "def"
         },
         "conditions": {
-          "score": 65.4,
+          "score": 64.7,
           "band": "caution",
           "comps": {
             "credit": 75,
-            "equityVol": 48,
+            "equityVol": 49,
             "ratesVol": 61,
             "realYield": 88,
             "funding": 28,
-            "breadth": 75,
-            "dollar": 88
+            "breadth": 67,
+            "dollar": 87
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 30,
+          "hikeOdds": 28,
           "liq4w": 8
         },
-        "sizing": 0.59,
+        "sizing": 0.63,
         "stage": 2
       },
       "source": "cron",
-      "loggedAt": "2026-10-15T12:36:50.596Z"
+      "loggedAt": "2026-10-15T13:41:13.779Z"
     }
   ]
 }
