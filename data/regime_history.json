@@ -3848,18 +3848,28 @@
       "reflationary_p": 17,
       "deflationary_p": 12,
       "inflationary_p": 5,
-      "hawkish_repricing": null,
+      "hawkish_repricing": "INSUFFICIENT_DATA",
       "live_regime": "stag",
-      "view_regime": null,
-      "pinned": null,
-      "hyg_chg": null,
-      "hyg_qqq_divergence": null,
+      "view_regime": "stag",
+      "pinned": false,
+      "hyg_chg": -0.36,
+      "hyg_qqq_divergence": 1.61,
       "inputs": {
         "weightedRecessionProb": 13.6,
         "cpi": 3.71725,
         "kalshi2027": 20,
-        "tape": null,
-        "ladderSpread": null,
+        "tape": {
+          "gold": "down",
+          "tlt": "up",
+          "xlu": "down",
+          "xlp": "up",
+          "spy": "down",
+          "qqq": "down",
+          "iwm": "down",
+          "btc": "down",
+          "breakevenBp": 2
+        },
+        "ladderSpread": -3.62,
         "u3": 4.2,
         "empPop": 59.2,
         "oas": 3.16,
@@ -3871,23 +3881,23 @@
       "axes": {
         "growth": {
           "state": "turning-down",
-          "lean": 1,
+          "lean": 0,
           "market": {
-            "verdict": "SOFTENING",
+            "verdict": "CONTRACTING",
             "lean": -1,
             "usable": 5,
             "of": 5
           },
           "weekly": {
-            "verdict": "EXPANDING",
-            "lean": 1,
-            "usable": 3,
+            "verdict": "INSUFFICIENT",
+            "lean": null,
+            "usable": 1,
             "of": 4
           },
           "monthly": {
             "verdict": "EXPANDING",
             "lean": 1,
-            "usable": 4,
+            "usable": 3,
             "of": 4
           }
         },
@@ -3913,20 +3923,20 @@
             "of": 3
           }
         },
-        "quadrant": "inf",
-        "quadrantRead": "growth firm, inflation hot"
+        "quadrant": null,
+        "quadrantRead": "between quadrants — the growth axis is flat"
       },
       "state": {
         "regime": {
-          "id": "inf",
+          "id": "stag",
           "probs": {
-            "ref": 28,
-            "inf": 47,
-            "stag": 16,
-            "def": 9
+            "ref": 12,
+            "inf": 21,
+            "stag": 42,
+            "def": 25
           },
-          "g": 0.29,
-          "gDrift": -0.95,
+          "g": -0.21,
+          "gDrift": -1.27,
           "i": 0.13,
           "iDrift": -0.67,
           "drifting": "def"
@@ -3946,14 +3956,14 @@
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 28,
+          "hikeOdds": 24,
           "liq4w": 8
         },
-        "sizing": 0.63,
+        "sizing": 0.51,
         "stage": 2
       },
-      "source": "cron",
-      "loggedAt": "2026-10-15T13:41:13.779Z"
+      "source": "client+cron",
+      "loggedAt": "2026-10-15T13:51:48.405Z"
     }
   ]
 }
