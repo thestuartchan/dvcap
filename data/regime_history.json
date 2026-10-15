@@ -3857,7 +3857,7 @@
       "inputs": {
         "weightedRecessionProb": 13.6,
         "cpi": 3.71725,
-        "kalshi2027": 20,
+        "kalshi2027": 21,
         "tape": {
           "gold": "down",
           "tlt": "up",
@@ -3872,7 +3872,7 @@
         "ladderSpread": -3.62,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.16,
+        "oas": 3.25,
         "tenY": 5.21,
         "twoY": 4.79,
         "consensusAlive": 0.688,
@@ -3881,23 +3881,23 @@
       "axes": {
         "growth": {
           "state": "turning-down",
-          "lean": 0,
+          "lean": 1,
           "market": {
-            "verdict": "CONTRACTING",
+            "verdict": "SOFTENING",
             "lean": -1,
             "usable": 5,
             "of": 5
           },
           "weekly": {
-            "verdict": "INSUFFICIENT",
-            "lean": null,
-            "usable": 1,
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 4,
             "of": 4
           },
           "monthly": {
             "verdict": "EXPANDING",
             "lean": 1,
-            "usable": 3,
+            "usable": 4,
             "of": 4
           }
         },
@@ -3923,20 +3923,20 @@
             "of": 3
           }
         },
-        "quadrant": null,
-        "quadrantRead": "between quadrants — the growth axis is flat"
+        "quadrant": "inf",
+        "quadrantRead": "growth firm, inflation hot"
       },
       "state": {
         "regime": {
-          "id": "stag",
+          "id": "inf",
           "probs": {
-            "ref": 12,
-            "inf": 21,
-            "stag": 42,
-            "def": 25
+            "ref": 28,
+            "inf": 48,
+            "stag": 15,
+            "def": 9
           },
-          "g": -0.21,
-          "gDrift": -1.27,
+          "g": 0.32,
+          "gDrift": -0.95,
           "i": 0.13,
           "iDrift": -0.67,
           "drifting": "def"
@@ -3945,9 +3945,9 @@
           "score": 64.7,
           "band": "caution",
           "comps": {
-            "credit": 75,
-            "equityVol": 49,
-            "ratesVol": 61,
+            "credit": 81,
+            "equityVol": 36,
+            "ratesVol": 68,
             "realYield": 88,
             "funding": 28,
             "breadth": 67,
@@ -3956,14 +3956,14 @@
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 24,
+          "hikeOdds": 28,
           "liq4w": 8
         },
-        "sizing": 0.51,
+        "sizing": 0.63,
         "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-15T13:51:48.405Z"
+      "loggedAt": "2026-10-15T17:22:40.548Z"
     }
   ]
 }
