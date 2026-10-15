@@ -3857,7 +3857,7 @@
       "inputs": {
         "weightedRecessionProb": 13.6,
         "cpi": 3.71725,
-        "kalshi2027": 21,
+        "kalshi2027": 20,
         "tape": null,
         "ladderSpread": null,
         "u3": 4.2,
@@ -3871,7 +3871,7 @@
       "axes": {
         "growth": {
           "state": "turning-down",
-          "lean": 0,
+          "lean": 1,
           "market": {
             "verdict": "CONTRACTING",
             "lean": -1,
@@ -3879,9 +3879,9 @@
             "of": 5
           },
           "weekly": {
-            "verdict": "INSUFFICIENT",
-            "lean": null,
-            "usable": 1,
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 3,
             "of": 4
           },
           "monthly": {
@@ -3913,47 +3913,47 @@
             "of": 3
           }
         },
-        "quadrant": null,
-        "quadrantRead": "between quadrants — the growth axis is flat"
+        "quadrant": "inf",
+        "quadrantRead": "growth firm, inflation hot"
       },
       "state": {
         "regime": {
-          "id": "stag",
+          "id": "inf",
           "probs": {
-            "ref": 13,
-            "inf": 23,
-            "stag": 40,
-            "def": 24
+            "ref": 22,
+            "inf": 37,
+            "stag": 26,
+            "def": 15
           },
-          "g": -0.18,
+          "g": 0.11,
           "gDrift": -1.35,
           "i": 0.13,
           "iDrift": -0.67,
           "drifting": "def"
         },
         "conditions": {
-          "score": 65.9,
+          "score": 65.4,
           "band": "caution",
           "comps": {
             "credit": 75,
-            "equityVol": 49,
+            "equityVol": 48,
             "ratesVol": 61,
             "realYield": 88,
-            "funding": 32,
+            "funding": 28,
             "breadth": 75,
-            "dollar": 86
+            "dollar": 88
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 28,
+          "hikeOdds": 30,
           "liq4w": 8
         },
-        "sizing": 0.52,
+        "sizing": 0.59,
         "stage": 2
       },
       "source": "cron",
-      "loggedAt": "2026-10-15T08:46:07.974Z"
+      "loggedAt": "2026-10-15T12:36:47.393Z"
     }
   ]
 }
