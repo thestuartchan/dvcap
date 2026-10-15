@@ -6696,16 +6696,17 @@
     ]
   },
   "lastFetch": {
-    "at": "2026-10-15T12:37:12.256Z",
+    "at": "2026-10-15T15:35:18.303Z",
     "by": "schedule",
     "ok": true,
-    "changed": true,
+    "changed": false,
     "sources": {
-      "kofia": "updated",
-      "krx": "updated"
+      "kofia": "nothing new",
+      "krx": "nothing new"
     },
     "report": [
       "KOFIA: kospi 2026-10-15, deposits 2026-10-14, marginLoans 2026-10-14, cma 2026-10-14, kr3yGovt 2026-10-15, kr3yCorp 2026-10-15",
+      "KOFIA: nothing new",
       "KRX KOSPI: 2026-10-15 foreign -3758 · inst 1712 · retail 1395 (십억원)",
       "KRX KOSDAQ: 2026-10-15 foreign 222 · inst -161 · retail -75 (십억원)"
     ]
