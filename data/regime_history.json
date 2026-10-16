@@ -3971,24 +3971,34 @@
       "reflationary_p": 17,
       "deflationary_p": 12,
       "inflationary_p": 5,
-      "hawkish_repricing": null,
+      "hawkish_repricing": "INSUFFICIENT_DATA",
       "live_regime": "stag",
-      "view_regime": null,
-      "pinned": null,
-      "hyg_chg": null,
-      "hyg_qqq_divergence": null,
+      "view_regime": "stag",
+      "pinned": false,
+      "hyg_chg": 0.2,
+      "hyg_qqq_divergence": 1.67,
       "inputs": {
         "weightedRecessionProb": 13.6,
         "cpi": 3.71725,
         "kalshi2027": 21,
-        "tape": null,
-        "ladderSpread": null,
+        "tape": {
+          "gold": "up",
+          "tlt": "up",
+          "xlu": "up",
+          "xlp": "up",
+          "spy": "down",
+          "qqq": "down",
+          "iwm": "up",
+          "btc": "down",
+          "breakevenBp": 2
+        },
+        "ladderSpread": -4.01,
         "u3": 4.2,
         "empPop": 59.2,
         "oas": 3.25,
-        "tenY": 5.19,
-        "twoY": 4.82,
-        "consensusAlive": 0.686,
+        "tenY": 5.21,
+        "twoY": 4.79,
+        "consensusAlive": 0.683,
         "regimeVintage": "decayed"
       },
       "axes": {
@@ -3996,7 +4006,7 @@
           "state": "turning-down",
           "lean": 1,
           "market": {
-            "verdict": "SOFTENING",
+            "verdict": "CONTRACTING",
             "lean": -1,
             "usable": 5,
             "of": 5
@@ -4043,13 +4053,13 @@
         "regime": {
           "id": "inf",
           "probs": {
-            "ref": 28,
-            "inf": 48,
-            "stag": 15,
-            "def": 9
+            "ref": 26,
+            "inf": 44,
+            "stag": 19,
+            "def": 11
           },
-          "g": 0.32,
-          "gDrift": -0.95,
+          "g": 0.23,
+          "gDrift": -1.15,
           "i": 0.13,
           "iDrift": -0.67,
           "drifting": "def"
@@ -4072,11 +4082,11 @@
           "hikeOdds": 28,
           "liq4w": 8
         },
-        "sizing": 0.63,
+        "sizing": 0.62,
         "stage": 2
       },
-      "source": "cron",
-      "loggedAt": "2026-10-16T00:49:34.613Z"
+      "source": "client+cron",
+      "loggedAt": "2026-10-16T01:58:33.608Z"
     }
   ]
 }
