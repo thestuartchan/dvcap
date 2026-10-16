@@ -6,7 +6,7 @@
 // appear nowhere in the serialised output. A future edit that adds "· 600 @ 18.06" to a line fails
 // here rather than on a Discord server.
 import { optPx, sectionsOf, fitSections, CARD_SECTIONS, publicView, buildCard, buildClosedCard, closedLine, rOf, lockedPct, isOptionTrade, showsOnCard, CLOSED_WINDOW_DAYS, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, dirOf, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS, DOT } from '../lib/tradecard.js';
-import { isStaleEvent } from '../lib/tradecard.js';
+import { isStaleEvent, optionBias, biasTag } from '../lib/tradecard.js';
 import { isWebhookUrl, alertTtlMin, mentionFromEnv, webhookFromEnv } from '../lib/discord.js';
 import { derivePosition } from '../lib/positions.js';
 import fs from 'node:fs';
@@ -539,7 +539,7 @@ eq('sorted by exit date', order[0].includes('CLOSED_LAST'), true);
   ok('never a contract count', !/×|contracts|qty/i.test(line));
   const unpriced = tradeLine(publicView(spread('SPY', 'hedge', null), { today }));
   eq('premiums in cents; sub-cent ones in significant figures', [optPx(2.7368), optPx(0.4763), optPx(0.00000495)], ['2.74', '0.48', '0.00000495']);
-  ok('no mark says so, and prints no percentage', /_no live mark_/.test(unpriced) && !/%/.test(unpriced));
+  ok('no mark says so, and prints no return', /_no live mark_/.test(unpriced) && !/\*\*[^*]*%\*\*/.test(unpriced));
   ok('an IBKR close mark is labelled', /\(IBKR close\)/.test(tradeLine(publicView(spread('SPY', 'hedge', 5.1, { markSource: 'close' }), { today }))));
   ok('inside a week of expiry the clock is flagged', /⏳ 3 DTE/.test(tradeLine({ ...v, dte: 3 })));
   const uStop = publicView(spread('SPY', 'hedge', 5.1, { levels: [{ kind: 'stop', at: 690, on: 'underlying' }] }), { today });
@@ -549,6 +549,41 @@ eq('sorted by exit date', order[0].includes('CLOSED_LAST'), true);
   const big = Array.from({ length: 70 }, (_, i) => share('S' + i, i - 30, ['position', 'swing', 'hedge'][i % 3]));
   const fitted = fitSections(sectionsOf(big.map(r => publicView(r, { today }))));
   ok('a book too big for full detail still fits', fitted.body.length <= DESC_BUDGET);
+}
+
+// ── WHICH WAY AN OPTION WINS (16 Oct) ────────────────────────────────────────
+// "L" on a long put spread read as bullish; a filled arrow beside the red/green dot read as a price
+// move. An option line now carries C△ (needs the underlying up) or P▽ (down). Fake tickers.
+{
+  const today = '2026-10-16';
+  const leg = (right, strike, side) => ({ right, strike, expiry: '2026-11-20', side, ratio: 1 });
+  eq('a long call pays as it rises, a long put as it falls', [optionBias([leg('C', 50, 'long')]), optionBias([leg('P', 50, 'long')])], [1, -1]);
+  eq('a short put rises, a short call falls', [optionBias([leg('P', 50, 'short')]), optionBias([leg('C', 50, 'short')])], [1, -1]);
+  eq('call debit spread (long the lower) up, call credit spread down', [optionBias([leg('C', 50, 'long'), leg('C', 55, 'short')]), optionBias([leg('C', 55, 'long'), leg('C', 50, 'short')])], [1, -1]);
+  eq('put debit spread (long the higher) down, bull put credit up', [optionBias([leg('P', 12.5, 'long'), leg('P', 10, 'short')]), optionBias([leg('P', 10, 'long'), leg('P', 12.5, 'short')])], [-1, 1]);
+  eq('a row marked short has sold the structure — turned around', optionBias([leg('C', 50, 'long')], 'short'), -1);
+  eq('no single direction (a straddle, a calendar) gives none', [optionBias([leg('C', 50, 'long'), leg('P', 50, 'long')]), optionBias([leg('C', 50, 'long'), { ...leg('C', 50, 'short'), expiry: '2026-12-18' }])], [null, null]);
+
+  eq('the tag: C△ for up, P▽ for down, nothing for neither', [biasTag(1), biasTag(-1), biasTag(null)], ['C△', 'P▽', null]);
+
+  const row = (sym, legs, avg, under, extra = {}) => ({ id: sym, symbol: sym, trade: '', instrument: 'spread', multiplier: 100, tag: 'swing', legs,
+    price: 1.0, underlyingPx: under, markSource: 'live', levels: [],
+    derived: { status: 'open', avgCost: avg, side: 'long', firstDate: '2026-10-01', scaleOuts: [] }, pnl: { unrealizedPct: -10 }, ...extra });
+  const bear = publicView(row('XYZ', [leg('P', 45, 'long'), leg('P', 40, 'short')], 1.8, 46), { today });
+  const bull = publicView(row('ABC', [leg('C', 120, 'long'), leg('C', 130, 'short')], 3, 121.5), { today });
+  const soldPut = publicView(row('DEF', [leg('P', 30, 'short')], -0.9, 32), { today });
+  eq('the view carries the bias', [bear.bias, bull.bias, soldPut.bias], [-1, 1, 1]);
+  ok('bias is a published field', PUBLIC_FIELDS.includes('bias'));
+  ok('a put debit spread reads P▽ at the front, not L', /^\S+ `P▽` \*\*XYZ\*\* Nov20 40\/45 P/.test(tradeLine(bear)));
+  ok('a call debit spread reads C△', /^\S+ `C△` \*\*ABC\*\* Nov20 120\/130 C/.test(tradeLine(bull)));
+  ok('a sold put wants the stock up: C△, though it is a put', /`C△` \*\*DEF\*\* Nov20 30P/.test(tradeLine(soldPut)));
+  ok('the tag wins over L/S when the card marks sides for a short elsewhere', /`P▽` \*\*XYZ\*\*/.test(tradeLine(bear, 'full', { showSide: true })) && !/`[LS]` \*\*XYZ\*\*/.test(tradeLine(bear, 'full', { showSide: true })));
+  ok('no filled arrows anywhere', !/[▲▼]/.test(tradeLine(bear) + tradeLine(bull)));
+  ok('kept at minimal detail', /`P▽` \*\*XYZ\*\*/.test(tradeLine(bear, 'minimal')));
+  const odd = publicView(row('QRS', [leg('C', 20, 'long'), leg('P', 20, 'long')], 1.2, 20), { today });
+  ok('a straddle carries no tag, and no L in an all-long book', !/`[^`]*` \*\*QRS/.test(tradeLine(odd)));
+  ok('but falls back to L when the card marks sides', /`L` \*\*QRS\*\*/.test(tradeLine(odd, 'full', { showSide: true })));
+  ok('shares are unchanged', !/[△▽]/.test(fitLines([publicView({ id: 'S1', symbol: 'DEF', price: 10, levels: [], multiplier: 1, derived: { status: 'open', avgCost: 9, side: 'long', firstDate: '2026-10-01', scaleOuts: [] }, pnl: { unrealizedPct: 11 } }, { today })]).body));
 }
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
