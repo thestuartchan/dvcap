@@ -3996,9 +3996,9 @@
         "u3": 4.2,
         "empPop": 59.2,
         "oas": 3.25,
-        "tenY": 5.21,
-        "twoY": 4.79,
-        "consensusAlive": 0.683,
+        "tenY": 5.19,
+        "twoY": 4.82,
+        "consensusAlive": 0.686,
         "regimeVintage": "decayed"
       },
       "axes": {
@@ -4006,7 +4006,7 @@
           "state": "turning-down",
           "lean": 1,
           "market": {
-            "verdict": "CONTRACTING",
+            "verdict": "SOFTENING",
             "lean": -1,
             "usable": 5,
             "of": 5
@@ -4053,40 +4053,40 @@
         "regime": {
           "id": "inf",
           "probs": {
-            "ref": 26,
-            "inf": 44,
-            "stag": 19,
-            "def": 11
+            "ref": 28,
+            "inf": 48,
+            "stag": 15,
+            "def": 9
           },
-          "g": 0.23,
-          "gDrift": -1.15,
+          "g": 0.32,
+          "gDrift": -0.95,
           "i": 0.13,
           "iDrift": -0.67,
           "drifting": "def"
         },
         "conditions": {
-          "score": 63.1,
+          "score": 60.6,
           "band": "caution",
           "comps": {
             "credit": 81,
-            "equityVol": 30,
+            "equityVol": 19,
             "ratesVol": 68,
             "realYield": 86,
             "funding": 28,
             "breadth": 66,
-            "dollar": 87
+            "dollar": 81
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 28,
+          "hikeOdds": 16,
           "liq4w": 8
         },
-        "sizing": 0.62,
+        "sizing": 0.63,
         "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-16T01:58:33.608Z"
+      "loggedAt": "2026-10-16T08:46:06.387Z"
     }
   ]
 }
