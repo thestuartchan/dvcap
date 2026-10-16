@@ -1806,6 +1806,9 @@ function CreditBlock({ credit, oas, hyg, reconSummary, history, depth = "full" }
 // which way, what is excluded and why, and what flips it. A late input is excluded and named,
 // never counted flat. The informative state is the two legs DISAGREEING — the market turning
 // while the data has not — and the axis line names it as a turning point rather than a conflict.
+// The state says where the legs are heading; the lean is what the quadrant uses. Shown together so
+// "turning cool" next to a quadrant that read inflation as hot is never left unexplained.
+const axisWords = a => a.state.replace("-", " ") + (a.state !== "confirmed" && a.balance ? ` (leans ${a.balance})` : "");
 const AXIS_STATUS = { confirmed: null, "turning-down": "WATCH", "turning-up": "WATCH", split: "WATCH", "market-only": "WATCH", "data-only": "WATCH", insufficient: "WATCH" };
 function GrowthLegBlock({ title, p, kind }) {
   const tok = STATUS[p.status] || STATUS.WATCH;
@@ -1953,6 +1956,7 @@ function GrowthPulsePanel({ growth, market, monthly, ism, onIsmChange }) {
           <SLabel>Growth axis</SLabel>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
             <span style={{ fontSize: 22, fontWeight: 900, letterSpacing: -0.5, color: tok.color, textTransform: "uppercase" }}>{axis.state.replace("-", " ")}</span>
+            {axis.state !== "confirmed" && axis.balance && <span style={{ fontSize: 13, fontWeight: 800, color: C.mid }}>leans {axis.balance}</span>}
             <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: 0.5, color: tok.color, background: tok.bg, border: "1px solid " + tok.bdr, borderRadius: 5, padding: "2px 8px" }}>{st}</span>
           </div>
           <div style={{ fontSize: 12.5, color: C.text, marginTop: 4, lineHeight: 1.5 }}>{axis.read}.</div>
@@ -2005,6 +2009,7 @@ function InflationAxisPanel({ data, liveInd }) {
           <SLabel>Inflation axis</SLabel>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
             <span style={{ fontSize: 22, fontWeight: 900, letterSpacing: -0.5, color: tok.color, textTransform: "uppercase" }}>{axis.state.replace("-", " ")}</span>
+            {axis.state !== "confirmed" && axis.balance && <span style={{ fontSize: 13, fontWeight: 800, color: C.mid }}>leans {axis.balance}</span>}
             <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: 0.5, color: tok.color, background: tok.bg, border: "1px solid " + tok.bdr, borderRadius: 5, padding: "2px 8px" }}>{st}</span>
           </div>
           <div style={{ fontSize: 12.5, color: C.text, marginTop: 4, lineHeight: 1.5 }}>{axis.read}.</div>
@@ -2061,7 +2066,7 @@ function QuadrantStrip({ liveInd, ism, liveRegime, regimeProbFor, regimeVintage 
         )}
       </div>
       <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
-        Growth axis {ax.growth.state.replace("-", " ")} · inflation axis {ax.inflation.state.replace("-", " ")}. The measured quadrant is logged daily beside the consensus regime and drives nothing until the two have been watched against each other.
+        Growth axis {axisWords(ax.growth)} · inflation axis {axisWords(ax.inflation)}. The measured quadrant is logged daily beside the consensus regime and drives nothing until the two have been watched against each other.
       </div>
     </Card>
   );

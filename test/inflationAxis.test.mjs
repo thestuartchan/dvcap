@@ -1,5 +1,5 @@
 // test/inflationAxis.test.mjs — the inflation axis and the measured quadrant.
-import { marketInflation, nowcastInflation, printedInflation, inflationAxis, CORE_HOT, CORE_AT_TARGET, BE_HOT, BE_COLD, OIL_LOOKBACK } from '../lib/inflationAxis.js';
+import { marketInflation, nowcastInflation, printedInflation, inflationAxis, CORE_HOT, CORE_AT_TARGET, BE_HOT, BE_COLD, OIL_LOOKBACK, OIL_EXIT_PCT, BE_EXIT_BP, heldScore } from '../lib/inflationAxis.js';
 import { measuredQuadrant, axisLean, measuredAxes, axesLogRow } from '../lib/quadrant.js';
 import { regimeLogRow, regimeSnapshot } from '../lib/regimeEngine.js';
 
@@ -26,7 +26,7 @@ const fred = (id, history) => ({ id, ok: true, verified: true, mismatch: null, v
   eq('with the 20-session trend in basis points', b5.trendBp, 12);
   eq(`2.30 sits between ${BE_COLD} and ${BE_HOT}`, b10.score, 0);
   eq(`oil +10.8% over ${OIL_LOOKBACK} sessions is an impulse`, [o.score, o.change], [1, 10.8]);
-  ok('the oil flip is a dollar level from the base', /WTI back below \$72/.test(o.flip));
+  ok('the oil flip is the exit level from the base — the impulse lasts until the move is back inside ±5%', /WTI back below \$68/.test(o.flip));
   eq('two hot, one between reads HOT', [p.verdict, p.status, p.lean], ['HOT', 'ELEVATED', 1]);
   ok('the words are inflation words', /hot/.test(p.read) && /between/.test(p.read));
   const cool = marketInflation({ be5: fred('T5YIE', daily('2026-09-11', 30, () => 1.9)), be10: fred('T10YIE', daily('2026-09-11', 30, () => 1.95)), oil: { ok: true, series: daily('2026-09-11', 45, (i, n) => i >= n - 1 ? 58 : 65) } }, { now: NOW });
@@ -66,15 +66,47 @@ const fred = (id, history) => ({ id, ok: true, verified: true, mismatch: null, v
   eq('a missing print is excluded, not zero', printedInflation({ coreCpiYoY: null }, { now: NOW }).legs[0].available, false);
 }
 
+// ── HYSTERESIS: A BAND IS ENTERED AT THE LINE AND LEFT INSIDE A NARROWER ONE ──
+{
+  const oilOf = vals => ({ ok: true, series: daily('2026-09-11', vals.length, i => vals[i]) });
+  const lead = Array(30).fill(65), surge = Array(9).fill(72);   // +10.8% vs 20 sessions earlier
+  const oilLeg = vals => marketInflation({ oil: oilOf(vals) }, { now: NOW }).legs.find(l => l.key === 'oil');
+  const held = oilLeg([...lead, ...surge, 69.6]);
+  eq(`oil back to +7.1% after an impulse is still an impulse — it ends inside ±${OIL_EXIT_PCT}%`, [held.score, held.change, held.held], [1, 7.1, true]);
+  ok('and the read says since when and until what', /held since \d{4}-\d{2}-\d{2} \(\+10\.8%\) until the move is back inside ±5%/.test(held.read));
+  eq('at +3.8% the impulse is over', oilLeg([...lead, ...surge, 67.5]).score, 0);
+  eq('a series that is already +7% when it starts is not invented into an impulse', oilLeg([...Array(20).fill(65), ...Array(5).fill(69.6)]).score, 0);
+  eq('a fall works the same way', oilLeg([...lead, ...Array(9).fill(58), 61]).score, -1);
+  // The 2026-09-14 → 10-15 window: oil's 20-session change crossing ±10% and back. Without the exit
+  // band every crossing is a flip; with it, only entries and exits.
+  const walk = [12, 9.6, 11, 9.8, 4, 0, -10.7, -8.2, -7.5, -11, -7.2, -5.2];
+  const plainFlips = walk.map(c => c >= 10 ? 1 : c <= -10 ? -1 : 0).filter((v, k, a) => k && v !== a[k - 1]).length;
+  const heldFlips = walk.map((_, k) => heldScore(walk.slice(0, k + 1).map(value => ({ value })), { hotIn: 10, hotOut: 5, coldIn: -10, coldOut: -5 }).score)
+    .filter((v, k, a) => k && v !== a[k - 1]).length;
+  eq('a walk that crosses the line seven times flips twice with the exit band', [plainFlips, heldFlips], [7, 2]);
+
+  const beOf = vals => fred('T5YIE', daily('2026-09-11', 30, (i, n) => vals[i - (n - vals.length)] ?? 2.30));
+  const b = v => marketInflation({ be5: beOf(v) }, { now: NOW }).legs.find(l => l.key === 'be5');
+  const bh = b([2.52, 2.47]);
+  eq(`a breakeven back to 2.47 after 2.52 stays hot until it is ${BE_EXIT_BP}bp inside the line`, [bh.score, bh.held], [1, true]);
+  ok('and the read and flip name 2.45, not a rounded 2.5', /until below 2\.45/.test(bh.read) && /below 2\.45/.test(bh.flip));
+  eq('at 2.44 it is between again', b([2.52, 2.44]).score, 0);
+  eq('a breakeven that never crossed is read on the plain band', [b([2.47]).score, b([2.47]).held], [0, false]);
+}
+
 // ── THE AXIS ─────────────────────────────────────────────────────────────────
 {
   const V = (verdict, lean) => ({ verdict, label: verdict, lean });
   eq('all hot is confirmed', inflationAxis({ market: V('HOT', 1), nowcast: V('HOT', 1), printed: V('HOT', 1) }).state, 'confirmed');
   const t = inflationAxis({ market: V('COOLING', -1), nowcast: V('BETWEEN', 0), printed: V('HOT', 1) });
   eq('market cool, nowcast between, printed hot — a turn toward cool, in lead order', t.state, 'turning-cool');
-  ok('the read names the leading leg against the slowest one, with the in-between leg implied by the turn', /The market reads cool while the printed data still reads hot/.test(t.read));
+  ok('the read names the leading leg against the slowest one, with the in-between leg implied by the turn', /the market reads cool while the printed data still reads hot/.test(t.read));
+  ok('and opens with the lean the quadrant takes — neutral when the legs cancel', /^On balance neutral: /.test(t.read) && t.balance === 'between');
   eq('the axis lean is the sign of the sum', t.lean, 0);
   eq('printed hot while both faster legs cool is turning-cool with a cool lean', inflationAxis({ market: V('COLD', -1), nowcast: V('COOLING', -1), printed: V('HOT', 1) }).lean, -1);
+  const cooling = inflationAxis({ market: V('BETWEEN', 0), nowcast: V('BETWEEN', 0), printed: V('HOT', 1) });
+  eq('printed hot with both faster legs between is turning cool but still leans hot — 2026-10-14', [cooling.state, cooling.lean, cooling.balance], ['turning-cool', 1, 'hot']);
+  ok('and the read opens with that lean, so the label and the quadrant never disagree unexplained', /^On balance hot: /.test(cooling.read));
   eq('fast-slow-fast is a split', inflationAxis({ market: V('HOT', 1), nowcast: V('COLD', -1), printed: V('HOT', 1) }).state, 'split');
   eq('nothing usable is insufficient', inflationAxis({}).state, 'insufficient');
 }

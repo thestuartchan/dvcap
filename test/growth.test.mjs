@@ -3,7 +3,7 @@
 // Built from inputs, never from a captured output: every fixture is a synthetic FRED block with
 // the shape api/indicators.js produces, so the verdict is exercised on the arithmetic, and the
 // clock is pinned so no assertion here can drift with the calendar.
-import { growthPulse, marketPulse, monthlyPulse, growthAxis, MARKET_LABEL, MARKET_PAIRS, MONTHLY_SERIES, CFNAI_RECESSION, ISM_STALE_DAYS, MARKET_LOOKBACK, GROWTH_SERIES, CLAIMS_WINDOW, CLAIMS_LOOKBACK, CLAIMS_RISE_PCT, WEI_STRONG, GDPNOW_STRONG, GDPNOW_WEAK, MIN_LEGS } from '../lib/growth.js';
+import { growthPulse, marketPulse, monthlyPulse, growthAxis, MARKET_LABEL, MARKET_PAIRS, MONTHLY_SERIES, CFNAI_RECESSION, ISM_STALE_DAYS, MARKET_LOOKBACK, GROWTH_SERIES, CLAIMS_WINDOW, CLAIMS_LOOKBACK, CLAIMS_RISE_PCT, WEI_STRONG, GDPNOW_STRONG, GDPNOW_WEAK, MIN_LEGS, vintageOf } from '../lib/growth.js';
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; console.log(`✅ ${n}`); } else { fail++; console.log(`❌ ${n}`); } };
@@ -269,7 +269,8 @@ const hoursFlat = () => mSeries('AWHMAN', monthly('2026-08', 16, () => 40.5));
   eq('the two-leg cases are unchanged with the monthly leg absent', growthAxis({ market: V('CONTRACTING'), weekly: V('EXPANDING') }).state, 'turning-down');
   eq('a lone monthly leg reads as data-only', growthAxis({ monthly: V('MIXED') }).state, 'data-only');
   const wording = growthAxis({ market: { verdict: 'CONTRACTING', label: 'PAYING FOR SAFETY' }, weekly: V('EXPANDING'), monthly: V('CONTRACTING') });
-  ok('a split read uses each leg\'s own words — the market pays for safety, it does not contract', /The market paying for safety, the weekly data expanding/.test(wording.read));
+  ok('a split read uses each leg\'s own words — the market pays for safety, it does not contract', /^On balance weakening: the market paying for safety, the weekly data expanding/.test(wording.read));
+  eq('and the split names its lean, the one the quadrant takes', wording.balance, 'weakening');
 }
 // ── A PRINT IS CURRENT UNTIL THE NEXT ONE LANDS ──────────────────────────────
 // 2026-09-14 live: July's Chicago Fed index (dated 07-01, released late August) was the latest
@@ -320,6 +321,18 @@ const ism = (manufacturing, newOrders, services, asOf = '2026-09-01', period = '
 {
   const l = monthlyPulse({ cfnai: cfnaiAt(-0.04) }, { now: NOW }).legs.find(x => x.key === 'cfnai');
   ok('−0.04 prints as −0.04, not −0.0', /Chicago Fed index −0\.04/.test(l.read));
+}
+
+// ── RELEASE-MORNING TOLERANCE ─────────────────────────────────────────────────
+// 2026-10-15, Thursday, 08:36 ET: the cron read the weekly leg before FRED had posted that
+// morning's prints, and the previous week's (9 business days old; 14 for continuing claims) was
+// past a tolerance set to the day. The tolerance is the release-morning age plus one.
+{
+  const thu = new Date('2026-10-15T12:36:00Z');
+  eq('weekly tolerances: claims 10, continuing 15, WEI 10', [GROWTH_SERIES.claims.lagBizDays, GROWTH_SERIES.continuing.lagBizDays, GROWTH_SERIES.wei.lagBizDays], [10, 15, 10]);
+  eq('last week\'s claims are still current on release morning', vintageOf('2026-10-03', GROWTH_SERIES.claims.lagBizDays, thu).late, false);
+  eq('so are continuing claims a week behind them', vintageOf('2026-09-26', GROWTH_SERIES.continuing.lagBizDays, thu).late, false);
+  eq('a week missed outright still drops out the Monday after', vintageOf('2026-10-03', GROWTH_SERIES.claims.lagBizDays, new Date('2026-10-19T14:00:00Z')).late, true);
 }
 
 console.log(`${pass} passed, ${fail} failed`);
