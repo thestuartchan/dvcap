@@ -25,6 +25,7 @@ import { ASSETS } from "../lib/assets.js";
 import { derivePosition, applyRolls, splitIntoTrades, collapseFills, oversellSplit, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, archiveCurve } from "../lib/positions.js";
 import { sideOf, isShort, openSideFor, closeSideFor, geometryCheck, levelVocab, fillVerb, SIDES, SIDE_LABEL, DEFAULT_SIDE } from "../lib/side.js";
 import { fmtPrice } from "../lib/price.js";
+import { markGap } from "../lib/listings.js";
 import { archivePeriods, hiddenSummary, returnStats, splitReturns, archiveKindOf, archiveSorter, ARCHIVE_KINDS, ARCHIVE_SORTS, GRAINS } from "../lib/archive.js";
 import { isOptionTrade } from "../lib/tradecard.js";
 import { CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy, resolveRowCurrency } from "../lib/fxrates.js";
@@ -383,7 +384,7 @@ const {
   delFill, sizeOpen, setSizeOpen, justMoved, drafts, setDraft, clearDraft, chip, ccyChip, fitChip,
   kindCol, money, pnlCol,
   equityBase, baseCcy, fxRates, baseRisk, targetPct, numOrNull,
-  livePositions, sameDayMissing,
+  livePositions, sameDayMissing, flexMarks, listingFixes,
 } = ctx;
   const price = priceOf(r);
   const q = prices?.[quoteSym(r)];
@@ -528,6 +529,27 @@ const {
               that look upside down. Long stays unmarked because it is the overwhelming majority
               and a chip on every row is a chip nobody reads. */}
           {isShort(r.side) ? chip("SHORT", C.blue, C.blBg, C.blBdr) : null}
+          {/* ── NOT THE BROKER'S PRICE ──
+              16 Oct: a London-listed ETF was quoted off the US fund sharing its ticker, 28% away,
+              and nothing on the card said so. Two checks from the last
+              statement (lib/listings.js): IBKR named a listing this row is not quoted off — one
+              click sets "Quote as" — or the live price is more than 15% from IBKR's close mark,
+              which opens the row so the field can be checked. Gone once the price agrees. */}
+          {!o && !r.margined && (() => {
+            const fix = (listingFixes || []).find(n => n.id === r.id && String(n.quoteAs).toUpperCase() !== String(quoteSym(r)).toUpperCase());
+            const fm = flexMarks?.[r.id];
+            const gap = fm ? markGap(q?.price, fm.mark) : null;
+            if (!fix && gap == null) return null;
+            const why = fix
+              ? `IBKR holds this on ${fix.listing || "another listing"}; it is priced off ${quoteSym(r)}. Click to quote it as ${fix.quoteAs}.`
+              : `Live ${q?.price} is ${gap > 0 ? "+" : ""}${gap}% from IBKR's last close mark ${fm.mark}${fm.listing ? ` (${fm.listing})` : ""} — check "Quote as" in the row.`;
+            return (
+              <button title={why} onClick={(e) => { e.stopPropagation(); if (fix) upd(r.id, { quoteSymbol: fix.quoteAs }); else setExpanded(r.id); }}
+                style={{ alignSelf: "center", cursor: "pointer", fontSize: 9.5, fontWeight: 900, letterSpacing: 0.5, color: C.amber, background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 5, padding: "1px 6px", whiteSpace: "nowrap" }}>
+                {fix ? `QUOTE AS ${fix.quoteAs}` : `PRICE ${gap > 0 ? "+" : ""}${gap}% VS IBKR`}
+              </button>
+            );
+          })()}
           {/* THE STATE, as a pill — where the trade IS in its life, derived from the fills and never
               confirmed. WATCHING → OPEN → CLOSED → ARCHIVED (lib/lifecycle.js). */}
           {(() => {
@@ -4112,6 +4134,10 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
     // Same-day fills the last statement did not contain, flagged on their fill (lib/sameDayFills.js).
     sameDayMissing: flexNote?.sameDay?.missing || [],
+    // The last statement's close mark per row, and rows it found quoted off the wrong listing
+    // (lib/listings.js) — for the row's WRONG-PRICE chip.
+    flexMarks: flexNote?.marks || null,
+    listingFixes: (flexNote?.needsYou || []).filter(n => n.quoteAs && n.id),
     // So a row can show the name the feed resolved its symbol to when the static map has none.
     atrFor,
     rollCandidates, guardPanel, coverage,
@@ -4365,6 +4391,17 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
                       screen called it, so the banner named a problem and offered no way through.
                       Offered only where it applies: a cost-only gap. A quantity gap is a missing
                       fill and the server refuses to acknowledge it. */}
+                  {/* The listing fix: sets "Quote as" on the row, the same edit as typing it. */}
+                  {n.quoteAs && n.id && (() => {
+                    const row = rows.find(x => x.id === n.id);
+                    if (!row || String(quoteSym(row)).toUpperCase() === String(n.quoteAs).toUpperCase()) return null;
+                    return (
+                      <button onClick={() => upd(row.id, { quoteSymbol: n.quoteAs })}
+                        style={{ cursor: "pointer", background: C.blue, color: C.onFill, border: "none", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800 }}>
+                        Quote as {n.quoteAs}
+                      </button>
+                    );
+                  })()}
                   {n.ackable && n.id && (
                     <button disabled={ackBusy === n.id} onClick={() => acknowledge(n.id)}
                       style={{ cursor: "pointer", background: C.blue, color: C.onFill, border: "none", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800, opacity: ackBusy === n.id ? 0.5 : 1 }}>

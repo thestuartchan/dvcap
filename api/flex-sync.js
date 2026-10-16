@@ -147,6 +147,8 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
     report: rec.report,
     // The rows it WOULD add, always — so a dry run shows exactly what an apply would do.
     adds: rec.adds,
+    // Rows quoted off a different listing from the one IBKR holds (lib/listings.js). Symbols only.
+    listings: rec.listings.map(l => ({ id: l.id, root: l.root, quoteAs: l.quoteAs, current: l.current, explicit: l.explicit })),
   };
   // ── TRADES ────────────────────────────────────────────────────────────────
   // The Open Positions section cannot say whether an exit was recorded — a sold position is simply
@@ -289,6 +291,11 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
         qtyDiffers: !!d.qty, costDiffers: !!d.avg, ackable: !d.qty && !!(d.avg && d.avg.ibkr != null),
         // What to record so the console matches the statement — IBKR is the record.
         fix: reconcilingFill(d, { asOf, statementFills: (tradePlan?.apply || []).filter(a => a.root === d.root && (a.rowId === d.id || !rows.some(r => r.id === a.rowId))).map(a => a.fill) }) })),
+      // QUOTED OFF THE WRONG LISTING. A London ETF priced as the US fund of the same ticker. The
+      // banner offers the one-click "Quote as" — the console sets the field, as a person would; this
+      // sync still never edits a row. A quoteSymbol set by hand is named, and the button says so.
+      ...rec.listings.map(l => ({ what: `priced off ${l.current}, but IBKR holds it on ${l.listing} — quote it as ${l.quoteAs}${l.explicit ? ' (Quote as was set by hand)' : ''}`,
+        root: l.root, id: l.id, quoteAs: l.quoteAs, listing: l.listing })),
       ...rec.ambiguous.map(a => ({ what: 'ambiguous — two rows share this symbol', root: a.root })),
       ...rec.report.filter(r => r.kind === 'missing-at-broker').map(r => ({ what: 'open here, not at the broker', root: r.root, id: r.id })),
       // Option contracts, by contract rather than by underlying (lib/flex.js optionFindings).
@@ -300,6 +307,10 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
       ...adoption.ambiguous.map(m => ({ what: `same-day fill of ${m.date} matches more than one statement order — kept, provisional`, root: m.symbol, id: m.rowId })),
     ].slice(0, 12),
     summary: [tradePlan ? summariseTrades(tradePlan) : '', summariseActionable(rec)].filter(Boolean).join(' · ') || 'everything reconciles',
+    // The statement's close mark per matched row — prices, no sizes; this note is read only by the
+    // signed-in console. It flags a row whose live price is far from the broker's (lib/listings.js
+    // markGap): the net under the listing check, for a wrong ticker IBKR's listing cannot name.
+    marks: rec.marks,
   });
 
   // TELL SOMEONE. A reconciliation nobody reads is a reconciliation that does not exist, and until
