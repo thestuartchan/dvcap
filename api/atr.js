@@ -155,8 +155,10 @@ export default async function handler(req, res) {
       }
       return res.status(200).json({ range: rg, settled, at: new Date().toISOString(), symbols: out });
     }
-    // An hour: the last bar is today's and moves until the close; the rest never will.
-    res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=21600');
+    // Half an hour, and a short stale window. Six hours of stale-while-revalidate meant the first
+    // read on a Saturday morning could be Friday afternoon's answer — without Friday's close, and
+    // nothing on the panel said so. The panel prints the last close it got (FactorPanel as-of line).
+    res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=600');
     return res.status(200).json({ range: rg, at: new Date().toISOString(), symbols: await closeHistory(list, rg) });
   }
   if (String(cta || '') === '1') {

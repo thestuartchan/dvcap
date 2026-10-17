@@ -3076,10 +3076,9 @@ function IndicatorChart({ ind, live }) {
   const current = ind.id === "yield" && live ? (live.yieldSpread >= 0 ? "+" : "") + live.yieldSpread.toFixed(2) + "%" :
                   ind.id === "unemp" && live ? live.unemployment.toFixed(1) + "%" :
                   ind.id === "credit" && live ? live.creditSpread.toFixed(2) + "%" :
-                  ind.current;
-  const statusColor = ind.status === "GREEN" ? C.green : ind.status === "RED" ? C.red : C.amber;
-  const statusBg    = ind.status === "GREEN" ? C.gBg   : ind.status === "RED" ? C.rBg  : C.aBg;
-  const statusBdr   = ind.status === "GREEN" ? C.gBdr  : ind.status === "RED" ? C.rBdr : C.aBdr;
+                  // No live read: a dash, not the hard-coded figure from when this card was written,
+                  // which rendered as if current with no date beside it.
+                  "—";
 
   // Source date (asOf) for this metric — monthly for unemployment, daily otherwise.
   const asOfKey = ind.id === "unemp" ? "unemployment" : ind.id === "yield" ? "yieldSpread" : ind.id === "credit" ? "creditSpread" : null;
@@ -3092,8 +3091,10 @@ function IndicatorChart({ ind, live }) {
           <SLabel>{ind.name}</SLabel>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
             <span style={{ fontSize: 28, fontWeight: 900, letterSpacing: -1, color: ind.color }}>{current}</span>
-            <Pill label={ind.label} color={statusColor} bg={statusBg} bdr={statusBdr} />
-            {asOfLbl ? <span style={{ fontSize: 11, color: C.lbl, fontWeight: 700 }}>as of {asOfLbl}</span> : null}
+            {/* The fixed status pill ("Watch") sat beside the live signal below and could disagree
+                with it; the signal box is the status. */}
+            {asOfLbl ? <span style={{ fontSize: 11, color: C.lbl, fontWeight: 700 }}>as of {asOfLbl}</span>
+              : <span style={{ fontSize: 11, color: C.muted }}>no live read — the indicator feed has not loaded</span>}
           </div>
         </div>
         {(() => {
@@ -5183,7 +5184,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
             // is not today, and flag stale cache outright — a global stamp must never imply a
             // freshness the per-field stamps contradict.
             const u = updated ? new Date(updated) : null;
-            const today = u && u.toDateString() === new Date().toDateString();
+
             const ageH = u ? (Date.now() - u.getTime()) / 3.6e6 : null;
             const old = ageH != null && ageH > 12;
             return (
@@ -5194,7 +5195,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                     was pulled and is an upper bound on freshness, never a statement that everything
                     on screen is current to it. The per-tile "last print" dates are the authority. */}
                 {old ? "⚠ cached " : "Fetched "}
-                {u ? (today ? fmtTime(u) : u.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + fmtTime(u)) : "—"}
+                {u ? fmtTime(u) : "—"}{/* fmtTime already carries the date and age when it is not today — prefixing it again printed the date twice */}
               </span>
             );
           })()}
@@ -5376,8 +5377,8 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                   hours: a Friday settle served after Sunday's reopen reads STALE rather than
                   passing as a live tick. WTI and Brent both shown — the spread is itself a
                   read on waterborne supply stress. */}
-              <MacroCell field={data.macro.wti}   value={data.macro.wti?.value != null ? "$" + data.macro.wti.value : "—"}     delta={data.macro.wti?.delta} deltaSuffix="" />
-              <MacroCell field={data.macro.brent} value={data.macro.brent?.value != null ? "$" + data.macro.brent.value : "—"} delta={data.macro.brent?.delta} deltaSuffix="" />
+              <MacroCell field={data.macro.wti}   value={data.macro.wti?.value != null ? "$" + data.macro.wti.value : "—"}     delta={data.macro.wti?.delta} deltaSuffix=" $/bbl" />
+              <MacroCell field={data.macro.brent} value={data.macro.brent?.value != null ? "$" + data.macro.brent.value : "—"} delta={data.macro.brent?.delta} deltaSuffix=" $/bbl" />
               {(data.macro.wti?.value != null && data.macro.brent?.value != null) && (
                 <MetricCard label="Brent − WTI"
                   title="waterborne vs landlocked crude — widens on shipping/supply stress"
@@ -5789,7 +5790,8 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                 // C6 — countdown chip so imminence is legible, and adjacent same-window catalysts read
                 // as the collision they are (e.g. NVDA Aug 26 → Jackson Hole Aug 27–29).
                 const days = Math.round((new Date(e.date + "T00:00:00Z") - new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z")) / 864e5);
-                const cd = e.reported ? null : days <= 0 ? "today" : days === 1 ? "tomorrow" : `in ${days}d`;
+                // A past event not marked reported is "passed", not "today" — `days <= 0` used to cover both.
+                const cd = e.reported ? null : days < 0 ? "passed" : days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days}d`;
                 const soon = !e.reported && days >= 0 && days <= 2;
                 return (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0", fontSize: 13, color: e.reported ? C.lbl : C.mid, borderBottom: i < data.calendar.length - 1 ? "1px solid " + C.bdr : "none" }}>
@@ -6214,7 +6216,8 @@ export default function App() {
   useEffect(function() {
     if (tab === "global") pbRegions.forEach(r => fetchPlaybookRegion(r));
     // Credit detail and the yen toggle on Drivers (and the previous Macro layout) read the US payload.
-    else if (tab === "drivers" || tab === "macro" || tab === "indicators") fetchPlaybookRegion("us");
+    // Hedges too: its tape chip and fallback phase read pbData.us, which it never fetched itself.
+    else if (tab === "drivers" || tab === "macro" || tab === "indicators" || tab === "insurance") fetchPlaybookRegion("us");
   }, [tab, pbRegions, fetchPlaybookRegion]);
 
   // Load manual deploy-stage toggles + portfolio value from localStorage
@@ -7176,7 +7179,10 @@ export default function App() {
               : `${REGIMES.find(x => x.id === r.id)?.label ?? r.label} ${r.probs[r.id]}%`;
             const streetDisagrees = r.available && liveRegime && !r.contested && liveRegime.id !== r.id;
             return (
-              <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "nowrap", overflowX: "auto", scrollbarWidth: "none", padding: "7px 2px 3px", borderTop: "1px solid " + C.bdr, marginTop: 4 }}>
+              // WRAPS, NOT SCROLLS. On a 390px phone the strip ran past the edge with its scrollbar
+              // hidden, so "Inflationary Boom 48% → defl" read as cut off and the chips after it
+              // were invisible. It now breaks onto a second line.
+              <div style={{ display: "flex", columnGap: 14, rowGap: 4, alignItems: "center", flexWrap: "wrap", padding: "7px 2px 3px", borderTop: "1px solid " + C.bdr, marginTop: 4 }}>
                 {chip("Regime", `${regTxt}${r.available && r.drifting ? ` → ${{ ref: "refl", inf: "infl", stag: "stag", def: "defl" }[r.drifting]}` : ""}`, pal?.color || C.mid, () => setTab("state"))}
                 <span style={{ color: C.bdr }}>·</span>
                 {chip("Conditions", c?.score != null ? `${c.score} ${c.band.label}${c.trend === "rising" ? " ↑" : c.trend === "easing" ? " ↓" : ""}` : "—", bandCol, () => setTab("state"))}
@@ -7230,6 +7236,14 @@ export default function App() {
         {/* ── GAMMA EXPOSURE ──
             Self-contained: its own tab, its own endpoints, its own state. Nothing about it lives
             in this file beyond the mount, which is the whole point of building it separately. */}
+        {/* A FAILED MACRO REFRESH IS SAID, ON EVERY TAB THAT READS IT. The error was rendered only
+            on the retired Indicators tab, so State, Drivers, Plan, Hedges and Income kept drawing
+            the last stored copy with nothing to say it was old. */}
+        {indError && ["state", "drivers", "plan", "insurance", "income", "global", "smartmoney"].includes(tab) && (
+          <div style={{ padding: "8px 12px", marginBottom: 10, borderRadius: 8, background: C.aBg, border: "1px solid " + C.aBdr, color: C.amber, fontSize: 12.5, fontWeight: 700 }}>
+            ⚠ Macro indicators did not refresh — {indError} Showing the copy from {indUpdated ? new Date(indUpdated).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "an earlier load"}.
+          </div>
+        )}
         {tab === "gex" && <GexPanel />}
         {tab === "ratios" && <RatiosPanel />}
 

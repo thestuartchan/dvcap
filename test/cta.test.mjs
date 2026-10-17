@@ -33,7 +33,7 @@ const N = MIN_BARS + 20;
      ['max long', 'long', 'long', 'neutral', 'neutral', 'short', 'max short']);
   eq('thresholds', [CROWDED, NEUTRAL], [0.8, 0.2]);
   eq('the windows are one, three and twelve months', LOOKBACKS.map(w => w.days), [21, 63, 252]);
-  eq('six markets: equities, bonds, dollar, crude, gold', CTA_MARKETS.map(m => m.key), ['ES', 'NQ', 'ZN', 'DX', 'CL', 'GC']);
+  eq('six markets: equities (Nasdaq first), bonds, dollar, crude, gold', CTA_MARKETS.map(m => m.key), ['NQ', 'ES', 'ZN', 'DX', 'CL', 'GC']);
   eq('crude carries the largest roll caveat, the dollar index none', [CTA_MARKETS.find(m => m.key === 'CL').roll, CTA_MARKETS.find(m => m.key === 'DX').roll], ['high', 'none']);
   eq('quote precision reads like the market', [priceDp(6512.25), priceDp(24.5), priceDp(1.08)], [2, 3, 4]);
 }
