@@ -137,7 +137,11 @@ function sanitizeFill(f) {
     // what allows the Flex query to use a 30-day window and heal a missed run.
     tradeId: cs(f.tradeId, 24) || null,
     // From IBKR's SAME-DAY report, until the next statement adopts it (lib/sameDayFills.js).
-    ...(f.provisional && typeof f.provisional === 'object' ? { provisional: { since: cs(f.provisional.since, 12) } } : {}) };
+    ...(f.provisional && typeof f.provisional === 'object' ? { provisional: { since: cs(f.provisional.since, 12) } } : {}),
+    // A SPLIT'S BOOKKEEPING ENTRY, not a trade (lib/journalInbox.js legOutApply). This whitelist
+    // dropped the flag, so a saved split read as hand-entered fills to the audit and the matcher.
+    // Kept now — and recovered from the entry's own note on rows saved before.
+    ...((f.transfer === true || /^transfer (in|out): /.test(String(f.note || ''))) ? { transfer: true } : {}) };
 }
 function sanitizeRow(r) {
   if (!r || typeof r !== 'object') return null;
@@ -177,6 +181,9 @@ function sanitizeRow(r) {
     // bought another the same day" is also what closing a trade and opening a different one looks
     // like.
     rolledFrom: cs(r.rolledFrom, 48) || null,
+    // The row a leg came out of when a multi-leg position was split (lib/journalInbox.js
+    // legOutApply) — so the closed card can post the whole trade once (lib/tradecard.js splitRootOf).
+    ...(cs(r.splitFrom, 48) ? { splitFrom: cs(r.splitFrom, 48) } : {}),
     // The IBKR cost basis for a position where the two accountings legitimately disagree — the
     // console is average-cost, IBKR reports the lots it actually matched, and after a partial exit
     // they diverge permanently (ARM: 331.56 here, 409.26 there). Recording the broker's number

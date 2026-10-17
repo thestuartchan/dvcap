@@ -155,7 +155,9 @@ export async function refresh(origin, { now = Date.now() } = {}) {
   // A trade carried over from the old sheet (tag broker-fills) is history, not news: it stays off
   // the public card, which would otherwise fill with months-old exits the moment it was imported.
   const closedRows = rows.filter(r => r.derived.status === 'closed' && !r.derived.rolledInto && showsOnCard(r) && !(r.tags || []).includes('broker-fills'));
-  const closed = buildClosedCard(closedRows, { updatedAt: new Date(now).toISOString() });
+  // `related`: every row, so a trade split leg by leg waits off the card until its last piece is
+  // closed and then posts once (lib/tradecard.js splitRootOf).
+  const closed = buildClosedCard(closedRows, { updatedAt: new Date(now).toISOString(), related: rows });
   const c = closedRows.length ? await upsertCard(webhook, state.closedMessageId, closed) : { id: state.closedMessageId };
 
   await kvSetJson(CARD_KEY, {

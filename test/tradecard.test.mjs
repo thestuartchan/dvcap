@@ -6,7 +6,7 @@
 // appear nowhere in the serialised output. A future edit that adds "· 600 @ 18.06" to a line fails
 // here rather than on a Discord server.
 import { optPx, sectionsOf, fitSections, CARD_SECTIONS, publicView, buildCard, buildClosedCard, closedLine, rOf, lockedPct, isOptionTrade, showsOnCard, CLOSED_WINDOW_DAYS, buildAlert, diffRows, tradeLine, distTo, daysHeld, isCashLeg, dirOf, fitLines, sortForCard, DESC_BUDGET, PUBLIC_FIELDS, DOT } from '../lib/tradecard.js';
-import { isStaleEvent, optionBias, biasTag } from '../lib/tradecard.js';
+import { isStaleEvent, optionBias, biasTag, premiumRisk, rOnRisk, splitParentOf, splitRootOf } from '../lib/tradecard.js';
 import { isWebhookUrl, alertTtlMin, mentionFromEnv, webhookFromEnv } from '../lib/discord.js';
 import { derivePosition } from '../lib/positions.js';
 import fs from 'node:fs';
@@ -525,9 +525,10 @@ eq('sorted by exit date', order[0].includes('CLOSED_LAST'), true);
 
   const card = buildCard([share('AMZN', 9, 'position'), share('MCD', -2, 'position'), share('RKLB', 16, 'swing'), share('BRNT', 3, 'hedge'), spread('SPY', 'hedge', 5.1)]);
   const body = card.embeds[0].description;
-  ok('a heading per section, with its count', /__\*\*Positions\*\*__ · 2/.test(body) && /__\*\*Hedges\*\*__ · 2/.test(body));
+  ok('a heading per section, in bold underlined capitals, with its count', /__\*\*POSITIONS\*\*__ · 2/.test(body) && /__\*\*HEDGES\*\*__ · 2/.test(body));
   ok('best to worst inside a section', body.indexOf('**AMZN**') < body.indexOf('**MCD**'));
-  ok('options sit in their own sub-block, after the shares', /\*\*BRNT\*\*[^\n]*\n_Options_\n[^\n]*\*\*SPY\*\* Nov20 720\/750 P/.test(body));
+  ok('options sit in their own sub-block, after the shares, under a bold label with its count', /\*\*BRNT\*\*[^\n]*\n\*\*Options\*\* · 1\n[^\n]*\*\*SPY\*\* Nov20 720\/750 P/.test(body));
+  ok('no italic sub-labels left', !/^_[A-Za-z]+_$/m.test(body));
   ok('the title counts options', /5 positions/.test(card.embeds[0].title));
   const one = buildCard([share('AMZN', 9, 'position'), share('MCD', -2, 'position')]).embeds[0].description;
   ok('a book of one kind has no headings', !/__\*\*/.test(one) && !/_Options_/.test(one));
@@ -535,7 +536,7 @@ eq('sorted by exit date', order[0].includes('CLOSED_LAST'), true);
   const v = publicView(spread('SPY', 'hedge', 5.1), { today });
   eq('an option carries its contract, underlying and clock', [v.opt, v.contract, v.under, v.dte, v.mark], [true, 'Nov20 720/750 P', 668.12, 45, 'live']);
   const line = tradeLine(v);
-  ok('the option line', /\*\*SPY\*\* Nov20 720\/750 P 5\.10 · cost 4\.02 · \*\*\+26\.87%\*\* · SPY 668\.12 · 45 DTE · held 14d/.test(line));
+  ok('the option line', /\*\*SPY\*\* Nov20 720\/750 P 5\.10 · cost 4\.02 · \*\*\+26\.87%\*\* \(\+0\.3R\) · SPY 668\.12 · 45 DTE · held 14d/.test(line));
   ok('never a contract count', !/×|contracts|qty/i.test(line));
   const unpriced = tradeLine(publicView(spread('SPY', 'hedge', null), { today }));
   eq('premiums in cents; sub-cent ones in significant figures', [optPx(2.7368), optPx(0.4763), optPx(0.00000495)], ['2.74', '0.48', '0.00000495']);
@@ -584,6 +585,52 @@ eq('sorted by exit date', order[0].includes('CLOSED_LAST'), true);
   ok('a straddle carries no tag, and no L in an all-long book', !/`[^`]*` \*\*QRS/.test(tradeLine(odd)));
   ok('but falls back to L when the card marks sides', /`L` \*\*QRS\*\*/.test(tradeLine(odd, 'full', { showSide: true })));
   ok('shares are unchanged', !/[△▽]/.test(fitLines([publicView({ id: 'S1', symbol: 'DEF', price: 10, levels: [], multiplier: 1, derived: { status: 'open', avgCost: 9, side: 'long', firstDate: '2026-10-01', scaleOuts: [] }, pnl: { unrealizedPct: 11 } }, { today })]).body));
+}
+
+// ── R FOR AN OPTION WITH NO STOP, AND ONE LINE PER SPLIT TRADE (17 Oct) ──────────
+// An option's risk without a stop is its maximum loss; a straddle legged out of in three rows is
+// one closed trade, posted once its last piece is closed. Fake tickers.
+{
+  const today = '2026-10-17';
+  const leg = (right, strike, side) => ({ right, strike, expiry: '2026-11-20', side, ratio: 1 });
+  eq('a bought option risks its premium', premiumRisk([leg('C', 50, 'long')], 2), 2);
+  eq('so does a long straddle', premiumRisk([leg('C', 50, 'long'), leg('P', 50, 'long')], 3), 3);
+  eq('a debit vertical risks what it cost', premiumRisk([leg('C', 50, 'long'), leg('C', 55, 'short')], 1.5), 1.5);
+  eq('a short row, a credit, or no cost: no premium risk', [premiumRisk([leg('C', 50, 'long')], 2, 'short'), premiumRisk([leg('P', 40, 'short')], 0.9), premiumRisk([leg('C', 50, 'long')], null)], [null, null, null]);
+  eq('R against it: the premium made back is +1R, all of it lost is −1R', [rOnRisk(4, 2, 2), rOnRisk(0, 2, 2), rOnRisk(2.5, 2, 2)], [1, -1, 0.3]);
+
+  const opt = (id, legs, fills, extra = {}) => { const r = { id, symbol: 'XYZ', trade: '', instrument: legs.length > 1 ? 'spread' : 'option', multiplier: 100, tag: 'swing', legs, levels: [], tags: [], fills, ...extra };
+    return { ...r, derived: derivePosition(fills, { multiplier: 100, side: 'long' }) }; };
+  const open1 = opt('o1', [leg('C', 50, 'long'), leg('C', 55, 'short')], [{ id: 'b', side: 'buy', qty: 2, price: 1.5, date: '2026-10-01' }], { price: 2.1, markSource: 'live', underlyingPx: 52 });
+  const ov = publicView(open1, { today });
+  eq('an open debit spread with no stop has an R on its premium', [ov.r, ov.rOnPremium], [0.4, true]);
+  ok('and the line shows it', /\(\+0\.4R\)/.test(tradeLine(ov)));
+  const withStop = publicView({ ...open1, levels: [{ kind: 'stop', at: 1.0 }] }, { today });
+  eq('a stop on the combo still wins', [withStop.r, withStop.rOnPremium], [1.2, null]);
+  const uStop = publicView({ ...open1, levels: [{ kind: 'stop', at: 49, on: 'underlying' }] }, { today });
+  eq('a stop on the underlying still gives no R', [uStop.r, uStop.rOnPremium], [null, null]);
+
+  // The straddle: 8 bought at 2.00; 4 sold together at 2.50; the other 4 split into a put row and a
+  // call row at 1.10 / 0.90 (a transfer: no P&L); the puts sold at 1.60, then the calls at 0.40.
+  const parent = opt('XYZ-s', [leg('C', 50, 'long'), leg('P', 50, 'long')], [
+    { id: 'b', side: 'buy', qty: 8, price: 2.0, date: '2026-10-01' },
+    { id: 's', side: 'sell', qty: 4, price: 2.5, date: '2026-10-05' },
+    { id: 'tx', side: 'sell', qty: 4, price: 2.0, date: '2026-10-05', transfer: true, note: 'transfer out: 4 units moved to XYZ-s-50P and XYZ-s-50C at the average cost — no profit or loss' }]);
+  const tin = (price) => ({ id: 't', side: 'buy', qty: 4, price, date: '2026-10-05', transfer: true, note: 'transfer in: split from XYZ-s on 2026-10-05 when one leg was sold on its own' });
+  const puts = opt('XYZ-s-50P', [leg('P', 50, 'long')], [tin(1.1), { id: 'p', side: 'sell', qty: 4, price: 1.6, date: '2026-10-06' }], { splitFrom: 'XYZ-s', tags: ['split'] });
+  const callsOpen = opt('XYZ-s-50C', [leg('C', 50, 'long')], [tin(0.9)], { tags: ['split'] });   // legacy: no splitFrom, only the note
+  const callsShut = opt('XYZ-s-50C', [leg('C', 50, 'long')], [tin(0.9), { id: 'c', side: 'sell', qty: 4, price: 0.4, date: '2026-10-09' }], { tags: ['split'] });
+  eq('a split row names its parent — by field, or by its transfer note', [splitParentOf(puts), splitParentOf(callsOpen), splitParentOf(parent)], ['XYZ-s', 'XYZ-s', null]);
+  eq('every piece resolves to the same root', ['XYZ-s', 'XYZ-s-50P', 'XYZ-s-50C'].map(id => splitRootOf(id, new Map([parent, puts, callsOpen].map(r => [r.id, r])))), ['XYZ-s', 'XYZ-s', 'XYZ-s']);
+  const closedOf = (rows) => rows.filter(r => r.derived.status === 'closed');
+  const pending = buildClosedCard(closedOf([parent, puts, callsOpen]), { today, related: [parent, puts, callsOpen] }).embeds[0].description;
+  ok('while the calls are open, none of it is on the closed card', !/XYZ/.test(pending));
+  const card = buildClosedCard(closedOf([parent, puts, callsShut]), { today, related: [parent, puts, callsShut] }).embeds[0];
+  const xyz = card.description.split('\n').filter(l => /\*\*XYZ\*\*/.test(l));
+  eq('once the last piece closes, it is ONE line', xyz.length, 1);
+  ok('the whole trade: P&L summed over the pieces (+$200 on $1,600 of premium) is +0.1R, held from open to the last close', /\*\*XYZ\*\* \+Oct20 50C \+Oct20 50P|\*\*XYZ\*\* [^·]*· \*\*\+0\.1R\*\* · held 8d/.test(xyz[0]) && /\*\*\+0\.1R\*\* · held 8d/.test(xyz[0]));
+  eq('it counts as one trade in the title', /· 1 trade$/.test(card.title), true);
+  ok('the footer says how an option R with no stop is measured', /R against the premium paid/.test(card.footer?.text || ''));
 }
 
 console.log(fail?`\n❌ ${fail} FAILED`:`\n✅ ALL ${pass} PASSED`);
