@@ -70,6 +70,7 @@ import { HOLD_TYPES, HOLD_LABEL, anA, holdSettings, defaultDrawdown, otherTypesL
 import { syncStatus } from "../lib/flexStatus.js";
 import { searchBook } from "../lib/positionSearch.js";
 import { FACTORS, FACTOR_SYMBOLS, TAGS, tagOf, LIST_GROUPS, listGroupOf, groupCounts, sortByGroup, filterByGroups, holdingsOf, factorExposure, scenarioPnl, overnightFlag } from "../lib/factorExposure.js";
+import { lastSettledSession, sessionsBetween } from "../lib/ratios.js";
 
 // Shown in the sizing note; kept a constant so the copy and the cap cannot drift apart.
 const CREDIT_DANGER_CAP_LABEL = `×${CREDIT_DANGER_CAP.toFixed(2)}`;
@@ -2414,8 +2415,33 @@ const isStale = (asOf) => {
 // what it cannot see, are in lib/factorExposure.js.
 const FACTOR_LOOKBACK_DAYS = 100;
 const numOr = (v, d) => (Number.isFinite(+v) && +v > 0 ? +v : d);
-function FactorPanel({ rows, toBase, nlv, baseCcy, today }) {
+// Narrow screens get the two windows stacked rather than side by side (390px phone: the 60-session
+// columns were cut off). Read once and on resize; no CSS-in-JS media queries in this file.
+function useNarrow(px = 560) {
+  const q = typeof window !== "undefined" && window.matchMedia ? window.matchMedia(`(max-width: ${px}px)`) : null;
+  const [narrow, setNarrow] = useState(!!q?.matches);
+  useEffect(() => {
+    if (!q) return undefined;
+    const on = () => setNarrow(q.matches);
+    q.addEventListener?.("change", on);
+    return () => q.removeEventListener?.("change", on);
+  }, []);   // eslint-disable-line
+  return narrow;
+}
+// A line's name: the ticker, and for an option or spread the CONTRACT. "SLV" three times was a
+// straddle and the two rows it split into; "INTC" with "no delta yet" was an INTC option row, not
+// the shares.
+const factorLabel = (r) => {
+  if (isDerivativeRow(r)) {
+    const c = legLabel(r.legs || [], { year: false });
+    return `${underlyingOf(r) || r.symbol}${c ? " " + c : ""}`;
+  }
+  return r.symbol + (r.trade && r.trade.trim().toUpperCase() !== r.symbol.toUpperCase() ? ` · ${r.trade}` : "");
+};
+const R2_WEAK = 0.10;   // below this a loading is noise, and is drawn that way
+function FactorPanel({ rows, toBase, nlv, baseCcy, today, nlvAsOf = null, positionsAsOf = null }) {
   const [mode, setMode] = useState("held");
+  const narrow = useNarrow();
   const [open, setOpen] = useState(null);
   const [hist, setHist] = useState({ state: "idle", symbols: {}, key: "" });
   const since = new Date(Date.parse(today + "T00:00:00Z") - FACTOR_LOOKBACK_DAYS * 86400000).toISOString().slice(0, 10);
@@ -2424,7 +2450,7 @@ function FactorPanel({ rows, toBase, nlv, baseCcy, today }) {
   const specs = useMemo(() => rows.filter(r => (r.fills || []).length && (r.state === "OPEN" ||
       String(r.derived?.lastDate || "").slice(0, 10) >= since)).map(r => {
     const holdings = holdingsOf(r);
-    const base = { id: r.id, label: r.symbol + (r.trade && r.trade.trim().toUpperCase() !== r.symbol.toUpperCase() ? ` · ${r.trade}` : ""),
+    const base = { id: r.id, label: factorLabel(r), open: r.state === "OPEN",
                    tag: tagOf(r), symbol: quoteSym(r), holdings, qtyNow: r.state === "OPEN" ? (holdings.at(-1)?.[1] ?? 0) : 0 };
     if (isHlPerp(r.symbol)) return { ...base, skip: "no daily history (Hyperliquid)" };
     const fx = toBase(1, r);
@@ -2474,11 +2500,28 @@ function FactorPanel({ rows, toBase, nlv, baseCcy, today }) {
   const w60 = fx?.ok ? Object.fromEntries(fx.windows[60].map(x => [x.factor, x])) : {};
   const th = { fontSize: 10, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4, textAlign: "right", padding: "4px 6px", whiteSpace: "nowrap" };
   const td = { fontSize: 12, textAlign: "right", padding: "5px 6px", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" };
-  const cells = (x, edge = false) => { const t0 = edge ? { ...td, borderLeft: "1px solid " + C.bdr } : td; return x?.usdPerUnit == null ? [<td key="b" style={t0}>—</td>, <td key="r" style={td}>—</td>, <td key="u" style={td}>—</td>] : [
-    <td key="b" style={{ ...t0, fontWeight: 800 }}>{x.beta == null ? "—" : x.beta.toFixed(2)}</td>,
-    <td key="r" style={{ ...td, color: x.r2 < 0.1 ? C.muted : C.mid }}>{x.r2.toFixed(2)}</td>,
-    <td key="u" style={{ ...td, color: col(x.usdPerUnit), fontWeight: 700 }}>{signed(x.usdPerUnit)}</td>,
+  // A WEAK FIT IS DRAWN AS ONE. Below R² 0.10 the factor explains under a tenth of the book's daily
+  // moves and its β is mostly noise, but it was printed in the same weight and colour as a 0.55.
+  // Those cells are muted and say why on hover; nothing is hidden.
+  const weak = (x) => x?.r2 != null && x.r2 < R2_WEAK;
+  const weakTip = (x) => weak(x) ? `loading not reliable — R² ${x.r2.toFixed(2)} is below ${R2_WEAK.toFixed(2)}: this factor explains little of the book's daily moves in this window` : undefined;
+  const cells = (x, edge = false) => { const t0 = edge ? { ...td, borderLeft: "1px solid " + C.bdr } : td; const w = weak(x); const dim = w ? { opacity: 0.45 } : {}; return x?.usdPerUnit == null ? [<td key="b" style={t0} title="no fit in this window">—</td>, <td key="r" style={td}>—</td>, <td key="u" style={td}>—</td>] : [
+    <td key="b" title={weakTip(x)} style={{ ...t0, ...dim, fontWeight: w ? 500 : 800, color: w ? C.muted : undefined }}>{x.beta == null ? "—" : x.beta.toFixed(2)}</td>,
+    <td key="r" title={weakTip(x)} style={{ ...td, ...dim, color: w ? C.muted : C.mid }}>{x.r2.toFixed(2)}</td>,
+    <td key="u" title={weakTip(x)} style={{ ...td, ...dim, color: w ? C.muted : col(x.usdPerUnit), fontWeight: w ? 500 : 700 }}>{signed(x.usdPerUnit)}</td>,
   ]; };
+  // ── WHAT IS NOT IN IT, AND AS OF WHEN ──
+  // "Not in it" named every row held at some point in the window that could not be priced —
+  // contracts closed weeks ago among them, the same underlying listed once per row. It names what
+  // is HELD NOW and left out, once per contract; closed lines the window could not price are
+  // counted, because their missing days still shape the "as held" history.
+  const skippedOpen = fx?.ok ? [...new Map(fx.skipped.filter(s => specs.find(l => l.id === s.id)?.open).map(s => [`${s.label}|${s.why}`, s])).values()] : [];
+  const skippedClosed = fx?.ok ? fx.skipped.filter(s => !specs.find(l => l.id === s.id)?.open).length : 0;
+  const settled = lastSettledSession();
+  const behind = (d) => d ? sessionsBetween(d, settled) : null;
+  const closesBehind = fx?.ok ? behind(fx.last) : null;
+  const posBehind = behind(positionsAsOf);
+  const nlvAge = nlvAsOf ? equityFreshness(nlvAsOf, today) : null;
   const shockText = sc?.ok ? Object.entries(sc.shocks).map(([k, v]) => {
     const f = FACTORS.find(x => x.id === k);
     return `${f.label.replace(" front", "")} ${v > 0 ? "+" : "−"}${Math.abs(v)}${f.kind === "bp" ? "bp" : "%"}`;
@@ -2500,7 +2543,35 @@ function FactorPanel({ rows, toBase, nlv, baseCcy, today }) {
       {hist.state === "error" && <div style={{ fontSize: 12, color: C.amber, marginTop: 8 }}>⚠ price history unavailable — {hist.err}</div>}
       {fx && !fx.ok && <div style={{ fontSize: 12, color: C.amber, marginTop: 8 }}>⚠ {fx.reason}</div>}
       {fx?.ok && (<>
-        <div style={{ overflowX: "auto", marginTop: 8 }}>
+        {/* AS OF, BOTH HALVES. The positions come from the last IBKR statement; the closes from the
+            price feed. Either one a full session behind the last settled close is amber. */}
+        <div style={{ fontSize: 11.5, color: C.mid, marginTop: 6, display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <span title="the rows' fills, last reconciled against this IBKR statement; fills recorded since (Sync now, or by hand) are in too">positions reconciled to IBKR <b style={{ color: posBehind > 0 ? C.amber : C.text }}>{positionsAsOf || "— no statement synced yet"}</b>{posBehind > 0 ? ` · ${posBehind} session${posBehind === 1 ? "" : "s"} behind` : ""}</span>
+          <span>closes to <b style={{ color: closesBehind > 0 ? C.amber : C.text }}>{fx.last}</b>{closesBehind > 0 ? ` · ${closesBehind} session${closesBehind === 1 ? "" : "s"} behind ${settled}` : ""}</span>
+        </div>
+        {narrow ? (
+          // Stacked on a phone: one block per window, each fits 390px.
+          [[20, w20], [60, w60]].map(([w, W]) => (
+            <div key={w} style={{ marginTop: 10 }}>
+              <div style={{ ...th, textAlign: "left", padding: "0 0 3px" }}>{w} sessions</div>
+              <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                <thead><tr>
+                  <th style={{ ...th, textAlign: "left" }}>Factor</th>
+                  <th style={{ ...th, textTransform: "none" }} title="book % per unit move">β</th><th style={th}>R²</th><th style={th}>$ / unit</th>
+                </tr></thead>
+                <tbody>
+                  {FACTORS.map(f => (
+                    <tr key={f.id} onClick={() => setOpen(open === f.id ? null : f.id)} style={{ cursor: "pointer", borderTop: "1px solid " + C.bdr }}>
+                      <td style={{ ...td, textAlign: "left", fontWeight: 800, whiteSpace: "normal", opacity: weak(W[f.id]) ? 0.6 : 1 }} title={weakTip(W[f.id])}>{f.label} <span style={{ fontWeight: 500, color: C.muted, fontSize: 11 }}>/{f.unit}</span></td>
+                      {cells(W[f.id])}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))
+        ) : (
+        <div style={{ overflowX: "auto", marginTop: 8, maxWidth: "100%" }}>
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 560 }}>
             <thead>
               <tr>
@@ -2522,7 +2593,7 @@ function FactorPanel({ rows, toBase, nlv, baseCcy, today }) {
                 return (
                   <Fragment key={f.id}>
                     <tr onClick={() => setOpen(isOpen ? null : f.id)} style={{ cursor: "pointer", borderTop: "1px solid " + C.bdr, background: isOpen ? C.bg : "transparent" }}>
-                      <td style={{ ...td, textAlign: "left", fontWeight: 800 }}>{isOpen ? "▾" : "▸"} {f.label} <span style={{ fontWeight: 500, color: C.muted, fontSize: 11 }}>per {f.unit}</span></td>
+                      <td title={weak(a) && weak(b) ? "loading not reliable in either window (R² below 0.10)" : undefined} style={{ ...td, textAlign: "left", fontWeight: 800, opacity: weak(a) && weak(b) ? 0.6 : 1 }}>{isOpen ? "▾" : "▸"} {f.label} <span style={{ fontWeight: 500, color: C.muted, fontSize: 11 }}>per {f.unit}</span></td>
                       {cells(a)}
                       {cells(b, true)}
                       <td style={{ ...td, textAlign: "left", color: C.mid, fontSize: 11.5 }}>{(b?.top || []).length ? b.top.slice(0, 2).map((t, i) => <span key={t.id}>{i ? ", " : ""}{t.label.split(" · ")[0]} <span style={{ color: col(t.usd) }}>{signed(t.usd)}</span></span>) : "—"}</td>
@@ -2552,6 +2623,7 @@ function FactorPanel({ rows, toBase, nlv, baseCcy, today }) {
             </tbody>
           </table>
         </div>
+        )}
         {sc?.ok && (
           <div style={{ marginTop: 10, paddingTop: 9, borderTop: "1px solid " + C.bdr }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
@@ -2573,9 +2645,10 @@ function FactorPanel({ rows, toBase, nlv, baseCcy, today }) {
           </div>
         )}
         <div style={{ fontSize: 10.5, color: C.muted, marginTop: 9, lineHeight: 1.5 }}>
-          β is book % per unit move on {nlv ? usd(nlv) : "NLV (set account equity for β)"}; $ / unit is the slope itself. {fx.first} → {fx.last}, {fx.sessions} sessions{fx.short ? " — fewer than 60, so the 60 is what there is" : ""}.
-          Close to close, so intraday trades do not count. Options at today's delta on the underlying; futures on the continuous front month, roll days included.
-          {fx.skipped.length > 0 && <> Not in it: {fx.skipped.map(s => `${s.label} (${s.why})`).join(", ")}.</>}
+          β is book % per unit move on {nlv ? usd(nlv) : "NLV (set account equity for β)"}{nlv ? <> (<span style={{ color: nlvAge?.stale ? C.amber : undefined }}>{nlvAsOf ? `account equity as of ${nlvAsOf}${nlvAge?.days ? `, ${nlvAge.days}d ago` : ""}` : "account equity — no date recorded"}</span>, set in Settings)</> : null}; $ / unit is the slope itself. {fx.first} → {fx.last}, {fx.sessions} sessions{fx.short ? " — fewer than 60, so the 60 is what there is" : ""}.
+          Close to close, so intraday trades do not count. Shares, ETFs and futures at delta 1 per unit; options at today's delta on the underlying; futures on the continuous front month, roll days included. Faded rows: R² below {R2_WEAK.toFixed(2)}, loading not reliable.
+          {skippedOpen.length > 0 && <> Held and not in it: {skippedOpen.map(s => `${s.label} (${s.why})`).join(", ")}.</>}
+          {skippedClosed > 0 && <> {skippedClosed} closed line{skippedClosed === 1 ? "" : "s"} in the window could not be priced (no delta recorded) — their days are missing from "as held", and they are not in today's book.</>}
         </div>
       </>)}
       {flags.length > 0 && (
@@ -2998,9 +3071,14 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   // Deliberately NOT the whole payload. Re-reading the console rows on a refresh would overwrite
   // unsaved edits with whatever was last synced, which is a data-loss bug wearing a refresh
   // button. Only the read-only, server-owned fields are re-read here.
-  const refreshLive = useCallback(() => fetch("/api/manual-entry?live=1")
-    .then(r => r.json())
+  // A REFUSED OR FAILED READ IS NOT DATA. Neither path checked r.ok: a 401 or 500 body
+  // ({ error }) was read as an answer — the live blocks blanked, and the chain stamp read "just
+  // now" over a failed fetch. Now it is an error, said in the console, and nothing is replaced.
+  const [loadErr, setLoadErr] = useState(null);
+  const readLive = () => fetch("/api/manual-entry?live=1").then(r => r.ok ? r.json() : r.json().catch(() => ({})).then(b => Promise.reject(new Error(`${r.status}${b?.error ? ` — ${b.error}` : ""}`))));
+  const refreshLive = useCallback(() => readLive()
     .then(j => {
+      setLoadErr(null);
       const hl = j?.hyperliquid;
       setLivePositions(hl?.ok && Array.isArray(hl.positions)
         ? Object.fromEntries(hl.positions.map(p => [p.coin, p])) : null);
@@ -3013,14 +3091,15 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       setJournal(j?.journal || null);
       setChainAt(new Date().toISOString());
     })
-    .catch(() => { /* leave the last good read on screen rather than blanking it */ }), []);
+    .catch((e) => { setLoadErr(String(e?.message || e)); /* the last good read stays on screen, and the banner says it is old */ }), []);
 
   useEffect(() => {
     try {
       const c = JSON.parse(localStorage.getItem(LS) || "null");
       if (c) { setRows(backfillMultipliers(c.rows || []).rows); setSettings(s => ({ ...s, ...(c.settings || {}) })); }
     } catch { /* no cache */ }
-    fetch("/api/manual-entry?live=1").then(r => r.json()).then(j => {
+    readLive().then(j => {
+      setLoadErr(null);
       // Real perp positions, keyed by coin, when HYPERLIQUID_ADDRESS is configured. Keyed rather
       // than listed because every consumer looks one up by coin and none of them iterates.
       const hl = j?.hyperliquid;
@@ -3052,7 +3131,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       setPreread(Array.isArray(j?.preread) ? j.preread : null);
       setChainAt(new Date().toISOString());
       setLoaded(true);
-    }).catch(() => setLoaded(true));
+    }).catch((e) => { setLoadErr(String(e?.message || e)); setLoaded(true); });
   }, []);
   useEffect(() => {
     if (!loaded) return;
@@ -4299,6 +4378,11 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           )}
         </Card>
       )}
+      {loadErr && (
+        <div style={{ padding: "9px 13px", borderRadius: 10, border: "1.5px solid " + C.aBdr, background: C.aBg, color: C.amber, fontSize: 12.5, fontWeight: 700 }}>
+          ⚠ The server did not answer ({loadErr}). Showing this browser's saved copy — the IBKR sync note, cash book and journal may be old, and Save will not reach other devices until it does.
+        </div>
+      )}
       {flexNote && flexNote.at !== noteSeen && (flexNote.applied || flexNote.needsYou?.length || flexNote.discarded) && (
         <div style={{ padding: "10px 13px", borderRadius: 10, border: "1.5px solid " + (flexNote.needsYou?.length || flexNote.discarded ? C.aBdr : C.bdr), background: flexNote.needsYou?.length || flexNote.discarded ? C.aBg : C.surf }}>
           <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
@@ -4651,7 +4735,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       </ExposureTile>
 
       {/* ── FACTOR EXPOSURE ── realised betas and the oil-shock day, beside the delta view above. */}
-      <FactorPanel rows={derivedRows} toBase={toBase} nlv={equityBase} baseCcy={baseCcy} today={todayISO} />
+      <FactorPanel rows={derivedRows} toBase={toBase} nlv={equityBase} baseCcy={baseCcy} today={todayISO} nlvAsOf={settings.equityAsOf || null} positionsAsOf={flexNote?.asOf || null} />
 
       {/* ── P4 — RISK COVERAGE ──
           Three numbers, same units, never summed, and never collapsed into one. A single
@@ -4687,7 +4771,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
         {showSizing && (<>
         <div style={{ marginTop: 9, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
           <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Account equity ({baseCcy})<br />
-            <NumCommit dk="equity" drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={settings.equity} placeholder="e.g. 208597" width={124}
+            <NumCommit dk="equity" drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={settings.equity} placeholder="e.g. 250000" width={124}
               title="A rough figure is fine — sizing is linear in equity, so being 5% out moves a suggestion by 5%."
               onCommit={v => { setSettings(x => ({ ...x, equity: v, equityAsOf: new Date().toISOString().slice(0, 10) })); touch(); }} />
             {(() => {
