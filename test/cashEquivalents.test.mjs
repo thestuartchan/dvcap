@@ -132,5 +132,16 @@ for (const dir of ['lib', 'api', 'src', 'scripts']) {
 eq('#6 no file defines its own cash list', offenders, []);
 ok('#6 the non-US list carries IB01 with its conid', NON_US_CASH_EQUIVALENTS.some(e => e.root === 'IB01' && e.conid === '354802220'));
 
+// ── THE LISTING IN "QUOTE AS" (17 Oct) ────────────────────────────────────────
+// A console row named plain IB01 and priced off IB01.L read as untagged: the suffix was looked for
+// in the symbol only. The quote symbol counts when it names the same root.
+ok('IB01 quoted as IB01.L is cash', isCashEquivalent({ symbol: 'IB01', quoteSymbol: 'IB01.L' }));
+ok('and accumulating', isAccumulating({ symbol: 'IB01', quoteSymbol: 'IB01.L' }));
+ok('bare IB01 with nothing else is still not — non-US tickers collide', !isCashEquivalent({ symbol: 'IB01' }));
+ok('a quote symbol for a different root does not lend its suffix', !isCashEquivalent({ symbol: 'IB01', quoteSymbol: 'XYZ.L' }));
+ok('a US cash fund quoted off another market is not the US fund', !isCashEquivalent({ symbol: 'USFR', quoteSymbol: 'USFR.L' }));
+ok('USFR as typed is unchanged', isCashEquivalent({ symbol: 'USFR' }));
+eq('it is delta 0 in the book', equityDelta('IB01', null, { symbol: 'IB01', quoteSymbol: 'IB01.L' }).delta, 0);
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
