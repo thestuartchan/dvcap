@@ -283,6 +283,27 @@ eq('bulk confirm clears the exact match, refuses the amend, and logs one entry p
   [bulk.code, bulk.body.journal.confirmed, bulk.body.journal.refused, bulk.body.journal.drafts.map(d => d.id), log.map(e => [e.id, e.outcome, e.bulk])],
   [200, ['d-900001'], ['m-x'], ['m-x'], [['fcx-nov-75-85c', 'confirmed', true]]]);
 
+// ── A SPLIT SURVIVES A SAVE (17 Oct) ──────────────────────────────────────────
+// The store's fill whitelist dropped `transfer`, so a split's bookkeeping entries read as typed-in
+// fills after the first save. Kept now, recovered from the note on older rows, and the leg row
+// keeps the name of the row it came out of.
+{
+  const { CONSOLE_KEY } = await import('../lib/kv.js');
+  const legRow = { id: 'XYZ-s-50C', symbol: 'XYZ', instrument: 'option', multiplier: 100, splitFrom: 'XYZ-s', tags: ['split'],
+    legs: [{ right: 'C', strike: 50, expiry: '2026-11-20', side: 'long', ratio: 1 }],
+    fills: [{ id: 't1', side: 'buy', qty: 4, price: 0.9, date: '2026-10-05', transfer: true, note: 'transfer in: split from XYZ-s on 2026-10-05' },
+            { id: 't2', side: 'buy', qty: 1, price: 0.9, date: '2026-10-05', note: 'transfer in: split from XYZ-s on 2026-10-05 (saved before the flag was kept)' },
+            { id: 'f1', side: 'sell', qty: 2, price: 1.2, date: '2026-10-06', note: 'typed by hand' }] };
+  // The handler reads the data file from GitHub first; there is none here.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => /api\.github\.com/.test(String(url)) ? { ok: false, status: 404, json: async () => ({}), text: async () => '' } : realFetch(url, init);
+  const saved = await callEntry({ console: { rows: [legRow] } });
+  globalThis.fetch = realFetch;
+  const back = JSON.parse(mem.get(CONSOLE_KEY)).rows[0];
+  eq('a save keeps the transfer flag, recovers it from the note, and adds it nowhere else', [saved.code, back.fills.map(f => !!f.transfer)], [200, [true, true, false]]);
+  eq('and the leg row keeps splitFrom', back.splitFrom, 'XYZ-s');
+}
+
 // ── A PLAN NOTE FOR A TRADE ALREADY HELD (SPY, 9 Oct) ─────────────────────────
 {
   const { CONSOLE_KEY } = await import('../lib/kv.js');
