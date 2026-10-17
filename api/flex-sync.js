@@ -46,7 +46,8 @@ import { runJournal } from '../lib/journalStore.js';
 import { journalLine, orderUnits } from '../lib/journalInbox.js';
 import { parseTradeConfirms, tcSections } from '../lib/flexTrades.js';
 import { adoptProvisional, tcQueryId, TC_QUERY_ENV, TC_WAITS_MS, SYNC_NOW_MIN_INTERVAL_S, skipOnSameDay, syncNowLine, recordLag, lagText } from '../lib/sameDayFills.js';
-import { hasSessionCookie } from '../lib/apiauth.js';
+import { hasSessionCookie, hasJournalReadKey } from '../lib/apiauth.js';
+import { journalOrdersFromFlex } from '../lib/dayTradeJournal.js';
 import { readJournal } from '../lib/journalStore.js';
 import { kvSetNxEx } from '../lib/kv.js';
 import HOLIDAYS from '../data/holidays.json' with { type: 'json' };
@@ -482,8 +483,42 @@ export async function sizerRuns(run = null) {
   return { ok: true, runs, wrote: false };
 }
 
+// ?journal=1&from=YYYY-MM-DD&to=YYYY-MM-DD — the day-trading journal's weekly sync. Each option
+// order's contract for the window, read from the statement with IBKR's documented date override,
+// so the journal can cut option round trips per contract (lib/dayTradeJournal.js). READ ONLY:
+// nothing is stored, nothing is posted. Its own key (lib/apiauth.js hasJournalReadKey) or the
+// dashboard session; the service key does not open it and its key opens nothing else.
+export const JOURNAL_MAX_DAYS = 92;
+export function journalRange(q = {}) {
+  const from = String(q.from ?? '').trim(), to = String(q.to ?? '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return { error: 'from and to are required, as YYYY-MM-DD' };
+  const days = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000;
+  if (!(days >= 0)) return { error: 'from must be on or before to' };
+  if (days > JOURNAL_MAX_DAYS) return { error: `at most ${JOURNAL_MAX_DAYS} days per request` };
+  return { from, to };
+}
+async function journalOrders(range) {
+  if (!flexConfigured()) return { ok: false, error: 'IBKR_FLEX_TOKEN / IBKR_FLEX_QUERY_ID not set in the environment' };
+  const { token, queryId } = flexEnv();
+  // No pending-statement memory here: the daily sync owns PENDING_KEY, and a weekly read that has
+  // to wait simply asks again.
+  const got = await fetchStatement({ token, queryId, range });
+  if (!got.ok) return { ok: false, error: got.error, retryable: !!got.retryable };
+  const orders = journalOrdersFromFlex(parseTrades(got.xml));
+  return { ok: true, from: range.from, to: range.to, asOf: isoDate(got.statement?.toDate) || null, count: orders.length, orders };
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') { res.status(405).json({ error: 'method not allowed' }); return; }
+  if (String(req.query?.journal ?? '') === '1') {
+    res.setHeader('Cache-Control', 'private, no-store');
+    if (!(hasJournalReadKey(req) || await hasSessionCookie(req))) { res.status(401).json({ ok: false, error: 'unauthorised' }); return; }
+    const range = journalRange(req.query);
+    if (range.error) { res.status(400).json({ ok: false, error: range.error }); return; }
+    try { res.status(200).json(await journalOrders(range)); }
+    catch { console.error('journal read failed'); res.status(200).json({ ok: false, error: 'the statement could not be read' }); }
+    return;
+  }
   if (!(await authorised(req))) { res.status(401).json({ error: 'unauthorised', why: refusalReason(req) }); return; }
   // ?tc=1 — Sync now. THE CONSOLE'S OWN SESSION ONLY: not the cron's service key, and never the
   // journal token (which passes nothing anywhere — lib/apiauth.js). About one a minute: a click

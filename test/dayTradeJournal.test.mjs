@@ -1,6 +1,10 @@
 // test/dayTradeJournal.test.mjs — the day-trading record: what the console's rules leave out.
 import { parseBrokerFills } from '../lib/fillAudit.js';
-import { nyDate, isoWeek, weekOf, mergeWeeks, journalReason, roundTripsFromSheet, roundTripsFromIbkr, toWeeks, FEED_FROM } from '../lib/dayTradeJournal.js';
+import { nyDate, isoWeek, weekOf, mergeWeeks, journalReason, roundTripsFromSheet, roundTripsFromIbkr, toWeeks, FEED_FROM,
+  contractFromDescription, contractKey, journalOrdersFromFlex } from '../lib/dayTradeJournal.js';
+import { sendRequestUrl } from '../lib/flex.js';
+import { hasJournalReadKey, hasServiceKey } from '../lib/apiauth.js';
+import { journalRange } from '../api/flex-sync.js';
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; console.log(`✅ ${n}`); } else { fail++; console.log(`❌ ${n}`); } };
@@ -94,6 +98,84 @@ eq('the same feed round trip under another id replaces the stored copy and keeps
   eq('a spread\'s legs closed as two orders are not a round trip', roundTripsFromIbkr({ positions: [], trades: [
     T(60, 'JPY', 'FOP', 'BUY', 2, 5e-7, '2026-10-07T18:58:46Z', 277.22, 80), T(61, 'JPY', 'FOP', 'SELL', 2, 3.5e-6, '2026-10-07T19:08:33Z', -672.78, 81)] }), []);
   eq('a split fill gives one id whichever way the broker lists it', [split(x => x), split(x => [x[1], x[0], x[2]])], [['ib-31'], ['ib-31']]);
+}
+
+// ── ONE CONTRACT AT A TIME (17 Oct 2026) ──
+// The feed calls every option fill by its underlying. A 1-DTE call bought on Wednesday, partly sold
+// Thursday and expired for the rest (booked overnight) kept the underlying's combined position
+// open across two separate day trades, which vanished into one multi-day "trade". Fake ticker,
+// made-up sizes and prices.
+eq('the connector\'s position line names the contract', contractFromDescription("XYZ Oct15'26 100 CALL @AMEX"), { root: 'XYZ', expiry: '2026-10-15', right: 'C', strike: 100 });
+eq('a put, and a share line is not a contract', [contractKey(contractFromDescription("XYZ Oct16'26 90.5 PUT @CBOE")), contractFromDescription('XYZ')], ['XYZ|2026-10-16|P|90.5', null]);
+{
+  const T = (id, order, side, size, price, time, realized = 0) => ({ trade_id: id, order_id: order, symbol: 'XYZ', sec_type: 'OPT', side, size, price, trade_time: time, realized_pnl: realized, commission: 1, currency: 'USD' });
+  const trades = [
+    T('a1', 11, 'BUY', 10, 1.00, '2026-10-14T15:00:00Z'),
+    T('b1', 12, 'BUY', 5, 1.00, '2026-10-15T14:00:00Z'),
+    T('b2', 13, 'SELL', 5, 1.50, '2026-10-15T14:30:00Z', 245),
+    T('a2', 14, 'SELL', 6, 0.40, '2026-10-15T15:00:00Z', -365),
+    T('c1', 15, 'BUY', 3, 2.00, '2026-10-16T14:00:00Z'),
+    T('c2', 16, 'SELL', 3, 3.00, '2026-10-16T14:20:00Z', 297),
+    T('a3', 17, 'SELL', 4, 0, '2026-10-17T05:00:00Z', -400),          // the expiry booking
+  ];
+  const C = { root: 'XYZ', expiry: '2026-10-15', right: 'C', strike: 100 }, P1 = { root: 'XYZ', expiry: '2026-10-16', right: 'P', strike: 95 }, P2 = { ...P1, strike: 90 };
+  const O = (orderId, c, side, qty, price, date) => ({ orderId, ...c, side, qty, price, date });
+  const orders = [O('11', C, 'buy', 10, 1.00, '2026-10-14'), O('12', P1, 'buy', 5, 1.00, '2026-10-15'), O('13', P1, 'sell', 5, 1.50, '2026-10-15'),
+                  O('14', C, 'sell', 6, 0.40, '2026-10-15'), O('15', P2, 'buy', 3, 2.00, '2026-10-16'), O('16', P2, 'sell', 3, 3.00, '2026-10-16')];
+  const positions = [{ contract_description: "XYZ Oct16'26 90 PUT @AMEX", position: 0, average_price: 0, asset_class: 'OPT' }];
+  const merged = roundTripsFromIbkr({ trades, positions, since: '2026-10-01' });
+  eq('by underlying alone it is one trade, held past a day, and drops out of the journal', merged.length, 0);
+  const report = {};
+  const split = roundTripsFromIbkr({ trades, positions, since: '2026-10-01', contracts: orders, report });
+  eq('by contract it is three', split.map(r => [r.contract, r.reason]), [
+    ['XYZ 2026-10-15 100C', 'opened at 1 DTE'], ['XYZ 2026-10-16 95P', 'held under 24h'], ['XYZ 2026-10-16 90P', 'held under 24h']]);
+  eq('the expiry booking closes the call it belongs to', split[0].closedAt, '2026-10-17T05:00:00Z');
+  eq('each keeps IBKR\'s own realised P&L', split.map(r => r.pnlUsd), [-765, 245, 297]);
+  eq('and the three add up to what the merged trade was', split.reduce((a, r) => a + r.pnlUsd, 0), -765 + 245 + 297);
+  eq('the first keeps the merged trade\'s id, so a re-run replaces the stored row', split[0].id, 'ib-a1');
+  eq('nothing was left grouped', report.unresolvedRoots, []);
+  // The statement's order ids are not the feed's: the order itself is matched instead.
+  const noIds = orders.map(o => ({ ...o, orderId: `x${o.orderId}` }));
+  eq('matched on date, side, size and price when the ids do not meet', roundTripsFromIbkr({ trades, positions, since: '2026-10-01', contracts: noIds }).map(r => r.contract),
+    ['XYZ 2026-10-15 100C', 'XYZ 2026-10-16 95P', 'XYZ 2026-10-16 90P']);
+  // One order the statement does not have: the underlying is not half split, it falls back whole.
+  const r2 = {};
+  roundTripsFromIbkr({ trades, positions, since: '2026-10-01', contracts: orders.filter(o => o.orderId !== '15'), report: r2 });
+  eq('a fill with no contract leaves its underlying grouped, and says so', r2.unresolvedRoots, ['XYZ']);
+  // Two candidate statement orders for one feed order: no guess.
+  const twin = [...noIds, { ...noIds[4], orderId: 'dup', strike: 85 }];
+  const r3 = {};
+  roundTripsFromIbkr({ trades, positions, since: '2026-10-01', contracts: twin, report: r3 });
+  eq('an ambiguous match is not guessed at', r3.unresolvedRoots, ['XYZ']);
+}
+{
+  const flexRows = [
+    { assetCategory: 'OPT', orderId: '7', root: 'XYZ   261016P00095000', symbol: 'XYZ   261016P00095000', side: 'buy', qty: 2, rawPrice: 1.1, price: 1.11, date: '2026-10-16' },
+    { assetCategory: 'STK', orderId: '8', root: 'XYZ', symbol: 'XYZ', side: 'buy', qty: 5, rawPrice: 10, date: '2026-10-16' },
+  ];
+  eq('the statement\'s option orders, contract read from the OCC symbol; shares left out', journalOrdersFromFlex(flexRows),
+    [{ orderId: '7', root: 'XYZ', expiry: '2026-10-16', right: 'P', strike: 95, side: 'buy', qty: 2, price: 1.1, date: '2026-10-16' }]);
+}
+
+// ── THE ROUTE'S EDGES ──
+ok('the statement request carries IBKR\'s date override when asked', /&fd=20261012&td=20261016&v=3$/.test(sendRequestUrl('t', 'q', { from: '2026-10-12', to: '2026-10-16' })));
+ok('and not otherwise', !/fd=/.test(sendRequestUrl('t', 'q')));
+eq('a window is required, ordered, and bounded', [journalRange({}).error != null, journalRange({ from: '2026-10-16', to: '2026-10-12' }).error != null,
+  journalRange({ from: '2026-01-01', to: '2026-10-16' }).error != null, journalRange({ from: '2026-10-12', to: '2026-10-16' })],
+  [true, true, true, { from: '2026-10-12', to: '2026-10-16' }]);
+{
+  const keep = { ...process.env };
+  const req = (h) => ({ headers: h, query: {} });
+  process.env.JOURNAL_READ_KEY = 'read-key-123'; process.env.TRADECARD_KEY = 'service-key-456'; delete process.env.TRADECARD_SECRET; delete process.env.JOURNAL_INBOX_TOKEN;
+  ok('the journal key opens the journal read', hasJournalReadKey(req({ 'x-journal-key': 'read-key-123' })));
+  ok('a wrong key does not', !hasJournalReadKey(req({ 'x-journal-key': 'read-key-124' })));
+  ok('the service key does not open it', !hasJournalReadKey(req({ 'x-journal-key': 'service-key-456' })));
+  ok('and the journal key is never a service key', !hasServiceKey(req({ 'x-tradecard-key': 'read-key-123' })));
+  process.env.TRADECARD_KEY = 'read-key-123';
+  ok('set to the same value as the service key, it opens nothing', !hasJournalReadKey(req({ 'x-journal-key': 'read-key-123' })));
+  delete process.env.JOURNAL_READ_KEY;
+  ok('unset, it lets nobody in', !hasJournalReadKey(req({ 'x-journal-key': '' })));
+  for (const k of ['JOURNAL_READ_KEY', 'TRADECARD_KEY']) { if (k in keep) process.env[k] = keep[k]; else delete process.env[k]; }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
