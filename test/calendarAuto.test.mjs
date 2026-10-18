@@ -71,12 +71,17 @@ eq('the tab keeps the hand-kept FOMC row and adds the BoJ meeting the hand list 
   let calls = 0;
   const fetchImpl = async (url) => { calls++; const host = Object.keys(pages).find(h => url.includes(h)); return { ok: !!host, status: host ? 200 : 404, text: async () => pages[host] }; };
   const now = new Date('2026-10-18T09:00:00Z');
-  const first = await autoCalendar({ now, fetchImpl, kv });
+  // FRED is stubbed: the real one would answer during the deployment's own build (its key is set
+  // there) and make this test depend on where it runs.
+  const fredUp = async () => ({ dates: { 'Consumer Price Index': ['2026-11-10'] }, errors: {} });
+  const fredDown = async () => ({ dates: {}, errors: { all: 'HTTP 503' } });
+  const first = await autoCalendar({ now, fetchImpl, kv, fredDates: fredUp });
   eq('the first read fetches each page once and is stored', [first.cache, calls, !!store[CAL_AUTO_KEY]], ['live', 5, true]);
-  const second = await autoCalendar({ now: new Date(now.getTime() + 3600e3), fetchImpl, kv });
+  eq('and carries the FRED dates', first.events.some(e => e.kind === 'cpi' && e.date === '2026-11-10'), true);
+  const second = await autoCalendar({ now: new Date(now.getTime() + 3600e3), fetchImpl, kv, fredDates: fredUp });
   eq('within 12 hours the stored copy is served, no fetch', [second.cache, calls], ['kv', 5]);
   const down = async () => ({ ok: false, status: 503, text: async () => '' });
-  const stale = await autoCalendar({ now: new Date(now.getTime() + 13 * 3600e3), fetchImpl: down, kv });
+  const stale = await autoCalendar({ now: new Date(now.getTime() + 13 * 3600e3), fetchImpl: down, kv, fredDates: fredDown });
   eq('when every source fails later, the last good copy is served and marked stale', [stale.cache, stale.events.length === first.events.length, stale.sources.fomc.ok], ['stale', true, false]);
 }
 
