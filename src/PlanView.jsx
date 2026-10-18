@@ -135,7 +135,26 @@ function CellDetail({ cell, meta, statusTone, fillNote }) {
   );
 }
 
-export function PlanView({ st, allocations, bucketMeta, statusTone, fillNote = (s) => s, portfolioValue = "", onGo = () => {} }) {
+// The total the bucket ranges are sized against. Typed here, kept in this browser only
+// (App.jsx stores it under portfolio_total_value), never sent anywhere. It used to sit on the
+// retired Posture tab, which left Plan's dollar ranges with no way to set them.
+function PortfolioValueInput({ pv, onChange }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
+      <label htmlFor="plan-pv-input" style={{ fontSize: 12.5, fontWeight: 700, color: C.mid, whiteSpace: "nowrap" }}>Portfolio value</label>
+      <div style={{ display: "flex", alignItems: "center", border: "1.5px solid " + C.bdr, borderRadius: 8, padding: "5px 9px", background: C.bg, flex: "1 1 160px", maxWidth: 240 }}>
+        <span style={{ color: C.muted, fontSize: 14, fontWeight: 700, marginRight: 4 }}>$</span>
+        <input id="plan-pv-input" inputMode="numeric" placeholder="for $ ranges" autoComplete="off"
+          value={pv > 0 ? pv.toLocaleString("en-US") : ""} onChange={e => onChange(e.target.value)}
+          style={{ border: "none", outline: "none", background: "transparent", fontSize: 14, fontWeight: 700, color: C.text, width: "100%", minWidth: 0 }} />
+      </div>
+      {pv > 0 && <button onClick={() => onChange("")} style={{ background: "none", border: "none", color: C.muted, fontSize: 12, fontWeight: 700, cursor: "pointer", textDecoration: "underline", padding: 0 }}>clear</button>}
+      <span style={{ fontSize: 11, color: C.lbl }}>stored in this browser only, never sent</span>
+    </div>
+  );
+}
+
+export function PlanView({ st, allocations, bucketMeta, statusTone, fillNote = (s) => s, portfolioValue = "", onPortfolioValue = null, onGo = () => {} }) {
   const grid = useMemo(() => postureGrid(allocations), [allocations]);
   const probs = st?.regime?.available ? st.regime.probs : null;
   const band = st?.conditions?.band?.id ?? null;
@@ -173,6 +192,7 @@ export function PlanView({ st, allocations, bucketMeta, statusTone, fillNote = (
           Each bucket is the probability-weighted range across the four regimes at today's conditions; the status and note are the leading regime's ({QUADRANTS[lead].short}).
           In the grid below, Calm and Caution are each regime's allocation as written; Stress adds 5pp cash and 3pp hedges, Crisis 10pp and 6pp, funded from deployment first and then core and income.
         </div>
+        {onPortfolioValue && <PortfolioValueInput pv={pv} onChange={onPortfolioValue} />}
       </Card>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>

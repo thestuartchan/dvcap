@@ -8,6 +8,7 @@
 // measured one, never an input to it.
 //
 // Pure rendering: App fetches and computes, these draw. Nothing here reads private data.
+import { dubaiEtStamp } from "../lib/timeFmt.js";
 import { useState } from "react";
 import { C, alpha } from "./theme.js";
 import { Card, SLabel, StaleChip } from "./ui.jsx";
@@ -38,7 +39,7 @@ const pretty = (s) => (s ? s.replace(/_/g, " ").replace(/^./, c => c.toUpperCase
 const fmtWhen = (iso) => {
   if (!iso) return "—";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return Number.isNaN(d.getTime()) ? "—" : dubaiEtStamp(d);
 };
 const fmtDay = (iso) => (iso ? new Date(iso + "T12:00:00Z").toLocaleDateString([], { month: "short", day: "numeric", timeZone: "UTC" }) : "—");
 

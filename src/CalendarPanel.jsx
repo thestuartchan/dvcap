@@ -5,6 +5,16 @@ import { useMemo, useState } from "react";
 import { C } from "./theme.js";
 import { Card, SLabel } from "./ui.jsx";
 import { calendarMonths, tzCity, REGIONS } from "../lib/calendarView.js";
+import { dubaiEt, zonedInstant } from "../lib/timeFmt.js";
+
+// Dubai first, ET in brackets (lib/timeFmt.js), then the event's own city when it is neither:
+// "03:50 Dubai (18:50 ET) · Tokyo 08:50". A row with no zone keeps the time as entered.
+const whenOf = (e, city) => {
+  const at = e.tz ? zonedInstant(e.date, e.time, e.tz) : null;
+  if (!at) return `${e.time}${city ? ` ${city}` : ""}`;
+  const own = city && e.tz !== "America/New_York" && e.tz !== "Asia/Dubai" ? ` · ${city} ${e.time}` : "";
+  return `${dubaiEt(at, { refDate: e.date })}${own}`;
+};
 
 // The viewer's own calendar date — "today" is where they are, not UTC.
 const localToday = () => new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -88,7 +98,7 @@ export function CalendarPanel({ extra = [], autoSources = null }) {
                             <span title={e.auto ? `Read automatically from ${e.source}` : undefined} style={{ fontWeight: Number(e.tier) === 1 ? 700 : 500, textDecoration: e.reported ? "line-through" : "none", overflowWrap: "anywhere" }}>{e.title}</span>
                             <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "2px 8px", fontSize: 11.5, color: C.muted, fontVariantNumeric: "tabular-nums" }}>
                               <span style={{ fontWeight: 700, color: C.lbl }}>{REGION_LABEL[e.region] || e.region}</span>
-                              {e.time && <span>{e.time}{city ? ` ${city}` : ""}</span>}
+                              {e.time && <span>{whenOf(e, city)}</span>}
                               <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: cd.warn ? C.amber : C.lbl, background: cd.warn ? C.aBg : "transparent", border: "1px solid " + (cd.warn ? C.aBdr : C.bdr), borderRadius: 4, padding: "1px 5px" }}>{cd.txt}</span>
                             </span>
                           </div>
