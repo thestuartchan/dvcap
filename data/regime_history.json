@@ -4213,9 +4213,9 @@
     },
     {
       "date": "2026-10-18",
-      "stagflation_p": 55,
-      "reflationary_p": 20,
-      "deflationary_p": 20,
+      "stagflation_p": 66,
+      "reflationary_p": 17,
+      "deflationary_p": 12,
       "inflationary_p": 5,
       "hawkish_repricing": "INSUFFICIENT_DATA",
       "live_regime": "stag",
@@ -4224,9 +4224,9 @@
       "hyg_chg": -0.35,
       "hyg_qqq_divergence": 2.15,
       "inputs": {
-        "weightedRecessionProb": 15,
+        "weightedRecessionProb": 13.5,
         "cpi": 3.71725,
-        "kalshi2027": 25,
+        "kalshi2027": 21,
         "tape": {
           "gold": "down",
           "tlt": "up",
@@ -4244,11 +4244,24 @@
         "oas": 3.23,
         "tenY": 5.1,
         "twoY": 4.77,
-        "consensusAlive": 0.561,
+        "consensusAlive": 0.678,
         "regimeVintage": "decayed"
       },
       "state": {
-        "regime": null,
+        "regime": {
+          "id": "inf",
+          "probs": {
+            "ref": 28,
+            "inf": 48,
+            "stag": 15,
+            "def": 9
+          },
+          "g": 0.32,
+          "gDrift": -0.95,
+          "i": 0.13,
+          "iDrift": -0.67,
+          "drifting": "def"
+        },
         "conditions": {
           "score": 68.9,
           "band": "caution",
@@ -4264,10 +4277,10 @@
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": null,
+          "hikeOdds": 16,
           "liq4w": 8
         },
-        "sizing": 0.8,
+        "sizing": 0.63,
         "stage": 2
       },
       "axes": {
@@ -4319,7 +4332,7 @@
         "quadrantRead": "growth firm, inflation hot"
       },
       "source": "client",
-      "loggedAt": "2026-10-18T09:37:53.207Z"
+      "loggedAt": "2026-10-18T09:37:54.403Z"
     }
   ]
 }
