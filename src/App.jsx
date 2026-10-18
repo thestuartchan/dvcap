@@ -8,6 +8,7 @@ import { GexPanel } from "./GexPanel.jsx";
 import { CtaPanel } from "./CtaPanel.jsx";
 import { RatiosPanel } from "./RatiosPanel.jsx";
 import { CalendarPanel } from "./CalendarPanel.jsx";
+import { GoBar, GoKey } from "./GoBar.jsx";
 import { CorrelationPanel } from "./CorrelationPanel.jsx";
 import { ScenarioBoard } from "./ScenarioBoard.jsx";
 import {
@@ -5959,6 +5960,19 @@ export default function App() {
   // middle of Market Watch is the kind of small incoherence that makes an ordering feel arbitrary.
   const [tab, setTab]           = useState("global");
   const [showLegacy, setShowLegacy] = useState(false);   // the previous Market Watch tabs, while they are offered
+  // THE GO BAR (src/GoBar.jsx): open state, and the last Gamma symbol it asked for.
+  const [goOpen, setGoOpen] = useState(false);
+  const [gexRequest, setGexRequest] = useState(null);
+  // "/" outside a text field, or Ctrl/Cmd+K anywhere, opens it — the keys every palette uses.
+  useEffect(() => {
+    const onKey = (e) => {
+      const el = e.target, typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
+      if ((e.key === "k" || e.key === "K") && (e.metaKey || e.ctrlKey)) { e.preventDefault(); setGoOpen(true); return; }
+      if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); setGoOpen(true); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [theme, setTheme]       = useTheme();
   // THE PINNED NAV'S HEIGHT, as --nav-h on the root. Anything that pins itself below the nav (the
   // Console's book tabs) uses it as its `top`, so the two never overlap however the nav wraps.
@@ -7076,6 +7090,14 @@ export default function App() {
     const level = stateFeedStatus.error && !stateFeed ? "red" : notes.length ? "amber" : "green";
     return { level, title: notes.length ? `Data health: ${notes.join(", ")}. Click for detail.` : "Data health: every input current. Click for detail." };
   })();
+  // What a Go bar line does once chosen (lib/goCommands.js says what it means).
+  const runGo = (r) => {
+    if (r.tab) {
+      setTab(r.tab);
+      if (r.tab === "gex" && r.symbol) setGexRequest({ symbol: r.symbol, n: Date.now() });
+    } else if (r.action === "refresh") { fetchPrices(HEADER_TICKERS); fetchIndicators(); }
+    else if (String(r.action || "").startsWith("theme:")) setTheme(r.action.slice(6));
+  };
 
   return (
     <div style={{ background: C.bg, minHeight: "100vh", width: "100%", color: C.text, fontFamily: "'DM Sans', system-ui, sans-serif" }}>
@@ -7093,7 +7115,7 @@ export default function App() {
                 📊 Market Watch Dashboard
               </h1>
               <p className="mwd-tagline" style={{ margin: 0, color: C.muted, fontSize: 13 }}>
-                Market state · Drivers · The Street · Plan · Hedges · Income
+                Markets · Tickers · Book · Plan
               </p>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: "100%" }}>
@@ -7144,11 +7166,11 @@ export default function App() {
               Selecting a group moves to its FIRST tab rather than leaving the second row pointing
               at a section you are not on. A group button that changes the menu without changing
               the page is the thing people click twice and then stop trusting. */}
-          <div className="mwd-tabrow" style={{ display: "flex", gap: 6, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
+          <div className="mwd-tabrow mwd-grouprow" style={{ display: "flex", gap: 6, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
             {TAB_GROUPS.map(g => {
               const on = !!inGroup && g.id === activeGroup.id;
               return (
-                <button key={g.id} onClick={() => { if (!on) setTab(g.tabs[0].id); }} style={{
+                <button key={g.id} className="mwd-group-btn" onClick={() => { if (!on) setTab(g.tabs[0].id); }} style={{
                   background: on ? C.blBg : "transparent",
                   border: "1.5px solid " + (on ? C.blue : C.bdr),
                   borderRadius: 999, color: on ? C.blue : C.mid,
@@ -7160,14 +7182,19 @@ export default function App() {
                 </button>
               );
             })}
+            <button className="mwd-nav-pill" onClick={() => setGoOpen(true)} title="Go to any view: type a code like ECO or PORT, or a ticker with GEX. Shortcut: / or Ctrl+K" aria-label="Open the Go bar"
+              style={{ background: "transparent", border: "1.5px solid " + C.bdr, borderRadius: 999, color: C.mid, padding: "5px 10px", fontSize: 12, fontWeight: 800,
+                       cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <GoKey small /><span className="mwd-data-label" style={{ color: C.muted }}>/</span>
+            </button>
             {(() => {
               const on = tab === HEALTH_TAB.id;
               const dot = { green: C.green, amber: C.amber, red: C.red }[health.level];
               return (
-                <button onClick={() => setTab(HEALTH_TAB.id)} title={health.title} aria-label={health.title} style={{
+                <button className="mwd-nav-pill" onClick={() => setTab(HEALTH_TAB.id)} title={health.title} aria-label={health.title} style={{
                   background: on ? C.blBg : "transparent", border: "1.5px solid " + (on ? C.blue : C.bdr), borderRadius: 999,
                   color: on ? C.blue : C.mid, padding: "5px 11px", fontSize: 12, fontWeight: 800, cursor: "pointer",
-                  whiteSpace: "nowrap", flexShrink: 0, marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6,
+                  whiteSpace: "nowrap", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6,
                 }}>
                   <span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: 99, background: dot, display: "inline-block" }} />
                   <span className="mwd-data-label">Data</span>
@@ -7237,6 +7264,8 @@ export default function App() {
         </div>
       </div>
 
+      {goOpen && <GoBar onClose={() => setGoOpen(false)} onRun={runGo} />}
+
       {/* ── CONTENT ── */}
       <div className="mwd-content-pad" style={{ maxWidth: 1080, margin: "0 auto", padding: "16px" }}>
 
@@ -7270,7 +7299,8 @@ export default function App() {
         {/* ── GAMMA EXPOSURE ──
             Self-contained: its own tab, its own endpoints, its own state. Nothing about it lives
             in this file beyond the mount, which is the whole point of building it separately. */}
-        {tab === "gex" && <GexPanel />}
+        {/* A Go bar request is spent once Gamma has acted on it, so returning to the tab later opens it as usual. */}
+        {tab === "gex" && <GexPanel request={gexRequest} onRequestDone={() => setGexRequest(null)} />}
         {tab === "ratios" && <RatiosPanel />}
         {/* The feed's calendar rows add announced Treasury auctions to the hand-kept list. */}
         {tab === "calendar" && <CalendarPanel extra={pbData?.us?.calendar || []} />}
