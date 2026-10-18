@@ -151,7 +151,7 @@ export function PlanView({ st, allocations, bucketMeta, statusTone, fillNote = (
       <Card>
         <Eyebrow>The plan</Eyebrow>
         <div style={{ marginTop: 8, fontSize: 13, color: C.muted }}>
-          Waiting for the measured state — {!probs ? "the regime has no read yet" : "the conditions score has not loaded"}. The previous Posture tab is under “previous layout”.
+          Waiting for the measured state — {!probs ? "the regime has no read yet" : "the conditions score has not loaded"}.
         </div>
       </Card>
     );
