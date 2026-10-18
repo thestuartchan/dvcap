@@ -4,7 +4,7 @@
 // 2026-09-09 14:32 UTC rather than invented, so the field names, the OSI encoding and the zero-OI
 // deep-ITM row are the ones the endpoint actually serves.
 import { readFileSync } from 'node:fs';
-import { parseOsi, parseCboe, cboeAsOf, cboeSummary, compareGex, CBOE_URL, OSI_RE, TOL } from '../lib/cboe.js';
+import { parseOsi, parseCboe, cboeAsOf, cboeSummary, compareGex, cappedCallWall, CBOE_URL, OSI_RE, TOL } from '../lib/cboe.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const ok = (n, c) => eq(n, !!c, true);
@@ -189,6 +189,39 @@ const FX = JSON.parse(readFileSync(new URL('./fixtures-cboe-qqq.json', import.me
   const p = parseCboe(J, { roots: ['SPX', 'SPXW'] });
   eq('a multi-root parse keeps SPX and SPXW, each with its root', p.contracts.map(c => [c.root, c.oi]), [['SPX', 10], ['SPXW', 20]]);
   eq('a single-root parse is unchanged — no root field', Object.keys(parseCboe(J).contracts[0]).includes('root'), false);
+}
+
+// ── P6: the call wall on one definition (18 Oct audit) ──
+// Ours is capped at 5% above spot; CBOE's callWall is their heaviest call strike anywhere. A far
+// node outside the cap read as "✗ disagrees" against a capped one. Synthetic profile, spot 100.
+{
+  const prof = [
+    { strike: 98, netGexUsd: -50 }, { strike: 102, netGexUsd: 300 }, { strike: 104, netGexUsd: 500 },
+    { strike: 106, netGexUsd: 900 },   // outside 5% — their uncapped heaviest
+  ];
+  const ours = { spot: 100, callWall: 104, putWall: 95, callOi: 1, putOi: 1, oiWeightedIv: 0.2 };
+  const theirs = { spot: 100, callWall: 106, putWall: 95, callOi: 1, putOi: 1, oiWeightedIv: 0.2, byStrike: prof };
+  const lv = { callWall: { strike: 104, source: 'largest positive above spot, within 5%' } };
+  eq('their wall re-solved on our definition', cappedCallWall(prof, 100), 104);
+  eq('none inside the cap is null, not a guess', cappedCallWall([{ strike: 106, netGexUsd: 900 }, { strike: 103, netGexUsd: -1 }], 100), null);
+  const r = compareGex(ours, theirs, { spot: 100, levels: lv });
+  const cw = r.checks.find(c => c.name === 'call wall');
+  eq('capped against capped: a match, not a false ✗', [cw.ours, cw.theirs, cw.state], [104, 104, 'match']);
+  ok('the detail names the shared definition', /within 5%, both sides/.test(cw.detail));
+  const ctx = r.checks.find(c => c.name === 'CBOE heaviest call');
+  eq('their uncapped strike rides alongside, unscored', [ctx.theirs, ctx.state, ctx.score], [106, 'context', false]);
+  ok('so the verdict is clean', r.clean);
+  // A real disagreement inside the cap is still one.
+  const moved = compareGex(ours, { ...theirs, byStrike: [...prof.slice(0, 2), { strike: 104, netGexUsd: 100 }, { strike: 103, netGexUsd: 50 }] }, { spot: 100, levels: lv });
+  eq('a different capped node still differs', moved.checks.find(c => c.name === 'call wall').state, 'differ');
+  // Our fallback (no positive node inside 5%) is not a capped wall.
+  const fb = { callWall: { strike: 106, source: 'heaviest call gamma (no positive node above spot inside 5%)' } };
+  const none = compareGex(ours, { ...theirs, byStrike: [{ strike: 106, netGexUsd: 900 }] }, { spot: 100, levels: fb });
+  eq('neither side has one inside the cap: they agree', [none.checks.find(c => c.name === 'call wall').state, none.checks.find(c => c.name === 'call wall').ours], ['match', null]);
+  const oneSided = compareGex(ours, theirs, { spot: 100, levels: fb });
+  eq('only theirs has one: that is a real difference', oneSided.checks.find(c => c.name === 'call wall').state, 'differ');
+  // Without their profile the old comparison runs unchanged.
+  eq('no byStrike: legacy comparison', compareGex(ours, { ...theirs, byStrike: undefined }, { spot: 100, levels: lv }).checks.find(c => c.name === 'call wall').theirs, 106);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
