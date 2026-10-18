@@ -5785,7 +5785,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {/* This week's flagged events */}
           {data.calendar && data.calendar.length > 0 && (
             <Card>
-              <SLabel>📅 Calendar — Current / Upcoming{onOpenCalendar && <> · <button onClick={onOpenCalendar} style={{ background: "none", border: "none", padding: 0, color: C.blue, fontWeight: 700, cursor: "pointer", font: "inherit" }}>six weeks on Markets › Calendar</button></>}</SLabel>
+              <SLabel>📅 Calendar — Current / Upcoming{onOpenCalendar && <> · <button onClick={onOpenCalendar} style={{ background: "none", border: "none", padding: 0, color: C.blue, fontWeight: 700, cursor: "pointer", font: "inherit" }}>the quarter ahead on Markets › Calendar</button></>}</SLabel>
               {data.calendar.map((e, i) => {
                 // C6 — countdown chip so imminence is legible, and adjacent same-window catalysts read
                 // as the collision they are (e.g. NVDA Aug 26 → Jackson Hole Aug 27–29).
