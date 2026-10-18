@@ -5541,20 +5541,28 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
             <Card>{/* I.2 — alert flag is not a status badge; no bar. */}
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                 <SLabel>🪜 Breadth ladder</SLabel>
-                <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>SMH → QQQ → SPY → IWM → HYG</span>
+                <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>SMH (SOXX) → QQQ → SPY → IWM → HYG</span>
                 <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 900, color: data.ladder.alert ? C.amber : C.mid }}>
-                  spread {data.ladder.spread}pp
+                  {/* The size of the gap and which end moved most — a bare signed spread read as an error on a down day. */}
+                  {data.ladder.span ?? Math.abs(data.ladder.spread)}pp{data.ladder.direction === "down" ? ` · ${data.ladder.rungs[0].sym} weakest` : data.ladder.direction === "up" ? ` · ${data.ladder.rungs[0].sym} strongest` : ""}
                 </span>
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 4 }}>
-                {data.ladder.rungs.map(r => (
-                  <span key={r.sym} style={{ fontSize: 12.5, fontWeight: 700 }}>
-                    <span style={{ color: C.muted }}>{r.sym}</span>{" "}
-                    <span style={{ color: r.pct == null ? C.lbl : pbPctColor(r.pct) }}>
-                      {r.pct == null ? "—" : `${r.pct >= 0 ? "+" : ""}${r.pct}%`}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 4, alignItems: "baseline" }}>
+                {data.ladder.rungs.map((r, i) => {
+                  const cell = (sym, pct, title) => (
+                    <span key={sym} title={title} style={{ fontSize: 12.5, fontWeight: 700 }}>
+                      <span style={{ color: C.muted }}>{sym}</span>{" "}
+                      <span style={{ color: pct == null ? C.lbl : pbPctColor(pct) }}>{pct == null ? "—" : `${pct >= 0 ? "+" : ""}${pct}%`}</span>
                     </span>
-                  </span>
-                ))}
+                  );
+                  // SOXX sits beside SMH as the broader semis read. It is shown, not ranked: the
+                  // order check runs on the five rungs only, and the gap between the two is read below.
+                  return i === 0 && data.smhSoxx?.available
+                    ? <span key="semis" style={{ display: "inline-flex", gap: 6, alignItems: "baseline", padding: "1px 7px", border: "1px solid " + C.bdr, borderRadius: 6 }}>
+                        {cell(r.sym, r.pct)}<span style={{ color: C.bdr }}>|</span>{cell("SOXX", data.smhSoxx.soxxPct, "Broader semis, shown beside SMH; not part of the order check")}
+                      </span>
+                    : cell(r.sym, r.pct);
+                })}
               </div>
               <div style={{ fontSize: 11.5, color: data.ladder.alert ? C.amber : C.muted, fontWeight: data.ladder.alert ? 700 : 400, marginTop: 4 }}>
                 {data.ladder.alert ? "⚠ " : ""}{data.ladder.note}
