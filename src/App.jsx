@@ -70,6 +70,8 @@ import { handoffChain } from "../lib/handoff.js";
 import { coreSpread, monthName } from "../lib/inflation.js";
 import { pathReading, ladder, CAVEATS as FED_PATH_CAVEATS, nextMeetingOdds } from "../lib/fedpath.js";
 import HOLIDAYS from "../data/holidays.json";
+import { dubaiEt, dubaiEtStamp } from "../lib/timeFmt.js";
+import { leadRegion, regionStamps } from "../lib/overviewRegions.js";
 import { SEC_YIELDS, PROXY, secYieldProxy, proxyDivergence, proxyError, ISSUER_PAGE, apyFromSec, billFromDiscount, BILL_DAYS, compareCash } from "../lib/cashyield.js";
 import { parseSecYieldPaste, parseYieldValue } from "../lib/fundYield.js";
 import { COMPANY_NAMES } from '../lib/companyNames.js';  // one map, shared with the trade console
@@ -985,7 +987,7 @@ function InterventionAutoBlock({ auto, compact = false }) {
       {!compact && (
         <div style={{ color: C.lbl, fontSize: 10.5, marginTop: 3 }}>
           Suspected when USD/JPY falls ≥1.0% in an hour (or ≥1.5% in three), ≥2× DXY's move, within 3% of its 60-day high; confirmed or denied from the MoF's daily CSV and monthly totals.
-          {auto.sources?.scan?.at ? ` Scan ${new Date(auto.sources.scan.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.` : auto.sources?.scan?.error ? ` Scan failed: ${auto.sources.scan.error}.` : ""}
+          {auto.sources?.scan?.at ? ` Scan ${dubaiEt(auto.sources.scan.at)}.` : auto.sources?.scan?.error ? ` Scan failed: ${auto.sources.scan.error}.` : ""}
           {auto.sources?.mof?.error ? ` MoF fetch failed: ${auto.sources.mof.error} — events stay SUSPECTED.` : ""}
         </div>
       )}
@@ -2743,13 +2745,16 @@ function useLivePlaybook() {
   // regime.aiAxis + per-name session). Bumping the key retires payloads of an older shape
   // instead of rehydrating them into a renderer that expects the new fields.
   const [byRegion, setByRegion] = useState(() => cacheLoad("cache_playbook_v2", {}));
-  const [loading, setLoading]   = useState(false);
-  const [updated, setUpdated]   = useState(() => cacheLoadDate("cache_playbook_updated_v1"));
-  const [error, setError]       = useState(null);
+  // PER REGION (P8): the three regions are fetched separately, so each keeps its own fetch time
+  // and its own error. One shared stamp was whatever region finished last, and one error was
+  // whichever failed last — neither said which region it was about.
+  const [updatedBy, setUpdatedBy] = useState(() => cacheLoad("cache_playbook_updated_v2", {}));
+  const [errorBy, setErrorBy] = useState({});
+  const [pending, setPending] = useState(0);
 
   const fetchRegion = useCallback(async function(region) {
-    setLoading(true);
-    setError(null);
+    setPending(n => n + 1);
+    setErrorBy(prev => ({ ...prev, [region]: null }));
     try {
       const data = await fetchPlaybook(region);
       if (data && data.region) {
@@ -2758,20 +2763,22 @@ function useLivePlaybook() {
           cacheSave("cache_playbook_v2", merged);
           return merged;
         });
-        const now = new Date();
-        setUpdated(now);
-        try { localStorage.setItem("cache_playbook_updated_v1", now.toISOString()); } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ }
+        setUpdatedBy(prev => {
+          const next = { ...prev, [region]: new Date().toISOString() };
+          cacheSave("cache_playbook_updated_v2", next);
+          return next;
+        });
       } else {
-        setError("Playbook returned no data.");
+        setErrorBy(prev => ({ ...prev, [region]: "Playbook returned no data." }));
       }
     } catch (e) {
       console.error("Playbook fetch error:", e);
-      setError("Fetch error: " + e.message);
+      setErrorBy(prev => ({ ...prev, [region]: "Fetch error: " + e.message }));
     }
-    setLoading(false);
+    setPending(n => Math.max(0, n - 1));
   }, []);
 
-  return { byRegion, loading, updated, error, fetchRegion };
+  return { byRegion, loading: pending > 0, updatedBy, errorBy, fetchRegion };
 }
 
 async function loadFunds() {
@@ -3043,7 +3050,7 @@ function AssetDetail({ asset, prices, onFetchPrices, pricesLoading, pricesUpdate
     { axis: "Liquidity",  val: asset.liquidityScore },
     { axis: "Stagflation",val: asset.stagScore },
   ];
-  const fmtTime = d => d ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+  const fmtTime = d => (d ? dubaiEt(d) : "");
   const tickers = asset.tickers.map(t => t.t);
 
   return (
@@ -3152,7 +3159,7 @@ function AssetDetail({ asset, prices, onFetchPrices, pricesLoading, pricesUpdate
 
 // ─── FUND DETAIL ──────────────────────────────────────────────────────────────
 function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated }) {
-  const fmtTime = d => d ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+  const fmtTime = d => (d ? dubaiEt(d) : "");
   const pieData = fund.sectors.map(s => ({ name: s.name, value: s.pct }));
   const tickers = fund.holdings.filter(h => h.name !== "Other").map(h => h.name);
 
@@ -4938,11 +4945,16 @@ function DataFold({ children }) {
   );
 }
 
-function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updated, onRefresh, fmtTime, reconSummary, liveIntervention, regime = null, layers = null, onOpenCalendar = null }) {
+function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, errorBy = {}, updatedBy = {}, onRefresh, fmtTime, reconSummary, liveIntervention, regime = null, layers = null, onOpenCalendar = null }) {
   // Both All and single-region are filtered views of ONE spine. `active` = loaded data for
-  // the selected region(s); `data` (= first active) backs the global macro strip + calendar.
+  // the selected region(s); `data` heads the page — the stance, scenarios, tripwires, the read —
+  // and is the US whenever it is selected and loaded (lib/overviewRegions.js), not whichever
+  // region happens to be first in the selection.
   const active = regions.map(r => byRegion[r]).filter(Boolean);
-  const data = active[0];
+  const lead = leadRegion(regions, byRegion);
+  const data = lead ? byRegion[lead] : null;
+  const stamps = regionStamps(regions, { updatedBy, errorBy, byRegion });
+  const regionName = (r) => (PB_REGIONS.find(x => x.id === r)?.label || r).replace(/^\S+\s/, "");
   const multi = regions.length > 1;
 
   // Combined, sorted names across active regions. Sort: category → (region, ALL only) →
@@ -4973,32 +4985,31 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           })}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {(() => {
-            // The "Updated" stamp is rehydrated from localStorage, so it can be DAYS old while
-            // still rendering as a bare HH:MM that reads as current. Show the date whenever it
-            // is not today, and flag stale cache outright — a global stamp must never imply a
-            // freshness the per-field stamps contradict.
-            const u = updated ? new Date(updated) : null;
-
-            const ageH = u ? (Date.now() - u.getTime()) / 3.6e6 : null;
-            const old = ageH != null && ageH > 12;
-            return (
-              <span style={{ fontSize: 12, color: old ? C.amber : C.muted, fontWeight: old ? 700 : 400 }}
-                title={u ? u.toString() : "never fetched"}>
-                {/* FETCHED, not "as of". The tiles beneath refresh on different cadences — FRED
-                    dailies, intraday quotes, manual pastes — so this timestamp is when the payload
-                    was pulled and is an upper bound on freshness, never a statement that everything
-                    on screen is current to it. The per-tile "last print" dates are the authority. */}
-                {old ? "⚠ cached " : "Fetched "}
-                {u ? fmtTime(u) : "—"}{/* fmtTime already carries the date and age when it is not today — prefixing it again printed the date twice */}
+          {/* ONE STAMP PER REGION. FETCHED, not "as of": the tiles beneath refresh on different
+              cadences, so a fetch time is an upper bound on freshness, never a statement that
+              everything on screen is current to it. Rehydrated from localStorage, so it can be days
+              old; fmtTime then carries the date and age, and an old copy is flagged. */}
+          <span style={{ display: "flex", flexWrap: "wrap", gap: "2px 10px", fontSize: 12, color: C.muted, justifyContent: "flex-end" }}>
+            {stamps.map(st => (
+              <span key={st.region} title={st.at ? st.at.toString() : "never fetched"}
+                style={{ color: st.error || st.old ? C.amber : C.muted, fontWeight: st.error || st.old ? 700 : 400 }}>
+                {regionName(st.region)}{st.region === lead && multi ? " (lead)" : ""}: {st.error ? "⚠ failed" : st.old ? "⚠ cached " : ""}{st.at ? fmtTime(st.at) : st.error ? "" : "—"}
               </span>
-            );
-          })()}
+            ))}
+          </span>
           <Btn onClick={onRefresh} disabled={loading} color={C.blue} bgColor={C.blBg} label={loading ? "⏳ …" : "🔄 Refresh"} />
         </div>
       </div>
 
-      {error && <Card style={{ background: C.rBg, border: "1.5px solid " + C.rBdr }}><span style={{ color: C.red, fontSize: 13 }}>{error}</span></Card>}
+      {stamps.some(st => st.error) && (
+        <Card style={{ background: C.rBg, border: "1.5px solid " + C.rBdr }}>
+          {stamps.filter(st => st.error).map(st => (
+            <div key={st.region} style={{ color: C.red, fontSize: 13 }}>
+              {regionName(st.region)}: {st.error}{st.loaded ? " — showing the last good copy." : ""}
+            </div>
+          ))}
+        </Card>
+      )}
 
       {!data ? (
         <Card><div style={{ color: C.muted, fontSize: 14 }}>{loading ? "Loading…" : "No data yet — hit Refresh."}</div></Card>
@@ -5738,6 +5749,21 @@ function AnalystViewBoard({ live, probFor, engineRegime, consensus }) {
   );
 }
 
+// HAND-WRITTEN SMART MONEY NOTES carry the date they were written (P14), read from the commit
+// that last changed each one. They describe a moment; without a date a note from August reads
+// as this morning's. Update the date whenever the note's text is rewritten.
+const SM_NOTES_WRITTEN = { fedContext: "2026-09-28", aiInfra: "2026-08-24", q2Signal: "2026-08-24" };
+function WrittenOn({ date }) {
+  const days = Math.floor((Date.now() - Date.parse(date + "T12:00:00Z")) / 86400000);
+  const old = days > 30;
+  return (
+    <span title="When this note was written by hand. It is not updated automatically." style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", whiteSpace: "nowrap",
+      color: old ? C.amber : C.lbl, border: "1px solid " + (old ? C.aBdr : C.bdr), borderRadius: 4, padding: "1px 5px", marginLeft: 6 }}>
+      written {new Date(date + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })}{days >= 1 ? ` · ${days}d ago` : ""}
+    </span>
+  );
+}
+
 // Data health is not a place you go to read the market; it is the state of the inputs behind every
 // number. It opens from the status dot beside the groups rather than sitting among them.
 const HEALTH_TAB = { id: "health", label: "🩺 Data health" };
@@ -5806,7 +5832,7 @@ export default function App() {
 
   const { prices, loading: pricesLoading, updated: pricesUpdated, fetchPrices } = useLivePrices();
   const { live: liveInd, loading: indLoading, updated: indUpdated, error: indError, fetchIndicators } = useLiveIndicators();
-  const { byRegion: pbData, loading: pbLoading, updated: pbUpdated, error: pbError, fetchRegion: fetchPlaybookRegion } = useLivePlaybook();
+  const { byRegion: pbData, loading: pbLoading, updatedBy: pbUpdatedBy, errorBy: pbErrorBy, fetchRegion: fetchPlaybookRegion } = useLivePlaybook();
   // Task 1a+1b — the recession table the whole app reads: manual override > auto-feed > static.
   const effectiveRecessionSources = useMemo(
     () => mergeRecessionSources(RECESSION_SOURCES, liveInd?.recessionFeeds || {}, recessionOverrides),
@@ -6016,19 +6042,9 @@ export default function App() {
   // restored from localStorage and re-rendered as "Live:" whether or not today's fetch worked, so
   // the timestamp is the only thing standing between a stale payload and a confident misread of
   // the macro board. Anything not from today therefore carries its DATE and says how old it is.
-  const fmtTime = d => {
-    if (!d) return "—";
-    // WITH THE ZONE. "Updated 15:53" sat above region panels reading "ASIA CLOSED 21:14 local",
-    // "EUROPE OPEN 14:14 local" and "US PRE-OPEN 09:14 local" — three explicit local times and one
-    // bare number, which cannot be reconciled against any of them without knowing which zone it is
-    // in. The implied gap was over an hour and there was no way to tell from the screen whether
-    // that was real.
-    const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
-    const iso = x => new Date(x.getTime() - x.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-    if (iso(d) === iso(new Date())) return t;
-    const days = Math.floor((Date.now() - d.getTime()) / 86400000);
-    return `${iso(d)} ${t} — ${days < 1 ? "yesterday" : days + "d old"}`;
-  };
+  // WITH THE ZONES: Dubai first, ET in brackets (lib/timeFmt.js). "Updated 15:53" once sat above
+  // region panels reading exchange-local times and could not be reconciled with any of them.
+  const fmtTime = d => (d ? dubaiEtStamp(d) : "—");
 
   // ── SHARED MACRO BLOCKS ── rendered on the previous Macro layout and on Drivers / Street. One
   // definition each, lifted out of the Macro tab so the new screens do not carry copies.
@@ -7053,7 +7069,7 @@ export default function App() {
             the last stored copy with nothing to say it was old. */}
         {indError && ["state", "drivers", "plan", "insurance", "income", "global", "street"].includes(tab) && (
           <div style={{ padding: "8px 12px", marginBottom: 10, borderRadius: 8, background: C.aBg, border: "1px solid " + C.aBdr, color: C.amber, fontSize: 12.5, fontWeight: 700 }}>
-            ⚠ Macro indicators did not refresh — {indError} Showing the copy from {indUpdated ? new Date(indUpdated).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "an earlier load"}.
+            ⚠ Macro indicators did not refresh — {indError} Showing the copy from {indUpdated ? dubaiEtStamp(indUpdated) : "an earlier load"}.
           </div>
         )}
         {/* A Go bar request is spent once Gamma has acted on it, so returning to the tab later opens it as usual. */}
@@ -7702,7 +7718,7 @@ export default function App() {
             {/* B5 — Fed context the snapshot lacks. The book was set on Jun 30; the Fed path has moved
                 since, and the positioning reads differently against it. */}
             <div style={{ padding: "8px 11px", background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 8, fontSize: 11.5, color: C.mid, lineHeight: 1.6 }}>
-              <b style={{ color: C.blue }}>Fed context since Jun 30: </b>
+              <b style={{ color: C.blue }}>Fed context since Jun 30</b><WrittenOn date={SM_NOTES_WRITTEN.fedContext} /><b style={{ color: C.blue }}>: </b>
               July was a <b>9–3 hold</b> with three presidents dissenting <i>for</i> a hike, and the Aug 19 minutes said "many participants" saw tightening as likely necessary. On <b>Sep 16 the Fed hiked 25bp to 3.75–4.00%, 12–0</b>, and the September dots added one more hike for 2026 and no cut in 2027. The book below was set before all of this — every position in it was chosen against a Fed that was still holding.
             </div>
             {/* Cross-Fund Positioning Matrix — rendered above the fund selector (Fix 3) */}
@@ -7803,7 +7819,7 @@ export default function App() {
                       divergence is the signal — a crowded long meeting an ordinary quarter, not a
                       fundamentals problem. All figures post-date the Jun-30 snapshot. */}
                   <div style={{ marginTop: 12, padding: "10px 13px", background: C.aBg, border: "1.5px solid " + C.aBdr, borderRadius: 8 }}>
-                    <div style={{ fontSize: 12, fontWeight: 900, color: C.amber, marginBottom: 3 }}>⚠️ The consensus long (AI infra): thesis strengthening, price de-rating</div>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: C.amber, marginBottom: 3 }}>⚠️ The consensus long (AI infra): thesis strengthening, price de-rating<WrittenOn date={SM_NOTES_WRITTEN.aiInfra} /></div>
                     <div style={{ fontSize: 11.5, color: C.mid, lineHeight: 1.6 }}>
                       <b style={{ color: C.green }}>Fundamentals up post-filing:</b> Amazon 2026 capex raised to $220B (Jul 30 call), Alphabet to $205B, Meta twice; big-four 2026 ~$725B (+77% YoY), 2027 consensus $934.5B (JPM/Goldman &gt;$1T); Google Cloud backlog $460B (~2×).
                       <br /><b style={{ color: C.red }}>Price down anyway:</b> AMD (Aug 4) record double-beat but −9% on in-line guidance; MU (Aug 18) −7%; SK Hynix / Samsung (Aug 19) −9.4% / −7.7%; SMH 546.03, −5.4% since Aug 19.
@@ -7860,7 +7876,7 @@ export default function App() {
                 </table>
               </div>
               <div style={{ marginTop: 12, padding: "12px 14px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8 }}>
-                <span style={{ color: C.amber, fontWeight: 700, fontSize: 13 }}>⚠️ The Q2 signal (as of Jun 30): </span>
+                <span style={{ color: C.amber, fontWeight: 700, fontSize: 13 }}>⚠️ The Q2 signal (as of Jun 30)<WrittenOn date={SM_NOTES_WRITTEN.q2Signal} />: </span>
                 <span style={{ color: C.amber, fontSize: 14 }}>The AI-chip long got MORE crowded, not less — Micron became Appaloosa's #2, Tiger added a new Cerebras stake and re-entered Intel, and semis moved to the top of Tiger's book. But hedges are appearing at the edges: Tepper initiated an AAPL put and cut BABA. Berkshire built Alphabet to a top-4 position (its most AI-adjacent bet) while holding ~$397B cash. Druckenmiller re-entered the mega-caps he'd exited. Ackman (now filing via the public parent Pershing Square Inc.) added Visa, Mastercard, S&P Global and Netflix — a shift toward quality compounders. Positions as of Jun 30 — not current.</span>
               </div>
             </Card>
@@ -7933,8 +7949,8 @@ export default function App() {
             regions={pbRegions}
             toggleRegion={toggleRegion}
             loading={pbLoading}
-            error={pbError}
-            updated={pbUpdated}
+            errorBy={pbErrorBy}
+            updatedBy={pbUpdatedBy}
             onRefresh={() => pbRegions.forEach(r => fetchPlaybookRegion(r))}
             fmtTime={fmtTime}
           />
