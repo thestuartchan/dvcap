@@ -21,7 +21,8 @@ import {
 } from "recharts";
 import { C, P } from "./theme.js";
 import { SLabel, Card, Btn, StaleChip } from "./ui.jsx";
-import { navCheck, NAV_DRIFT_PCT, pricesStamp, clockHHMM, nlvDate } from "../lib/consoleStamps.js";
+import { navCheck, NAV_DRIFT_PCT, pricesStamp, nlvDate } from "../lib/consoleStamps.js";
+import { dubaiEt, dubaiEtStamp } from "../lib/timeFmt.js";
 import { ASSETS } from "../lib/assets.js";
 import { derivePosition, applyRolls, splitIntoTrades, collapseFills, oversellSplit, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, archiveCurve } from "../lib/positions.js";
 import { sideOf, isShort, openSideFor, closeSideFor, geometryCheck, levelVocab, fillVerb, SIDES, SIDE_LABEL, DEFAULT_SIDE } from "../lib/side.js";
@@ -2356,7 +2357,7 @@ function CatalystBlock({ cat, kind, expiry }) {
     );
   }
   const age = hoursOld(cat.feed?.fetchedAt);
-  const fetched = age != null && age > 24 ? ` · fetched ${new Date(cat.feed.fetchedAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : "";
+  const fetched = age != null && age > 24 ? ` · fetched ${dubaiEtStamp(cat.feed.fetchedAt)}` : "";
   const stale = cat.own?.stale ? " · feed error, last answer shown" : "";
   if (kind !== "option" || !cat.window) {
     // A stock: the next date only, no classification.
@@ -4326,7 +4327,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
             ].filter(Boolean).join(" · ");
             return (
               <span title={detail || undefined} style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>
-                prices as of {clockHHMM(st.asOfMs)}{st.basis === "closed" ? " (markets shut)" : ""}
+                prices as of {dubaiEt(st.asOfMs)}{st.basis === "closed" ? " (markets shut)" : ""}
                 {st.stale.length > 0 && <StaleChip title="market open, quote older than the feed's cadence — press 🔄 Prices">{st.stale.map(x => x.symbol).join(", ")}</StaleChip>}
               </span>
             );

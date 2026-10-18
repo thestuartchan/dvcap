@@ -19,6 +19,7 @@ import { heatCells, heatAlpha, spotSlot, withGrossShares, horizonGrid, isMonthly
 import { oiSettledLabel } from "../lib/gexFeed.js";
 import { levelsOf, mustShow, rateLine, rateFarOut } from "../lib/gexLevels.js";
 import { pineFor } from "../lib/pine.js";
+import { dubaiEt, dubaiEtStamp } from "../lib/timeFmt.js";
 import { gexDays, gexSummary, todayTellInputs, TREND_MOVE, TREND_EFF, WIDE_RANGE } from "../lib/gexDays.js";
 import { tellsFor, tellsHeadline, shownTells, BACKTEST, BASE_RATE, FIRST_HOUR_BASE, CUSHION, CUSHION_SOURCE } from "../lib/trendTells.js";
 // The New York date, for which expiries are already today's (the week view hides them).
@@ -151,7 +152,7 @@ function DecayTile({ d }) {
 function CrossCheck({ x, of = null }) {
   if (!x) return null;
   // Whose numbers this was run against, when they are not the ones on screen.
-  const from = of ? `${(of.asOf || of.date || "").slice(0, 16).replace("T", " ")}Z capture` : null;
+  const from = of ? `${of.asOf ? dubaiEtStamp(of.asOf) : (of.date || "")} capture` : null;
   if (!x.ok) {
     return (
       <div style={{ marginTop: 9, fontSize: 11.5, color: C.muted, paddingTop: 8, borderTop: "1px solid " + C.bdr }}>
@@ -206,7 +207,7 @@ function CrossCheck({ x, of = null }) {
         The flip is not cross-checked: CBOE publishes gamma at the current spot only, and solving a
         flip needs it repriced across a range — that would be their data through our model, which is
         a different claim. Walls, open interest and vol are theirs end to end.
-        {x.asOf && ` Their snapshot ${new Date(x.asOf).toISOString().slice(11, 16)} UTC.`}
+        {x.asOf && ` Their snapshot ${dubaiEt(x.asOf)}.`}
       </div>
     </div>
   );
@@ -591,7 +592,7 @@ export function GexPanel({ request = null, onRequestDone = null }) {
           );
         })}
         <div style={{ marginTop: 5, display: "flex", gap: 10, alignItems: "center" }}>
-          <span style={{ color: C.muted, fontSize: 10.5 }}>issued {String(feed.createdAt || "").slice(0, 16).replace("T", " ")}Z</span>
+          <span style={{ color: C.muted, fontSize: 10.5 }}>issued {feed.createdAt ? dubaiEtStamp(feed.createdAt) : "—"}</span>
           <button onClick={() => loadFeed(true)}
             style={{ cursor: "pointer", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 6, border: "1px solid " + C.aBdr, background: C.aBg, color: C.amber }}>replace URL</button>
         </div>
@@ -633,7 +634,7 @@ export function GexPanel({ request = null, onRequestDone = null }) {
       so this is that day's settled open interest and implied vols at the current spot and time decay.
       <div style={{ color: C.mid, marginTop: 3 }}>
         Live: the spot and the time to every expiry. Not live: the open interest, and the vol surface —
-        a vol move since {live.note.capturedAt ? new Date(live.note.capturedAt).toISOString().slice(0, 16).replace("T", " ") + " UTC" : "the capture"} does not show up here.
+        a vol move since {live.note.capturedAt ? dubaiEtStamp(live.note.capturedAt) : "the capture"} does not show up here.
         {live.note.expiredSinceCapture > 0 && ` ${live.note.expiredSinceCapture} contract${live.note.expiredSinceCapture === 1 ? " has" : "s have"} expired since, and dropped out — the walls move for that reason alone.`}
       </div>
     </div>
