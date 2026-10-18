@@ -22,6 +22,7 @@
 // reaches Discord is lib/flex.js's summary, which carries symbols and counts and no sizes.
 
 import { kvGetJson, kvSetJson, kvSetJsonEx, kvConfigured, CONSOLE_KEY, FLEX_NOTE_KEY, CASHBOOK_KEY, OPTION_MARKS_KEY } from '../lib/kv.js';
+import { nextRev } from '../lib/consoleRev.js';
 
 // What the channel was last told. Only the SIGNATURE, so this can never become a second copy of
 // the book.
@@ -262,6 +263,10 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   const noteOf = () => ({
     at: new Date().toISOString(),
     asOf,
+    // The broker's NLV and its date, or why there is none (lib/flex.js navOf). This note is read
+    // only by the signed-in console, which offers it for Settings › Account equity; it never goes
+    // to the channel.
+    nav: got.statement.nav || null,
     applied: !!(fresh.length || plan.ack.length || (apply && tradeRows)),
     // Counts for the console's status line (lib/flexStatus.js) — how many of the statement's
     // positions the console agrees with, so a quiet run reads as checked rather than as absent.
@@ -328,7 +333,9 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   const base = writingTrades ? tradeRows : rows;
   const merged = base.map(r => acked.has(r.id) ? { ...r, costBasisAck: acked.get(r.id) } : r);
   const settings = from0 ? { ...(stored?.settings || {}), flexTradesFrom: from0 } : (stored?.settings || {});
-  const next = { ...stored, rows: [...merged, ...fresh], settings, updatedAt: new Date().toISOString() };
+  // A new revision (lib/consoleRev.js): a browser holding the copy from before this write is
+  // refused on its next save rather than putting these fills back the way they were.
+  const next = { ...stored, rows: [...merged, ...fresh], settings, updatedAt: new Date().toISOString(), rev: nextRev(stored) };
   const wrote = await kvSetJson(CONSOLE_KEY, next);
   if (!wrote) return { ...result, ok: false, error: 'Redis write failed — nothing was changed' };
   // `applied` means ROWS CHANGED. Writing only the watermark is a settings change and used to set
