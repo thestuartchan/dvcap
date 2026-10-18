@@ -212,7 +212,10 @@ function CrossCheck({ x, of = null }) {
   );
 }
 
-export function GexPanel() {
+// `request` — { symbol, n } from the Go bar ("QQQ GEX", "XYZ GEX"): a book symbol selects its tab,
+// any other root runs the custom read, exactly as typing it in the box here would. `n` changes on
+// every request so asking for the same name twice still acts.
+export function GexPanel({ request = null, onRequestDone = null }) {
   const [symbol, setSymbol] = useState("QQQ");
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
@@ -399,6 +402,16 @@ export function GexPanel() {
     }
     setCustomBusy(false);
   };
+
+  useEffect(() => {
+    const sym = String(request?.symbol || "").trim().toUpperCase();
+    if (!sym) return;
+    if ((data?.symbols || ["QQQ", "SPY"]).includes(sym)) pickBook(sym);
+    else { setCustomInput(sym); lookUpCustom(sym); }
+    onRequestDone?.();
+    // Only a new request acts; the board loading underneath must not re-run it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request?.n]);
 
   const latest = live?.row || data?.latest || null;
   const strikeSource = live?.byStrike || data?.byStrike || null;
