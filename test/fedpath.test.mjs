@@ -4,7 +4,7 @@
 // "1.3 × 25bp HIKES priced vs EFFR 3.63%", "ZQ 96.045". Every line true, and together they still do
 // not say what to do with "1.3 hikes" — which is not a thing that can happen. The Fed moves in
 // quarter points, so a fractional count is a probability wearing the clothes of a forecast.
-import { zqImpliedRate, zqMovesPriced, pathReading, ladder, article, STEP_PP, FLAT_MOVES, CAVEATS, nextMeetingOdds, FOMC_DECISIONS } from '../lib/fedpath.js';
+import { zqImpliedRate, zqMovesPriced, pathReading, ladder, article, STEP_PP, FLAT_MOVES, CAVEATS, nextMeetingOdds, FOMC_DECISIONS, sixMonthPath } from '../lib/fedpath.js';
 import { assertObservational } from '../lib/read.js';
 
 let pass = 0, fail = 0;
@@ -109,6 +109,16 @@ const EFFR = 3.63;
   eq('no contract for the meeting, no reading', nextMeetingOdds({ effr: 3.88, contracts: [] }, { today: '2026-09-27' }), null);
   eq('past the published calendar, no reading', nextMeetingOdds(feed, { today: '2028-01-01' }), null);
   ok('the calendar is in order', FOMC_DECISIONS.every((x, i) => i === 0 || x > FOMC_DECISIONS[i - 1]));
+}
+
+// ── the 6-month path reads the daily rate, not last month's average ─────────
+{
+  const p = sixMonthPath({ effr: { value: 3.9, date: '2026-01-15' }, fedFunds: { value: 4.15, date: '2025-12-01' }, tbill6m: { value: 3.7, date: '2026-01-15' } });
+  eq('the daily EFFR is the leg, with its own date', [p.rate, p.rateDate, p.source], [3.9, '2026-01-15', 'EFFR (daily)']);
+  eq('bill below the rate is cuts priced, in bps', p.bps, 20);
+  const f = sixMonthPath({ effr: { value: 0, date: null }, fedFunds: { value: 4.15, date: '2025-12-01' }, tbill6m: { value: 3.7, date: '2026-01-15' } });
+  eq('with no daily print the monthly average stands in, and says so', [f.rate, f.source, f.bps], [4.15, 'FEDFUNDS (monthly average)', 45]);
+  eq('a missing leg is no reading, not zero', sixMonthPath({ effr: { value: 3.9 } }).bps, null);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

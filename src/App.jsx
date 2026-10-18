@@ -70,6 +70,7 @@ import { handoffChain } from "../lib/handoff.js";
 import { coreSpread, monthName } from "../lib/inflation.js";
 import { pathReading, ladder, CAVEATS as FED_PATH_CAVEATS, nextMeetingOdds } from "../lib/fedpath.js";
 import HOLIDAYS from "../data/holidays.json";
+import { businessDaysSince } from "../lib/bondDays.js";
 import { SEC_YIELDS, PROXY, secYieldProxy, proxyDivergence, proxyError, ISSUER_PAGE, apyFromSec, billFromDiscount, BILL_DAYS, compareCash } from "../lib/cashyield.js";
 import { parseSecYieldPaste, parseYieldValue } from "../lib/fundYield.js";
 import { COMPANY_NAMES } from '../lib/companyNames.js';  // one map, shared with the trade console
@@ -1181,15 +1182,11 @@ function InterventionToggle({ jpyChangePct, dxyChangePct, onChange, auto = null 
   );
 }
 
-// C2 — business days (Mon–Fri) elapsed since an ISO date. A hand-entered ZQ settle goes stale fast:
+// C2 — business days elapsed since an ISO date. A hand-entered ZQ settle goes stale fast:
 // past 3 business days the derived hike/cut count must not read as current, so it is suppressed.
+// ZQ settles on the exchange calendar (CME is open on Columbus and Veterans Day).
 function bizDaysSince(isoDate, now = new Date()) {
-  const start = new Date(isoDate + "T00:00:00Z");
-  if (isNaN(start.getTime())) return 0;
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  let d = new Date(start), n = 0;
-  while (d < end) { d.setUTCDate(d.getUTCDate() + 1); const wd = d.getUTCDay(); if (wd !== 0 && wd !== 6) n++; }
-  return n;
+  return businessDaysSince(isoDate, { now, calendar: "exchange" }) ?? 0;
 }
 function FedPathCard({ effr, feed = null }) {
   const [data, setData] = useState(null);
@@ -4461,28 +4458,11 @@ function AxisBaskets({ ai, non }) {
 }
 
 // Business days between a YYYY-MM-DD and today (UTC). For the daily-cadence stale check.
-// US market holidays, so a print either side of one is not counted as having aged through it.
-// data/holidays.json is already maintained for lib/sessions.js; this reads the same list rather
-// than keeping a second one.
-// THE US LIST ONLY. data/holidays.json is keyed by exchange, so flattening it would let a Tokyo
-// or Seoul closure suppress a day the US bond market was open — and every series counted here
-// (DGS, DFII10, T10YIE, BAMLH0A0HYM2) is a US print. `half` days are excluded deliberately: an
-// early close is still a session and these series still print on it.
-const US_HOLIDAYS = new Set(HOLIDAYS?.US?.closed || []);
+// Counted on the US BOND calendar (lib/bondDays.js): every series aged here (DGS, DFII10, T10YIE,
+// BAMLH0A0HYM2, EFFR) is a Treasury or Fed print, and none prints on Columbus or Veterans Day
+// even though the stock exchange is open. `half` days still count: an early close is a session.
 function bizDaysAgo(dateStr) {
-  if (!dateStr) return null;
-  const d = new Date(dateStr + "T00:00:00Z");
-  const now = new Date();
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  let n = 0;
-  while (d < end) {
-    d.setUTCDate(d.getUTCDate() + 1);
-    const wd = d.getUTCDay();
-    if (wd === 0 || wd === 6) continue;
-    if (US_HOLIDAYS.has(d.toISOString().slice(0, 10))) continue;   // the exchange was shut
-    n++;
-  }
-  return n;
+  return businessDaysSince(dateStr, { calendar: "bond" });
 }
 // Cadence-based freshness for a macro field → { stale, text }. daily > 2 biz days;
 // intraday > 30m. Also flags a future-dated asOf.
@@ -4499,7 +4479,7 @@ function macroFresh(field) {
     }
     const bd = bizDaysAgo(field.date);
     // MORE THAN ONE BUSINESS DAY BEHIND IS STALE. At the old threshold of two, a Wednesday print
-    // read on Friday rendered as current — and the ACM term premium, which lags by design and
+    // read on Friday rendered as current — and the term premium, which lags by design and
     // feeds the one macro read supporting the gold position, sat six calendar days old looking
     // live. A number that has not moved since before the last session should not look like one
     // that has.
@@ -6294,6 +6274,9 @@ export default function App() {
               {(() => {
                 const bps = liveInd?.impliedCutsBps ?? null;
                 const cf = liveInd?.currentFedFunds ?? null, tb = liveInd?.tbill6m ?? null;
+                // Each leg carries its own date, so a monthly fallback or a holiday-old bill shows.
+                const cfSrc = /monthly/i.test(liveInd?.currentFedFundsSource || "") ? "funds (monthly avg)" : "EFFR";
+                const dShort = (d) => d ? ` (${new Date(d + "T12:00:00Z").toLocaleString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })})` : "";
                 const nx = nextMeetingOdds(liveInd?.fedPathFeed ?? null);
                 const mtgLabel = nx ? new Date(nx.meeting + "T12:00:00Z").toLocaleString("en-US", { month: "long", day: "numeric", timeZone: "UTC" }) : null;
                 const sept = nx ? nx.hikePct : null;
@@ -6325,7 +6308,7 @@ export default function App() {
                       {nx?.asOf && <span style={{ marginLeft: "auto", fontSize: 10.5, color: C.muted }}>ZQ settle {nx.asOf}</span>}
                     </div>
                     <div style={{ marginTop: 6 }}>
-                      {row("6-month path", bps != null ? `${bps} bps` : "—", bps != null ? `${bps > 0 ? "cuts" : bps < 0 ? "hikes" : "flat"} priced · 6M bill ${tb != null ? tb.toFixed(2) : "—"}% vs funds ${cf != null ? cf.toFixed(2) : "—"}%` : "Fed funds / T-bill not loaded", bps != null ? dirCol(sixDir) : C.muted)}
+                      {row("6-month path", bps != null ? `${bps} bps` : "—", bps != null ? `${bps > 0 ? "cuts" : bps < 0 ? "hikes" : "flat"} priced · 6M bill ${tb != null ? tb.toFixed(2) : "—"}%${dShort(liveInd?.asOf?.tbill6m)} vs ${cfSrc} ${cf != null ? cf.toFixed(2) : "—"}%${dShort(liveInd?.asOf?.currentFedFunds)}` : "Fed funds / T-bill not loaded", bps != null ? dirCol(sixDir) : C.muted)}
                       {nx ? row(`${mtgLabel} meeting`, nx.cutPct > 0 ? `${nx.cutPct}% cut` : `${sept}%`, `${nx.cutPct > 0 ? "implied cut odds" : "implied hike odds"} · ${nx.contract} ZQ ${nx.impliedPost.toFixed(3)}% vs EFFR ${nx.effr.toFixed(2)}%`, dirCol(septDir))
                           : row("Next meeting", "—", "ZQ curve not loaded", C.muted)}
                     </div>
