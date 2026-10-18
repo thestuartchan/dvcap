@@ -70,11 +70,11 @@ import { handoffChain } from "../lib/handoff.js";
 import { coreSpread, monthName } from "../lib/inflation.js";
 import { pathReading, ladder, CAVEATS as FED_PATH_CAVEATS, nextMeetingOdds } from "../lib/fedpath.js";
 import HOLIDAYS from "../data/holidays.json";
-import { dubaiEt, dubaiEtStamp } from "../lib/timeFmt.js";
-import { leadRegion, regionStamps } from "../lib/overviewRegions.js";
 import { SEC_YIELDS, PROXY, secYieldProxy, proxyDivergence, proxyError, ISSUER_PAGE, apyFromSec, billFromDiscount, BILL_DAYS, compareCash } from "../lib/cashyield.js";
 import { parseSecYieldPaste, parseYieldValue } from "../lib/fundYield.js";
 import { COMPANY_NAMES } from '../lib/companyNames.js';  // one map, shared with the trade console
+import { dubaiEt, dubaiEtStamp } from "../lib/timeFmt.js";
+import { leadRegion, regionStamps } from "../lib/overviewRegions.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
 const SC = [C.blue,C.green,P.amber600,P.violet700,P.amber700,P.pink700,P.teal700,P.amber500];
