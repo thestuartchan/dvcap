@@ -733,6 +733,14 @@
   "tz": "America/New_York"
  },
  {
+  "date": "2026-10-29",
+  "title": "Intel Q3 earnings (AC)",
+  "region": "US",
+  "tier": 2,
+  "time": "14:00",
+  "tz": "America/Los_Angeles"
+ },
+ {
   "date": "2026-10-30",
   "title": "BoJ rate decision + Quarterly Outlook Report",
   "region": "ASIA",
