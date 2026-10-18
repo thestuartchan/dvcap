@@ -16,7 +16,7 @@ const s = (t) => { const x = boardSession(t); return x && [x.date, x.phase, x.la
 eq('the Friday close run at 00:10Z Saturday is Friday\'s close, after the monthly expiry', s('2026-10-17T00:10:19Z'), ['2026-10-16', 'close', 'Fri 16 Oct close ET, after monthly expiry']);
 eq('an ordinary Thursday close has no expiry tag', s('2026-10-16T01:30:00Z'), ['2026-10-15', 'close', 'Thu 15 Oct close ET']);
 eq('a capture on a Sunday is the last session\'s close', s('2026-10-18T15:00:00Z'), ['2026-10-16', 'close', 'Fri 16 Oct close ET, after monthly expiry']);
-eq('mid-session reads its clock', s('2026-10-15T15:15:00Z'), ['2026-10-15', 'intraday', 'Thu 15 Oct 11:15 ET']);
+eq('mid-session reads its clock', s('2026-10-15T15:15:00Z'), ['2026-10-15', 'intraday', 'Thu 15 Oct 19:15 Dubai (11:15 ET)']);
 eq('Monday before the open, after an expiry Friday', s('2026-10-19T12:00:00Z'), ['2026-10-19', 'pre', 'Mon 19 Oct pre-open ET, after monthly expiry']);
 eq('the day after Thanksgiving closes at 13:00 ET', s('2026-11-27T18:30:00Z')[1], 'close');
 eq('no time is no session', boardSession(null), null);
