@@ -567,9 +567,11 @@ select option:disabled { color: var(--text-muted); }
   .mwd-tagline { display: none !important; }
   .mwd-title   { font-size: 16px !important; }
 
-  /* "act / read / revisit" earns its place on a wide screen and steals width on a narrow one,
-     where the group names alone already fit. */
+  /* The group hints earn their place on a wide screen and steal width on a narrow one, where the
+     group names alone already fit. */
   .mwd-group-hint { display: none !important; }
+  /* The Data health pill keeps only its dot, so four groups and the dot fit a phone's width. */
+  .mwd-data-label { display: none !important; }
 }
 
 /* Both nav rows scroll sideways rather than wrap: a wrapped row silently doubles the height of
