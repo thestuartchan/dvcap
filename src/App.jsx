@@ -26,10 +26,10 @@ import {  } from "../lib/regimeProb.js";
 import { applyRegimeGuard } from "../lib/posture.js";
 import { readSnapshot, bookLine, ageText } from "../lib/bookSnapshot.js";
 import { regimeFlipsIf } from "../lib/regime.js";
-import { minersPairImplication } from "../lib/regimeState.js";
+
 import { southboundTrend, southboundLevelTrend, southboundRead, ahPremiumRead, sbStale } from "../lib/southbound.js";
 import { mergeSouthbound } from "../lib/hkexSouthbound.js";
-import { STATUS, BAND_STATUS, creditStatus, deriveAction } from "../lib/status.js";
+import { STATUS, BAND_STATUS, creditStatus } from "../lib/status.js";
 import { HORIZON, HORIZON_LABEL, dispersionRead, NO_CONVERSION_NOTE } from "../lib/recession.js";
 import { buildViews, evaluateViews, regimeCluster, divergenceRead } from "../lib/analystViews.js";
 import { fmtCcy } from "../lib/fxrates.js";
@@ -54,7 +54,7 @@ import { measuredAxes, axesLogRow } from "../lib/quadrant.js";
 import { handKeptLedger } from "../lib/ledger.js";
 import CALENDAR from "../data/calendar.json";
 import { FED_LANGUAGE_STATUS } from "../lib/fedLanguage.js";
-import { announced, overlayJulyLabor, RECESSION_SOURCES, recessionAsOfState, parseProbability, RECESSION_STALE_ZERO_DAYS, recessionSrcKey, mergeRecessionSources, CONSENSUS_VINTAGE, FALLBACK_REGIMES, regimeSnapshot, regimeLogRow, RECESSION_SOURCE_CADENCE, ANNOUNCED_PRINTS, LABOR_ANNOUNCED } from "../lib/regimeEngine.js";
+import { announced, RECESSION_SOURCES, recessionAsOfState, parseProbability, recessionSrcKey, mergeRecessionSources, CONSENSUS_VINTAGE, FALLBACK_REGIMES, regimeSnapshot, regimeLogRow, RECESSION_SOURCE_CADENCE, ANNOUNCED_PRINTS, LABOR_ANNOUNCED } from "../lib/regimeEngine.js";
 
 // ── AN UNMAPPED REGIME RANKS NOTHING ─────────────────────────────────────────
 // Every ranking site on the Posture, Insurance and Income tabs fell back to the STAGFLATION column
@@ -65,14 +65,17 @@ const INS_RANK_KEY = { stag: "stagRank", def: "defRank", ref: "refRank", inf: "i
 const INCOME_RANK_KEY = { stag: "rank", def: "defRank", ref: "refRank", inf: "infRank" };
 const rankKeyFor = (table, id) => table[id] ?? null;
 const byRank = (key) => (a, b) => key ? ((a[key] ?? 99) - (b[key] ?? 99)) : 0;
-import { laborStress, sahmAnnotation, laborVerdict, laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead, quitsRead, revisionTrackerRead, twelveMonthAvgRead, ytdDivergenceRead } from "../lib/labor.js";
+import { sahmAnnotation, laborSummary, laborDeteriorationTrigger, primeAgeRead, longTermRead, u6SpreadRead, payrollsRead, surveyDivergenceRead, quitsRead, revisionTrackerRead, twelveMonthAvgRead, ytdDivergenceRead } from "../lib/labor.js";
 import { handoffChain } from "../lib/handoff.js";
 import { coreSpread, monthName } from "../lib/inflation.js";
 import { pathReading, ladder, CAVEATS as FED_PATH_CAVEATS, nextMeetingOdds } from "../lib/fedpath.js";
 import HOLIDAYS from "../data/holidays.json";
+import { businessDaysSince } from "../lib/bondDays.js";
 import { SEC_YIELDS, PROXY, secYieldProxy, proxyDivergence, proxyError, ISSUER_PAGE, apyFromSec, billFromDiscount, BILL_DAYS, compareCash } from "../lib/cashyield.js";
 import { parseSecYieldPaste, parseYieldValue } from "../lib/fundYield.js";
 import { COMPANY_NAMES } from '../lib/companyNames.js';  // one map, shared with the trade console
+import { dubaiEt, dubaiEtStamp } from "../lib/timeFmt.js";
+import { leadRegion, regionStamps } from "../lib/overviewRegions.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
 const SC = [C.blue,C.green,P.amber600,P.violet700,P.amber700,P.pink700,P.teal700,P.amber500];
@@ -212,22 +215,6 @@ const TICKER_TRIGGERS = {
   SMH:"AI capex guidance miss OR semi earnings disappointment.",
 };
 
-// ─── CROSS-TAB ASSET RATING INVARIANT ─────────────────────────────────────────
-// One definition of WHY gold miners are not a gold hedge, referenced by both the Macro regime
-// lists and the Insurance matrix so the two tabs can never contradict again. Miners once read as
-// a "best asset" under Stagflation on Macro while the Insurance matrix rated GDX/GDXJ ⚠️ — same
-// regime, same asset, opposite guidance. Resolved toward the Insurance caution.
-//
-// INVARIANT: any asset that appears in BOTH a Macro regime best/worst list AND an Insurance
-// SCENARIO_MATRIX column must carry the SAME rating. Audit at time of writing — all consistent:
-//   • Gold miners  — Stagflation: Macro no longer lists as "best" (see below); Insurance ⚠️.  ✓ fixed
-//                    Inflationary Boom / Debasement: Macro best · Insurance ✅✅.               ✓
-//   • TLT          — Stag: Macro worst · Insurance ❌ | Def: Macro best · Insurance ✅✅.        ✓
-//   • Cash/T-bills — Def: Macro best · Insurance ✅✅ | Debasement: Macro worst · Insurance ⚠️.  ✓
-//   • Gold (GLD)   — Def: Macro best · Insurance ✅.                                            ✓
-//   • Staples/XLP  — Stag: Macro best · Insurance ✅✅ | Def: Macro best · Insurance ✅.          ✓
-//   • Energy/BTC/Commodities — Debasement: Macro best · Insurance ✅✅ | Def: Macro worst/❌.     ✓
-const GOLD_MINERS_WHY = "Gold miners are equities with operating leverage to gold, not gold itself — they carry equity beta and are sold in liquidity events (GDX fell ~70% in 2008). They express a gold view; they do not hedge one. The stagflation hedge is physical gold (GLD); miners are a cautioned, leveraged expression of it.";
 
 // ─── INSURANCE PHASE NOTES ────────────────────────────────────────────────────
 // Three-state crash-scenario overrides (onset / deflationary / inflationary) for
@@ -279,7 +266,7 @@ const INSURANCE_PHASES = [
   { k:"preCrash",  col:"preCrash",  label:"Pre-Crash",                 short:"Pre-Crash",         color:STATUS.WATCH.color,  bg:STATUS.WATCH.bg,  bdr:STATUS.WATCH.bdr,  desc:"Signals deteriorating, no drawdown yet — the accumulation window. Protection is cheap: puts and VIX calls are the right instruments here, before IV reprices. GLD works; miners lag (equity beta).", size:{ band:"0–3%", note:"protection is cheap (VIX low, IV not yet repriced) — begin sizing puts / VIX calls; don't fully activate yet." } },
   { k:"liquidity", col:"liquidity", label:"Liquidity Phase",           short:"Liquidity Phase",   color:STATUS.DANGER.color, bg:STATUS.DANGER.bg, bdr:STATUS.DANGER.bdr, desc:"Drawdown underway — margin calls, correlations going to 1. Gold is SOLD here because it is liquid and profitable: it fell ~12% over ~8 sessions in March 2020 and ~30% from its March 2008 high to its October 2008 low, both times while equities collapsed. Miners are worse (GDX ~−70% in 2008). Protection bought now is expensive — IV has already repriced, so puts and VIX calls are a poor purchase. Cash is the only thing that works cleanly.", size:{ band:"hold · add ~0%", note:"protection is now expensive (IV repriced) — don't chase it. Raise cash and prepare the recovery buy." } },
   { k:"recovery",  col:"recovery",  label:"Recovery / Post-Trough",    short:"Recovery",          color:P.emerald700, bg:P.emerald50, bdr:P.emerald200, desc:"VIX has peaked and is rolling over, credit has stopped widening, forced selling is exhausted — resolution not yet determined. This is THE BUY: gold miners, BTC and equities lead off the trough (the NYSE Arca Gold Miners Index ran +100% Oct'07→Mar'09 while the S&P fell 57%, +40% in Apr'20, +27% in a single day Nov'08 — all of it here, none in the collapse column). Sell the decay hedges into the vol collapse: holding the right hedge past its window is where most insurance P&L is given back. Miners here are a post-trough TRADE with a trigger, never a hedge and never a hold.", size:{ band:"insurance → ~0%", note:"unwind the decay hedges into the vol collapse and rotate the proceeds + dry powder into the recovery buy (miners / BTC / equities)." } },
-  { k:"def",       col:"def",       label:"Deflationary Recession",    short:"Defl. Recession",   color:C.blue, bg:C.blBg, bdr:C.blBdr, desc:"Crash resolves through debt deflation — falling prices, Japan-style. TLT wins. Gold moderate. BTC loses. Same term as the Macro tab's regime: a deflationary recession, whether you're forecasting it (Macro) or hedging its arrival (here).", size:{ band:"10–18%", note:"the highest insurance allocation — TLT and SPY puts dominate; add IEF as a lower-vol duration alternative." } },
+  { k:"def",       col:"def",       label:"Deflationary Recession",    short:"Defl. Recession",   color:C.blue, bg:C.blBg, bdr:C.blBdr, desc:"Crash resolves through debt deflation — falling prices, Japan-style. TLT wins. Gold moderate. BTC loses. Same term as the regime on State: a deflationary recession, whether you're reading it (State) or hedging its arrival (here).", size:{ band:"10–18%", note:"the highest insurance allocation — TLT and SPY puts dominate; add IEF as a lower-vol duration alternative." } },
   { k:"inf",       col:"inf",       label:"Resolution: Debasement",    short:"Res: Debasement",   color:P.violet600, bg:P.violet50, bdr:P.violet300, desc:"Crash resolves through DEBASEMENT — Fed prints, dollar credibility erodes, currency stress, loss of monetary confidence. Gold and BTC win; TLT is a trap. This is a CRISIS — the OPPOSITE of Macro's 'Inflationary Boom' (a good, growth-strong outcome you'd want to be long). Read at speed, the shared word invites exactly the wrong action; hence 'Resolution: Debasement'. Its slow-motion, multi-year cousin — Financial Repression (negative real yields held for years, Japan-style) — is a Macro-tab regime STATE, not a crash resolution; see the Regime-shift scenarios there, not a column here.", size:{ band:"5–10%", note:"gold and BTC as MONETARY insurance (not crash insurance) — TLT is a trap here." } },
   { k:"stag",      col:"stag",      label:"Resolution: Stagflation",   short:"Res: Stagflation",  color:P.teal700, bg:P.teal50, bdr:P.teal300, desc:"Persistent stagflation — slow grind, not a sharp crash. Favour passive real-asset hedges (GLD, XLP, farmland, HYG puts) over active short instruments. Avoid VIX calls (contango) and SQQQ (daily decay). Size conservatively; favour longer-dated instruments to reduce theta bleed.", size:{ band:"8–15%", note:"gold / staples / HYG puts; size conservatively and favour longer-dated to cut theta bleed over a slow grind." } },
   { k:"hawkish",   col:"hawkish",   label:"Hawkish Rates Repricing",   short:"Hawkish Repricing", color:P.amber700, bg:C.oBg, bdr:P.orange200, desc:"Not a crash — a rates repricing (occurred 2026-07-31: gold −2.07%, TLT −0.87%, XLU −0.37%, XLP −0.80%, IWM −0.70%, BTC −1.8%, SPY roughly flat). Nothing hedges this except the front end. Duration is the risk, and every asset that competes with cash for yield gets sold simultaneously — including the defensives (GLD, TLT, staples) that work in every other scenario.", size:{ band:"front-end only", note:"nothing hedges a rates repricing except the front end (bills / USFR) — duration IS the risk." } },
@@ -403,7 +390,7 @@ const actStyle = a => ACT_STYLE[a] || ACT_STYLE.HOLD;
 const HOLD_LOGIC = {
   decay:    { horizon:"days–weeks",           horizonShort:"days–wks",   exit:"VIX term structure flips back to contango",              exitShort:"vol → contango",       note:"Sold, not held — bleeds continuously (theta / contango roll / daily decay). Holding through the peak gives back the entire gain." },
   tactical: { horizon:"weeks — post-trough window", horizonShort:"wks",   exit:"the recovery rally matures / the resolution confirms",    exitShort:"rally matures",        note:"A VIX-peak TRADE, not a hedge and not a hold. Take the off-the-trough move; don't carry it into the resolution." },
-  regime:   { horizon:"months — until the regime changes", horizonShort:"months", exit:"the Macro-tab regime state changes",             exitShort:"Macro regime flips",   note:"Exit on a regime change, NOT on a liquidity-phase drawdown — that drawdown is how liquid, profitable positions get sold to meet margin (gold −12% over 8 sessions Mar 2020, then all-time highs by August)." },
+  regime:   { horizon:"months — until the regime changes", horizonShort:"months", exit:"the measured regime on State changes",          exitShort:"regime flips",         note:"Exit on a regime change, NOT on a liquidity-phase drawdown — that drawdown is how liquid, profitable positions get sold to meet margin (gold −12% over 8 sessions Mar 2020, then all-time highs by August)." },
   cash:     { horizon:"until the deployment trigger", horizonShort:"to trigger", exit:"bills → duration at the pivot → equities 30–60d after the first cut", exitShort:"deployment sequence", note:"The only asset whose worst outcome is being right and doing nothing. Flips ✅✅→❌ on a REGIME change (Debasement — loses purchasing power), not on a phase change." },
 };
 
@@ -525,20 +512,6 @@ const POSTURE_STATUS = {
 // A status resolved to its colours. Half the table names a STATUS token rather than colours, and
 // reading `.color` off those gave undefined — the Activate / Accumulate / Pause cards drew no accent.
 const postureTone = (s) => { const x = POSTURE_STATUS[s] || POSTURE_STATUS.HOLD; return x.state ? STATUS[x.state] : x; };
-// Midpoint of a "60–70%" style range, for the allocation donut.
-function postureMid(range) {
-  const nums = String(range).replace(/%/g, "").split("–").map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
-  return nums.length === 2 ? (nums[0] + nums[1]) / 2 : (nums[0] || 0);
-}
-// Stages 1–3 auto-trigger from the live signal (same thresholds as the Indicators
-// action card). Stages 4–5 are manual toggles persisted to localStorage.
-const DEPLOY_STAGES = [
-  { n:1, label:"Surveillance",     auto:true,  trigger:"WATCH signal (spread <4.5% & UE <5%)",   note:"All signals within normal range. Monitoring only. No action required." },
-  { n:2, label:"Warning",          auto:true,  trigger:"ALERT signal (spread >4.5% OR UE >5%)",  note:"Buy first insurance tranche. SPY puts 90% strike, 90-day expiry, ~1.5% of portfolio in premium. Reduce leveraged positions." },
-  { n:3, label:"Correction Onset", auto:true,  trigger:"DANGER signal (spread >6% OR UE >5.5%)", note:"Full insurance active. Deploy no new equity. Let puts work. Path 2 corrections average 18 months — do not deploy cash yet." },
-  { n:4, label:"Deploy",           auto:false, trigger:"Manual toggle — judgment call",          note:"Fed pivot confirmed. Two-step sequence: (1) Rotate USFR → IEF immediately on pivot signal — captures rate duration appreciation while assessing equity entry. (2) Begin equity deployment 30-60 days after first cut — software sleeve first (NOW, DDOG, CRWD, PLTR, SNOW), then hardware fills (ASML, AVGO, AMAT), then ARM adds at $360-375. Roll IEF proceeds into equities as positions fill. Maintain 25% cash floor throughout — this never reaches zero." },
-  { n:5, label:"Full Deployment",  auto:false, trigger:"Manual toggle — judgment call",          note:"Fully deployed. Drift toward 50/50 hardware/software by mid-2027. Roll off insurance as VIX normalises below 20." },
-];
 
 // ─── INCOME PLAYS ─────────────────────────────────────────────────────────────
 const INCOME_PLAYS = [
@@ -946,48 +919,6 @@ function bookSinceFiling(fund, prices) {
 
 
 
-// P0.2 — Regime-SHIFT scenarios. The recession-consensus engine produces four states
-// (stag/ref/def/inf) and cannot derive these two: Debasement is a currency-devaluation regime and
-// Hawkish Rates Repricing is a long-end break — neither is a consensus recession outcome. They are
-// resolutions the Insurance tab already carries; the decision they change lives on the Macro tab
-// (the parking bucket). So they are presented here as SELECTABLE scenario states you check
-// positioning against, explicitly NOT consensus probabilities. Boom ≠ Debasement — kept distinct.
-const REGIME_SHIFTS = [
-  {
-    id:"debase", label:"Debasement", color:P.violet600, bg:P.violet50, bdr:P.violet300,
-    tag:"currency devaluation · weak growth · suppressed yields",
-    desc:"Currency loses purchasing power while real growth stays weak and yields are administratively suppressed below inflation. NOT Inflationary Boom (that is strong growth + inflation).",
-    discriminator:"gold up + breakevens UP = confirming · gold up + breakevens FLAT = ambiguous · gold up + breakevens DOWN = a real-yield trade, not debasement",
-    best:["Gold / physical (GLD, 2840.HK)","Hard assets / real assets","Bitcoin (as debasement hedge)","TIPS / inflation-linked","Foreign hard-currency assets"],
-    worst:["Short-duration T-bills — cash loses purchasing power (the parking bucket is the losing trade here)","Nominal long bonds","Cash (USD)"],
-    decision:"⚠ Parking-bucket flip: the USFR/T-bill parking thesis assumes STAGFLATION, where short bills are a best asset. In DEBASEMENT the same bills are the WRONG asset — real value erodes. If the discriminator confirms debasement, the cash bucket must rotate into real assets.",
-  },
-  {
-    id:"hawkish", label:"Hawkish Rates Repricing", color:P.red700, bg:C.rBg, bdr:C.rBdr,
-    tag:"long-end breaks higher · term premium repricing",
-    desc:"The long end reprices higher — 30Y breaks above ~5.35% and rate-sensitives sell together. A duration event, distinct from a growth-driven selloff.",
-    discriminator:"30Y > 5.35% AND gold, TLT, XLU, XLP, IWM selling together (a broad rate-sensitive de-rate, not a single-name move)",
-    best:["Cash / ultra-short (BIL, SGOV)","Floating-rate (USFR)","Energy / commodities (real-rate resilient)","Value over growth"],
-    worst:["Long-duration bonds (TLT, ZROZ)","Rate-sensitive equities (REITs, utilities)","Gold (loses to rising real yields)","High-multiple / unprofitable tech"],
-    decision:"Short-duration parking is CORRECT here (cash earns the higher front-end), but any long-duration hedge (TLT) is the wrong side — a hawkish break is exactly when the duration leg breaks.",
-  },
-  {
-    // Aug-24 — financial repression is NOT a Debasement variant: the mechanism is similar but the
-    // horizon is DECADES, and it is the tool used to AVOID a crash, not a crash resolution. So it is
-    // a structural background STATE, gated on a sustained-negative 10Y real yield (DFII10), and it is
-    // deliberately kept off the Insurance tab (which only asks how a crash resolves).
-    id:"repress", label:"Financial Repression", color:P.teal700, bg:P.teal50, bdr:P.teal300,
-    tag:"structural · multi-year",
-    desc:"Retiring the debt in real terms by holding nominal yields below inflation for years — Dalio's \"artificially low interest rate… the way Japan has done it.\" NOT a crash resolution: repression is the mechanism used to AVOID a crash. Japan ran suppressed JGB yields ~1990–2024 with no crash — the Nikkei peaked in 1989 and did not recover until 2024. Cash bleeds ~1–2%/yr: slow and survivable, not the fast erosion of Debasement.",
-    discriminator:"10Y real yield (DFII10) sustained NEGATIVE → repression active · positive → not repression. This IS the definition — the bondholder must receive less than inflation.",
-    realYieldGated:true,
-    best:["Real assets held for YEARS — physical gold (GLD, 2840.HK), NCREIF-type farmland","Equities with pricing power","TIPS · commodities · foreign hard-currency assets (✅ second tier)"],
-    caution:["Cash — loses ~1–2%/yr; survivable, but a slow real bleed. Distinct from Debasement's ⚠️, where cash is wrong QUICKLY."],
-    worst:["Nominal long bonds — the asset being repressed","ALL decay instruments (puts · VIX calls · SQQQ) — explicitly excluded: the multi-year horizon guarantees they expire worthless long before the thesis pays"],
-    decision:"⚠ Parking-bucket, slow version: in Debasement cash is wrong QUICKLY; in repression cash is wrong SLOWLY — ~1–2% of purchasing power a year. Survivable, and it leaves time to react. Different urgency, same direction: rotate toward real assets, but you are not forced out overnight.",
-    counter:"Counter-case (both sides): Japan's repression worked because domestic savers held JGBs and had nowhere else to go. Roughly a third of US Treasuries are held by foreigners who CAN leave — if they do, the outcome is a currency crisis, not orderly repression (a worse outcome that fits no column here). And today's committee points the other way: Warsh is a hawk who stripped forward guidance, three regional presidents dissented FOR a hike in July, and the July minutes recorded 'many participants' saw tightening as likely necessary. Not a repression-friendly Fed. Dalio is describing a PATH, not today's condition.",
-  },
-];
 
 // CPI tracker series colours — ONE definition shared by the headline tiles, the chart lines
 // and the legend, so a tile can never drift out of sync with the line it labels.
@@ -1057,7 +988,7 @@ function InterventionAutoBlock({ auto, compact = false }) {
       {!compact && (
         <div style={{ color: C.lbl, fontSize: 10.5, marginTop: 3 }}>
           Suspected when USD/JPY falls ≥1.0% in an hour (or ≥1.5% in three), ≥2× DXY's move, within 3% of its 60-day high; confirmed or denied from the MoF's daily CSV and monthly totals.
-          {auto.sources?.scan?.at ? ` Scan ${new Date(auto.sources.scan.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.` : auto.sources?.scan?.error ? ` Scan failed: ${auto.sources.scan.error}.` : ""}
+          {auto.sources?.scan?.at ? ` Scan ${dubaiEt(auto.sources.scan.at)}.` : auto.sources?.scan?.error ? ` Scan failed: ${auto.sources.scan.error}.` : ""}
           {auto.sources?.mof?.error ? ` MoF fetch failed: ${auto.sources.mof.error} — events stay SUSPECTED.` : ""}
         </div>
       )}
@@ -1181,15 +1112,11 @@ function InterventionToggle({ jpyChangePct, dxyChangePct, onChange, auto = null 
   );
 }
 
-// C2 — business days (Mon–Fri) elapsed since an ISO date. A hand-entered ZQ settle goes stale fast:
+// C2 — business days elapsed since an ISO date. A hand-entered ZQ settle goes stale fast:
 // past 3 business days the derived hike/cut count must not read as current, so it is suppressed.
+// ZQ settles on the exchange calendar (CME is open on Columbus and Veterans Day).
 function bizDaysSince(isoDate, now = new Date()) {
-  const start = new Date(isoDate + "T00:00:00Z");
-  if (isNaN(start.getTime())) return 0;
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  let d = new Date(start), n = 0;
-  while (d < end) { d.setUTCDate(d.getUTCDate() + 1); const wd = d.getUTCDay(); if (wd !== 0 && wd !== 6) n++; }
-  return n;
+  return businessDaysSince(isoDate, { now, calendar: "exchange" }) ?? 0;
 }
 function FedPathCard({ effr, feed = null }) {
   const [data, setData] = useState(null);
@@ -1555,16 +1482,6 @@ function CashComparisonCard({ liveInd }) {
   );
 }
 
-// The 2x2 verdict for a live indicators payload — shared so the Sahm annotation and the
-// labour panel can never disagree about whether the print is AMBER.
-function laborVerdictFor(liveInd) {
-  // Uses the July overlay and the payroll count so this shared verdict matches the panel's —
-  // R2's negative-payroll override must be reflected everywhere the verdict is read.
-  const { labor } = overlayJulyLabor(liveInd?.labor);
-  const u3 = labor?.u3, ep = labor?.empPop, pr = labor?.payrolls;
-  if (!u3?.ok || !ep?.ok) return null;
-  return laborVerdict(u3.delta, ep.delta, pr?.ok ? pr.delta : null).verdict;
-}
 
 // C4 — the next BLS Employment Situation release, DERIVED from the cadence (first Friday of the
 // month) instead of a hardcoded date that goes wrong the moment the print lands. If this month's
@@ -1684,7 +1601,6 @@ function CreditBlock({ credit, oas, hyg, reconSummary, history, depth = "full" }
         )}
         <div style={{ fontSize: 11, color: C.lbl, marginTop: 6, lineHeight: 1.5 }}>
           Level bands: &lt;3.0 benign · 3.0–4.5 watchful · 4.5–8.0 stressed · &gt;8.0 recessionary.
-          Trend and the 3Y-window caveat on the Macro tab.
         </div>
       </Card>
     );
@@ -1791,26 +1707,6 @@ function CreditBlock({ credit, oas, hyg, reconSummary, history, depth = "full" }
   );
 }
 
-// ─── LABOUR MODULE (P1 / J / K / M.1) ─────────────────────────────────────────
-// ONE component, rendered on both tabs with a `depth` prop — `full` on Macro (the
-// interpretation lives there) and `glance` on Indicators (which conforms to that tab's card
-// pattern: big number · badge · as-of · chart · right panel). Two implementations drift, and
-// already had: this replaces both.
-//
-// The scoring rule is unchanged and lives in lib/labor.js: U3 is never scored alone, because
-// the rate can FALL on labour-force exit. Emp-pop is the control — employed ÷ working-age
-// population — and it cannot be gamed that way. That is why it is the hero metric.
-// ── F.6 — the growth axis: weekly data and market-implied, read against each other ────────────
-// Claims, continuing claims, the NY Fed Weekly Economic Index and GDPNow are the weekly leg; five
-// relative-performance ratios are the market leg. Both scored in lib/growth.js. The labour module
-// below is monthly and lands three to five weeks after the fact; these are the same axis one to
-// three months earlier. The card describes what each leg is consistent with, which inputs vote
-// which way, what is excluded and why, and what flips it. A late input is excluded and named,
-// never counted flat. The informative state is the two legs DISAGREEING — the market turning
-// while the data has not — and the axis line names it as a turning point rather than a conflict.
-// The state says where the legs are heading; the lean is what the quadrant uses. Shown together so
-// "turning cool" next to a quadrant that read inflation as hot is never left unexplained.
-const axisWords = a => a.state.replace("-", " ") + (a.state !== "confirmed" && a.balance ? ` (leans ${a.balance})` : "");
 const AXIS_STATUS = { confirmed: null, "turning-down": "WATCH", "turning-up": "WATCH", split: "WATCH", "market-only": "WATCH", "data-only": "WATCH", insufficient: "WATCH" };
 function GrowthLegBlock({ title, p, kind }) {
   const tok = STATUS[p.status] || STATUS.WATCH;
@@ -2040,39 +1936,6 @@ function InflationAxisPanel({ data, liveInd }) {
   );
 }
 
-// ── THE MEASURED QUADRANT BESIDE THE CONSENSUS REGIME ────────────────────────
-// The watching period, on screen: what the two axes measure against what the consensus engine
-// derives. Agreement and disagreement are both stated; neither drives anything yet.
-function QuadrantStrip({ liveInd, ism, liveRegime, regimeProbFor, regimeVintage }) {
-  if (!liveInd) return null;
-  const ax = measuredAxes(liveInd, { ism });
-  const q = ax.quadrant;
-  const agree = q.id && liveRegime?.id ? (q.id === liveRegime.id ? "agree" : "disagree") : null;
-  const tok = agree === "agree" ? STATUS.BENIGN : agree === "disagree" ? STATUS.WATCH : STATUS.WATCH;
-  const qLabel = q.id ? `${q.label}` : "no quadrant";
-  return (
-    <Card style={{ borderLeft: "4px solid " + tok.color }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-        <SLabel>Measured vs consensus</SLabel>
-        <span style={{ fontSize: 12.5, color: C.text }}>
-          <b>Measured:</b> {qLabel}{q.id ? ` — ${q.read}` : ` — ${q.read}`}
-        </span>
-        <span style={{ color: C.bdr }}>·</span>
-        <span style={{ fontSize: 12.5, color: C.text }}>
-          <b>Consensus:</b> {liveRegime?.label ?? "—"} {liveRegime ? `${regimeProbFor(liveRegime.id)}%` : ""}{regimeVintage?.grade && regimeVintage.grade !== "fresh" ? ` (consensus ${regimeVintage.grade})` : ""}
-        </span>
-        {agree && (
-          <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: 0.5, color: tok.color, background: tok.bg, border: "1px solid " + tok.bdr, borderRadius: 5, padding: "2px 8px" }}>
-            {agree === "agree" ? "AGREE" : "DISAGREE"}
-          </span>
-        )}
-      </div>
-      <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
-        Growth axis {axisWords(ax.growth)} · inflation axis {axisWords(ax.inflation)}. The measured quadrant is logged daily beside the consensus regime and drives nothing until the two have been watched against each other.
-      </div>
-    </Card>
-  );
-}
 
 // ── THE HAND-KEPT LEDGER ─────────────────────────────────────────────────────
 // lib/ledger.js builds the list; this renders it. Stale and missing first. Each row: the input,
@@ -2286,9 +2149,8 @@ function LaborPanel({ labor, depth = "full", extras = null, announced = false })
             </div>
           );
         })()}
-        {/* K.3 — Indicators is the glance tab; the full interpretation lives on Macro. */}
         <div style={{ fontSize: 11, color: C.lbl, marginTop: 6, lineHeight: 1.5 }}>
-          Emp–pop (solid, left axis) vs U3 (dashed, right). {watchLine} Full interpretation on the Macro tab.
+          Emp–pop (solid, left axis) vs U3 (dashed, right). {watchLine}
         </div>
       </Card>
     );
@@ -2880,13 +2742,16 @@ function useLivePlaybook() {
   // regime.aiAxis + per-name session). Bumping the key retires payloads of an older shape
   // instead of rehydrating them into a renderer that expects the new fields.
   const [byRegion, setByRegion] = useState(() => cacheLoad("cache_playbook_v2", {}));
-  const [loading, setLoading]   = useState(false);
-  const [updated, setUpdated]   = useState(() => cacheLoadDate("cache_playbook_updated_v1"));
-  const [error, setError]       = useState(null);
+  // PER REGION (P8): the three regions are fetched separately, so each keeps its own fetch time
+  // and its own error. One shared stamp was whatever region finished last, and one error was
+  // whichever failed last — neither said which region it was about.
+  const [updatedBy, setUpdatedBy] = useState(() => cacheLoad("cache_playbook_updated_v2", {}));
+  const [errorBy, setErrorBy] = useState({});
+  const [pending, setPending] = useState(0);
 
   const fetchRegion = useCallback(async function(region) {
-    setLoading(true);
-    setError(null);
+    setPending(n => n + 1);
+    setErrorBy(prev => ({ ...prev, [region]: null }));
     try {
       const data = await fetchPlaybook(region);
       if (data && data.region) {
@@ -2895,20 +2760,22 @@ function useLivePlaybook() {
           cacheSave("cache_playbook_v2", merged);
           return merged;
         });
-        const now = new Date();
-        setUpdated(now);
-        try { localStorage.setItem("cache_playbook_updated_v1", now.toISOString()); } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ }
+        setUpdatedBy(prev => {
+          const next = { ...prev, [region]: new Date().toISOString() };
+          cacheSave("cache_playbook_updated_v2", next);
+          return next;
+        });
       } else {
-        setError("Playbook returned no data.");
+        setErrorBy(prev => ({ ...prev, [region]: "Playbook returned no data." }));
       }
     } catch (e) {
       console.error("Playbook fetch error:", e);
-      setError("Fetch error: " + e.message);
+      setErrorBy(prev => ({ ...prev, [region]: "Fetch error: " + e.message }));
     }
-    setLoading(false);
+    setPending(n => Math.max(0, n - 1));
   }, []);
 
-  return { byRegion, loading, updated, error, fetchRegion };
+  return { byRegion, loading: pending > 0, updatedBy, errorBy, fetchRegion };
 }
 
 async function loadFunds() {
@@ -3078,10 +2945,9 @@ function IndicatorChart({ ind, live }) {
   const current = ind.id === "yield" && live ? (live.yieldSpread >= 0 ? "+" : "") + live.yieldSpread.toFixed(2) + "%" :
                   ind.id === "unemp" && live ? live.unemployment.toFixed(1) + "%" :
                   ind.id === "credit" && live ? live.creditSpread.toFixed(2) + "%" :
-                  ind.current;
-  const statusColor = ind.status === "GREEN" ? C.green : ind.status === "RED" ? C.red : C.amber;
-  const statusBg    = ind.status === "GREEN" ? C.gBg   : ind.status === "RED" ? C.rBg  : C.aBg;
-  const statusBdr   = ind.status === "GREEN" ? C.gBdr  : ind.status === "RED" ? C.rBdr : C.aBdr;
+                  // No live read: a dash, not the hard-coded figure from when this card was written,
+                  // which rendered as if current with no date beside it.
+                  "—";
 
   // Source date (asOf) for this metric — monthly for unemployment, daily otherwise.
   const asOfKey = ind.id === "unemp" ? "unemployment" : ind.id === "yield" ? "yieldSpread" : ind.id === "credit" ? "creditSpread" : null;
@@ -3094,8 +2960,10 @@ function IndicatorChart({ ind, live }) {
           <SLabel>{ind.name}</SLabel>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
             <span style={{ fontSize: 28, fontWeight: 900, letterSpacing: -1, color: ind.color }}>{current}</span>
-            <Pill label={ind.label} color={statusColor} bg={statusBg} bdr={statusBdr} />
-            {asOfLbl ? <span style={{ fontSize: 11, color: C.lbl, fontWeight: 700 }}>as of {asOfLbl}</span> : null}
+            {/* The fixed status pill ("Watch") sat beside the live signal below and could disagree
+                with it; the signal box is the status. */}
+            {asOfLbl ? <span style={{ fontSize: 11, color: C.lbl, fontWeight: 700 }}>as of {asOfLbl}</span>
+              : <span style={{ fontSize: 11, color: C.muted }}>no live read — the indicator feed has not loaded</span>}
           </div>
         </div>
         {(() => {
@@ -3179,7 +3047,7 @@ function AssetDetail({ asset, prices, onFetchPrices, pricesLoading, pricesUpdate
     { axis: "Liquidity",  val: asset.liquidityScore },
     { axis: "Stagflation",val: asset.stagScore },
   ];
-  const fmtTime = d => d ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+  const fmtTime = d => (d ? dubaiEt(d) : "");
   const tickers = asset.tickers.map(t => t.t);
 
   return (
@@ -3288,7 +3156,7 @@ function AssetDetail({ asset, prices, onFetchPrices, pricesLoading, pricesUpdate
 
 // ─── FUND DETAIL ──────────────────────────────────────────────────────────────
 function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated }) {
-  const fmtTime = d => d ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+  const fmtTime = d => (d ? dubaiEt(d) : "");
   const pieData = fund.sectors.map(s => ({ name: s.name, value: s.pct }));
   const tickers = fund.holdings.filter(h => h.name !== "Other").map(h => h.name);
 
@@ -3817,7 +3685,7 @@ function PostureCard({ p: raw, regime = null, tape = null, layers = null, region
   return (
     <Card style={{ background: bg, border: "1.5px solid " + bdr, borderTop: "5px solid " + col }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 2 }} title="The tape's what-to-do right now. Portfolio allocation lives on the Posture tab.">Tape stance</span>
+        <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 2 }} title="The tape's what-to-do right now. Portfolio allocation lives on the Plan tab.">Tape stance</span>
         <span style={{ fontSize: 22, fontWeight: 900, color: col, lineHeight: 1.05 }}>{p.posture}</span>
         <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 800, color: C.muted, textTransform: "uppercase" }}>weeks</span>
         {p.tripwires && (
@@ -4373,76 +4241,6 @@ function CorrelationCollapse({ c }) {
   );
 }
 
-// P0.2 — Regime-shift scenarios (Macro tab). Selectable Debasement / Hawkish states the recession
-// engine can't derive, surfaced so the parking-bucket decision has somewhere to live.
-function RegimeShiftScenarios({ realYield = null, realYieldAsOf = null }) {
-  const [sel, setSel] = useState(REGIME_SHIFTS[0].id);
-  const s = REGIME_SHIFTS.find(x => x.id === sel) || REGIME_SHIFTS[0];
-  // Live gate for the real-yield-defined states (financial repression). A sustained-negative 10Y
-  // real yield (DFII10) is the definition; a positive one means the state is NOT active today.
-  const gate = s.realYieldGated
-    ? (realYield == null
-        ? { text: "AWAITING DFII10", col: C.muted, bg: C.bg, bdr: C.bdr }
-        : realYield < 0
-          ? { text: `ACTIVE · DFII10 ${realYield.toFixed(2)}% (negative)`, col: C.red, bg: C.rBg, bdr: C.rBdr }
-          : { text: `NOT ACTIVE · DFII10 +${realYield.toFixed(2)}% (positive)${realYieldAsOf ? ` · ${realYieldAsOf}` : ""}`, col: C.green, bg: C.gBg, bdr: C.gBdr })
-    : null;
-  return (
-    <Card style={{ borderTop: "4px solid " + s.color }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-        <SLabel>🔀 Regime-shift scenarios</SLabel>
-        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>selectable · check positioning — NOT consensus probabilities</span>
-      </div>
-      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-        {REGIME_SHIFTS.map(x => {
-          const on = x.id === sel;
-          return (
-            <button key={x.id} onClick={() => setSel(x.id)} style={{
-              background: on ? x.color : C.surf, color: on ? C.onFill : C.mid,
-              border: "1.5px solid " + (on ? x.color : C.bdr), borderRadius: 8,
-              padding: "6px 12px", fontSize: 12.5, fontWeight: 800, cursor: "pointer", opacity: on ? 1 : 0.75,
-            }}>{on ? "● " : ""}{x.label}</button>
-          );
-        })}
-      </div>
-      <div style={{ marginTop: 10, padding: "12px 14px", background: s.bg, border: "1.5px solid " + s.bdr, borderRadius: 10 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-          <div style={{ fontSize: 16, fontWeight: 900, color: s.color }}>{s.label}</div>
-          {gate && <span style={{ fontSize: 11, fontWeight: 900, letterSpacing: 0.3, color: gate.col, background: gate.bg, border: "1.5px solid " + gate.bdr, borderRadius: 6, padding: "2px 8px" }}>{gate.text}</span>}
-        </div>
-        <div style={{ fontSize: 11, fontWeight: 800, color: s.color, letterSpacing: 0.3, marginTop: 1 }}>{s.tag}</div>
-        <div style={{ fontSize: 12.5, color: C.mid, lineHeight: 1.55, marginTop: 6 }}>{s.desc}</div>
-        <div style={{ fontSize: 11.5, color: C.muted, fontWeight: 700, marginTop: 6, lineHeight: 1.5 }}>
-          <b style={{ color: C.mid }}>Discriminator:</b> {s.discriminator}
-        </div>
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 8 }}>
-          <div style={{ flex: "1 1 200px", minWidth: 0 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 800, color: C.green, textTransform: "uppercase", letterSpacing: 0.4 }}>Best</div>
-            {s.best.map((a, i) => <div key={i} style={{ fontSize: 12, color: C.mid, marginTop: 2, lineHeight: 1.45 }}>✓ {a}</div>)}
-          </div>
-          {s.caution && (
-            <div style={{ flex: "1 1 200px", minWidth: 0 }}>
-              <div style={{ fontSize: 10.5, fontWeight: 800, color: C.amber, textTransform: "uppercase", letterSpacing: 0.4 }}>Caution</div>
-              {s.caution.map((a, i) => <div key={i} style={{ fontSize: 12, color: C.mid, marginTop: 2, lineHeight: 1.45 }}>⚠️ {a}</div>)}
-            </div>
-          )}
-          <div style={{ flex: "1 1 200px", minWidth: 0 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 800, color: C.red, textTransform: "uppercase", letterSpacing: 0.4 }}>Worst</div>
-            {s.worst.map((a, i) => <div key={i} style={{ fontSize: 12, color: C.mid, marginTop: 2, lineHeight: 1.45 }}>✗ {a}</div>)}
-          </div>
-        </div>
-        <div style={{ marginTop: 10, padding: "8px 11px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8, fontSize: 12, fontWeight: 700, color: C.amber, lineHeight: 1.55 }}>
-          {s.decision}
-        </div>
-        {s.counter && (
-          <div style={{ marginTop: 8, padding: "8px 11px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, fontSize: 11.5, color: C.mid, lineHeight: 1.55 }}>
-            <b style={{ color: C.muted }}>⚖ </b>{s.counter}
-          </div>
-        )}
-      </div>
-    </Card>
-  );
-}
 
 // Constituent baskets under the AI-levered axis — same auditable pattern as the other cards.
 function AxisBaskets({ ai, non }) {
@@ -4460,28 +4258,11 @@ function AxisBaskets({ ai, non }) {
 }
 
 // Business days between a YYYY-MM-DD and today (UTC). For the daily-cadence stale check.
-// US market holidays, so a print either side of one is not counted as having aged through it.
-// data/holidays.json is already maintained for lib/sessions.js; this reads the same list rather
-// than keeping a second one.
-// THE US LIST ONLY. data/holidays.json is keyed by exchange, so flattening it would let a Tokyo
-// or Seoul closure suppress a day the US bond market was open — and every series counted here
-// (DGS, DFII10, T10YIE, BAMLH0A0HYM2) is a US print. `half` days are excluded deliberately: an
-// early close is still a session and these series still print on it.
-const US_HOLIDAYS = new Set(HOLIDAYS?.US?.closed || []);
+// Counted on the US BOND calendar (lib/bondDays.js): every series aged here (DGS, DFII10, T10YIE,
+// BAMLH0A0HYM2, EFFR) is a Treasury or Fed print, and none prints on Columbus or Veterans Day
+// even though the stock exchange is open. `half` days still count: an early close is a session.
 function bizDaysAgo(dateStr) {
-  if (!dateStr) return null;
-  const d = new Date(dateStr + "T00:00:00Z");
-  const now = new Date();
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  let n = 0;
-  while (d < end) {
-    d.setUTCDate(d.getUTCDate() + 1);
-    const wd = d.getUTCDay();
-    if (wd === 0 || wd === 6) continue;
-    if (US_HOLIDAYS.has(d.toISOString().slice(0, 10))) continue;   // the exchange was shut
-    n++;
-  }
-  return n;
+  return businessDaysSince(dateStr, { calendar: "bond" });
 }
 // Cadence-based freshness for a macro field → { stale, text }. daily > 2 biz days;
 // intraday > 30m. Also flags a future-dated asOf.
@@ -4498,7 +4279,7 @@ function macroFresh(field) {
     }
     const bd = bizDaysAgo(field.date);
     // MORE THAN ONE BUSINESS DAY BEHIND IS STALE. At the old threshold of two, a Wednesday print
-    // read on Friday rendered as current — and the ACM term premium, which lags by design and
+    // read on Friday rendered as current — and the term premium, which lags by design and
     // feeds the one macro read supporting the gold position, sat six calendar days old looking
     // live. A number that has not moved since before the last session should not look like one
     // that has.
@@ -5116,7 +4897,7 @@ function RatesStrip({ macro }) {
                   padding: "8px 14px", background: C.surf, border: "1.5px solid " + C.bdr, borderRadius: 12 }}>
       <span style={{ fontSize: 10, fontWeight: 800, color: C.lbl, letterSpacing: 1.5, textTransform: "uppercase" }}>Rates</span>
       {items}
-      <span style={{ marginLeft: "auto", fontSize: 10.5, color: C.lbl }}>full card in Data below · Macro tab</span>
+      <span style={{ marginLeft: "auto", fontSize: 10.5, color: C.lbl }}>full card in Data below</span>
     </div>
   );
 }
@@ -5144,11 +4925,16 @@ function DataFold({ children }) {
   );
 }
 
-function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updated, onRefresh, fmtTime, reconSummary, liveIntervention, regime = null, layers = null, onOpenCalendar = null }) {
+function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, errorBy = {}, updatedBy = {}, onRefresh, fmtTime, reconSummary, liveIntervention, regime = null, layers = null, onOpenCalendar = null }) {
   // Both All and single-region are filtered views of ONE spine. `active` = loaded data for
-  // the selected region(s); `data` (= first active) backs the global macro strip + calendar.
+  // the selected region(s); `data` heads the page — the stance, scenarios, tripwires, the read —
+  // and is the US whenever it is selected and loaded (lib/overviewRegions.js), not whichever
+  // region happens to be first in the selection.
   const active = regions.map(r => byRegion[r]).filter(Boolean);
-  const data = active[0];
+  const lead = leadRegion(regions, byRegion);
+  const data = lead ? byRegion[lead] : null;
+  const stamps = regionStamps(regions, { updatedBy, errorBy, byRegion });
+  const regionName = (r) => (PB_REGIONS.find(x => x.id === r)?.label || r).replace(/^\S+\s/, "");
   const multi = regions.length > 1;
 
   // Combined, sorted names across active regions. Sort: category → (region, ALL only) →
@@ -5179,32 +4965,31 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           })}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {(() => {
-            // The "Updated" stamp is rehydrated from localStorage, so it can be DAYS old while
-            // still rendering as a bare HH:MM that reads as current. Show the date whenever it
-            // is not today, and flag stale cache outright — a global stamp must never imply a
-            // freshness the per-field stamps contradict.
-            const u = updated ? new Date(updated) : null;
-            const today = u && u.toDateString() === new Date().toDateString();
-            const ageH = u ? (Date.now() - u.getTime()) / 3.6e6 : null;
-            const old = ageH != null && ageH > 12;
-            return (
-              <span style={{ fontSize: 12, color: old ? C.amber : C.muted, fontWeight: old ? 700 : 400 }}
-                title={u ? u.toString() : "never fetched"}>
-                {/* FETCHED, not "as of". The tiles beneath refresh on different cadences — FRED
-                    dailies, intraday quotes, manual pastes — so this timestamp is when the payload
-                    was pulled and is an upper bound on freshness, never a statement that everything
-                    on screen is current to it. The per-tile "last print" dates are the authority. */}
-                {old ? "⚠ cached " : "Fetched "}
-                {u ? (today ? fmtTime(u) : u.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + fmtTime(u)) : "—"}
+          {/* ONE STAMP PER REGION. FETCHED, not "as of": the tiles beneath refresh on different
+              cadences, so a fetch time is an upper bound on freshness, never a statement that
+              everything on screen is current to it. Rehydrated from localStorage, so it can be days
+              old; fmtTime then carries the date and age, and an old copy is flagged. */}
+          <span style={{ display: "flex", flexWrap: "wrap", gap: "2px 10px", fontSize: 12, color: C.muted, justifyContent: "flex-end" }}>
+            {stamps.map(st => (
+              <span key={st.region} title={st.at ? st.at.toString() : "never fetched"}
+                style={{ color: st.error || st.old ? C.amber : C.muted, fontWeight: st.error || st.old ? 700 : 400 }}>
+                {regionName(st.region)}{st.region === lead && multi ? " (lead)" : ""}: {st.error ? "⚠ failed" : st.old ? "⚠ cached " : ""}{st.at ? fmtTime(st.at) : st.error ? "" : "—"}
               </span>
-            );
-          })()}
+            ))}
+          </span>
           <Btn onClick={onRefresh} disabled={loading} color={C.blue} bgColor={C.blBg} label={loading ? "⏳ …" : "🔄 Refresh"} />
         </div>
       </div>
 
-      {error && <Card style={{ background: C.rBg, border: "1.5px solid " + C.rBdr }}><span style={{ color: C.red, fontSize: 13 }}>{error}</span></Card>}
+      {stamps.some(st => st.error) && (
+        <Card style={{ background: C.rBg, border: "1.5px solid " + C.rBdr }}>
+          {stamps.filter(st => st.error).map(st => (
+            <div key={st.region} style={{ color: C.red, fontSize: 13 }}>
+              {regionName(st.region)}: {st.error}{st.loaded ? " — showing the last good copy." : ""}
+            </div>
+          ))}
+        </Card>
+      )}
 
       {!data ? (
         <Card><div style={{ color: C.muted, fontSize: 14 }}>{loading ? "Loading…" : "No data yet — hit Refresh."}</div></Card>
@@ -5378,8 +5163,8 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                   hours: a Friday settle served after Sunday's reopen reads STALE rather than
                   passing as a live tick. WTI and Brent both shown — the spread is itself a
                   read on waterborne supply stress. */}
-              <MacroCell field={data.macro.wti}   value={data.macro.wti?.value != null ? "$" + data.macro.wti.value : "—"}     delta={data.macro.wti?.delta} deltaSuffix="" />
-              <MacroCell field={data.macro.brent} value={data.macro.brent?.value != null ? "$" + data.macro.brent.value : "—"} delta={data.macro.brent?.delta} deltaSuffix="" />
+              <MacroCell field={data.macro.wti}   value={data.macro.wti?.value != null ? "$" + data.macro.wti.value : "—"}     delta={data.macro.wti?.delta} deltaSuffix=" $/bbl" />
+              <MacroCell field={data.macro.brent} value={data.macro.brent?.value != null ? "$" + data.macro.brent.value : "—"} delta={data.macro.brent?.delta} deltaSuffix=" $/bbl" />
               {(data.macro.wti?.value != null && data.macro.brent?.value != null) && (
                 <MetricCard label="Brent − WTI"
                   title="waterborne vs landlocked crude — widens on shipping/supply stress"
@@ -5799,7 +5584,8 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
                 // C6 — countdown chip so imminence is legible, and adjacent same-window catalysts read
                 // as the collision they are (e.g. NVDA Aug 26 → Jackson Hole Aug 27–29).
                 const days = Math.round((new Date(e.date + "T00:00:00Z") - new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z")) / 864e5);
-                const cd = e.reported ? null : days <= 0 ? "today" : days === 1 ? "tomorrow" : `in ${days}d`;
+                // A past event not marked reported is "passed", not "today" — `days <= 0` used to cover both.
+                const cd = e.reported ? null : days < 0 ? "passed" : days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days}d`;
                 const soon = !e.reported && days >= 0 && days <= 2;
                 return (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0", fontSize: 13, color: e.reported ? C.lbl : C.mid, borderBottom: i < data.calendar.length - 1 ? "1px solid " + C.bdr : "none" }}>
@@ -5943,31 +5729,30 @@ function AnalystViewBoard({ live, probFor, engineRegime, consensus }) {
   );
 }
 
-// The previous Market Watch and Posture tabs, reachable from a link beside the new ones for a week after the
-// rebuild, then removed.
-const LEGACY_BY_GROUP = {
-  markets: [
-    { id: "macro",      label: "🌐 Macro (previous)"       },
-    { id: "indicators", label: "📡 Indicators (previous)"  },
-  ],
-  plan: [
-    { id: "smartmoney", label: "🏦 Smart Money (previous)" },
-    { id: "posture",    label: "🎯 Posture (previous)"     },
-  ],
-};
+// HAND-WRITTEN SMART MONEY NOTES carry the date they were written (P14), read from the commit
+// that last changed each one. They describe a moment; without a date a note from August reads
+// as this morning's. Update the date whenever the note's text is rewritten.
+const SM_NOTES_WRITTEN = { fedContext: "2026-09-28", aiInfra: "2026-08-24", q2Signal: "2026-08-24" };
+function WrittenOn({ date }) {
+  const days = Math.floor((Date.now() - Date.parse(date + "T12:00:00Z")) / 86400000);
+  const old = days > 30;
+  return (
+    <span title="When this note was written by hand. It is not updated automatically." style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", whiteSpace: "nowrap",
+      color: old ? C.amber : C.lbl, border: "1px solid " + (old ? C.aBdr : C.bdr), borderRadius: 4, padding: "1px 5px", marginLeft: 6 }}>
+      written {new Date(date + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })}{days >= 1 ? ` · ${days}d ago` : ""}
+    </span>
+  );
+}
+
 // Data health is not a place you go to read the market; it is the state of the inputs behind every
 // number. It opens from the status dot beside the groups rather than sitting among them.
 const HEALTH_TAB = { id: "health", label: "🩺 Data health" };
-const LEGACY_TABS = Object.values(LEGACY_BY_GROUP).flat();
-const LEGACY_UNTIL = "2026-10-08";
-const legacyOffered = new Date().toISOString().slice(0, 10) < LEGACY_UNTIL;
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
   // Lands on the first tab of the first group. Declaring Trade Desk first and then opening in the
   // middle of Market Watch is the kind of small incoherence that makes an ordering feel arbitrary.
   const [tab, setTab]           = useState("global");
-  const [showLegacy, setShowLegacy] = useState(false);   // the previous Market Watch tabs, while they are offered
   // THE GO BAR (src/GoBar.jsx): open state, and the last Gamma symbol it asked for.
   const [goOpen, setGoOpen] = useState(false);
   const [gexRequest, setGexRequest] = useState(null);
@@ -6013,9 +5798,7 @@ export default function App() {
   // still computes and, when it diverges from the pin, surfaces a banner with a follow-signal action.
   const pickInsurancePhase = (k) => { setInsurancePhase(k); setInsurancePinned(true); };
   const followInsuranceSignal = () => { setInsurancePinned(false); };
-  const [stage4, setStage4] = useState(false); // Posture deploy stage 4 — manual, persisted
-  const [stage5, setStage5] = useState(false); // Posture deploy stage 5 — manual, persisted
-  const [portfolioValue, setPortfolioValue] = useState(""); // Posture portfolio total (digits only), persisted
+  const [portfolioValue, setPortfolioValue] = useState(""); // Plan portfolio total (digits only), this browser only
   const [funds, setFunds]       = useState(DEFAULT_FUNDS);
   const [selectedFund, setSelectedFund] = useState(DEFAULT_FUNDS[0]);
   // Task 1b — manual recession-source overrides, keyed by recessionSrcKey. Loaded once from the
@@ -6029,7 +5812,7 @@ export default function App() {
 
   const { prices, loading: pricesLoading, updated: pricesUpdated, fetchPrices } = useLivePrices();
   const { live: liveInd, loading: indLoading, updated: indUpdated, error: indError, fetchIndicators } = useLiveIndicators();
-  const { byRegion: pbData, loading: pbLoading, updated: pbUpdated, error: pbError, fetchRegion: fetchPlaybookRegion } = useLivePlaybook();
+  const { byRegion: pbData, loading: pbLoading, updatedBy: pbUpdatedBy, errorBy: pbErrorBy, fetchRegion: fetchPlaybookRegion } = useLivePlaybook();
   // Task 1a+1b — the recession table the whole app reads: manual override > auto-feed > static.
   const effectiveRecessionSources = useMemo(
     () => mergeRecessionSources(RECESSION_SOURCES, liveInd?.recessionFeeds || {}, recessionOverrides),
@@ -6043,7 +5826,7 @@ export default function App() {
   // dashboard and the log cannot disagree about what the regime was.
   const fallbackRegimes = FALLBACK_REGIMES;
   const snap = useMemo(() => regimeSnapshot(liveInd, { overrides: recessionOverrides }), [liveInd, recessionOverrides]);
-  const { recConsensus, recKalshi2027, recDecayed, laborView, laborAnnounced, laborExtras, derivedRegimes, regimeVintage } = snap;
+  const { recConsensus, recKalshi2027, laborView, laborAnnounced, laborExtras, derivedRegimes, regimeVintage } = snap;
   // ── THE HAND-KEPT LEDGER ─────────────────────────────────────────────────────
   // Every input a person keeps, with its age and what the system does when it is late. One list,
   // so nothing is overlooked for a while because its badge was on a tab nobody opened.
@@ -6069,27 +5852,10 @@ export default function App() {
       calendarEvents: Array.isArray(CALENDAR) ? CALENDAR : (CALENDAR?.events || []),
     },
   }), [manualStore, pbData, liveInd, effectiveRecessionSources, sbFeedTop]);
-  // Section D — one labour-stress read, replacing every unemployment-RATE tripwire.
-  const labStress = laborStress({
-    empPop: { delta: laborView?.empPop?.delta ?? null },
-    household: { changeK: laborView?.household?.delta ?? null },
-    payrolls: { changeK: laborView?.payrolls?.delta ?? null },
-  });
   const regimeProbFor = (id) => (derivedRegimes || fallbackRegimes)[
     { stag: "stagflation", ref: "reflationary", def: "deflationary", inf: "inflationary" }[id]
   ];
 
-  // The four regime cards + the colour bar, ordered by probability (desc) so the most-likely
-  // state reads first. Probabilities are clamped to finite integers HERE, once — a bad/missing
-  // input can then never produce an "undefined%"/"NaN%" width that would collapse the colour bar
-  // to nothing. Stable secondary sort keeps equal-probability states in canonical order.
-  const regimeSorted = useMemo(() => {
-    const src = derivedRegimes || fallbackRegimes;
-    const key = { stag: "stagflation", ref: "reflationary", def: "deflationary", inf: "inflationary" };
-    return REGIMES
-      .map((r, i) => ({ r, prob: Math.max(0, Math.min(100, Math.round(Number(src?.[key[r.id]]) || 0))), i }))
-      .sort((a, b) => (b.prob - a.prob) || (a.i - b.i));
-  }, [derivedRegimes]);
 
   // ── P0.2 — computed regime vs displayed regime, deliberately separate ────────
   // liveRegime is ALWAYS what the engine computes; it is never user-editable. viewRegime is
@@ -6166,12 +5932,6 @@ export default function App() {
   const [liveIntervention, setLiveIntervention] = useState(null);
   const [regimeHistory, setRegimeHistory] = useState([]);
   useEffect(() => { fetch("/api/regime-log?limit=90").then(r => r.json()).then(j => setRegimeHistory(j.rows || [])).catch(() => {}); }, []);
-  // Only rows carrying a reading can be plotted. Counting rows the chart cannot draw is how
-  // an empty chart came to announce "3 days logged" — the label must describe the picture.
-  const plottableHistory = useMemo(
-    () => (regimeHistory || []).filter(r => r && r.stagflation_p != null),
-    [regimeHistory],
-  );
   useEffect(() => {
     if (!derivedRegimes || !liveRegime) return;
     if (!stateFeedStatus.done) return;                                 // wait for the gauges, so the row carries the measured state
@@ -6240,14 +6000,13 @@ export default function App() {
   useEffect(function() {
     if (tab === "global") pbRegions.forEach(r => fetchPlaybookRegion(r));
     // Credit detail and the yen toggle on Drivers (and the previous Macro layout) read the US payload.
-    else if (tab === "drivers" || tab === "macro" || tab === "indicators" || tab === "calendar") fetchPlaybookRegion("us");
+    // Hedges too: its tape chip and fallback phase read pbData.us, which it never fetched itself.
+    else if (tab === "drivers" || tab === "insurance" || tab === "calendar") fetchPlaybookRegion("us");
   }, [tab, pbRegions, fetchPlaybookRegion]);
 
   // Load manual deploy-stage toggles + portfolio value from localStorage
   useEffect(function() {
     try {
-      setStage4(localStorage.getItem("posture_stage4_active") === "true");
-      setStage5(localStorage.getItem("posture_stage5_active") === "true");
       const pv = localStorage.getItem("portfolio_total_value");
       if (pv) setPortfolioValue(pv.replace(/[^0-9]/g, ""));
     } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ }
@@ -6257,31 +6016,15 @@ export default function App() {
     setPortfolioValue(digits);
     try { localStorage.setItem("portfolio_total_value", digits); } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ }
   }
-  function toggleStage4() {
-    setStage4(function(v) { const n = !v; try { localStorage.setItem("posture_stage4_active", String(n)); } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ } return n; });
-  }
-  function toggleStage5() {
-    setStage5(function(v) { const n = !v; try { localStorage.setItem("posture_stage5_active", String(n)); } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ } return n; });
-  }
 
   // "Updated 14:32" on a payload cached three weeks ago reads exactly like one fetched two
   // minutes ago, because the clock face repeats every day. The last successful indicator fetch is
   // restored from localStorage and re-rendered as "Live:" whether or not today's fetch worked, so
   // the timestamp is the only thing standing between a stale payload and a confident misread of
   // the macro board. Anything not from today therefore carries its DATE and says how old it is.
-  const fmtTime = d => {
-    if (!d) return "—";
-    // WITH THE ZONE. "Updated 15:53" sat above region panels reading "ASIA CLOSED 21:14 local",
-    // "EUROPE OPEN 14:14 local" and "US PRE-OPEN 09:14 local" — three explicit local times and one
-    // bare number, which cannot be reconciled against any of them without knowing which zone it is
-    // in. The implied gap was over an hour and there was no way to tell from the screen whether
-    // that was real.
-    const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
-    const iso = x => new Date(x.getTime() - x.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-    if (iso(d) === iso(new Date())) return t;
-    const days = Math.floor((Date.now() - d.getTime()) / 86400000);
-    return `${iso(d)} ${t} — ${days < 1 ? "yesterday" : days + "d old"}`;
-  };
+  // WITH THE ZONES: Dubai first, ET in brackets (lib/timeFmt.js). "Updated 15:53" once sat above
+  // region panels reading exchange-local times and could not be reconciled with any of them.
+  const fmtTime = d => (d ? dubaiEtStamp(d) : "—");
 
   // ── SHARED MACRO BLOCKS ── rendered on the previous Macro layout and on Drivers / Street. One
   // definition each, lifted out of the Macro tab so the new screens do not carry copies.
@@ -6291,6 +6034,9 @@ export default function App() {
               {(() => {
                 const bps = liveInd?.impliedCutsBps ?? null;
                 const cf = liveInd?.currentFedFunds ?? null, tb = liveInd?.tbill6m ?? null;
+                // Each leg carries its own date, so a monthly fallback or a holiday-old bill shows.
+                const cfSrc = /monthly/i.test(liveInd?.currentFedFundsSource || "") ? "funds (monthly avg)" : "EFFR";
+                const dShort = (d) => d ? ` (${new Date(d + "T12:00:00Z").toLocaleString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })})` : "";
                 const nx = nextMeetingOdds(liveInd?.fedPathFeed ?? null);
                 const mtgLabel = nx ? new Date(nx.meeting + "T12:00:00Z").toLocaleString("en-US", { month: "long", day: "numeric", timeZone: "UTC" }) : null;
                 const sept = nx ? nx.hikePct : null;
@@ -6322,7 +6068,7 @@ export default function App() {
                       {nx?.asOf && <span style={{ marginLeft: "auto", fontSize: 10.5, color: C.muted }}>ZQ settle {nx.asOf}</span>}
                     </div>
                     <div style={{ marginTop: 6 }}>
-                      {row("6-month path", bps != null ? `${bps} bps` : "—", bps != null ? `${bps > 0 ? "cuts" : bps < 0 ? "hikes" : "flat"} priced · 6M bill ${tb != null ? tb.toFixed(2) : "—"}% vs funds ${cf != null ? cf.toFixed(2) : "—"}%` : "Fed funds / T-bill not loaded", bps != null ? dirCol(sixDir) : C.muted)}
+                      {row("6-month path", bps != null ? `${bps} bps` : "—", bps != null ? `${bps > 0 ? "cuts" : bps < 0 ? "hikes" : "flat"} priced · 6M bill ${tb != null ? tb.toFixed(2) : "—"}%${dShort(liveInd?.asOf?.tbill6m)} vs ${cfSrc} ${cf != null ? cf.toFixed(2) : "—"}%${dShort(liveInd?.asOf?.currentFedFunds)}` : "Fed funds / T-bill not loaded", bps != null ? dirCol(sixDir) : C.muted)}
                       {nx ? row(`${mtgLabel} meeting`, nx.cutPct > 0 ? `${nx.cutPct}% cut` : `${sept}%`, `${nx.cutPct > 0 ? "implied cut odds" : "implied hike odds"} · ${nx.contract} ZQ ${nx.impliedPost.toFixed(3)}% vs EFFR ${nx.effr.toFixed(2)}%`, dirCol(septDir))
                           : row("Next meeting", "—", "ZQ curve not loaded", C.muted)}
                     </div>
@@ -7044,7 +6790,6 @@ export default function App() {
   // were doing (act / read / revisit), which put Gamma — a view of one underlying — beside the
   // Console, and Hedges and Income — which act on positions — under the longer-horizon playbook.
   // Every view and its id are unchanged; only where it sits moved.
-  const legacyOn = (g) => LEGACY_BY_GROUP[g].some(t => t.id === tab) || (showLegacy && legacyOffered);
   const TAB_GROUPS = [
     // MARKETS reads one measured state: the day's overview, State landing on it, Drivers with every
     // gauge behind it, Ratios with who is winning in seven pairs (src/RatiosPanel.jsx), and the
@@ -7055,7 +6800,6 @@ export default function App() {
       { id: "drivers",    label: "📈 Drivers"        },
       { id: "ratios",     label: "⚖️ Ratios"         },
       { id: "calendar",   label: "📅 Calendar"       },
-      ...(legacyOn("markets") ? LEGACY_BY_GROUP.markets : []),
     ] },
     // TICKERS — one underlying at a time. Gamma today; the per-name page joins it.
     { id: "tickers", label: "Tickers", hint: "one name", tabs: [
@@ -7073,7 +6817,6 @@ export default function App() {
     { id: "plan", label: "Plan", hint: "revisit", tabs: [
       { id: "plan",       label: "🎯 Plan"           },
       { id: "street",     label: "🏦 Smart Money"    },
-      ...(legacyOn("plan") ? LEGACY_BY_GROUP.plan : []),
     ] },
   ];
   // Flat list kept so every existing lookup — the error boundary's tab name, most of all — keeps
@@ -7225,12 +6968,6 @@ export default function App() {
                 {t.label}
               </button>
             ))}
-            {inGroup && LEGACY_BY_GROUP[activeGroup.id] && legacyOffered && !LEGACY_TABS.some(t => t.id === tab) && (
-              <button onClick={() => setShowLegacy(v => !v)} title={`${LEGACY_BY_GROUP[activeGroup.id].map(t => t.label.replace(/^\S+\s/, "").replace(" (previous)", "")).join(", ")} as they were — offered until ${LEGACY_UNTIL}`}
-                style={{ background: "none", border: "none", color: C.muted, padding: "8px 10px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, textDecoration: "underline", marginLeft: "auto" }}>
-                {showLegacy ? "hide previous layout" : "previous layout ▸"}
-              </button>
-            )}
           </div>
           {/* THE STATE STRIP — on every tab, sticky: the measured regime, conditions and policy
               (lib/marketState.js). The consensus regime and the credit ladder it used to show are
@@ -7251,7 +6988,10 @@ export default function App() {
               : `${REGIMES.find(x => x.id === r.id)?.label ?? r.label} ${r.probs[r.id]}%`;
             const streetDisagrees = r.available && liveRegime && !r.contested && liveRegime.id !== r.id;
             return (
-              <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "nowrap", overflowX: "auto", scrollbarWidth: "none", padding: "7px 2px 3px", borderTop: "1px solid " + C.bdr, marginTop: 4 }}>
+              // WRAPS, NOT SCROLLS. On a 390px phone the strip ran past the edge with its scrollbar
+              // hidden, so "Inflationary Boom 48% → defl" read as cut off and the chips after it
+              // were invisible. It now breaks onto a second line.
+              <div style={{ display: "flex", columnGap: 14, rowGap: 4, alignItems: "center", flexWrap: "wrap", padding: "7px 2px 3px", borderTop: "1px solid " + C.bdr, marginTop: 4 }}>
                 {chip("Regime", `${regTxt}${r.available && r.drifting ? ` → ${{ ref: "refl", inf: "infl", stag: "stag", def: "defl" }[r.drifting]}` : ""}`, pal?.color || C.mid, () => setTab("state"))}
                 <span style={{ color: C.bdr }}>·</span>
                 {chip("Conditions", c?.score != null ? `${c.score} ${c.band.label}${c.trend === "rising" ? " ↑" : c.trend === "easing" ? " ↓" : ""}` : "—", bandCol, () => setTab("state"))}
@@ -7307,6 +7047,14 @@ export default function App() {
         {/* ── GAMMA EXPOSURE ──
             Self-contained: its own tab, its own endpoints, its own state. Nothing about it lives
             in this file beyond the mount, which is the whole point of building it separately. */}
+        {/* A FAILED MACRO REFRESH IS SAID, ON EVERY TAB THAT READS IT. The error was rendered only
+            on the retired Indicators tab, so State, Drivers, Plan, Hedges and Income kept drawing
+            the last stored copy with nothing to say it was old. */}
+        {indError && ["state", "drivers", "plan", "insurance", "income", "global", "street"].includes(tab) && (
+          <div style={{ padding: "8px 12px", marginBottom: 10, borderRadius: 8, background: C.aBg, border: "1px solid " + C.aBdr, color: C.amber, fontSize: 12.5, fontWeight: 700 }}>
+            ⚠ Macro indicators did not refresh — {indError} Showing the copy from {indUpdated ? dubaiEtStamp(indUpdated) : "an earlier load"}.
+          </div>
+        )}
         {/* A Go bar request is spent once Gamma has acted on it, so returning to the tab later opens it as usual. */}
         {tab === "gex" && <GexPanel request={gexRequest} onRequestDone={() => setGexRequest(null)} />}
         {tab === "ratios" && <RatiosPanel />}
@@ -7396,470 +7144,10 @@ export default function App() {
           </div>
         )}
 
-        {/* ── INDICATORS ── */}
-        {tab === "indicators" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-
-
-            {/* ACTION CARD — top, high-emphasis, colorizes with signal */}
-            {(() => {
-              const cs = liveInd?.creditSpread ?? null;   // null, never a chosen number — creditStatus(null) is null and the stage falls through
-              // ── Sections H + L — derived, with CREDIT'S VETO applied ──
-              // Previously: isDanger = cs > 6.0 || labStress.severe, which let a severe labour
-              // print alone print "Stage 3 — Full Insurance Active" while the master gauge
-              // directly beneath read BENIGN at 2.84. Those describe different worlds: Stage 3
-              // means insurance is already ON, benign credit means nothing has happened yet.
-              // HY OAS is the master gauge, so it now vetoes a full-defensive call.
-              const act = deriveAction({
-                oas: cs,
-                regimeLabel: liveRegime?.label, regimePct: regimeProbFor(liveRegime?.id),
-                regimeContested: !!derivedRegimes?.contested,
-                regimeConviction: regimeVintage.conviction,
-                labourVerdict: laborVerdictFor(liveInd), labourSevere: labStress.severe,
-                ratesNote: liveInd?.yieldSpread != null ? `curve ${liveInd.yieldSpread >= 0 ? "+" : ""}${liveInd.yieldSpread.toFixed(2)}%` : null,
-                vintages: {
-                  regime: `${CONSENSUS_VINTAGE.label}, ${CONSENSUS_VINTAGE.staleNote}${regimeVintage.pct != null ? `, ${regimeVintage.pct}% of the consensus alive` : ''}`,
-                  credit: liveInd?.asOf?.creditSpread ? `obs ${liveInd.asOf.creditSpread}` : null,
-                  labour: liveInd?.labor?.empPop?.date ? `obs ${liveInd.labor.empPop.date}` : null,
-                },
-              });
-              const isDanger  = act.status === "DANGER";
-              const isAlert   = act.status === "ELEVATED";
-              const isNeutral = act.stage === 1 && activeRegime.id === "ref";
-              const sigLabel  = act.status === "ELEVATED" ? "ALERT" : act.status === "BENIGN" && isNeutral ? "NEUTRAL" : act.status === "BENIGN" ? "WATCH" : act.status;
-              // Colour tracks STATUS; the instruction tracks STAGE. Keeping both on one
-              // status-keyed map is what put "Stage 1 active — Surveillance. No insurance
-              // purchases yet." underneath a "Stage 2 — Accumulate insurance" headline:
-              // deriveAction compresses stage 2 to WATCH and stage 3 to ELEVATED, so a map
-              // that assumed WATCH=1 / ALERT=2 / DANGER=3 was one stage behind at every level
-              // above 1. The card contradicted itself, and the bullets were the wrong advice.
-              const GRADIENTS = {
-                DANGER:  { g1: C.heroDanger1, g2: C.heroDanger2, shadow: "rgba(153,27,27,0.35)" },
-                ALERT:   { g1: C.heroAlert1, g2: C.heroAlert2, shadow: "rgba(146,64,14,0.35)" },
-                WATCH:   { g1: C.heroWatch1, g2: C.heroWatch2, shadow: "rgba(30,41,59,0.35)" },
-                NEUTRAL: { g1: C.heroNeutral1, g2: C.heroNeutral2, shadow: "rgba(22,101,52,0.30)" },
-              };
-              const STAGE_BULLETS = {
-                1: ["🔍 Stage 1 — Surveillance. No insurance purchases yet.",
-                    "📉 VIX below 20 means insurance is cheap — this is the preparation window, not the activation window.",
-                    "💵 Berkshire's playbook: T-bills at ~4.2% while waiting. Optionality > yield."],
-                2: ["🛡️ Stage 2 — Accumulate insurance. Build the position while it is cheap.",
-                    "🎯 SPY puts at 90% strike, 90-day expiry, ~1.5% of portfolio in premium. Scale in; do not size it all at once.",
-                    "📉 Reduce leveraged positions. This is a preparation stance, not a defensive one — equity exposure stays on."],
-                3: ["🚨 Stage 3 — Full insurance active. No new equity.",
-                    "⏳ Do not deploy cash yet — Path 2 corrections average 18 months.",
-                    "📈 Wait for a VIX peak before Stage 4."],
-                4: ["🚀 Stage 4 — Deploy. Rotate from insurance into risk.",
-                    "📊 Harvest puts into the peak; recycle premium into equities in tranches.",
-                    "🔄 Re-establish the long-term book before the recovery is obvious."],
-              };
-              const NEUTRAL_BULLETS = [
-                "🌱 Reflationary recovery underway. AI infrastructure, broad equities, and REITs leading.",
-                "📈 Reduce insurance overweight — defensive positioning gives way to growth assets.",
-                "🔄 Watch for credit spread re-widening as the signal to rotate back defensive.",
-              ];
-              const cfg = {
-                ...(GRADIENTS[sigLabel] || GRADIENTS.WATCH),
-                action: act.label,
-                bullets: sigLabel === "NEUTRAL" ? NEUTRAL_BULLETS : (STAGE_BULLETS[act.stage] || STAGE_BULLETS[1]),
-              };
-              // ── Section A — contested guard ──
-              // A 1pp separation between the top two states is a tie. A tie cannot support a
-              // capital-deployment instruction, so the directional recommendation is
-              // SUPPRESSED entirely — no "Risk-On", no "Deploy", no defensive equivalent.
-              const contested = !!derivedRegimes?.contested;
-              const gapPP = derivedRegimes?.topTwoGap;
-              const topTwoLabels = (derivedRegimes?.topTwo || [])
-                .map(id => REGIMES.find(r => r.id === id)?.label).filter(Boolean);
-              return (
-                <>
-                  <div style={{ background: contested ? `linear-gradient(135deg, ${C.heroContested1}, ${C.heroContested2})` : `linear-gradient(135deg, ${cfg.g1}, ${cfg.g2})`, borderRadius: 14, padding: "18px 22px", color: C.onHero, boxShadow: `0 4px 24px ${contested ? "rgba(75,80,104,0.35)" : cfg.shadow}`, transition: "background 0.4s" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
-                      <div>
-                        <div style={{ fontSize: 11, letterSpacing: 3, textTransform: "uppercase", opacity: 0.7, fontWeight: 700, marginBottom: 5 }}>
-                          {contested ? "No directional signal" : "Recommended Action"} · consensus inputs {CONSENSUS_VINTAGE.label}
-                        </div>
-                        <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1.2 }}>
-                          {contested ? `REGIME CONTESTED — no clear signal. Top two states within ${gapPP}pp.` : act.label}
-                        </div>
-                        {/* L.3 — the stage definition, so "Stage 3" is never unexplained. */}
-                        {!contested && <div style={{ fontSize: 12, opacity: 0.82, marginTop: 3, lineHeight: 1.5 }}>{act.desc}</div>}
-                      </div>
-                      <div style={{ background: "rgba(255,255,255,0.18)", borderRadius: 10, padding: "8px 16px", textAlign: "center", backdropFilter: "blur(4px)", minWidth: 90 }}>
-                        <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", opacity: 0.8, marginBottom: 2 }}>Signal</div>
-                        <div style={{ fontSize: 22, fontWeight: 900, color: C.onHero, lineHeight: 1 }}>{contested ? "—" : sigLabel}</div>
-                        <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>{contested ? topTwoLabels.join(" / ") : activeRegime.label}</div>
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                      {(contested
-                        ? [`⚖️ ${topTwoLabels.join(" and ")} are separated by ${gapPP}pp — that is a tie, not a winner.`,
-                           "🚫 Directional recommendation suppressed. A 1-in-2 call cannot support a deployment instruction.",
-                           `🗓️ Consensus inputs are ${CONSENSUS_VINTAGE.label} (${CONSENSUS_VINTAGE.staleNote}); ${CONSENSUS_VINTAGE.dueNote}.`]
-                        : cfg.bullets).map((t, i) => (
-                        <div key={i} style={{ flex: "1 1 200px" }}>
-                          <span style={{ color: C.onHero, fontSize: 14, lineHeight: 1.7, opacity: 0.92 }}>{t}</span>
-                        </div>
-                      ))}
-                    </div>
-                    {/* L.2 — when credit vetoes, say so on the card. A capped recommendation
-                        with no explanation is the same opacity L.1 exists to remove. */}
-                    {act.vetoed && !contested && (
-                      <div style={{ marginTop: 10, padding: "8px 11px", background: "rgba(255,255,255,0.16)", borderRadius: 8, fontSize: 12.5, lineHeight: 1.55 }}>
-                        🛑 <b>Credit veto:</b> {act.vetoNote}
-                      </div>
-                    )}
-                    {/* L.1 — the derivation, with each input's vintage inline. */}
-                    {act.inputs.length > 0 && (
-                      <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.22)", fontSize: 11.5, lineHeight: 1.6, opacity: 0.9 }}>
-                        <b style={{ opacity: 0.75 }}>Derived from: </b>
-                        {/* Drivers first, then context. Listing a non-input in the same run as the
-                            gauges that actually set the stage implies a weight it does not have. */}
-                        {act.inputs.filter(x => x.weight !== "context").map((inp, i) => (
-                          <span key={inp.name}>
-                            {i ? " · " : ""}{inp.name} ({inp.value}
-                            {inp.vintage ? <span style={{ opacity: 0.7 }}> — {inp.vintage}</span> : null})
-                          </span>
-                        ))}
-                        {act.inputs.some(x => x.weight === "context") && (
-                          <span style={{ opacity: 0.62 }}>
-                            {" · context (not weighted): "}
-                            {act.inputs.filter(x => x.weight === "context").map(x => x.name + " " + x.value).join(", ")}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  {/* Separator */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 14, margin: "4px 0" }}>
-                    <div style={{ flex: 1, height: 1, background: C.bdr }} />
-                    <span style={{ color: C.lbl, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", fontWeight: 600 }}>Market Indicators</span>
-                    <div style={{ flex: 1, height: 1, background: C.bdr }} />
-                  </div>
-                </>
-              );
-            })()}
-
-            {/* OVERALL READ — context above charts */}
-            <Card style={{ background: C.aBg, border: "1.5px solid " + C.aBdr }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-                {/* M.2 — vintage removed: this composite reads LIVE data. Stale stamps go on
-                    the individual stale inputs (regime consensus), never on the composite. */}
-                <SLabel>Overall Read</SLabel>
-                <Btn onClick={fetchIndicators} disabled={indLoading} color={C.onFill} bgColor={C.blue} label={indLoading ? "Fetching…" : "🔄 Refresh Live Data"} />
-              </div>
-              {liveInd && (
-                <div style={{ marginBottom: 10, padding: "8px 12px", background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 8, fontSize: 13, color: C.blue, fontWeight: 700 }}>
-                  Live: 10Y {liveInd.tenY?.toFixed(2)}% · 2Y {liveInd.twoY?.toFixed(2)}% · Spread {liveInd.yieldSpread >= 0 ? "+" : ""}{liveInd.yieldSpread?.toFixed(2)}% · UE {liveInd.unemployment?.toFixed(1)}% · HY OAS {liveInd.creditSpread?.toFixed(2)}%
-                  <span style={{ color: C.lbl, fontWeight: 400, marginLeft: 8 }}>Updated {fmtTime(indUpdated)}</span>
-                  {/* THE READER SUBTRACTS. 10Y 4.67 and 2Y 4.20 beside a spread of 0.39 is an
-                      arithmetic contradiction on one line, and it is not a data fault: FRED
-                      publishes T10Y2Y a day ahead of DGS10 and DGS2, so the spread is simply a
-                      later vintage than its own legs. Saying that is the difference between a card
-                      that looks broken and one that is legible. */}
-                  {liveInd.yieldSpreadCoherence?.checked === false && (
-                    <div style={{ fontWeight: 400, color: C.mid, fontSize: 11.5, marginTop: 4 }}
-                         title={liveInd.yieldSpreadCoherence.note}>
-                      ⓘ the spread is T10Y2Y as published ({liveInd.yieldSpreadCoherence.publishedDate}), a day ahead of the
-                      10Y/2Y legs ({liveInd.yieldSpreadCoherence.derivedDate}) — so it will not equal 10Y − 2Y above
-                    </div>
-                  )}
-                </div>
-              )}
-              {indError && (
-                <div style={{ marginBottom: 10, padding: "10px 13px", background: C.rBg, border: "1px solid " + C.rBdr, borderRadius: 8, fontSize: 13, color: C.red }}>
-                  ⚠️ {indError}
-                </div>
-              )}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-                {[
-                  { icon: liveInd && liveInd.creditSpread >= 4.5 ? "🚨" : liveInd && liveInd.creditSpread >= 3.5 ? "⚠️" : "✅", text: `Credit spreads at ${liveInd ? liveInd.creditSpread.toFixed(2) : "2.75"}%. ${liveInd && liveInd.creditSpread >= 4.5 ? "ALERT THRESHOLD BREACHED — rotate defensive now." : liveInd && liveInd.creditSpread >= 3.5 ? "Widening toward alert zone. Build insurance." : "Markets not pricing stress. Trip wire: 4.5%."}` },
-                  // The un-inversion window is elapsed time since a dated event, so this bullet
-                  // reads the same computation as the card rather than restating a level test.
-                  (() => {
-                    const yph = unInversionPhase(liveInd?.yieldHistory || []);
-                    const lvl = liveInd ? (liveInd.yieldSpread >= 0 ? "+" : "") + liveInd.yieldSpread.toFixed(2) + "%" : "+0.38%";
-                    const tail = liveInd && liveInd.yieldSpread < 0
-                      ? "still inverted, pricing recession ahead."
-                      : yph.phase === "IN_WINDOW" ? `inside the historical 4–11 month post-un-inversion window (${yph.monthsSince} months in).`
-                      : yph.phase === "ELAPSED"   ? `${yph.monthsSince} months past un-inversion — the historical 4–11 month window has closed.`
-                      : yph.phase === "PRE_WINDOW" ? `un-inverted ${yph.monthsSince} month${yph.monthsSince === 1 ? "" : "s"} ago; the historical window has not opened yet.`
-                      : "un-inversion date not locatable from the loaded history.";
-                    return { icon: yph.phase === "IN_WINDOW" ? "⚠️" : "•", text: `Yield curve at ${lvl} — ${tail}` };
-                  })(),
-                  // Section D + C.5 — the icon is keyed on the EMPLOYMENT measures, not the
-                  // unemployment rate, and the Sahm reference carries its understatement
-                  // caveat: a rate that fell on labour-force exit suppresses the rule.
-                  { icon: labStress.severe ? "🚨" : "⚠️",
-                    // The only one of these on a rendered path — and it stated a fabricated 4.4%
-                    // as fact whenever both sources were missing. It now says the print is absent,
-                    // which is the true thing and the one that prompts a refresh.
-                    text: `${(() => { const u = laborView?.u3?.value ?? liveInd?.unemployment ?? null;
-                              return u == null ? "Unemployment — no live print" : `Unemployment at ${u.toFixed(1)}%`; })()}`
-                      + `${laborView?.empPop?.value != null ? `, emp-pop ${laborView.empPop.value.toFixed(1)}% (${laborView.empPop.delta >= 0 ? "+" : "−"}${Math.abs(laborView.empPop.delta ?? 0).toFixed(1)}pp)` : ""}. `
-                      + `${labStress.known ? labStress.note[0].toUpperCase() + labStress.note.slice(1) + "." : "Employment print unavailable."}`
-                      + `${(() => { const sn = sahmAnnotation(laborVerdictFor(liveInd), laborView?.payrolls?.delta ?? null); return sn ? ` ${sn.title} ${sn.text}` : ""; })()}` },
-                ].map((r, i) => (
-                  <div key={i} style={{ flex: "1 1 200px", display: "flex", gap: 10 }}>
-                    <span style={{ fontSize: 17, flexShrink: 0 }}>{r.icon}</span>
-                    <span style={{ color: C.amber, fontSize: 14, lineHeight: 1.65 }}>{r.text}</span>
-                  </div>
-                ))}
-              </div>
-            </Card>
-
-            {/* C.1 — "unemp" is deliberately excluded: the labour module above is the single
-                definition for that topic. Three renderings of one subject is what this removes. */}
-            {INDICATORS.filter(ind => ind.id !== "unemp" && ind.id !== "credit").map(ind => <IndicatorChart key={ind.id} ind={ind} live={liveInd} />)}
-
-            {/* M.2 — credit renders on BOTH tabs from the same component, so the age chip and
-                the HYG proxy exist here by construction rather than by duplication. */}
-            <CreditBlock
-              depth="glance"
-              history={liveInd?.creditHistory}
-              credit={pbData?.us?.regime?.credit}
-              oas={pbData?.us?.macro?.oas}
-              hyg={pbData?.us?.hyg}
-              reconSummary={reconSummary}
-            />
-
-            {/* G.2 — labour renders BELOW credit spreads and the yield curve. G.3 — this is
-                the SHARED definition (LaborPanel), not a reimplementation; two copies drift. */}
-            <LaborPanel labor={laborView} depth="glance" announced={laborAnnounced} />
-          </div>
-        )}
-
-        {/* ── POSTURE ── */}
+        {/* ── PLAN ── */}
         {tab === "plan" && (
           <PlanView st={mstate} allocations={POSTURE_ALLOCATIONS} bucketMeta={POSTURE_BUCKET_META} statusTone={postureTone}
-            fillNote={(t) => fillLiveRates(t, liveCashYield(liveInd))} portfolioValue={portfolioValue} onGo={setTab} />
-        )}
-
-        {tab === "posture" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {(() => {
-              const cs = liveInd?.creditSpread ?? null;   // null, never a chosen number — creditStatus(null) is null and the stage falls through
-              // Same derivation as the Indicators action card — ONE rule, so the two surfaces
-              // cannot disagree about the stage. Credit's veto (L.2) applies here identically:
-              // a severe labour print alone cannot put the book at Stage 3 while the master
-              // gauge reads benign.
-              const pAct = deriveAction({
-                oas: cs,
-                regimeLabel: liveRegime?.label, regimePct: regimeProbFor(liveRegime?.id),
-                regimeContested: !!derivedRegimes?.contested,
-                labourVerdict: laborVerdictFor(liveInd), labourSevere: labStress.severe,
-              });
-              const signalStage = pAct.stage;
-              const sigLabel = pAct.status === "ELEVATED" ? "ALERT" : pAct.status;
-              const sigColor = STATUS[pAct.status]?.color ?? C.amber;
-              // Manual stages 4–5 override the auto signal stage as the cycle marker.
-              const activeStage = stage5 ? 5 : stage4 ? 4 : signalStage;
-              // Allocations: regime-driven fund-manager framework.
-              const alloc = POSTURE_ALLOCATIONS[activeRegime.id] || POSTURE_ALLOCATIONS.baseline;
-              // Donut: range mid-points; emphasise the largest bucket with full
-              // activeRegime.color, fade the rest by relative size.
-              const mids = POSTURE_BUCKET_META.map(m => postureMid(alloc[m.key].range));
-              const maxMid = Math.max(...mids, 1);
-              const segColor = mid => {
-                const a = Math.max(0.30, Math.min(1, (mid || 0) / maxMid));
-                return alpha(activeRegime.color, a);
-              };
-              const chartData = POSTURE_BUCKET_META.map((m, i) => ({ name: m.name, value: mids[i] || 0.5, range: alloc[m.key].range, fill: segColor(mids[i]) }));
-              // Fix F — portfolio value → dollar extrapolation.
-              const pv = parseFloat(portfolioValue) || 0;
-              const fmtUSD = n => "$" + Math.round(n).toLocaleString("en-US");
-              const fmtCompact = n => n >= 1e9 ? "$" + (n / 1e9).toFixed(n >= 1e10 ? 0 : 1).replace(/\.0$/, "") + "B"
-                : n >= 1e6 ? "$" + (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M"
-                : n >= 1e3 ? "$" + Math.round(n / 1e3) + "K"
-                : "$" + Math.round(n);
-              const dollarRange = range => {
-                const nums = String(range).replace(/%/g, "").split("–").map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
-                if (pv <= 0 || nums.length < 2) return null;
-                return fmtUSD(pv * nums[0] / 100) + " – " + fmtUSD(pv * nums[1] / 100);
-              };
-              // Fix A — top regime-ranked insurance instruments feed the stage tracker
-              // (same rankKey + sort as the Insurance tab; best-ranked first).
-              const insRankKey = rankKeyFor(INS_RANK_KEY, activeRegime.id);
-              const rankedIns = [...ASSETS].sort(byRank(insRankKey));
-              const top2Ins = rankedIns.slice(0, 2).map(a => a.name).join(", ");
-              const top3Ins = rankedIns.slice(0, 3).map(a => a.name).join(", ");
-              const stageNote = s => s.n === 2
-                ? `Activate first insurance tranche — current regime favours: ${top2Ins}. For put spreads: 90% strike, 90-day expiry, ~1.5% of portfolio in premium. Reduce leveraged positions.`
-                : s.n === 3
-                ? `Full insurance active — deploy ${top3Ins}. No new equity. Let positions work. Path 2 corrections average 18 months — do not deploy cash yet. USFR and SGOV stay put — they continue earning yield while insurance works. Do not sell cash instruments to fund insurance purchases — insurance should be sized from existing liquid positions, not by reducing cash.`
-                : s.note;
-              return (
-                <>
-                  {/* Pinned cash-floor banner — always visible regardless of regime */}
-                  <div style={{ background: C.aBg, border: "1.5px solid " + C.aBdr, borderRadius: 12, padding: "11px 15px", color: C.amber, fontSize: 14, lineHeight: 1.6, fontWeight: 600 }}>
-                    ⚠️ Cash floor: never below 25% of portfolio. No employment income requires maintained liquidity runway at all times. This floor does not change with regime.
-                  </div>
-
-                  {/* Portfolio value input (Fix F) */}
-                  <Card>
-                    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-                      <label htmlFor="pv-input" style={{ fontSize: 13, fontWeight: 700, color: C.mid, whiteSpace: "nowrap" }}>Total Portfolio Value</label>
-                      <div style={{ display: "flex", alignItems: "center", border: "1.5px solid " + C.bdr, borderRadius: 8, padding: "6px 10px", background: C.bg, flex: "1 1 200px", maxWidth: 280 }}>
-                        <span style={{ color: C.muted, fontSize: 15, fontWeight: 700, marginRight: 4 }}>$</span>
-                        <input
-                          id="pv-input" inputMode="numeric" placeholder="e.g. 500,000"
-                          value={pv > 0 ? pv.toLocaleString("en-US") : ""}
-                          onChange={e => updatePortfolioValue(e.target.value)}
-                          style={{ border: "none", outline: "none", background: "transparent", fontSize: 15, fontWeight: 700, color: C.text, width: "100%" }}
-                        />
-                        <span style={{ color: C.lbl, fontSize: 12, fontWeight: 700, marginLeft: 4 }}>USD</span>
-                      </div>
-                      {pv > 0 && <Btn onClick={() => updatePortfolioValue("")} color={C.muted} bgColor={C.bg} label="Clear" />}
-                    </div>
-                    <div style={{ color: C.lbl, fontSize: 11, marginTop: 6 }}>Stored locally in your browser. Never transmitted.</div>
-                  </Card>
-
-                  {/* Header banner */}
-                  <div style={{ background: activeRegime.bg, border: "1.5px solid " + activeRegime.bdr, borderRadius: 14, padding: "14px 18px", borderTop: "4px solid " + activeRegime.color }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                      <div>
-                        <div style={{ fontSize: 11, letterSpacing: 2.5, textTransform: "uppercase", color: activeRegime.color, fontWeight: 700, marginBottom: 3 }}>Portfolio Posture · {activeRegime.label}</div>
-                        <div style={{ fontSize: 16, fontWeight: 900, color: activeRegime.color }}>Allocation by bucket — driven by the active regime</div>
-                      </div>
-                      <div style={{ background: C.surf, border: "1.5px solid " + alpha(sigColor, 0x55), borderRadius: 10, padding: "6px 14px", textAlign: "center", minWidth: 90 }}>
-                        <div style={{ color: C.lbl, fontSize: 10, letterSpacing: 2, textTransform: "uppercase", fontWeight: 700 }}>Live Signal</div>
-                        <div style={{ color: sigColor, fontSize: 17, fontWeight: 900, lineHeight: 1 }}>{sigLabel}</div>
-                        <div style={{ color: sigColor, fontSize: 10, marginTop: 2, opacity: 0.8 }}>Stage {activeStage} active</div>
-                      </div>
-                    </div>
-                    <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <button onClick={() => setTab("indicators")} style={{ background: C.surf, color: activeRegime.color, border: "1.5px solid " + activeRegime.bdr, borderRadius: 8, padding: "5px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>📡 See Indicators tab for signals →</button>
-                      <button onClick={() => setTab("insurance")} style={{ background: C.surf, color: activeRegime.color, border: "1.5px solid " + activeRegime.bdr, borderRadius: 8, padding: "5px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>🛡️ See Insurance tab for instruments →</button>
-                      <button onClick={() => setTab("income")} style={{ background: C.surf, color: activeRegime.color, border: "1.5px solid " + activeRegime.bdr, borderRadius: 8, padding: "5px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>💰 See Income tab for yield ranking →</button>
-                    </div>
-                  </div>
-
-                  {/* Allocation donut for the active regime */}
-                  <Card>
-                    <SLabel>Target Allocation · {activeRegime.label}</SLabel>
-                    <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-                      <div style={{ flex: "0 0 200px", minWidth: 180, position: "relative" }}>
-                        {pv > 0 && (
-                          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-                            <span style={{ color: C.lbl, fontSize: 10, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700 }}>Total</span>
-                            <span style={{ color: C.text, fontSize: 18, fontWeight: 900, letterSpacing: -0.5 }}>{fmtCompact(pv)}</span>
-                          </div>
-                        )}
-                        <ResponsiveContainer width="100%" height={200}>
-                          <PieChart>
-                            <Pie data={chartData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" stroke={C.surf} strokeWidth={2} paddingAngle={2}>
-                              {chartData.map((d, i) => <Cell key={i} fill={d.fill} />)}
-                            </Pie>
-                            <Tooltip content={function({ active, payload }) {
-                              if (!active || !payload || !payload.length) return null;
-                              const p = payload[0].payload;
-                              return <div style={{ background: C.surf, border: "1px solid " + C.bdr, borderRadius: 8, padding: "8px 12px" }}>
-                                <div style={{ fontWeight: 700, fontSize: 14 }}>{p.name}</div>
-                                <div style={{ color: C.muted, fontSize: 13 }}>{p.range}</div>
-                              </div>;
-                            }} />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      </div>
-                      <div style={{ flex: 1, minWidth: 200, display: "flex", flexDirection: "column", gap: 7 }}>
-                        {chartData.map((d, i) => (
-                          <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                            <div style={{ width: 12, height: 12, borderRadius: 3, background: d.fill, flexShrink: 0 }} />
-                            <span style={{ color: C.text, fontWeight: 600, flex: 1 }}>{d.name}</span>
-                            <span style={{ color: C.muted, fontWeight: 700 }}>{d.range}</span>
-                          </div>
-                        ))}
-                        <div style={{ color: C.lbl, fontSize: 11, marginTop: 2, lineHeight: 1.5 }}>Donut sizes by range mid-point; deepest shade = largest bucket. Ranges overlap by design — guard-rails, not a fixed sum.</div>
-                      </div>
-                    </div>
-                    <div style={{ marginTop: 10, padding: "9px 12px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8, color: C.mid, fontSize: 13, lineHeight: 1.6 }}>
-                      <b style={{ color: activeRegime.color }}>Long-term holds focus: </b>{alloc.categoryNote}
-                    </div>
-                  </Card>
-
-                  {/* Bucket cards — single row on desktop, wrap below 900px (Fix B) */}
-                  <div className="mwd-posture-row">
-                    {POSTURE_BUCKET_META.map(m => {
-                      const a = alloc[m.key];
-                      const sc = postureTone(a.status);
-                      return (
-                        <Card key={m.key} onClick={m.link ? () => setTab(m.link) : undefined} style={{ borderTop: "4px solid " + sc.color, cursor: m.link ? "pointer" : "default", minWidth: 0 }}>
-                          {/* Header: title + subtitle take the full card width on their own lines; the status badge sits on its own line below — so the title never truncates or breaks beside the badge. */}
-                          <div style={{ marginBottom: 8 }}>
-                            <div style={{ display: "flex", alignItems: "flex-start", gap: 6, minWidth: 0 }}>
-                              <span style={{ fontSize: 20, flexShrink: 0, lineHeight: 1.2 }}>{m.icon}</span>
-                              <strong style={{ fontSize: 15, fontWeight: 900, color: C.text, lineHeight: 1.2, minWidth: 0, overflowWrap: "break-word" }} title={m.name}>{m.name}</strong>
-                            </div>
-                            <div style={{ fontSize: 11, color: C.lbl, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={m.sub}>{m.sub}</div>
-                            <span style={{ display: "inline-block", marginTop: 6, fontSize: 10, fontWeight: 800, letterSpacing: 0.3, padding: "2px 8px", borderRadius: 99, border: "1px solid " + sc.bdr, background: sc.bg, color: sc.color, whiteSpace: "nowrap" }}>{a.status}</span>
-                          </div>
-                          <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: dollarRange(a.range) ? 2 : 6, flexWrap: "wrap" }}>
-                            <span style={{ fontSize: "clamp(18px, 2.2vw, 28px)", fontWeight: 900, letterSpacing: -1, color: sc.color, whiteSpace: "nowrap" }}>{a.range}</span>
-                            <span style={{ color: C.lbl, fontSize: 12 }}>target allocation</span>
-                          </div>
-                          {dollarRange(a.range) && (
-                            <div style={{ color: C.mid, fontSize: 13, fontWeight: 800, marginBottom: 6, whiteSpace: "nowrap" }}>{dollarRange(a.range)}</div>
-                          )}
-                          {/* Rate figures in authored prose resolve through the live cash yield
-                              ({{CASH}}), so they can't go stale independently of the feed. */}
-                          <div style={{ color: C.mid, fontSize: 12, lineHeight: 1.55 }}>{fillLiveRates(a.note, liveCashYield(liveInd))}</div>
-                        </Card>
-                      );
-                    })}
-                  </div>
-
-                  {/* Deployment stage tracker */}
-                  <Card>
-                    <SLabel>Deployment Stage Tracker</SLabel>
-                    <div style={{ color: C.muted, fontSize: 12, marginBottom: 8, lineHeight: 1.6 }}>
-                      Stages 1–3 auto-trigger from the live signal (same thresholds as the Indicators action card). Stages 4–5 are manual judgment calls — toggle them as you act. Saved to this browser.
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {DEPLOY_STAGES.map(s => {
-                        const isActive = s.n === activeStage;
-                        const toggled = s.n === 4 ? stage4 : s.n === 5 ? stage5 : false;
-                        return (
-                          <div key={s.n} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "10px 12px", borderRadius: 10, background: isActive ? activeRegime.bg : C.bg, border: "1.5px solid " + (isActive ? activeRegime.color : C.bdr) }}>
-                            <div style={{ flexShrink: 0, width: 30, height: 30, borderRadius: "50%", background: isActive ? activeRegime.color : C.bdrMd, color: C.onFill, fontWeight: 900, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>{s.n}</div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
-                                <span style={{ fontWeight: 800, fontSize: 14, color: isActive ? activeRegime.color : C.text }}>Stage {s.n}: {s.label}</span>
-                                <span style={{ fontSize: 11, color: isActive ? activeRegime.color : C.lbl, fontWeight: 700 }}>{s.auto ? "Auto" : "Manual"} · {s.trigger}</span>
-                              </div>
-                              <div style={{ color: C.mid, fontSize: 13, lineHeight: 1.6, marginTop: 3 }}>{stageNote(s)}</div>
-                              {s.n === 4 && (
-                                <div style={{ marginTop: 6, padding: "7px 10px", background: C.surf, border: "1px solid " + C.bdr, borderRadius: 8, color: C.muted, fontSize: 12, lineHeight: 1.55 }}>
-                                  <b style={{ color: C.mid }}>Trigger checklist before activating Stage 4:</b> (1) Fed has made first cut OR signalled cuts explicitly. (2) VIX has peaked and begun sustained decline from above 30. (3) HY credit spreads contracting from peak. (4) IEF purchased as rate duration bridge. All four should be present before deploying into equities.
-                                </div>
-                              )}
-                              {isActive && <div style={{ marginTop: 4, color: activeRegime.color, fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase" }}>● Active now</div>}
-                            </div>
-                            {!s.auto && (
-                              <button
-                                onClick={() => (s.n === 4 ? toggleStage4() : toggleStage5())}
-                                style={{
-                                  flexShrink: 0, alignSelf: "center",
-                                  background: toggled ? C.green : C.surf,
-                                  color: toggled ? C.onFill : C.muted,
-                                  border: "1.5px solid " + (toggled ? C.green : C.bdrMd),
-                                  borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap",
-                                }}
-                              >
-                                {toggled ? "✓ Active" : "Activate"}
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div style={{ marginTop: 10, color: C.lbl, fontSize: 12, lineHeight: 1.6 }}>
-                      Stage 4 (Deploy) and Stage 5 (Full deployment) require judgment — confirm a VIX peak and a Fed pivot before activating. Toggles persist across sessions.
-                    </div>
-                  </Card>
-                </>
-              );
-            })()}
-          </div>
+            fillNote={(t) => fillLiveRates(t, liveCashYield(liveInd))} portfolioValue={portfolioValue} onPortfolioValue={updatePortfolioValue} onGo={setTab} />
         )}
 
         {/* ── INSURANCE ── */}
@@ -8400,7 +7688,7 @@ export default function App() {
         )}
 
         {/* ── SMART MONEY ── */}
-        {(tab === "smartmoney" || tab === "street") && (
+        {tab === "street" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {/* 13F limitation header — states plainly what this data is and is NOT, so an absent
                 cell isn't read as "no position" and a non-13F row isn't read as 13F. */}
@@ -8413,7 +7701,7 @@ export default function App() {
             {/* B5 — Fed context the snapshot lacks. The book was set on Jun 30; the Fed path has moved
                 since, and the positioning reads differently against it. */}
             <div style={{ padding: "8px 11px", background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 8, fontSize: 11.5, color: C.mid, lineHeight: 1.6 }}>
-              <b style={{ color: C.blue }}>Fed context since Jun 30: </b>
+              <b style={{ color: C.blue }}>Fed context since Jun 30</b><WrittenOn date={SM_NOTES_WRITTEN.fedContext} /><b style={{ color: C.blue }}>: </b>
               July was a <b>9–3 hold</b> with three presidents dissenting <i>for</i> a hike, and the Aug 19 minutes said "many participants" saw tightening as likely necessary. On <b>Sep 16 the Fed hiked 25bp to 3.75–4.00%, 12–0</b>, and the September dots added one more hike for 2026 and no cut in 2027. The book below was set before all of this — every position in it was chosen against a Fed that was still holding.
             </div>
             {/* Cross-Fund Positioning Matrix — rendered above the fund selector (Fix 3) */}
@@ -8514,7 +7802,7 @@ export default function App() {
                       divergence is the signal — a crowded long meeting an ordinary quarter, not a
                       fundamentals problem. All figures post-date the Jun-30 snapshot. */}
                   <div style={{ marginTop: 12, padding: "10px 13px", background: C.aBg, border: "1.5px solid " + C.aBdr, borderRadius: 8 }}>
-                    <div style={{ fontSize: 12, fontWeight: 900, color: C.amber, marginBottom: 3 }}>⚠️ The consensus long (AI infra): thesis strengthening, price de-rating</div>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: C.amber, marginBottom: 3 }}>⚠️ The consensus long (AI infra): thesis strengthening, price de-rating<WrittenOn date={SM_NOTES_WRITTEN.aiInfra} /></div>
                     <div style={{ fontSize: 11.5, color: C.mid, lineHeight: 1.6 }}>
                       <b style={{ color: C.green }}>Fundamentals up post-filing:</b> Amazon 2026 capex raised to $220B (Jul 30 call), Alphabet to $205B, Meta twice; big-four 2026 ~$725B (+77% YoY), 2027 consensus $934.5B (JPM/Goldman &gt;$1T); Google Cloud backlog $460B (~2×).
                       <br /><b style={{ color: C.red }}>Price down anyway:</b> AMD (Aug 4) record double-beat but −9% on in-line guidance; MU (Aug 18) −7%; SK Hynix / Samsung (Aug 19) −9.4% / −7.7%; SMH 546.03, −5.4% since Aug 19.
@@ -8571,7 +7859,7 @@ export default function App() {
                 </table>
               </div>
               <div style={{ marginTop: 12, padding: "12px 14px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8 }}>
-                <span style={{ color: C.amber, fontWeight: 700, fontSize: 13 }}>⚠️ The Q2 signal (as of Jun 30): </span>
+                <span style={{ color: C.amber, fontWeight: 700, fontSize: 13 }}>⚠️ The Q2 signal (as of Jun 30)<WrittenOn date={SM_NOTES_WRITTEN.q2Signal} />: </span>
                 <span style={{ color: C.amber, fontSize: 14 }}>The AI-chip long got MORE crowded, not less — Micron became Appaloosa's #2, Tiger added a new Cerebras stake and re-entered Intel, and semis moved to the top of Tiger's book. But hedges are appearing at the edges: Tepper initiated an AAPL put and cut BABA. Berkshire built Alphabet to a top-4 position (its most AI-adjacent bet) while holding ~$397B cash. Druckenmiller re-entered the mega-caps he'd exited. Ackman (now filing via the public parent Pershing Square Inc.) added Visa, Mastercard, S&P Global and Netflix — a shift toward quality compounders. Positions as of Jun 30 — not current.</span>
               </div>
             </Card>
@@ -8620,7 +7908,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ── MACRO ── */}
+        {/* ── DAILY OVERVIEW ── */}
         {tab === "global" && (
           <GlobalPlaybook
             /* The stance card runs the regime guard client-side. The MEASURED state: the combined
@@ -8644,581 +7932,13 @@ export default function App() {
             regions={pbRegions}
             toggleRegion={toggleRegion}
             loading={pbLoading}
-            error={pbError}
-            updated={pbUpdated}
+            errorBy={pbErrorBy}
+            updatedBy={pbUpdatedBy}
             onRefresh={() => pbRegions.forEach(r => fetchPlaybookRegion(r))}
             fmtTime={fmtTime}
           />
         )}
 
-        {tab === "macro" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {/* T1c — Macro synthesis strip: the one-line answer at the top, so the read lands without
-                scrolling the cards below. Complements the always-on header strip with recession + cash + do. */}
-            {(() => {
-              const r = liveRegime || REGIMES[0];
-              const prob = regimeProbFor(r.id);
-              const rec = derivedRegimes?.weightedAvg ?? null;
-              const headline = liveInd?.cpiHeadlineCurrent ?? null;
-              const realCash = headline != null ? +(SEC_YIELDS.USFR.value - headline).toFixed(2) : null;
-              const item = (k, v, col) => (<span style={{ display: "inline-flex", gap: 6, alignItems: "baseline" }}><span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: C.lbl }}>{k}</span><b style={{ color: col || C.text, fontWeight: 800 }}>{v}</b></span>);
-              return (
-                <div style={{ background: r.bg, border: "1.5px solid " + r.bdr, borderTop: "4px solid " + r.color, borderRadius: 12, padding: "11px 16px" }}>
-                  <div style={{ display: "flex", gap: "4px 18px", flexWrap: "wrap", alignItems: "baseline", fontSize: 14 }}>
-                    {item("Regime", `${r.label} ${prob}%`, r.color)}
-                    <span style={{ color: C.bdr }}>·</span>
-                    {item("Recession consensus", rec != null ? `${rec}%` : "—", C.mid)}
-                    <span style={{ color: C.bdr }}>·</span>
-                    {item("Real cash yield", realCash != null ? `${realCash >= 0 ? "+" : ""}${realCash}pp` : "—", realCash != null ? (realCash > 0 ? C.green : C.red) : C.muted)}
-                  </div>
-                  {/* No "Do:" here. It was a lookup into the regime's static best/worst lists,
-                      printed in the voice of a live instruction, beside a real one on the
-                      Overview that it could contradict. This strip states the STRUCTURAL regime —
-                      months, consensus-derived. The stance is the tape's, and lives in one place. */}
-                  <div style={{ marginTop: 6, fontSize: 11.5, color: C.muted, lineHeight: 1.5 }}>
-                    structural · consensus-derived · months — the tape stance is on the Daily Overview
-                  </div>
-                </div>
-              );
-            })()}
-            {/* Item 4 — purpose line. This tab is about the CURRENT regime; the Insurance tab is
-                about how a crash would RESOLVE. Different taxonomies, stated so they don't blur. */}
-            <div style={{ background: C.surf, border: "1.5px solid " + C.bdr, borderRadius: 12, padding: "10px 16px", fontSize: 13.5, color: C.mid, lineHeight: 1.5 }}>
-              <b style={{ color: C.text }}>What regime are we in right now?</b>
-              <span style={{ color: C.muted }}> The Insurance tab answers a different question — if a crash happens from here, how does it resolve.</span>
-            </div>
-            {/* T2a — jump-nav. The Macro tab is long; this lets the reader land on any section
-                without scrolling. Anchors are the `id="macro-*"` markers before each block. */}
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", padding: "2px 2px" }}>
-              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: C.lbl, marginRight: 2 }}>Jump to</span>
-              {[
-                ["Ledger", "macro-ledger"], ["Regime", "macro-regime"], ["Credit", "macro-credit"], ["Fed", "macro-fed"],
-                ["Inflation", "macro-inflation"], ["Axes", "macro-growth"], ["Labor", "macro-labor"], ["Recession", "macro-recession"],
-                ["Transitions", "macro-transitions"],
-              ].map(([lbl, id]) => (
-                <button key={id} onClick={() => { const el = typeof document !== "undefined" && document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }}
-                  style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 999, padding: "4px 11px", fontSize: 11.5, fontWeight: 700 }}>
-                  {lbl}
-                </button>
-              ))}
-            </div>
-            {/* Section E — the 10Y auction-health card is DELETED (the P7 spec is void).
-                10Y auctions are roughly monthly while this page is read daily, so a card whose
-                value is 3-25 days old, styled like the live ones, invites a stale impression to
-                form. Fixing the metrics does not fix that — the update frequency was the defect.
-                Transmission to duration shows up in the 30Y and 5s30s rows below, which move
-                daily and are early enough for the positions actually held. */}
-
-            {/* ── FEED FAILURES — a blank tile must not read as "nothing was published" ──
-                api/indicators.js records every FRED request that failed after a retry. Core PCE
-                sat blank here for weeks while FRED carried it at 3.3%: the fetch was failing and
-                said so only to a server log. A dash and a failure looked identical. They no
-                longer do — if this strip is absent, every feed answered. ── */}
-            {Array.isArray(liveInd?.feedErrors) && liveInd.feedErrors.length > 0 && (
-              <div style={{ marginBottom: 12, padding: "9px 12px", background: C.rBg, border: "1.5px solid " + C.rBdr, borderRadius: 8, fontSize: 12, lineHeight: 1.55, color: C.red }}>
-                <b>⚠ {liveInd.feedErrors.length} data feed{liveInd.feedErrors.length > 1 ? "s" : ""} failed to load.</b>{" "}
-                <span style={{ color: C.mid }}>
-                  Any tile below fed by {liveInd.feedErrors.length > 1 ? "these series" : "this series"} is blank because the request failed, not because
-                  no figure has been published. Each was retried with a backoff before being reported.
-                </span>
-                <div style={{ marginTop: 5, fontFamily: "ui-monospace, monospace", fontSize: 11, color: C.mid }}>
-                  {liveInd.feedErrors.map((e, i) => (
-                    <div key={i}>{e.series} — {e.error || "unknown error"}</div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* ── F.1 — REGIME first. Ordered by decision relevance, fast-moving above
-                slow-moving: regime + contested guard, then rates, then CPI, then the
-                labour module, then the consensus block (slowest). Credit stays on the
-                Global Playbook tab where it already lives. ── */}
-            <div id="macro-ledger" style={{ scrollMarginTop: 96 }} />
-            <HandKeptLedgerPanel ledger={ledger} />
-
-            <div id="macro-regime" style={{ scrollMarginTop: 96 }} />
-            <Card>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                <SLabel>Regime Probability — Derived from Recession Consensus + Live CPI</SLabel>
-                {/* Section A — vintage stamped ON the regime block, because the engine keeps
-                    producing live-looking output from inputs that are months old. */}
-                {/* Red once the refresh is actually owed. Amber for "old but waiting on a
-                    release" and amber for "old and nothing is coming" looked identical, so the
-                    chip could not distinguish a deferral from a lapse. */}
-                <span style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 800,
-                               color: CONSENSUS_VINTAGE.refreshDue ? C.red : C.amber,
-                               background: CONSENSUS_VINTAGE.refreshDue ? C.rBg : C.aBg,
-                               border: "1px solid " + (CONSENSUS_VINTAGE.refreshDue ? C.rBdr : C.aBdr),
-                               borderRadius: 5, padding: "2px 7px" }}
-                      title={CONSENSUS_VINTAGE.dueNote}>
-                  Consensus inputs {CONSENSUS_VINTAGE.label} — {CONSENSUS_VINTAGE.staleNote}
-                  {CONSENSUS_VINTAGE.refreshDue ? " · REFRESH DUE" : ""}
-                </span>
-              </div>
-              {derivedRegimes?.contested && (
-                <div style={{ marginBottom: 10, padding: "8px 11px", background: C.bg, border: "1.5px solid " + C.bdrMd, borderRadius: 8, fontSize: 12.5, fontWeight: 700, color: C.mid, lineHeight: 1.55 }}>
-                  ⚖️ <b>CONTESTED</b> — top two states within {derivedRegimes.topTwoGap}pp. Neither is highlighted as a winner and the directional recommendation is suppressed.
-                </div>
-              )}
-              {derivedRegimes?.mapping?.known && !derivedRegimes.mapping.earned && (
-                <div style={{ marginBottom: 10, padding: "8px 11px", background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 8, fontSize: 11.5, color: C.mid, lineHeight: 1.55 }}>
-                  <b style={{ color: C.blue }}>Mapping: </b>{derivedRegimes.mapping.reason} — {derivedRegimes.mapping.redirected}pp moved from growth to stagflation.
-                </div>
-              )}
-              {/* R8.1 — the labour override made visible: a live payroll/emp-pop deterioration
-                  moves weight into deflationary recession ahead of the (lagging) analyst consensus. */}
-              {derivedRegimes?.labor?.shift > 0 && (
-                <div style={{ marginBottom: 10, padding: "8px 11px", background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 8, fontSize: 11.5, color: C.mid, lineHeight: 1.55 }}>
-                  <b style={{ color: C.blue }}>Labour: </b>{derivedRegimes.labor.shift}pp moved into <b>deflationary recession</b> on live labour weakness ({derivedRegimes.labor.reasons.join(", ")}). The recession-consensus input lags today's print — this moves the engine on it.
-                </div>
-              )}
-              <div className="mwd-regime-grid" style={{ marginBottom: 14 }}>
-                {regimeSorted.map(({ r, prob }) => {
-                  // When contested, the top TWO share the highlight — no single winner.
-                  const inTopTwo = (derivedRegimes?.topTwo || []).includes(r.id);
-                  const highlighted = derivedRegimes?.contested ? inTopTwo : activeRegime.id === r.id;
-                  // Per-side longhand borders ONLY — never the `border`/`borderTop` shorthand mix.
-                  // React updating the `border` shorthand on click was dropping the `borderTop`
-                  // longhand, so the 4px top colour bar vanished from any card whose highlight
-                  // changed. All-longhand (no shorthand for a changing value) can't be clobbered.
-                  return (
-                  <button key={r.id} onClick={() => { setActiveRegime(r); keepPinned(); }} style={{ background: highlighted ? r.bg : C.surf, borderStyle: "solid", borderTopWidth: 4, borderRightWidth: 1.5, borderBottomWidth: 1.5, borderLeftWidth: 1.5, borderTopColor: r.color, borderRightColor: highlighted ? r.color : C.bdr, borderBottomColor: highlighted ? r.color : C.bdr, borderLeftColor: highlighted ? r.color : C.bdr, borderRadius: 10, padding: "12px 14px", cursor: "pointer", textAlign: "left", width: "100%" }}>
-                    <div style={{ fontSize: 22, fontWeight: 900, color: r.color }}>{prob}%</div>
-                    <div style={{ color: r.color, fontWeight: 700, fontSize: 13, marginTop: 3, lineHeight: 1.3 }}>{r.label}</div>
-                    {derivedRegimes?.contested && inTopTwo && (
-                      <div style={{ fontSize: 9.5, fontWeight: 800, color: C.muted, marginTop: 2 }}>TIED</div>
-                    )}
-                  </button>
-                  );
-                })}
-              </div>
-              {/* Colour bar — same probability order as the cards. Widths come from the clamped
-                  integers in regimeSorted, so a segment can never render an invalid width and the
-                  bar cannot collapse; a non-zero share keeps a 2px floor so even 5% stays visible. */}
-              <div style={{ display: "flex", height: 12, borderRadius: 6, overflow: "hidden", border: "1px solid " + C.bdr }}>
-                {regimeSorted.map(({ r, prob }) => (
-                  <div key={r.id} style={{ width: prob + "%", minWidth: prob > 0 ? 2 : 0, background: r.color, fontSize: 10, color: C.onFill, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }} title={r.label}>{prob}%</div>
-                ))}
-              </div>
-              {derivedRegimes ? (
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5 }}>Weighted tracked-panel recession probability: <b style={{ color: C.muted }}>{derivedRegimes.weightedAvg}%</b> | Derived from analyst consensus + live CPI</div>
-                  <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5, marginTop: 2 }}>{derivedRegimes.derivedFrom}</div>
-                  {recDecayed && recDecayed.length > 0 && (
-                    <div style={{ color: C.amber, fontSize: 11, lineHeight: 1.5, marginTop: 2 }}>
-                      ⏳ Recency-decayed (linear to zero at {RECESSION_STALE_ZERO_DAYS}d): {recDecayed.map(d => `${d.name.split(" (")[0]} ${Math.round(d.factor * 100)}%`).join(" · ")} — stale vintages no longer carry full weight.
-                    </div>
-                  )}
-                  <div style={{ color: C.lbl, fontSize: 11, lineHeight: 1.5, marginTop: 2, fontStyle: "italic" }}>Updates automatically when recession table is refreshed or CPI changes.</div>
-                  {/* P0.3 — trailing history. The engine is unfalsifiable without it: this is
-                      how you answer "has the classifier actually been right". Raw inputs are
-                      stored server-side alongside these probabilities so a change to the
-                      discriminator can be re-run against days already recorded. */}
-                  {plottableHistory.length >= 2 ? (
-                    <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px dashed " + C.bdr }}>
-                      <div style={{ fontSize: 10.5, color: C.muted, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>
-                        Regime history · {plottableHistory.length} days logged
-                      </div>
-                      <ResponsiveContainer width="100%" height={70}>
-                        <LineChart data={plottableHistory} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-                          <XAxis dataKey="date" tick={{ fontSize: 9, fill: C.lbl }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                          <YAxis domain={[0, 100]} hide />
-                          <Tooltip formatter={(v, n) => [`${v}%`, n]} />
-                          <Line type="monotone" dataKey="stagflation_p"  name="Stagflation"  stroke={REGIME_PALETTE.stag.color} strokeWidth={1.5} dot={false} connectNulls />
-                          <Line type="monotone" dataKey="reflationary_p" name="Reflationary" stroke={REGIME_PALETTE.ref.color} strokeWidth={1.5} dot={false} connectNulls />
-                          <Line type="monotone" dataKey="deflationary_p" name="Deflationary" stroke={REGIME_PALETTE.def.color} strokeWidth={1.5} dot={false} connectNulls />
-                          <Line type="monotone" dataKey="inflationary_p" name="Inflationary" stroke={REGIME_PALETTE.inf.color} strokeWidth={1.5} dot={false} connectNulls />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 8, fontStyle: "italic" }}>
-                      Regime history: {plottableHistory.length} day{plottableHistory.length === 1 ? "" : "s"} logged — insufficient for a trend. One row is appended per day.
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div style={{ color: C.lbl, fontSize: 11, marginTop: 10, fontStyle: "italic" }}>Using fallback regime probabilities — live recession data unavailable.</div>
-              )}
-            </Card>
-
-            {/* P0.2 — regime-shift scenarios the consensus engine can't derive (Debasement / Hawkish). */}
-            <RegimeShiftScenarios realYield={pbData?.us?.macro?.realYield?.value ?? null} realYieldAsOf={pbData?.us?.macro?.realYield?.date ?? null} />
-
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-              <Card style={{ flex: "1 1 240px", background: activeRegime.bg, border: "1.5px solid " + activeRegime.bdr, borderTop: "4px solid " + activeRegime.color }}>
-                <div style={{ fontSize: 18, fontWeight: 900, color: activeRegime.color, marginBottom: 1 }}>{activeRegime.label}</div>
-                {/* P0.1 — scope label: this is the STRUCTURAL regime, distinct from the Global
-                    Playbook tape read (one session) and the debasement cross-asset read (5d). */}
-                <div style={{ fontSize: 11, fontWeight: 800, color: C.blue, letterSpacing: 0.3, marginBottom: 4 }}>structural · consensus-derived · months</div>
-                <p style={{ color: C.mid, fontSize: 15, lineHeight: 1.75, margin: "0 0 12px" }}>{activeRegime.desc}</p>
-                <div style={{ padding: "10px 13px", background: C.surf, border: "1px solid " + activeRegime.bdr, borderRadius: 8 }}>
-                  <div style={{ color: activeRegime.color, fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Transition trigger</div>
-                  <div style={{ color: C.mid, fontSize: 14 }}>{activeRegime.trigger}</div>
-                </div>
-              </Card>
-              <div style={{ flex: "1 1 240px", display: "flex", flexDirection: "column", gap: 12 }}>
-                <Card>
-                  {/* I.3 — no fill, no accent: this is a CATEGORY panel, not a status one. */}
-                  <SLabel>✓ Best Assets</SLabel>
-                  {activeRegime.best.map((a, i) => (
-                    <div key={i} style={{ color: C.mid, fontSize: 14, padding: "4px 0", borderBottom: i < activeRegime.best.length - 1 ? "1px solid " + C.gBdr : "none" }}>✅ {a}</div>
-                  ))}
-                </Card>
-                <Card>
-                  <SLabel>✗ Worst Assets</SLabel>
-                  {activeRegime.worst.map((a, i) => (
-                    <div key={i} style={{ color: C.mid, fontSize: 14, padding: "4px 0", borderBottom: i < activeRegime.worst.length - 1 ? "1px solid " + C.rBdr : "none" }}>❌ {a}</div>
-                  ))}
-                </Card>
-              </div>
-            </div>
-
-            {/* P1/P2 — gold-miners resolution. Miners left the Stagflation "Best" list (they're
-                cautioned, matching the Insurance tab), and the F2 gold pair says which of the two
-                miner regimes is live right now. Only shown under Stagflation — the regime where the
-                two tabs used to disagree. */}
-            {activeRegime.id === "stag" && (() => {
-              const gp = pbData?.us?.marketRegime?.goldPair;
-              const mp = gp?.available ? minersPairImplication(gp.reading) : null;
-              return (
-                <div style={{ padding: "11px 14px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 10, fontSize: 13, lineHeight: 1.6 }}>
-                  <span style={{ color: C.amber, fontWeight: 800 }}>⚠️ Gold miners are not on the Best list as a hedge. </span>
-                  <span style={{ color: C.amber }}>{GOLD_MINERS_WHY} Same ⚠️ rating as the Insurance tab's GDX/GDXJ under stagflation — one definition, both tabs.</span>
-                  {mp && (
-                    <div style={{ marginTop: 7, color: mp.ok ? C.green : C.red, fontWeight: 700 }}>
-                      Gold pair live read — <b>{mp.live}</b>: {mp.text}
-                    </div>
-                  )}
-                  {gp && !gp.available && (
-                    <div style={{ marginTop: 7, color: C.lbl, fontSize: 12 }}>Gold pair unreadable right now: {gp.note}</div>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* F.2 — credit is the master gauge and sits directly under regime. Reads the
-                Playbook payload (pbData.us) because OAS/HYG come from /api/playbook, not
-                /api/indicators which feeds the rest of this tab. */}
-            <div id="macro-credit" style={{ scrollMarginTop: 96 }} />
-            <CreditBlock
-              credit={pbData?.us?.regime?.credit}
-              oas={pbData?.us?.macro?.oas}
-              hyg={pbData?.us?.hyg}
-              reconSummary={reconSummary}
-            />
-
-            {/* T1b — Fed pricing: one card that answers "what's priced for the Fed", cross-checking the
-                6-month bill-implied path against the September-meeting odds. Folds the former standalone
-                6-month-cuts and September-odds cards; the ZQ futures path + qualitative language follow below. */}
-            <div id="macro-fed" style={{ scrollMarginTop: 96 }} />
-            {renderFedBlock()}
-            <InterventionToggle
-              jpyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "JPY=X")?.changePct ?? null}
-              dxyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "DX-Y.NYB")?.changePct ?? null}
-              onChange={setLiveIntervention}
-              auto={pbData?.us?.interventionAuto ?? null}
-            />
-
-            <div id="macro-inflation" style={{ scrollMarginTop: 96 }} />
-            {renderInflationBlock()}
-
-            {/* Aug-22 Part B — cash-yield comparison card, adjacent to the CPI tracker's cash read. */}
-            <CashComparisonCard liveInd={liveInd} />
-
-            {/* F.5 — the labour module is a paragraph of interpretation, so it sits where the
-                user is already reading rather than glancing. Same shared definition as the
-                Indicators tab (G.3) — one module, rendered once per tab. */}
-            {/* F.6 — the weekly growth leg sits directly above the monthly labour module: same axis,
-                a month earlier. The two are meant to be read against each other. */}
-            <div id="macro-growth" style={{ scrollMarginTop: 96 }} />
-            <QuadrantStrip liveInd={liveInd} ism={ismEntry} liveRegime={liveRegime} regimeProbFor={regimeProbFor} regimeVintage={regimeVintage} />
-            <GrowthPulsePanel growth={liveInd?.growth} market={liveInd?.growthMarket} monthly={liveInd?.growthMonthly} ism={ismEntry} onIsmChange={setIsmEntry} />
-            <InflationAxisPanel data={liveInd?.inflationAxis} liveInd={liveInd} />
-
-            <div id="macro-labor" style={{ scrollMarginTop: 96 }} />
-            <LaborPanel labor={laborView} extras={laborExtras} announced={laborAnnounced} />
-
-            <div id="macro-recession" style={{ scrollMarginTop: 96 }} />
-            {renderRecessionPanel()}
-
-            <div id="macro-transitions" style={{ scrollMarginTop: 96 }} />
-            <Card>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 4 }}>
-                <SLabel>Transition Roadmap</SLabel>
-                <Btn onClick={fetchIndicators} disabled={indLoading} color={C.onFill} bgColor={C.blue} label={indLoading ? "Fetching…" : "🔄 Refresh signals"} />
-              </div>
-              {(() => {
-                // ── NO STATIC FALLBACKS ──────────────────────────────────────
-                // These were `2.75`, `4.4`, `0.38`, `$88`, `105` and `$21.5T`: numbers chosen
-                // when the card was written, rendered in the same weight as a live print, with a
-                // threshold bar drawn against them and a sentence explaining what they meant. A
-                // feed that failed produced a confident read on a figure nobody had fetched. A
-                // missing input is null, and SignalBar says "not loaded" and draws nothing.
-                const hy  = liveInd?.creditSpread ?? null;
-                const ue  = laborView?.u3?.value ?? liveInd?.unemployment ?? null;
-                const yc  = liveInd?.yieldSpread ?? null;
-                const cpi = liveInd?.cpi ?? null;
-                const gdp = liveInd?.gdp ?? null;
-                const oil = liveInd?.oil ?? null;
-                const oilPrev = liveInd?.oilPrev ?? null;
-
-                // CPI/GDP formatted for display
-                // FRED CPIAUCSL is an index level (~315), not a % — compute YoY% from context note
-                // GDP is quarterly real GDP in billions
-                const cpiNote = cpi && cpi > 100
-                  ? `CPI index at ${cpi.toFixed(1)} (latest BLS release via FRED — reflects most recently published monthly figure)`
-                  : "CPI: fetching from FRED…";
-                // GROWTH, not just the level — a level cannot answer "is growth decelerating".
-                // Prefers the announced advance estimate while FRED still lags it, labelled as such.
-                const gAnn = announced("gdpGrowth", liveInd?.asOf?.gdpGrowth);
-                const gNow = gAnn ? gAnn.value : liveInd?.gdpGrowth;
-                const gPrev = gAnn ? gAnn.prev : liveInd?.gdpGrowthPrev;
-                const gdpNote = (() => {
-                  if (gNow == null) return gdp && gdp > 0
-                    ? `Real GDP: $${(gdp/1000).toFixed(1)}T (level only — growth rate not yet available)`
-                    : "GDP: fetching from FRED…";
-                  const dir = (gPrev != null) ? (gNow < gPrev ? "decelerating" : gNow > gPrev ? "accelerating" : "flat") : null;
-                  const src = gAnn ? `${gAnn.source}, announced ${gAnn.released} — not yet in FRED` : "BEA via FRED";
-                  return `Real GDP growth: ${gNow > 0 ? "+" : ""}${gNow}% annualised`
-                    + (dir && gPrev != null ? `, ${dir} from ${gPrev > 0 ? "+" : ""}${gPrev}%` : "")
-                    + ` (${src})`
-                    + (gdp && gdp > 0 ? ` · level $${(gdp/1000).toFixed(1)}T` : "");
-                })();
-
-                // SignalBar — with analyst context sentence below the bar
-                function SignalBar({ label, value, unit, threshold, thresholdLabel, good, fmtVal, context }) {
-                  // A FEED THAT DID NOT LOAD IS NOT A READING OF ZERO. Nothing below runs on a null: no bar,
-                  // no breach verdict, no sentence explaining a number nobody fetched.
-                  if (value == null || !Number.isFinite(+value)) {
-                    return (
-                      <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px", border: "1px dashed " + C.bdr, flex: "1 1 150px", minWidth: 140 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
-                          <span style={{ color: C.mid, fontSize: 11, fontWeight: 700 }}>{label}</span>
-                          <span style={{ color: C.lbl, fontSize: 10, fontWeight: 800 }}>NOT LOADED</span>
-                        </div>
-                        <div style={{ fontSize: 12, color: C.lbl, lineHeight: 1.5 }}>No live print for this input, so the {thresholdLabel} test cannot be run. Refresh signals; if it stays blank, the feed failed and the strip at the top of the tab will say which.</div>
-                      </div>
-                    );
-                  }
-                  const pct = Math.min(100, Math.max(0, (value / (threshold * 1.5)) * 100));
-                  const breached = good === "below" ? value >= threshold : value <= threshold;
-                  const barColor = breached ? C.red : C.green;
-                  const statusLabel = breached ? "⚠️ BREACHED" : "✅ OK";
-                  const statusColor = breached ? C.red : C.green;
-                  return (
-                    <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px", border: "1px solid " + C.bdr, flex: "1 1 150px", minWidth: 140 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
-                        <span style={{ color: C.mid, fontSize: 11, fontWeight: 700 }}>{label}</span>
-                        <span style={{ color: statusColor, fontSize: 10, fontWeight: 800 }}>{statusLabel}</span>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 6 }}>
-                        <span style={{ fontSize: 19, fontWeight: 900, color: C.text, lineHeight: 1 }}>{fmtVal ? fmtVal(value) : value}{unit}</span>
-                        <span style={{ fontSize: 11, color: C.lbl }}>vs {thresholdLabel}</span>
-                      </div>
-                      <div style={{ height: 5, background: C.bdr, borderRadius: 3, overflow: "hidden", marginBottom: 6 }}>
-                        <div style={{ width: pct + "%", height: "100%", background: barColor, borderRadius: 3, transition: "width 0.4s" }} />
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: context ? 7 : 0 }}>
-                        <span style={{ fontSize: 10, color: C.lbl }}>0</span>
-                        <span style={{ fontSize: 10, color: breached ? C.red : C.lbl, fontWeight: breached ? 700 : 400 }}>threshold {threshold}{unit}</span>
-                      </div>
-                      {context && (
-                        <div style={{ fontSize: 11, color: breached ? C.red : C.green, lineHeight: 1.5, borderTop: "1px solid " + C.bdr, paddingTop: 6 }}>
-                          {context(value, breached)}
-                        </div>
-                      )}
-                    </div>
-                  );
-                }
-
-                const ROADMAP = [
-                  {
-                    label: "Stagflation → Deflationary Recession",
-                    regimeKey: "def", character: "Painful", tiebreak: 2, color: C.blue,
-                    path: "High oil + tight Fed choke off demand. Businesses stop hiring, consumers stop spending. Credit markets crack first — then unemployment surges. Treasuries and cash win. Everything else falls.",
-                    signals: [
-                      {
-                        label: "HY Credit Spread", value: hy, unit: "%", threshold: 4.5,
-                        thresholdLabel: "alert >4.5%", good: "below", fmtVal: v => v.toFixed(2),
-                        context: (v, breached) => breached
-                          ? `At ${v.toFixed(2)}%, credit markets are pricing stress. Companies are struggling to refinance debt — this is the classic deflationary warning.`
-                          : `At ${v.toFixed(2)}%, credit markets are calm — investors aren't panicking yet. This scenario needs spreads to widen to 4.5%+ before it becomes probable. Watch weekly.`,
-                      },
-                      // P1.4 — the trigger is the EMPLOYMENT–POPULATION RATIO, not U3.
-                      // U3 can FALL during exactly the deterioration this scenario exists to
-                      // catch, because people leaving the labour force shrink the numerator
-                      // without anyone being hired (June 2026: U3 4.3→4.2 while emp-pop fell
-                      // 0.2pp). Emp-pop cannot be gamed that way. U3 is still displayed — in
-                      // the labour panel above and in the stagflation scenario — it just no
-                      // longer decides whether this transition has fired.
-                      (() => {
-                        const ep = laborView?.empPop;
-                        if (ep?.ok && ep.value != null && ep.prev != null) {
-                          return {
-                            label: "Emp–pop ratio", value: ep.value, unit: "%",
-                            // "Breached" = below the prior print, i.e. FALLING.
-                            threshold: ep.prev, thresholdLabel: `falling vs prior ${ep.prev.toFixed(1)}%`,
-                            good: "above", fmtVal: v => v.toFixed(1),
-                            context: (v, breached) => breached
-                              ? `Emp-pop at ${v.toFixed(1)}%, down from ${ep.prev.toFixed(1)}% — a smaller share of the working-age population is employed. This is the trigger, not the unemployment rate: U3 can fall while this falls, and in June it did exactly that.`
-                              : `Emp-pop at ${v.toFixed(1)}%, holding at or above the prior ${ep.prev.toFixed(1)}%. The employed share of the population is not shrinking, so the transition has not fired regardless of what the headline rate does.`,
-                          };
-                        }
-                        // No emp-pop print → show U3 but say plainly it is not the trigger.
-                        return {
-                          label: "Unemployment (not the trigger)", value: ue, unit: "%", threshold: 5.0,
-                          thresholdLabel: "emp-pop unavailable", good: "below", fmtVal: v => v.toFixed(1),
-                          context: v => `Emp-pop ratio unavailable, so the transition trigger cannot be evaluated. U3 ${v.toFixed(1)}% is shown for reference only — it is deliberately not the trigger, because it can fall on labour-force exit.`,
-                        };
-                      })(),
-                    ],
-                    tip: (liveInd && hy != null)
-                      ? (hy > 4.5 ? "⚠️ Credit spreads have breached the alert level — deflationary recession risk is elevated. This is the scenario in which Treasuries and cash outperform."
-                        : hy > 3.5 ? "📡 Spreads are widening toward the alert zone. Insurance is cheapest before 4.5% confirms it and dearest after."
-                        : `✅ Both indicators are well within safe territory today. This scenario requires credit spreads to more than double from here (${hy.toFixed(2)}% → 4.5%+). Low near-term risk.`)
-                      : "Hit Refresh signals to get live readings for this scenario.",
-                  },
-                  {
-                    label: "Stagflation → Reflationary Recovery",
-                    regimeKey: "ref", character: "Best case", tiebreak: 3, color: C.green,
-                    path: "A Gulf peace deal or OPEC production increase brings oil below $80. Inflation cools, the Fed resumes cutting, and growth bounces back. This is the best-case exit from stagflation — and what equity markets would celebrate most.",
-                    signals: [
-                      {
-                        label: "Yield Spread", value: yc == null ? null : Math.abs(yc), unit: "%", threshold: 0.5,
-                        thresholdLabel: "normal >0.5%", good: "above", fmtVal: v => (yc >= 0 ? "+" : "-") + v.toFixed(2),
-                        context: (v, breached) => breached
-                          ? `Spread is below 0.5% — curve hasn't fully normalized yet. Recovery hasn't been confirmed by the bond market.`
-                          : `At ${(yc >= 0 ? "+" : "") + yc.toFixed(2)}%, the yield curve has re-normalized. Historically this means the bond market is no longer pricing a recession — a good early sign for recovery.`,
-                      },
-                      {
-                        label: "WTI Crude Oil", value: oil, unit: "$", threshold: 80,
-                        thresholdLabel: "target <$80", good: "below", fmtVal: v => "$" + v,
-                        context: (v, breached) => breached
-                          ? `WTI crude at $${v.toFixed(1)} is the primary blockage. Until oil falls below $80, inflation stays too sticky for the Fed to cut. ${oilPrev ? (v > oilPrev ? "Price is rising — moving in the wrong direction." : "Price is falling — trending toward the trigger.") : ""}`
-                          : `✅ WTI crude at $${v.toFixed(1)} — below the $80 reflationary trigger. Oil is no longer the inflation blockage. The Fed now has room to cut if labour market data warrants it.`,
-                      },
-                    ],
-                    tip: (() => {
-                      const oilDir = oilPrev && oil ? (oil > oilPrev ? "↑ rising" : "↓ falling") : "";
-                      const oilNote = oil == null
-                        ? "WTI not loaded — the oil trigger cannot be evaluated this refresh."
-                        : oil < 80
-                        ? `WTI at $${oil.toFixed(1)} is technically below the $80 trigger — but July 7–8 Hormuz attacks reversed the disinflationary impulse. The Fed needs sustained sub-$80 oil for multiple months, not a brief dip.`
-                        : `WTI at $${oil.toFixed(1)} ${oilDir} — above the $80 threshold. Until sustained below $80, inflation stays too sticky for the Fed to cut.`;
-                      return `⚠️ June FOMC minutes (Jul 8): "only a few" members saw a case to hike — less hawkish than the dot plot implied, but Warsh gave no forward guidance and is firmly on hold. ${oilNote}`;
-                    })(),
-                  },
-                  {
-                    label: "Persistent Stagflation — no transition, regime persists",
-                    regimeKey: "stag", character: "1970s path", tiebreak: 1, color: C.amber,
-                    path: "The Iran conflict drags on for years. Oil stays elevated. The Fed is paralysed — it can't raise rates without crushing growth, and can't cut without reigniting inflation. Gold and real assets become the only reliable stores of value.",
-                    signals: [
-                      {
-                        label: "Unemployment", value: ue, unit: "%", threshold: 4.5,
-                        thresholdLabel: "elevated >4.5%", good: "below", fmtVal: v => v.toFixed(1),
-                        context: (v, breached) => breached
-                          ? `Unemployment above 4.5% while inflation stays high is the textbook stagflation combination — the same dynamic the US faced in 1974–1982.`
-                          : `At ${v.toFixed(1)}%, unemployment is approaching the zone where the Fed's dual mandate becomes impossible to satisfy simultaneously.`,
-                      },
-                      {
-                        label: "Yield Spread", value: yc == null ? null : Math.abs(yc), unit: "%", threshold: 1.0,
-                        thresholdLabel: "normal >1%", good: "above", fmtVal: v => (yc >= 0 ? "+" : "-") + v.toFixed(2),
-                        context: (v, breached) => breached
-                          ? `Spread hasn't reached 1%+ — the curve isn't pricing a sustained growth recovery yet. Consistent with a prolonged stagnation environment.`
-                          : `Spread above 1% suggests the bond market expects growth to recover — which would make persistent stagflation less likely.`,
-                      },
-                    ],
-                    tip: (() => {
-                      const cpiLine = cpi ? `Latest CPI index: ${cpi.toFixed(1)} (FRED, most recent monthly release).` : "CPI: fetching…";
-                      const gdpLine = gdp ? `Real GDP: $${(gdp/1000).toFixed(1)}T (FRED, most recent quarterly release).` : "GDP: fetching…";
-                      return `📊 ${cpiLine} ${gdpLine} The 1970s confirmation signal is CPI staying above 3.5% for 6+ consecutive months while GDP growth stays below 2%. Both are published monthly/quarterly by the BLS and BEA — FRED pulls the latest figure automatically when you hit Refresh.`;
-                    })(),
-                  },
-                  {
-                    label: "Any regime → Inflationary Boom",
-                    regimeKey: "inf", character: "Dalio scenario", tiebreak: 4, color: P.violet600,
-                    path: "The US government keeps spending regardless of the Fed. The dollar structurally weakens. AI generates a genuine productivity surprise. The result: persistent inflation above 4%, but with real growth — a 1990s-style boom with a debasement twist. Gold miners, commodities, and Bitcoin are the standout winners.",
-                    signals: [
-                      {
-                        label: "Yield Spread", value: yc == null ? null : Math.abs(yc), unit: "%", threshold: 1.5,
-                        thresholdLabel: "boom >1.5%", good: "above", fmtVal: v => (yc >= 0 ? "+" : "-") + v.toFixed(2),
-                        context: (v, breached) => breached
-                          ? `Spread above 1.5% would suggest the bond market is pricing strong sustained growth — a precondition for this scenario.`
-                          : `At ${(yc >= 0 ? "+" : "") + yc.toFixed(2)}%, the spread is well below the 1.5% level associated with inflationary boom conditions. This scenario remains a tail risk.`,
-                      },
-                      {
-                        label: "US Dollar Index", value: liveInd?.dxy ?? null, unit: "", threshold: 95,
-                        thresholdLabel: "weak <95", good: "below", fmtVal: v => v.toFixed(1),
-                        context: (v, breached) => breached
-                          ? `Dollar index at ${v.toFixed(1)} — weakening meaningfully. A sustained break below 95 would signal dollar structural decline, which is a key precondition for the inflationary boom scenario.`
-                          : `Dollar index at ${v.toFixed(1)} — still relatively strong. A structural dollar decline (sustained below 95) would be required to validate this scenario. Watch for sustained trend lower.`,
-                      },
-                      {
-                        label: "M2 Money Supply", value: liveInd?.m2 ? liveInd.m2 / 1000 : null, unit: "T", threshold: 22,
-                        thresholdLabel: "re-accel >$22T", good: "above", fmtVal: v => "$" + v.toFixed(1),
-                        context: (v, breached) => {
-                          const dir = liveInd?.m2Rising ? "↑ rising" : "↓ falling";
-                          return breached
-                            ? `M2 at $${v.toFixed(1)}T and ${dir} — money supply re-accelerating is the Fed losing control of the inflation narrative. Combined with a weak dollar, this is the Dalio scenario in motion.`
-                            : `M2 at $${v.toFixed(1)}T, ${dir}. Re-acceleration above $22T would suggest fiscal dominance — the government printing faster than the Fed can tighten.`;
-                        },
-                      },
-                    ],
-                    tip: (() => {
-                      const dxyVal = liveInd?.dxy;
-                      const m2Val  = liveInd?.m2;
-                      const m2Dir  = liveInd?.m2Rising;
-                      if (!dxyVal && !m2Val) return "Hit Refresh signals to get live DXY and M2 readings for this scenario.";
-                      const dxyNote = dxyVal
-                        ? (dxyVal < 95 ? `⚠️ Dollar index at ${dxyVal.toFixed(1)} — below the 95 warning level. Dollar weakening is a live signal.`
-                          : `Dollar index at ${dxyVal.toFixed(1)} — no structural decline yet. Needs to break below 95 to validate.`)
-                        : "";
-                      const m2Note = m2Val
-                        ? (m2Dir ? `⚠️ M2 is re-accelerating ($${(m2Val/1000).toFixed(1)}T, rising) — money supply expanding again.`
-                          : `M2 at $${(m2Val/1000).toFixed(1)}T and falling — not yet signalling fiscal dominance.`)
-                        : "";
-                      return `${dxyNote} ${m2Note} Both signals need to confirm simultaneously for this scenario to become probable. Currently a tail risk; gold miners are the hedge this scenario is priced against.`.trim();
-                    })(),
-                  },
-                ];
-
-                // Item 2 — rank is DERIVED from live probability, not baked into a string. Sort
-                // descending by probability; ties broken by a stable secondary key (`tiebreak`)
-                // so the order never jitters on refresh. The rank badge comes from the sorted
-                // index; the character tag ("Painful", "1970s path", …) stays per-scenario.
-                const RANK_BADGES = ["Most likely", "2nd most likely", "3rd", "4th"];
-                const rankSorted = [...ROADMAP].sort((a, b) =>
-                  (regimeProbFor(b.regimeKey) - regimeProbFor(a.regimeKey)) || (a.tiebreak - b.tiebreak));
-                return rankSorted.map((r, i) => (
-                  <div key={r.regimeKey} style={{ padding: "16px 0", borderBottom: i < rankSorted.length - 1 ? "1px solid " + C.bdr : "none" }}>
-                    <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-                      <div style={{ flexShrink: 0, width: 120, paddingTop: 2 }}>
-                        <div style={{ background: alpha(r.color, 0x15), color: r.color, border: "1.5px solid " + alpha(r.color, 0x40), borderRadius: 8, padding: "6px 8px", textAlign: "center", lineHeight: 1.25 }}>
-                          <div style={{ fontSize: 19, fontWeight: 900 }}>{regimeProbFor(r.regimeKey)}%</div>
-                          <div style={{ fontSize: 10, fontWeight: 800, marginTop: 3 }}>{RANK_BADGES[i] || `${i + 1}th`}</div>
-                          <div style={{ fontSize: 9.5, fontWeight: 700, marginTop: 2, opacity: 0.85 }}>{r.character}</div>
-                        </div>
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 5 }}>{r.label}</div>
-                        <div style={{ color: C.mid, fontSize: 13, lineHeight: 1.7, marginBottom: 10 }}>{r.path}</div>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-                          {r.signals.map((s, si) => (
-                            <SignalBar key={si} {...s} />
-                          ))}
-                        </div>
-                        <div style={{ background: alpha(r.color, 0x0D), border: "1px solid " + alpha(r.color, 0x30), borderRadius: 8, padding: "9px 12px", color: r.color, fontSize: 12, lineHeight: 1.65, fontWeight: 500 }}>
-                          📡 {r.tip}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ));
-              })()}
-            </Card>
-          </div>
-        )}
 
         </TabErrorBoundary>
 

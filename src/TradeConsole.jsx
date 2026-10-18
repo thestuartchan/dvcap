@@ -21,6 +21,7 @@ import {
 } from "recharts";
 import { C, P } from "./theme.js";
 import { SLabel, Card, Btn, StaleChip } from "./ui.jsx";
+import { navCheck, NAV_DRIFT_PCT, pricesStamp, clockHHMM, nlvDate } from "../lib/consoleStamps.js";
 import { ASSETS } from "../lib/assets.js";
 import { derivePosition, applyRolls, splitIntoTrades, collapseFills, oversellSplit, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, archiveCurve } from "../lib/positions.js";
 import { sideOf, isShort, openSideFor, closeSideFor, geometryCheck, levelVocab, fillVerb, SIDES, SIDE_LABEL, DEFAULT_SIDE } from "../lib/side.js";
@@ -34,7 +35,7 @@ import { decisionEntry, lastClosedWasWin, overrideTrend, guardOutcomes } from ".
 import { stopWidth, ATR_STATUS } from "../lib/atr.js";
 import { preTradeGuards, guardStates } from "../lib/guards.js";
 import { riskCoverage, rowExposure, stopOf } from "../lib/exposure.js";
-import { bookExposure, parseOptionSymbol, contractKey } from "../lib/bookExposure.js";
+import { bookExposure, parseOptionSymbol, contractKey, expiredLine } from "../lib/bookExposure.js";
 import { sizeTrade, sizeFuture, sizerRun, reconcileRuns, mismatchReview, capReview, futuresReview, leveragedReview, SIZER_LIMITS, SINGLE_NAME_EXEMPT } from "../lib/sizer.js";
 import { leverageFor, SWING, roomInWrappers } from "../lib/leverage.js";
 import { modelledDelta } from "../lib/blackscholes.js";
@@ -70,6 +71,7 @@ import { HOLD_TYPES, HOLD_LABEL, anA, holdSettings, defaultDrawdown, otherTypesL
 import { syncStatus } from "../lib/flexStatus.js";
 import { searchBook } from "../lib/positionSearch.js";
 import { FACTORS, FACTOR_SYMBOLS, TAGS, tagOf, LIST_GROUPS, listGroupOf, groupCounts, sortByGroup, filterByGroups, holdingsOf, factorExposure, scenarioPnl, overnightFlag } from "../lib/factorExposure.js";
+import { lastSettledSession, sessionsBetween } from "../lib/ratios.js";
 
 // Shown in the sizing note; kept a constant so the copy and the cap cannot drift apart.
 const CREDIT_DANGER_CAP_LABEL = `×${CREDIT_DANGER_CAP.toFixed(2)}`;
@@ -1549,6 +1551,12 @@ const chainLook = (label) => CHAIN_LOOK[label] || CHAIN_FALLBACK;
 // PRIVATE. Positions, quantities and account value. It renders here and nowhere else: not in a
 // pre-read, not on a Discord card, not on any public route.
 const XPO_ROW = { display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginTop: 3 };
+// The date of the NLV a "× NLV" figure divides by (lib/consoleStamps.js nlvDate) — amber once the
+// figure is older than the sizing module's stale threshold.
+const NlvOf = ({ asOf }) => {
+  const d = nlvDate(asOf, new Date().toISOString().slice(0, 10));
+  return <span style={{ color: d.stale ? C.amber : C.muted, fontWeight: d.stale ? 700 : 400, fontSize: 11 }}> ({d.text})</span>;
+};
 const XpoStat = ({ label, value, sub, col, breach }) => (
   <div style={{ flex: "1 1 150px", minWidth: 140 }}>
     <div style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
@@ -1570,7 +1578,7 @@ function useBookExposure(rows, nlv, cashBook = null, toBase = null, exempt = nul
   // on every render of an unchanged book.
   const spec = useMemo(() => {
     const keys = (rows || [])
-      .filter(r => Math.abs(Number(r?.derived?.qty ?? r?.qty) || 0) > 0)
+      .filter(r => Math.abs(Number(r?.derived?.qty ?? r?.qty) || 0) > 0 && !expiredLine(r))
       .map(r => contractKey(parseOptionSymbol(r?.symbol)))
       .filter(Boolean);
     return [...new Set(keys)].sort().join(",");
@@ -1627,7 +1635,7 @@ function useBookExposure(rows, nlv, cashBook = null, toBase = null, exempt = nul
 // everything — size so that one ATR of adverse movement costs 1% of NLV — then the concentration
 // caps, then the smallest result. See lib/sizer.js for the worked example this was built from: the
 // QQQ line where both tests said five contracts and the position was twenty.
-function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], exempt = null, holds = [], head = null, holdCfg = null, toBase = null }) {
+function PositionSizer({ book = null, nlv = null, nlvAsOf = null, calendar = null, fills = [], exempt = null, holds = [], head = null, holdCfg = null, toBase = null }) {
   const [tkr, setTkr] = useState("");
   const [kind, setKind] = useState("option");
   // CALL OR PUT. The chain key was hard-coded to the call, so a put at the same strike was priced
@@ -1921,7 +1929,7 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <SLabel>Position sizer</SLabel>
         <span style={{ fontSize: 11.5, color: C.muted }}>sized by hold type — Trade: a stop-out costs 1R · Long hold: the bad case costs the drawdown budget · Event: the typical gap costs 1R</span>
-        <span style={{ marginLeft: "auto", fontSize: 11, color: C.lbl, fontWeight: 700 }}>NLV {money(nlv)}</span>
+        <span style={{ marginLeft: "auto", fontSize: 11, color: C.lbl, fontWeight: 700 }}>NLV {money(nlv)}<NlvOf asOf={nlvAsOf} /></span>
       </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
         <SzFld label="Ticker"><input value={tkr} onChange={e => setTkr(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && ready && !busy) look(); }}
@@ -2276,7 +2284,7 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
           {result.book.after != null && (
             <div style={{ fontSize: 11.5, color: C.mid, marginTop: 5, lineHeight: 1.6 }}>
               <div style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Book delta-notional</div>
-              <div>now <b>{result.book.before}×</b> NLV → after{" "}
+              <div>now <b>{result.book.before}×</b> NLV<NlvOf asOf={nlvAsOf} /> → after{" "}
                 <b style={{ color: result.pastCeiling ? C.red : result.pastTarget ? C.amber : C.green }}>{result.book.after}×</b>
                 <span style={{ color: C.lbl }}> · target {result.book.target}× · ceiling {result.book.ceiling}×</span>
                 {result.book.follows === "entered" && result.book.atSuggested != null
@@ -2292,7 +2300,7 @@ function PositionSizer({ book = null, nlv = null, calendar = null, fills = [], e
                   <div style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>
                     this trade · {result.bucket.used} bucket{result.bucket.used !== result.bucket.byDefault ? ` (default ${result.bucket.byDefault})` : ""}
                   </div>
-                  <div>position book <b style={{ color: result.bucket.room.positionOverUsd > 0 ? C.amber : C.green }}>{result.bucket.room.positionX}× NLV</b>
+                  <div>position book <b style={{ color: result.bucket.room.positionOverUsd > 0 ? C.amber : C.green }}>{result.bucket.room.positionX}× NLV</b><NlvOf asOf={nlvAsOf} />
                     <span style={{ color: C.lbl }}> · limit {result.bucket.room.positionLimit}×</span>
                     {result.bucket.room.positionOverUsd > 0 ? <b style={{ color: C.amber }}> ⚠ over by {money(result.bucket.room.positionOverUsd)}</b> : <b style={{ color: C.green }}> ✓</b>}</div>
                   <div>swing room <b style={{ color: result.bucket.room.negative ? C.amber : C.green }}>{result.bucket.room.negative ? "−" : ""}{money(Math.abs(result.bucket.room.roomUsd))}</b>
@@ -2414,8 +2422,33 @@ const isStale = (asOf) => {
 // what it cannot see, are in lib/factorExposure.js.
 const FACTOR_LOOKBACK_DAYS = 100;
 const numOr = (v, d) => (Number.isFinite(+v) && +v > 0 ? +v : d);
-function FactorPanel({ rows, toBase, nlv, baseCcy, today }) {
+// Narrow screens get the two windows stacked rather than side by side (390px phone: the 60-session
+// columns were cut off). Read once and on resize; no CSS-in-JS media queries in this file.
+function useNarrow(px = 560) {
+  const q = typeof window !== "undefined" && window.matchMedia ? window.matchMedia(`(max-width: ${px}px)`) : null;
+  const [narrow, setNarrow] = useState(!!q?.matches);
+  useEffect(() => {
+    if (!q) return undefined;
+    const on = () => setNarrow(q.matches);
+    q.addEventListener?.("change", on);
+    return () => q.removeEventListener?.("change", on);
+  }, []);   // eslint-disable-line
+  return narrow;
+}
+// A line's name: the ticker, and for an option or spread the CONTRACT. "SLV" three times was a
+// straddle and the two rows it split into; "INTC" with "no delta yet" was an INTC option row, not
+// the shares.
+const factorLabel = (r) => {
+  if (isDerivativeRow(r)) {
+    const c = legLabel(r.legs || [], { year: false });
+    return `${underlyingOf(r) || r.symbol}${c ? " " + c : ""}`;
+  }
+  return r.symbol + (r.trade && r.trade.trim().toUpperCase() !== r.symbol.toUpperCase() ? ` · ${r.trade}` : "");
+};
+const R2_WEAK = 0.10;   // below this a loading is noise, and is drawn that way
+function FactorPanel({ rows, toBase, nlv, baseCcy, today, nlvAsOf = null, positionsAsOf = null }) {
   const [mode, setMode] = useState("held");
+  const narrow = useNarrow();
   const [open, setOpen] = useState(null);
   const [hist, setHist] = useState({ state: "idle", symbols: {}, key: "" });
   const since = new Date(Date.parse(today + "T00:00:00Z") - FACTOR_LOOKBACK_DAYS * 86400000).toISOString().slice(0, 10);
@@ -2424,7 +2457,7 @@ function FactorPanel({ rows, toBase, nlv, baseCcy, today }) {
   const specs = useMemo(() => rows.filter(r => (r.fills || []).length && (r.state === "OPEN" ||
       String(r.derived?.lastDate || "").slice(0, 10) >= since)).map(r => {
     const holdings = holdingsOf(r);
-    const base = { id: r.id, label: r.symbol + (r.trade && r.trade.trim().toUpperCase() !== r.symbol.toUpperCase() ? ` · ${r.trade}` : ""),
+    const base = { id: r.id, label: factorLabel(r), open: r.state === "OPEN",
                    tag: tagOf(r), symbol: quoteSym(r), holdings, qtyNow: r.state === "OPEN" ? (holdings.at(-1)?.[1] ?? 0) : 0 };
     if (isHlPerp(r.symbol)) return { ...base, skip: "no daily history (Hyperliquid)" };
     const fx = toBase(1, r);
@@ -2474,11 +2507,28 @@ function FactorPanel({ rows, toBase, nlv, baseCcy, today }) {
   const w60 = fx?.ok ? Object.fromEntries(fx.windows[60].map(x => [x.factor, x])) : {};
   const th = { fontSize: 10, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4, textAlign: "right", padding: "4px 6px", whiteSpace: "nowrap" };
   const td = { fontSize: 12, textAlign: "right", padding: "5px 6px", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" };
-  const cells = (x, edge = false) => { const t0 = edge ? { ...td, borderLeft: "1px solid " + C.bdr } : td; return x?.usdPerUnit == null ? [<td key="b" style={t0}>—</td>, <td key="r" style={td}>—</td>, <td key="u" style={td}>—</td>] : [
-    <td key="b" style={{ ...t0, fontWeight: 800 }}>{x.beta == null ? "—" : x.beta.toFixed(2)}</td>,
-    <td key="r" style={{ ...td, color: x.r2 < 0.1 ? C.muted : C.mid }}>{x.r2.toFixed(2)}</td>,
-    <td key="u" style={{ ...td, color: col(x.usdPerUnit), fontWeight: 700 }}>{signed(x.usdPerUnit)}</td>,
+  // A WEAK FIT IS DRAWN AS ONE. Below R² 0.10 the factor explains under a tenth of the book's daily
+  // moves and its β is mostly noise, but it was printed in the same weight and colour as a 0.55.
+  // Those cells are muted and say why on hover; nothing is hidden.
+  const weak = (x) => x?.r2 != null && x.r2 < R2_WEAK;
+  const weakTip = (x) => weak(x) ? `loading not reliable — R² ${x.r2.toFixed(2)} is below ${R2_WEAK.toFixed(2)}: this factor explains little of the book's daily moves in this window` : undefined;
+  const cells = (x, edge = false) => { const t0 = edge ? { ...td, borderLeft: "1px solid " + C.bdr } : td; const w = weak(x); const dim = w ? { opacity: 0.45 } : {}; return x?.usdPerUnit == null ? [<td key="b" style={t0} title="no fit in this window">—</td>, <td key="r" style={td}>—</td>, <td key="u" style={td}>—</td>] : [
+    <td key="b" title={weakTip(x)} style={{ ...t0, ...dim, fontWeight: w ? 500 : 800, color: w ? C.muted : undefined }}>{x.beta == null ? "—" : x.beta.toFixed(2)}</td>,
+    <td key="r" title={weakTip(x)} style={{ ...td, ...dim, color: w ? C.muted : C.mid }}>{x.r2.toFixed(2)}</td>,
+    <td key="u" title={weakTip(x)} style={{ ...td, ...dim, color: w ? C.muted : col(x.usdPerUnit), fontWeight: w ? 500 : 700 }}>{signed(x.usdPerUnit)}</td>,
   ]; };
+  // ── WHAT IS NOT IN IT, AND AS OF WHEN ──
+  // "Not in it" named every row held at some point in the window that could not be priced —
+  // contracts closed weeks ago among them, the same underlying listed once per row. It names what
+  // is HELD NOW and left out, once per contract; closed lines the window could not price are
+  // counted, because their missing days still shape the "as held" history.
+  const skippedOpen = fx?.ok ? [...new Map(fx.skipped.filter(s => specs.find(l => l.id === s.id)?.open).map(s => [`${s.label}|${s.why}`, s])).values()] : [];
+  const skippedClosed = fx?.ok ? fx.skipped.filter(s => !specs.find(l => l.id === s.id)?.open).length : 0;
+  const settled = lastSettledSession();
+  const behind = (d) => d ? sessionsBetween(d, settled) : null;
+  const closesBehind = fx?.ok ? behind(fx.last) : null;
+  const posBehind = behind(positionsAsOf);
+  const nlvAge = nlvAsOf ? equityFreshness(nlvAsOf, today) : null;
   const shockText = sc?.ok ? Object.entries(sc.shocks).map(([k, v]) => {
     const f = FACTORS.find(x => x.id === k);
     return `${f.label.replace(" front", "")} ${v > 0 ? "+" : "−"}${Math.abs(v)}${f.kind === "bp" ? "bp" : "%"}`;
@@ -2500,7 +2550,35 @@ function FactorPanel({ rows, toBase, nlv, baseCcy, today }) {
       {hist.state === "error" && <div style={{ fontSize: 12, color: C.amber, marginTop: 8 }}>⚠ price history unavailable — {hist.err}</div>}
       {fx && !fx.ok && <div style={{ fontSize: 12, color: C.amber, marginTop: 8 }}>⚠ {fx.reason}</div>}
       {fx?.ok && (<>
-        <div style={{ overflowX: "auto", marginTop: 8 }}>
+        {/* AS OF, BOTH HALVES. The positions come from the last IBKR statement; the closes from the
+            price feed. Either one a full session behind the last settled close is amber. */}
+        <div style={{ fontSize: 11.5, color: C.mid, marginTop: 6, display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <span title="the rows' fills, last reconciled against this IBKR statement; fills recorded since (Sync now, or by hand) are in too">positions reconciled to IBKR <b style={{ color: posBehind > 0 ? C.amber : C.text }}>{positionsAsOf || "— no statement synced yet"}</b>{posBehind > 0 ? ` · ${posBehind} session${posBehind === 1 ? "" : "s"} behind` : ""}</span>
+          <span>closes to <b style={{ color: closesBehind > 0 ? C.amber : C.text }}>{fx.last}</b>{closesBehind > 0 ? ` · ${closesBehind} session${closesBehind === 1 ? "" : "s"} behind ${settled}` : ""}</span>
+        </div>
+        {narrow ? (
+          // Stacked on a phone: one block per window, each fits 390px.
+          [[20, w20], [60, w60]].map(([w, W]) => (
+            <div key={w} style={{ marginTop: 10 }}>
+              <div style={{ ...th, textAlign: "left", padding: "0 0 3px" }}>{w} sessions</div>
+              <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                <thead><tr>
+                  <th style={{ ...th, textAlign: "left" }}>Factor</th>
+                  <th style={{ ...th, textTransform: "none" }} title="book % per unit move">β</th><th style={th}>R²</th><th style={th}>$ / unit</th>
+                </tr></thead>
+                <tbody>
+                  {FACTORS.map(f => (
+                    <tr key={f.id} onClick={() => setOpen(open === f.id ? null : f.id)} style={{ cursor: "pointer", borderTop: "1px solid " + C.bdr }}>
+                      <td style={{ ...td, textAlign: "left", fontWeight: 800, whiteSpace: "normal", opacity: weak(W[f.id]) ? 0.6 : 1 }} title={weakTip(W[f.id])}>{f.label} <span style={{ fontWeight: 500, color: C.muted, fontSize: 11 }}>/{f.unit}</span></td>
+                      {cells(W[f.id])}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))
+        ) : (
+        <div style={{ overflowX: "auto", marginTop: 8, maxWidth: "100%" }}>
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 560 }}>
             <thead>
               <tr>
@@ -2522,7 +2600,7 @@ function FactorPanel({ rows, toBase, nlv, baseCcy, today }) {
                 return (
                   <Fragment key={f.id}>
                     <tr onClick={() => setOpen(isOpen ? null : f.id)} style={{ cursor: "pointer", borderTop: "1px solid " + C.bdr, background: isOpen ? C.bg : "transparent" }}>
-                      <td style={{ ...td, textAlign: "left", fontWeight: 800 }}>{isOpen ? "▾" : "▸"} {f.label} <span style={{ fontWeight: 500, color: C.muted, fontSize: 11 }}>per {f.unit}</span></td>
+                      <td title={weak(a) && weak(b) ? "loading not reliable in either window (R² below 0.10)" : undefined} style={{ ...td, textAlign: "left", fontWeight: 800, opacity: weak(a) && weak(b) ? 0.6 : 1 }}>{isOpen ? "▾" : "▸"} {f.label} <span style={{ fontWeight: 500, color: C.muted, fontSize: 11 }}>per {f.unit}</span></td>
                       {cells(a)}
                       {cells(b, true)}
                       <td style={{ ...td, textAlign: "left", color: C.mid, fontSize: 11.5 }}>{(b?.top || []).length ? b.top.slice(0, 2).map((t, i) => <span key={t.id}>{i ? ", " : ""}{t.label.split(" · ")[0]} <span style={{ color: col(t.usd) }}>{signed(t.usd)}</span></span>) : "—"}</td>
@@ -2552,6 +2630,7 @@ function FactorPanel({ rows, toBase, nlv, baseCcy, today }) {
             </tbody>
           </table>
         </div>
+        )}
         {sc?.ok && (
           <div style={{ marginTop: 10, paddingTop: 9, borderTop: "1px solid " + C.bdr }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
@@ -2573,9 +2652,10 @@ function FactorPanel({ rows, toBase, nlv, baseCcy, today }) {
           </div>
         )}
         <div style={{ fontSize: 10.5, color: C.muted, marginTop: 9, lineHeight: 1.5 }}>
-          β is book % per unit move on {nlv ? usd(nlv) : "NLV (set account equity for β)"}; $ / unit is the slope itself. {fx.first} → {fx.last}, {fx.sessions} sessions{fx.short ? " — fewer than 60, so the 60 is what there is" : ""}.
-          Close to close, so intraday trades do not count. Options at today's delta on the underlying; futures on the continuous front month, roll days included.
-          {fx.skipped.length > 0 && <> Not in it: {fx.skipped.map(s => `${s.label} (${s.why})`).join(", ")}.</>}
+          β is book % per unit move on {nlv ? usd(nlv) : "NLV (set account equity for β)"}{nlv ? <> (<span style={{ color: nlvAge?.stale ? C.amber : undefined }}>{nlvAsOf ? `account equity as of ${nlvAsOf}${nlvAge?.days ? `, ${nlvAge.days}d ago` : ""}` : "account equity — no date recorded"}</span>, set in Settings)</> : null}; $ / unit is the slope itself. {fx.first} → {fx.last}, {fx.sessions} sessions{fx.short ? " — fewer than 60, so the 60 is what there is" : ""}.
+          Close to close, so intraday trades do not count. Shares, ETFs and futures at delta 1 per unit; options at today's delta on the underlying; futures on the continuous front month, roll days included. Faded rows: R² below {R2_WEAK.toFixed(2)}, loading not reliable.
+          {skippedOpen.length > 0 && <> Held and not in it: {skippedOpen.map(s => `${s.label} (${s.why})`).join(", ")}.</>}
+          {skippedClosed > 0 && <> {skippedClosed} closed line{skippedClosed === 1 ? "" : "s"} in the window could not be priced (no delta recorded) — their days are missing from "as held", and they are not in today's book.</>}
         </div>
       </>)}
       {flags.length > 0 && (
@@ -2588,8 +2668,15 @@ function FactorPanel({ rows, toBase, nlv, baseCcy, today }) {
   );
 }
 
-function ExposureTile({ book, err, children = null }) {
-  if (!book?.available) return children ? <Card>{children}</Card> : null;
+function ExposureTile({ book, err, nlvAsOf = null, children = null }) {
+  // A book whose only option lines have expired is still worth one line saying so.
+  const expiredNote = book?.expired?.length > 0 && (
+    <div style={{ marginTop: 5, fontSize: 11, color: C.mid, fontWeight: 700 }}>
+      {book.expired.length} expired contract{book.expired.length === 1 ? "" : "s"} left out of every figure — past 16:00 New York on the expiry date, still open here until the IBKR statement books the expiry:{" "}
+      {book.expired.map(x => `${String(x.symbol || "").trim()}${x.expiry ? ` (${x.expiry})` : ""}`).join(", ")}
+    </div>
+  );
+  if (!book?.available) return (children || expiredNote) ? <Card>{expiredNote}{children}</Card> : null;
   const L = book.limits;
   const money = (v) => v == null ? "—" : (v < 0 ? "−$" : "$") + Math.abs(Math.round(v)).toLocaleString("en-US");
   const stateCol = book.state === "OVER CEILING" ? C.red
@@ -2607,11 +2694,12 @@ function ExposureTile({ book, err, children = null }) {
             without its timestamp is one nobody can check against their own screen. */}
         <span style={{ marginLeft: "auto", fontSize: 11, color: C.lbl, fontWeight: 700 }}>
           {book.asOf ? `greeks pulled ${String(book.asOf).slice(0, 10)} ${String(book.asOf).slice(11, 16)}Z` : book.optionLines > 0 ? "awaiting greeks" : "no options open"}
+          <NlvOf asOf={nlvAsOf} />
         </span>
       </div>
       <div style={{ display: "flex", gap: 22, flexWrap: "wrap", marginTop: 9 }}>
         <XpoStat label="Delta-notional" value={money(book.deltaNotional)} col={stateCol}
-          sub={book.ratio == null ? null : `${book.ratio}× NLV`} breach={over} />
+          sub={book.ratio == null ? null : <>{book.ratio}× NLV<NlvOf asOf={nlvAsOf} /></>} breach={over} />
         <XpoStat label="Premium at risk" value={money(book.premium)}
           sub={book.premiumPct == null ? null : `${book.premiumPct}% NLV`} />
         {/* AWAITING IS NOT ZERO. With an option open and no greek in yet, "$0" reads as no decay.
@@ -2633,12 +2721,12 @@ function ExposureTile({ book, err, children = null }) {
           <span title={book.leverage.book.basis}>
             <span style={{ color: C.lbl, fontWeight: 800 }} title="target 1.0× · position book ≤ 1.2× + swing ≤ 0.3× · ceiling 1.5× — the same limits the sizer uses">Book (1.2× + 0.3× swing · 1.5× ceiling) </span>
             <b style={{ color: stateCol, fontSize: 14 }}>{book.leverage.book.ratio == null ? "—" : `${book.leverage.book.ratio}×`}</b>
-            <span style={{ color: C.muted }}> delta-notional ÷ NLV, cash equivalents excluded</span>
+            <span style={{ color: C.muted }}> delta-notional ÷ NLV, cash equivalents excluded</span><NlvOf asOf={nlvAsOf} />
           </span>
           <span title={book.leverage.ibkr.basis}>
             <span style={{ color: C.lbl, fontWeight: 800 }}>IBKR leverage </span>
             <b style={{ fontSize: 14 }}>{book.leverage.ibkr.ratio == null ? "—" : `${book.leverage.ibkr.ratio}×`}</b>
-            <span style={{ color: C.muted }}> gross ÷ NLV, cash equivalents included — what IBKR shows</span>
+            <span style={{ color: C.muted }}> gross ÷ NLV, cash equivalents included — what IBKR shows</span><NlvOf asOf={nlvAsOf} />
           </span>
         </div>
       )}
@@ -2666,7 +2754,7 @@ function ExposureTile({ book, err, children = null }) {
       {book.buckets && (
         <div style={XPO_ROW}>
           <span style={{ fontSize: 11, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>Position book</span>
-          <b style={{ fontSize: 12.5, color: book.buckets.positionOverUsd > 0 ? C.amber : C.green }}>{book.buckets.positionX}× NLV</b>
+          <b style={{ fontSize: 12.5, color: book.buckets.positionOverUsd > 0 ? C.amber : C.green }}>{book.buckets.positionX}× NLV</b><NlvOf asOf={nlvAsOf} />
           <span style={{ fontSize: 11.5, color: C.muted }}>limit {book.buckets.positionLimit}×{book.buckets.positionOverUsd > 0 ? ` · ⚠ over by ${money(book.buckets.positionOverUsd)}` : " · ✓"}</span>
           <span style={{ fontSize: 11, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4, marginLeft: 8 }}>Swing room</span>
           <b style={{ fontSize: 12.5, color: book.buckets.negative ? C.amber : C.green }}>{book.buckets.negative ? "−" : ""}{money(Math.abs(book.buckets.roomUsd))}</b>
@@ -2690,7 +2778,7 @@ function ExposureTile({ book, err, children = null }) {
         {book.largest && (
           <span style={{ fontSize: 11.5, color: book.largest.overCap ? C.red : C.muted, fontWeight: 700 }}>
             largest {book.largest.symbol.trim()} {money(book.largest.deltaNotional)}
-            {book.largest.ratio == null ? "" : ` · ${book.largest.ratio}× NLV`}
+            {book.largest.ratio == null ? "" : <> · {book.largest.ratio}× NLV<NlvOf asOf={nlvAsOf} /></>}
             {book.largest.overCap ? ` ⚠ over the ${L.singleNamePct}% single-name cap` : ""}
           </span>
         )}
@@ -2724,6 +2812,7 @@ function ExposureTile({ book, err, children = null }) {
           {book.unpriced.map(u => u.symbol?.trim()).join(", ")}
         </div>
       )}
+      {expiredNote}
       {err && <div style={{ marginTop: 5, fontSize: 11, color: C.amber }}>⚠ greeks feed — {err}</div>}
       <div style={{ marginTop: 5, fontSize: 10.5, color: C.lbl, lineHeight: 1.5 }}>
         {book.note}. Greeks are CBOE's published values, not modelled — no assumed rate or dividend.
@@ -2852,6 +2941,11 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   const [saving, setSaving]     = useState(false);
   const [saveMsg, setSaveMsg]   = useState(null);
   const [kvOn, setKvOn]         = useState(null);
+  // ── THE REVISION THIS TAB'S COPY WAS MADE FROM (lib/consoleRev.js) ──
+  // Sent with every save; a save from an older copy is refused and `conflict` says so, rather
+  // than the server taking this tab's book over a newer one. Null until the server copy is read.
+  const [serverRev, setServerRev] = useState(null);
+  const [conflict, setConflict] = useState(null);
   const [expanded, setExpanded] = useState(null);
   // ── THE COMMAND BAR ── one line: TICKER · direction · instrument · [qty @ price]. Parsed as it is
   // typed (lib/commandBar.js); the pills beside it rewrite the same line.
@@ -2998,9 +3092,14 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   // Deliberately NOT the whole payload. Re-reading the console rows on a refresh would overwrite
   // unsaved edits with whatever was last synced, which is a data-loss bug wearing a refresh
   // button. Only the read-only, server-owned fields are re-read here.
-  const refreshLive = useCallback(() => fetch("/api/manual-entry?live=1")
-    .then(r => r.json())
+  // A REFUSED OR FAILED READ IS NOT DATA. Neither path checked r.ok: a 401 or 500 body
+  // ({ error }) was read as an answer — the live blocks blanked, and the chain stamp read "just
+  // now" over a failed fetch. Now it is an error, said in the console, and nothing is replaced.
+  const [loadErr, setLoadErr] = useState(null);
+  const readLive = () => fetch("/api/manual-entry?live=1").then(r => r.ok ? r.json() : r.json().catch(() => ({})).then(b => Promise.reject(new Error(`${r.status}${b?.error ? ` — ${b.error}` : ""}`))));
+  const refreshLive = useCallback(() => readLive()
     .then(j => {
+      setLoadErr(null);
       const hl = j?.hyperliquid;
       setLivePositions(hl?.ok && Array.isArray(hl.positions)
         ? Object.fromEntries(hl.positions.map(p => [p.coin, p])) : null);
@@ -3013,14 +3112,15 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       setJournal(j?.journal || null);
       setChainAt(new Date().toISOString());
     })
-    .catch(() => { /* leave the last good read on screen rather than blanking it */ }), []);
+    .catch((e) => { setLoadErr(String(e?.message || e)); /* the last good read stays on screen, and the banner says it is old */ }), []);
 
   useEffect(() => {
     try {
       const c = JSON.parse(localStorage.getItem(LS) || "null");
       if (c) { setRows(backfillMultipliers(c.rows || []).rows); setSettings(s => ({ ...s, ...(c.settings || {}) })); }
     } catch { /* no cache */ }
-    fetch("/api/manual-entry?live=1").then(r => r.json()).then(j => {
+    readLive().then(j => {
+      setLoadErr(null);
       // Real perp positions, keyed by coin, when HYPERLIQUID_ADDRESS is configured. Keyed rather
       // than listed because every consumer looks one up by coin and none of them iterates.
       const hl = j?.hyperliquid;
@@ -3043,21 +3143,32 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
         }
         else if (Array.isArray(c.watchlist)) setRows(migrateV1(c.watchlist));   // one-time v1 → v2
         if (c.settings) setSettings(s => ({ ...s, ...c.settings }));
+        setServerRev(Number.isInteger(c.rev) ? c.rev : 0);
       }
       setKvOn(j?.kv?.configured ?? null);
       setFlexNote(j?.flexSync || null);
+      // ── AN EMPTY EQUITY FIELD TAKES THE STATEMENT'S NLV ──
+      // Only an empty one, on load: a typed figure is never replaced without asking (Settings
+      // offers the statement's beside it and flags drift). Dated the statement's day, not today,
+      // so every "× NLV" on the page says how old its denominator is. Saved like any other edit.
+      const pre = navCheck({ equity: c?.settings?.equity ?? null, nav: j?.flexSync?.nav ?? null, baseCcy: c?.settings?.baseCurrency || "USD" });
+      if (pre.state === "prefill") {
+        setSettings(x => (x.equity == null ? { ...x, equity: pre.value, equityAsOf: pre.asOf, equitySource: "ibkr" } : x));
+        setDirty(true);
+      }
       setCashBook(j?.cashBook || null);
       if (Array.isArray(j?.consoleSnapshots)) setSnapshots(j.consoleSnapshots);
       setJournal(j?.journal || null);
       setPreread(Array.isArray(j?.preread) ? j.preread : null);
       setChainAt(new Date().toISOString());
       setLoaded(true);
-    }).catch(() => setLoaded(true));
+    }).catch((e) => { setLoadErr(String(e?.message || e)); setLoaded(true); });
   }, []);
   useEffect(() => {
     if (!loaded) return;
     try { localStorage.setItem(LS, JSON.stringify({ rows, settings })); } catch { /* quota */ }
   }, [rows, settings, loaded]);
+
 
   // v1 stored a single `entry` per row. Convert it to an opening BUY fill so nothing is lost, and
   // mark the quantity unknown rather than inventing one.
@@ -3814,20 +3925,41 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     return () => clearTimeout(t);
   }, [undo]);
 
-  const saveCloud = async () => {
+  // EVERY CONSOLE SAVE GOES THROUGH HERE, so every one names the revision it was made from and
+  // picks up the one it wrote. `force` is the conflict banner's "overwrite": the same save, made
+  // deliberately against the revision the server now holds.
+  const postConsole = async (rowsOut, { force = false } = {}) => {
+    const baseRev = force && conflict ? conflict.current : serverRev;
+    const res = await fetch("/api/manual-entry", {
+      method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+      body: JSON.stringify({ console: { rows: rowsOut, settings, ...(baseRev != null ? { baseRev } : {}) } }),
+    });
+    const j = await res.json().catch(() => null);
+    if (res.ok) {
+      if (Number.isInteger(j?.console?.rev)) setServerRev(j.console.rev);
+      setConflict(null);
+    } else if (res.status === 409) {
+      setDirty(true);   // the banner that carries the conflict is the unsaved one
+      // Never read the server copy (the load failed): say that, not "an older version".
+      const neverRead = serverRev == null && j?.console?.reason === "no-revision";
+      setConflict({ current: j?.console?.rev ?? null, updatedAt: j?.console?.updatedAt || null, reason: j?.console?.reason || null,
+        text: neverRead ? "Not saved — this tab never read the server's copy (the load failed), so saving could overwrite a newer one. Reload the page, then save again; your edits are kept in this browser."
+                        : (j?.error || "Not saved — the console changed since this page loaded it.") });
+    }
+    return { res, j };
+  };
+  const saveCloud = async (opts) => {
+    const force = opts?.force === true;
     setSaving(true); setSaveMsg(null);
     try {
-      const res = await fetch("/api/manual-entry", {
-        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
-        body: JSON.stringify({ console: { rows, settings } }),
-      });
-      const j = await res.json().catch(() => null);
+      const { res, j } = await postConsole(rows, { force });
       if (res.ok) {
         const stored = j?.console?.stored;
         setDirty(false);
-        setSaveMsg(stored === "kv" ? "Synced across devices ✓" : stored === "none" ? "Saved in this browser only — sync not configured." : "Saved ✓");
+        setSaveMsg(stored === "kv" ? (force ? "Overwrote the newer copy ✓" : "Synced across devices ✓") : stored === "none" ? "Saved in this browser only — sync not configured." : "Saved ✓");
         if (stored) setKvOn(stored === "kv");
-      } else if (res.status === 401) setSaveMsg("Log in to sync (kept locally).");
+      } else if (res.status === 409) setSaveMsg("Not saved — see the banner (kept locally).");
+      else if (res.status === 401) setSaveMsg("Log in to sync (kept locally).");
       else setSaveMsg(`Save failed (${res.status}) — kept locally.`);
     } catch { setSaveMsg("Save failed — kept locally."); }
     setSaving(false); setTimeout(() => setSaveMsg(null), 6000);
@@ -3849,9 +3981,8 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     setJournalBusy(true); setJournalMsg(null);
     try {
       setRows(r.rows);
-      const res = await fetch("/api/manual-entry", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
-        body: JSON.stringify({ console: { rows: r.rows, settings } }) });
-      if (!res.ok) { touch(); setJournalMsg({ err: true, text: `Row kept locally, not synced (${res.status}) — the draft stays until it is.` }); return; }
+      const { res } = await postConsole(r.rows);
+      if (!res.ok) { touch(); setJournalMsg({ err: true, text: res.status === 409 ? "Row kept locally, not synced — the console changed since this page loaded it (see the banner). The draft stays until it is." : `Row kept locally, not synced (${res.status}) — the draft stays until it is.` }); return; }
       setDirty(false);
       const done = await resolveJournal({ id: draft.id, action: "confirm" });
       setJournalMsg(done.ok ? r.message ? { text: r.message } : { text: `${r.how === "amended" ? "Rule change applied to" : r.how === "annotated" ? "Note attached to" : r.how === "adopted" ? "Matched your hand entry on" : r.how === "added" ? "Fill added to" : "Opened"} ${r.rowId} ✓` } : { err: true, text: done.error || "Saved; the draft could not be cleared." });
@@ -3874,9 +4005,8 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     setJournalBusy(true); setJournalMsg(null);
     try {
       setRows(next);
-      const res = await fetch("/api/manual-entry", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
-        body: JSON.stringify({ console: { rows: next, settings } }) });
-      if (!res.ok) { touch(); setJournalMsg({ err: true, text: `Rows kept locally, not synced (${res.status}) — the drafts stay until they are.` }); return; }
+      const { res } = await postConsole(next);
+      if (!res.ok) { touch(); setJournalMsg({ err: true, text: res.status === 409 ? "Rows kept locally, not synced — the console changed since this page loaded it (see the banner). The drafts stay until they are." : `Rows kept locally, not synced (${res.status}) — the drafts stay until they are.` }); return; }
       setDirty(false);
       const r2 = await fetch("/api/manual-entry", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ journalDraft: { action: "confirm-many", ids: done } }) });
@@ -4185,6 +4315,22 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
             );
           })()}
           {saveMsg && <span style={{ fontSize: 12, color: C.mid }}>{saveMsg}</span>}
+          {/* ── PRICES AS OF ── the oldest quote from an open market the book is valued at, in this
+              device's clock; stale by the quote module's own test (lib/consoleStamps.js). */}
+          {(() => {
+            const st = pricesStamp(symbols, prices, Date.now());
+            if (!st || st.asOfMs == null) return null;
+            const detail = [
+              st.closed ? `${st.closed} of ${st.total} at a closed market's prior close` : null,
+              st.missing.length ? `no quote: ${st.missing.join(", ")}` : null,
+            ].filter(Boolean).join(" · ");
+            return (
+              <span title={detail || undefined} style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>
+                prices as of {clockHHMM(st.asOfMs)}{st.basis === "closed" ? " (markets shut)" : ""}
+                {st.stale.length > 0 && <StaleChip title="market open, quote older than the feed's cadence — press 🔄 Prices">{st.stale.map(x => x.symbol).join(", ")}</StaleChip>}
+              </span>
+            );
+          })()}
           {/* Both halves. Quotes come from Yahoo and the chain data from our own route; a
               button labelled "refresh" that moved only one of them was the bug. */}
           <Btn onClick={() => { fetchPrices([...symbols, ...fxSyms]); refreshLive(); }} disabled={pricesLoading || !symbols.length} color={C.mid} bgColor={C.bg} label={pricesLoading ? "…" : "🔄 Prices"} />
@@ -4207,6 +4353,24 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
             {saveMsg && <span style={{ fontSize: 11.5, color: C.mid }}>{saveMsg}</span>}
             <Btn onClick={saveCloud} disabled={saving} color={C.onFill} bgColor={C.blue} label={saving ? "Saving…" : "☁ Save to cloud"} />
           </span>
+          {/* ── A SAVE FROM AN OLDER COPY, REFUSED ──
+              Another device or the IBKR sync wrote the console after this tab read it. Saving anyway
+              would put that write back the way it was, so the server refused and this says what the
+              two ways out are. Nothing is lost until one of them is chosen. Inside the sticky banner
+              (a refused save leaves the tab unsaved), so it follows the editing down the page. */}
+          {conflict && (
+            <div role="alert" style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+              padding: "8px 11px", borderRadius: 8, background: C.rBg, border: "1.5px solid " + C.rBdr }}>
+              <b style={{ fontSize: 12.5, color: C.red }}>Not saved</b>
+              <span style={{ fontSize: 12, color: C.mid, flex: "1 1 260px", minWidth: 0 }}>{conflict.text} Reloading drops this tab's unsaved edits; overwriting drops the newer copy's.</span>
+              <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <Btn onClick={() => window.location.reload()} color={C.onFill} bgColor={C.blue} label="Reload the newer copy" />
+                {conflict.reason === "stale" && conflict.current != null && (
+                  <Btn onClick={() => saveCloud({ force: true })} disabled={saving} color={C.red} bgColor={C.surf} label="Overwrite with this tab's" />
+                )}
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -4298,6 +4462,11 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
             </div>
           )}
         </Card>
+      )}
+      {loadErr && (
+        <div style={{ padding: "9px 13px", borderRadius: 10, border: "1.5px solid " + C.aBdr, background: C.aBg, color: C.amber, fontSize: 12.5, fontWeight: 700 }}>
+          ⚠ The server did not answer ({loadErr}). Showing this browser's saved copy — the IBKR sync note, cash book and journal may be old, and Save will not reach other devices until it does.
+        </div>
       )}
       {flexNote && flexNote.at !== noteSeen && (flexNote.applied || flexNote.needsYou?.length || flexNote.discarded) && (
         <div style={{ padding: "10px 13px", borderRadius: 10, border: "1.5px solid " + (flexNote.needsYou?.length || flexNote.discarded ? C.aBdr : C.bdr), background: flexNote.needsYou?.length || flexNote.discarded ? C.aBg : C.surf }}>
@@ -4603,7 +4772,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           times, with one QQQ line carrying 2.37x on its own. Risk coverage below answers "what
           does a stop-out cost"; this answers "what am I carrying right now", and on this book the
           two differ by a factor of twelve. */}
-      <ExposureTile book={bookX.book} err={bookX.err}>
+      <ExposureTile book={bookX.book} err={bookX.err} nlvAsOf={settings.equityAsOf || null}>
         {(coverage.gross.rows > 0 || coverage.undefined.rows > 0) && (
         <div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
@@ -4651,7 +4820,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       </ExposureTile>
 
       {/* ── FACTOR EXPOSURE ── realised betas and the oil-shock day, beside the delta view above. */}
-      <FactorPanel rows={derivedRows} toBase={toBase} nlv={equityBase} baseCcy={baseCcy} today={todayISO} />
+      <FactorPanel rows={derivedRows} toBase={toBase} nlv={equityBase} baseCcy={baseCcy} today={todayISO} nlvAsOf={settings.equityAsOf || null} positionsAsOf={flexNote?.asOf || null} />
 
       {/* ── P4 — RISK COVERAGE ──
           Three numbers, same units, never summed, and never collapsed into one. A single
@@ -4662,7 +4831,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
 
       {/* ── SIZING, ONE CARD ── The master settings (equity, risk, allocation, regime multipliers)
           head the calculator that uses them; they were two cards reading the same inputs. */}
-      <PositionSizer book={bookX.book} nlv={equityBase} fills={openingFills} exempt={settings.sizerExempt ?? null} holds={holds} holdCfg={settings.hold ?? null} toBase={exposureToBase}
+      <PositionSizer book={bookX.book} nlv={equityBase} nlvAsOf={settings.equityAsOf || null} fills={openingFills} exempt={settings.sizerExempt ?? null} holds={holds} holdCfg={settings.hold ?? null} toBase={exposureToBase}
         head={<>
         <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
           <SLabel>Sizing</SLabel>
@@ -4687,9 +4856,9 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
         {showSizing && (<>
         <div style={{ marginTop: 9, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
           <label style={{ fontSize: 12, color: C.lbl, fontWeight: 700 }}>Account equity ({baseCcy})<br />
-            <NumCommit dk="equity" drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={settings.equity} placeholder="e.g. 208597" width={124}
+            <NumCommit dk="equity" drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={settings.equity} placeholder="e.g. 250000" width={124}
               title="A rough figure is fine — sizing is linear in equity, so being 5% out moves a suggestion by 5%."
-              onCommit={v => { setSettings(x => ({ ...x, equity: v, equityAsOf: new Date().toISOString().slice(0, 10) })); touch(); }} />
+              onCommit={v => { setSettings(({ equitySource: _src, ...x }) => ({ ...x, equity: v, equityAsOf: new Date().toISOString().slice(0, 10) })); touch(); }} />
             {(() => {
               const f = equityFreshness(settings.equityAsOf);
               if (settings.equity == null) return null;
@@ -4697,7 +4866,27 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
                 <div style={{ fontSize: 10.5, fontWeight: 600, color: f.stale ? C.amber : C.lbl, marginTop: 2 }}
                   title={`Sizing scales linearly with equity, so it is refreshed on your schedule rather than synced — a figure within ~${EQUITY_STALE_DAYS} days is plenty.`}>
                   {f.days == null ? "no date recorded" : f.days === 0 ? "as of today" : `as of ${settings.equityAsOf} · ${f.days}d ago`}
+                  {settings.equitySource === "ibkr" ? " · from the IBKR statement" : " · typed"}
                   {f.stale ? <StaleChip /> : null}
+                </div>
+              );
+            })()}
+            {/* ── THE STATEMENT'S NLV BESIDE THE TYPED ONE ──
+                From the IBKR sync (lib/flex.js navOf). Filled in when the field is empty, flagged
+                when the two are more than NAV_DRIFT_PCT apart, and — when the saved Flex query has
+                no NAV section — said plainly, with nothing changed. */}
+            {(() => {
+              const n = navCheck({ equity: settings.equity, equityAsOf: settings.equityAsOf, nav: flexNote?.nav ?? null, baseCcy });
+              const use = () => { setSettings(x => ({ ...x, equity: n.value, equityAsOf: n.asOf, equitySource: "ibkr" })); touch(); };
+              const line = { fontSize: 10.5, fontWeight: 600, marginTop: 2, maxWidth: 300, lineHeight: 1.4 };
+              if (n.state === "missing") return <div style={{ ...line, color: C.muted }}>IBKR NLV: {n.reason}</div>;
+              if (n.state === "currency") return <div style={{ ...line, color: C.muted }}>IBKR NLV {fmtCcy(n.value, n.currency)} ({n.asOf}) — {n.reason}</div>;
+              const link = (t) => <button onClick={use} style={{ cursor: "pointer", background: "none", border: "none", padding: 0, color: C.blue, fontWeight: 800, fontSize: 10.5 }}>{t}</button>;
+              if (n.state === "prefill") return <div style={{ ...line, color: C.lbl }}>IBKR NLV {fmtCcy(n.value, baseCcy)} ({n.asOf}) · {link("use it")}</div>;
+              if (n.state === "agrees") return <div style={{ ...line, color: C.green }}>✓ within {NAV_DRIFT_PCT}% of IBKR NLV {fmtCcy(n.value, baseCcy)} ({n.asOf}){n.newer && settings.equitySource !== "ibkr" ? <> · {link("take the statement's")}</> : null}</div>;
+              return (
+                <div style={{ ...line, color: C.amber }}>
+                  ⚠ {n.driftPct > 0 ? "+" : "−"}{Math.abs(n.driftPct)}% from IBKR NLV {fmtCcy(n.value, baseCcy)} ({n.asOf}) · {link("take the statement's")}
                 </div>
               );
             })()}

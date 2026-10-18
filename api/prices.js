@@ -76,6 +76,9 @@ export default async function handler(req, res) {
           price: roundQuote(price),
           changePercent: parseFloat(changePercent.toFixed(2)),
           ...(ccy ? { currency: ccy } : {}),
+          // When the exchange printed it (unix seconds), so a screen can say how old the price
+          // is — the Console's "prices as of" (lib/consoleStamps.js). Absent when Yahoo omits it.
+          ...(Number.isFinite(meta.regularMarketTime) ? { ts: meta.regularMarketTime } : {}),
         };
       }
     } catch (e) {

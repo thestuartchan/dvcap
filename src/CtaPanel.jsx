@@ -3,6 +3,7 @@
 // STATE → EVIDENCE → WHAT FLIPS IT, per market: the replica's position and how it has moved over a
 // week; the three windows behind it; and the prices that would cut it. It is a MODEL of mechanical
 // trend funds rebuilt from public prices (lib/cta.js), not their orders, and the card says so.
+import { dubaiEt } from "../lib/timeFmt.js";
 import { useEffect, useState } from "react";
 import { C, alpha } from "./theme.js";
 import { Card, SLabel } from "./ui.jsx";
@@ -150,7 +151,7 @@ export function CtaPanel() {
     <Card id="daily-cta">
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <SLabel>CTA positioning · trend-fund replica</SLabel>
-        {data?.at && <span style={{ fontSize: 11, color: C.muted }}>computed {new Date(data.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
+        {data?.at && <span style={{ fontSize: 11, color: C.muted }}>computed {dubaiEt(data.at)}</span>}
       </div>
       {err && <div style={{ fontSize: 13, color: C.muted, marginTop: 6 }}>No CTA read: {err}</div>}
       {!data && !err && <div style={{ fontSize: 13, color: C.muted, marginTop: 6 }}>Loading…</div>}
