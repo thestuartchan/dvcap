@@ -4217,28 +4217,28 @@
       "reflationary_p": 17,
       "deflationary_p": 12,
       "inflationary_p": 5,
-      "hawkish_repricing": "INSUFFICIENT_DATA",
+      "hawkish_repricing": "DISINFLATIONARY_EASING",
       "live_regime": "stag",
       "view_regime": "stag",
-      "pinned": false,
-      "hyg_chg": -0.35,
-      "hyg_qqq_divergence": 2.15,
+      "pinned": true,
+      "hyg_chg": 0.12,
+      "hyg_qqq_divergence": -0.37,
       "inputs": {
         "weightedRecessionProb": 13.5,
         "cpi": 3.71725,
-        "kalshi2027": 21,
+        "kalshi2027": 19,
         "tape": {
-          "gold": "down",
+          "gold": "up",
           "tlt": "up",
           "xlu": "up",
-          "xlp": "up",
-          "spy": "down",
-          "qqq": "down",
-          "iwm": "down",
-          "btc": "down",
-          "breakevenBp": 3
+          "xlp": "flat",
+          "spy": "up",
+          "qqq": "up",
+          "iwm": "up",
+          "btc": "up",
+          "breakevenBp": -2
         },
-        "ladderSpread": -3.06,
+        "ladderSpread": -0.77,
         "u3": 4.2,
         "empPop": 59.2,
         "oas": 3.23,
@@ -4256,8 +4256,8 @@
             "stag": 15,
             "def": 9
           },
-          "g": 0.32,
-          "gDrift": -0.95,
+          "g": 0.31,
+          "gDrift": -0.87,
           "i": 0.13,
           "iDrift": -0.67,
           "drifting": "def"
@@ -4302,7 +4302,7 @@
           "monthly": {
             "verdict": "EXPANDING",
             "lean": 1,
-            "usable": 4,
+            "usable": 3,
             "of": 4
           }
         },
@@ -4332,7 +4332,7 @@
         "quadrantRead": "growth firm, inflation hot"
       },
       "source": "client",
-      "loggedAt": "2026-10-18T09:37:54.403Z"
+      "loggedAt": "2026-10-18T21:14:42.416Z"
     }
   ]
 }
