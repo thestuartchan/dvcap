@@ -13,7 +13,13 @@ const down = concentrationLadder({ SMH: -3.0, QQQ: -2.2, SPY: -1.0, IWM: -1.5, H
 eq('the gap is given as a size, with the end that moved most', [down.span, down.direction], [2.7, 'down']);
 eq('the signed spread the rule uses is unchanged', down.spread, -2.7);
 eq('the words carry it, with no minus sign', down.note, 'not in order (2.7pp from SMH to HYG, SMH weakest) — no single-theme signature');
-eq('a down day never alerts under the current rule', down.alert, false);
+eq('out of order lower down (IWM below SPY), a selloff does not alert', down.alert, false);
+// Both directions: a strictly ordered selloff past the threshold now alerts.
+const rout = concentrationLadder({ SMH: -3.6, QQQ: -2.4, SPY: -1.5, IWM: -1.2, HYG: -0.3 });
+eq('a strictly ordered semis-led selloff alerts', [rout.alert, rout.alertDirection, rout.ordered], [true, 'down', 'down']);
+eq('and says so in words, not a sign', rout.note.startsWith('single-theme selloff: SMH < QQQ < SPY < IWM < HYG in order, 3.3pp'), true);
+eq('a narrow ordered selloff does not', concentrationLadder({ SMH: -1.0, QQQ: -0.8, SPY: -0.5, IWM: -0.4, HYG: -0.1 }).alert, false);
+eq('monotonic keeps its old meaning (top rung strongest)', [rout.monotonic, concentrationLadder({ SMH: 3.4, QQQ: 2.1, SPY: 1.2, IWM: 0.6, HYG: 0.1 }).monotonic], [false, true]);
 
 const up = concentrationLadder({ SMH: 3.4, QQQ: 2.1, SPY: 1.2, IWM: 0.6, HYG: 0.1 });
 eq('an ordered rally wider than the threshold still alerts, as before', [up.alert, up.spread > LADDER_SPREAD_ALERT], [true, true]);
