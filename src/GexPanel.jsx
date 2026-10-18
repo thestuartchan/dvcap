@@ -420,6 +420,9 @@ export function GexPanel({ request = null, onRequestDone = null }) {
   const grid = useMemo(() => (rawGrid?.expiries?.some(e => e.grossGexUsd == null) ? withGrossShares(rawGrid) : rawGrid), [rawGrid]);
   const decay = live?.decay || data?.decay || null;
   const fresh = ageOf(latest?.asOf || (latest?.date ? `${latest.date}T13:00:00Z` : null));
+  // The session first, then the hours (P3): "Fri 16 Oct close ET, after monthly expiry · 3.4h ago"
+  // rather than an age that reads like an intraday print.
+  const ageText = fresh.session ? `${fresh.session.label} · ${fresh.label}` : fresh.label;
   // ── THE THREE DOWNSIDE OBJECTS ──
   // Computed server-side on every path and carried on the response; recomputed here only when a
   // row arrived without them (a build from before the split), so the tiles never go blank.
@@ -532,10 +535,10 @@ export function GexPanel({ request = null, onRequestDone = null }) {
                   rather than "settled book" over a body that says live. */}
               {live ? (live.mode === "repriced" ? "◐ repriced"
                      : live.mode === "settled" ? `● live recompute · ${oiSettledLabel(live.vintage)}`
-                     : "● live") : fresh.label}
+                     : "● live") : ageText}
             </span>
           )}
-          {latest && live && <span style={{ fontSize: 11, color: C.muted, fontWeight: 700, marginLeft: 8 }}>{fresh.label}</span>}
+          {latest && live && <span style={{ fontSize: 11, color: C.muted, fontWeight: 700, marginLeft: 8 }}>{ageText}</span>}
           {latest && fresh.stale && <StaleChip />}
           {pineMsg && <span style={{ fontSize: 11.5, color: C.mid, fontWeight: 700, marginLeft: 8 }}>{pineMsg}</span>}
         </span>

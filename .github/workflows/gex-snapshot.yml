@@ -83,6 +83,7 @@ jobs:
           import json
           d = json.load(open('/tmp/gex.json'))
           print('date:', d.get('date'), ' rate:', d.get('rate'), f"({d.get('rateSource')})", ' dry:', d.get('dry'))
+          if d.get('weekendRowsFolded'): print('weekend-dated rows folded into their Friday:', d['weekendRowsFolded'])
           for r in d.get('results', []):
               if not r.get('ok'):
                   print(f"  {r.get('symbol')}: FAILED — {r.get('reason')}")
