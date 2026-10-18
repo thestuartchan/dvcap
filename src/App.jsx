@@ -7,6 +7,7 @@ import { TradeConsole } from "./TradeConsole.jsx";
 import { GexPanel } from "./GexPanel.jsx";
 import { CtaPanel } from "./CtaPanel.jsx";
 import { RatiosPanel } from "./RatiosPanel.jsx";
+import { CalendarPanel } from "./CalendarPanel.jsx";
 import { CorrelationPanel } from "./CorrelationPanel.jsx";
 import { ScenarioBoard } from "./ScenarioBoard.jsx";
 import {
@@ -1603,7 +1604,7 @@ function CreditBlock({ credit, oas, hyg, reconSummary, history, depth = "full" }
         <SLabel>HY Credit Spread — master gauge</SLabel>
         <div style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.55 }}>
           The playbook feed (HYG proxy, OAS series) has not loaded{oas?.value != null ? ` — last HY OAS ${oas.value}%${oas.date ? ` (${oas.date})` : ""}` : ""}.
-          The conditions score reads HY and IG OAS directly from FRED; see Market Watch › State.
+          The conditions score reads HY and IG OAS directly from FRED; see Markets › State.
         </div>
       </Card>
     );
@@ -5142,7 +5143,7 @@ function DataFold({ children }) {
   );
 }
 
-function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updated, onRefresh, fmtTime, reconSummary, liveIntervention, regime = null, layers = null }) {
+function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updated, onRefresh, fmtTime, reconSummary, liveIntervention, regime = null, layers = null, onOpenCalendar = null }) {
   // Both All and single-region are filtered views of ONE spine. `active` = loaded data for
   // the selected region(s); `data` (= first active) backs the global macro strip + calendar.
   const active = regions.map(r => byRegion[r]).filter(Boolean);
@@ -5784,7 +5785,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, error, updat
           {/* This week's flagged events */}
           {data.calendar && data.calendar.length > 0 && (
             <Card>
-              <SLabel>📅 Calendar — Current / Upcoming</SLabel>
+              <SLabel>📅 Calendar — Current / Upcoming{onOpenCalendar && <> · <button onClick={onOpenCalendar} style={{ background: "none", border: "none", padding: 0, color: C.blue, fontWeight: 700, cursor: "pointer", font: "inherit" }}>the quarter ahead on Markets › Calendar</button></>}</SLabel>
               {data.calendar.map((e, i) => {
                 // C6 — countdown chip so imminence is legible, and adjacent same-window catalysts read
                 // as the collision they are (e.g. NVDA Aug 26 → Jackson Hole Aug 27–29).
@@ -5936,15 +5937,18 @@ function AnalystViewBoard({ live, probFor, engineRegime, consensus }) {
 // The previous Market Watch and Posture tabs, reachable from a link beside the new ones for a week after the
 // rebuild, then removed.
 const LEGACY_BY_GROUP = {
-  watch: [
+  markets: [
     { id: "macro",      label: "🌐 Macro (previous)"       },
     { id: "indicators", label: "📡 Indicators (previous)"  },
-    { id: "smartmoney", label: "🏦 Smart Money (previous)" },
   ],
-  playbook: [
+  plan: [
+    { id: "smartmoney", label: "🏦 Smart Money (previous)" },
     { id: "posture",    label: "🎯 Posture (previous)"     },
   ],
 };
+// Data health is not a place you go to read the market; it is the state of the inputs behind every
+// number. It opens from the status dot beside the groups rather than sitting among them.
+const HEALTH_TAB = { id: "health", label: "🩺 Data health" };
 const LEGACY_TABS = Object.values(LEGACY_BY_GROUP).flat();
 const LEGACY_UNTIL = "2026-10-08";
 const legacyOffered = new Date().toISOString().slice(0, 10) < LEGACY_UNTIL;
@@ -6214,7 +6218,7 @@ export default function App() {
   useEffect(function() {
     if (tab === "global") pbRegions.forEach(r => fetchPlaybookRegion(r));
     // Credit detail and the yen toggle on Drivers (and the previous Macro layout) read the US payload.
-    else if (tab === "drivers" || tab === "macro" || tab === "indicators") fetchPlaybookRegion("us");
+    else if (tab === "drivers" || tab === "macro" || tab === "indicators" || tab === "calendar") fetchPlaybookRegion("us");
   }, [tab, pbRegions, fetchPlaybookRegion]);
 
   // Load manual deploy-stage toggles + portfolio value from localStorage
@@ -7013,43 +7017,65 @@ export default function App() {
   // answers "what am I doing" and the second answers "which part of it" — and the second row is
   // three items rather than nine, which is the difference between scrolling and reading.
   //
-  // Order is deliberate: the desk you act at, then the market you read, then the longer-horizon
-  // playbook you revisit rather than watch.
+  // GROUPED BY WHAT YOU ARE LOOKING AT (18 Oct 2026), the way a terminal's functions are: the
+  // market as a whole, one name, your own book, and the plan. It used to be grouped by what you
+  // were doing (act / read / revisit), which put Gamma — a view of one underlying — beside the
+  // Console, and Hedges and Income — which act on positions — under the longer-horizon playbook.
+  // Every view and its id are unchanged; only where it sits moved.
   const legacyOn = (g) => LEGACY_BY_GROUP[g].some(t => t.id === tab) || (showLegacy && legacyOffered);
   const TAB_GROUPS = [
-    { id: "desk", label: "Trade Desk", hint: "act", tabs: [
+    // MARKETS reads one measured state: the day's overview, State landing on it, Drivers with every
+    // gauge behind it, Ratios with who is winning in seven pairs (src/RatiosPanel.jsx), and the
+    // calendar of what is coming.
+    { id: "markets", label: "Markets", hint: "read", tabs: [
       { id: "global",     label: "🌏 Daily Overview" },
-      { id: "console",    label: "🎚️ Console"        },
-      { id: "gex",        label: "🌀 Gamma"          },
-    ] },
-    // MARKET WATCH reads one measured state: State lands on it, Drivers shows every gauge behind it,
-    // Ratios shows who is winning in seven pairs (src/RatiosPanel.jsx),
-    // Street puts the houses' view beside it, Data health says how old each input is. The previous
-    // tabs stay one click away (the "previous layout" link) until LEGACY_UNTIL.
-    { id: "watch", label: "Market Watch", hint: "read", tabs: [
       { id: "state",      label: "🧭 State"          },
       { id: "drivers",    label: "📈 Drivers"        },
       { id: "ratios",     label: "⚖️ Ratios"         },
-      { id: "street",     label: "🏦 Smart Money"    },
-      { id: "health",     label: "🩺 Data health"    },
-      ...(legacyOn("watch") ? LEGACY_BY_GROUP.watch : []),
+      { id: "calendar",   label: "📅 Calendar"       },
+      ...(legacyOn("markets") ? LEGACY_BY_GROUP.markets : []),
     ] },
-    // PLAYBOOK plans against the same state: Plan (posture by regime × conditions, the stage, and
-    // what each transition changes), Hedges (phase from the conditions), Income (ranked on the
-    // measured regime mix).
-    { id: "playbook", label: "Playbook", hint: "revisit", tabs: [
-      { id: "plan",       label: "🎯 Plan"           },
+    // TICKERS — one underlying at a time. Gamma today; the per-name page joins it.
+    { id: "tickers", label: "Tickers", hint: "one name", tabs: [
+      { id: "gex",        label: "🌀 Gamma"          },
+    ] },
+    // BOOK — what you hold and what acts on it: the Console, Hedges (phase from the conditions),
+    // Income (ranked on the measured regime mix).
+    { id: "book", label: "Book", hint: "act", tabs: [
+      { id: "console",    label: "🎚️ Console"        },
       { id: "insurance",  label: "🛡️ Hedges"         },
       { id: "income",     label: "💰 Income"         },
-      ...(legacyOn("playbook") ? LEGACY_BY_GROUP.playbook : []),
+    ] },
+    // PLAN — posture by regime × conditions, the stage and what each transition changes, with the
+    // houses' view (Smart Money) beside it as the research it is.
+    { id: "plan", label: "Plan", hint: "revisit", tabs: [
+      { id: "plan",       label: "🎯 Plan"           },
+      { id: "street",     label: "🏦 Smart Money"    },
+      ...(legacyOn("plan") ? LEGACY_BY_GROUP.plan : []),
     ] },
   ];
   // Flat list kept so every existing lookup — the error boundary's tab name, most of all — keeps
   // working against one array rather than each one learning about groups.
-  const TABS = TAB_GROUPS.flatMap(g => g.tabs);
+  const TABS = [...TAB_GROUPS.flatMap(g => g.tabs), HEALTH_TAB];
   // The open group is DERIVED from the open tab, never stored alongside it. Two sources of truth
-  // for "where am I" is how a tab bar ends up highlighting one thing while showing another.
-  const activeGroup = TAB_GROUPS.find(g => g.tabs.some(t => t.id === tab)) || TAB_GROUPS[0];
+  // for "where am I" is how a tab bar ends up highlighting one thing while showing another. Data
+  // health belongs to no group: its own row shows while it is open.
+  const inGroup = TAB_GROUPS.find(g => g.tabs.some(t => t.id === tab)) || null;
+  const activeGroup = inGroup || TAB_GROUPS[0];
+  // THE INPUTS, AT A GLANCE — what the status dot shows, from what is already loaded (nothing is
+  // fetched for it). Red: the conditions read failed. Amber: serving a last good copy, a feed
+  // erroring, or a hand-kept input stale or never entered. Green otherwise.
+  const health = (() => {
+    const feedErrs = Array.isArray(liveInd?.feedErrors) ? liveInd.feedErrors.length : 0;
+    const handOut = (ledger?.counts?.stale || 0) + (ledger?.counts?.missing || 0);
+    const notes = [];
+    if (stateFeedStatus.error && !stateFeed) notes.push("the conditions read failed");
+    if (stateFeed?.source === "stale") notes.push("gauges on their last good copy");
+    if (feedErrs) notes.push(`${feedErrs} feed${feedErrs === 1 ? "" : "s"} erroring`);
+    if (handOut) notes.push(`${handOut} hand-kept input${handOut === 1 ? "" : "s"} out of date`);
+    const level = stateFeedStatus.error && !stateFeed ? "red" : notes.length ? "amber" : "green";
+    return { level, title: notes.length ? `Data health: ${notes.join(", ")}. Click for detail.` : "Data health: every input current. Click for detail." };
+  })();
 
   return (
     <div style={{ background: C.bg, minHeight: "100vh", width: "100%", color: C.text, fontFamily: "'DM Sans', system-ui, sans-serif" }}>
@@ -7094,7 +7120,7 @@ export default function App() {
                 return (
                   <div style={{ background: tok.bg, border: "1.5px solid " + tok.bdr, borderRadius: 10, padding: "6px 14px", textAlign: "center", minWidth: 90, cursor: "pointer" }}
                        onClick={() => setTab("state")}
-                       title="The measured market state: the stage the conditions score implies, the score and its band, and the size multiplier (regime mix × conditions). Opens Market Watch › State.">
+                       title="The measured market state: the stage the conditions score implies, the score and its band, and the size multiplier (regime mix × conditions). Opens Markets › State.">
                     <div style={{ color: C.lbl, fontSize: 10, letterSpacing: 2, textTransform: "uppercase", fontWeight: 700 }}>Market state</div>
                     <div style={{ color: tok.color, fontSize: 17, fontWeight: 900, lineHeight: 1, whiteSpace: "nowrap" }} title={stg ? `Stage ${stg.n} — ${stg.label}: ${stg.plan}` : undefined}>{stg ? `${stg.n} · ${stg.id.toUpperCase()}` : "—"}</div>
                     <div style={{ color: tok.color, fontSize: 10, marginTop: 2, opacity: 0.8, lineHeight: 1.2 }}>
@@ -7120,7 +7146,7 @@ export default function App() {
               the page is the thing people click twice and then stop trusting. */}
           <div className="mwd-tabrow" style={{ display: "flex", gap: 6, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
             {TAB_GROUPS.map(g => {
-              const on = g.id === activeGroup.id;
+              const on = !!inGroup && g.id === activeGroup.id;
               return (
                 <button key={g.id} onClick={() => { if (!on) setTab(g.tabs[0].id); }} style={{
                   background: on ? C.blBg : "transparent",
@@ -7134,12 +7160,26 @@ export default function App() {
                 </button>
               );
             })}
+            {(() => {
+              const on = tab === HEALTH_TAB.id;
+              const dot = { green: C.green, amber: C.amber, red: C.red }[health.level];
+              return (
+                <button onClick={() => setTab(HEALTH_TAB.id)} title={health.title} aria-label={health.title} style={{
+                  background: on ? C.blBg : "transparent", border: "1.5px solid " + (on ? C.blue : C.bdr), borderRadius: 999,
+                  color: on ? C.blue : C.mid, padding: "5px 11px", fontSize: 12, fontWeight: 800, cursor: "pointer",
+                  whiteSpace: "nowrap", flexShrink: 0, marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6,
+                }}>
+                  <span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: 99, background: dot, display: "inline-block" }} />
+                  <span className="mwd-data-label">Data</span>
+                </button>
+              );
+            })()}
           </div>
           {/* ── TAB ROW — only the open group's tabs ──
               Three items, not nine. On a phone this is the whole difference between a row you read
               and a row you scroll hunting for something you cannot see. */}
           <div className="mwd-tabrow" style={{ display: "flex", gap: 0, marginTop: 6, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
-            {activeGroup.tabs.map(t => (
+            {(inGroup ? activeGroup.tabs : [HEALTH_TAB]).map(t => (
               <button key={t.id} onClick={() => setTab(t.id)} style={{
                 background: "none", border: "none",
                 borderBottom: "3px solid " + (tab === t.id ? C.blue : "transparent"),
@@ -7150,7 +7190,7 @@ export default function App() {
                 {t.label}
               </button>
             ))}
-            {LEGACY_BY_GROUP[activeGroup.id] && legacyOffered && !LEGACY_TABS.some(t => t.id === tab) && (
+            {inGroup && LEGACY_BY_GROUP[activeGroup.id] && legacyOffered && !LEGACY_TABS.some(t => t.id === tab) && (
               <button onClick={() => setShowLegacy(v => !v)} title={`${LEGACY_BY_GROUP[activeGroup.id].map(t => t.label.replace(/^\S+\s/, "").replace(" (previous)", "")).join(", ")} as they were — offered until ${LEGACY_UNTIL}`}
                 style={{ background: "none", border: "none", color: C.muted, padding: "8px 10px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, textDecoration: "underline", marginLeft: "auto" }}>
                 {showLegacy ? "hide previous layout" : "previous layout ▸"}
@@ -7159,7 +7199,7 @@ export default function App() {
           </div>
           {/* THE STATE STRIP — on every tab, sticky: the measured regime, conditions and policy
               (lib/marketState.js). The consensus regime and the credit ladder it used to show are
-              on Market Watch › Smart Money (folded, under the 13F data) and inside the conditions score. */}
+              on Plan › Smart Money (folded, under the 13F data) and inside the conditions score. */}
           {(() => {
             const r = mstate.regime, c = mstate.conditions, pol = mstate.policy;
             const chip = (k, v, col, onClick) => (
@@ -7184,12 +7224,12 @@ export default function App() {
                 {chip("Fed", pol?.stance ? `${pol.stance}${pol.next?.hikeOdds != null && pol.next.hikeOdds >= 10 ? ` · hike ${Math.round(pol.next.hikeOdds)}%` : pol.next?.cutOdds != null && pol.next.cutOdds >= 10 ? ` · cut ${Math.round(pol.next.cutOdds)}%` : ""}` : "—",
                   pol?.stance === "tightening" ? C.red : pol?.stance === "easing" ? C.green : C.amber)}
                 {mstate.sizing?.total != null && <><span style={{ color: C.bdr }}>·</span>{chip("Size", `×${mstate.sizing.total.toFixed(2)}`, C.text)}</>}
-                {streetDisagrees && <span title={`The Street's consensus reads ${liveRegime.label} ${regimeProbFor(liveRegime.id)}% — see Market Watch › Smart Money`}>{flag(`STREET: ${liveRegime.label.toUpperCase()}`)}</span>}
+                {streetDisagrees && <span title={`The Street's consensus reads ${liveRegime.label} ${regimeProbFor(liveRegime.id)}% — see Plan › Smart Money`}>{flag(`STREET: ${liveRegime.label.toUpperCase()}`)}</span>}
                 {(() => { const ia = pbData?.us?.interventionAuto; if (!ia?.active) return null;
                   const g = ia.latest?.confirmation?.status === "confirmed" ? "CONFIRMED" : "SUSPECTED";
                   return <span title={ia.headline}>{flag(`⚑ YEN INTERVENTION ${g}`)}</span>; })()}
                 {regimeDiverged && flag("📌 PINNED ≠ LIVE")}
-                {(ledger.counts.stale + ledger.counts.missing) > 0 && <span title={`${ledger.counts.stale} stale, ${ledger.counts.missing} never entered — see Market Watch › Data health`}>{flag(`✍ ${ledger.counts.stale + ledger.counts.missing} HAND-KEPT OUT`)}</span>}
+                {(ledger.counts.stale + ledger.counts.missing) > 0 && <span onClick={() => setTab(HEALTH_TAB.id)} style={{ cursor: "pointer" }} title={`${ledger.counts.stale} stale, ${ledger.counts.missing} never entered — open Data health`}>{flag(`✍ ${ledger.counts.stale + ledger.counts.missing} HAND-KEPT OUT`)}</span>}
                 {stateFeed?.source === "stale" && flag("GAUGES: LAST GOOD COPY")}
               </div>
             );
@@ -7232,6 +7272,8 @@ export default function App() {
             in this file beyond the mount, which is the whole point of building it separately. */}
         {tab === "gex" && <GexPanel />}
         {tab === "ratios" && <RatiosPanel />}
+        {/* The feed's calendar rows add announced Treasury auctions to the hand-kept list. */}
+        {tab === "calendar" && <CalendarPanel extra={pbData?.us?.calendar || []} />}
 
         {/* ── TRADE CONSOLE (Tier 3) ── */}
         {tab === "console" && (
@@ -7811,7 +7853,7 @@ export default function App() {
                 <div style={{ background: C.surf, border: "1.5px solid " + C.bdr, borderRadius: 12, padding: "12px 16px" }}>
                   <div style={{ fontSize: 13.5, color: C.mid, lineHeight: 1.55 }}>
                     <b style={{ color: C.text }}>If a crash happens from here, how does it resolve — and what works in each case?</b>
-                    <span style={{ color: C.muted }}> These columns are crash <i>outcomes</i>, not current-state regimes. (Market Watch › State answers “what regime are we in right now?”)</span>
+                    <span style={{ color: C.muted }}> These columns are crash <i>outcomes</i>, not current-state regimes. (Markets › State answers “what regime are we in right now?”)</span>
                   </div>
                   <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 13 }}>
                     <span style={{ color: C.lbl, fontWeight: 700 }}>{mstate.regime.available ? "Measured regime:" : "Consensus regime:"}</span>
@@ -8560,6 +8602,7 @@ export default function App() {
             liveIntervention={liveIntervention}
             reconSummary={reconSummary}
             byRegion={pbData}
+            onOpenCalendar={() => setTab("calendar")}
             regions={pbRegions}
             toggleRegion={toggleRegion}
             loading={pbLoading}
