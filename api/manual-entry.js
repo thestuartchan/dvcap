@@ -22,6 +22,7 @@ import { sideOf } from '../lib/side.js';
 import { PLAUSIBLE_SEC_YIELD, parseYieldValue, parseIssuerDate } from '../lib/fundYield.js';
 import { SEC_YIELD_TICKERS } from '../lib/cashyield.js';
 import { authorised, hasSessionCookie, refuse } from '../lib/apiauth.js';
+import { saveCheck } from '../lib/consoleRev.js';
 import { fetchHlAccount, fetchHlSpot, fetchSpotContext, fetchHyperliquid } from '../lib/hyperliquid.js';
 import { fetchWallets } from '../lib/wallet.js';
 import { validateNote, noteBytes, MAX_NOTE_BYTES } from '../lib/journalInbox.js';
@@ -262,7 +263,10 @@ function sanitizeConsoleSettings(s) {
   if (!s || typeof s !== 'object') return {};
   const out = {
     alertsEnabled: !!s.alertsEnabled,
-    equity: cn(s.equity), equityAsOf: cs(s.equityAsOf, 12), baseRiskPct: cn(s.baseRiskPct), targetPct: cn(s.targetPct),
+    equity: cn(s.equity), equityAsOf: cs(s.equityAsOf, 12),
+    // Where the figure came from: 'ibkr' when it was taken from the statement's NLV, absent typed.
+    ...(s.equitySource === 'ibkr' ? { equitySource: 'ibkr' } : {}),
+    baseRiskPct: cn(s.baseRiskPct), targetPct: cn(s.targetPct),
     baseCurrency: /^[A-Z]{3}$/.test(String(s.baseCurrency || '').toUpperCase()) ? String(s.baseCurrency).toUpperCase() : 'USD',
     // The date from which the BROKER is the record of what was traded. Fills before it are whatever
     // the console already holds — mostly bulk averages that no individual order will ever match —
@@ -691,15 +695,23 @@ export default async function handler(req, res) {
   let consoleResult = null;
   if (consoleIn && typeof consoleIn === 'object') {
     const prev = await readConsole(store.console);
+    // A SAVE NAMES THE COPY IT WAS MADE FROM (lib/consoleRev.js). Made from an older one — another
+    // device or the IBKR sync wrote since this page loaded — it is refused, not applied over the
+    // top. Only where the copy is shared: without Redis there is nothing else to overwrite.
+    const check = kvConfigured() ? saveCheck(prev._store === 'kv' ? prev : null, consoleIn.baseRev) : { ok: true, rev: null };
+    if (!check.ok) {
+      return res.status(check.status).json({ ok: false, error: check.error,
+        console: { stored: 'refused', reason: check.reason, rev: check.current, updatedAt: prev.updatedAt || null } });
+    }
     const rows = Array.isArray(consoleIn.rows)
       ? consoleIn.rows.map(sanitizeRow).filter(Boolean).slice(0, 200)
       : (prev.rows || []);
     const settings = consoleIn.settings ? sanitizeConsoleSettings(consoleIn.settings) : (prev.settings || {});
-    const payload = { rows, settings, updatedAt: new Date().toISOString() };
+    const payload = { rows, settings, updatedAt: new Date().toISOString(), ...(check.rev != null ? { rev: check.rev } : {}) };
 
     if (kvConfigured()) {
       const ok = await kvSetJson(CONSOLE_KEY, payload);
-      consoleResult = ok ? { stored: 'kv' } : { stored: 'failed', error: 'Redis write failed — state kept locally in your browser' };
+      consoleResult = ok ? { stored: 'kv', rev: payload.rev, updatedAt: payload.updatedAt } : { stored: 'failed', error: 'Redis write failed — state kept locally in your browser' };
     } else {
       consoleResult = { stored: 'none', error: 'cross-device sync not configured (KV_REST_API_URL / KV_REST_API_TOKEN unset) — saved locally in this browser only' };
     }
