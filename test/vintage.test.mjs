@@ -126,12 +126,12 @@ const AFTER  = new Date('2026-09-10T13:30:00Z');
 }
 
 // ── NOT EVERY SERIES IS A DAILY SERIES ──────────────────────────────────────
-// Caught on the live board an hour after this shipped: the ACM term premium read "late" at four
+// Caught on the live board an hour after this shipped: the term premium read "late" at four
 // business days and pushed the confidence grade to `low` on a completely ordinary morning. It is
 // a model estimate on its own release cadence, and judging it by FRED's daily schedule flags it
 // most days — a warning that is always on is not a warning.
 {
-  const tp = { value: 0.71, date: '2026-09-04', name: 'ACM 10Y term premium' };
+  const tp = { value: 0.71, date: '2026-09-04', name: 'Kim-Wright 10Y term premium' };
   const v = fieldVintage(tp, 'termPremium', AFTER);
   eq('an ordinary term-premium lag is not late', v.late, false);
   eq('and the tolerance it was judged against is stated', v.tolerance, GATE_LAG_BIZ_DAYS.termPremium);
