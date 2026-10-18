@@ -7311,7 +7311,7 @@ export default function App() {
         {tab === "gex" && <GexPanel request={gexRequest} onRequestDone={() => setGexRequest(null)} />}
         {tab === "ratios" && <RatiosPanel />}
         {/* The feed's calendar rows add announced Treasury auctions to the hand-kept list. */}
-        {tab === "calendar" && <CalendarPanel extra={pbData?.us?.calendar || []} />}
+        {tab === "calendar" && <CalendarPanel extra={[...(pbData?.us?.calendar || []), ...(pbData?.us?.calendarAuto?.events || [])]} autoSources={pbData?.us?.calendarAuto?.sources || null} />}
 
         {/* ── TRADE CONSOLE (Tier 3) ── */}
         {tab === "console" && (

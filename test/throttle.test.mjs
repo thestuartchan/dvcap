@@ -154,8 +154,11 @@ function harness() {
   {
     const readers = (fredSrc.match(/^export async function fred\w+/gm) || [])
       .filter(x => !/fredJson/.test(x));
-    eq('four readers, all through the gate', readers.length, 4);
-    eq('each with a fredJson call', (fredSrc.match(/await fredJson\(/g) || []).length, readers.length);
+    eq('five readers, all through the gate', readers.length, 5);
+    // Each reader's own body calls fredJson or fredJsonEx — the release calendar
+    // (fredReleaseDates, 18 Oct 2026) reads through fredJsonEx so it can set its own cache life.
+    const bodies = fredSrc.split(/^export async function /m).slice(1).filter(b => /^fred\w+/.test(b) && !/^fredJson/.test(b));
+    eq('each with a fredJson or fredJsonEx call', bodies.filter(b => /await fredJson(Ex)?\(/.test(b.split(/^export /m)[0])).length, readers.length);
   }
 }
 

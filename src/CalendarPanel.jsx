@@ -14,7 +14,9 @@ const fmtMonth = (ym) => new Date(`${ym}-15T12:00:00Z`).toLocaleDateString("en-G
 const fmtMonthShort = (ym) => new Date(`${ym}-15T12:00:00Z`).toLocaleDateString("en-GB", { month: "short", timeZone: "UTC" });
 const REGION_LABEL = { ALL: "All", US: "US", ASIA: "Asia", EU: "Europe" };
 
-export function CalendarPanel({ extra = [] }) {
+const SOURCE_LABEL = { fomc: "Fed", ecb: "ECB", boj: "BoJ", bea: "BEA", census: "Census", fred: "FRED (BLS)" };
+
+export function CalendarPanel({ extra = [], autoSources = null }) {
   const [region, setRegion] = useState("ALL");
   const [majorOnly, setMajorOnly] = useState(false);
   const today = localToday();
@@ -48,8 +50,12 @@ export function CalendarPanel({ extra = [] }) {
           {view.months.map(m => pill(false, `${fmtMonthShort(m.month)} · ${m.count}`, () => jump(m.month), `${fmtMonth(m.month)}: ${m.count} events, ${m.major} major`))}
         </div>
         <div style={{ fontSize: 12, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>
-          The hand-kept calendar plus weekly jobless claims and announced Treasury auctions. The pre-reads and the sizer's catalyst check read the same list.
-          {view.beyondEntered && <> <b style={{ color: C.amber }}>Entries run to {fmtDay(view.lastEntered)}</b>; later months show only the weekly rules and auctions until the calendar is extended.</>}
+          Central-bank decisions (Fed, ECB, BoJ) and the main US releases are read automatically from the bodies that set them; your hand-kept entries win wherever both cover the same event. Weekly jobless claims and Treasury auctions are automatic too.
+          {view.beyondEntered && <> <b style={{ color: C.amber }}>Hand-kept entries run to {fmtDay(view.lastEntered)}</b>: earnings and Asia/Europe data after that are not on the page yet.</>}
+          {autoSources && (() => {
+            const bad = Object.entries(autoSources).filter(([, v]) => v && v.ok === false);
+            return bad.length ? <> <b style={{ color: C.amber }}>Not read this time: {bad.map(([k, v]) => `${SOURCE_LABEL[k] || k} (${v.error})`).join(", ")}.</b></> : null;
+          })()}
         </div>
       </Card>
 
@@ -58,7 +64,7 @@ export function CalendarPanel({ extra = [] }) {
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 10px", padding: "6px 2px 0", borderBottom: "2px solid " + C.bdr }}>
             <h3 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: C.text }}>{fmtMonth(m.month)}</h3>
             <span style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>{m.count} event{m.count === 1 ? "" : "s"} · {m.major} major</span>
-            {m.partial && <span style={{ fontSize: 11, fontWeight: 700, color: C.amber }}>not entered yet: weekly rules and auctions only</span>}
+            {m.partial && <span style={{ fontSize: 11, fontWeight: 700, color: C.amber }}>automatic dates only: earnings and Asia/Europe data not entered yet</span>}
           </div>
           {m.weeks.length === 0 && <div style={{ color: C.muted, fontSize: 13, padding: "4px 2px" }}>Nothing in this month for this filter.</div>}
           {m.weeks.map(w => (
@@ -79,7 +85,7 @@ export function CalendarPanel({ extra = [] }) {
                         const city = tzCity(e.tz);
                         return (
                           <div key={i} style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 13, color: e.reported ? C.lbl : C.text, minWidth: 0 }}>
-                            <span style={{ fontWeight: Number(e.tier) === 1 ? 700 : 500, textDecoration: e.reported ? "line-through" : "none", overflowWrap: "anywhere" }}>{e.title}</span>
+                            <span title={e.auto ? `Read automatically from ${e.source}` : undefined} style={{ fontWeight: Number(e.tier) === 1 ? 700 : 500, textDecoration: e.reported ? "line-through" : "none", overflowWrap: "anywhere" }}>{e.title}</span>
                             <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "2px 8px", fontSize: 11.5, color: C.muted, fontVariantNumeric: "tabular-nums" }}>
                               <span style={{ fontWeight: 700, color: C.lbl }}>{REGION_LABEL[e.region] || e.region}</span>
                               {e.time && <span>{e.time}{city ? ` ${city}` : ""}</span>}
