@@ -24,7 +24,7 @@ const fmtMonth = (ym) => new Date(`${ym}-15T12:00:00Z`).toLocaleDateString("en-G
 const fmtMonthShort = (ym) => new Date(`${ym}-15T12:00:00Z`).toLocaleDateString("en-GB", { month: "short", timeZone: "UTC" });
 const REGION_LABEL = { ALL: "All", US: "US", ASIA: "Asia", EU: "Europe" };
 
-const SOURCE_LABEL = { fomc: "Fed", ecb: "ECB", boj: "BoJ", bea: "BEA", census: "Census", fred: "FRED (BLS)", earnings: "Earnings (Nasdaq)" };
+const SOURCE_LABEL = { fomc: "Fed", ecb: "ECB", boj: "BoJ", bea: "BEA", census: "Census", fred: "FRED (BLS)", earnings: "Earnings (Nasdaq)", dart: "DART (Korea)" };
 
 export function CalendarPanel({ extra = [], autoSources = null }) {
   const [region, setRegion] = useState("ALL");
@@ -60,8 +60,8 @@ export function CalendarPanel({ extra = [], autoSources = null }) {
           {view.months.map(m => pill(false, `${fmtMonthShort(m.month)} · ${m.count}`, () => jump(m.month), `${fmtMonth(m.month)}: ${m.count} events, ${m.major} major`))}
         </div>
         <div style={{ fontSize: 12, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>
-          Central-bank decisions (Fed, ECB, BoJ) and the main US releases are read automatically from the bodies that set them; your hand-kept entries win wherever both cover the same event. Weekly jobless claims, Treasury auctions and the earnings of the US-listed names on the watch list are automatic too; an earnings date the company has not announced yet is marked "est.".
-          {view.beyondEntered && <> <b style={{ color: C.amber }}>Hand-kept entries run to {fmtDay(view.lastEntered)}</b>: Asia/Europe data and Korea-listed earnings after that are not on the page yet.</>}
+          Central-bank decisions (Fed, ECB, BoJ) and the main US releases are read automatically from the bodies that set them; your hand-kept entries win wherever both cover the same event. Weekly jobless claims, Treasury auctions and the earnings of the US-listed names on the watch list are automatic too; an earnings date the company has not announced yet is marked "est.". Samsung Electronics' and SK hynix's IR calls and preliminary results come from their DART filings.
+          {view.beyondEntered && <> <b style={{ color: C.amber }}>Hand-kept entries run to {fmtDay(view.lastEntered)}</b>: Asia/Europe data releases after that are not on the page yet.</>}
           {autoSources && (() => {
             const bad = Object.entries(autoSources).filter(([, v]) => v && v.ok === false);
             return bad.length ? <> <b style={{ color: C.amber }}>Not read this time: {bad.map(([k, v]) => `${SOURCE_LABEL[k] || k} (${v.error})`).join(", ")}.</b></> : null;

@@ -1,5 +1,5 @@
 {
-  "_README": "Companies whose earnings dates the Calendar reads automatically (lib/calendarAuto.js, Nasdaq's per-symbol earnings date). Public market names only, chosen for what moves the tape and the AI/semis complex; nothing here says what is held. `aliases` are the words a hand-kept calendar row uses for the same company, so a hand-kept row wins over the automatic one. Korea-listed names (Samsung, SK Hynix) are not on Nasdaq and stay hand-kept.",
+  "_README": "Companies whose earnings dates the Calendar reads automatically (lib/calendarAuto.js, Nasdaq's per-symbol earnings date). Public market names only, chosen for what moves the tape and the AI/semis complex; nothing here says what is held. `aliases` are the words a hand-kept calendar row uses for the same company, so a hand-kept row wins over the automatic one. Korea-listed names are not on Nasdaq: `dart` lists them with their DART corp_code and KRX code, and their IR-call and preliminary-results dates are read from DART (lib/dartEarnings.js, needs DART_API_KEY).",
   "names": [
     { "sym": "AAPL", "name": "Apple", "aliases": ["Apple"], "region": "US", "tier": 1 },
     { "sym": "MSFT", "name": "Microsoft", "aliases": ["Microsoft"], "region": "US", "tier": 1 },
@@ -29,5 +29,9 @@
     { "sym": "ASML", "name": "ASML", "aliases": ["ASML"], "region": "EU", "tier": 1 },
     { "sym": "SAP", "name": "SAP", "aliases": ["SAP"], "region": "EU", "tier": 2 },
     { "sym": "STM", "name": "STMicro", "aliases": ["STMicro", "STMicroelectronics"], "region": "EU", "tier": 2 }
+  ],
+  "dart": [
+    { "corp": "00126380", "code": "005930", "name": "Samsung Electronics", "aliases": ["Samsung"], "region": "ASIA", "tier": 1 },
+    { "corp": "00164779", "code": "000660", "name": "SK hynix", "aliases": ["SK Hynix", "SK hynix", "Hynix"], "region": "ASIA", "tier": 1 }
   ]
 }
