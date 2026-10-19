@@ -35,10 +35,22 @@ const row = (name, weight, recency, prob = 20, extra = {}) => ({ name, weight, r
   eq(`below ${CONSENSUS_EXPIRED_BELOW} is expired at the floor`, [regimeVintage({ alive: 0.1 }).grade, regimeVintage({ alive: 0.1 }).haircut], ['expired', UNCERTAINTY_HAIRCUT]);
   eq('an undated consensus is unknown, treated like expired', [regimeVintage({}).grade, regimeVintage({}).haircut], ['unknown', UNCERTAINTY_HAIRCUT]);
   const due = regimeVintage({ alive: 0.9, refreshDue: true, staleNote: '2 months stale' });
-  eq('a refresh that is due makes a fresh-looking consensus decayed', due.grade, 'decayed');
-  eq('with the haircut from its own share, not the floor', due.haircut, 0.9);
-  ok('and the note says both things', /consensus 90% alive/.test(due.note) && /refresh due, inputs 2 months stale/.test(due.note));
-  eq('only a fresh consensus carries conviction', [regimeVintage({ alive: 1 }).conviction, due.conviction, regimeVintage({ alive: 0.1 }).conviction], [true, false, false]);
+  // House views are context (19 Oct 2026): the house table's refresh is said, but no longer cuts.
+  eq('a house-table refresh that is due no longer grades a live consensus down', [due.grade, due.haircut], ['fresh', 1]);
+  ok('and the note says both things', /consensus 90% alive/.test(due.note) && /house table refresh due \(context only\), inputs 2 months stale/.test(due.note));
+  eq('only a fresh consensus carries conviction', [regimeVintage({ alive: 1 }).conviction, due.conviction, regimeVintage({ alive: 0.1 }).conviction], [true, true, false]);
+}
+
+// ── HOUSE VIEWS: COUNTED INSIDE THEIR CYCLE, DROPPED AFTER IT (19 Oct 2026) ──
+{
+  const cyc = (n) => (n === 'House' ? 120 : null);
+  const rows = (houseRecency) => [
+    { name: 'Model', weight: 0.2, prob: 15, recency: 1 }, { name: 'Market', weight: 0.2, prob: 10, recency: 1 },
+    { name: 'House', weight: 0.2, prob: 20, recency: houseRecency }];
+  eq('a house view inside its cycle counts as fully alive', consensusAlive(rows(0.6), { contextDays: cyc }).alive, 1);
+  eq('past its cycle it drops out of the share instead of shrinking it', [consensusAlive(rows(0.2), { contextDays: cyc }).alive, consensusAlive(rows(0.2), { contextDays: cyc }).nSources], [1, 2]);
+  eq('without the context rule the same row would have cut it', consensusAlive(rows(0.2)).alive, 0.733);
+  eq('a self-updating source that goes stale still counts against the share', consensusAlive([{ name: 'Model', weight: 0.2, prob: 15, recency: 0.3 }, { name: 'House', weight: 0.2, prob: 20, recency: 1 }], { contextDays: cyc }).alive, 0.65);
 }
 
 // ── THE SIZER: ONE UNRESOLVED REGIME, NOT TWO ────────────────────────────────

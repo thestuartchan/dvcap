@@ -64,7 +64,8 @@ const find = (l, key) => l.rows.find(r => r.key === key);
                  gdpGrowth: { label: 'Q2 GDP', period: '2026-04-01', released: '2026-07-30', fredAsOf: '2026-01-01' } },
   };
   const l = handKeptLedger({ consts, now: NOW });
-  eq('a consensus whose refresh is due is due, with the haircut named', [find(l, 'consensus').state, /DECAYED/.test(find(l, 'consensus').rule)], ['due', true]);
+  eq('a house table whose refresh is due is optional, not overdue — it no longer cuts sizing', [find(l, 'consensus').state, /no sizing cut|instead of cutting sizing/.test(find(l, 'consensus').rule)], ['optional', true]);
+  eq('optional rows are not counted as needing you', [l.counts.optional >= 1, l.counts.due + l.counts.stale + l.counts.missing >= 0], [true, true]);
   eq('a static Goldman row 80 days old is inside its 120-day cadence', find(l, 'src:Goldman Sachs').state, 'fresh');
   ok('a live-fed row is not a hand-kept input', !find(l, 'src:NY Fed Yield Curve Model'));
   eq('the 2027 Kalshi static row, a week old against a one-day cadence, is due', find(l, 'src:Kalshi prediction market').state, 'due');
