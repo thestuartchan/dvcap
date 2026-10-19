@@ -6,7 +6,13 @@
 // For each company in lib/supplyChain.js SC_UNIVERSE (or the tickers given): find its latest
 // annual report on EDGAR (10-K, or 20-F / 40-F for a foreign filer), read the primary document raw,
 // and keep the links lib/supplyChain.js extractLinks finds in it, each with the filing and the
-// sentence. Writes data/supplychain.json. Prints counts only.
+// sentence. A 10-K filer's latest 10-Q, when it was filed after that 10-K, is read the same way and
+// laid on top (mergeQuarter): customer shares change every quarter. Foreign filers report half-
+// yearly on 6-K with no fixed form, so they are annual only. Writes data/supplychain.json. Prints
+// counts only.
+//
+//   --if-newer   read only the companies whose latest annual report or 10-Q on EDGAR is newer than
+//                the one stored, and leave the file untouched when none is (the weekly job).
 //
 // SEC FAIR ACCESS. EDGAR refuses document requests whose User-Agent carries no contact address,
 // and asks for at most ten requests a second. The contact is the person running the script, so it
@@ -16,7 +22,7 @@
 // A company keeps its previous links when its fetch fails this run (listed under `missing` with
 // the reason), so one bad night does not empty the map.
 import fs from 'node:fs';
-import { SC_UNIVERSE, filingText, extractLinks } from '../lib/supplyChain.js';
+import { SC_UNIVERSE, filingText, extractLinks, mergeQuarter } from '../lib/supplyChain.js';
 
 const OUT = new URL('../data/supplychain.json', import.meta.url);
 const UA = String(process.env.SEC_USER_AGENT || '').trim();
@@ -36,14 +42,22 @@ async function get(url, as = 'text') {
 }
 
 const ANNUAL = new Set(['10-K', '20-F', '40-F']);
-const tickers = process.argv.slice(2).length ? process.argv.slice(2).map(t => t.toUpperCase()) : SC_UNIVERSE;
+const args = process.argv.slice(2);
+const ifNewer = args.includes('--if-newer');
+const named = args.filter(a => !a.startsWith('--')).map(t => t.toUpperCase());
+const tickers = named.length ? named : SC_UNIVERSE;
 const prev = fs.existsSync(OUT) ? JSON.parse(fs.readFileSync(OUT, 'utf8')) : { companies: {} };
 
 const map = await get('https://www.sec.gov/files/company_tickers.json', 'json');
 const cikOf = Object.fromEntries(Object.values(map).map(r => [String(r.ticker).toUpperCase(), r.cik_str]));
 
 const companies = { ...(prev.companies || {}) };
-const missing = {};
+const missing = { ...(ifNewer ? prev.missing || {} : {}) };
+const filingAt = (cik, r, i) => {
+  const acc = r.accessionNumber[i];
+  return { form: r.form[i], accession: acc, url: `https://www.sec.gov/Archives/edgar/data/${cik}/${acc.replace(/-/g, '')}/${r.primaryDocument[i]}`, date: r.filingDate[i] };
+};
+let read = 0;
 for (const t of tickers) {
   try {
     const cik = cikOf[t.replace('.', '-')] ?? cikOf[t];
@@ -52,21 +66,27 @@ for (const t of tickers) {
     const r = sub.filings?.recent || {};
     const i = (r.form || []).findIndex(f => ANNUAL.has(f));
     if (i < 0) throw new Error('no annual report in the recent filings');
-    const acc = r.accessionNumber[i];
-    const url = `https://www.sec.gov/Archives/edgar/data/${cik}/${acc.replace(/-/g, '')}/${r.primaryDocument[i]}`;
-    const filing = { form: r.form[i], accession: acc, url, date: r.filingDate[i] };
-    const text = filingText(await get(url));
-    const links = extractLinks(text, { filer: t, filing });
-    companies[t] = { cik, name: sub.name, asOf: filing.date, filing, links };
-    console.log(`${t}: ${filing.form} ${filing.date} · ${links.filter(l => l.named).length} named, ${links.filter(l => !l.named).length} anonymised`);
+    const filing = filingAt(cik, r, i);
+    const q = filing.form === '10-K' ? (r.form || []).findIndex(f => f === '10-Q') : -1;
+    const quarter = q >= 0 && r.filingDate[q] > filing.date ? filingAt(cik, r, q) : null;
+    const had = prev.companies?.[t];
+    if (ifNewer && had && had.filing?.accession === filing.accession && (had.quarter?.accession || null) === (quarter?.accession || null)) continue;
+    const links = extractLinks(filingText(await get(filing.url)), { filer: t, filing });
+    const qLinks = quarter ? extractLinks(filingText(await get(quarter.url)), { filer: t, filing: quarter }) : [];
+    const merged = quarter ? mergeQuarter(links, qLinks) : links;
+    companies[t] = { cik, name: sub.name, asOf: quarter?.date || filing.date, filing, ...(quarter ? { quarter } : {}), links: merged };
+    delete missing[t];
+    read++;
+    console.log(`${t}: ${filing.form} ${filing.date}${quarter ? ` + 10-Q ${quarter.date}` : ''} · ${merged.filter(l => l.named).length} named, ${merged.filter(l => !l.named).length} anonymised`);
   } catch (e) {
     missing[t] = String(e?.message || e);
     console.log(`${t}: not read (${missing[t]})`);
   }
 }
+if (ifNewer && !read) { console.log('no newer filing for any company; file unchanged'); process.exit(0); }
 
 const out = {
-  _README: 'Supplier, customer and competitor links read from each company\'s own latest annual report on EDGAR (scripts/supplychain-build.mjs; method in docs/supply-chain.md). Each link quotes the sentence and names the filing. relation = what the counterparty is to the filer. named=false is an anonymised customer as the filing states it.',
+  _README: 'Supplier, customer and competitor links read from each company\'s own latest annual report on EDGAR, plus its latest 10-Q when filed after it (scripts/supplychain-build.mjs; method in docs/supply-chain.md). Each link quotes the sentence and names the filing it came from. relation = what the counterparty is to the filer. named=false is an anonymised customer as the filing states it.',
   _generated: new Date().toISOString(),
   companies: Object.fromEntries(Object.entries(companies).sort(([a], [b]) => a.localeCompare(b))),
   missing,

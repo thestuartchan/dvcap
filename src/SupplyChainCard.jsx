@@ -91,7 +91,7 @@ export function SupplyChainCard({ symbol, held = null }) {
   const all = [...m.suppliers.map(r => ["Suppliers", r]), ...m.customers.map(r => ["Customers", r]), ...m.competitors.map(r => ["Competitors", r])];
   const opened = all.find(([t, r]) => `${t}|${r.label}` === openKey)?.[1] || null;
   const shared = { openKey, onOpen: toggle, onCentre: recentre, held };
-  const f = m.filer?.filing;
+  const f = m.filer?.filing, q = m.filer?.quarter;
 
   return (
     <div data-slot="supply-chain">
@@ -102,7 +102,7 @@ export function SupplyChainCard({ symbol, held = null }) {
       <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.5, marginBottom: 10 }}>
         <b style={{ fontFamily: MONO, color: C.text }}>{m.label}</b>
         {m.label !== m.centre && <span style={{ fontFamily: MONO }}> ({m.centre})</span>}
-        {f ? <> · from its {f.form} filed {day(f.date)} and the filings of the other {SC_UNIVERSE.length - 1} companies read · <a href={f.url} target="_blank" rel="noreferrer" style={{ color: C.blue, fontWeight: 700 }}>{f.form} ↗</a></>
+        {f ? <> · from its {f.form} filed {day(f.date)}{q ? <>, its 10-Q filed {day(q.date)},</> : null} and the filings of the other {SC_UNIVERSE.length - 1} companies read · <a href={f.url} target="_blank" rel="noreferrer" style={{ color: C.blue, fontWeight: 700 }}>{f.form} ↗</a>{q && <> · <a href={q.url} target="_blank" rel="noreferrer" style={{ color: C.blue, fontWeight: 700 }}>10-Q ↗</a></>}</>
           : <> · its own reports aren’t read here; any links below come from other companies’ filings</>}
       </div>
 
@@ -134,7 +134,7 @@ export function SupplyChainCard({ symbol, held = null }) {
       )}
 
       <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 10, lineHeight: 1.5 }}>
-        Each company’s latest 10-K or 20-F on SEC EDGAR, read raw; a link is kept only when its sentence states it. Named: the filing names the company. Anonymised: the filing gives a share and no name, and it stays unnamed. A % is shown only where the filing states it. Thicker edge: a stated share, or both companies’ filings. Built {dubaiEtStamp(SC._generated)}.
+        Each company’s latest 10-K or 20-F on SEC EDGAR, plus its latest 10-Q when that is newer, read raw; a link is kept only when its sentence states it. A customer share from the 10-Q replaces the annual one. Named: the filing names the company. Anonymised: the filing gives a share and no name, and it stays unnamed. A % is shown only where the filing states it. Thicker edge: a stated share, or both companies’ filings. Built {dubaiEtStamp(SC._generated)}.
       </div>
     </div>
   );

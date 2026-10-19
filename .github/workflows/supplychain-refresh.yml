@@ -1,0 +1,64 @@
+# Supplier / customer map, kept current with the filings it is read from (scripts/supplychain-build.mjs).
+#
+# WHEN. A company's links change only when it files: an annual report once a year, a 10-Q three
+# times. Once a week the script asks EDGAR for each company's latest 10-K / 20-F / 40-F and 10-Q
+# and re-reads only the companies whose filing is newer than the one stored (--if-newer); a week
+# with no new filing changes nothing and commits nothing. Manual runs can name tickers to re-read
+# regardless (e.g. after a rule change in lib/supplyChain.js).
+#
+# SEC FAIR ACCESS. EDGAR refuses requests without a contact in the User-Agent. The contact is the
+# repository secret SEC_USER_AGENT ("Name email"), which never reaches the log or the output. With
+# no secret set the job says so and stops without failing.
+#
+# WHERE IT GOES. data/supplychain.json, committed to main; the commit redeploys, which is how the
+# ticker page's map picks it up. The log prints each re-read company's forms and link counts —
+# public filings, nothing about the account.
+name: supply-chain refresh
+
+on:
+  schedule:
+    - cron: '40 4 * * 0'
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: 'Tickers to re-read regardless of filing date, space-separated (default: only newer filings)'
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: supplychain-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Re-read newer filings into data/supplychain.json
+        env:
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+          TICKERS: ${{ github.event.inputs.tickers }}
+        run: |
+          if [ -z "$SEC_USER_AGENT" ]; then echo "::warning::SEC_USER_AGENT secret not set; nothing fetched"; exit 0; fi
+          if [ -n "$TICKERS" ]; then node scripts/supplychain-build.mjs $TICKERS; else node scripts/supplychain-build.mjs --if-newer; fi
+      - name: Commit
+        run: |
+          if git diff --quiet -- data/supplychain.json; then echo "no change to commit"; exit 0; fi
+          git config user.name "dvcap-bot"
+          git config user.email "dvcap-bot@users.noreply.github.com"
+          git add data/supplychain.json
+          git commit -m "Supply chain auto — newer EDGAR filings @ $(date -u +%F)"
+          for i in 1 2 3; do
+            if git push origin HEAD:main; then exit 0; fi
+            git fetch origin main && git rebase origin/main || exit 1
+            sleep $((i * 5))
+          done
+          echo "::error::could not push after three attempts"; exit 1
