@@ -1996,7 +1996,7 @@ function HandEntryHub({ ledger, renderEditor }) {
   const row = (r) => <HandEntryRow key={r.key} r={r} isOpen={open === r.key} onToggle={() => setOpen(open === r.key ? null : r.key)} renderEditor={renderEditor} />;
   const tok = plan.counts.overdue > 0 ? STATUS.ELEVATED : plan.counts.due > 0 ? STATUS.WATCH : STATUS.BENIGN;
   return (
-    <Card id="hand-entry" style={{ borderLeft: "4px solid " + tok.color, scrollMarginTop: 120 }}>
+    <Card id="hand-entry" style={{ borderLeft: "4px solid " + tok.color, scrollMarginTop: 170 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <SLabel>✍ Needs you — hand-kept inputs</SLabel>
         <span style={{ fontSize: 12.5, color: C.text }}>
