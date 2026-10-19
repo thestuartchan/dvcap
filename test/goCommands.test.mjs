@@ -33,6 +33,12 @@ eq('a line that means nothing is not kept', pushRecent(['ECO'], 'zzz yyy'), ['EC
 
 eq('HAND opens the hand-entry list in Data health', (() => { const r = parseGo('hand'); return [r.tab, r.anchor, r.title]; })(), ['health', 'hand-entry', 'Hand-kept inputs']);
 eq('and the plain words reach it too', [parseGo('inputs')?.code, parseGo('hand-kept')?.code], ['HAND', 'HAND']);
+eq('COV opens the coverage list in Data health', (() => { const r = parseGo('coverage'); return [r.tab, r.anchor, r.code]; })(), ['health', 'coverage', 'COV']);
+eq('the price feed\'s spellings are tickers: index, future, share class, crypto, a Korea code', [go('^XYZ DES'), go('XY=F DES'), go('XYZ-B DES'), go('XYZ-USD GEX'), go('123456.KS')],
+  [['ticker', '^XYZ'], ['ticker', 'XY=F'], ['ticker', 'XYZ-B'], ['gex', 'XYZ-USD'], ['ticker', '123456.KS']]);
+eq('beside DES or GEX a word that is also a code is the ticker', [go('SM DES'), go('des cal'), go('ECO GEX')], [['ticker', 'SM'], ['ticker', 'CAL'], ['gex', 'ECO']]);
+eq('but two ticker views together are nothing', go('DES GEX'), null);
+eq('a code alone is still the code', [go('SM'), go('CAL')], [['street', null], ['calendar', null]]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
