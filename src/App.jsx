@@ -9,6 +9,7 @@ import { CtaPanel } from "./CtaPanel.jsx";
 import { RatiosPanel } from "./RatiosPanel.jsx";
 import { CalendarPanel } from "./CalendarPanel.jsx";
 import { TickerPanel } from "./TickerPanel.jsx";
+import { CoveragePanel } from "./CoveragePanel.jsx";
 import { GoBar, GoKey } from "./GoBar.jsx";
 import { CorrelationPanel } from "./CorrelationPanel.jsx";
 import { ScenarioBoard } from "./ScenarioBoard.jsx";
@@ -7258,6 +7259,7 @@ export default function App() {
             <FeedHealth feed={stateFeed} indErrors={liveInd?.feedErrors} indUpdated={indUpdated ? indUpdated.toISOString() : null} />
             <CrossCheckHealth xc={xcHealth} />
             <HandKeptLedgerPanel ledger={ledger} />
+            <CoveragePanel onOpenTicker={(sym) => runGo({ tab: "ticker", symbol: sym })} />
           </div>
         )}
 
