@@ -93,7 +93,7 @@ export default async function handler(req, res) {
     vintages,             // P4-A — every gate's observation date, and whether it is late for its own schedule
     // The automatic calendar whole, for Markets › Calendar's quarter-long view, with each source's
     // count or the reason it gave nothing (Data health reads the same).
-    calendarAuto: { at: calAuto.at ?? null, cache: calAuto.cache ?? null, sources: calAuto.sources || {}, events: calAuto.events || [] },
+    calendarAuto: { at: calAuto.at ?? null, cache: calAuto.cache ?? null, sources: calAuto.sources || {}, events: calAuto.events || [], fomcLatest: calAuto.fomcLatest ?? null },
     // Announced auctions ride in the hand-maintained calendar's own shape, so every consumer of
     // this field gets them without knowing they came from a feed. The automatic dates join the
     // same way, inside the same window, wherever the hand-kept list has nothing of that kind.

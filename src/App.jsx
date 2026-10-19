@@ -5654,6 +5654,7 @@ function AnalystViewBoard({ live, probFor, engineRegime, consensus }) {
         <div style={{ marginTop: 5, fontSize: 12.5, color: C.mid, fontStyle: "italic", lineHeight: 1.5 }}>“{v.call}”</div>
         {/* Provenance — every view names where it came from and when, same discipline as the
             numeric rows. A view read off a secondary summary says so. */}
+        {v.needsReview && <div style={{ marginTop: 4, fontSize: 11, fontWeight: 700, color: C.amber }}>⚠ {v.needsReview}</div>}
         {v.sourceNote && (
           <div style={{ marginTop: 4, fontSize: 10.5, color: C.lbl, lineHeight: 1.45 }} title={v.sourceNote}>
             {v.published ? <b>{v.published}</b> : null}{v.published ? " · " : ""}
@@ -6001,7 +6002,8 @@ export default function App() {
     if (tab === "global") pbRegions.forEach(r => fetchPlaybookRegion(r));
     // Credit detail and the yen toggle on Drivers (and the previous Macro layout) read the US payload.
     // Hedges too: its tape chip and fallback phase read pbData.us, which it never fetched itself.
-    else if (tab === "drivers" || tab === "insurance" || tab === "calendar") fetchPlaybookRegion("us");
+    // Smart Money: the analyst board's FOMC row reads the latest statement from the US payload.
+    else if (tab === "drivers" || tab === "insurance" || tab === "calendar" || tab === "street") fetchPlaybookRegion("us");
   }, [tab, pbRegions, fetchPlaybookRegion]);
 
   // Load manual deploy-stage toggles + portfolio value from localStorage
@@ -6511,6 +6513,8 @@ export default function App() {
                     nextHikeOdds: nextMeetingOdds(liveInd?.fedPathFeed ?? null)?.hikePct ?? null,
                     nextMeetingLabel: (() => { const o = nextMeetingOdds(liveInd?.fedPathFeed ?? null); return o ? new Date(o.meeting + "T12:00:00Z").toLocaleString("en-US", { month: "short", timeZone: "UTC" }) : null; })(),
                     fedHawkish: /hawkish|tightening/i.test(FED_LANGUAGE_STATUS?.status || ""),
+                    // The decision in force, from the newest FOMC statement (lib/calendarAuto.js).
+                    fomcLatest: pbData?.us?.calendarAuto?.fomcLatest ?? null,
                     capexRising: true,   // big-four 2026 ~$725B (+77% YoY) — Smart Money tab, sourced
                     unemployment: laborView?.u3?.value ?? liveInd?.unemployment ?? null,
                     // The employment SHARE, not the headline rate: U3 can fall on labour-force exit

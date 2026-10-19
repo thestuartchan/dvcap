@@ -1,6 +1,6 @@
 // Regression tests for lib/analystViews.js — the analyst-view board.
 // Run: node test/analystViews.test.mjs
-import { buildViews, evaluateViews, regimeCluster, divergenceRead, VERDICT_WEIGHT } from '../lib/analystViews.js';
+import { buildViews, evaluateViews, regimeCluster, divergenceRead, VERDICT_WEIGHT, fomcDecisionText } from '../lib/analystViews.js';
 
 let pass = 0, fail = 0;
 const eq = (name, got, want) => {
@@ -51,6 +51,19 @@ eq('no live data -> unverifiable', find(evaluateViews(buildViews({})), 'NY Fed Y
 // Divergence read
 eq('divergence names the disagreement',
   divergenceRead({ cluster: { top: 'ref' }, engineRegime: 'stag' }).includes('disagree'), true);
+
+// ── The FOMC row follows the newest statement (19 Oct 2026) ──
+{
+  const fomc = (f) => buildViews({ ...NOW, fomcLatest: f }).find(v => v.key === 'September FOMC');
+  const none = fomc(null);
+  eq('with no statement read, the hand-written September row stands', [none.house, none.published, !!none.needsReview], ['FOMC — September decision', '2026-09-16', false]);
+  const hold = fomc({ date: '2026-10-28', action: 'maintain', bps: 0, range: [3.75, 4], dissents: ['A', 'B'], dissentPreferred: 'raise the target range for the federal funds rate by 1/4 percentage point at this meeting' });
+  eq('a newer decision replaces the text, dated', [hold.house, hold.published, hold.call], ['FOMC — October decision', '2026-10-28', 'Held at 3.75–4.00%, 2 dissents (preferred to raise by 1/4 percentage point)']);
+  eq('a hold flags the regime mapping for review instead of re-mapping it', [hold.impliedRegime, /review/.test(hold.needsReview || '')], ['stag', true]);
+  eq('and adds the decisive condition, unmet', hold.conditions.at(-1).label + ' ' + hold.conditions.at(-1).met, 'Latest action still a hike false');
+  eq('an older statement never overrides the row', fomc({ date: '2026-07-29', action: 'maintain', bps: 0, range: [3.5, 3.75], dissents: [] }).published, '2026-09-16');
+  eq('a cut reads as a cut', fomcDecisionText({ action: 'lower', bps: 50, range: [3.25, 3.5], dissents: [] }), 'Cut 50bp to 3.25–3.50%, no dissent listed');
+}
 
 console.log(fail ? `\n❌ ${fail} FAILED` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

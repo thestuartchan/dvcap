@@ -1,0 +1,33 @@
+{
+  "_README": "Companies whose earnings dates the Calendar reads automatically (lib/calendarAuto.js, Nasdaq's per-symbol earnings date). Public market names only, chosen for what moves the tape and the AI/semis complex; nothing here says what is held. `aliases` are the words a hand-kept calendar row uses for the same company, so a hand-kept row wins over the automatic one. Korea-listed names (Samsung, SK Hynix) are not on Nasdaq and stay hand-kept.",
+  "names": [
+    { "sym": "AAPL", "name": "Apple", "aliases": ["Apple"], "region": "US", "tier": 1 },
+    { "sym": "MSFT", "name": "Microsoft", "aliases": ["Microsoft"], "region": "US", "tier": 1 },
+    { "sym": "GOOGL", "name": "Alphabet", "aliases": ["Alphabet", "Google"], "region": "US", "tier": 1 },
+    { "sym": "AMZN", "name": "Amazon", "aliases": ["Amazon"], "region": "US", "tier": 1 },
+    { "sym": "META", "name": "Meta", "aliases": ["Meta"], "region": "US", "tier": 1 },
+    { "sym": "NVDA", "name": "NVIDIA", "aliases": ["NVIDIA", "Nvidia"], "region": "US", "tier": 1 },
+    { "sym": "TSLA", "name": "Tesla", "aliases": ["Tesla"], "region": "US", "tier": 1 },
+    { "sym": "AVGO", "name": "Broadcom", "aliases": ["Broadcom"], "region": "US", "tier": 1 },
+    { "sym": "AMD", "name": "AMD", "aliases": ["AMD", "Advanced Micro"], "region": "US", "tier": 1 },
+    { "sym": "MU", "name": "Micron", "aliases": ["Micron"], "region": "US", "tier": 1 },
+    { "sym": "ORCL", "name": "Oracle", "aliases": ["Oracle"], "region": "US", "tier": 2 },
+    { "sym": "INTC", "name": "Intel", "aliases": ["Intel"], "region": "US", "tier": 2 },
+    { "sym": "TXN", "name": "Texas Instruments", "aliases": ["Texas Instruments"], "region": "US", "tier": 2 },
+    { "sym": "LRCX", "name": "Lam Research", "aliases": ["Lam Research"], "region": "US", "tier": 2 },
+    { "sym": "AMAT", "name": "Applied Materials", "aliases": ["Applied Materials"], "region": "US", "tier": 2 },
+    { "sym": "QCOM", "name": "Qualcomm", "aliases": ["Qualcomm"], "region": "US", "tier": 2 },
+    { "sym": "IBM", "name": "IBM", "aliases": ["IBM"], "region": "US", "tier": 2 },
+    { "sym": "NFLX", "name": "Netflix", "aliases": ["Netflix"], "region": "US", "tier": 2 },
+    { "sym": "CRWV", "name": "CoreWeave", "aliases": ["CoreWeave"], "region": "US", "tier": 2 },
+    { "sym": "PLTR", "name": "Palantir", "aliases": ["Palantir"], "region": "US", "tier": 2 },
+    { "sym": "JPM", "name": "JPMorgan", "aliases": ["JPM", "JPMorgan"], "region": "US", "tier": 1 },
+    { "sym": "GS", "name": "Goldman Sachs", "aliases": ["GS", "Goldman"], "region": "US", "tier": 2 },
+    { "sym": "BAC", "name": "Bank of America", "aliases": ["BAC", "Bank of America"], "region": "US", "tier": 2 },
+    { "sym": "MS", "name": "Morgan Stanley", "aliases": ["MS", "Morgan Stanley"], "region": "US", "tier": 2 },
+    { "sym": "TSM", "name": "TSMC", "aliases": ["TSMC"], "region": "ASIA", "tier": 1 },
+    { "sym": "ASML", "name": "ASML", "aliases": ["ASML"], "region": "EU", "tier": 1 },
+    { "sym": "SAP", "name": "SAP", "aliases": ["SAP"], "region": "EU", "tier": 2 },
+    { "sym": "STM", "name": "STMicro", "aliases": ["STMicro", "STMicroelectronics"], "region": "EU", "tier": 2 }
+  ]
+}
