@@ -53,6 +53,7 @@ import { growthPulse, marketPulse, monthlyPulse, growthAxis } from "../lib/growt
 import { marketInflation, nowcastInflation, printedInflation, inflationAxis } from "../lib/inflationAxis.js";
 import { measuredAxes, axesLogRow } from "../lib/quadrant.js";
 import { handKeptLedger } from "../lib/ledger.js";
+import { handEntryPlan } from "../lib/handEntry.js";
 import CALENDAR from "../data/calendar.json";
 import { FED_LANGUAGE_STATUS } from "../lib/fedLanguage.js";
 import { announced, RECESSION_SOURCES, recessionAsOfState, parseProbability, recessionSrcKey, mergeRecessionSources, CONSENSUS_VINTAGE, FALLBACK_REGIMES, regimeSnapshot, regimeLogRow, RECESSION_SOURCE_CADENCE, ANNOUNCED_PRINTS, LABOR_ANNOUNCED } from "../lib/regimeEngine.js";
@@ -1119,7 +1120,7 @@ function InterventionToggle({ jpyChangePct, dxyChangePct, onChange, auto = null 
 function bizDaysSince(isoDate, now = new Date()) {
   return businessDaysSince(isoDate, { now, calendar: "exchange" }) ?? 0;
 }
-function FedPathCard({ effr, feed = null }) {
+function FedPathCard({ effr, feed = null, onSaved = null }) {
   const [data, setData] = useState(null);
   const [price, setPrice] = useState("");
   const [contract, setContract] = useState("Dec-2026");
@@ -1139,7 +1140,7 @@ function FedPathCard({ effr, feed = null }) {
         body: JSON.stringify({ fedPath: { price: px, contract, effr: effr ?? null, date: new Date().toISOString().slice(0, 10) } }),
       });
       const j = await r.json();
-      if (r.ok) { setData(d => ({ ...(d || {}), latest: j.fedPath })); setPrice(""); setMsg({ ok: true, text: `Saved — implied ${j.fedPath?.impliedRate}%` }); }
+      if (r.ok) { setData(d => ({ ...(d || {}), latest: j.fedPath })); setPrice(""); setMsg({ ok: true, text: `Saved — implied ${j.fedPath?.impliedRate}%` }); onSaved?.(); }
       else setMsg({ ok: false, text: j.error || "save failed" });
     } catch (e) { setMsg({ ok: false, text: String(e.message) }); }
     setSaving(false);
@@ -1256,6 +1257,80 @@ function FedPathCard({ effr, feed = null }) {
 // the comparison valid: compounding (SEC 30-day is annualised-simple → an APY column), withholding
 // (0% VERIFIED on USFR per the Jul 30 2026 distribution; SGOV UNVERIFIED until one is observed), and
 // liquidity (a locked deposit defeats a bucket held for deployment). Bank rate + WHT + size are manual.
+// ── THE USFR SEC-YIELD ENTRY ── one form, used by the Cash card and the Data health hand-entry hub.
+// The figure cannot be fetched (the issuer answers 403 to scripts), so this makes it a paste: the
+// issuer link, the exact field, and the fund's own as-of date. `onSaved` receives the store's
+// secYields after a successful save.
+function UsfrSecYieldForm({ liveInd, onSaved = null }) {
+  const [form, setForm] = useState({ paste: "", value: "", asOf: "" });
+  const [saveMsg, setSaveMsg] = useState(null);
+  const setEntered = (v) => { if (onSaved) onSaved(v); };
+  return (
+    <div style={{ marginTop: 6, padding: "7px 9px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 7 }}>
+      <div style={{ fontSize: 10.5, color: C.lbl, fontWeight: 700, marginBottom: 4 }}>
+        Update USFR — <a href={ISSUER_PAGE.USFR.url} target="_blank" rel="noreferrer" style={{ color: C.blue }}>
+          {ISSUER_PAGE.USFR.label}</a>, copy &ldquo;{ISSUER_PAGE.USFR.field}&rdquo; and its as-of date
+      </div>
+      {/* PASTE THE WHOLE THING. Retyping two numbers you are looking at is where the wrong
+          digit comes from, and the only reason this field exists is that the figure cannot be
+          fetched — so the hand path should be as close to a copy as it can be. Select the line
+          on the issuer page and drop it here; the two fields below fill in and stay editable. */}
+      <input value={form.paste}
+        onChange={e => {
+          const text = e.target.value;
+          const p = parseSecYieldPaste(text);
+          setForm(f => ({ ...f, paste: text,
+            value: p.value != null ? String(p.value) : f.value,
+            asOf: p.asOf || f.asOf }));
+          // TWO PERCENTAGES IN ONE PASTE IS AMBIGUOUS. "SEC 30-Day Yield" sits beside "12m
+          // Trailing Yield" on both pages, and taking the first silently is how the wrong one
+          // gets saved. It still fills — and it says which it took.
+          // Anchored on the "30-day SEC yield" label, so a paste of the whole header block
+          // takes the right figure rather than the first one — WisdomTree prints the
+          // DISTRIBUTION yield first, 14bp away and entirely plausible. Only an UNANCHORED
+          // paste with several figures needs a warning; an anchored one already knows.
+          setSaveMsg(!p.anchored && p.ambiguous
+            ? { ok: false, text: `That paste had ${p.ambiguous.length} percentages (${p.ambiguous.join("%, ")}%) and no "30-day SEC yield" label to anchor on — took ${p.value}%. Check it is the SEC yield, not the distribution or trailing one.` }
+            : p.anchored && p.ambiguous
+            ? { ok: true, text: `Took ${p.value}% from beside the "30-day SEC yield" label (the paste held ${p.ambiguous.length} figures).` }
+            : null);
+        }}
+        placeholder="paste the line from the issuer page, or fill the fields below"
+        style={{ width: "100%", boxSizing: "border-box", fontSize: 12, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, marginBottom: 5 }} />
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+        <input value={form.value} onChange={e => setForm(f => ({ ...f, value: e.target.value }))} placeholder="3.71%"
+          style={{ fontSize: 13, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 78 }} />
+        {/* A NATIVE DATE INPUT, so the as-of is picked from a calendar rather than typed in a
+            format the reader has to remember. `max` is today: the issuer's figure is dated to a
+            business day already past, and a future one is a typo the server refuses anyway. */}
+        <input type="date" value={form.asOf} max={new Date().toISOString().slice(0, 10)}
+          onChange={e => setForm(f => ({ ...f, asOf: e.target.value }))}
+          style={{ fontSize: 13, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6 }} />
+        <button onClick={async () => {
+          setSaveMsg(null);
+          // Parsed here too, so the typed path and the pasted path accept the same things —
+          // a form that takes "3.68%" only when pasted is a form with two rules.
+          const value = parseYieldValue(form.value);
+          if (value == null) { setSaveMsg({ ok: false, text: `"${form.value}" is not a yield — a number, with or without the % sign` }); return; }
+          try {
+            const r = await fetch("/api/manual-entry", { method: "POST", credentials: "include",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ secYield: { ticker: "USFR", value, asOf: form.asOf,
+                                                 dtb3AtAsOf: liveInd?.tbill3m ?? null } }) });
+            const j = await r.json();
+            if (!r.ok) { setSaveMsg({ ok: false, text: j?.error || `HTTP ${r.status}` }); return; }
+            setEntered(j?.secYields || null);
+            setForm({ paste: "", value: "", asOf: "" });
+            setSaveMsg({ ok: true, text: `Saved — USFR ${j?.secYields?.USFR?.value}% as of ${j?.secYields?.USFR?.asOf}` });
+          } catch (e) { setSaveMsg({ ok: false, text: String(e?.message || e) }); }
+        }} style={{ fontSize: 12, fontWeight: 700, padding: "6px 12px", borderRadius: 6, cursor: "pointer",
+                    border: "1.5px solid " + C.bdr, background: C.surf, color: C.mid }}>Save</button>
+      </div>
+      {saveMsg ? <div style={{ fontSize: 11, marginTop: 4, fontWeight: 700, color: saveMsg.ok ? C.green : C.amber }}>{saveMsg.text}</div> : null}
+    </div>
+  );
+}
+
 function CashComparisonCard({ liveInd }) {
   const [cfg, setCfg] = useState(() => cacheLoad("cash_compare_v1", { bankRate: "3.65", conv: "apy", term: "6mo", usfrWht: "0", sgovWht: "0", posUsd: "53418" }));
   const set = (k, v) => setCfg(prev => { const next = { ...prev, [k]: v }; cacheSave("cash_compare_v1", next); return next; });
@@ -1277,8 +1352,6 @@ function CashComparisonCard({ liveInd }) {
   // automated route while loading fine in a browser. A newer hand entry beats the constant in the
   // source; the constant remains the floor so the card never has nothing.
   const [entered, setEntered] = useState(null);
-  const [form, setForm] = useState({ paste: "", value: "", asOf: "" });
-  const [saveMsg, setSaveMsg] = useState(null);
   useEffect(() => {
     fetch("/api/manual-entry").then(r => r.json()).then(j => setEntered(j?.secYields || null)).catch(() => {});
   }, []);
@@ -1390,68 +1463,7 @@ function CashComparisonCard({ liveInd }) {
             the exact page, the exact field to copy, and the fund's own as-of date rather than
             today's — stamping a two-day-old figure with the moment it was typed is the defect this
             whole card is being fixed for. */}
-        <div style={{ marginTop: 6, padding: "7px 9px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 7 }}>
-          <div style={{ fontSize: 10.5, color: C.lbl, fontWeight: 700, marginBottom: 4 }}>
-            Update USFR — <a href={ISSUER_PAGE.USFR.url} target="_blank" rel="noreferrer" style={{ color: C.blue }}>
-              {ISSUER_PAGE.USFR.label}</a>, copy &ldquo;{ISSUER_PAGE.USFR.field}&rdquo; and its as-of date
-          </div>
-          {/* PASTE THE WHOLE THING. Retyping two numbers you are looking at is where the wrong
-              digit comes from, and the only reason this field exists is that the figure cannot be
-              fetched — so the hand path should be as close to a copy as it can be. Select the line
-              on the issuer page and drop it here; the two fields below fill in and stay editable. */}
-          <input value={form.paste}
-            onChange={e => {
-              const text = e.target.value;
-              const p = parseSecYieldPaste(text);
-              setForm(f => ({ ...f, paste: text,
-                value: p.value != null ? String(p.value) : f.value,
-                asOf: p.asOf || f.asOf }));
-              // TWO PERCENTAGES IN ONE PASTE IS AMBIGUOUS. "SEC 30-Day Yield" sits beside "12m
-              // Trailing Yield" on both pages, and taking the first silently is how the wrong one
-              // gets saved. It still fills — and it says which it took.
-              // Anchored on the "30-day SEC yield" label, so a paste of the whole header block
-              // takes the right figure rather than the first one — WisdomTree prints the
-              // DISTRIBUTION yield first, 14bp away and entirely plausible. Only an UNANCHORED
-              // paste with several figures needs a warning; an anchored one already knows.
-              setSaveMsg(!p.anchored && p.ambiguous
-                ? { ok: false, text: `That paste had ${p.ambiguous.length} percentages (${p.ambiguous.join("%, ")}%) and no "30-day SEC yield" label to anchor on — took ${p.value}%. Check it is the SEC yield, not the distribution or trailing one.` }
-                : p.anchored && p.ambiguous
-                ? { ok: true, text: `Took ${p.value}% from beside the "30-day SEC yield" label (the paste held ${p.ambiguous.length} figures).` }
-                : null);
-            }}
-            placeholder="paste the line from the issuer page, or fill the fields below"
-            style={{ width: "100%", boxSizing: "border-box", fontSize: 12, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, marginBottom: 5 }} />
-          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-            <input value={form.value} onChange={e => setForm(f => ({ ...f, value: e.target.value }))} placeholder="3.71%"
-              style={{ fontSize: 13, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6, width: 78 }} />
-            {/* A NATIVE DATE INPUT, so the as-of is picked from a calendar rather than typed in a
-                format the reader has to remember. `max` is today: the issuer's figure is dated to a
-                business day already past, and a future one is a typo the server refuses anyway. */}
-            <input type="date" value={form.asOf} max={new Date().toISOString().slice(0, 10)}
-              onChange={e => setForm(f => ({ ...f, asOf: e.target.value }))}
-              style={{ fontSize: 13, padding: "5px 8px", border: "1.5px solid " + C.bdr, borderRadius: 6 }} />
-            <button onClick={async () => {
-              setSaveMsg(null);
-              // Parsed here too, so the typed path and the pasted path accept the same things —
-              // a form that takes "3.68%" only when pasted is a form with two rules.
-              const value = parseYieldValue(form.value);
-              if (value == null) { setSaveMsg({ ok: false, text: `"${form.value}" is not a yield — a number, with or without the % sign` }); return; }
-              try {
-                const r = await fetch("/api/manual-entry", { method: "POST", credentials: "include",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ secYield: { ticker: "USFR", value, asOf: form.asOf,
-                                                     dtb3AtAsOf: liveInd?.tbill3m ?? null } }) });
-                const j = await r.json();
-                if (!r.ok) { setSaveMsg({ ok: false, text: j?.error || `HTTP ${r.status}` }); return; }
-                setEntered(j?.secYields || null);
-                setForm({ paste: "", value: "", asOf: "" });
-                setSaveMsg({ ok: true, text: `Saved — USFR ${j?.secYields?.USFR?.value}% as of ${j?.secYields?.USFR?.asOf}` });
-              } catch (e) { setSaveMsg({ ok: false, text: String(e?.message || e) }); }
-            }} style={{ fontSize: 12, fontWeight: 700, padding: "6px 12px", borderRadius: 6, cursor: "pointer",
-                        border: "1.5px solid " + C.bdr, background: C.surf, color: C.mid }}>Save</button>
-          </div>
-          {saveMsg ? <div style={{ fontSize: 11, marginTop: 4, fontWeight: 700, color: saveMsg.ok ? C.green : C.amber }}>{saveMsg.text}</div> : null}
-        </div>
+        <UsfrSecYieldForm liveInd={liveInd} onSaved={setEntered} />
         {modelErr ? (
           <div style={{ fontSize: 11, color: modelErr.diverged ? C.amber : C.muted }}>
             The bill-based estimate {modelErr.note.replace(/^checked/, "was checked")} — treat USFR&rsquo;s
@@ -1946,6 +1958,68 @@ const LEDGER_TONE = {
   due: { tok: STATUS.WATCH, word: "due — still used" }, fresh: { tok: STATUS.BENIGN, word: "fresh" },
   retired: { tok: null, word: "retired" }, undated: { tok: null, word: "undated" },
 };
+// ── THE HAND-ENTRY HUB ───────────────────────────────────────────────────────
+// Every hand-kept input in one list, in the order it needs you (lib/handEntry.js), each with the
+// SAME editor its own tab uses, opened in place — so keeping them current is one place, not five
+// tabs of scrolling. `renderEditor(editor)` is App's: it hands each editor the state and save path
+// it already has, and refreshes the store after a save so the row's age updates.
+function HandEntryRow({ r, isOpen, onToggle, renderEditor }) {
+  const t = LEDGER_TONE[r.state] || LEDGER_TONE.undated;
+  const col = t.tok ? t.tok.color : C.muted;
+  return (
+    <div style={{ borderTop: "1px solid " + C.bdr, padding: "8px 0" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: 0.4, color: col, background: t.tok ? t.tok.bg : "transparent", border: "1px solid " + (t.tok ? t.tok.bdr : C.bdr), borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap" }}>{t.word}</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: C.text, minWidth: 0, overflowWrap: "anywhere" }}>{r.label}</span>
+        <span style={{ fontSize: 11.5, color: C.muted }}>
+          {r.asOf ? `last ${r.asOf}` : "never entered"}{r.days != null && r.key !== "calendar" && r.key !== "holidays" ? ` · ${r.days}d` : ""}{r.cadence ? ` · ${r.cadence}` : ""}
+        </span>
+        {r.editable && (
+          <button onClick={onToggle} aria-expanded={isOpen}
+            style={{ marginLeft: "auto", fontSize: 12, fontWeight: 800, padding: "4px 10px", borderRadius: 6, cursor: "pointer", border: "1.5px solid " + (isOpen ? C.blue : C.bdr), background: isOpen ? C.blBg : C.surf, color: isOpen ? C.blue : C.mid }}>
+            {isOpen ? "Close" : "Update ▾"}
+          </button>
+        )}
+      </div>
+      <div style={{ fontSize: 11, color: C.lbl, marginTop: 3, lineHeight: 1.45 }}>
+        {r.editable ? r.rule : r.whyNot}
+        {r.source && <> · <a href={r.source.url} target="_blank" rel="noopener noreferrer" style={{ color: C.blue, fontWeight: 700 }}>{r.source.label} ↗</a></>}
+      </div>
+      {isOpen && <div style={{ marginTop: 8 }}>{renderEditor(r.editor)}</div>}
+    </div>
+  );
+}
+function HandEntryHub({ ledger, renderEditor }) {
+  const [open, setOpen] = useState(null);
+  if (!ledger) return null;
+  const plan = handEntryPlan(ledger.rows);
+  const row = (r) => <HandEntryRow key={r.key} r={r} isOpen={open === r.key} onToggle={() => setOpen(open === r.key ? null : r.key)} renderEditor={renderEditor} />;
+  const tok = plan.counts.overdue > 0 ? STATUS.ELEVATED : plan.counts.due > 0 ? STATUS.WATCH : STATUS.BENIGN;
+  return (
+    <Card id="hand-entry" style={{ borderLeft: "4px solid " + tok.color, scrollMarginTop: 170 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+        <SLabel>✍ Needs you — hand-kept inputs</SLabel>
+        <span style={{ fontSize: 12.5, color: C.text }}>
+          {plan.needsYou.length === 0 ? "all current" : `${plan.counts.overdue} overdue · ${plan.counts.due} due`} · {plan.counts.editable} you can update here
+        </span>
+      </div>
+      <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+        Each row opens the same editor its own tab uses and saves the same way; the age updates after a save. Inputs kept in the source are listed with who keeps them.
+      </div>
+      <div style={{ marginTop: 6 }}>
+        {plan.needsYou.length === 0 && <div style={{ fontSize: 12.5, color: C.green, fontWeight: 700, padding: "8px 0" }}>Nothing overdue or due.</div>}
+        {plan.needsYou.map(row)}
+      </div>
+      {plan.rest.length > 0 && (
+        <details style={{ marginTop: 6 }}>
+          <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, color: C.mid }}>Current, retired and automatic ({plan.rest.length})</summary>
+          {plan.rest.map(row)}
+        </details>
+      )}
+    </Card>
+  );
+}
+
 function HandKeptLedgerPanel({ ledger }) {
   if (!ledger) return null;
   const { rows, counts } = ledger;
@@ -4478,7 +4552,7 @@ function KoreaStressPanel({ korea }) {
 // AUTOMATIC, market-priced sentiment gauge from /api/indicators, the primary signal; (2) aggregate
 // Southbound net — a manual daily hand entry for the broad mainland-appetite backdrop. Trends are
 // 5d/20d since single days are noise. Self-fetches both; a save 401s if unauthenticated.
-function SouthboundPanel() {
+function SouthboundPanel({ onSaved = null } = {}) {
   const [manualSeries, setSeries] = useState([]);
   const [smicAH, setSmicAH] = useState(null);
   const [sbFeed, setSbFeed] = useState(null);
@@ -4524,6 +4598,7 @@ function SouthboundPanel() {
       if (r.ok) {
         const fresh = await fetch("/api/manual-entry").then(x => x.json()).catch(() => null);
         setSeries(fresh?.southbound?.series || []);
+        onSaved?.();
         setAgg(""); setSmic(""); setNotes(""); setMsg({ ok: true, text: `Saved ${date}` });
       } else setMsg({ ok: false, text: j.error || "save failed" });
     } catch (e) { setMsg({ ok: false, text: String(e.message) }); }
@@ -5814,6 +5889,10 @@ export default function App() {
   useEffect(() => {
     fetch("/api/manual-entry").then(r => r.json()).then(j => { setRecessionOverrides(j.recession || {}); setIsmEntry(j.ism || null); setManualStore(j); }).catch(() => {});
   }, []);
+  // After a save from the hand-entry hub: re-read the store so the ledger's ages update.
+  const refreshManual = () => {
+    fetch("/api/manual-entry").then(r => r.json()).then(j => { setRecessionOverrides(j.recession || {}); setIsmEntry(j.ism || null); setManualStore(j); }).catch(() => {});
+  };
 
   const { prices, loading: pricesLoading, updated: pricesUpdated, fetchPrices } = useLivePrices();
   const { live: liveInd, loading: indLoading, updated: indUpdated, error: indError, fetchIndicators } = useLiveIndicators();
@@ -6009,6 +6088,8 @@ export default function App() {
     // Smart Money: the analyst board's FOMC row reads the latest statement from the US payload.
     // Ticker: the next-earnings card reads the calendar rows from the same payload.
     else if (tab === "drivers" || tab === "insurance" || tab === "calendar" || tab === "street" || tab === "ticker") fetchPlaybookRegion("us");
+    // Data health: the hand-entry hub's Korea editor and the ledger's KOFIA rows read the Asia payload.
+    else if (tab === "health") { fetchPlaybookRegion("asia"); fetchPlaybookRegion("us"); }
   }, [tab, pbRegions, fetchPlaybookRegion]);
 
   // Load manual deploy-stage toggles + portfolio value from localStorage
@@ -6857,6 +6938,7 @@ export default function App() {
       setTab(r.tab);
       if (r.tab === "gex" && r.symbol) setGexRequest({ symbol: r.symbol, n: Date.now() });
       if (r.tab === "ticker" && r.symbol) setTickerSym(r.symbol);
+      if (r.anchor) setTimeout(() => document.getElementById(r.anchor)?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
     } else if (r.action === "refresh") { fetchPrices(HEADER_TICKERS); fetchIndicators(); }
     else if (String(r.action || "").startsWith("theme:")) setTheme(r.action.slice(6));
   };
@@ -7015,7 +7097,7 @@ export default function App() {
                   const g = ia.latest?.confirmation?.status === "confirmed" ? "CONFIRMED" : "SUSPECTED";
                   return <span title={ia.headline}>{flag(`⚑ YEN INTERVENTION ${g}`)}</span>; })()}
                 {regimeDiverged && flag("📌 PINNED ≠ LIVE")}
-                {(ledger.counts.stale + ledger.counts.missing) > 0 && <span onClick={() => setTab(HEALTH_TAB.id)} style={{ cursor: "pointer" }} title={`${ledger.counts.stale} stale, ${ledger.counts.missing} never entered — open Data health`}>{flag(`✍ ${ledger.counts.stale + ledger.counts.missing} HAND-KEPT OUT`)}</span>}
+                {(ledger.counts.stale + ledger.counts.missing) > 0 && <span onClick={() => runGo({ tab: HEALTH_TAB.id, anchor: "hand-entry" })} style={{ cursor: "pointer" }} title={`${ledger.counts.stale} stale, ${ledger.counts.missing} never entered — open the hand-entry list`}>{flag(`✍ ${ledger.counts.stale + ledger.counts.missing} HAND-KEPT OUT`)}</span>}
                 {stateFeed?.source === "stale" && flag("GAUGES: LAST GOOD COPY")}
               </div>
             );
@@ -7156,6 +7238,22 @@ export default function App() {
         )}
         {tab === "health" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <HandEntryHub ledger={ledger} renderEditor={(editor) => {
+              // The same components, props and save paths as on their own tabs.
+              if (editor === "ism") return <IsmEntryPanel entry={ismEntry} onChange={(v) => { setIsmEntry(v); refreshManual(); }} />;
+              if (editor === "usfr") return <UsfrSecYieldForm liveInd={liveInd} onSaved={refreshManual} />;
+              if (editor === "korea") return pbData?.asia?.kofia
+                ? <KoreaManualEntry kofia={pbData.asia.kofia} gate2={pbData.asia.won?.gate2 ?? null} onSaved={() => fetchPlaybookRegion("asia")} />
+                : <div style={{ fontSize: 12, color: C.muted }}>Loading the Asia payload the Korea entry reads…</div>;
+              if (editor === "fedPath") return <FedPathCard effr={liveInd?.fedPathFeed?.effr ?? liveInd?.currentFedFunds ?? null} feed={liveInd?.fedPathFeed ?? null} onSaved={refreshManual} />;
+              if (editor === "southbound") return <SouthboundPanel onSaved={refreshManual} />;
+              if (editor === "intervention") return <InterventionToggle
+                jpyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "JPY=X")?.changePct ?? null}
+                dxyChangePct={pbData?.us?.cross?.fx?.rows?.find(r => r.sym === "DX-Y.NYB")?.changePct ?? null}
+                onChange={(v) => { setLiveIntervention(v); refreshManual(); }} auto={pbData?.us?.interventionAuto ?? null} />;
+              if (editor === "recession") return <RecessionEntryPanel overrides={recessionOverrides} onSaved={(v) => { setRecessionOverrides(v); refreshManual(); }} />;
+              return null;
+            }} />
             <FeedHealth feed={stateFeed} indErrors={liveInd?.feedErrors} indUpdated={indUpdated ? indUpdated.toISOString() : null} />
             <CrossCheckHealth xc={xcHealth} />
             <HandKeptLedgerPanel ledger={ledger} />
