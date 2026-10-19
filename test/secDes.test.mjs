@@ -47,6 +47,9 @@ eq('a share class is written the SEC way', secTicker('xyz.b'), 'XYZ-B');
 eq('the ticker list, compacted', tickerMap({ 0: { cik_str: 123456, ticker: 'XYZ', title: 'XYZ CORP' } }), { XYZ: [123456, 'XYZ CORP'] });
 
 // ── fetch, cache and the ways it says no ──
+// The SEC contact comes from SEC_USER_AGENT; the test sets a made-up one and puts the real value back.
+const keepUa = process.env.SEC_USER_AGENT;
+process.env.SEC_USER_AGENT = 'dvcap test@example.invalid';
 {
   const store = {};
   const kv = { configured: () => true, get: async (k) => store[k] ?? null, setEx: async (k, v) => { store[k] = v; } };
@@ -59,7 +62,7 @@ eq('the ticker list, compacted', tickerMap({ 0: { cik_str: 123456, ticker: 'XYZ'
   };
   const now = new Date('2026-10-30T08:00:00Z');
   const a = await fetchDes('xyz', { now, fetchImpl, kv });
-  eq('the first read goes to EDGAR, names itself, and is kept', [a.ok, a.cache, a.name, urls.length, urls.every(u => /dvcap/.test(u[1])), !!store[DES_KEY('XYZ')]], [true, 'live', 'XYZ CORP', 3, true, true]);
+  eq('the first read goes to EDGAR, names itself, and is kept', [a.ok, a.cache, a.name, urls.length, urls.every(u => u[1] === 'dvcap test@example.invalid'), !!store[DES_KEY('XYZ')]], [true, 'live', 'XYZ CORP', 3, true, true]);
   const b = await fetchDes('XYZ', { now: new Date(now.getTime() + 3600e3), fetchImpl, kv });
   eq('within 12 hours the kept copy is served', [b.cache, urls.length], ['kv', 3]);
   const etf = await fetchDes('ABCD', { now, fetchImpl, kv });
@@ -68,7 +71,13 @@ eq('the ticker list, compacted', tickerMap({ 0: { cik_str: 123456, ticker: 'XYZ'
   const down = async () => ({ ok: false, status: 503, json: async () => null });
   const none = { configured: () => false };
   eq('EDGAR down with nothing kept says so', (await fetchDes('XYZ', { now, fetchImpl: down, kv: none })).why, 'SEC ticker list unavailable (HTTP 503)');
+  // No contact configured: nothing is sent to SEC, and the page says what to set.
+  delete process.env.SEC_USER_AGENT;
+  let sent = 0;
+  const why = (await fetchDes('XYZ', { now, fetchImpl: async () => { sent++; return { ok: true, json: async () => ({}) }; }, kv: none })).why;
+  eq('without a contact nothing reaches SEC, and it says so', [sent, /SEC_USER_AGENT/.test(why || '')], [0, true]);
 }
+if (keepUa === undefined) delete process.env.SEC_USER_AGENT; else process.env.SEC_USER_AGENT = keepUa;
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
