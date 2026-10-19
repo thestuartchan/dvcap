@@ -1,0 +1,60 @@
+# Exchange holidays, generated rather than topped up by hand (scripts/holidays-fetch.py).
+#
+# WHEN. Exchanges announce the coming year's closures through the autumn, and exchange_calendars
+# follows them in its releases. Two runs a year — 15 Oct and 1 Dec — fill next year's dates for any
+# exchange the file has none for yet; a year already in the file is never touched, so a hand
+# correction always stands. Manual runs can name the years (e.g. 2028).
+#
+# WHERE IT GOES. data/holidays.json, committed to main; the commit redeploys, which is how the
+# session logic, freshness labels and pre-read timing pick it up. The log prints counts only, and
+# the dates are public exchange calendars — nothing about the account.
+name: holidays fetch
+
+on:
+  schedule:
+    - cron: '20 3 15 10 *'
+    - cron: '20 3 1 12 *'
+  workflow_dispatch:
+    inputs:
+      years:
+        description: 'Years to fill, comma-separated (default: next year)'
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: holidays-fetch
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install the pinned calendar rules
+        run: pip install --quiet exchange_calendars==4.13.2
+      - name: Fill next year's closures and early closes
+        env:
+          YEARS: ${{ github.event.inputs.years }}
+        run: |
+          if [ -n "$YEARS" ]; then python scripts/holidays-fetch.py data/holidays.json --years="$YEARS"; else python scripts/holidays-fetch.py data/holidays.json; fi
+      - name: Commit
+        run: |
+          if git diff --quiet -- data/holidays.json; then echo "no change to commit"; exit 0; fi
+          git config user.name "dvcap-bot"
+          git config user.email "dvcap-bot@users.noreply.github.com"
+          git add data/holidays.json
+          git commit -m "Holidays auto — exchange calendars @ $(date -u +%F)"
+          for i in 1 2 3; do
+            if git push origin HEAD:main; then exit 0; fi
+            git fetch origin main && git rebase origin/main || exit 1
+            sleep $((i * 5))
+          done
+          echo "::error::could not push after three attempts"; exit 1

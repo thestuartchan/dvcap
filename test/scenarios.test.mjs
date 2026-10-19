@@ -213,80 +213,64 @@ const NOW = '2026-09-03T08:00:00Z';
 
 // ── THE FALSIFIER IS SCORED, NOT NARRATED ────────────────────────────────────
 // Observed on the live board 2026-09-09: KM rendered "2/3 · one leg away" while both halves of its
-// own falsifier were true ON THE SAME SCREEN — CSOP 7709 units −7.2% (still falling) and VKOSPI
-// −3.36%, which the Korea panel itself labelled "rolling over" and independently called
-// EXHAUSTING. The break condition was grey prose; nothing evaluated it.
+// own falsifier were true ON THE SAME SCREEN. The break condition was grey prose; nothing
+// evaluated it. KM now reads the KOFIA / KRX store (lib/koreaUnwind.js); the rule is the same:
+// price turning while the leverage is still coming out is the seller finishing. Made-up figures.
 {
   const KM = (live) => evaluateScenarios(live).find(s => s.id === 'KM');
+  const day = '2026-09-09';
+  const km = (marginPct, kospiPct, foreign) => ({ kofiaKm: {
+    margin: marginPct == null ? null : { value: marginPct, atr: 1.0, date: day },
+    kospi: kospiPct == null ? null : { value: kospiPct, atr: 2.0, date: day },
+    foreignNet: foreign == null ? null : { value: foreign, date: day } } });
 
-  // The board exactly as it was.
-  const observed = KM({
-    korea: { volBand: 'EXTREME', volRolling: true, date: '2026-09-09' },
-    units7709: { value: -7.2, atr: 2.0, date: '2026-09-09' },
-  });
-  eq('the observed KM board is BROKEN', observed.status, 'BROKEN');
+  // The seller exhausting: margin still being cut, KOSPI up.
+  const observed = KM(km(-2.5, +3.0, -800));
+  eq('KOSPI up while margin is still being cut is BROKEN', observed.status, 'BROKEN');
   eq('and flagged on the object', observed.broken, true);
-  // The count that was misleading is still computed and still true — it is demoted, not deleted.
-  eq('the entry count is unchanged', [observed.met, observed.total], [2, 3]);
+  eq('the entry count is still computed', [observed.met, observed.total], [2, 3]);
   eq('both break legs fired', [observed.breakMet, observed.breakTotal], [2, 2]);
-  ok('and each is named', observed.brokenBy.length === 2);
-  ok('the vol leg by name', observed.brokenBy.some(b => /VKOSPI rolling over/.test(b)));
-  ok('the units leg by name', observed.brokenBy.some(b => /units still falling/.test(b)));
-  // THE POINT OF THE WHOLE CHANGE: it must not sort or read as "close to firing".
+  ok('the price leg by name', observed.brokenBy.some(b => /KOSPI rising/.test(b)));
+  ok('the margin leg by name', observed.brokenBy.some(b => /Margin loans still falling/.test(b)));
   eq('a broken scenario is not close to firing', observed.proximity, -1);
   ok('and cannot be confirmed', !observed.confirmed);
 
-  // Still live: the seller is going but the vol has not rolled. Same units, one flag flipped.
-  const running = KM({
-    korea: { volBand: 'EXTREME', volRolling: false, date: '2026-09-09' },
-    units7709: { value: -7.2, atr: 2.0, date: '2026-09-09' },
-  });
-  eq('with VKOSPI not yet rolled it is CONFIRMED, not broken', running.status, 'CONFIRMED');
+  // Still running: margin cut hard, foreigners selling, KOSPI down.
+  const running = KM(km(-2.5, -4.0, -1500));
+  eq('margin cut, foreigners selling and KOSPI down is CONFIRMED', running.status, 'CONFIRMED');
   eq('nothing broke', running.broken, false);
-  eq('and the entry count went UP, not down', running.met, 3);
+  eq('all three entry legs met', running.met, 3);
+  eq('the flow leg shows the won amount', running.conditions.find(c => /Foreigners/.test(c.label)).display, '₩−1,500bn');
 
-  // Vol rolled but the selling stopped: the conjunction is half true and must NOT break it.
-  const halfway = KM({
-    korea: { volBand: 'EXTREME', volRolling: true, date: '2026-09-09' },
-    units7709: { value: +3.1, atr: 2.0, date: '2026-09-09' },
-  });
+  // KOSPI up but margin growing again: half the conjunction, not a break.
+  const halfway = KM(km(+1.8, +3.0, 200));
   eq('one leg of an "all" falsifier is not a break', halfway.broken, false);
   eq('though it is counted', halfway.breakMet, 1);
 
-  // A conjunction with an unreadable leg is UNKNOWN, not satisfied. Letting a dark input count as
-  // met would retire scenarios for having no data, which is the opposite of the intent.
-  const blind = KM({ korea: { volBand: 'EXTREME', volRolling: true, date: '2026-09-09' } });
-  eq('an "all" break with a missing leg does not fire', blind.broken, false);
+  // No KOFIA input at all is UNKNOWN, not satisfied.
+  const blind = KM({});
+  eq('with no Korea store the break does not fire', blind.broken, false);
   ok('and the scenario keeps its normal status', blind.status !== 'BROKEN');
 }
 
 // The ATR gate applies to breaks exactly as it does to entries — a break called off a move too
-// small to read is the same error a confirmation would be, and more expensive, because it retires
-// a scenario rather than raising one.
+// small to read is the same error a confirmation would be, and more expensive.
 {
-  const tiny = evaluateScenarios({
-    korea: { volBand: 'EXTREME', volRolling: true, date: '2026-09-09' },
-    units7709: { value: -0.1, atr: 2.0, date: '2026-09-09' },
-  }).find(s => s.id === 'KM');
-  eq('a sub-ATR fall does not break it', tiny.broken, false);
+  const tiny = evaluateScenarios({ kofiaKm: {
+    margin: { value: -0.1, atr: 1.0, date: '2026-09-09' }, kospi: { value: +3.0, atr: 2.0, date: '2026-09-09' }, foreignNet: { value: -10, date: '2026-09-09' } } }).find(s => s.id === 'KM');
+  eq('a sub-ATR margin fall does not break it', tiny.broken, false);
   eq('the leg is neutral, not false', tiny.breakConditions.find(c => /still falling/.test(c.label)).met, null);
 }
 
-// Break vintage is checked over the BREAK's own inputs. Entry legs disagreeing on their dates says
-// nothing about whether the disproof is composable, and letting that veto would leave a dead
-// scenario reading "one leg away" for a reason that has nothing to do with it.
+// Break vintage is checked over the BREAK's own inputs. lib/koreaUnwind.js aligns them on one
+// date; if they ever disagree the break is stated as unverified rather than fired.
 {
-  const mixed = evaluateScenarios({
-    korea: { volBand: 'EXTREME', volRolling: true, date: '2026-09-01' },
-    units7709: { value: -7.2, atr: 2.0, date: '2026-09-09' },
-  }).find(s => s.id === 'KM');
+  const mixed = evaluateScenarios({ kofiaKm: {
+    margin: { value: -2.5, atr: 1.0, date: '2026-09-08' }, kospi: { value: +3.0, atr: 2.0, date: '2026-09-09' }, foreignNet: { value: -10, date: '2026-09-09' } } }).find(s => s.id === 'KM');
   eq('break inputs from different days do not break it', mixed.broken, false);
   eq('and that is stated', mixed.breakUnverified, true);
-  // `dates` is keyed BY CONDITION LABEL, not a list — so the reader can see which input is stale
-  // rather than only that something is. Both legs must appear, with their own dates.
   eq('both break inputs are named with their dates', mixed.breakVintage.dates,
-    { 'VKOSPI rolling over': '2026-09-01', '7709 units still falling': '2026-09-09' });
-  ok('and the reason spells it out', /observation dates disagree/.test(mixed.breakVintage.reason));
+    { 'KOSPI rising': '2026-09-09', 'Margin loans still falling': '2026-09-08' });
 }
 
 // "either horizon" is a DISJUNCTION and must not be collapsed into the conjunction rule.

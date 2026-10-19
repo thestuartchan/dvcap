@@ -19,6 +19,7 @@ import { heatCells, heatAlpha, spotSlot, withGrossShares, horizonGrid, isMonthly
 import { oiSettledLabel } from "../lib/gexFeed.js";
 import { levelsOf, mustShow, rateLine, rateFarOut } from "../lib/gexLevels.js";
 import { pineFor } from "../lib/pine.js";
+import { dubaiEt, dubaiEtStamp } from "../lib/timeFmt.js";
 import { gexDays, gexSummary, todayTellInputs, TREND_MOVE, TREND_EFF, WIDE_RANGE } from "../lib/gexDays.js";
 import { tellsFor, tellsHeadline, shownTells, BACKTEST, BASE_RATE, FIRST_HOUR_BASE, CUSHION, CUSHION_SOURCE } from "../lib/trendTells.js";
 // The New York date, for which expiries are already today's (the week view hides them).
@@ -151,7 +152,7 @@ function DecayTile({ d }) {
 function CrossCheck({ x, of = null }) {
   if (!x) return null;
   // Whose numbers this was run against, when they are not the ones on screen.
-  const from = of ? `${(of.asOf || of.date || "").slice(0, 16).replace("T", " ")}Z capture` : null;
+  const from = of ? `${of.asOf ? dubaiEtStamp(of.asOf) : (of.date || "")} capture` : null;
   if (!x.ok) {
     return (
       <div style={{ marginTop: 9, fontSize: 11.5, color: C.muted, paddingTop: 8, borderTop: "1px solid " + C.bdr }}>
@@ -206,13 +207,16 @@ function CrossCheck({ x, of = null }) {
         The flip is not cross-checked: CBOE publishes gamma at the current spot only, and solving a
         flip needs it repriced across a range — that would be their data through our model, which is
         a different claim. Walls, open interest and vol are theirs end to end.
-        {x.asOf && ` Their snapshot ${new Date(x.asOf).toISOString().slice(11, 16)} UTC.`}
+        {x.asOf && ` Their snapshot ${dubaiEt(x.asOf)}.`}
       </div>
     </div>
   );
 }
 
-export function GexPanel() {
+// `request` — { symbol, n } from the Go bar ("QQQ GEX", "XYZ GEX"): a book symbol selects its tab,
+// any other root runs the custom read, exactly as typing it in the box here would. `n` changes on
+// every request so asking for the same name twice still acts.
+export function GexPanel({ request = null, onRequestDone = null }) {
   const [symbol, setSymbol] = useState("QQQ");
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
@@ -400,6 +404,16 @@ export function GexPanel() {
     setCustomBusy(false);
   };
 
+  useEffect(() => {
+    const sym = String(request?.symbol || "").trim().toUpperCase();
+    if (!sym) return;
+    if ((data?.symbols || ["QQQ", "SPY"]).includes(sym)) pickBook(sym);
+    else { setCustomInput(sym); lookUpCustom(sym); }
+    onRequestDone?.();
+    // Only a new request acts; the board loading underneath must not re-run it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request?.n]);
+
   const latest = live?.row || data?.latest || null;
   const strikeSource = live?.byStrike || data?.byStrike || null;
   // Expiry shares on GROSS gamma; a board stored before the grid carried it gets it from its cells.
@@ -407,6 +421,9 @@ export function GexPanel() {
   const grid = useMemo(() => (rawGrid?.expiries?.some(e => e.grossGexUsd == null) ? withGrossShares(rawGrid) : rawGrid), [rawGrid]);
   const decay = live?.decay || data?.decay || null;
   const fresh = ageOf(latest?.asOf || (latest?.date ? `${latest.date}T13:00:00Z` : null));
+  // The session first, then the hours (P3): "Fri 16 Oct close ET, after monthly expiry · 3.4h ago"
+  // rather than an age that reads like an intraday print.
+  const ageText = fresh.session ? `${fresh.session.label} · ${fresh.label}` : fresh.label;
   // ── THE THREE DOWNSIDE OBJECTS ──
   // Computed server-side on every path and carried on the response; recomputed here only when a
   // row arrived without them (a build from before the split), so the tiles never go blank.
@@ -519,10 +536,10 @@ export function GexPanel() {
                   rather than "settled book" over a body that says live. */}
               {live ? (live.mode === "repriced" ? "◐ repriced"
                      : live.mode === "settled" ? `● live recompute · ${oiSettledLabel(live.vintage)}`
-                     : "● live") : fresh.label}
+                     : "● live") : ageText}
             </span>
           )}
-          {latest && live && <span style={{ fontSize: 11, color: C.muted, fontWeight: 700, marginLeft: 8 }}>{fresh.label}</span>}
+          {latest && live && <span style={{ fontSize: 11, color: C.muted, fontWeight: 700, marginLeft: 8 }}>{ageText}</span>}
           {latest && fresh.stale && <StaleChip />}
           {pineMsg && <span style={{ fontSize: 11.5, color: C.mid, fontWeight: 700, marginLeft: 8 }}>{pineMsg}</span>}
         </span>
@@ -575,7 +592,7 @@ export function GexPanel() {
           );
         })}
         <div style={{ marginTop: 5, display: "flex", gap: 10, alignItems: "center" }}>
-          <span style={{ color: C.muted, fontSize: 10.5 }}>issued {String(feed.createdAt || "").slice(0, 16).replace("T", " ")}Z</span>
+          <span style={{ color: C.muted, fontSize: 10.5 }}>issued {feed.createdAt ? dubaiEtStamp(feed.createdAt) : "—"}</span>
           <button onClick={() => loadFeed(true)}
             style={{ cursor: "pointer", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 6, border: "1px solid " + C.aBdr, background: C.aBg, color: C.amber }}>replace URL</button>
         </div>
@@ -617,7 +634,7 @@ export function GexPanel() {
       so this is that day's settled open interest and implied vols at the current spot and time decay.
       <div style={{ color: C.mid, marginTop: 3 }}>
         Live: the spot and the time to every expiry. Not live: the open interest, and the vol surface —
-        a vol move since {live.note.capturedAt ? new Date(live.note.capturedAt).toISOString().slice(0, 16).replace("T", " ") + " UTC" : "the capture"} does not show up here.
+        a vol move since {live.note.capturedAt ? dubaiEtStamp(live.note.capturedAt) : "the capture"} does not show up here.
         {live.note.expiredSinceCapture > 0 && ` ${live.note.expiredSinceCapture} contract${live.note.expiredSinceCapture === 1 ? " has" : "s have"} expired since, and dropped out — the walls move for that reason alone.`}
       </div>
     </div>

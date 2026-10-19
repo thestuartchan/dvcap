@@ -8,6 +8,7 @@
 // measured one, never an input to it.
 //
 // Pure rendering: App fetches and computes, these draw. Nothing here reads private data.
+import { dubaiEtStamp } from "../lib/timeFmt.js";
 import { useState } from "react";
 import { C, alpha } from "./theme.js";
 import { Card, SLabel, StaleChip } from "./ui.jsx";
@@ -15,6 +16,7 @@ import { REGIME_PALETTE } from "../lib/regimes.js";
 import { QUADRANTS, BANDS, STRESS_AT, CONDITION_SIZING, DRIVER_GROUPS, seriesHealth, STAGE_AT, STAGE_LABEL, INSTRUMENTS } from "../lib/marketState.js";
 import { readSnapshot, bookLine, ageText } from "../lib/bookSnapshot.js";
 import { REGIME_SIZING } from "../lib/sizing.js";
+import { ordinal } from "../lib/ordinal.js";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 const QORDER = ["ref", "inf", "stag", "def"];
@@ -37,7 +39,7 @@ const pretty = (s) => (s ? s.replace(/_/g, " ").replace(/^./, c => c.toUpperCase
 const fmtWhen = (iso) => {
   if (!iso) return "—";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return Number.isNaN(d.getTime()) ? "—" : dubaiEtStamp(d);
 };
 const fmtDay = (iso) => (iso ? new Date(iso + "T12:00:00Z").toLocaleDateString([], { month: "short", day: "numeric", timeZone: "UTC" }) : "—");
 
@@ -565,7 +567,7 @@ export function DriverTile({ s, health }) {
       <Spark values={s.spark} height={28} />
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 6, alignItems: "center" }}>
         <Bar pct={s.pctile} color={C.blue} height={5} marks={[50]} />
-        <span style={{ fontSize: 10, color: C.muted, fontFamily: MONO }}>{s.pctile != null ? `${s.pctile}th pct` : "—"}</span>
+        <span style={{ fontSize: 10, color: C.muted, fontFamily: MONO }}>{s.pctile != null ? `${ordinal(s.pctile)} pct` : "—"}</span>
       </div>
       <div style={{ fontSize: 9.5, color: C.lbl }}>{s.src}</div>
     </div>

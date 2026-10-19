@@ -238,6 +238,9 @@ export default async function handler(req, res) {
   // set, its length and the first 8 hex of its SHA-256: enough to compare with a hash computed on
   // your own machine, never enough to recover or use the token.
   if (String(req.query?.mcpcheck || '') === '1') {
+    // Behind the login: the hash prefix cannot recover the token, but the request log beside it
+    // (who called, with what, whether the token matched) is connector metadata, not public data.
+    if (!(await authorised(req))) { res.setHeader('Cache-Control', 'private, no-store'); return res.status(401).json({ error: 'sign in to the dashboard first' }); }
     const t = String(process.env[MCP_TOKEN_ENV] || '').trim();
     return res.status(200).json({ configured: t.length > 0, length: t.length, long_enough: t.length >= MCP_TOKEN_MIN,
       sha256_prefix: t ? createHash('sha256').update(t).digest('hex').slice(0, 8) : null,

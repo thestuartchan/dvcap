@@ -6,6 +6,8 @@
 import { assembleRegion } from '../lib/assemble.js';
 import { structure } from '../lib/regime.js';
 import { weekHighlights } from '../lib/calendar.js';
+import { autoCalendar } from '../lib/calendarAutoFetch.js';
+import { mergeAuto } from '../lib/calendarAuto.js';
 import { auctionEvents } from '../lib/auctions.js';
 import { freshness, sessionPhase, localClock } from '../lib/sessions.js';
 import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
@@ -45,6 +47,9 @@ export default async function handler(req, res) {
   const indices = idxRaw.map((q, i) => ({ ...q, name: R.indices[i].name, freshness: freshness(q.sym, q), session: sessionPhase(q.sym) }));
 
   // Region-level session badge: phase of the region's primary index + a live local clock.
+  // The automatic macro calendar (lib/calendarAuto.js) — central-bank decisions and US releases read
+  // from the bodies that set them, cached 12h. A failure costs only these rows.
+  const calAuto = await autoCalendar().catch(e => ({ events: [], sources: { all: { ok: false, error: String(e?.message || e).slice(0, 120) } } }));
   const primaryIdxSym = R.indices[0]?.sym;
   const regionSession = primaryIdxSym ? sessionPhase(primaryIdxSym) : 'closed';
   const regionClock   = localClock(R.tz);
@@ -86,10 +91,18 @@ export default async function handler(req, res) {
     interventionAuto,     // F3  — the automatic yen flag: price scan + MoF confirmation (lib/interventionAuto.js)
     auctions,             // P7  — Treasury auction calendar + how the last long-end one went
     vintages,             // P4-A — every gate's observation date, and whether it is late for its own schedule
+    // The automatic calendar whole, for Markets › Calendar's quarter-long view, with each source's
+    // count or the reason it gave nothing (Data health reads the same).
+    calendarAuto: { at: calAuto.at ?? null, cache: calAuto.cache ?? null, sources: calAuto.sources || {}, events: calAuto.events || [] },
     // Announced auctions ride in the hand-maintained calendar's own shape, so every consumer of
-    // this field gets them without knowing they came from a feed.
+    // this field gets them without knowing they came from a feed. The automatic dates join the
+    // same way, inside the same window, wherever the hand-kept list has nothing of that kind.
     calendar: (() => { const hand = weekHighlights();
-                       return [...hand, ...auctionEvents(auctions, hand)]
+                       const today = new Date().toISOString().slice(0, 10);
+                       const shift = (n) => new Date(Date.parse(`${today}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+                       const auto = mergeAuto(hand, (calAuto.events || []).filter(e => e.date >= shift(-2) && e.date < shift(10)))
+                         .map(e => ({ ...e, reported: e.date < today }));
+                       return [...hand, ...auto, ...auctionEvents(auctions, hand)]
                          .sort((a, b) => String(a.date).localeCompare(String(b.date))); })(),
     // `series` is the authoritative dated store (one row per observation date, ordered);
     // `history` stays for backward compatibility with older cached clients.

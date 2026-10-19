@@ -567,9 +567,19 @@ select option:disabled { color: var(--text-muted); }
   .mwd-tagline { display: none !important; }
   .mwd-title   { font-size: 16px !important; }
 
-  /* "act / read / revisit" earns its place on a wide screen and steals width on a narrow one,
-     where the group names alone already fit. */
+  /* The group hints earn their place on a wide screen and steal width on a narrow one, where the
+     group names alone already fit. */
   .mwd-group-hint { display: none !important; }
+  /* The Data health pill keeps only its dot, so four groups and the dot fit a phone's width. */
+  .mwd-data-label { display: none !important; }
+  /* Four groups, the GO key and the status dot share one phone-width row. */
+  .mwd-grouprow { gap: 4px !important; }
+  .mwd-group-btn { padding: 5px 8px !important; }
+  .mwd-nav-pill { padding: 5px 8px !important; }
+}
+/* The smallest phones (360px) need a little more back for the same row. */
+@media (max-width: 380px) {
+  .mwd-group-btn { padding: 5px 6px !important; font-size: 12.5px !important; }
 }
 
 /* Both nav rows scroll sideways rather than wrap: a wrapped row silently doubles the height of

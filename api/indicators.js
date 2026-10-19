@@ -6,7 +6,7 @@ import { stateInputs } from "../lib/marketStateFeed.js";
 import { crossCheckPayload } from "../lib/crossCheckFeed.js";
 import { crossCheckHealth } from "../lib/crossCheck.js";
 import { conditions, conditionsAt, liquidity, seriesStats, inflationMomentum } from "../lib/marketState.js";
-import { zqMovesPriced } from "../lib/fedpath.js";
+import { zqMovesPriced, sixMonthPath } from "../lib/fedpath.js";
 import { fetchSmicAHPremium } from "../lib/smicah.js";
 import { fetchSouthbound } from "../lib/hkexSouthbound.js";
 import { fredJsonEx } from '../lib/fred.js';
@@ -837,7 +837,7 @@ export default async function handler(req, res) {
       fredPair("A191RL1Q225SBEA"),
       fetchEtfYield("USFR"),   // cash-ETF yields, computed from real distributions
       fetchEtfYield("SGOV"),
-      // Section B — ACM 10Y term premium. MODEL ESTIMATE, not a market price: direction and
+      // Section B — Kim-Wright 10Y term premium (Fed Board; FRED THREEFYTP10). MODEL ESTIMATE, not a market price: direction and
       // trend only, never the absolute level. ID verified against FRED metadata on every fetch.
       fredLabor("THREEFYTP10", "term premium"),
       // P1 — every labour series, each identity-checked against FRED's own metadata title.
@@ -941,15 +941,14 @@ export default async function handler(req, res) {
     }
 
     // ── Market-implied Fed policy change ──────────────────────────────────────
-    // Proxy: current Fed funds effective rate vs the 6-month T-bill. When the 6m
-    // bill yields less than Fed funds, the market is pricing rate cuts → positive
-    // bps. Negative bps = market pricing hikes. Null if either fetch is missing.
-    const currentFedFunds = fedFundsRaw.value > 0 ? fedFundsRaw.value : null;
-    const tbill6m = tbill6mRaw.value > 0 ? tbill6mRaw.value : null;
+    // Proxy: the daily effective rate vs the 6-month T-bill. When the 6m bill yields less than
+    // the policy rate, the market is pricing cuts → positive bps; negative = hikes. The monthly
+    // FEDFUNDS average is only the fallback (lib/fedpath.js sixMonthPath says why).
+    const path6m = sixMonthPath({ effr: effrRaw, fedFunds: fedFundsRaw, tbill6m: tbill6mRaw });
+    const currentFedFunds = path6m.rate;
+    const tbill6m = path6m.tbill6m;
     const tbill3m = tbill3mRaw.value > 0 ? tbill3mRaw.value : null;
-    const impliedCutsBps = (currentFedFunds != null && tbill6m != null)
-      ? Math.round((currentFedFunds - tbill6m) * 100)
-      : null;
+    const impliedCutsBps = path6m.bps;
 
     // ── Sanity clamp: flag any scalar outside a plausible band (don't silently render) ──
     const BANDS = { dxy: [70, 130], tenY: [0, 10], twoY: [0, 10], unemployment: [2, 12], creditSpread: [1, 25] };
@@ -1011,6 +1010,7 @@ export default async function handler(req, res) {
       auctionDate:     auctionRaw?.date ?? null,
       auctionHistory:  auctionRaw?.history ?? [],
       currentFedFunds,
+      currentFedFundsSource: path6m.source,
       tbill6m,
       tbill3m,        // 3-month T-bill (DTB3) — drives the SGOV/USFR SEC-yield proxy
       impliedCutsBps, // positive = market pricing cuts, negative = pricing hikes
@@ -1035,7 +1035,7 @@ export default async function handler(req, res) {
         tenY: tenY.date, twoY: twoY.date, yieldSpread: yieldSpreadDate,
         unemployment: unemp.date, creditSpread: hySpread.date,
         cpi: cpi.date, gdp: gdp.date, gdpGrowth: gdpGrowthRaw.date,
-        currentFedFunds: fedFundsRaw.date, tbill6m: tbill6mRaw.date, tbill3m: tbill3mRaw.date,
+        currentFedFunds: path6m.rateDate, tbill6m: tbill6mRaw.date, tbill3m: tbill3mRaw.date,
         dxy: dxyRaw.asOf, oil: oilRaw.asOf,
         cpiYoY:             cpiHeadlineHistory.at(-1)?.date ?? null,
         cpiHeadlineCurrent: cpiHeadlineHistory.at(-1)?.date ?? null,

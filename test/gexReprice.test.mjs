@@ -40,8 +40,8 @@ const CONTRACTS = [
 const seed = () => {
   STORE.clear();
   STORE.set(SERIES_KEY, JSON.stringify({ QQQ: [
-    { date: '2026-09-05', spot: 700, rate: 0.041, divYield: 0.005, advUsd: 2e10, rateSource: 'DTB3 2026-09-04' },
-    { date: '2026-09-08', spot: 712.5, rate: 0.042, divYield: 0.005, advUsd: 25e9, rateSource: 'DTB3 2026-09-05' },
+    { date: '2026-09-04', spot: 700, rate: 0.041, divYield: 0.005, advUsd: 2e10, rateSource: 'DTB3 2026-09-03' },
+    { date: '2026-09-08', spot: 712.5, rate: 0.042, divYield: 0.005, advUsd: 25e9, rateSource: 'DTB3 2026-09-04' },
   ] }));
   STORE.set(RAW_KEY('QQQ', '2026-09-08'), JSON.stringify({
     symbol: 'QQQ', date: '2026-09-08', asOf: '2026-09-08T15:15:00.000Z', spot: 712.5,
@@ -260,7 +260,7 @@ const NOW = new Date('2026-09-09T13:39:00.000Z');
     eq('and labelled as a refusal', w.mode, 'refused');
     eq('but told that a reprice was available', w.repriceable, true);
     eq('and the stored series is untouched',
-      JSON.parse(STORE.get(SERIES_KEY)).QQQ.map(x => x.date), ['2026-09-05', '2026-09-08']);
+      JSON.parse(STORE.get(SERIES_KEY)).QQQ.map(x => x.date), ['2026-09-04', '2026-09-08']);
   } finally { globalThis.fetch = saved; }
 }
 
