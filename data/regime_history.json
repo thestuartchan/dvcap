@@ -4349,7 +4349,7 @@
       "inputs": {
         "weightedRecessionProb": 13.5,
         "cpi": 3.71725,
-        "kalshi2027": 19,
+        "kalshi2027": 20,
         "tape": {
           "gold": "down",
           "tlt": "up",
@@ -4375,7 +4375,7 @@
           "state": "turning-down",
           "lean": 1,
           "market": {
-            "verdict": "SOFTENING",
+            "verdict": "CONTRACTING",
             "lean": -1,
             "usable": 5,
             "of": 5
@@ -4389,7 +4389,7 @@
           "monthly": {
             "verdict": "EXPANDING",
             "lean": 1,
-            "usable": 3,
+            "usable": 4,
             "of": 4
           }
         },
@@ -4422,40 +4422,40 @@
         "regime": {
           "id": "inf",
           "probs": {
-            "ref": 28,
-            "inf": 48,
-            "stag": 15,
-            "def": 9
+            "ref": 26,
+            "inf": 44,
+            "stag": 19,
+            "def": 11
           },
-          "g": 0.31,
-          "gDrift": -0.87,
+          "g": 0.23,
+          "gDrift": -1.15,
           "i": 0.13,
           "iDrift": -0.67,
           "drifting": "def"
         },
         "conditions": {
-          "score": 68.8,
+          "score": 64.4,
           "band": "caution",
           "comps": {
             "credit": 75,
-            "equityVol": 70,
+            "equityVol": 48,
             "ratesVol": 67,
             "realYield": 85,
             "funding": 30,
             "breadth": 63,
-            "dollar": 79
+            "dollar": 80
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 16,
+          "hikeOdds": 14,
           "liq4w": 8
         },
-        "sizing": 0.63,
+        "sizing": 0.62,
         "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-19T06:42:06.135Z"
+      "loggedAt": "2026-10-19T08:45:58.001Z"
     }
   ]
 }
