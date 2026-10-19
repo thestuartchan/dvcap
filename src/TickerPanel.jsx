@@ -6,12 +6,15 @@
 //   gamma                          /api/gex?symbol=SYM — the stored board, where one is kept
 //   next earnings                  the calendar rows the app already loads (passed in)
 //   market context                 the Ratios cards and the breadth ladder (lib/tickerPage.js)
+//   suppliers and customers        data/supplychain.json, bundled: each company's own annual report
+//                                  on EDGAR, read by scripts/supplychain-build.mjs (SupplyChainCard)
 //   your line                      the Console's rows, already in this logged-in browser (passed in).
 //                                  It is read here and shown here; it is never sent anywhere.
 // A card with nothing to show says why rather than going blank.
 import { useEffect, useMemo, useState } from "react";
 import { C } from "./theme.js";
 import { Card, SLabel } from "./ui.jsx";
+import { SupplyChainCard } from "./SupplyChainCard.jsx";
 import { dubaiEt, dubaiEtStamp, zonedInstant } from "../lib/timeFmt.js";
 import { linesFor, ratioContext, nextEarnings, chartOf, money, cleanSymbol, TICKER_RE } from "../lib/tickerPage.js";
 import { eventsBetween } from "../lib/calendar.js";
@@ -64,6 +67,9 @@ export function TickerPanel({ symbol, onSymbol, consoleRows = null, calendarExtr
   const d = des?.j || null;
   const lines = useMemo(() => linesFor(consoleRows || [], sym), [consoleRows, sym]);
   const ctx = useMemo(() => ratioContext(sym), [sym]);
+  // Which companies on the supply-chain map the Console holds open: worked out here, in this
+  // browser, from the rows the Console already loaded. Only the map's tint reads it.
+  const held = useMemo(() => (consoleRows ? { has: (t) => linesFor(consoleRows, t).some(l => l.status === "open") } : null), [consoleRows]);
   const events = useMemo(() => [...eventsBetween(today, until), ...(calendarExtra || [])], [calendarExtra, today, until]);
   const earn = useMemo(() => nextEarnings(events, sym, { name: d?.name || null, today }), [events, sym, d?.name, today]);
   const g = gex?.j?.available ? gex.j.latest : null;
@@ -234,12 +240,9 @@ export function TickerPanel({ symbol, onSymbol, consoleRows = null, calendarExtr
         )}
       </Card>
 
-      {/* ── SUPPLY CHAIN ── the slot the supplier/customer map (from SEC filings) fills next. */}
+      {/* ── SUPPLY CHAIN ── who it buys from and sells to, each link quoted from a filing. */}
       <Card>
-        <div data-slot="supply-chain">
-          <SLabel>Suppliers and customers</SLabel>
-          <Why>Coming next: who {sym} buys from and sells to, each link quoted from its SEC filings.</Why>
-        </div>
+        <SupplyChainCard symbol={sym} held={held} />
       </Card>
     </div>
   );
