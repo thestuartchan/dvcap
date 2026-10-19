@@ -344,11 +344,14 @@ ok('and never a quantity', !/\b(50|100|1058)\b/.test(line));
 {
   // Options are in scope now (the console holds options and spreads): one held at IBKR and not in
   // the console is announced. A day trade — opened at 0 or 1 day to expiry — is not.
-  const opts = parseStatement('<OpenPosition symbol="QQQ 260911C00737000" underlyingSymbol="QQQ" assetCategory="OPT" currency="USD" multiplier="100" position="15" costBasisPrice="8.77" />').positions;
+  // (XYZ: a QQQ option is the day-trading journal's by kind, and is never added — see below.)
+  const opts = parseStatement('<OpenPosition symbol="XYZ 260911C00737000" underlyingSymbol="XYZ" assetCategory="OPT" currency="USD" multiplier="100" position="15" costBasisPrice="8.77" />').positions;
   const rec = reconcile([], opts, {});
   eq('an option the console does not hold is added, like a share', [rec.report.length, rec.adds.length, actionable(rec).length], [0, 1, 1]);
-  eq('and named by its contract', summariseActionable(rec), "added QQQ Sep11'26 737C");
-  eq('but the channel gets the ticker only — the contract stays in the console', summariseActionable(rec, { forChannel: true }), 'added QQQ option');
+  eq('and named by its contract', summariseActionable(rec), "added XYZ Sep11'26 737C");
+  eq('but the channel gets the ticker only — the contract stays in the console', summariseActionable(rec, { forChannel: true }), 'added XYZ option');
+  const qqqOpt = reconcile([], parseStatement('<OpenPosition symbol="QQQ 260911C00737000" underlyingSymbol="QQQ" assetCategory="OPT" currency="USD" multiplier="100" position="15" costBasisPrice="8.77" />').positions, {});
+  eq('a QQQ option is the journal\'s whatever its expiry: named, not added', [qqqOpt.adds.length, qqqOpt.report.map(r => r.kind)], [0, ['daytrade-option']]);
   const day = parseStatement('<OpenPosition symbol="QQQ 260911C00737000" underlyingSymbol="QQQ" assetCategory="OPT" currency="USD" multiplier="100" position="15" costBasisPrice="8.77" holdingPeriodDateTime="20260910;093500" />').positions;
   const recDay = reconcile([], day, { asOf: '2026-09-10' });
   eq('a 1DTE option is a day trade: named, not announced', [recDay.report.map(r => r.kind), actionable(recDay).length], [['daytrade-option'], 0]);
