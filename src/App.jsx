@@ -1956,6 +1956,7 @@ function InflationAxisPanel({ data, liveInd }) {
 const LEDGER_TONE = {
   stale: { tok: STATUS.ELEVATED, word: "stale — not used" }, missing: { tok: STATUS.ELEVATED, word: "missing" },
   due: { tok: STATUS.WATCH, word: "due — still used" }, fresh: { tok: STATUS.BENIGN, word: "fresh" },
+  optional: { tok: null, word: "optional — update when a house publishes" },
   retired: { tok: null, word: "retired" }, undated: { tok: null, word: "undated" },
 };
 // ── THE HAND-ENTRY HUB ───────────────────────────────────────────────────────
