@@ -539,7 +539,6 @@ export function GexPanel({ request = null, onRequestDone = null }) {
                      : "● live") : ageText}
             </span>
           )}
-          {latest && live && <span style={{ fontSize: 11, color: C.muted, fontWeight: 700, marginLeft: 8 }}>{ageText}</span>}
           {latest && fresh.stale && <StaleChip />}
           {pineMsg && <span style={{ fontSize: 11.5, color: C.mid, fontWeight: 700, marginLeft: 8 }}>{pineMsg}</span>}
         </span>
@@ -574,6 +573,15 @@ export function GexPanel({ request = null, onRequestDone = null }) {
       </div>
     </div>
   );
+  // THE TIME HAS A LINE OF ITS OWN. Dubai-first with ET in brackets ("Mon 19 Oct 22:15 Dubai
+  // (14:15 ET) · 0.2h ago") no longer fits beside the mode in the one-line status, which gives way
+  // to an ellipsis first — so on a recompute the stamp was the part cut off. It sits under the
+  // header instead, full width, and wraps rather than hides.
+  const stamp = latest && live ? (
+    <div className="gex-head-stamp" style={{ marginTop: 4, fontSize: 11.5, color: C.muted, fontWeight: 700, lineHeight: 1.4, overflowWrap: "anywhere" }}>
+      {ageText}
+    </div>
+  ) : null;
 
   const feedBox = feed ? (
     <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 7, background: C.bg, border: "1px solid " + C.bdr, fontSize: 11.5, color: C.mid, lineHeight: 1.6 }}>
@@ -640,13 +648,13 @@ export function GexPanel({ request = null, onRequestDone = null }) {
     </div>
   ) : null;
 
-  if (err) return <Card>{header}<div style={{ fontSize: 12.5, color: C.red, marginTop: 8 }}>Could not load: {err}</div></Card>;
-  if (!data) return <Card>{header}<div style={{ fontSize: 12.5, color: C.muted, marginTop: 8 }}>Loading…</div></Card>;
+  if (err) return <Card>{header}{stamp}<div style={{ fontSize: 12.5, color: C.red, marginTop: 8 }}>Could not load: {err}</div></Card>;
+  if (!data) return <Card>{header}{stamp}<div style={{ fontSize: 12.5, color: C.muted, marginTop: 8 }}>Loading…</div></Card>;
   if (data.custom && !data.available) {
     // A REFUSAL IS AN ANSWER — the same rule as the live recompute. OCC listing no such root, a
     // chain that failed the join, or a vol surface the guards would not price all say why.
     return (
-      <Card>{header}
+      <Card>{header}{stamp}
         <div style={{ fontSize: 12.5, color: data.loading ? C.muted : C.amber, marginTop: 8, lineHeight: 1.6 }}>
           {data.loading ? `Reading ${data.symbol}'s settled book — OCC open interest and CBOE's vol surface, a few seconds…`
             : <><b>No map for {data.symbol}</b> — {data.reason}</>}
@@ -662,7 +670,7 @@ export function GexPanel({ request = null, onRequestDone = null }) {
   }
   if (!data.available) {
     return (
-      <Card>{header}{liveErrCard}{pineBox}{feedBox}{repricedCard}
+      <Card>{header}{stamp}{liveErrCard}{pineBox}{feedBox}{repricedCard}
         <div style={{ fontSize: 12.5, color: C.mid, marginTop: 8, lineHeight: 1.6 }}>
           Nothing captured yet. The snapshot runs mid-session each weekday and writes one row per symbol;
           the by-strike chart appears after the first run and the time series becomes meaningful after
@@ -682,7 +690,7 @@ export function GexPanel({ request = null, onRequestDone = null }) {
           — which is the common case on a real chain and genuinely is not a regime read. A panel
           that always has an opinion is one nobody should size off. */}
       <Card>
-        {header}
+        {header}{stamp}
         {liveErrCard}{pineBox}{feedBox}
         {repricedCard}
         {read.ok && (
