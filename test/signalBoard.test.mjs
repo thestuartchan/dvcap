@@ -127,13 +127,15 @@ eq('next session skips the weekend and a holiday', [nextSession('2026-10-16'), n
   const lp = TRADE_DAY_MODEL.QQQ.const + TRADE_DAY_MODEL.QQQ.cush * 3.6 + TRADE_DAY_MODEL.QQQ.prevR * 0.65;
   eq('QQQ median R is exp(the model) and P(R ≥ 1) is Φ(log R̂ ÷ σ)', [q.median_r, q.p_r_ge_1], [+Math.exp(lp).toFixed(2), +normCdf(lp / TRADE_DAY_MODEL.QQQ.sigma).toFixed(2)]);
   eq('the assumptions are stated when the gap and IV change are not known', q.assumed, ['gap 0 (no futures-implied open yet)', 'IV unchanged overnight']);
-  eq('the band\'s own distribution rides along (median and share ≥1.0×, not a mean)', q.band, { id: 'p0', median_r: 1.10, share_ge_1: 60, n: 403 });
+  eq('the band\'s own distribution rides along (median and share ≥1.0×, not a mean)', q.band, { id: 'p0', median_r: 1.10, share_ge_1: 60, n: 403, lean: 'trade' });
   eq('negative GEX takes the negative band', tradeDayCall('SPY', { cushionPct: 5, gexNegative: true, prevR: 1 }).band.id, 'neg');
   ok('a high cushion and a quiet prior day call lean skip', tradeDayCall('QQQ', { cushionPct: 95, prevR: 0.6 }).zone === 'lean skip');
   ok('a big gap and a wide prior day call trade', tradeDayCall('QQQ', { cushionPct: 10, prevR: 1.6, gapSigma: 1.5 }).zone === 'trade');
   eq('no cushion or no prior day → no call, with why', [tradeDayCall('QQQ', { prevR: 1 }).why, tradeDayCall('QQQ', { cushionPct: 10 }).why], ['no cushion', 'no prior-day range']);
   eq('one zone rule: ≥1.0 trade, 0.9–1.0 selective, below lean skip', [zoneOf(1.0), zoneOf(0.95), zoneOf(0.899), zoneOf(null)], ['trade', 'selective', 'lean skip', null]);
-  eq('the cushion bands and the board use that one rule', CUSHION.map(b => b.lean), ['trade', 'trade', 'trade', 'selective', 'lean skip', 'lean skip']);
+  eq('the cushion bands use that one rule per ticker: QQQ', CUSHION.map(b => b.leanQqq), ['trade', 'trade', 'trade', 'selective', 'lean skip', 'lean skip']);
+  eq('… and SPX', CUSHION.map(b => b.leanSpx), ['trade', 'trade', 'selective', 'lean skip', 'lean skip', 'lean skip']);
+  eq('the call carries the ticker-matching band lean: 30th pct is Trade for QQQ, Selective for SPY', [tradeDayCall('QQQ', { cushionPct: 30, prevR: 1 }).band.lean, tradeDayCall('SPY', { cushionPct: 30, prevR: 1 }).band.lean], ['trade', 'selective']);
   ok('band stats are medians that fall band by band, on both tickers', ['QQQ', 'SPY'].every(t => ['neg', 'p0', 'p20', 'p40', 'p60', 'p80'].every((k, i, a) => i === 0 || BAND_STATS[t][k][0] <= BAND_STATS[t][a[i - 1]][0])));
 }
 {
