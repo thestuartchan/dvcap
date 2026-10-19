@@ -73,6 +73,9 @@ eq('an algorithm\'s date is labelled an estimate', parseNasdaqEarnings('XYZ', sa
 eq('no date, no row; a name off the watch list, no row', [parseNasdaqEarnings('XYZ', said("Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date."), W), parseNasdaqEarnings('ABC', said('ABC is expected* to report earnings on 11/05/2026.'), W)], [null, null]);
 eq('a hand-kept earnings row covers each company it names', kindsOf({ title: 'Texas Instruments + Lam Research Q3 earnings (AC)', region: 'US' }), ['earn:TXN', 'earn:LRCX']);
 eq('a row that is not about earnings names none', kindsOf({ title: 'MS and GS conference', region: 'US' }), []);
+eq('the Korea names match their hand-kept rows, which say Q2 or results rather than earnings',
+  [kindsOf({ title: 'Samsung Q2 full results (10:00 KST; prelim was Jul 7)', region: 'ASIA' }), kindsOf({ title: 'SK Hynix Q2 + new KRX shares list', region: 'ASIA' }), kindsOf({ title: 'Samsung foldable launch', region: 'ASIA' })],
+  [['earn:005930'], ['earn:000660'], []]);
 eq('the watch list is public names only, each with a symbol and aliases', WATCH.every(w => /^[A-Z.]{1,6}$/.test(w.sym) && w.aliases.length > 0), true);
 {
   const hand = [{ date: '2026-10-21', title: 'Texas Instruments + Lam Research Q3 earnings (AC)', region: 'US' }];
@@ -115,14 +118,18 @@ eq('a page without a decision is nothing', parseFomcStatement('<p>Minutes of the
   // there) and make this test depend on where it runs.
   const fredUp = async () => ({ dates: { 'Consumer Price Index': ['2026-11-10'] }, errors: {} });
   const fredDown = async () => ({ dates: {}, errors: { all: 'HTTP 503' } });
-  const first = await autoCalendar({ now, fetchImpl, kv, fredDates: fredUp });
+  // DART too, for the same reason: the deployment holds its key.
+  const dartUp = async () => ({ events: [{ date: '2026-10-29', title: 'Xyz Corp earnings (IR call)', region: 'ASIA', tier: 1, kind: 'earn:999999', auto: true, source: 'DART (opendart.fss.or.kr)' }], source: { ok: true, count: 1 } });
+  const dartOff = async () => ({ events: [], source: { ok: false, error: 'DART_API_KEY not set' } });
+  const first = await autoCalendar({ now, fetchImpl, kv, fredDates: fredUp, dartEarnings: dartUp });
+  eq('the DART rows and their source status ride along', [first.events.some(e => e.kind === 'earn:999999'), first.sources.dart], [true, { ok: true, count: 1 }]);
   eq('the first read fetches each source once and is stored', [first.cache, calls, !!store[CAL_AUTO_KEY]], ['live', READS, true]);
   eq('and carries the earnings and the decision in force', [first.events.some(e => e.kind === 'earn:MSFT' && e.date === '2026-10-28'), first.fomcLatest?.action, first.fomcLatest?.date], [true, 'raise', '2026-09-16']);
   eq('and carries the FRED dates', first.events.some(e => e.kind === 'cpi' && e.date === '2026-11-10'), true);
-  const second = await autoCalendar({ now: new Date(now.getTime() + 3600e3), fetchImpl, kv, fredDates: fredUp });
+  const second = await autoCalendar({ now: new Date(now.getTime() + 3600e3), fetchImpl, kv, fredDates: fredUp, dartEarnings: dartUp });
   eq('within 12 hours the stored copy is served, no fetch', [second.cache, calls], ['kv', READS]);
   const down = async () => ({ ok: false, status: 503, text: async () => '' });
-  const stale = await autoCalendar({ now: new Date(now.getTime() + 13 * 3600e3), fetchImpl: down, kv, fredDates: fredDown });
+  const stale = await autoCalendar({ now: new Date(now.getTime() + 13 * 3600e3), fetchImpl: down, kv, fredDates: fredDown, dartEarnings: dartOff });
   eq('when every source fails later, the last good copy is served and marked stale', [stale.cache, stale.events.length === first.events.length, stale.sources.fomc.ok], ['stale', true, false]);
 }
 
