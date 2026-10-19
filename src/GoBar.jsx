@@ -49,7 +49,7 @@ export function GoBar({ onClose, onRun }) {
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: "1px solid " + C.bdr }}>
           <span style={{ color: C.muted, fontWeight: 900 }}>›</span>
           <input ref={inputRef} id="go-bar-input" value={line} onChange={(e) => { setLine(e.target.value); setSel(0); }} onKeyDown={onKey}
-            placeholder="ECO, PORT, QQQ GEX…" aria-label="Function or ticker" autoComplete="off" autoCapitalize="characters" spellCheck={false}
+            placeholder="ECO, PORT, NVDA, QQQ GEX…" aria-label="Function or ticker" autoComplete="off" autoCapitalize="characters" spellCheck={false}
             style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", color: C.text, fontSize: 17, fontWeight: 700,
                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", textTransform: "uppercase", letterSpacing: 0.5 }} />
           <button onClick={() => run(parseGo(line) || list[sel])} aria-label="Go" style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}><GoKey /></button>

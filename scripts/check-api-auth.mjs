@@ -15,7 +15,7 @@ const PUBLIC = {
   'prices.js':     'market quotes only, edge-cached and shared; carries nothing about the account',
   'indicators.js': 'public macro series (FRED, Yahoo); no account state',
   'gex.js':        'options-chain aggregates for public tickers; no account state (the /api/g feed is slug-gated, the slug mint is authorised, the /api/mcp connector is token-gated)',
-  'atr.js':        'price bars for a public ticker; no account state',
+  'atr.js':        'price bars and SEC filing data for a public ticker; no account state',
   'playbook.js':   'the composed regional read; no positions and no sizes',
   'preread.js':    'the composed brief; deliberately reachable so a run can be triggered by hand',
 };

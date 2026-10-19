@@ -8,6 +8,7 @@ import { GexPanel } from "./GexPanel.jsx";
 import { CtaPanel } from "./CtaPanel.jsx";
 import { RatiosPanel } from "./RatiosPanel.jsx";
 import { CalendarPanel } from "./CalendarPanel.jsx";
+import { TickerPanel } from "./TickerPanel.jsx";
 import { GoBar, GoKey } from "./GoBar.jsx";
 import { CorrelationPanel } from "./CorrelationPanel.jsx";
 import { ScenarioBoard } from "./ScenarioBoard.jsx";
@@ -5757,6 +5758,9 @@ export default function App() {
   // THE GO BAR (src/GoBar.jsx): open state, and the last Gamma symbol it asked for.
   const [goOpen, setGoOpen] = useState(false);
   const [gexRequest, setGexRequest] = useState(null);
+  // The ticker page's symbol, kept across visits in this browser (a convenience, nothing private).
+  const [tickerSym, setTickerSymRaw] = useState(() => { try { return localStorage.getItem("ticker_last_v1") || "NVDA"; } catch { return "NVDA"; } });
+  const setTickerSym = (s) => { setTickerSymRaw(s); try { localStorage.setItem("ticker_last_v1", s); } catch { /* private window: the last symbol is only a convenience */ } };
   // "/" outside a text field, or Ctrl/Cmd+K anywhere, opens it — the keys every palette uses.
   useEffect(() => {
     const onKey = (e) => {
@@ -6003,7 +6007,8 @@ export default function App() {
     // Credit detail and the yen toggle on Drivers (and the previous Macro layout) read the US payload.
     // Hedges too: its tape chip and fallback phase read pbData.us, which it never fetched itself.
     // Smart Money: the analyst board's FOMC row reads the latest statement from the US payload.
-    else if (tab === "drivers" || tab === "insurance" || tab === "calendar" || tab === "street") fetchPlaybookRegion("us");
+    // Ticker: the next-earnings card reads the calendar rows from the same payload.
+    else if (tab === "drivers" || tab === "insurance" || tab === "calendar" || tab === "street" || tab === "ticker") fetchPlaybookRegion("us");
   }, [tab, pbRegions, fetchPlaybookRegion]);
 
   // Load manual deploy-stage toggles + portfolio value from localStorage
@@ -6805,8 +6810,9 @@ export default function App() {
       { id: "ratios",     label: "⚖️ Ratios"         },
       { id: "calendar",   label: "📅 Calendar"       },
     ] },
-    // TICKERS — one underlying at a time. Gamma today; the per-name page joins it.
+    // TICKERS — one underlying at a time: its page (the terminal's DES) and its gamma.
     { id: "tickers", label: "Tickers", hint: "one name", tabs: [
+      { id: "ticker",     label: "🔎 Ticker"         },
       { id: "gex",        label: "🌀 Gamma"          },
     ] },
     // BOOK — what you hold and what acts on it: the Console, Hedges (phase from the conditions),
@@ -6850,6 +6856,7 @@ export default function App() {
     if (r.tab) {
       setTab(r.tab);
       if (r.tab === "gex" && r.symbol) setGexRequest({ symbol: r.symbol, n: Date.now() });
+      if (r.tab === "ticker" && r.symbol) setTickerSym(r.symbol);
     } else if (r.action === "refresh") { fetchPrices(HEADER_TICKERS); fetchIndicators(); }
     else if (String(r.action || "").startsWith("theme:")) setTheme(r.action.slice(6));
   };
@@ -7061,6 +7068,13 @@ export default function App() {
         )}
         {/* A Go bar request is spent once Gamma has acted on it, so returning to the tab later opens it as usual. */}
         {tab === "gex" && <GexPanel request={gexRequest} onRequestDone={() => setGexRequest(null)} />}
+        {/* The Console's rows reach the ticker page from the store this browser already loaded; the
+            page shows them and sends them nowhere. */}
+        {tab === "ticker" && <TickerPanel key={tickerSym} symbol={tickerSym} onSymbol={setTickerSym}
+          consoleRows={Array.isArray(manualStore?.console?.rows) ? manualStore.console.rows : null}
+          calendarExtra={[...(pbData?.us?.calendar || []), ...(pbData?.us?.calendarAuto?.events || [])]}
+          onOpenGamma={(s) => { setGexRequest({ symbol: s, n: Date.now() }); setTab("gex"); }}
+          onOpenConsole={() => setTab("console")} />}
         {tab === "ratios" && <RatiosPanel />}
         {/* The feed's calendar rows add announced Treasury auctions to the hand-kept list. */}
         {tab === "calendar" && <CalendarPanel extra={[...(pbData?.us?.calendar || []), ...(pbData?.us?.calendarAuto?.events || [])]} autoSources={pbData?.us?.calendarAuto?.sources || null} />}
