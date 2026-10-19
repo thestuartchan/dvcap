@@ -1,6 +1,7 @@
 // test/calendarAuto.test.mjs — the automatic macro calendar (lib/calendarAuto.js, lib/calendarAutoFetch.js).
 // The snippets below copy each source page's markup shape, with made-up dates where it matters.
-import { parseFomc, parseEcb, parseBoj, parseBea, parseCensus, eventsFromFred, kindsOf, mergeAuto, buildAutoCalendar } from '../lib/calendarAuto.js';
+import { parseFomc, parseEcb, parseBoj, parseBea, parseCensus, eventsFromFred, kindsOf, mergeAuto, buildAutoCalendar,
+  parseNasdaqEarnings, latestStatementUrl, parseFomcStatement, WATCH } from '../lib/calendarAuto.js';
 import { autoCalendar, CAL_AUTO_KEY } from '../lib/calendarAutoFetch.js';
 import { calendarMonths } from '../lib/calendarView.js';
 
@@ -63,23 +64,63 @@ const view = calendarMonths({ today: '2026-10-18', extra: [{ ...auto.find(e => e
 const rows = view.months.flatMap(m => m.weeks.flatMap(w => w.days.flatMap(d => d.events)));
 eq('the tab keeps the hand-kept FOMC row and adds the BoJ meeting the hand list lacks', [rows.filter(e => e.date === '2026-10-28' && /FOMC/.test(e.title)).length, rows.some(e => e.date === '2026-12-18' && e.auto)], [1, true]);
 
+// ── Earnings (Nasdaq per symbol) ──
+const W = [{ sym: 'XYZ', name: 'Xyz Corp', aliases: ['Xyz'], region: 'US', tier: 1 }];
+const said = (t) => ({ data: { reportText: t } });
+eq('a company-announced date, with its timing', pick([parseNasdaqEarnings('XYZ', said('Xyz Corp Common Stock is expected* to report earnings on  11/05/2026 after market close.  The report will be for the fiscal Quarter ending Sep 2026.'), W)]),
+  [['2026-11-05', 'Xyz Corp earnings (AC)']]);
+eq('an algorithm\'s date is labelled an estimate', parseNasdaqEarnings('XYZ', said('Xyz Corp is estimated to report earnings on  01/28/2027. The upcoming earnings date is derived from an algorithm based on a company\'s historical reporting dates.'), W).title, 'Xyz Corp earnings — est.');
+eq('no date, no row; a name off the watch list, no row', [parseNasdaqEarnings('XYZ', said("Our vendor, Zacks Investment Research, hasn't provided us with the upcoming earnings report date."), W), parseNasdaqEarnings('ABC', said('ABC is expected* to report earnings on 11/05/2026.'), W)], [null, null]);
+eq('a hand-kept earnings row covers each company it names', kindsOf({ title: 'Texas Instruments + Lam Research Q3 earnings (AC)', region: 'US' }), ['earn:TXN', 'earn:LRCX']);
+eq('a row that is not about earnings names none', kindsOf({ title: 'MS and GS conference', region: 'US' }), []);
+eq('the watch list is public names only, each with a symbol and aliases', WATCH.every(w => /^[A-Z.]{1,6}$/.test(w.sym) && w.aliases.length > 0), true);
+{
+  const hand = [{ date: '2026-10-21', title: 'Texas Instruments + Lam Research Q3 earnings (AC)', region: 'US' }];
+  const auto = [{ date: '2026-10-21', title: 'Texas Instruments earnings (AC)', kind: 'earn:TXN' }, { date: '2026-10-28', title: 'Microsoft earnings (AC)', kind: 'earn:MSFT' }];
+  eq('the hand-kept row wins on its day; another company stays', pick(mergeAuto(hand, auto)), [['2026-10-28', 'Microsoft earnings (AC)']]);
+}
+{
+  const b = buildAutoCalendar({ earnings: { MSFT: said('Microsoft Corporation is expected* to report earnings on 10/28/2026 after market close.'), NVDA: said('NVIDIA is estimated to report earnings on 11/18/2026. derived from an algorithm'), AAPL: { error: 'HTTP 403' } }, from: '2026-10-01' });
+  eq('the earnings source reports its count, its estimates and its failures', b.sources.earnings, { ok: true, count: 2, estimated: 1, failed: 1 });
+}
+
+// ── The latest FOMC decision ──
+eq('the newest statement the calendar page links', latestStatementUrl('<a href="/newsevents/pressreleases/monetary20260729a.htm">HTML</a> <a href="/newsevents/pressreleases/monetary20260916a.htm">HTML</a>'),
+  { date: '2026-09-16', url: 'https://www.federalreserve.gov/newsevents/pressreleases/monetary20260916a.htm' });
+const STMT = (body) => `<div id="article"><p>${body}</p><p>For media inquiries, please email</p></div>`;
+eq('a hike: action, size and range', parseFomcStatement(STMT('In support of its goals, the Committee decided to raise the target range for the federal funds rate by 1/4 percentage point to 3-3/4 to 4 percent, in support of the Federal Reserve\'s dual mandate.')),
+  { date: null, url: null, action: 'raise', bps: 25, range: [3.75, 4], dissents: [], dissentPreferred: null });
+eq('a hold with dissents, middle initials kept', parseFomcStatement(STMT('the Committee decided to maintain the target range for the federal funds rate at 3-1/2 to 3-3/4 percent.</p><p>Voting against the monetary policy action were Jane Q. Doe, John Roe, and Ann B. Poe, who preferred to raise the target range for the federal funds rate by 1/4 percentage point at this meeting.')),
+  { date: null, url: null, action: 'maintain', bps: 0, range: [3.5, 3.75], dissents: ['Jane Q. Doe', 'John Roe', 'Ann B. Poe'], dissentPreferred: 'raise the target range for the federal funds rate by 1/4 percentage point at this meeting' });
+eq('a page without a decision is nothing', parseFomcStatement('<p>Minutes of the meeting</p>'), null);
+
 // ── The cache ──
 {
   const store = {};
   const kv = { configured: () => true, get: async (k) => store[k] ?? null, setEx: async (k, v) => { store[k] = v; } };
   const pages = { 'federalreserve.gov': FOMC, 'ecb.europa.eu': ECB, 'boj.or.jp': BOJ, 'bea.gov': BEA, 'census.gov': CENSUS };
   let calls = 0;
-  const fetchImpl = async (url) => { calls++; const host = Object.keys(pages).find(h => url.includes(h)); return { ok: !!host, status: host ? 200 : 404, text: async () => pages[host] }; };
+  const STATEMENT = STMT('the Committee decided to raise the target range for the federal funds rate by 1/4 percentage point to 3-3/4 to 4 percent.');
+  const fetchImpl = async (url) => {
+    calls++;
+    if (url.includes('api.nasdaq.com')) return { ok: true, status: 200, json: async () => ({ data: { reportText: url.includes('/MSFT/') ? 'Microsoft is expected* to report earnings on 10/28/2026 after market close.' : "hasn't provided" } }) };
+    if (url.includes('/newsevents/pressreleases/monetary')) return { ok: true, status: 200, text: async () => STATEMENT };
+    const host = Object.keys(pages).find(h => url.includes(h)); return { ok: !!host, status: host ? 200 : 404, text: async () => pages[host] };
+  };
+  const FOMC_WITH_LINK = FOMC + '<a href="/newsevents/pressreleases/monetary20260916a.htm">HTML</a>';
+  pages['federalreserve.gov'] = FOMC_WITH_LINK;
+  const READS = 5 + WATCH.length + 1;   // five pages, one earnings read per watched name, the latest statement
   const now = new Date('2026-10-18T09:00:00Z');
   // FRED is stubbed: the real one would answer during the deployment's own build (its key is set
   // there) and make this test depend on where it runs.
   const fredUp = async () => ({ dates: { 'Consumer Price Index': ['2026-11-10'] }, errors: {} });
   const fredDown = async () => ({ dates: {}, errors: { all: 'HTTP 503' } });
   const first = await autoCalendar({ now, fetchImpl, kv, fredDates: fredUp });
-  eq('the first read fetches each page once and is stored', [first.cache, calls, !!store[CAL_AUTO_KEY]], ['live', 5, true]);
+  eq('the first read fetches each source once and is stored', [first.cache, calls, !!store[CAL_AUTO_KEY]], ['live', READS, true]);
+  eq('and carries the earnings and the decision in force', [first.events.some(e => e.kind === 'earn:MSFT' && e.date === '2026-10-28'), first.fomcLatest?.action, first.fomcLatest?.date], [true, 'raise', '2026-09-16']);
   eq('and carries the FRED dates', first.events.some(e => e.kind === 'cpi' && e.date === '2026-11-10'), true);
   const second = await autoCalendar({ now: new Date(now.getTime() + 3600e3), fetchImpl, kv, fredDates: fredUp });
-  eq('within 12 hours the stored copy is served, no fetch', [second.cache, calls], ['kv', 5]);
+  eq('within 12 hours the stored copy is served, no fetch', [second.cache, calls], ['kv', READS]);
   const down = async () => ({ ok: false, status: 503, text: async () => '' });
   const stale = await autoCalendar({ now: new Date(now.getTime() + 13 * 3600e3), fetchImpl: down, kv, fredDates: fredDown });
   eq('when every source fails later, the last good copy is served and marked stale', [stale.cache, stale.events.length === first.events.length, stale.sources.fomc.ok], ['stale', true, false]);
