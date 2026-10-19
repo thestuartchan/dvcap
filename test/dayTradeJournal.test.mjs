@@ -178,5 +178,23 @@ eq('a window is required, ordered, and bounded', [journalRange({}).error != null
   for (const k of ['JOURNAL_READ_KEY', 'TRADECARD_KEY']) { if (k in keep) process.env[k] = keep[k]; else delete process.env[k]; }
 }
 
+// ── AN OPTION HELD TO A WORTHLESS EXPIRY (19 Oct 2026) ──
+// The feed books the expiry as a sale at 0 with a realised P&L of 0, so a long that lost its whole
+// premium read as breaking even. It is counted from its cash instead. Fake ticker, made-up figures.
+{
+  const T = (id, order, side, size, price, time, realized = 0, fee = 1) => ({ trade_id: id, order_id: order, symbol: 'XYZ', sec_type: 'OPT', side, size, price,
+    net_amount: size * price * 100, trade_time: time, realized_pnl: realized, commission: fee, currency: 'USD' });
+  const C = { root: 'XYZ', expiry: '2026-10-16', right: 'C', strike: 50 };
+  const orders = [{ orderId: '21', ...C, side: 'buy', qty: 4, price: 1.5, date: '2026-10-16' }, { orderId: '22', ...C, side: 'sell', qty: 1, price: 2.0, date: '2026-10-16' }];
+  const run = (trades) => roundTripsFromIbkr({ trades, positions: [], since: '2026-10-01', contracts: orders });
+  const worthless = run([T('e1', 21, 'BUY', 4, 1.5, '2026-10-16T15:00:00Z'), T('e2', null, 'SELL', 4, 0, '2026-10-17T05:00:00Z', 0, 0)]);
+  eq('a worthless expiry loses the premium and the commission, not nothing', [worthless.length, worthless[0]?.pnl, worthless[0]?.expired], [1, -601, true]);
+  const partly = run([T('f1', 21, 'BUY', 4, 1.5, '2026-10-16T15:00:00Z'), T('f2', 22, 'SELL', 1, 2.0, '2026-10-16T16:00:00Z', 49),
+    T('f3', null, 'SELL', 3, 0, '2026-10-17T05:00:00Z', 0, 0)]);
+  eq('part sold, the rest expired: the sale\'s proceeds less the whole cost', partly[0]?.pnl, 200 - 600 - 2);
+  const booked = run([T('g1', 21, 'BUY', 4, 1.5, '2026-10-16T15:00:00Z'), T('g2', null, 'SELL', 4, 0, '2026-10-17T05:00:00Z', -601, 0)]);
+  eq('when IBKR did book the loss, its own figure stands, unmarked', [booked[0]?.pnl, booked[0]?.expired ?? null], [-601, null]);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
