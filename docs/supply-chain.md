@@ -30,13 +30,14 @@ Nothing comes from press, a summary, a search result or a model. The repo's `che
 
 ## How a sentence is read
 
-The rules are written down in code (`linksInSentence`) and tested with fake companies (`test/supplyChain.test.mjs`).
+The rules are written down in code (`linksInSentence`) and tested with fake companies (`test/supplyChain.test.mjs`). A keyword next to a name is not enough: the first real run over the 28 annual reports showed "customers" beside any company ("Intel targets our customers"), "supplier" in a director's biography, "competitive" in "competitive advantage", and supplier wording about someone else's suppliers. So the name has to sit where the wording points.
 
-- **Supplier:** a named company plus supplier wording ("rely on", "foundry", "wafers", "sole source", "contract manufacturer", "purchase from").
-- **Customer:** a named company plus customer wording ("customer", "sales to", "accounted for N%"). A share is kept only when the sentence names one company and states one percentage of revenue.
-- **Competitor:** a named company plus "compete", "competitor" or "competition".
-- **Anonymised customer:** "Customer A accounted for 12%" or "one customer accounted for 21% of net sales". Letters and percentages must pair one to one, or nothing is kept.
-- **Ambiguous:** left out. That covers a company that is a customer and a competitor in the same sentence, or a sentence with both supplier and customer wording. A missing link is better than a wrong one.
+- **Supplier:** the filer speaks about itself (we / our / the Company), and the name is in the list after "foundries / suppliers / contract manufacturers … such as / include / are", or follows "manufactured by", "rely on", "purchase … from", or "we use / utilize …" in a sentence about wafers, manufacturing, assembly or packaging. Hypotheticals ("would shift to", "capable of producing") and co-ownership ("jointly owned by") are not supply.
+- **Customer:** the name is in the list after "customers include / included / are / (for example, …)", or follows "sales to" / "revenues from", or "our top / largest customer, X", or "X, which is a major customer", or "X accounted for N%". A share is kept only when the sentence names one company and states one percentage of revenue, and not a threshold ("10% or more").
+- **Competitor:** a named company plus "compete", "competitor", "competition" or "competitive products", with no supplier or customer wording in the sentence. "Competitive advantage / position / landscape", "highly competitive" and "anti-competition claims" don't count.
+- **Anonymised customer:** "Customer A accounted for 12%", "sales to one direct customer represented 22% … another direct customer 14%", "two customers accounted for 19% and 15%, respectively", "one of our end customers accounted for 12%", "our largest customer in 2023, 2024 and 2025 accounted for 25%, 22% and 19%". Labels and percentages must pair one to one. Across years, only the latest year is kept; when the newest year's sentence can't be paired up, older years are dropped rather than shown as current. Thresholds, groups ("top five customers") and receivables are skipped.
+- **Ambiguous:** left out. A name the sentence makes both a supplier and a customer, or a supplier/customer and a competitor (Intel's "tiles manufactured by TSMC, a key competitor"), is dropped from that sentence. A missing link is better than a wrong one.
+- **Sentences:** a full stop after "Inc." / "Ltd." / "Corp." doesn't end a sentence when what follows is a bracket or the next company of a list.
 
 Company names match strictly. A bare "Arm" or "Flex" is an ordinary word, so only the full company name counts.
 
@@ -47,6 +48,8 @@ Company names match strictly. A bare "Arm" or "Flex" is an ordinary word, so onl
 - **The map is one-sided until both companies are read.** A link stated by both companies' filings becomes one edge with two quotes, and draws heavier.
 - **Only annual reports are read.** A supplier change disclosed in a 10-Q or 8-K appears at the next annual report.
 - **Non-US companies that don't file with the SEC** (Samsung, SK hynix, Tokyo Electron) appear only as counterparties named in others' filings. Their own reports aren't read.
+- **Only the counterparty table is recognised.** A supplier the table doesn't list (Fabrinet, SPIL, Xiaomi, Sony) is not a link, even when the sentence is clear.
+- **Plain statements only.** A relationship the filing implies but doesn't state in one sentence (Microsoft as AMD's console customer, Amazon as Vistra's power buyer) is missed on purpose.
 
 ## Running it
 
@@ -65,4 +68,10 @@ When a company can't be read, it keeps its previous links and is listed under `m
 - `graph(data, centre, { depth: 1 | 2, named, competitors })` returns the nodes and edges around one company. The second ring follows the supply chain only; competitors are shown around the centre.
 - `edgeWeight(edge)`: a stated revenue share sets the weight (10% → 1, capped at 3). Without one, a link both filings state weighs 2 and a one-sided link weighs 1.
 
-The overlay of your own holdings is done in the browser from the Console. This file and the data it reads never see positions.
+- `mapFor(data, ticker)` is what the ticker page's card draws: the three roles, whether the company's own filing was read, and why there is nothing when there is nothing.
+
+## On the ticker page
+
+`src/SupplyChainCard.jsx` fills the `data-slot="supply-chain"` card on Tickers › Ticker. `data/supplychain.json` is bundled with the page (no API call, no Vercel function). Suppliers on the left, customers on the right, competitors below. A company's name re-centres the map on it; its “” opens the sentence and a link to the filing. Anonymised customers are dashed and labelled; a % shows only where the filing states one.
+
+The "held" tint is worked out in the browser from the Console rows that page already loaded behind the login. It is never written to this file, the JSON, a log or a request.
