@@ -31,5 +31,8 @@ eq('recent keeps the newest first, no repeats, five at most', pushRecent(['ECO',
 eq('a new one goes on top and the oldest falls off', pushRecent(['ECO', 'QQQ GEX', 'PORT', 'RAT', 'DRV'], 'spy gex'), ['SPY GEX', 'ECO', 'QQQ GEX', 'PORT', 'RAT']);
 eq('a line that means nothing is not kept', pushRecent(['ECO'], 'zzz yyy'), ['ECO']);
 
+eq('HAND opens the hand-entry list in Data health', (() => { const r = parseGo('hand'); return [r.tab, r.anchor, r.title]; })(), ['health', 'hand-entry', 'Hand-kept inputs']);
+eq('and the plain words reach it too', [parseGo('inputs')?.code, parseGo('hand-kept')?.code], ['HAND', 'HAND']);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
