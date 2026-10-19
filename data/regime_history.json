@@ -4434,12 +4434,12 @@
           "drifting": "def"
         },
         "conditions": {
-          "score": 67.2,
+          "score": 66.5,
           "band": "caution",
           "comps": {
             "credit": 84,
-            "equityVol": 48,
-            "ratesVol": 72,
+            "equityVol": 45,
+            "ratesVol": 71,
             "realYield": 85,
             "funding": 32,
             "breadth": 59,
@@ -4448,14 +4448,14 @@
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 16,
+          "hikeOdds": 18,
           "liq4w": 8
         },
         "sizing": 0.62,
         "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-19T14:37:06.293Z"
+      "loggedAt": "2026-10-19T15:51:59.622Z"
     }
   ]
 }
