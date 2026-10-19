@@ -1,4 +1,5 @@
 // test/crossCheck.test.mjs — the cross-check JSON: data and simple statistics, one failing source never fails the rest.
+import { gexPercentile } from '../lib/squeeze.js';
 import { buildCrossCheck, crossCheckLeaks, scrubError, statusOf, pctRank, chg5, dir5, computeCredit, computeRealYields, computeBreadth,
          computeAuctions, computeCotMarket, parseDixCsv, computeDix, parseCboeDaily, computePutCall, computeAaii, crossCheckHealth, BLOCKS, CADENCE,
          weeklyDownStreak, computeOilPolicy } from '../lib/crossCheck.js';
@@ -47,6 +48,7 @@ const days = (vals, end = '2026-09-28') => { const out = []; let t = Date.parse(
   const csv = 'date,price,dix,gex\n' + Array.from({ length: 300 }, (_, i) => `2025-${String(1 + Math.floor(i / 28) % 12).padStart(2, '0')}-${String(1 + i % 28).padStart(2, '0')},6000,${(0.40 + (i % 50) / 1000).toFixed(4)},${i % 3 ? 1e9 : -1e9}`).join('\n');
   const d = computeDix(parseDixCsv(csv));
   eq('DIX: ten rows, the sign of the latest GEX, and a one-year rank', [d.series.length, d.gex_sign, typeof d.dix_pct_rank_1y], [10, 'positive', 'number']);
+  eq('the GEX rank is the cushion\'s own percentile (252 sessions before today, lib/squeeze.js)', d.gex_pct_rank_1y, Math.round(gexPercentile(parseDixCsv(csv).map(r => [r.date, r.gex]), d.as_of) * 100));
   const pc = parseCboeDaily({ ratios: [{ name: 'TOTAL PUT/CALL RATIO', value: '0.76' }, { name: 'INDEX PUT/CALL RATIO', value: '1.01' }, { name: 'EQUITY PUT/CALL RATIO', value: '0.38' }] }, '2026-09-29');
   eq('Cboe daily ratios by name', pc, { date: '2026-09-29', total: 0.76, equity: 0.38, index: 1.01 });
   const p = computePutCall([{ date: '2026-09-25', total: 0.75, equity: 0.52, index: 0.95 }, pc]);

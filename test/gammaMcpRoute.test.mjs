@@ -30,7 +30,7 @@ eq('no token is a 404', (await call({ token: '', body: list })).code, 404);
 eq('…even a GET', (await call({ method: 'GET', token: 'nope' })).code, 404);
 eq('the right token, GET: 405 (no stream offered)', (await call({ method: 'GET', token: TOKEN })).code, 405);
 const r = await call({ token: TOKEN, body: list });
-eq('tools/list: 200 and exactly the two tools', [r.code, r.body.result.tools.map(t => t.name)], [200, ['get_gamma_dashboard', 'get_gamma_board']]);
+eq('tools/list: 200, the two gamma tools and the Signal Board', [r.code, r.body.result.tools.map(t => t.name)], [200, ['get_gamma_dashboard', 'get_gamma_board', 'get_signal_board']]);
 eq('a notification: 202, no body', (await call({ token: TOKEN, body: { jsonrpc: '2.0', method: 'notifications/initialized' } })).code, 202);
 const batch = await call({ token: TOKEN, body: [{ jsonrpc: '2.0', id: 1, method: 'ping' }, { jsonrpc: '2.0', id: 2, method: 'tools/list' }] });
 eq('a batch gets a batch back', batch.body.map(x => x.id), [1, 2]);

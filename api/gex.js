@@ -23,6 +23,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { kvConfigured, kvGetJson, kvSetJson, kvSetJsonEx, kvIncrEx, kvSetNxEx } from '../lib/kv.js';
 import { gexFeedPayload, feedLeaks, slugMatches, rateBucket, FEED_TICKERS, FEED_RECOMPUTE_MIN, FEED_RATE_PER_HOUR, oiStaleReason, nyToday } from '../lib/gexFeed.js';
 import { crossCheckPayload } from '../lib/crossCheckFeed.js';
+import { signalBoardPayload } from '../lib/signalBoardFeed.js';
 import { handleRpc, dashboardFor, dashboardLeaks, tokenMatches, mcpRateBucket, toolOk, toolError, MCP_RATE_PER_MIN, MCP_TOKEN_ENV, MCP_TOKEN_MIN } from '../lib/gammaMcp.js';
 import { crossCheckLeaks } from '../lib/crossCheck.js';
 import { captureGex, readGex, settledGex, observeRoll, OCC_ROLL_LOG_KEY, OCC_HEALTH_KEY, GEX_SYMBOLS, CUSTOM_ROOT_RE,
@@ -141,6 +142,13 @@ async function serveFeed(req, res) {
 // call feedBoard and the feed's payload builder in-process — the same board, the same numbers.
 async function mcpTool(name, args) {
   const today = nyToday();
+  if (name === 'get_signal_board') {
+    // The Signal Board, as /api/indicators?board=1 serves it; the same leak check as the boards.
+    try {
+      const out = await signalBoardPayload();
+      return feedLeaks(JSON.stringify(out)).length ? toolError('signal board unavailable') : toolOk(out);
+    } catch { return toolError('signal board unavailable'); }
+  }
   if (name === 'get_gamma_board') {
     const { board, mode, asOf, source, staleReason, wallRoll: roll } = await feedBoard(args.ticker);
     if (!board) return toolError('board unavailable');

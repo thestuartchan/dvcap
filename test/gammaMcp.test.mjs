@@ -109,7 +109,8 @@ eq('a trailing newline or space on the stored value still matches', [tokenMatche
   eq('initialize: echoes a version it supports, offers tools', [init.result.protocolVersion, !!init.result.capabilities.tools, init.result.serverInfo.name], ['2025-03-26', true, 'dvcap-gamma']);
   eq('an unknown version gets the latest', (await handleRpc({ jsonrpc: '2.0', id: 2, method: 'initialize', params: { protocolVersion: '1999-01-01' } }, { callTool })).result.protocolVersion, '2025-06-18');
   eq('a notification gets no reply', await handleRpc({ jsonrpc: '2.0', method: 'notifications/initialized' }, { callTool }), null);
-  eq('tools/list: exactly the two tools', (await handleRpc({ jsonrpc: '2.0', id: 3, method: 'tools/list' }, { callTool })).result.tools.map(t => t.name), ['get_gamma_dashboard', 'get_gamma_board']);
+  eq('tools/list: the two gamma tools and the Signal Board', (await handleRpc({ jsonrpc: '2.0', id: 3, method: 'tools/list' }, { callTool })).result.tools.map(t => t.name), ['get_gamma_dashboard', 'get_gamma_board', 'get_signal_board']);
+  eq('get_signal_board takes no arguments and refuses unknown ones only by schema', checkArgs('get_signal_board', { anything: 1 }), { args: {} });
   ok('every tool says it is read-only and carries no account data', TOOLS.every(t => t.annotations.readOnlyHint && /no account/i.test(t.description)));
   const bad = await handleRpc({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'get_gamma_board', arguments: { ticker: 'NVDA' } } }, { callTool });
   eq('a disallowed ticker: isError with a plain message, the tool never called', [bad.result.isError, bad.result.content[0].text, calls.length], [true, 'ticker not allowed: NVDA', 0]);

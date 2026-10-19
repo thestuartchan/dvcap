@@ -1,5 +1,5 @@
 // test/trendTells.test.mjs — the trend-day tells and their fifteen-year rates (lib/trendTells.js).
-import { tellsFor, tellsHeadline, shownTells, firstHourBands, BACKTEST, BASE_RATE, cushionBand, CUSHION } from '../lib/trendTells.js';
+import { tellsFor, tellsHeadline, shownTells, firstHourBands, BACKTEST, BASE_RATE, cushionBand, CUSHION, zoneOf } from '../lib/trendTells.js';
 import { parseDix, gexPercentile } from '../lib/squeeze.js';
 import { firstHourFrom } from '../lib/yahoo.js';
 
@@ -57,7 +57,8 @@ const ok = (n, c) => eq(n, !!c, true);
 
 // ── THE CUSHION BANDS (13 Oct) ──
 eq('the bands: negative GEX first, then by percentile, with the lean', [cushionBand(0.05, -1e9).key, cushionBand(0.1, 3e9).lean, cushionBand(0.3, 5e9).lean, cushionBand(0.5, 6e9).lean, cushionBand(0.77, 7.3e9).lean, cushionBand(0.95, 9e9).lean],
-  ['neg', 'trade', 'selective', 'selective', 'lean skip', 'lean skip']);
+  ['neg', 'trade', 'trade', 'selective', 'lean skip', 'lean skip']);
+eq('every band\'s lean is the one zone rule applied to its QQQ median (Signal Board, 20 Oct)', CUSHION.every(b => b.lean === zoneOf(b.qqq)), true);
 eq('range ÷ implied falls band by band, on both symbols', [CUSHION.every((b, i) => i === 0 || b.spx <= CUSHION[i - 1].spx), CUSHION.every((b, i) => i === 0 || b.qqq <= CUSHION[i - 1].qqq)], [true, true]);
 {
   const g = tellsFor({ gexPct: 0.77, gexValue: 7.34e9 }).find(t => t.key === 'gex');
