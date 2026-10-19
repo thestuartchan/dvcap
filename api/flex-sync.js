@@ -34,6 +34,7 @@ const SEEN_KEY = 'dvcap:flex:seen:v1';
 const PENDING_KEY = 'dvcap:flex:pending:v1';
 const PENDING_TTL_S = 15 * 60;
 import { derivePosition, splitIntoTrades } from '../lib/positions.js';
+import { expiryCloses, applyExpiryCloses, parseOptionEae, eaeSectionPresent } from '../lib/optionExpiry.js';
 import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, unrecordedTrades, dropCreatedAdds } from '../lib/flexTrades.js';
 import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf, planAck, reconcilingFill, flexEnv, flexConfigured, isoDate, optionFindings, addLabel, cashBookOf, optionMarksOf } from '../lib/flex.js';
 import { post, webhookFromEnv } from '../lib/discord.js';
@@ -152,6 +153,13 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
     // Rows quoted off a different listing from the one IBKR holds (lib/listings.js). Symbols only.
     listings: rec.listings.map(l => ({ id: l.id, root: l.root, quoteAs: l.quoteAs, current: l.current, explicit: l.explicit })),
   };
+  // ── EXPIRED OPTIONS (lib/optionExpiry.js) ─────────────────────────────────
+  // A console option gone from the statement after its expiry is closed at 0 only where IBKR's
+  // Option Exercises, Assignments and Expirations section books it as an Expiration; an exercise or
+  // assignment, or no section at all, is left for a person.
+  const expiry = expiryCloses(withDerived, rec.report.filter(r => r.kind === 'option-missing-at-broker'),
+    { eae: parseOptionEae(got.xml), present: eaeSectionPresent(got.xml), asOf });
+  result.expiries = { closes: expiry.closes.map(c => ({ id: c.rowId, root: c.root, contract: c.contract, date: c.fill.date })), waiting: expiry.waiting };
   // ── TRADES ────────────────────────────────────────────────────────────────
   // The Open Positions section cannot say whether an exit was recorded — a sold position is simply
   // absent, which looks identical to one the console never knew about. The Trades section can.
@@ -268,7 +276,8 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
     // only by the signed-in console, which offers it for Settings › Account equity; it never goes
     // to the channel.
     nav: got.statement.nav || null,
-    applied: !!(fresh.length || plan.ack.length || (apply && tradeRows)),
+    applied: !!(fresh.length || plan.ack.length || (apply && tradeRows) || closingExpiries),
+    expired: closingExpiries ? expiry.closes.map(c => c.contract) : [],
     // Counts for the console's status line (lib/flexStatus.js) — how many of the statement's
     // positions the console agrees with, so a quiet run reads as checked rather than as absent.
     agree: rec.agree.length,
@@ -309,6 +318,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
                                             : o.kind === 'option-not-in-console' ? `${o.contract}: held at IBKR, not in the console`
                                             : `${o.contract}: in the console, not at IBKR`, root: o.root, id: o.ids?.[0] || null })),
       ...((tradePlan?.report) || []).map(r => ({ what: r.kind.replace(/-/g, ' '), root: r.root })),
+      ...expiry.waiting.map(w => ({ what: `${w.contract}: ${w.note}`, root: w.root, id: w.id || w.ids?.[0] || null })),
       ...adoption.missing.map(m => ({ what: `same-day fill of ${m.date} is not in this statement — kept, provisional; check it against IBKR`, root: m.symbol, id: m.rowId })),
       ...adoption.ambiguous.map(m => ({ what: `same-day fill of ${m.date} matches more than one statement order — kept, provisional`, root: m.symbol, id: m.rowId })),
     ].slice(0, 12),
@@ -325,14 +335,15 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   // announce anything actionable, once, and again only if what is wrong changes.
   if (apply) result.told = await tell(rec2, asOf, apply && tradeRows ? tradePlan : null, journal);
   const writingTrades = apply && !!tradeRows;
-  if (!fresh.length && !plan.ack.length && !writingTrades && !from0) {
+  const closingExpiries = apply && expiry.closes.length > 0;
+  if (!fresh.length && !plan.ack.length && !writingTrades && !closingExpiries && !from0) {
     if (apply) await kvSetJson(FLEX_NOTE_KEY, noteOf());
     return result;
   }
 
   const acked = new Map(plan.ack.map(a => [a.id, a.to]));
   const base = writingTrades ? tradeRows : rows;
-  const merged = base.map(r => acked.has(r.id) ? { ...r, costBasisAck: acked.get(r.id) } : r);
+  const merged = applyExpiryCloses(base.map(r => acked.has(r.id) ? { ...r, costBasisAck: acked.get(r.id) } : r), closingExpiries ? expiry.closes : []);
   const settings = from0 ? { ...(stored?.settings || {}), flexTradesFrom: from0 } : (stored?.settings || {});
   // A new revision (lib/consoleRev.js): a browser holding the copy from before this write is
   // refused on its next save rather than putting these fills back the way they were.
@@ -341,7 +352,8 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   if (!wrote) return { ...result, ok: false, error: 'Redis write failed — nothing was changed' };
   // `applied` means ROWS CHANGED. Writing only the watermark is a settings change and used to set
   // this true, which read as "the trades were ingested" on a run that ingested nothing.
-  result.applied = !!(fresh.length || plan.ack.length || writingTrades);
+  result.applied = !!(fresh.length || plan.ack.length || writingTrades || closingExpiries);
+  if (closingExpiries) result.expiries.applied = true;
   if (from0) result.watermarkSet = from0;
   if (fresh.length) result.added = fresh.map(r => r.id);
   if (writingTrades) result.trades.applied = true;
