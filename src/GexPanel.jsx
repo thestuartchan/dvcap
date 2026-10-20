@@ -1196,19 +1196,20 @@ export function GammaDays({ symbol, series }) {
                             <span style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4, marginRight: 2 }}>Cushion bands</span>
                             {CUSHION.map(bd => {
                               const on = bd.key === t.cushion.band;
-                              const tone = bd.lean === "trade" ? C.green : bd.lean === "lean skip" ? C.amber : C.mid;
+                              // Tone by QQQ, the primary instrument; each ticker's lean is printed beside its own ×.
+                              const tone = bd.leanQqq === "trade" ? C.green : bd.leanQqq === "lean skip" ? C.amber : C.mid;
                               return (
-                                <span key={bd.key} title={`${bd.label}: days moved ${bd.spx}× their implied range (SPX), ${bd.qqq}× (QQQ) · ${bd.lean}`}
+                                <span key={bd.key} title={`${bd.label}: days moved ${bd.spx}× their implied range (SPX · ${bd.leanSpx}), ${bd.qqq}× (QQQ · ${bd.leanQqq})`}
                                       style={{ fontSize: 11, padding: "2px 8px", borderRadius: 999, fontVariantNumeric: "tabular-nums",
                                                border: `${on ? 2 : 1}px solid ${on ? tone : C.bdr}`, background: on ? C.surf : "transparent",
                                                color: on ? tone : C.muted, fontWeight: on ? 800 : 600 }}>
-                                  {bd.label} · {bd.lean} · {bd.spx.toFixed(2)}× / {bd.qqq.toFixed(2)}×
+                                  {bd.label} · SPX {bd.spx.toFixed(2)}× {bd.leanSpx} / QQQ {bd.qqq.toFixed(2)}× {bd.leanQqq}
                                 </span>
                               );
                             })}
                           </div>
                           <div style={{ fontSize: 10.5, color: C.muted, marginTop: 4 }}>
-                            × = the day's range against the move options priced the evening before (SPX / QQQ). Above 1 pays an option buyer; below 1 premium bleeds. {CUSHION_SOURCE}.
+                            × = the day's range against the move options priced the evening before, with each ticker's lean (SPY reads SPX's). Above 1 pays an option buyer; below 1 premium bleeds. {CUSHION_SOURCE}.
                           </div>
                         </td>
                       </tr>

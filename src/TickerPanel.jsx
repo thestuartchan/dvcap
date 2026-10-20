@@ -10,7 +10,8 @@
 //                                  on EDGAR, read by scripts/supplychain-build.mjs (SupplyChainCard)
 //   your line                      the Console's rows, already in this logged-in browser (passed in).
 //                                  It is read here and shown here; it is never sent anywhere.
-// A card with nothing to show says why rather than going blank.
+// A card with nothing to show says why rather than going blank. Under the name, one line says what
+// each part of the dashboard does with this symbol (lib/coverage.js), so a blank card is expected.
 import { useEffect, useMemo, useState } from "react";
 import { C } from "./theme.js";
 import { Card, SLabel } from "./ui.jsx";
@@ -18,6 +19,7 @@ import { SupplyChainCard } from "./SupplyChainCard.jsx";
 import { dubaiEt, dubaiEtStamp, zonedInstant } from "../lib/timeFmt.js";
 import { linesFor, ratioContext, nextEarnings, chartOf, money, cleanSymbol, TICKER_RE } from "../lib/tickerPage.js";
 import { eventsBetween } from "../lib/calendar.js";
+import { coverageFor, priceSymbol, kindOf, GAMMA_STORED } from "../lib/coverage.js";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const pctTxt = (v) => (v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(2)}%`);
@@ -41,6 +43,24 @@ function useFor(sym, url) {
   return got?.sym === sym ? got : null;
 }
 
+// One line under the name: what each part of the dashboard does with this symbol. Green: covered.
+// Blue: an open source that answers if it has the symbol. Grey: not covered, with the reason on hover.
+const COV_TONE = { yes: () => [C.green, C.gBg], try: () => [C.blue, C.blBg], no: () => [C.lbl, C.bg] };
+function CoverageLine({ rows }) {
+  if (!rows?.length) return null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }} aria-label="What the dashboard covers for this symbol">
+      {rows.map(r => {
+        const [col, bg] = (COV_TONE[r.status] || COV_TONE.no)();
+        return <span key={r.id} title={r.why} style={{ fontSize: 10.5, fontWeight: 700, color: col, background: bg, border: "1px solid " + C.bdr, borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap" }}>
+          {r.status === "yes" ? "✓" : r.status === "try" ? "?" : "–"} {r.label}
+        </span>;
+      })}
+      <span style={{ fontSize: 10.5, color: C.lbl, alignSelf: "center" }}>✓ covered · ? if the source has it · – not covered (hover for why) · type COV for the full list</span>
+    </div>
+  );
+}
+
 const Why = ({ children }) => <div style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.5 }}>{children}</div>;
 const Row = ({ k, v, sub, col }) => (
   <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", padding: "4px 0", borderBottom: "1px solid " + C.bdr }}>
@@ -56,13 +76,21 @@ export function TickerPanel({ symbol, onSymbol, consoleRows = null, calendarExtr
   // Read once per mount (the page remounts per symbol): today, and the end of the earnings window.
   const [[today, until]] = useState(() => { const n = Date.now(); return [new Date(n).toISOString().slice(0, 10), new Date(n + 200 * 86400000).toISOString().slice(0, 10)]; });
 
-  const quote = useFor(sym, `/api/prices?tickers=${encodeURIComponent(sym)}`);
-  const hist = useFor(sym, `/api/atr?history=1&range=1y&tickers=${encodeURIComponent(sym)}`);
-  const des = useFor(sym, `/api/atr?des=${encodeURIComponent(sym)}`);
-  const gex = useFor(sym, `/api/gex?symbol=${encodeURIComponent(sym)}`);
+  // The price feed's spelling (BRK.B → BRK-B, SPX → ^GSPC); SEC and the page keep what was typed.
+  const ps = priceSymbol(sym);
+  const kind = kindOf(sym);
+  const cov = useMemo(() => coverageFor(sym), [sym]);
+  const why = (id) => cov.find(r => r.id === id)?.why || null;
+  // SEC is asked only about what could be a US company; the stored gamma board only where one is kept.
+  const secAsk = kind === "us" || kind === "class";
+  const gexAsk = GAMMA_STORED.includes(sym);
+  const quote = useFor(sym, `/api/prices?tickers=${encodeURIComponent(ps)}`);
+  const hist = useFor(sym, `/api/atr?history=1&range=1y&tickers=${encodeURIComponent(ps)}`);
+  const des = useFor(sym, secAsk ? `/api/atr?des=${encodeURIComponent(sym)}` : null);
+  const gex = useFor(sym, gexAsk ? `/api/gex?symbol=${encodeURIComponent(sym)}` : null);
 
-  const q = quote?.j?.[sym] || null;
-  const closes = hist?.j?.symbols?.[sym]?.closes || null;
+  const q = quote?.j?.[ps] || null;
+  const closes = hist?.j?.symbols?.[ps]?.closes || null;
   const chart = useMemo(() => chartOf(closes || [], { w: 340, h: 120 }), [closes]);
   const d = des?.j || null;
   const lines = useMemo(() => linesFor(consoleRows || [], sym), [consoleRows, sym]);
@@ -94,9 +122,11 @@ export function TickerPanel({ symbol, onSymbol, consoleRows = null, calendarExtr
         </form>
         <div style={{ marginTop: 10, display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
           <span style={{ fontSize: 24, fontWeight: 900, color: C.text, fontFamily: MONO }}>{sym}</span>
-          <span style={{ fontSize: 14, fontWeight: 700, color: C.mid }}>{d?.name || hist?.j?.symbols?.[sym]?.name || ""}</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: C.mid }}>{d?.name || hist?.j?.symbols?.[ps]?.name || ""}</span>
           {d?.sic && <span style={{ fontSize: 11, color: C.muted }}>{d.sic}</span>}
+          {ps !== sym && <span style={{ fontSize: 11, color: C.muted }}>priced as <b style={{ fontFamily: MONO }}>{ps}</b></span>}
         </div>
+        <CoverageLine rows={cov} />
         {q?.price != null ? (
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
             <span style={{ fontSize: 22, fontWeight: 900, fontFamily: MONO, color: C.text }}>{q.price.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
@@ -122,7 +152,7 @@ export function TickerPanel({ symbol, onSymbol, consoleRows = null, calendarExtr
             </div>
             <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 4 }}>Settled closes only, last {shortDate(chart.lastDate)} · Yahoo daily history</div>
           </>
-        ) : <Why>{hist ? `No daily history for ${sym} (${hist?.j?.symbols?.[sym]?.status || "feed unavailable"}).` : "Loading the year's closes…"}</Why>}
+        ) : <Why>{hist ? `No daily history for ${ps} (${hist?.j?.symbols?.[ps]?.status || "feed unavailable"}).` : "Loading the year's closes…"}</Why>}
       </Card>
 
       {/* ── YOUR LINE ── read in this browser from what the Console already loaded; never sent. */}
@@ -150,13 +180,14 @@ export function TickerPanel({ symbol, onSymbol, consoleRows = null, calendarExtr
         {earn ? (
           <Row k={shortDate(earn.date)} v={earn.time && earn.tz ? (() => { const at = zonedInstant(earn.date, earn.time, earn.tz); return at ? dubaiEt(at, { refDate: earn.date }) : earn.time; })() : "time not given"}
             sub={`${earn.title}${earn.estimated ? " · est., not yet confirmed" : ""} · ${earn.source}`} />
-        ) : <Why>No earnings date for {sym} on the calendar in the next six months.</Why>}
+        ) : <Why>No earnings date for {sym} on the calendar in the next six months{cov.find(r => r.id === "earnings")?.status === "no" ? ` — ${why("earnings")}` : ""}.</Why>}
       </Card>
 
       {/* ── FUNDAMENTALS ── SEC EDGAR, the company's own XBRL. */}
       <Card>
         <SLabel>Fundamentals · from the filings</SLabel>
-        {!des ? <Why>Reading SEC EDGAR…</Why>
+        {!secAsk ? <Why>Not read for {sym}: {why("sec")}.</Why>
+          : !des ? <Why>Reading SEC EDGAR…</Why>
           : !d?.ok ? <Why>{d?.why || des?.error || "SEC EDGAR did not answer."}</Why>
           : !f?.gaap ? <Why>{d.fundamentalsWhy || (f?.ifrs ? `${d.name} reports in IFRS (a foreign filer); this page reads US-GAAP figures only. Its filings are listed below.` : "No US-GAAP XBRL figures in this company's filings.")}</Why>
           : (
@@ -199,7 +230,8 @@ export function TickerPanel({ symbol, onSymbol, consoleRows = null, calendarExtr
       {/* ── FILINGS ── */}
       <Card>
         <SLabel>Recent filings · SEC EDGAR</SLabel>
-        {!des ? <Why>Reading SEC EDGAR…</Why>
+        {!secAsk ? <Why>Not read for {sym}: {why("sec")}.</Why>
+          : !des ? <Why>Reading SEC EDGAR…</Why>
           : !d?.ok ? <Why>{d?.why || "No filing index."}</Why>
           : !d.filings?.length ? <Why>{d.filingsWhy || "No 10-K, 10-Q or 8-K on file."}</Why>
           : d.filings.map((x, i) => (
@@ -225,7 +257,8 @@ export function TickerPanel({ symbol, onSymbol, consoleRows = null, calendarExtr
             <Row k="Put wall" v={g.putWall ?? "—"} />
             {g.gexUsd != null && <Row k="Net gamma" v={money(g.gexUsd)} sub="per 1% move" col={g.gexUsd >= 0 ? C.green : C.red} />}
           </>
-        ) : <Why>{gex ? `No stored board for ${sym} (one is kept for QQQ, SPY and SPX). Open it on the Gamma tab to compute one from Cboe's chain on demand.` : "Reading the stored board…"}</Why>}
+        ) : <Why>{gexAsk ? (gex ? `No stored board for ${sym} came back.` : "Reading the stored board…")
+          : `No stored board for ${sym}: boards are kept for ${GAMMA_STORED.join(" and ")} only. Here, ${why("gamma")}.`}</Why>}
       </Card>
 
       {/* ── WHERE IT SITS IN THE MARKET READ ── */}
