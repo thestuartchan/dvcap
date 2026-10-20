@@ -7,6 +7,7 @@ import { C } from "./theme.js";
 import { Card, SLabel } from "./ui.jsx";
 import { coverageFor, priceSymbol, COVERAGE_LISTS, COVERAGE_OPEN } from "../lib/coverage.js";
 import { TICKER_RE } from "../lib/goCommands.js";
+import { UniverseAdd } from "./UniverseAdd.jsx";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const TONE = { yes: ["✓", () => C.green], try: ["?", () => C.blue], no: ["–", () => C.lbl] };
@@ -48,6 +49,7 @@ export function CoveragePanel({ onOpenTicker = null }) {
             </div>
           ))}
           <div style={{ fontSize: 10.5, color: C.lbl, marginTop: 4 }}>✓ covered · ? an open source; it works if the source has this symbol · – not covered</div>
+          <UniverseAdd sym={sym} />
         </div>
       )}
 

@@ -35,6 +35,8 @@
 // The display names are the exception and ARE curated: the feed's own strings are inconsistently
 // cased and sometimes truncated mid-word ("TAIWAN SEMICONDUCTOR MANUFACTUR"), so the non-US names
 // carry a short form. US tickers are their own names and carry none.
+import ADDED from './universe_added.json' with { type: 'json' };
+
 export const WATCH_META = Object.freeze({
   '0002.HK': { name: 'CLP', cat: 'utilities', sub: 'regulated power' },
   '000270.KS': { name: 'Kia', cat: 'consumer cyclical', sub: 'autos' },
@@ -240,7 +242,9 @@ export const WATCH_META = Object.freeze({
   'ZETA': { cat: 'tech', sub: 'infrastructure software' },
 });
 
-export const watchName = (sym) => WATCH_META[sym]?.name || sym;
+// A name added from the dashboard carries the name it was added under (data/universe_added.json).
+const ADDED_NAME = Object.fromEntries(Object.values(ADDED.watch || {}).flat().map(w => [w.sym, w.name]));
+export const watchName = (sym) => WATCH_META[sym]?.name || ADDED_NAME[sym] || sym;
 // Both levels, narrowest first. The caller decides which one it can actually use — see
 // GROUP_MIN_PEERS in lib/watchlist.js.
 export const watchLevels = (sym) => {

@@ -20,6 +20,8 @@ import { dubaiEt, dubaiEtStamp, zonedInstant } from "../lib/timeFmt.js";
 import { linesFor, ratioContext, nextEarnings, chartOf, money, cleanSymbol, TICKER_RE } from "../lib/tickerPage.js";
 import { eventsBetween } from "../lib/calendar.js";
 import { coverageFor, priceSymbol, kindOf, GAMMA_STORED } from "../lib/coverage.js";
+import { isUsSingle } from "../lib/universeAdded.js";
+import { UniverseAdd } from "./UniverseAdd.jsx";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const pctTxt = (v) => (v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(2)}%`);
@@ -100,6 +102,9 @@ export function TickerPanel({ symbol, onSymbol, consoleRows = null, calendarExtr
   const held = useMemo(() => (consoleRows ? { has: (t) => linesFor(consoleRows, t).some(l => l.status === "open") } : null), [consoleRows]);
   const events = useMemo(() => [...eventsBetween(today, until), ...(calendarExtra || [])], [calendarExtra, today, until]);
   const earn = useMemo(() => nextEarnings(events, sym, { name: d?.name || null, today }), [events, sym, d?.name, today]);
+  // Not on the calendar: a US company still has a date, asked of Nasdaq directly (/api/atr?earnings=).
+  const liveEarn = useFor(sym, !earn && isUsSingle(sym) ? `/api/atr?earnings=${encodeURIComponent(sym)}` : null);
+  const le = liveEarn?.j || null;
   const g = gex?.j?.available ? gex.j.latest : null;
 
   const go = () => { const s = cleanSymbol(typed); if (s && TICKER_RE.test(s)) onSymbol?.(s); };
@@ -127,6 +132,7 @@ export function TickerPanel({ symbol, onSymbol, consoleRows = null, calendarExtr
           {ps !== sym && <span style={{ fontSize: 11, color: C.muted }}>priced as <b style={{ fontFamily: MONO }}>{ps}</b></span>}
         </div>
         <CoverageLine rows={cov} />
+        <UniverseAdd sym={sym} name={d?.name || null} />
         {q?.price != null ? (
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
             <span style={{ fontSize: 22, fontWeight: 900, fontFamily: MONO, color: C.text }}>{q.price.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
@@ -180,7 +186,12 @@ export function TickerPanel({ symbol, onSymbol, consoleRows = null, calendarExtr
         {earn ? (
           <Row k={shortDate(earn.date)} v={earn.time && earn.tz ? (() => { const at = zonedInstant(earn.date, earn.time, earn.tz); return at ? dubaiEt(at, { refDate: earn.date }) : earn.time; })() : "time not given"}
             sub={`${earn.title}${earn.estimated ? " · est., not yet confirmed" : ""} · ${earn.source}`} />
-        ) : <Why>No earnings date for {sym} on the calendar in the next six months{cov.find(r => r.id === "earnings")?.status === "no" ? ` — ${why("earnings")}` : ""}.</Why>}
+        ) : le?.ok && le.date ? (
+          <Row k={shortDate(le.date)} v={le.time || "time not given"}
+            sub={`${le.status === "estimated" ? "est., not yet confirmed" : "confirmed"} · live from Nasdaq (Zacks) — not on the calendar; "Add to › Earnings watch" puts it there`} />
+        ) : <Why>{liveEarn && isUsSingle(sym) ? `No earnings date for ${sym}: not on the calendar, and Nasdaq says ${le?.why || "nothing"}.`
+          : !earn && isUsSingle(sym) ? "Asking Nasdaq for the next date…"
+          : `No earnings date for ${sym} on the calendar in the next six months${cov.find(r => r.id === "earnings")?.status === "no" ? ` — ${why("earnings")}` : ""}.`}</Why>}
       </Card>
 
       {/* ── FUNDAMENTALS ── SEC EDGAR, the company's own XBRL. */}

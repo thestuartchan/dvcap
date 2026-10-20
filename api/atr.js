@@ -17,7 +17,7 @@ import { kvGetJson, kvSetJsonEx, kvConfigured } from '../lib/kv.js';
 import holidays from '../data/holidays.json' with { type: 'json' };
 import { buildCta } from '../lib/ctaBook.js';
 import { readBreakLog, updateBreakLog } from '../lib/ratioBreakLog.js';
-import { fetchEarningsHistory } from '../lib/earnings.js';
+import { fetchEarningsHistory, fetchEarnings } from '../lib/earnings.js';
 import { earningsReactions } from '../lib/holdTypes.js';
 import { lastSettledSession } from '../lib/ratios.js';
 import { authorised, refusalReason } from '../lib/apiauth.js';
@@ -104,7 +104,7 @@ async function closeHistory(list, range) {
 }
 
 export default async function handler(req, res) {
-  const { tickers, period, future, cta, history, range, ratios, reactions, des } = req.query || {};
+  const { tickers, period, future, cta, history, range, ratios, reactions, des, earnings } = req.query || {};
   // ── ?des=SYM — THE TICKER PAGE'S FILING HALF (lib/secDes.js) ──
   // Fundamentals from the company's own XBRL filings and its recent filing index, read raw from SEC
   // EDGAR and kept 12 hours in KV. Folded into this route because the project is at its function
@@ -113,6 +113,13 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=21600');
     try { return res.status(200).json(await fetchDes(String(des).slice(0, 12))); }
     catch (e) { return res.status(200).json({ ok: false, symbol: String(des).slice(0, 12).toUpperCase(), why: String(e?.message || e).slice(0, 160) }); }
+  }
+  // ── ?earnings=SYM — ONE COMPANY'S NEXT EARNINGS DATE (the ticker page, for a name the calendar
+  // does not watch) ── Nasdaq's per-symbol date (lib/earnings.js), confirmed or estimated. Market
+  // data only; kept six hours at the edge.
+  if (earnings) {
+    res.setHeader('Cache-Control', 's-maxage=21600, stale-while-revalidate=43200');
+    return res.status(200).json(await fetchEarnings(String(earnings).trim().toUpperCase().slice(0, 12)));
   }
   // ── ?reactions=SYM — THE LAST FOUR EARNINGS MOVES (the sizer's Event hold type) ──
   // Report dates from Nasdaq's earnings-surprise table; each move measured from daily closes

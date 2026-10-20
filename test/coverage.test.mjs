@@ -28,7 +28,7 @@ eq('an exchange suffix is not a share class', [priceSymbol('XYZ.L'), priceSymbol
 
 // ── One symbol ──
 const st = (sym) => Object.fromEntries(coverageFor(sym).map(r => [r.id, r.status]));
-eq('an unknown US-shaped name: open sources only', st('QXZQ'), { price: 'try', sec: 'try', gamma: 'try', earnings: 'no', supply: 'no' });
+eq('an unknown US-shaped name: open sources only, its earnings date a live lookup', st('QXZQ'), { price: 'try', sec: 'try', gamma: 'try', earnings: 'try', supply: 'no' });
 eq('a non-US listing: price only', st('123456.KQ'), { price: 'try', sec: 'no', gamma: 'no', earnings: 'no', supply: 'no' });
 eq('a future: no filings, no gamma', [st('QX=F').sec, st('QX=F').gamma], ['no', 'no']);
 eq('SPX: gamma inside the S&P map, priced as ^GSPC', [st('SPX').gamma, coverageFor('SPX').find(r => r.id === 'price').why], ['yes', 'Yahoo, read as ^GSPC']);
