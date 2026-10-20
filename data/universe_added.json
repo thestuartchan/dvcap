@@ -1,0 +1,6 @@
+{
+  "_README": "Names added from the dashboard's 'Add to' buttons (ticker page and Data health › Ticker coverage), on top of the lists kept in code: data/earnings_watch.json, lib/supplyChain.js SC_UNIVERSE and data/watchUniverse.js. Written by api/manual-entry.js through the GitHub contents API, one commit per change; read by lib/universeAdded.js. Public company names only — nothing here says what is held.",
+  "earnings": [],
+  "supply": [],
+  "watch": { "us": [], "eu": [], "asia": [] }
+}

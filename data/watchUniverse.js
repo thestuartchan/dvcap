@@ -30,7 +30,9 @@
 // Dividend Yield). Every one is a basket tracking an index, and the rule at the top of this file
 // admits no index products. DRAM stays: it was identified by name as the Roundhill Memory ETF and
 // asked for specifically, and a single-theme fund is a view on that theme rather than on a market.
-export const WATCH_UNIVERSE = Object.freeze({
+import ADDED from './universe_added.json' with { type: 'json' };
+
+const WATCH_BASE = Object.freeze({
   us: Object.freeze([
     'AAL',       'AAOI',      'AAPL',      'ACHR',      'ADBE',      'AEHR',      'AMAT',      'AMD',
     'AMZN',      'ARM',       'ASML',      'ASST',      'ASTS',      'AVGO',      'BABA',      'BLSH',
@@ -87,6 +89,12 @@ export const WATCH_UNIVERSE = Object.freeze({
     '2308.TW',   '2317.TW',   '2330.TW',   '2412.TW',   '2454.TW',   '2881.TW',   '3008.TW',
   ]),
 });
+
+// The list above plus the names added from the dashboard's "Add to" buttons
+// (data/universe_added.json, through lib/universeAdded.js), each in its own region, after the
+// list's own. A name added there passed the price feed before it was written, as these did.
+export const WATCH_UNIVERSE = Object.freeze(Object.fromEntries(Object.entries(WATCH_BASE).map(([r, list]) =>
+  [r, Object.freeze([...list, ...((ADDED.watch || {})[r] || []).map(w => w.sym).filter(s => !list.includes(s))])])));
 
 // Flat lookup, for asserting that a symbol reaching the watchlist came from here.
 export const IN_WATCH_UNIVERSE = Object.freeze(

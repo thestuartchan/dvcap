@@ -22,6 +22,10 @@ import { sideOf } from '../lib/side.js';
 import { PLAUSIBLE_SEC_YIELD, parseYieldValue, parseIssuerDate } from '../lib/fundYield.js';
 import { SEC_YIELD_TICKERS } from '../lib/cashyield.js';
 import { authorised, hasSessionCookie, refuse } from '../lib/apiauth.js';
+import { ADD_LISTS, ADD_LABEL, addEntry, removeEntry } from '../lib/universeAdded.js';
+import { fetchEarnings } from '../lib/earnings.js';
+import { fetchDes } from '../lib/secDes.js';
+import { getQuotes } from '../lib/quotes.js';
 import { saveCheck } from '../lib/consoleRev.js';
 import { fetchHlAccount, fetchHlSpot, fetchSpotContext, fetchHyperliquid } from '../lib/hyperliquid.js';
 import { fetchWallets } from '../lib/wallet.js';
@@ -29,6 +33,7 @@ import { validateNote, noteBytes, MAX_NOTE_BYTES } from '../lib/journalInbox.js'
 import { journalTokenOk, underRateLimit, appendNote, pendingCount, readJournal, resolveDraft, resolveMany, dropNote, noteToAmend } from '../lib/journalStore.js';
 
 const DATA_PATH = 'data/manual_entry.json';
+const UNIVERSE_PATH = 'data/universe_added.json';
 
 // ── Where each kind of state lives ───────────────────────────────────────────
 // GIT (data/manual_entry.json): curated macro inputs — fedPath, oasRecon, intervention, recession
@@ -82,6 +87,59 @@ async function readStore() {
   store.console.rows ||= [];
   store.console.settings ||= {};
   return { store, sha: meta.sha };
+}
+
+async function readUniverseFile() {
+  const r = await fetch(`https://api.github.com/repos/${process.env.GITHUB_REPO}/contents/${UNIVERSE_PATH}?ref=${encodeURIComponent(process.env.GITHUB_BRANCH || 'main')}`, { headers: ghHeaders() });
+  if (!r.ok) return { file: null, sha: null, error: `GitHub answered ${r.status}` };
+  const meta = await r.json();
+  try { return { file: JSON.parse(Buffer.from(meta.content, 'base64').toString('utf8')), sha: meta.sha }; }
+  catch { return { file: null, sha: null, error: 'the file did not parse' }; }
+}
+async function universeChange(u) {
+  const op = u.op === 'remove' ? 'remove' : 'add';
+  const list = String(u.list || '');
+  const sym = String(u.sym || '').trim().toUpperCase().slice(0, 12);
+  if (!ADD_LISTS.includes(list)) return { ok: false, error: `unknown list ${list}` };
+  let name = u.name == null ? null : String(u.name).slice(0, 80);
+  if (op === 'add') {
+    // Checked against the list's own source before it is written.
+    if (list === 'earnings') {
+      const e = await fetchEarnings(sym, { timeoutMs: 8000 });
+      if (/not a listed single name|feed error/.test(e.why || '')) return { ok: false, error: `Nasdaq has no earnings feed for ${sym} (${e.why})` };
+    } else if (list === 'supply') {
+      const d = await fetchDes(sym).catch(e => ({ ok: false, why: String(e?.message || e) }));
+      if (!d?.ok) return { ok: false, error: `SEC EDGAR has no filings for ${sym} (${d?.why || 'no answer'})` };
+      name = name || d.name || null;
+    } else {
+      const [q] = await getQuotes([sym]).catch(() => [null]);
+      if (!(q?.price > 0)) return { ok: false, error: `the price feed has no quote for ${sym}, and nothing on the watchlist may be a symbol without a price` };
+      name = name || q.name || null;
+    }
+  }
+  const got = await readUniverseFile();
+  if (!got.file) return { ok: false, error: `could not read ${UNIVERSE_PATH}: ${got.error}` };
+  const next = op === 'add' ? addEntry(got.file, list, sym, { name }) : removeEntry(got.file, list, sym);
+  if (next.error) return { ok: false, error: next.error };
+  if (!next.changed) return { ok: true, op, list, sym, changed: false };
+  const content = Buffer.from(JSON.stringify({ ...got.file, ...next.file }, null, 2) + '\n', 'utf8').toString('base64');
+  const message = `Universe — ${op === 'add' ? 'add' : 'remove'} ${sym} ${op === 'add' ? 'to' : 'from'} the ${ADD_LABEL[list].toLowerCase()}`;
+  const w = await fetch(`https://api.github.com/repos/${process.env.GITHUB_REPO}/contents/${UNIVERSE_PATH}`, {
+    method: 'PUT', headers: { ...ghHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, content, sha: got.sha, branch: process.env.GITHUB_BRANCH || 'main' }),
+  });
+  if (!w.ok) return { ok: false, error: w.status === 409 ? 'the file changed while this was written — try again' : `GitHub refused the write (${w.status})` };
+  // A new filer on the supplier map: ask the weekly refresh to read it now rather than on Sunday.
+  // The commit above lands first; if the token cannot start a workflow, Sunday's run picks it up.
+  let readNow = null;
+  if (op === 'add' && list === 'supply') {
+    const d = await fetch(`https://api.github.com/repos/${process.env.GITHUB_REPO}/actions/workflows/supplychain-refresh.yml/dispatches`, {
+      method: 'POST', headers: { ...ghHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: process.env.GITHUB_BRANCH || 'main', inputs: { tickers: sym } }),
+    }).catch(() => null);
+    readNow = !!d?.ok;
+  }
+  return { ok: true, op, list, sym, changed: true, readNow };
 }
 
 // ZQ is quoted as 100 − implied average fed funds for the contract month.
@@ -498,6 +556,14 @@ export default async function handler(req, res) {
       orderId: journalDraft.orderId == null ? null : String(journalDraft.orderId).slice(0, 40) });
     return res.status(r.ok ? 200 : 409).json({ journal: r.ok ? { drafts: r.drafts } : { error: r.error } });
   }
+  // ── ADD TO / REMOVE FROM A LIST (data/universe_added.json) ───────────────────
+  // The ticker page's and the coverage panel's "Add to" buttons. One list, one symbol, one commit;
+  // the symbol is checked against the source that list reads (Nasdaq for the earnings watch, SEC
+  // EDGAR for the supplier map, the price feed for the watchlist) before anything is written, so a
+  // name that would never answer never reaches a list. Public names only — nothing about the book.
+  const { universe } = req.body || {};
+  if (universe && typeof universe === 'object') return res.status(200).json({ universe: await universeChange(universe) });
+
   const { store, sha } = await readStore();
   const saved = [];
 
