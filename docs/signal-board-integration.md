@@ -13,7 +13,7 @@ The Market Read artifact and the two skills live outside this repo, so this PR d
 { ok, at, source, today, errors: [{series, error}],
   board: { rows: [{dim, id, label, value, roc, roc_label, state: on|neutral|off|null, thresholds: {on, off, dir, unit},
                    benchmark, text, as_of, vote, flags: [], flip: {to, at, when, dist}, ...}],
-           clusters: [{id: macro|dealers|tape|narrative, label, state, on, off, neutral, rows}],
+           clusters: [{id: macro|dealers|tape|narrative, label, state, on, off, neutral, rows}],   // crypto rows sit in tape, vote: false
            lean: {state, on, off, of, text}, flips: [{id, label, from, to, at, value, dist, text}] },
   trade_day: { phase, target, as_of, cushion_pct, gex_negative,
                calls: { QQQ: {median_r, mean_r, p_r_ge_1, zone, band: {id, median_r, share_ge_1, n}, implied_1sd, assumed: [], text}, SPY: {...} },
@@ -30,7 +30,7 @@ The Market Read artifact and the two skills live outside this repo, so this PR d
    - the `lean.text` as the section headline;
    - `flips[].text` as "What flips it".
 
-   Rows with `vote: false` (opex, KOSPI, narrative) get a muted "not voted" tag. The narrative row (`ai_narrative`) has two inputs: `value` is the 5-day tone change, `roc` is the 5d-vs-20d coverage change, and `thresholds.coverage_pct` is the coverage gate. Its `flip.text` and `metrics` (share, 5v5, 20v20, tone) say the rest. Show `flip.text` rather than composing one.
+   Rows with `vote: false` (opex, KOSPI, the four crypto rows, narrative) get a muted "not voted" tag. The narrative row (`ai_narrative`) has two inputs: `value` is the 5-day tone change, `roc` is the 5d-vs-20d coverage change, and `thresholds.coverage_pct` is the coverage gate. Its `flip.text` and `metrics` (share, 5v5, 20v20, tone) say the rest. Show `flip.text` rather than composing one.
 3. **Delete the chips `chip1`–`chip4`** and show the four cluster states in their place. The notes file stops writing `chip*`.
 4. **★ Combined angle:** replace the "≥2 of sections 2–5 agree" rule text with the board's lean. Keep the `conf*` idea cards, but only when their `via` clusters match the board's non-neutral clusters.
 5. **Cross-check:** delete the `x_credit` and `x_breadth` lines. The board's `hy_oas`, `hyg_lqd` and `breadth` rows carry them with thresholds. Keep `x_auction` and `x_skip` (renamed as the day needs).
@@ -80,3 +80,29 @@ The Market Read artifact and the two skills live outside this repo, so this PR d
 - `/api/indicators?board=1` answers `ok: true`, and `errors` lists only expected gaps (put/call until the cross-check feed has run once; HY OAS if the FRED key is unset).
 - The connector lists three tools. The claude.ai connector settings may need a refresh to show `get_signal_board`.
 - After the first scheduled run, `signal board` commits one row to `data/signal_board_history.json`.
+
+## E. Crypto rows (added 20 Oct 2026): where they go
+
+There are four rows, all `dim: "crypto"` inside the Tape cluster and all `vote: false`. None is voted; the reasons are in `docs/signal-board-audit.md` §7.
+
+| id | value | thresholds (on / off) | extra |
+|---|---|---|---|
+| `btc_ma` | BTC closes above its 20/50/100/200-day averages, 0–4 | 4 / ≤1 (the QQQ/SOXX rule) | `mas` (distances); `break_200d`; flag text when today is the first close below the 200-day after ≥20 above |
+| `btc_qqq` | BTC ÷ QQQ % change over 20 US sessions | +12% / −8% | `roc` = 5-session % |
+| `eth_btc` | ETH ÷ BTC % change over 20 days | +5.5% / −7.5% | `roc` = 5-day % |
+| `btc_dd` | BTC close vs its 52-week closing high, % | −7.5% / −45% | `high`, `high_date` |
+
+BTC trades every day, so the rows' `as_of` can be a weekend date or today. US spot bitcoin ETF flows are not wired, because no free source works without scraping.
+
+**Market Read artifact** (the steps in A cover these rows automatically; these are the only additions):
+- In the Signal Board table, show the four crypto rows as a sub-group under **Tape**, labelled "Crypto (shown, not voted)". Keep them below KOSPI and out of the cluster tally.
+- In the cross-asset / ★ Combined angle area, when `btc_ma.flags` is non-empty, show the flag text verbatim as a warning line. It is the only crypto reading with a tested lead on QQQ: 54% vs 24% for a ≥5% QQQ fall within 20 sessions, n 13.
+- In the existing gold / BTC cross-asset line (the debasement read), add `btc_dd.text` and `btc_qqq.text` as one line beneath it. Do not add a second BTC quote; the page already shows BTC's price.
+- Do not add crypto to `ratios` / `corr`. Correlation already lives there, and BTC ÷ QQQ is now a board row.
+
+**Daily Brief (`morning-gamma-regime`)**:
+- In the "overnight" block, add one line from the board: `btc_ma.text` (trend and nearest average), then `btc_qqq.text` and `eth_btc.text`. BTC is the only risk asset that traded through the weekend and the US night, so this line carries the overnight risk-appetite read. Quote the as-of date.
+- When `btc_ma.flags` is non-empty, say so in `lean_reason` with the tested numbers, and never as a vote on the lean.
+- Do not turn the crypto rows into a gamma or trade-day input. They were tested against QQQ/SOXX direction, not against range R.
+
+**`current-market-read`**: in the cross-asset step, read the four rows from `get_signal_board` instead of quoting BTC by hand. The headline may cite them as context but must not count them toward a cluster.

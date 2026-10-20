@@ -30,6 +30,11 @@ The engine is `lib/signalBoard.js`. Its inputs come from `lib/signalBoardFeed.js
 | Tape: breadth | `lib/marketState.js` breadthComponent (RSP ÷ SPY and IWM ÷ SPY, 20d); `lib/crossCheck.js` computeBreadth (5d / 35d + weekly streak + `narrowing`); `lib/ratios.js` RSP ÷ SPY card; the Market Read `rsp_spy` card | **MERGE** | The board row *is* `breadthComponent`. **Windows differ, which is flagged, not a conflict:** the cross-check's 35-session `narrowing` flag answers a slower question and stays as the skill's raw-data cross-check. |
 | Tape: SOXX and QQQ vs 20/50/100/200dma | `lib/cta.js` (trend-fund replica: 21/63/252-session flips, NQ/ES only); Market Read `sr_levels` (20/50/200-day averages as price levels, page-side); `lib/watchSetup.js` / `lib/yahoo.js` (200-day for single names) | **NEW** row, **KEEP** cta | The CTA replica is a vol-scaled model with its own flip prices. The board gives the plain moving-average distances the brief asks for. The two are different questions, and both are labelled. |
 | Asia: KOSPI | `lib/handoff.js` (Asia → US handoff); `lib/regionTape.js` (region chip, ATR-gated); `lib/koreaFetch.js` (KRX flows); the Daily Brief tiles (TradingView KRX:KOSPI) | **NEW** row (does not vote) | Daily close, ^KS11, which carries KRX's close; the KSE intraday feed is stale and is not read. Crown's pattern is flagged with the tested result: 59.6% vs a 55.7% base, n 416 (`scripts/kospi-crown-backtest.py`). It is not voted. |
+| Crypto: BTC vs 20/50/100/200-day, 200-day break flag | `lib/quotes.js` getMacro → `lib/yahoo.js` yahooTrend('BTC-USD') (1d/5d/20d change, 50/200-day, 52-week high, as a summary) → `classifyDebasement` (gold + BTC) and the cross-asset tape (`lib/assemble.js`, `lib/read.js`); `lib/regimeState.js` (BTC direction) | **MERGE** the definitions, **NEW** row (does not vote) | Same symbol, source and definitions as the macro spine (7-day daily bars; 52-week high = highest close of the year). The board fetches the 2-year series itself because the spine keeps only the summary. The debasement classifier and the regime reads stay as they are: they answer a different question (gold vs BTC). |
+| Crypto: BTC ÷ QQQ 20 sessions | nowhere | **NEW** (does not vote) | Yahoo BTC-USD ÷ QQQ on shared dates |
+| Crypto: ETH ÷ BTC 20 days | nowhere (ETH appears only as a symbol hint in `lib/crypto.js` and an on-chain asset in `lib/chains.js`) | **NEW** (does not vote) | Yahoo ETH-USD |
+| Crypto: BTC off its 52-week high | `yahooTrend` `pctOffHi` (macro spine) | **MERGE** | Same definition (close vs the year's highest close), on a dated 365-day window |
+| Crypto: US spot bitcoin ETF net flows | nowhere | **NOT WIRED** | There is no free source that works without sign-up and without scraping. Skipped rather than scraped. |
 | Narrative: AI build-out coverage and tone | nothing before this row: dvcap had no news feed that is not a model | **NEW** row (does not vote, flagged for review) | GDELT DOC 2.0 (`lib/narrativeFeed.js`): article counts as a share of all coverage, and GDELT's dictionary tone. No model. The 2017–2026 test found no edge (section 6), so the row is shown and scored but does not vote, as with the Asia row. |
 
 ## 2. Trade-day call: four definitions became one
@@ -83,6 +88,7 @@ Folding the stress composite into the board's Macro cluster is a possible follow
 5. **RSP ÷ SPY windows** (20d marketState and board; 5d/35d cross-check; 5d/20d ratio cards). These are different horizons, not different definitions. Flagged and kept.
 6. **"Positioning" naming:** the connector's leak filter rejects any answer containing the word, so the cluster is named "Dealers & vol".
 7. **"key" in a row:** the connector's leak check matches substrings, so "keyless" or "keyword" anywhere in the board fails the whole `get_signal_board` answer. The Narrative row's text avoids both, and a test checks the row against the filter.
+8. **BTC's 52-week high vs its all-time high:** the 52-week row reads the highest close of the last 365 days, which is the macro spine's `pctOffHi` definition. The October 2025 peak (≈124.8k) left that window in early October 2026. On 20 Oct 2026 the row reads about −29% from 114.5k (26 Oct 2025), not −35% from the all-time high. **Kept** as the spine's definition; the row's text names the high and its date.
 
 ## 6. Narrative row: source, rule and test (20 Oct 2026)
 
@@ -116,3 +122,20 @@ Folding the stress composite into the board's Macro cluster is a possible follow
 From 2023 only (n 941; on 126, off 38), Spearman runs from −0.027 to +0.013. Risk-off is followed by a SOXX fall on 52.6% of next sessions against a 46.4% base, but n is only 38. Pre-2023 looks the same as the full sample.
 
 **Verdict: no edge.** Every Spearman is within ±0.035, and the hit rates sit at their base rates. So `NARRATIVE_TEST.edge` is `false`. The row is shown with its state, flagged "under review, not voted", and scored from the snapshot log like every other row. The Narrative cluster therefore reads null and the lean counts three clusters. To make it vote, set `edge: true`, but only once the log or a better query shows an edge.
+
+## 7. Crypto rows: why none votes (`scripts/crypto-signal-backtest.py`)
+
+The sample runs from 2015-04-06 to 2026-10-19: 2,903 US sessions. ETH starts 2017-11-30. The test reads crypto from the bar dated the day **before** each US session. Yahoo's BTC bar for day t closes at 20:00 ET, four hours after the US close, so using it would leak the overnight move into the score. The outcomes are next 1/3/5-session QQQ and SOXX returns. The 1-session binomial p is the significance test, because the 3- and 5-session windows overlap.
+
+| Row (on / off) | QQQ next session: risk-on up vs base | risk-off down vs base | Spearman 1d / 5d | Verdict |
+|---|---|---|---|---|
+| BTC MA count (4 / ≤1) | 58.2% vs 56.0% (n 1,038, p 0.15) | 45.8% vs 44.0% (n 970, p 0.29) | +0.026 / +0.048 | no vote |
+| BTC ÷ QQQ 20s (+12% / −8%) | 59.8% vs 56.0% (n 752, p 0.03); 5s 66.2% vs 60.1%; holds in 2015–20 and 2021–26 | 44.6% vs 44.0% (n 715, p 0.76) | +0.045 / +0.084 | no vote: the edge is one-sided, and a voting row votes both ways. Candidate to promote from the snapshot log. |
+| ETH ÷ BTC 20d (+5.5% / −7.5%) | 55.8% vs 56.1% (n 563) | 42.2% vs 43.9% (n 559) | −0.008 / −0.009 | no vote |
+| BTC off 52w high (−7.5% / −45%) | 57.4% vs 56.3% (n 700) | 47.5% vs 43.7% (n 667, p 0.05) | +0.012 / +0.004 | no vote: drawdowns are context. A fresh BTC −20% crossing was followed by a QQQ −10% reading within 130 sessions 10 of 14 times, against 77% of all days, so it is no lead. |
+
+SOXX tells the same story (BTC ÷ QQQ risk-on: 58.5% vs 54.5%, p 0.03; the other rows are within 2 points of base).
+
+**Lead/lag.** BTC's first close below its 200-day after ≥20 closes above happened 13 times. QQQ fell ≥5% within 20 sessions after 7 of them (54%), against 24% of all days (binomial p 0.02, but the events cluster in sell-offs) and 28% after QQQ's own first close below its 50-day (n 29). The median worst 20-session QQQ drawdown was −5.5%, against −1.9% for all days. Seven of the 13 breaks came while QQQ was still above its 50-day; four of those saw QQQ fall ≥5% within 20 sessions. This becomes a **flag** on the BTC trend row with its numbers, not a vote. **Redundancy:** when the QQQ trend row reads risk-on and BTC's reads risk-off, QQQ's next 5 sessions averaged −0.14% (n 345), against +0.42% when both read risk-on (n 719). This is the same divergence the 200-day flag catches.
+
+**Benchmark.** The KOSPI row did not vote at 59.6% vs 55.7% (n 416). The crypto rows are held to the same bar. All four rows are scored in the snapshot log (`scorecard.signals.btc_*`), and BTC ÷ QQQ can be promoted to a Tape vote once its risk-off side shows an edge there.
