@@ -3,8 +3,9 @@ import { GROWTH_SERIES, MARKET_PAIRS, MONTHLY_SERIES } from "../lib/growth.js";
 import { INFLATION_SERIES } from "../lib/inflationAxis.js";
 import { kvGetJson, kvSetJson, kvConfigured } from "../lib/kv.js";
 import { stateInputs } from "../lib/marketStateFeed.js";
+import { signalBoardPayload } from "../lib/signalBoardFeed.js";
 import { crossCheckPayload } from "../lib/crossCheckFeed.js";
-import { crossCheckHealth } from "../lib/crossCheck.js";
+import { crossCheckHealth, scrubError } from "../lib/crossCheck.js";
 import { conditions, conditionsAt, liquidity, seriesStats, inflationMomentum } from "../lib/marketState.js";
 import { zqMovesPriced, sixMonthPath } from "../lib/fedpath.js";
 import { fetchSmicAHPremium } from "../lib/smicah.js";
@@ -27,6 +28,24 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: false, error: String(e?.message || e), rows: [] });
     }
   }
+  // ── ?board=1 — THE SIGNAL BOARD (lib/signalBoard.js, lib/signalBoardFeed.js) ──
+  // One row per market signal with its value, change, state against fixed thresholds and benchmark;
+  // the cluster count and lean; what flips it; the trade-day call v2 with the 10:00 / 10:30 ET
+  // checkpoints; and the scorecard from data/signal_board_history.json. Rides on this route because the
+  // deployment is at Vercel's 12-function cap. Public by the same declaration as the rest of this route:
+  // market series only, nothing about the account. Before the FRED-key check: without the key only the
+  // HY OAS row is missing, and the row says so. Also served read-only as the get_signal_board tool
+  // on the Market Read Dashboard Gamma connector (lib/gammaMcp.js).
+  if (String(req.query?.board ?? '') === '1') {
+    try {
+      const p = await signalBoardPayload();
+      res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
+      return res.status(200).json(p);
+    } catch (e) {
+      return res.status(200).json({ ok: false, error: scrubError(e) });
+    }
+  }
+
   const FRED_KEY = process.env.FRED_API_KEY;
 
   if (!FRED_KEY) {

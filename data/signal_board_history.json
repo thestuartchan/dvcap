@@ -1,0 +1,4 @@
+{
+  "_README": "Signal Board daily snapshots (lib/signalBoard.js snapshotRow), one row per as-of session, written by scripts/signal-board-snapshot.mjs from the deployed /api/indicators?board=1 and scored from Yahoo closes (fwd: QQQ and SOXX returns 1/3/5 sessions from the as-of close; realised: the next session's R for QQQ and SPY). Market data only.",
+  "rows": []
+}

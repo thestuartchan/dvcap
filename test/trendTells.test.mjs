@@ -1,5 +1,5 @@
 // test/trendTells.test.mjs — the trend-day tells and their fifteen-year rates (lib/trendTells.js).
-import { tellsFor, tellsHeadline, shownTells, firstHourBands, BACKTEST, BASE_RATE, cushionBand, CUSHION } from '../lib/trendTells.js';
+import { tellsFor, tellsHeadline, shownTells, firstHourBands, BACKTEST, BASE_RATE, cushionBand, CUSHION, zoneOf, bandLean } from '../lib/trendTells.js';
 import { parseDix, gexPercentile } from '../lib/squeeze.js';
 import { firstHourFrom } from '../lib/yahoo.js';
 
@@ -56,13 +56,17 @@ const ok = (n, c) => eq(n, !!c, true);
 }
 
 // ── THE CUSHION BANDS (13 Oct) ──
-eq('the bands: negative GEX first, then by percentile, with the lean', [cushionBand(0.05, -1e9).key, cushionBand(0.1, 3e9).lean, cushionBand(0.3, 5e9).lean, cushionBand(0.5, 6e9).lean, cushionBand(0.77, 7.3e9).lean, cushionBand(0.95, 9e9).lean],
-  ['neg', 'trade', 'selective', 'selective', 'lean skip', 'lean skip']);
+eq('the bands: negative GEX first, then by percentile', [cushionBand(0.05, -1e9).key, cushionBand(0.1, 3e9).key, cushionBand(0.3, 5e9).key, cushionBand(0.5, 6e9).key, cushionBand(0.77, 7.3e9).key, cushionBand(0.95, 9e9).key],
+  ['neg', 'p0', 'p20', 'p40', 'p60', 'p80']);
+eq('QQQ lean per band: neg, <20, 20–40, 40–60, 60–80, ≥80', CUSHION.map(b => b.leanQqq), ['trade', 'trade', 'trade', 'selective', 'lean skip', 'lean skip']);
+eq('SPX lean per band: 20–40th is Selective (0.92×), 40–60th Lean skip (0.80×)', CUSHION.map(b => b.leanSpx), ['trade', 'trade', 'selective', 'lean skip', 'lean skip', 'lean skip']);
+eq('each lean is the one zone rule on that ticker\'s own median (Signal Board, 20 Oct)', CUSHION.every(b => b.leanQqq === zoneOf(b.qqq) && b.leanSpx === zoneOf(b.spx)), true);
+eq('bandLean: QQQ its own, SPY and SPX the S&P lean', [bandLean(CUSHION[2], 'QQQ'), bandLean(CUSHION[2], 'SPY'), bandLean(CUSHION[2], 'spx'), bandLean(null, 'QQQ')], ['trade', 'selective', 'selective', null]);
 eq('range ÷ implied falls band by band, on both symbols', [CUSHION.every((b, i) => i === 0 || b.spx <= CUSHION[i - 1].spx), CUSHION.every((b, i) => i === 0 || b.qqq <= CUSHION[i - 1].qqq)], [true, true]);
 {
   const g = tellsFor({ gexPct: 0.77, gexValue: 7.34e9 }).find(t => t.key === 'gex');
-  eq('the gamma row says the band, the lean and how such days moved against what was priced', [g.cushion, /77th percentile of the trailing year \(\$7\.3bn\) — high cushion — lean skip: days like this moved 0\.76× their implied range \(SPX\), 0\.88× \(QQQ\)/.test(g.text)],
-    [{ band: 'p60', lean: 'lean skip' }, true]);
+  eq('the gamma row says the band, the lean and how such days moved against what was priced', [g.cushion, /77th percentile of the trailing year \(\$7\.3bn\) — days like this moved 0\.76× their implied range on SPX \(lean skip\) and 0\.88× on QQQ \(lean skip\)/.test(g.text)],
+    [{ band: 'p60', leanQqq: 'lean skip', leanSpx: 'lean skip' }, true]);
   const n = tellsFor({ gexPct: 0.01, gexValue: -2e9 }).find(t => t.key === 'gex');
   eq('negative GEX is named as such and is a trade day', [n.cushion.band, n.text.startsWith('negative — ')], ['neg', true]);
 }

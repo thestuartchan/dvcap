@@ -1,0 +1,54 @@
+name: signal board
+
+# The Signal Board's daily record (scripts/signal-board-snapshot.mjs): before the US open, read the board
+# the deployment serves (/api/indicators?board=1 — public, market data only, no secret), append one row to
+# data/signal_board_history.json and re-score every row from Yahoo daily closes (QQQ / SOXX forward
+# returns, realised R of each trade-day call). The commit redeploys, which is how the scorecard on the
+# board picks it up — the Korea fetch's commit-back pattern.
+#
+# WHEN. 12:50 UTC on weekdays: after Seoul's close and SqueezeMetrics' overnight DIX.csv, before the
+# 13:30 UTC (EDT) / 14:30 UTC (EST) open, so no snapshot ever reads a partial session. A missed run loses
+# that day's row; the scoring heals on the next run.
+#
+# The log prints states and counts only — public market statistics.
+
+on:
+  schedule:
+    - cron: '50 12 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: signal-board
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Snapshot the board and score the history
+        run: node scripts/signal-board-snapshot.mjs
+      - name: Commit the snapshot
+        run: |
+          if git diff --quiet -- data/signal_board_history.json; then echo "no change to commit"; exit 0; fi
+          git config user.name "dvcap-bot"
+          git config user.email "dvcap-bot@users.noreply.github.com"
+          git add data/signal_board_history.json
+          git commit -m "Signal board snapshot @ $(TZ=America/New_York date +%F)"
+          for i in 1 2 3; do
+            if git push origin HEAD:main; then exit 0; fi
+            git fetch origin main && git reset --hard origin/main && node scripts/signal-board-snapshot.mjs || true
+            git diff --quiet -- data/signal_board_history.json && exit 0
+            git add data/signal_board_history.json && git commit -m "Signal board snapshot @ $(TZ=America/New_York date +%F)"
+            sleep $((i * 5))
+          done
+          echo "::error::could not push after three attempts"; exit 1
