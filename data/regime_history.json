@@ -4487,7 +4487,7 @@
         "ladderSpread": 1.65,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.31,
+        "oas": 3.29,
         "tenY": 5.09,
         "twoY": 4.74,
         "consensusAlive": 0.997,
@@ -4557,28 +4557,28 @@
           "drifting": "def"
         },
         "conditions": {
-          "score": 67.5,
+          "score": 65.1,
           "band": "caution",
           "comps": {
-            "credit": 84,
-            "equityVol": 56,
-            "ratesVol": 68,
+            "credit": 82,
+            "equityVol": 46,
+            "ratesVol": 69,
             "realYield": 85,
             "funding": 32,
-            "breadth": 56,
-            "dollar": 71
+            "breadth": 55,
+            "dollar": 73
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 16,
+          "hikeOdds": 18,
           "liq4w": 8
         },
         "sizing": 0.63,
         "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-20T13:50:43.083Z"
+      "loggedAt": "2026-10-20T17:33:18.190Z"
     }
   ]
 }
