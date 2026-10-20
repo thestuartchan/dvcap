@@ -9,7 +9,7 @@ import { parseTimeline, joinNarrative, narrativeInputs, NARRATIVE_QUERY, gdeltUr
 import { feedLeaks, gexFeedPayload } from '../lib/gexFeed.js';
 import { readFileSync } from 'node:fs';
 import { CUSHION } from '../lib/trendTells.js';
-import { firstRanges, gammaBoards, signalBoardPayload } from '../lib/signalBoardFeed.js';
+import { firstRanges, gammaBoards, signalBoardPayload, impliedOpenFromFutures, preMarketOpen, preOpenGaps, GAP_FUTURES } from '../lib/signalBoardFeed.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
@@ -390,7 +390,7 @@ function imp30() { return 0.2 / Math.sqrt(252); }
   const gb = { spot: 600.37, as_of_utc: '2026-10-19T20:00:00.000Z', mode: 'settled', net_gex_per_1pct: -2.34e9, flip: { line: 605.21, usable: true },
     call_wall: { strike: 612, gamma: 8e8 }, pin_box: null, trapdoor: { near: { strike: 597.5, gamma: -9e8 } }, expiries: [{ move_1sd: 6.1 }] };
   const opts = { now: new Date('2026-10-20T11:00:00Z'), inputs: async () => ({ at: '2026-10-20T11:00:00Z', series, errors: [], source: 'test' }),
-    intraday: async () => [], history: { rows: [] }, gamma: async () => ({ QQQ: gb, SPY: null }) };
+    intraday: async () => [], prepost: async () => null, history: { rows: [] }, gamma: async () => ({ QQQ: gb, SPY: null }) };
   const pub = await signalBoardPayload(opts), con = await signalBoardPayload({ ...opts, full: true });
   const pq = pub.trade_day.calls.QQQ, cq = con.trade_day.calls.QQQ;
   eq('both answers compute the same conflict rules on the same call', [pq.zone, pq.conflict?.rules, cq.conflict?.rules], ['lean skip', ['below_flip', 'trapdoor'], ['below_flip', 'trapdoor']]);
@@ -405,6 +405,50 @@ function imp30() { return 0.2 / Math.sqrt(252); }
   const snapJson = JSON.stringify(snap);
   eq('the stored snapshot: rule ids only, no gamma level field or number', [snap.call.QQQ.conflict, levels.filter(v => snapJson.includes(v)), ['net_gamma_bn', 'pin_lo', 'trap_near', '"gamma"'].filter(f => snapJson.includes(f))], [['below_flip', 'trapdoor'], [], []]);
   eq('both answers pass the connector\'s banned-word check', [feedLeaks(JSON.stringify(pub)), feedLeaks(JSON.stringify(con))], [[], []]);
+}
+
+
+{
+  // THE PRE-OPEN GAP: the future's move since the prior 16:00 ET close mapped onto the prior ETF close.
+  const T = (iso) => Date.parse(iso) / 1000;
+  const fut = [{ t: T('2026-10-19T19:50:00Z'), c: 19990 }, { t: T('2026-10-19T19:55:00Z'), c: 20000 },   // 15:55 ET = the ref
+    { t: T('2026-10-19T21:00:00Z'), c: 20050 }, { t: T('2026-10-20T12:35:00Z'), c: 20200 }];              // 08:35 ET
+  const io = impliedOpenFromFutures(fut, { refDate: '2026-10-19', priorClose: 600, sym: 'NQ=F' });
+  eq('implied open = prior close × future now ÷ future at the prior close, labelled with its time', [+io.open.toFixed(2), io.ref, io.source], [606, 20000, 'futures-implied (NQ=F 08:35 ET)']);
+  eq('no futures print at the prior close → no open, with why', impliedOpenFromFutures(fut.slice(2), { refDate: '2026-10-19', priorClose: 600, sym: 'NQ=F' }).why, 'no NQ=F print at the prior close');
+  eq('the front months: NQ for QQQ, ES for SPY', GAP_FUTURES, { QQQ: 'NQ=F', SPY: 'ES=F' });
+  const nowMs = Date.parse('2026-10-20T12:40:00Z');
+  eq('a fresh pre-market ETF print is used', preMarketOpen({ price: 605, ts: T('2026-10-20T12:35:00Z') }, { today: '2026-10-20', nowMs, ticker: 'QQQ' }), { open: 605, source: 'pre-market QQQ 08:35 ET' });
+  eq('a stale, prior-day or after-hours one is not', [preMarketOpen({ price: 605, ts: T('2026-10-20T12:00:00Z') }, { today: '2026-10-20', nowMs, ticker: 'QQQ' }),
+    preMarketOpen({ price: 605, ts: T('2026-10-19T22:00:00Z') }, { today: '2026-10-20', nowMs: T('2026-10-19T22:05:00Z') * 1000, ticker: 'QQQ' })], [null, null]);
+
+  const ds = days(300, '2026-10-19');
+  const bars = ds.map(d => ({ date: d, open: 600, high: 601, low: 599.5, close: 600 }));
+  const S = { qqqBars: bars, spyBars: bars, vxn: ds.map(d => ({ date: d, value: 20 })), vix: ds.map(d => ({ date: d, value: 20 })), squeeze: ds.map((d, i) => [d, 1e9 + i * 1e6]) };
+  const seen = [];
+  const intraday = async (sym) => { seen.push(sym); return sym === 'NQ=F' ? fut : []; };
+  const g = await preOpenGaps(S, { target: '2026-10-20', today: '2026-10-20', now: new Date(nowMs), intraday, prepost: async () => null });
+  eq('QQQ from NQ=F; SPY falls back to gap 0 when ES=F has no quote, and says so', [+g.QQQ.open.toFixed(2), g.QQQ.source, g.SPY], [606, 'futures-implied (NQ=F 08:35 ET)', { note: 'gap 0 (no ES=F print at the prior close)' }]);
+  eq('both front months were read', seen.sort(), ['ES=F', 'NQ=F']);
+  const g2 = await preOpenGaps(S, { target: '2026-10-20', today: '2026-10-20', now: new Date(nowMs), intraday: async () => { throw new Error('down'); }, prepost: async () => ({ price: 603, ts: T('2026-10-20T12:35:00Z') }) });
+  eq('a fresh pre-market print wins over the futures', g2.QQQ, { open: 603, source: 'pre-market QQQ 08:35 ET' });
+
+  const td = tradeDayBlock(S, { target: '2026-10-20', pre: g });
+  const q = td.calls.QQQ, sp = td.calls.SPY, implied = 0.2 / Math.sqrt(252);
+  eq('gap σ = |implied open ÷ prior close − 1| ÷ implied, the backtest feature', [q.inputs.gap_sigma, q.inputs.gap_source], [r2t(0.01 / implied), 'futures-implied (NQ=F 08:35 ET)']);
+  eq('with the gap read, only the IV change is assumed', q.assumed, ['IV unchanged overnight']);
+  const lp = (c) => { const m = TRADE_DAY_MODEL.QQQ; return m.const + m.cush * c.inputs.cushion_pct + m.gap * (0.01 / implied) + m.prevR * c.inputs.prev_r; };
+  ok('the median moves with the gap (same coefficients)', Math.abs(q.median_r - Math.exp(lp(q))) < 0.02 && q.median_r > tradeDayBlock(S, { target: '2026-10-20' }).calls.QQQ.median_r);
+  eq('the fallback: gap 0, null source, the reason in assumed', [sp.inputs.gap_sigma, sp.inputs.gap_source, sp.assumed], [null, null, ['gap 0 (no ES=F print at the prior close)', 'IV unchanged overnight']]);
+
+  // The payload before the open reads the implied gap; in session the actual open, labelled.
+  const base = { inputs: async () => ({ at: '2026-10-20T12:40:00Z', series: S, errors: [], source: 'test' }), history: { rows: [] }, gamma: async () => ({}) };
+  const pre = await signalBoardPayload({ ...base, now: new Date(nowMs), intraday, prepost: async () => null });
+  eq('pre-open payload: phase, QQQ gap σ and its source', [pre.trade_day.phase, pre.trade_day.calls.QQQ.inputs.gap_sigma, pre.trade_day.calls.QQQ.inputs.gap_source], ['before the open', r2t(0.01 / implied), 'futures-implied (NQ=F 08:35 ET)']);
+  const bar30 = (hm, o) => ({ t: T(`2026-10-20T${hm}:00Z`), o, h: o + 1, l: o - 1, c: o });
+  const live = await signalBoardPayload({ ...base, now: new Date('2026-10-20T14:05:00Z'), intraday: async (sym) => sym === 'QQQ' ? [bar30('13:30', 594)] : sym === 'SPY' ? [bar30('13:30', 600)] : [], prepost: async () => null });
+  eq('in session: the actual open, labelled', [live.trade_day.calls.QQQ.inputs.gap_sigma, live.trade_day.calls.QQQ.inputs.gap_source, live.trade_day.calls.SPY.inputs.gap_sigma], [r2t(0.01 / implied), 'actual open', 0]);
+  eq('the pre-open and in-session answers pass the connector\'s banned-word check', [feedLeaks(JSON.stringify(pre)), feedLeaks(JSON.stringify(live))], [[], []]);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
