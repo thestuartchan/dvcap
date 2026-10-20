@@ -51,11 +51,11 @@ jobs:
           dom=$(date -u +%-d); dow=$(date -u +%u)
           if { [ "$dom" = 1 ] && [ "$dow" -le 5 ]; } || { [ "$dom" -le 3 ] && [ "$dow" = 1 ]; }; then echo "run=true" >> "$GITHUB_OUTPUT"
           else echo "run=false" >> "$GITHUB_OUTPUT"; echo "not the first weekday of the quarter (day $dom, weekday $dow): skipped"; fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.when.outputs.run == 'true'
         with:
           ref: main
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: steps.when.outputs.run == 'true'
         with:
           python-version: '3.12'
