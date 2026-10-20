@@ -2,7 +2,7 @@
 // (lib/signalBoard.js), and the feed's pure helpers (lib/signalBoardFeed.js). Synthetic series only.
 import { stateOf, flipDistance, THRESHOLDS, CLUSTERS, clusterOf, leanOf, whatFlips, buildSignalBoard, creditRows, ratesRows, oilRows,
   dealerRows, tapeRows, asiaRows, narrativeRows, maRow, ratioSeries, realisedVol, downRunBefore, nextMonthlyOpex, sessionsBetween, nextSession,
-  tradeDayCall, checkpointRead, tradeDayBlock, normCdf, zoneOf, TRADE_DAY_MODEL, BAND_STATS, CHECKPOINTS, priorR, snapshotRow, scoreRows, scorecard, KOSPI_TEST,
+  tradeDayCall, checkpointRead, tradeDayBlock, normCdf, zoneOf, TRADE_DAY_MODEL, BAND_STATS, CHECKPOINTS, priorR, snapshotRow, scoreRows, scorecard, KOSPI_TEST, cryptoRows, btc200Break, offHigh, BTC_TEST,
   narrativeState, narrativeFlip, narrativeMetrics, NARRATIVE_RULE, NARRATIVE_TEST } from '../lib/signalBoard.js';
 import { parseTimeline, joinNarrative, narrativeInputs, NARRATIVE_QUERY, gdeltUrl } from '../lib/narrativeFeed.js';
 import { feedLeaks } from '../lib/gexFeed.js';
@@ -184,7 +184,7 @@ const narr = (c5, t5, n = 45, end = '2026-10-19') => Array.from({ length: n }, (
 }
 {
   const b = buildSignalBoard({}, { today: '2026-10-20', holidays: [] });
-  eq('an empty board: every dimension present, no cluster reads, no lean, no flips', [new Set(b.rows.map(r => r.dim)).size, b.clusters.every(c => c.state == null), b.lean.state, b.flips.length], [7, true, 'neutral', 0]);
+  eq('an empty board: every dimension present, no cluster reads, no lean, no flips', [new Set(b.rows.map(r => r.dim)).size, b.clusters.every(c => c.state == null), b.lean.state, b.flips.length], [8, true, 'neutral', 0]);
 }
 
 // ── CALENDAR ──
@@ -243,6 +243,46 @@ eq('next session skips the weekend and a holiday', [nextSession('2026-10-16'), n
   eq('first ranges: 30 minutes, then 60', firstRanges(bars, '2026-10-19'), { open: 100, '10:00': { open: 100, firstRange: 2 }, '10:30': { open: 100, firstRange: 5 } });
   eq('only the first bar: no window has closed yet', firstRanges(bars.slice(0, 1), '2026-10-19'), { open: 100 });
   eq('another day\'s bars: nothing', firstRanges(bars, '2026-10-20'), {});
+}
+
+// ── CRYPTO ROWS (shown, never voted) ──
+{
+  // Calendar-day series: crypto trades every day.
+  const cal = (vals, end = '2026-10-16') => { const t = Date.parse(`${end}T12:00:00Z`);
+    return vals.map((v, i) => ({ date: new Date(t - (vals.length - 1 - i) * 864e5).toISOString().slice(0, 10), value: v })); };
+  const t = THRESHOLDS;
+  eq('BTC ÷ QQQ: +12% on, −8% off, between neutral', [stateOf(12, t.btcQqq20d), stateOf(-8, t.btcQqq20d), stateOf(2, t.btcQqq20d)], ['on', 'off', 'neutral']);
+  eq('ETH ÷ BTC: +5.5% on, −7.5% off', [stateOf(5.5, t.ethBtc20d), stateOf(-8.4, t.ethBtc20d), stateOf(0, t.ethBtc20d)], ['on', 'off', 'neutral']);
+  eq('BTC off its high: within 7.5% on, 45% or more off, −35% neutral', [stateOf(-5, t.btcOffHigh), stateOf(-45, t.btcOffHigh), stateOf(-35, t.btcOffHigh)], ['on', 'off', 'neutral']);
+  // A year-plus of BTC rising, then a fall: below the 20-day, above the 200-day.
+  const up = ramp(400, 50000, 120000), btc = cal([...up, ...ramp(10, 119500, 115000)]);
+  const eth = cal([...ramp(400, 2000, 4000), ...ramp(10, 3950, 3000)]);
+  const qqq = ser(ramp(260, 500, 600), '2026-10-16');
+  const rows = cryptoRows({ btc, eth, qqq });
+  eq('four crypto rows, in the crypto dim, none voting', rows.map(r => [r.id, r.dim, r.vote]), [['btc_ma', 'crypto', false], ['btc_qqq', 'crypto', false], ['eth_btc', 'crypto', false], ['btc_dd', 'crypto', false]]);
+  const ma = rows[0];
+  eq('BTC trend: the QQQ/SOXX rule — a dip under the 20/50-day, above the 100/200-day, is neutral', [ma.value, ma.state, ma.thresholds.on, ma.thresholds.off], [2, 'neutral', 4, 1]);
+  const dd = rows.find(r => r.id === 'btc_dd');
+  eq('BTC off its 52-week closing high, dated', [Math.round(dd.value * 10) / 10, dd.high, dd.high_date], [-4.2, 120000, '2026-10-06']);
+  ok('ETH ÷ BTC is computed and reads a state', rows.find(r => r.id === 'eth_btc').state != null);
+  ok('BTC ÷ QQQ on shared dates: a 20-session change', Number.isFinite(rows.find(r => r.id === 'btc_qqq').value));
+  // A high older than 365 days rolls out of the window.
+  const old = cal([200, ...flat(380, 100)]);
+  eq('a high more than a year old is not the 52-week high', offHigh(old).pct, 0);
+  eq('under a year of closes: no 52-week reading', offHigh(cal(flat(200, 100))), null);
+  // The 200-day break: the first close below after ≥20 above.
+  const brk = cal([...ramp(240, 100, 200), 100]);
+  ok('a first close below the 200-day after a run above is a break', btc200Break(brk));
+  eq('the break carries its flag with the tested numbers', cryptoRows({ btc: brk, eth: [], qqq: [] })[0].flags.length, 1);
+  ok('…and the next close below is not a second break', !btc200Break(cal([...ramp(240, 100, 200), 100, 99])));
+  ok('a close below after a short run above is not a break', !btc200Break(cal([...flat(220, 100), ...flat(10, 110), 90])));
+  ok('fewer than 220 closes: no break', !btc200Break(cal(ramp(100, 100, 200))));
+  eq('missing series: rows say so and carry no state', cryptoRows({}).map(r => r.state), [null, null, null, null]);
+  // Not voted: the Tape cluster reads the same with or without them.
+  const board = buildSignalBoard({ btc, eth, qqq });
+  const tape = board.clusters.find(c => c.id === 'tape');
+  eq('crypto rows sit in the Tape cluster but cast no vote', [tape.rows, CLUSTERS.find(c => c.id === 'tape').dims.includes('crypto')], [buildSignalBoard({ qqq }).clusters.find(c => c.id === 'tape').rows, true]);
+  ok('the tested record is stated', BTC_TEST.n_break === 13 && BTC_TEST.btc_qqq_n_on === 752);
 }
 
 // ── SNAPSHOT AND SCORE ──
