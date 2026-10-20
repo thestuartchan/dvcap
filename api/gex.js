@@ -20,42 +20,22 @@
 //                                    (vercel.json rewrites it to ?mcp=<token>; lib/gammaMcp.js). Its
 //                                    own secret, MCP_CONNECTOR_TOKEN; a wrong one is a 404
 import { createHash, randomBytes } from 'node:crypto';
-import { kvConfigured, kvGetJson, kvSetJson, kvSetJsonEx, kvIncrEx, kvSetNxEx } from '../lib/kv.js';
-import { gexFeedPayload, feedLeaks, slugMatches, rateBucket, FEED_TICKERS, FEED_RECOMPUTE_MIN, FEED_RATE_PER_HOUR, oiStaleReason, nyToday } from '../lib/gexFeed.js';
+import { kvConfigured, kvGetJson, kvSetJson, kvSetJsonEx, kvIncrEx } from '../lib/kv.js';
+import { gexFeedPayload, feedLeaks, slugMatches, rateBucket, FEED_TICKERS, FEED_RATE_PER_HOUR, oiStaleReason, nyToday } from '../lib/gexFeed.js';
 import { crossCheckPayload } from '../lib/crossCheckFeed.js';
 import { signalBoardPayload } from '../lib/signalBoardFeed.js';
 import { handleRpc, dashboardFor, dashboardLeaks, tokenMatches, mcpRateBucket, toolOk, toolError, MCP_RATE_PER_MIN, MCP_TOKEN_ENV, MCP_TOKEN_MIN } from '../lib/gammaMcp.js';
 import { crossCheckLeaks } from '../lib/crossCheck.js';
 import { captureGex, readGex, settledGex, observeRoll, OCC_ROLL_LOG_KEY, OCC_HEALTH_KEY, GEX_SYMBOLS, CUSTOM_ROOT_RE,
-         LAST_RECOMPUTE_KEY, LAST_RECOMPUTE_TTL_SEC, recomputeRecord, newerRecompute, YAHOO_SYMBOL } from '../lib/gexStore.js';
+         LAST_RECOMPUTE_KEY, LAST_RECOMPUTE_TTL_SEC, recomputeRecord, newerRecompute } from '../lib/gexStore.js';
 import { spxRatio, esBasis, spMap, spMapBlock, dualLadder, fetchSpRates, BAND_PCT as SP_BAND_PCT, LADDER_BAND_PCT, spHeatGrid } from '../lib/spMap.js';
 import { instrumentKind } from '../lib/catalyst.js';
-import { wallRoll } from '../lib/wallRoll.js';
 import { authorised, refusalReason } from '../lib/apiauth.js';
 import { getQuotes } from '../lib/quotes.js';
 import { marketState } from '../lib/sessions.js';
 import { rollSummary, OCC_CONFIRM_MIN } from '../lib/occ.js';
 import { healthSummary, transitionRuns, confirmMinVerdict } from '../lib/occHealth.js';
-
-// ── THE SPOT A RECOMPUTE IS PRICED AT ────────────────────────────────────────
-// The panel was fetching /api/prices and passing the result. That route returns the REGULAR
-// print and never an extended-hours one, so pre-open it handed back the PRIOR CLOSE — 716.31
-// against a live pre-market 707.94 on 2026-09-10, a 1.2% error, labelled `spotSource: caller`
-// and therefore reported in the footer as the live spot. So the spot is resolved here, with the
-// same getQuotes({ prepost }) call the pre-read uses: one definition of the current price.
-async function resolveSpot(sym0) {
-  // SPX is the index; its quote is ^GSPC. An index has no extended session, so outside the session
-  // its last print is the close.
-  const sym = YAHOO_SYMBOL[sym0] || sym0;
-  try {
-    const [q] = await getQuotes([sym], { prepost: true });
-    // Outside regular hours the extended print is the live one and the regular is yesterday's.
-    // Inside them it is the other way round, and a stale ext must never override a live regular.
-    const shut = marketState(sym) !== 'open';
-    const px = (shut && q?.ext && !q.ext.stale && q.ext.price > 0) ? q.ext.price : q?.price;
-    return Number.isFinite(+px) && +px > 0 ? +px : null;
-  } catch { return null; }   // settledGex falls back to CBOE's, and the footer names it
-}
+import { feedBoard, resolveSpot } from '../lib/gexFeedBoard.js';
 
 // ── THE READ-ONLY FEED ───────────────────────────────────────────────────────
 // For a consumer that cannot send an auth header. The slug (32 random bytes, minted below and
@@ -65,46 +45,6 @@ async function resolveSpot(sym0) {
 // by lib/gexFeed.js from named gamma fields only, and refused outright if it ever contains a word
 // on the brief's banned list.
 const FEED_SLUG_KEY = 'dvcap:gex:feed:slug:v1';
-const FEED_LOCK_KEY = (sym) => `dvcap:gex:feed:lock:v1:${sym}`;
-
-// The board to serve: a recompute no older than FEED_RECOMPUTE_MIN if there is one — the panel's
-// or this route's, they share LAST_RECOMPUTE_KEY — else a new one if the lock allows (at most one
-// per ticker per FEED_RECOMPUTE_MIN, however many callers), else the newest thing on hand.
-async function feedBoard(sym, now = Date.now()) {
-  const out = await feedBoardOnly(sym, now);
-  return { ...out, wallRoll: out.stored?.series?.length ? wallRoll(out.stored.series, { today: nyToday(), symbol: sym }) : null };
-}
-async function feedBoardOnly(sym, now) {
-  const stored = await readGex(sym).catch(() => null);
-  // The row a recompute is shown with on the tab: the stored row with the recompute's on top.
-  // A recompute on YESTERDAY's open interest (OCC's file not yet rolled) is served but marked, and
-  // is not written over the store — the board stays yesterday's until today's file lands.
-  const fromRecord = (rec) => ({ board: { ...rec, row: { ...(stored?.latest || {}), ...rec.row } }, mode: 'live_recompute', asOf: rec.at,
-    source: rec.mode === 'repriced' ? (rec.capturedAt || rec.at) : (rec.iv?.asOf || rec.at),
-    staleReason: oiStaleReason(rec.vintage, new Date(now)) });
-  const kept = await kvGetJson(LAST_RECOMPUTE_KEY(sym)).catch(() => null);
-  const age = kept?.at ? now - Date.parse(kept.at) : Infinity;
-  if (age < FEED_RECOMPUTE_MIN * 60000) return { ...fromRecord(kept), stored };
-  if (await kvSetNxEx(FEED_LOCK_KEY(sym), { at: new Date(now).toISOString() }, FEED_RECOMPUTE_MIN * 60)) {
-    try {
-      const out = await settledGex(sym, { spot: await resolveSpot(sym), expiries: stored?.latest?.expiries || null });
-      const rec = recomputeRecord(sym, { ...out, mode: 'settled' });
-      if (rec) {
-        if (!oiStaleReason(rec.vintage, new Date(now))) { try { await kvSetJsonEx(LAST_RECOMPUTE_KEY(sym), rec, LAST_RECOMPUTE_TTL_SEC); } catch { /* served anyway */ } }
-        return { ...fromRecord(rec), stored };
-      }
-    } catch { /* fall through to what is on hand */ }
-  }
-  const rec = newerRecompute(stored?.latest, kept);
-  if (rec) return { ...fromRecord(rec), stored };
-  if (stored?.latest) {
-    return { board: { row: stored.latest, levels: stored.levels, grid: stored.grid, byStrike: stored.byStrike,
-                      decay: null, crossCheck: stored.latest.crossCheck ?? null },
-             mode: 'settled', asOf: stored.latest.asOf, source: stored.latest.asOf, stored };
-  }
-  return { board: null };
-}
-
 async function serveFeed(req, res) {
   if (req.method !== 'GET') { res.setHeader('Allow', 'GET'); return res.status(405).json({ error: 'GET only' }); }
   const ip = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim() || String(req.headers?.['x-real-ip'] || '') || 'unknown';
@@ -145,7 +85,9 @@ async function mcpTool(name, args) {
   if (name === 'get_signal_board') {
     // The Signal Board, as /api/indicators?board=1 serves it; the same leak check as the boards.
     try {
-      const out = await signalBoardPayload();
+      // recompute: true — the connector's gamma tools may mint a recompute, so its conflict flag reads
+      // the same board they would serve.
+      const out = await signalBoardPayload({ recompute: true });
       return feedLeaks(JSON.stringify(out)).length ? toolError('signal board unavailable') : toolOk(out);
     } catch { return toolError('signal board unavailable'); }
   }

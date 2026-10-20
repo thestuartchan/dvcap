@@ -1,0 +1,108 @@
+# The trade-day call's quarterly walk-forward refit (scripts/trade-day-refit.py --refit).
+#
+# WHAT. Refits the three trade-day models — median R and P(R ≥ 1) (the log-R model), and P(trend day) — on
+# every session from 2012 to the last quarter-end, scores the current coefficients (lib/tradeDayModel.json)
+# against a candidate on the four quarters to that cutoff (both out of sample), and writes a proposal under
+# docs/trade-day-refit/ (proposed.json, report.md, status.json).
+#
+# NEVER APPLIED. When performance moved past the documented threshold (the script's header: |Δ Brier
+# P(R≥1)| ≥ 0.005, |Δ Spearman| ≥ 0.03, zone differs on ≥ 15% of sessions, or P(trend)'s skill verdict
+# flips / |Δ BSS| ≥ 0.01) it opens a pull request carrying only the proposal files. lib/tradeDayModel.json is
+# changed by a person, by hand, after reading the report. Within the threshold nothing is committed; the
+# report is in the run's summary.
+#
+# WHEN. The first weekday after each quarter-end, 13:23 UTC (after Cboe's VIX/VXN history and
+# SqueezeMetrics' DIX.csv carry the quarter's last session). Cron cannot say "first weekday", and with both
+# day fields set it ORs them, so the schedule fires on the 1st–3rd of Jan/Apr/Jul/Oct and a guard step
+# keeps only the first weekday (the 1st on a weekday, else the Monday on the 2nd or 3rd).
+#
+# SOURCES. Free and keyless: SqueezeMetrics DIX.csv, Cboe VIX/VXN history CSVs, Yahoo daily bars. No paid
+# service, no secret beyond the workflow's own GITHUB_TOKEN. The log prints counts and verdicts only —
+# public market statistics.
+
+name: trade-day refit
+
+on:
+  schedule:
+    - cron: '23 13 1-3 1,4,7,10 *'
+  workflow_dispatch:
+    inputs:
+      cutoff:
+        description: 'Cutoff date YYYY-MM-DD (default: the last quarter-end)'
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: trade-day-refit
+  cancel-in-progress: false
+
+jobs:
+  refit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Only the first weekday after the quarter-end
+        id: when
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          dom=$(date -u +%-d); dow=$(date -u +%u)
+          if { [ "$dom" = 1 ] && [ "$dow" -le 5 ]; } || { [ "$dom" -le 3 ] && [ "$dow" = 1 ]; }; then echo "run=true" >> "$GITHUB_OUTPUT"
+          else echo "run=false" >> "$GITHUB_OUTPUT"; echo "not the first weekday of the quarter (day $dom, weekday $dow): skipped"; fi
+      - uses: actions/checkout@v4
+        if: steps.when.outputs.run == 'true'
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        if: steps.when.outputs.run == 'true'
+        with:
+          python-version: '3.12'
+      - name: Install the pinned maths
+        if: steps.when.outputs.run == 'true'
+        run: pip install --quiet numpy==2.1.3 pandas==2.2.3
+      - name: Fetch the market data
+        if: steps.when.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          D="$RUNNER_TEMP/td"; mkdir -p "$D"
+          get() { for i in 1 2 3; do if curl -sSfL --retry 2 "$@"; then return 0; fi; sleep $((i * 10)); done; return 1; }
+          get https://squeezemetrics.com/monitor/static/DIX.csv -o "$D/dix.csv"
+          get https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv -o "$D/VIX.csv"
+          get https://cdn.cboe.com/api/global/us_indices/daily_prices/VXN_History.csv -o "$D/VXN.csv"
+          for s in QQQ SPY %5EGSPC; do
+            get -A Mozilla/5.0 "https://query2.finance.yahoo.com/v8/finance/chart/$s?interval=1d&period1=1293840000&period2=$(date +%s)" -o "$D/d_$s.json"
+            sleep 2
+          done
+          wc -c "$D"/*
+      - name: Refit and compare (never applied)
+        if: steps.when.outputs.run == 'true'
+        env:
+          CUTOFF: ${{ github.event.inputs.cutoff }}
+        run: |
+          set -euo pipefail
+          if [ -n "$CUTOFF" ]; then python -I scripts/trade-day-refit.py "$RUNNER_TEMP/td" --refit --cutoff "$CUTOFF"
+          else python -I scripts/trade-day-refit.py "$RUNNER_TEMP/td" --refit; fi
+          cat docs/trade-day-refit/report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Open a pull request with the proposal, only past the threshold
+        if: steps.when.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          changed=$(python -c "import json; print(str(json.load(open('docs/trade-day-refit/status.json'))['changed']).lower())")
+          cutoff=$(python -c "import json; print(json.load(open('docs/trade-day-refit/status.json'))['cutoff'])")
+          if [ "$changed" != "true" ]; then echo "within the thresholds at $cutoff: no proposal"; exit 0; fi
+          branch="refit/trade-day-$cutoff"
+          git config user.name "dvcap-bot"
+          git config user.email "dvcap-bot@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add docs/trade-day-refit/proposed.json docs/trade-day-refit/report.md docs/trade-day-refit/status.json
+          git commit -m "Trade-day refit proposal @ $cutoff (not applied)"
+          git push --force-with-lease origin "HEAD:refs/heads/$branch"
+          if gh pr list --head "$branch" --state open --json number --jq 'length' | grep -q '^[1-9]'; then echo "a proposal PR for $cutoff is already open"; exit 0; fi
+          gh pr create --base main --head "$branch" \
+            --title "Trade-day refit proposal: data to $cutoff (not applied)" \
+            --body-file docs/trade-day-refit/report.md \
+            || echo "::warning::could not open the pull request (Settings → Actions → 'Allow GitHub Actions to create and approve pull requests' must be on); the branch $branch carries the proposal"

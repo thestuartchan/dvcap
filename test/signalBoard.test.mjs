@@ -3,11 +3,13 @@
 import { stateOf, flipDistance, THRESHOLDS, CLUSTERS, clusterOf, leanOf, whatFlips, buildSignalBoard, creditRows, ratesRows, oilRows,
   dealerRows, tapeRows, asiaRows, narrativeRows, maRow, ratioSeries, realisedVol, downRunBefore, nextMonthlyOpex, sessionsBetween, nextSession,
   tradeDayCall, checkpointRead, tradeDayBlock, normCdf, zoneOf, TRADE_DAY_MODEL, BAND_STATS, CHECKPOINTS, priorR, snapshotRow, scoreRows, scorecard, KOSPI_TEST, cryptoRows, btc200Break, offHigh, BTC_TEST,
-  narrativeState, narrativeFlip, narrativeMetrics, NARRATIVE_RULE, NARRATIVE_TEST } from '../lib/signalBoard.js';
+  narrativeState, narrativeFlip, narrativeMetrics, NARRATIVE_RULE, NARRATIVE_TEST,
+  trendDayProb, TREND_MODEL, gammaView, conflictRules, tradeConflict, CONFLICT } from '../lib/signalBoard.js';
 import { parseTimeline, joinNarrative, narrativeInputs, NARRATIVE_QUERY, gdeltUrl } from '../lib/narrativeFeed.js';
-import { feedLeaks } from '../lib/gexFeed.js';
+import { feedLeaks, gexFeedPayload } from '../lib/gexFeed.js';
+import { readFileSync } from 'node:fs';
 import { CUSHION } from '../lib/trendTells.js';
-import { firstRanges } from '../lib/signalBoardFeed.js';
+import { firstRanges, gammaBoards } from '../lib/signalBoardFeed.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
@@ -298,6 +300,85 @@ eq('next session skips the weekend and a holiday', [nextSession('2026-10-16'), n
   const card = scorecard([sc]);
   eq('scorecard: a risk-off row followed by a fall is a hit', card.signals.cushion.off.QQQ_1, { n: 1, hit_pct: 100, mean_pct: -1 });
   eq('scorecard: a Trade call that moved 1.3× is a hit, with its Brier', card.calls.QQQ.last20, { n: 1, judged: 1, hit_pct: 100, brier: 0.16 });
+}
+
+// ── P(TREND DAY) ──
+{
+  // 20 Oct 2026: no out-of-sample skill on either ticker, so the call shows the cushion band's base rate.
+  eq('the tested verdict: no skill, walk-forward n 2,714 from 2016', [TREND_MODEL.QQQ.skill, TREND_MODEL.SPY.skill, TREND_MODEL.QQQ.oos.n, TREND_MODEL.QQQ.oos.span.slice(0, 4)], [false, false, 2714, '2016']);
+  const top = trendDayProb('QQQ', { cushionPct: 90, prevR: 0.8, band: 'p80' });
+  eq('no skill → the band\'s base rate, labelled', [top.p, top.source, top.band_pct, top.band_n, top.base_pct], [0.42, 'band base rate', 41.5, 987, 49.1]);
+  ok('…and the text says the model has no out-of-sample skill', /no out-of-sample skill over the base rate/.test(top.text));
+  eq('negative GEX reads its own band', trendDayProb('SPY', { cushionPct: 5, gexNegative: true, prevR: 1, band: 'neg' }).band_pct, 57.1);
+  eq('no band → no reading', trendDayProb('QQQ', { cushionPct: 50, prevR: 1 }), null);
+  const q = tradeDayCall('QQQ', { cushionPct: 90, prevR: 0.8 });
+  eq('the call carries p_trend and its source', [q.p_trend, q.trend.source], [0.42, 'band base rate']);
+  ok('the call\'s text names P(trend day) and the base-rate fallback', /P\(trend day\) 41\.5%: the cushion band's base rate/.test(q.text));
+  ok('every band has a rate and a count, both tickers', ['QQQ', 'SPY'].every(t => ['neg', 'p0', 'p20', 'p40', 'p60', 'p80'].every(b => TREND_MODEL[t].bands[b][1] > 300)));
+  const imp = 0.2 / Math.sqrt(252);   // the one-day 1σ as a fraction; 5.0 on 500 is 0.79σ, a confirm
+  const h = checkpointRead('QQQ', '10:30', { firstRange: 5.0, open: 500, implied: imp }).history;
+  eq('10:30 checkpoint: the band\'s trend-day share with its n and base', [h.trend_day_pct, h.trend_n, h.trend_base_pct], [47, 122, 45]);
+  ok('10:00 carries no trend share (60 sessions of free 30-minute bars)', !('trend_day_pct' in checkpointRead('QQQ', '10:00', { firstRange: 3.0, open: 500, implied: imp }).history));
+}
+
+// ── THE CONFLICT FLAG ──
+{
+  const base = { spot: 600, as_of_utc: '2026-10-19T20:00:00.000Z', mode: 'settled', net_gex_per_1pct: 2e9,
+    flip: { line: 590, usable: true }, call_wall: { strike: 603, gamma: 8e8 }, pin_box: { lo: 595, hi: 605 },
+    trapdoor: { near: { strike: 585, gamma: -5e8 } }, expiries: [{ move_1sd: 6 }] };
+  const view = (o = {}) => gammaView({ ...base, ...o }, { target: '2026-10-20' });
+  const call = (zone, sd = 8) => ({ ok: true, ticker: 'QQQ', zone, median_r: zone === 'trade' ? 1.1 : 0.8, implied_1sd: sd });
+  eq('Trade in a positive-gamma pin box, near the wall: both pin rules', conflictRules('trade', view(), 8).map(r => r.id), ['pin_box', 'call_wall']);
+  eq('Trade outside the box and beyond 0.5σ of the wall: none', conflictRules('trade', view({ spot: 612 }), 8).map(r => r.id), []);
+  eq('Trade, call wall 0.5σ away exactly: fires (inclusive)', conflictRules('trade', view({ pin_box: null, call_wall: { strike: 604, gamma: 1e9 } }), 8).map(r => r.id), ['call_wall']);
+  eq('Trade, net gamma negative: no pin conflict', conflictRules('trade', view({ net_gex_per_1pct: -1e9 }), 8), []);
+  eq('Trade, a wall with negative gamma is no wall', conflictRules('trade', view({ pin_box: null, call_wall: { strike: 601, gamma: -1e8 } }), 8), []);
+  const neg = { net_gex_per_1pct: -2e9, flip: { line: 605, usable: true }, pin_box: null, trapdoor: { near: { strike: 597, gamma: -9e8 } } };
+  eq('Lean skip below the flip with negative gamma, trapdoor within 0.5σ: both', conflictRules('lean skip', view(neg), 8).map(r => r.id), ['below_flip', 'trapdoor']);
+  eq('Lean skip: a fragile flip (a zone, not a line) does not fire', conflictRules('lean skip', view({ ...neg, flip: { line: 605, usable: false }, trapdoor: null }), 8), []);
+  eq('Lean skip: a trapdoor 1σ away is not imminent', conflictRules('lean skip', view({ ...neg, flip: { line: 590, usable: true }, trapdoor: { near: { strike: 592, gamma: -1e9 } } }), 8), []);
+  eq('Lean skip in a pin box: the views agree', conflictRules('lean skip', view(), 8), []);
+  eq('Selective never raises one', conflictRules('selective', view(neg), 8), []);
+  eq('no call σ → the board\'s ±1σ is used', conflictRules('trade', view({ pin_box: null, call_wall: { strike: 602.9, gamma: 1e9 } }), null).map(r => r.id), ['call_wall']);
+  const stale = gammaView({ ...base, as_of_utc: '2026-10-12T20:00:00.000Z' }, { target: '2026-10-20' });
+  eq('a board 8 days old is stale and raises nothing', [stale.stale, conflictRules('trade', stale, 8)], [true, []]);
+  const c = tradeConflict(call('trade'), view());
+  eq('the conflict object: zone, what gamma reads, rules, never an override', [c.call_zone, c.gamma_reads, c.rules, c.overrides, c.sigma_usd], ['trade', 'pinned', ['pin_box', 'call_wall'], false, 8]);
+  ok('…its text shows both views and says the call stands', /the call says Trade .* the gamma board reads pinned .* the call is not changed/.test(c.text));
+  eq('agreement → null', tradeConflict(call('trade'), view({ net_gex_per_1pct: -1e9 })), null);
+  eq('no board → null', [gammaView(null), tradeConflict(call('trade'), null)], [null, null]);
+  ok('the rule constants are the documented ones', CONFLICT.sigma === 0.5 && CONFLICT.maxAgeDays === 4);
+  // The real SPY board (fixture, 8 Oct close): spot below a usable flip, net gamma −$1.8bn.
+  const fx = JSON.parse(readFileSync('test/fixtures-gamma-board-spy.json', 'utf8'));
+  const p = gexFeedPayload('SPY', fx, { mode: 'settled', asOf: fx.row.asOf, today: '2026-10-08' });
+  const g = gammaView(p, { target: '2026-10-09' });
+  eq('the served SPY board reads below its flip with negative gamma', [g.spot, g.flip, g.net_gamma_bn, g.flip_usable], [774.64, 775.59, -1.83, true]);
+  eq('…so a Lean skip call on it carries below_flip', tradeConflict({ ...call('lean skip'), ticker: 'SPY' }, g).rules, ['below_flip']);
+  // Through the block: the call is unchanged, the conflict sits beside it.
+  const ds = days(300, '2026-10-19');
+  const bars = ds.map(d => ({ date: d, open: 600, high: 601, low: 599.5, close: 600 }));
+  const S = { qqqBars: bars, spyBars: bars, vxn: ds.map(d => ({ date: d, value: 20 })), vix: ds.map(d => ({ date: d, value: 20 })), squeeze: ds.map((d, i) => [d, 1e9 + i * 1e6]) };
+  const plain = tradeDayBlock(S, { target: '2026-10-20' });
+  const withG = tradeDayBlock(S, { target: '2026-10-20', gamma: { QQQ: { ...base, ...neg } } });
+  eq('the block: same zone and median with or without the board', [withG.calls.QQQ.zone, withG.calls.QQQ.median_r], [plain.calls.QQQ.zone, plain.calls.QQQ.median_r]);
+  eq('…lean skip below the flip carries the conflict; SPY without a board has none', [withG.calls.QQQ.zone, withG.calls.QQQ.conflict?.rules, withG.calls.SPY.gamma, withG.calls.SPY.conflict], ['lean skip', ['below_flip', 'trapdoor'], null, null]);
+  const snap = snapshotRow({ rows: [] }, withG, '2026-10-20');
+  eq('the snapshot keeps the conflict rules and P(trend)', [snap.call.QQQ.conflict, snap.call.QQQ.p_trend], [['below_flip', 'trapdoor'], withG.calls.QQQ.p_trend]);
+  // The connector's banned-word filter (substring match: "position", "key", …) on everything new.
+  const texts = [withG, c, tradeDayCall('SPY', { cushionPct: 10, gexNegative: true, prevR: 1 }), checkpointRead('SPY', '10:30', { firstRange: 4, open: 600, implied: imp30() }),
+    conflictRules('trade', view(), 8), conflictRules('lean skip', view(neg), 8), TREND_MODEL];
+  eq('trend and conflict output pass the connector\'s banned-word check', texts.map(t => feedLeaks(JSON.stringify(t))), texts.map(() => []));
+}
+function imp30() { return 0.2 / Math.sqrt(252); }
+{
+  // gammaBoards: the feed's board selection, reshaped by the feed's payload builder; the recompute flag passed through.
+  const fx = JSON.parse(readFileSync('test/fixtures-gamma-board-spy.json', 'utf8'));
+  const seen = [];
+  const board = async (t, now, { recompute }) => { seen.push([t, recompute]); return t === 'SPY' ? { board: fx, mode: 'settled', asOf: fx.row.asOf, source: fx.row.asOf } : { board: null }; };
+  const g = await gammaBoards({ board, now: Date.parse('2026-10-09T12:00:00Z') });
+  eq('SPY reshaped by gexFeedPayload, QQQ without a board is null, never a recompute by default', [g.SPY.spot, g.SPY.flip.line, g.QQQ, seen.sort()], [774.64, 775.59, null, [['QQQ', false], ['SPY', false]]]);
+  const g2 = await gammaBoards({ recompute: true, board: async () => { throw new Error('down'); } });
+  eq('a failing board is null, not a failed board', [g2.QQQ, g2.SPY], [null, null]);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

@@ -16,8 +16,12 @@ The Market Read artifact and the two skills live outside this repo, so this PR d
            clusters: [{id: macro|dealers|tape|narrative, label, state, on, off, neutral, rows}],   // crypto rows sit in tape, vote: false
            lean: {state, on, off, of, text}, flips: [{id, label, from, to, at, value, dist, text}] },
   trade_day: { phase, target, as_of, cushion_pct, gex_negative,
-               calls: { QQQ: {median_r, mean_r, p_r_ge_1, zone, band: {id, median_r, share_ge_1, n}, implied_1sd, assumed: [], text}, SPY: {...} },
-               checkpoints: { QQQ: [{at: "10:00", ok, fr_sigma, band, quiet_below, confirm_at, history, text}, {at: "10:30", ...}], SPY: [...] } },
+               calls: { QQQ: {median_r, mean_r, p_r_ge_1, zone, band: {id, median_r, share_ge_1, n}, implied_1sd, assumed: [], text,
+                              p_trend, trend: {p, source: "model"|"band base rate", skill, band_pct, band_n, base_pct, text},
+                              gamma: {as_of, mode, spot, net_gamma_bn, flip, flip_usable, call_wall, call_wall_gamma_bn, pin_lo, pin_hi, trap_near, move_1sd, stale} | null,
+                              conflict: {call_zone, gamma_reads: "pinned"|"unstable", rules: [...], detail: [{id, text}], sigma_usd, gamma_as_of, gamma_mode, overrides: false, text} | null},
+                        SPY: {...} },
+               checkpoints: { QQQ: [{at: "10:00", ok, fr_sigma, band, quiet_below, confirm_at, history, text}, {at: "10:30", ..., history: {..., trend_day_pct, trend_n, trend_base_pct, trend_span}}], SPY: [...] } },
   scorecard: { scored_days, signals: {<row id>: {on|off: {QQQ_1: {n, hit_pct, mean_pct}, ...}}}, calls: {QQQ: {last20, last60}, SPY: {...}} } }
 ```
 
@@ -38,7 +42,9 @@ The Market Read artifact and the two skills live outside this repo, so this PR d
 7. **Add the trade-day call** to the Gamma section header, from `trade_day.calls.QQQ` then `.SPY`:
    - the zone chip;
    - "median R ×, P(≥1.0×) %", plus the band's "median ×, share ≥1.0× of n days";
-   - `assumed`, when present.
+   - `assumed`, when present;
+   - **P(trend):** "P(trend day) `trend.band_pct`% (band) · all days `trend.base_pct`%". While `trend.source` is `"band base rate"` (it is on 20 Oct 2026, for both tickers), label it "band base rate, no model skill" in muted text and never as a forecast. Hover: `trend.text`;
+   - **Conflict:** when `conflict` is non-null, show an amber "⚠ gamma disagrees" line under the ticker's chip with `conflict.text`. The zone chip stays as the call made it; never recolour or replace it. When `gamma.stale` is true, show "gamma board stale — no conflict check" instead.
 
    Show `trade_day.checkpoints` as two small lines per ticker, with the threshold before the window closes and the band and history after it.
 8. **Keep everything else as is:**
@@ -71,9 +77,13 @@ The Market Read artifact and the two skills live outside this repo, so this PR d
 4. **Step 7 `tell`:** replace "09:30–10:30 range > half the implied 1σ" with the two checkpoints from `trade_day.checkpoints`. Give the dollar thresholds as `confirm_at × implied_1sd` and `quiet_below × implied_1sd`:
    - QQQ: 10:00 ≥0.50σ / <0.33σ, 10:30 ≥0.70σ / <0.43σ;
    - SPY: 10:00 ≥0.40σ / <0.25σ, 10:30 ≥0.55σ / <0.32σ.
-5. **The cushion table:** keep it for reference, but quote the band's **median and share of days ≥1.0×** (`band.median_r`, `band.share_ge_1`), not a single ×.
-6. **Self-scoring:** a weekday workflow writes the board and the call to `data/signal_board_history.json` before the US open and scores them afterwards. Show `scorecard.calls.QQQ.last20` / `last60` (hit %, Brier) in `lean_reason` once `n` ≥ 10.
-7. **Asia tiles:** keep them. When the board's `kospi` row carries the Crown flag, mention it with its tested number (59.6% vs 55.7% base, n 416), not 80%.
+5. **P(trend) and the conflict flag:**
+   - `cushion_text`: after each ticker's `calls.<T>.text`, which already ends with the P(trend day) sentence, add nothing more for P(trend). While `trend.source` is `"band base rate"`, do not call a trend day likely or unlikely from it. The ≥80th band's ~42% against ~49% is the only step worth one clause.
+   - When `calls.<T>.conflict` is non-null, add one line to `lean_reason`: "Gamma disagrees: " + `conflict.text`. Keep `lean` exactly as `calls.QQQ.zone` gives it. The flag informs, it never overrides: do not move the lean a notch for it.
+   - `tell` (step 7): at 10:30, after the band, quote `history.trend_day_pct` against `history.trend_base_pct`, labelled "ended a trend day", as history only.
+6. **The cushion table:** keep it for reference, but quote the band's **median and share of days ≥1.0×** (`band.median_r`, `band.share_ge_1`), not a single ×.
+7. **Self-scoring:** a weekday workflow writes the board and the call to `data/signal_board_history.json` before the US open and scores them afterwards. Show `scorecard.calls.QQQ.last20` / `last60` (hit %, Brier) in `lean_reason` once `n` ≥ 10.
+8. **Asia tiles:** keep them. When the board's `kospi` row carries the Crown flag, mention it with its tested number (59.6% vs 55.7% base, n 416), not 80%.
 
 ## D. One-time checks after deploy
 
@@ -106,3 +116,20 @@ BTC trades every day, so the rows' `as_of` can be a weekend date or today. US sp
 - Do not turn the crypto rows into a gamma or trade-day input. They were tested against QQQ/SOXX direction, not against range R.
 
 **`current-market-read`**: in the cross-asset step, read the four rows from `get_signal_board` instead of quoting BTC by hand. The headline may cite them as context but must not count them toward a cluster.
+
+## F. P(trend), the conflict flag and the quarterly refit (added 20 Oct 2026)
+
+Evidence and rules are in `docs/signal-board-audit.md` §8–10.
+
+**P(trend day)** = the close in the top or bottom 20% of the day's range. It is a different definition from the Gamma tab's ATR trend day, so never put the two side by side as one number.
+- `calls.<T>.p_trend` is the number to show; `calls.<T>.trend` says where it came from.
+- The fitted model had no out-of-sample skill (walk-forward 2016–2026, n 2,714; Brier skill score +0.004 QQQ / +0.002 SPY with intervals spanning zero). The value is therefore the cushion band's base rate, and `trend.text` says so in words. Show `trend.text` on hover, not a composed sentence.
+- If a later refit flips `skill` to true, `trend.source` becomes `"model"`. The same fields then carry the model's probability, and the label drops "band base rate".
+
+**Conflict flag** (`calls.<T>.conflict`):
+- **Market Read:** an amber line under the trade-day chip in the Gamma section header, `conflict.text` verbatim, with `conflict.detail[].text` as bullets on expand. The ladder and levels already shown are the same board (`gamma_as_of`, `gamma_mode`).
+- **Daily Brief:** one line in `lean_reason` (C.5). The page's gamma bar keeps drawing `median_r`.
+- **`current-market-read`:** when a conflict is present, the gamma prose must name both views: the call's zone and what the structure reads. Do not let the structure silently win.
+- **Never:** recolour the zone, change `lean`, or count the conflict as a cluster vote.
+
+**Quarterly refit.** Nothing to wire. A pull request titled "Trade-day refit proposal: data to <date> (not applied)" appears only when performance moved past the thresholds. Adopting it means copying `docs/trade-day-refit/proposed.json`'s `r` / `trend` blocks into `lib/tradeDayModel.json` by hand and running `npm test`. The skills and the page read the numbers through `get_signal_board` and need no change.

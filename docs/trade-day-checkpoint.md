@@ -89,3 +89,14 @@ At 10:00 (30m sample): QQQ FR30 0.33 / 0.41 / 0.54; SPY 0.25 / 0.32 / 0.42. FR30
 - SPY intraday is scored with SPX daily features and VIX; QQQ with VXN.
 - "Full-day R ≥ 1" given a big first range is partly mechanical (the first range is part of the day);
   R_rest is the clean measure and is what the table and models use.
+
+## Trend-day share (added 20 Oct 2026)
+
+The two scripts also report, per checkpoint band, the share of sessions that ended a **trend day**: the close in the top or bottom 20% of the day's range, the trade-day call's P(trend) definition (`docs/signal-board-audit.md` §8). With the free Yahoo hourly bars (2024-10 → 2026-10, n 493), the 10:30 figures are:
+
+| | quiet | middle | confirm | base |
+|---|---|---|---|---|
+| QQQ | 43% | 44% | 47% | 45% |
+| SPY | 37% | 44% | 42% | 41% |
+
+A wide first hour says the rest of the day will *move*. It says almost nothing about whether the day *closes at an extreme*. 10:00 is not reported, because the free 30-minute record is 60 sessions. The checkpoint backtest now skips, instead of failing, a checkpoint with fewer than the 120 sessions its walk-forward needs.
