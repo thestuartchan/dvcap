@@ -1,16 +1,22 @@
 {
- "_README": "Supplier, customer and competitor links read from each company's own latest annual report on EDGAR (scripts/supplychain-build.mjs; method in docs/supply-chain.md). Each link quotes the sentence and names the filing. relation = what the counterparty is to the filer. named=false is an anonymised customer as the filing states it.",
- "_generated": "2026-10-19T12:09:03.861Z",
+ "_README": "Supplier, customer and competitor links read from each company's own latest annual report on EDGAR, plus its latest 10-Q when filed after it (scripts/supplychain-build.mjs; method in docs/supply-chain.md). Each link quotes the sentence and names the filing it came from. relation = what the counterparty is to the filer. named=false is an anonymised customer as the filing states it.",
+ "_generated": "2026-10-19T14:59:58.394Z",
  "companies": {
   "AAPL": {
    "cik": 320193,
    "name": "Apple Inc.",
-   "asOf": "2025-10-31",
+   "asOf": "2026-07-31",
    "filing": {
     "form": "10-K",
     "accession": "0000320193-25-000079",
     "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/aapl-20250927.htm",
     "date": "2025-10-31"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0000320193-26-000020",
+    "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000020/aapl-20260627.htm",
+    "date": "2026-07-31"
    },
    "links": [
     {
@@ -20,7 +26,7 @@
      "named": true,
      "share": null,
      "quote": "For example, the Company earns revenue from licensing arrangements with Google LLC (\"Google\") and other companies to offer their search services on the Company’s platforms and applications, and certain of these arrangements are currently subject to government investigations and legal proceedings.",
-     "mentions": 1,
+     "mentions": 2,
      "filing": {
       "form": "10-K",
       "accession": "0000320193-25-000079",
@@ -33,12 +39,18 @@
   "ADI": {
    "cik": 6281,
    "name": "ANALOG DEVICES INC",
-   "asOf": "2025-11-25",
+   "asOf": "2026-08-19",
    "filing": {
     "form": "10-K",
     "accession": "0000006281-25-000153",
     "url": "https://www.sec.gov/Archives/edgar/data/6281/000000628125000153/adi-20251101.htm",
     "date": "2025-11-25"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0000006281-26-000073",
+    "url": "https://www.sec.gov/Archives/edgar/data/6281/000000628126000073/adi-20260801.htm",
+    "date": "2026-08-19"
    },
    "links": [
     {
@@ -61,12 +73,18 @@
   "AMAT": {
    "cik": 6951,
    "name": "APPLIED MATERIALS INC /DE",
-   "asOf": "2025-12-12",
+   "asOf": "2026-08-20",
    "filing": {
     "form": "10-K",
     "accession": "0001628280-25-056742",
     "url": "https://www.sec.gov/Archives/edgar/data/6951/000162828025056742/amat-20251026.htm",
     "date": "2025-12-12"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001628280-26-058235",
+    "url": "https://www.sec.gov/Archives/edgar/data/6951/000162828026058235/amat-20260726.htm",
+    "date": "2026-08-20"
    },
    "links": [
     {
@@ -74,14 +92,14 @@
      "label": "One customer",
      "relation": "customer",
      "named": false,
-     "share": 19,
-     "quote": "During fiscal 2025, two customers accounted for approximately 19% and 15%, respectively, of our net revenue.",
-     "mentions": 2,
+     "share": 20,
+     "quote": "Two customers accounted for approximately 20 % and 14 %, respectively, of our revenue for the nine months ended July 26, 2026.",
+     "mentions": 1,
      "filing": {
-      "form": "10-K",
-      "accession": "0001628280-25-056742",
-      "url": "https://www.sec.gov/Archives/edgar/data/6951/000162828025056742/amat-20251026.htm",
-      "date": "2025-12-12"
+      "form": "10-Q",
+      "accession": "0001628280-26-058235",
+      "url": "https://www.sec.gov/Archives/edgar/data/6951/000162828026058235/amat-20260726.htm",
+      "date": "2026-08-20"
      }
     },
     {
@@ -89,14 +107,14 @@
      "label": "Another customer",
      "relation": "customer",
      "named": false,
-     "share": 15,
-     "quote": "During fiscal 2025, two customers accounted for approximately 19% and 15%, respectively, of our net revenue.",
-     "mentions": 2,
+     "share": 14,
+     "quote": "Two customers accounted for approximately 20 % and 14 %, respectively, of our revenue for the nine months ended July 26, 2026.",
+     "mentions": 1,
      "filing": {
-      "form": "10-K",
-      "accession": "0001628280-25-056742",
-      "url": "https://www.sec.gov/Archives/edgar/data/6951/000162828025056742/amat-20251026.htm",
-      "date": "2025-12-12"
+      "form": "10-Q",
+      "accession": "0001628280-26-058235",
+      "url": "https://www.sec.gov/Archives/edgar/data/6951/000162828026058235/amat-20260726.htm",
+      "date": "2026-08-20"
      }
     }
    ]
@@ -104,12 +122,18 @@
   "AMD": {
    "cik": 2488,
    "name": "ADVANCED MICRO DEVICES INC",
-   "asOf": "2026-02-04",
+   "asOf": "2026-08-05",
    "filing": {
     "form": "10-K",
     "accession": "0000002488-26-000018",
     "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248826000018/amd-20251227.htm",
     "date": "2026-02-04"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0000002488-26-000123",
+    "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248826000123/amd-20260627.htm",
+    "date": "2026-08-05"
    },
    "links": [
     {
@@ -239,7 +263,7 @@
      "named": true,
      "share": null,
      "quote": "We utilize Taiwan Semiconductor Manufacturing Company Limited (TSMC) for the production of wafers for our HPC, FPGA and adaptive SoC products and GLOBALFOUNDRIES Inc. (GF), with respect to wafer purchases for our HPC products at the 12 nm and 14 nm technology nodes.",
-     "mentions": 3,
+     "mentions": 5,
      "filing": {
       "form": "10-K",
       "accession": "0000002488-26-000018",
@@ -254,7 +278,7 @@
      "named": true,
      "share": null,
      "quote": "We utilize Taiwan Semiconductor Manufacturing Company Limited (TSMC) for the production of wafers for our HPC, FPGA and adaptive SoC products and GLOBALFOUNDRIES Inc. (GF), with respect to wafer purchases for our HPC products at the 12 nm and 14 nm technology nodes.",
-     "mentions": 2,
+     "mentions": 3,
      "filing": {
       "form": "10-K",
       "accession": "0000002488-26-000018",
@@ -264,17 +288,196 @@
     }
    ]
   },
+  "AMKR": {
+   "cik": 1047127,
+   "name": "AMKOR TECHNOLOGY, INC.",
+   "asOf": "2026-07-28",
+   "filing": {
+    "form": "10-K",
+    "accession": "0001047127-26-000014",
+    "url": "https://www.sec.gov/Archives/edgar/data/1047127/000104712726000014/amkr-20251231.htm",
+    "date": "2026-02-20"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001047127-26-000046",
+    "url": "https://www.sec.gov/Archives/edgar/data/1047127/000104712726000046/amkr-20260630.htm",
+    "date": "2026-07-28"
+   },
+   "links": [
+    {
+     "counterparty": "QCOM",
+     "label": "Qualcomm",
+     "relation": "customer",
+     "named": true,
+     "share": 11.1,
+     "quote": "Direct sales to Apple and Qualcomm accounted for 29.8% and 11.1% of our net sales, respectively, for the year ended December 31, 2025.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001047127-26-000014",
+      "url": "https://www.sec.gov/Archives/edgar/data/1047127/000104712726000014/amkr-20251231.htm",
+      "date": "2026-02-20"
+     }
+    },
+    {
+     "counterparty": "AAPL",
+     "label": "Apple",
+     "relation": "customer",
+     "named": true,
+     "share": 29.8,
+     "quote": "Direct sales to Apple and Qualcomm accounted for 29.8% and 11.1% of our net sales, respectively, for the year ended December 31, 2025.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001047127-26-000014",
+      "url": "https://www.sec.gov/Archives/edgar/data/1047127/000104712726000014/amkr-20251231.htm",
+      "date": "2026-02-20"
+     }
+    }
+   ]
+  },
   "AMZN": {
    "cik": 1018724,
    "name": "AMAZON COM INC",
-   "asOf": "2026-02-06",
+   "asOf": "2026-07-31",
    "filing": {
     "form": "10-K",
     "accession": "0001018724-26-000004",
     "url": "https://www.sec.gov/Archives/edgar/data/1018724/000101872426000004/amzn-20251231.htm",
     "date": "2026-02-06"
    },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001018724-26-000026",
+    "url": "https://www.sec.gov/Archives/edgar/data/1018724/000101872426000026/amzn-20260630.htm",
+    "date": "2026-07-31"
+   },
    "links": []
+  },
+  "ANET": {
+   "cik": 1596532,
+   "name": "Arista Networks, Inc.",
+   "asOf": "2026-08-05",
+   "filing": {
+    "form": "10-K",
+    "accession": "0001596532-26-000013",
+    "url": "https://www.sec.gov/Archives/edgar/data/1596532/000159653226000013/anet-20251231.htm",
+    "date": "2026-02-17"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001596532-26-000175",
+    "url": "https://www.sec.gov/Archives/edgar/data/1596532/000159653226000175/anet-20260630.htm",
+    "date": "2026-08-05"
+   },
+   "links": [
+    {
+     "counterparty": "AVGO",
+     "label": "Broadcom",
+     "relation": "supplier",
+     "named": true,
+     "share": null,
+     "quote": "Our product development efforts also depend upon continued collaboration with our key suppliers, such as Broadcom.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001596532-26-000013",
+      "url": "https://www.sec.gov/Archives/edgar/data/1596532/000159653226000013/anet-20251231.htm",
+      "date": "2026-02-17"
+     }
+    },
+    {
+     "counterparty": "NVDA",
+     "label": "Nvidia",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "The data center and campus networking markets have historically been dominated by Cisco, with competition also coming from other large network equipment and system vendors, including Dell/EMC, Extreme Networks, Hewlett Packard Enterprise, Huawei, Juniper Networks, Nvidia, and white box networking vendors that utilize open-source operating systems.",
+     "mentions": 3,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001596532-26-000013",
+      "url": "https://www.sec.gov/Archives/edgar/data/1596532/000159653226000013/anet-20251231.htm",
+      "date": "2026-02-17"
+     }
+    },
+    {
+     "counterparty": "DELL",
+     "label": "Dell",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "The data center and campus networking markets have historically been dominated by Cisco, with competition also coming from other large network equipment and system vendors, including Dell/EMC, Extreme Networks, Hewlett Packard Enterprise, Huawei, Juniper Networks, Nvidia, and white box networking vendors that utilize open-source operating systems.",
+     "mentions": 3,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001596532-26-000013",
+      "url": "https://www.sec.gov/Archives/edgar/data/1596532/000159653226000013/anet-20251231.htm",
+      "date": "2026-02-17"
+     }
+    },
+    {
+     "counterparty": "HPE",
+     "label": "HPE",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "The data center and campus networking markets have historically been dominated by Cisco, with competition also coming from other large network equipment and system vendors, including Dell/EMC, Extreme Networks, Hewlett Packard Enterprise, Huawei, Juniper Networks, Nvidia, and white box networking vendors that utilize open-source operating systems.",
+     "mentions": 3,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001596532-26-000013",
+      "url": "https://www.sec.gov/Archives/edgar/data/1596532/000159653226000013/anet-20251231.htm",
+      "date": "2026-02-17"
+     }
+    },
+    {
+     "counterparty": "CSCO",
+     "label": "Cisco",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "The data center and campus networking markets have historically been dominated by Cisco, with competition also coming from other large network equipment and system vendors, including Dell/EMC, Extreme Networks, Hewlett Packard Enterprise, Huawei, Juniper Networks, Nvidia, and white box networking vendors that utilize open-source operating systems.",
+     "mentions": 5,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001596532-26-000013",
+      "url": "https://www.sec.gov/Archives/edgar/data/1596532/000159653226000013/anet-20251231.htm",
+      "date": "2026-02-17"
+     }
+    },
+    {
+     "counterparty": null,
+     "label": "One customer",
+     "relation": "customer",
+     "named": false,
+     "share": 26,
+     "quote": "Sales to these two customers represented 26% and 16% of our total revenue for the year ended December 31, 2025, respectively.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001596532-26-000013",
+      "url": "https://www.sec.gov/Archives/edgar/data/1596532/000159653226000013/anet-20251231.htm",
+      "date": "2026-02-17"
+     }
+    },
+    {
+     "counterparty": null,
+     "label": "Another customer",
+     "relation": "customer",
+     "named": false,
+     "share": 16,
+     "quote": "Sales to these two customers represented 26% and 16% of our total revenue for the year ended December 31, 2025, respectively.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001596532-26-000013",
+      "url": "https://www.sec.gov/Archives/edgar/data/1596532/000159653226000013/anet-20251231.htm",
+      "date": "2026-02-17"
+     }
+    }
+   ]
   },
   "ARM": {
    "cik": 1973239,
@@ -332,15 +535,33 @@
     }
    ]
   },
+  "ASX": {
+   "cik": 1122411,
+   "name": "ASE Technology Holding Co., Ltd.",
+   "asOf": "2026-04-01",
+   "filing": {
+    "form": "20-F",
+    "accession": "0001193125-26-135585",
+    "url": "https://www.sec.gov/Archives/edgar/data/1122411/000119312526135585/d50802d20f.htm",
+    "date": "2026-04-01"
+   },
+   "links": []
+  },
   "AVGO": {
    "cik": 1730168,
    "name": "Broadcom Inc.",
-   "asOf": "2025-12-18",
+   "asOf": "2026-09-10",
    "filing": {
     "form": "10-K",
     "accession": "0001730168-25-000121",
     "url": "https://www.sec.gov/Archives/edgar/data/1730168/000173016825000121/avgo-20251102.htm",
     "date": "2025-12-18"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001730168-26-000080",
+    "url": "https://www.sec.gov/Archives/edgar/data/1730168/000173016826000080/avgo-20260802.htm",
+    "date": "2026-09-10"
    },
    "links": [
     {
@@ -350,7 +571,7 @@
      "named": true,
      "share": null,
      "quote": "The majority of our front-end wafer manufacturing operations is outsourced to external foundries, including Taiwan Semiconductor Manufacturing Company Limited (\"TSMC\").",
-     "mentions": 3,
+     "mentions": 4,
      "filing": {
       "form": "10-K",
       "accession": "0001730168-25-000121",
@@ -420,15 +641,39 @@
     }
    ]
   },
+  "CEG": {
+   "cik": 1868275,
+   "name": "Constellation Energy Corp",
+   "asOf": "2026-08-06",
+   "filing": {
+    "form": "10-K",
+    "accession": "0001868275-26-000032",
+    "url": "https://www.sec.gov/Archives/edgar/data/1868275/000186827526000032/ceg-20251231.htm",
+    "date": "2026-02-24"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001868275-26-000104",
+    "url": "https://www.sec.gov/Archives/edgar/data/1868275/000186827526000104/ceg-20260630.htm",
+    "date": "2026-08-06"
+   },
+   "links": []
+  },
   "CRWV": {
    "cik": 1769628,
    "name": "CoreWeave, Inc.",
-   "asOf": "2026-03-02",
+   "asOf": "2026-08-12",
    "filing": {
     "form": "10-K",
     "accession": "0001769628-26-000104",
     "url": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000104/crwv-20251231.htm",
     "date": "2026-03-02"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001769628-26-000366",
+    "url": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000366/crwv-20260630.htm",
+    "date": "2026-08-12"
    },
    "links": [
     {
@@ -438,7 +683,7 @@
      "named": true,
      "share": 67,
      "quote": "We recognized an aggregate of approximately 67% of our revenue from our top customer, Microsoft, for the year ended December 31, 2025.",
-     "mentions": 2,
+     "mentions": 3,
      "filing": {
       "form": "10-K",
       "accession": "0001769628-26-000104",
@@ -453,7 +698,7 @@
      "named": true,
      "share": null,
      "quote": "In May 2025, we entered into a master services agreement with OpenAI OpCo, LLC (\"OpenAI\") and in September 2025, we entered into an order form under this master services agreement pursuant to which OpenAI has committed to pay us up to approximately $6.5 billion through May 31, 2031 and, as a result, we expect OpenAI to be a significant customer in future periods.",
-     "mentions": 1,
+     "mentions": 3,
      "filing": {
       "form": "10-K",
       "accession": "0001769628-26-000104",
@@ -463,51 +708,472 @@
     }
    ]
   },
+  "CSCO": {
+   "cik": 858877,
+   "name": "CISCO SYSTEMS, INC.",
+   "asOf": "2026-09-02",
+   "filing": {
+    "form": "10-K",
+    "accession": "0000858877-26-000132",
+    "url": "https://www.sec.gov/Archives/edgar/data/858877/000085887726000132/csco-20260725.htm",
+    "date": "2026-09-02"
+   },
+   "links": [
+    {
+     "counterparty": "NVDA",
+     "label": "Nvidia",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "Our competitors (in each case relative to only some of our products or services) include: Amazon Web Services LLC; Arista Networks, Inc.; Broadcom Inc.; Ciena Corporation; CrowdStrike Holdings, Inc.; Datadog Inc.; Dell Technologies Inc.; Dynatrace Inc.; Fortinet, Inc.; Hewlett-Packard Enterprise Company; Huawei Technologies Co., Ltd.; Microsoft Corporation; Nokia Corporation; Nvidia Corporation; Palo Alto Networks, Inc.; RingCentral, Inc.; Zoom Video Communications, Inc.; and Zscaler, Inc.; among others.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0000858877-26-000132",
+      "url": "https://www.sec.gov/Archives/edgar/data/858877/000085887726000132/csco-20260725.htm",
+      "date": "2026-09-02"
+     }
+    },
+    {
+     "counterparty": "AVGO",
+     "label": "Broadcom",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "Our competitors (in each case relative to only some of our products or services) include: Amazon Web Services LLC; Arista Networks, Inc.; Broadcom Inc.; Ciena Corporation; CrowdStrike Holdings, Inc.; Datadog Inc.; Dell Technologies Inc.; Dynatrace Inc.; Fortinet, Inc.; Hewlett-Packard Enterprise Company; Huawei Technologies Co., Ltd.; Microsoft Corporation; Nokia Corporation; Nvidia Corporation; Palo Alto Networks, Inc.; RingCentral, Inc.; Zoom Video Communications, Inc.; and Zscaler, Inc.; among others.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0000858877-26-000132",
+      "url": "https://www.sec.gov/Archives/edgar/data/858877/000085887726000132/csco-20260725.htm",
+      "date": "2026-09-02"
+     }
+    },
+    {
+     "counterparty": "MSFT",
+     "label": "Microsoft",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "Our competitors (in each case relative to only some of our products or services) include: Amazon Web Services LLC; Arista Networks, Inc.; Broadcom Inc.; Ciena Corporation; CrowdStrike Holdings, Inc.; Datadog Inc.; Dell Technologies Inc.; Dynatrace Inc.; Fortinet, Inc.; Hewlett-Packard Enterprise Company; Huawei Technologies Co., Ltd.; Microsoft Corporation; Nokia Corporation; Nvidia Corporation; Palo Alto Networks, Inc.; RingCentral, Inc.; Zoom Video Communications, Inc.; and Zscaler, Inc.; among others.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0000858877-26-000132",
+      "url": "https://www.sec.gov/Archives/edgar/data/858877/000085887726000132/csco-20260725.htm",
+      "date": "2026-09-02"
+     }
+    },
+    {
+     "counterparty": "AMZN",
+     "label": "Amazon",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "Our competitors (in each case relative to only some of our products or services) include: Amazon Web Services LLC; Arista Networks, Inc.; Broadcom Inc.; Ciena Corporation; CrowdStrike Holdings, Inc.; Datadog Inc.; Dell Technologies Inc.; Dynatrace Inc.; Fortinet, Inc.; Hewlett-Packard Enterprise Company; Huawei Technologies Co., Ltd.; Microsoft Corporation; Nokia Corporation; Nvidia Corporation; Palo Alto Networks, Inc.; RingCentral, Inc.; Zoom Video Communications, Inc.; and Zscaler, Inc.; among others.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0000858877-26-000132",
+      "url": "https://www.sec.gov/Archives/edgar/data/858877/000085887726000132/csco-20260725.htm",
+      "date": "2026-09-02"
+     }
+    },
+    {
+     "counterparty": "DELL",
+     "label": "Dell",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "Our competitors (in each case relative to only some of our products or services) include: Amazon Web Services LLC; Arista Networks, Inc.; Broadcom Inc.; Ciena Corporation; CrowdStrike Holdings, Inc.; Datadog Inc.; Dell Technologies Inc.; Dynatrace Inc.; Fortinet, Inc.; Hewlett-Packard Enterprise Company; Huawei Technologies Co., Ltd.; Microsoft Corporation; Nokia Corporation; Nvidia Corporation; Palo Alto Networks, Inc.; RingCentral, Inc.; Zoom Video Communications, Inc.; and Zscaler, Inc.; among others.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0000858877-26-000132",
+      "url": "https://www.sec.gov/Archives/edgar/data/858877/000085887726000132/csco-20260725.htm",
+      "date": "2026-09-02"
+     }
+    },
+    {
+     "counterparty": "ANET",
+     "label": "Arista",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "Our competitors (in each case relative to only some of our products or services) include: Amazon Web Services LLC; Arista Networks, Inc.; Broadcom Inc.; Ciena Corporation; CrowdStrike Holdings, Inc.; Datadog Inc.; Dell Technologies Inc.; Dynatrace Inc.; Fortinet, Inc.; Hewlett-Packard Enterprise Company; Huawei Technologies Co., Ltd.; Microsoft Corporation; Nokia Corporation; Nvidia Corporation; Palo Alto Networks, Inc.; RingCentral, Inc.; Zoom Video Communications, Inc.; and Zscaler, Inc.; among others.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0000858877-26-000132",
+      "url": "https://www.sec.gov/Archives/edgar/data/858877/000085887726000132/csco-20260725.htm",
+      "date": "2026-09-02"
+     }
+    }
+   ]
+  },
+  "DELL": {
+   "cik": 1571996,
+   "name": "Dell Technologies Inc.",
+   "asOf": "2026-09-08",
+   "filing": {
+    "form": "10-K",
+    "accession": "0001571996-26-000008",
+    "url": "https://www.sec.gov/Archives/edgar/data/1571996/000157199626000008/dell-20260130.htm",
+    "date": "2026-03-16"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001571996-26-000046",
+    "url": "https://www.sec.gov/Archives/edgar/data/1571996/000157199626000046/dell-20260731.htm",
+    "date": "2026-09-08"
+   },
+   "links": [
+    {
+     "counterparty": null,
+     "label": "One customer",
+     "relation": "customer",
+     "named": false,
+     "share": 12,
+     "quote": "One customer accounted for 12 % of the Company’s consolidated net revenue for the fiscal year ended January 30, 2026, with substantially all of such net revenue attributable to the sale of ISG offerings.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001571996-26-000008",
+      "url": "https://www.sec.gov/Archives/edgar/data/1571996/000157199626000008/dell-20260130.htm",
+      "date": "2026-03-16"
+     }
+    }
+   ]
+  },
+  "ETN": {
+   "cik": 1551182,
+   "name": "Eaton Corp plc",
+   "asOf": "2026-07-31",
+   "filing": {
+    "form": "10-K",
+    "accession": "0001551182-26-000007",
+    "url": "https://www.sec.gov/Archives/edgar/data/1551182/000155118226000007/etn-20251231.htm",
+    "date": "2026-02-26"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001551182-26-000030",
+    "url": "https://www.sec.gov/Archives/edgar/data/1551182/000155118226000030/etn-20260630.htm",
+    "date": "2026-07-31"
+   },
+   "links": []
+  },
   "GEV": {
    "cik": 1996810,
    "name": "GE Vernova Inc.",
-   "asOf": "2026-01-29",
+   "asOf": "2026-07-22",
    "filing": {
     "form": "10-K",
     "accession": "0001996810-26-000015",
     "url": "https://www.sec.gov/Archives/edgar/data/1996810/000199681026000015/gev-20251231.htm",
     "date": "2026-01-29"
    },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001996810-26-000148",
+    "url": "https://www.sec.gov/Archives/edgar/data/1996810/000199681026000148/gev-20260630.htm",
+    "date": "2026-07-22"
+   },
    "links": []
+  },
+  "GFS": {
+   "cik": 1709048,
+   "name": "GLOBALFOUNDRIES Inc.",
+   "asOf": "2026-02-27",
+   "filing": {
+    "form": "20-F",
+    "accession": "0001709048-26-000022",
+    "url": "https://www.sec.gov/Archives/edgar/data/1709048/000170904826000022/gfs-20251231.htm",
+    "date": "2026-02-27"
+   },
+   "links": [
+    {
+     "counterparty": "TSM",
+     "label": "TSMC",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "Key competitors include Taiwan Semiconductor Manufacturing Company, Limited (\"TSMC\"), United Microelectronics Corporation (\"UMC\") and Semiconductor Manufacturing International Corporation.",
+     "mentions": 3,
+     "filing": {
+      "form": "20-F",
+      "accession": "0001709048-26-000022",
+      "url": "https://www.sec.gov/Archives/edgar/data/1709048/000170904826000022/gfs-20251231.htm",
+      "date": "2026-02-27"
+     }
+    },
+    {
+     "counterparty": "UMC",
+     "label": "UMC",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "Key competitors include Taiwan Semiconductor Manufacturing Company, Limited (\"TSMC\"), United Microelectronics Corporation (\"UMC\") and Semiconductor Manufacturing International Corporation.",
+     "mentions": 1,
+     "filing": {
+      "form": "20-F",
+      "accession": "0001709048-26-000022",
+      "url": "https://www.sec.gov/Archives/edgar/data/1709048/000170904826000022/gfs-20251231.htm",
+      "date": "2026-02-27"
+     }
+    },
+    {
+     "counterparty": "0981.HK",
+     "label": "SMIC",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "Key competitors include Taiwan Semiconductor Manufacturing Company, Limited (\"TSMC\"), United Microelectronics Corporation (\"UMC\") and Semiconductor Manufacturing International Corporation.",
+     "mentions": 1,
+     "filing": {
+      "form": "20-F",
+      "accession": "0001709048-26-000022",
+      "url": "https://www.sec.gov/Archives/edgar/data/1709048/000170904826000022/gfs-20251231.htm",
+      "date": "2026-02-27"
+     }
+    },
+    {
+     "counterparty": "005930.KS",
+     "label": "Samsung",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "TSMC, Samsung, Intel, Texas Instruments and others have commenced construction or initiated plans to develop new fabs and substantially increase their manufacturing capacity in the United States, and other competitors may seek to do likewise.",
+     "mentions": 1,
+     "filing": {
+      "form": "20-F",
+      "accession": "0001709048-26-000022",
+      "url": "https://www.sec.gov/Archives/edgar/data/1709048/000170904826000022/gfs-20251231.htm",
+      "date": "2026-02-27"
+     }
+    },
+    {
+     "counterparty": "INTC",
+     "label": "Intel",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "TSMC, Samsung, Intel, Texas Instruments and others have commenced construction or initiated plans to develop new fabs and substantially increase their manufacturing capacity in the United States, and other competitors may seek to do likewise.",
+     "mentions": 1,
+     "filing": {
+      "form": "20-F",
+      "accession": "0001709048-26-000022",
+      "url": "https://www.sec.gov/Archives/edgar/data/1709048/000170904826000022/gfs-20251231.htm",
+      "date": "2026-02-27"
+     }
+    },
+    {
+     "counterparty": "TXN",
+     "label": "Texas Instruments",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "TSMC, Samsung, Intel, Texas Instruments and others have commenced construction or initiated plans to develop new fabs and substantially increase their manufacturing capacity in the United States, and other competitors may seek to do likewise.",
+     "mentions": 1,
+     "filing": {
+      "form": "20-F",
+      "accession": "0001709048-26-000022",
+      "url": "https://www.sec.gov/Archives/edgar/data/1709048/000170904826000022/gfs-20251231.htm",
+      "date": "2026-02-27"
+     }
+    }
+   ]
   },
   "GLW": {
    "cik": 24741,
    "name": "CORNING INC /NY",
-   "asOf": "2026-02-12",
+   "asOf": "2026-07-29",
    "filing": {
     "form": "10-K",
     "accession": "0000024741-26-000124",
     "url": "https://www.sec.gov/Archives/edgar/data/24741/000002474126000124/glw-20251231.htm",
     "date": "2026-02-12"
    },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0000024741-26-000255",
+    "url": "https://www.sec.gov/Archives/edgar/data/24741/000002474126000255/glw-20260630.htm",
+    "date": "2026-07-29"
+   },
    "links": []
   },
   "GOOGL": {
    "cik": 1652044,
    "name": "Alphabet Inc.",
-   "asOf": "2026-02-05",
+   "asOf": "2026-07-23",
    "filing": {
     "form": "10-K",
     "accession": "0001652044-26-000018",
     "url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204426000018/goog-20251231.htm",
     "date": "2026-02-05"
    },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001652044-26-000071",
+    "url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204426000071/goog-20260630.htm",
+    "date": "2026-07-23"
+   },
    "links": []
+  },
+  "HPE": {
+   "cik": 1645590,
+   "name": "Hewlett Packard Enterprise Co",
+   "asOf": "2026-09-03",
+   "filing": {
+    "form": "10-K",
+    "accession": "0001645590-25-000130",
+    "url": "https://www.sec.gov/Archives/edgar/data/1645590/000164559025000130/hpe-20251031.htm",
+    "date": "2025-12-18"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001645590-26-000080",
+    "url": "https://www.sec.gov/Archives/edgar/data/1645590/000164559026000080/hpe-20260731.htm",
+    "date": "2026-09-03"
+   },
+   "links": [
+    {
+     "counterparty": "DELL",
+     "label": "Dell",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "Our primary competitors in data center infrastructure are technology vendors, such as Dell Technologies Inc., Super Micro Computer, Inc., Cisco Systems, Inc., and Lenovo Group Ltd.",
+     "mentions": 4,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001645590-25-000130",
+      "url": "https://www.sec.gov/Archives/edgar/data/1645590/000164559025000130/hpe-20251031.htm",
+      "date": "2025-12-18"
+     }
+    },
+    {
+     "counterparty": "SMCI",
+     "label": "Super Micro",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "Our primary competitors in data center infrastructure are technology vendors, such as Dell Technologies Inc., Super Micro Computer, Inc., Cisco Systems, Inc., and Lenovo Group Ltd.",
+     "mentions": 2,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001645590-25-000130",
+      "url": "https://www.sec.gov/Archives/edgar/data/1645590/000164559025000130/hpe-20251031.htm",
+      "date": "2025-12-18"
+     }
+    },
+    {
+     "counterparty": "CSCO",
+     "label": "Cisco",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "Our primary competitors in data center infrastructure are technology vendors, such as Dell Technologies Inc., Super Micro Computer, Inc., Cisco Systems, Inc., and Lenovo Group Ltd.",
+     "mentions": 4,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001645590-25-000130",
+      "url": "https://www.sec.gov/Archives/edgar/data/1645590/000164559025000130/hpe-20251031.htm",
+      "date": "2025-12-18"
+     }
+    },
+    {
+     "counterparty": "AVGO",
+     "label": "Broadcom",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "Our primary competitors are other infrastructure and cloud management software technology vendors, such as Broadcom, Cisco Systems Inc., Dell Technologies Inc., IBM, NetApp Inc., Nutanix, and Pure Storage and public cloud vendors like Amazon Web Services, Google Cloud, and Microsoft Azure.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001645590-25-000130",
+      "url": "https://www.sec.gov/Archives/edgar/data/1645590/000164559025000130/hpe-20251031.htm",
+      "date": "2025-12-18"
+     }
+    },
+    {
+     "counterparty": "MSFT",
+     "label": "Microsoft",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "Our primary competitors are other infrastructure and cloud management software technology vendors, such as Broadcom, Cisco Systems Inc., Dell Technologies Inc., IBM, NetApp Inc., Nutanix, and Pure Storage and public cloud vendors like Amazon Web Services, Google Cloud, and Microsoft Azure.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001645590-25-000130",
+      "url": "https://www.sec.gov/Archives/edgar/data/1645590/000164559025000130/hpe-20251031.htm",
+      "date": "2025-12-18"
+     }
+    },
+    {
+     "counterparty": "AMZN",
+     "label": "Amazon",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "Our primary competitors are other infrastructure and cloud management software technology vendors, such as Broadcom, Cisco Systems Inc., Dell Technologies Inc., IBM, NetApp Inc., Nutanix, and Pure Storage and public cloud vendors like Amazon Web Services, Google Cloud, and Microsoft Azure.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001645590-25-000130",
+      "url": "https://www.sec.gov/Archives/edgar/data/1645590/000164559025000130/hpe-20251031.htm",
+      "date": "2025-12-18"
+     }
+    },
+    {
+     "counterparty": "GOOGL",
+     "label": "Alphabet (Google)",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "Our primary competitors are other infrastructure and cloud management software technology vendors, such as Broadcom, Cisco Systems Inc., Dell Technologies Inc., IBM, NetApp Inc., Nutanix, and Pure Storage and public cloud vendors like Amazon Web Services, Google Cloud, and Microsoft Azure.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001645590-25-000130",
+      "url": "https://www.sec.gov/Archives/edgar/data/1645590/000164559025000130/hpe-20251031.htm",
+      "date": "2025-12-18"
+     }
+    },
+    {
+     "counterparty": "ANET",
+     "label": "Arista",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "Our primary competitors are technology vendors, such as Cisco Systems, Inc., Arista Networks Inc, Nokia Corporation, Huawei Technologies Co.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001645590-25-000130",
+      "url": "https://www.sec.gov/Archives/edgar/data/1645590/000164559025000130/hpe-20251031.htm",
+      "date": "2025-12-18"
+     }
+    }
+   ]
   },
   "INTC": {
    "cik": 50863,
    "name": "INTEL CORP",
-   "asOf": "2026-01-23",
+   "asOf": "2026-07-24",
    "filing": {
     "form": "10-K",
     "accession": "0000050863-26-000011",
     "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086326000011/intc-20251227.htm",
     "date": "2026-01-23"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0000050863-26-000157",
+    "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086326000157/intc-20260627.htm",
+    "date": "2026-07-24"
    },
    "links": [
     {
@@ -692,6 +1358,64 @@
     }
    ]
   },
+  "KLAC": {
+   "cik": 319201,
+   "name": "KLA CORP",
+   "asOf": "2026-08-06",
+   "filing": {
+    "form": "10-K",
+    "accession": "0000319201-26-000027",
+    "url": "https://www.sec.gov/Archives/edgar/data/319201/000031920126000027/klac-20260630.htm",
+    "date": "2026-08-06"
+   },
+   "links": [
+    {
+     "counterparty": "ASML",
+     "label": "ASML",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "In each of our product markets, we have many competitors, including companies such as Applied Materials, Inc., ASML Holding N.V., Hitachi High-Tech Corporation, Lasertec, Inc. and Onto Innovation, Inc., some of which may have greater financial, research, engineering, manufacturing and marketing resources than we have.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0000319201-26-000027",
+      "url": "https://www.sec.gov/Archives/edgar/data/319201/000031920126000027/klac-20260630.htm",
+      "date": "2026-08-06"
+     }
+    },
+    {
+     "counterparty": "AMAT",
+     "label": "Applied Materials",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "In each of our product markets, we have many competitors, including companies such as Applied Materials, Inc., ASML Holding N.V., Hitachi High-Tech Corporation, Lasertec, Inc. and Onto Innovation, Inc., some of which may have greater financial, research, engineering, manufacturing and marketing resources than we have.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0000319201-26-000027",
+      "url": "https://www.sec.gov/Archives/edgar/data/319201/000031920126000027/klac-20260630.htm",
+      "date": "2026-08-06"
+     }
+    },
+    {
+     "counterparty": null,
+     "label": "One customer",
+     "relation": "customer",
+     "named": false,
+     "share": 19,
+     "quote": "In each of the fiscal years ended June 30, 2026 and 2025, one customer accounted for approximately 19 % of total revenues.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0000319201-26-000027",
+      "url": "https://www.sec.gov/Archives/edgar/data/319201/000031920126000027/klac-20260630.htm",
+      "date": "2026-08-06"
+     }
+    }
+   ]
+  },
   "LRCX": {
    "cik": 707549,
    "name": "LAM RESEARCH CORP",
@@ -858,12 +1582,18 @@
   "META": {
    "cik": 1326801,
    "name": "Meta Platforms, Inc.",
-   "asOf": "2026-01-29",
+   "asOf": "2026-07-30",
    "filing": {
     "form": "10-K",
     "accession": "0001628280-26-003942",
     "url": "https://www.sec.gov/Archives/edgar/data/1326801/000162828026003942/meta-20251231.htm",
     "date": "2026-01-29"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001628280-26-050705",
+    "url": "https://www.sec.gov/Archives/edgar/data/1326801/000162828026050705/meta-20260630.htm",
+    "date": "2026-07-30"
    },
    "links": [
     {
@@ -873,7 +1603,7 @@
      "named": true,
      "share": null,
      "quote": "For example, each of Apple and Google have integrated competitive products with iOS and Android, respectively.",
-     "mentions": 1,
+     "mentions": 2,
      "filing": {
       "form": "10-K",
       "accession": "0001628280-26-003942",
@@ -888,7 +1618,7 @@
      "named": true,
      "share": null,
      "quote": "For example, each of Apple and Google have integrated competitive products with iOS and Android, respectively.",
-     "mentions": 1,
+     "mentions": 2,
      "filing": {
       "form": "10-K",
       "accession": "0001628280-26-003942",
@@ -901,12 +1631,18 @@
   "MRVL": {
    "cik": 1835632,
    "name": "Marvell Technology, Inc.",
-   "asOf": "2026-03-11",
+   "asOf": "2026-08-28",
    "filing": {
     "form": "10-K",
     "accession": "0001835632-26-000011",
     "url": "https://www.sec.gov/Archives/edgar/data/1835632/000183563226000011/mrvl-20260131.htm",
     "date": "2026-03-11"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001835632-26-000025",
+    "url": "https://www.sec.gov/Archives/edgar/data/1835632/000183563226000025/mrvl-20260801.htm",
+    "date": "2026-08-28"
    },
    "links": [
     {
@@ -1120,12 +1856,18 @@
   "NVDA": {
    "cik": 1045810,
    "name": "NVIDIA CORP",
-   "asOf": "2026-02-25",
+   "asOf": "2026-08-26",
    "filing": {
     "form": "10-K",
     "accession": "0001045810-26-000021",
     "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000021/nvda-20260125.htm",
     "date": "2026-02-25"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001045810-26-000075",
+    "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000075/nvda-20260726.htm",
+    "date": "2026-08-26"
    },
    "links": [
     {
@@ -1193,14 +1935,14 @@
      "label": "One customer",
      "relation": "customer",
      "named": false,
-     "share": 22,
-     "quote": "For fiscal year 2026, sales to one direct customer represented 22% of total revenue and sales to another direct customer represented 14% of total revenue, all of which were primarily attributable to the Compute & Networking segment.",
-     "mentions": 3,
+     "share": 16,
+     "quote": "For the first half of fiscal year 2027, three direct customers represented 16 %, 15 %, and 13 % of total revenue, all of which was primarily attributable to the Compute & Networking segment.",
+     "mentions": 1,
      "filing": {
-      "form": "10-K",
-      "accession": "0001045810-26-000021",
-      "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000021/nvda-20260125.htm",
-      "date": "2026-02-25"
+      "form": "10-Q",
+      "accession": "0001045810-26-000075",
+      "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000075/nvda-20260726.htm",
+      "date": "2026-08-26"
      }
     },
     {
@@ -1208,14 +1950,29 @@
      "label": "Another customer",
      "relation": "customer",
      "named": false,
-     "share": 14,
-     "quote": "For fiscal year 2026, sales to one direct customer represented 22% of total revenue and sales to another direct customer represented 14% of total revenue, all of which were primarily attributable to the Compute & Networking segment.",
-     "mentions": 3,
+     "share": 15,
+     "quote": "For the first half of fiscal year 2027, three direct customers represented 16 %, 15 %, and 13 % of total revenue, all of which was primarily attributable to the Compute & Networking segment.",
+     "mentions": 1,
      "filing": {
-      "form": "10-K",
-      "accession": "0001045810-26-000021",
-      "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000021/nvda-20260125.htm",
-      "date": "2026-02-25"
+      "form": "10-Q",
+      "accession": "0001045810-26-000075",
+      "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000075/nvda-20260726.htm",
+      "date": "2026-08-26"
+     }
+    },
+    {
+     "counterparty": null,
+     "label": "A third customer",
+     "relation": "customer",
+     "named": false,
+     "share": 13,
+     "quote": "For the first half of fiscal year 2027, three direct customers represented 16 %, 15 %, and 13 % of total revenue, all of which was primarily attributable to the Compute & Networking segment.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-Q",
+      "accession": "0001045810-26-000075",
+      "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000075/nvda-20260726.htm",
+      "date": "2026-08-26"
      }
     }
    ]
@@ -1223,12 +1980,18 @@
   "NXPI": {
    "cik": 1413447,
    "name": "NXP Semiconductors N.V.",
-   "asOf": "2026-02-19",
+   "asOf": "2026-07-28",
    "filing": {
     "form": "10-K",
     "accession": "0001413447-26-000008",
     "url": "https://www.sec.gov/Archives/edgar/data/1413447/000141344726000008/nxpi-20251231.htm",
     "date": "2026-02-19"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001413447-26-000045",
+    "url": "https://www.sec.gov/Archives/edgar/data/1413447/000141344726000045/nxpi-20260628.htm",
+    "date": "2026-07-28"
    },
    "links": [
     {
@@ -1341,12 +2104,18 @@
   "ORCL": {
    "cik": 1341439,
    "name": "ORACLE CORP",
-   "asOf": "2026-06-22",
+   "asOf": "2026-09-11",
    "filing": {
     "form": "10-K",
     "accession": "0001193125-26-277521",
     "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526277521/orcl-20260531.htm",
     "date": "2026-06-22"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001193125-26-389274",
+    "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526389274/orcl-20260831.htm",
+    "date": "2026-09-11"
    },
    "links": [
     {
@@ -1444,12 +2213,18 @@
   "QCOM": {
    "cik": 804328,
    "name": "QUALCOMM INC/DE",
-   "asOf": "2025-11-05",
+   "asOf": "2026-07-29",
    "filing": {
     "form": "10-K",
     "accession": "0000804328-25-000085",
     "url": "https://www.sec.gov/Archives/edgar/data/804328/000080432825000085/qcom-20250928.htm",
     "date": "2025-11-05"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0000804328-26-000086",
+    "url": "https://www.sec.gov/Archives/edgar/data/804328/000080432826000086/qcom-20260628.htm",
+    "date": "2026-07-29"
    },
    "links": [
     {
@@ -1534,7 +2309,7 @@
      "named": true,
      "share": null,
      "quote": "In fiscal 2025, revenues from Apple, Samsung and Xiaomi each comprised 10% or more of our consolidated revenues.",
-     "mentions": 2,
+     "mentions": 3,
      "filing": {
       "form": "10-K",
       "accession": "0000804328-25-000085",
@@ -1549,7 +2324,7 @@
      "named": true,
      "share": null,
      "quote": "In fiscal 2025, revenues from Apple, Samsung and Xiaomi each comprised 10% or more of our consolidated revenues.",
-     "mentions": 2,
+     "mentions": 3,
      "filing": {
       "form": "10-K",
       "accession": "0000804328-25-000085",
@@ -1570,6 +2345,94 @@
     "date": "2026-02-26"
    },
    "links": []
+  },
+  "SMCI": {
+   "cik": 1375365,
+   "name": "Super Micro Computer, Inc.",
+   "asOf": "2026-08-31",
+   "filing": {
+    "form": "10-K",
+    "accession": "0001375365-26-000022",
+    "url": "https://www.sec.gov/Archives/edgar/data/1375365/000137536526000022/smci-20260630.htm",
+    "date": "2026-08-31"
+   },
+   "links": [
+    {
+     "counterparty": "2317.TW",
+     "label": "Foxconn (Hon Hai)",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "We believe our principal competitors include: • global technology vendors, such as Cisco, Dell, Hewlett-Packard Enterprise, and Lenovo; and. • ODMs, such as Foxconn, Quanta Computer, and Wiwynn Corporation.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001375365-26-000022",
+      "url": "https://www.sec.gov/Archives/edgar/data/1375365/000137536526000022/smci-20260630.htm",
+      "date": "2026-08-31"
+     }
+    },
+    {
+     "counterparty": "2382.TW",
+     "label": "Quanta",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "We believe our principal competitors include: • global technology vendors, such as Cisco, Dell, Hewlett-Packard Enterprise, and Lenovo; and. • ODMs, such as Foxconn, Quanta Computer, and Wiwynn Corporation.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001375365-26-000022",
+      "url": "https://www.sec.gov/Archives/edgar/data/1375365/000137536526000022/smci-20260630.htm",
+      "date": "2026-08-31"
+     }
+    },
+    {
+     "counterparty": "DELL",
+     "label": "Dell",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "We believe our principal competitors include: • global technology vendors, such as Cisco, Dell, Hewlett-Packard Enterprise, and Lenovo; and. • ODMs, such as Foxconn, Quanta Computer, and Wiwynn Corporation.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001375365-26-000022",
+      "url": "https://www.sec.gov/Archives/edgar/data/1375365/000137536526000022/smci-20260630.htm",
+      "date": "2026-08-31"
+     }
+    },
+    {
+     "counterparty": "CSCO",
+     "label": "Cisco",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "We believe our principal competitors include: • global technology vendors, such as Cisco, Dell, Hewlett-Packard Enterprise, and Lenovo; and. • ODMs, such as Foxconn, Quanta Computer, and Wiwynn Corporation.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001375365-26-000022",
+      "url": "https://www.sec.gov/Archives/edgar/data/1375365/000137536526000022/smci-20260630.htm",
+      "date": "2026-08-31"
+     }
+    },
+    {
+     "counterparty": null,
+     "label": "One customer",
+     "relation": "customer",
+     "named": false,
+     "share": 28.1,
+     "quote": "For the fiscal year ended June 30, 2026, sales to one customer represented 28.1 % of total net sales.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001375365-26-000022",
+      "url": "https://www.sec.gov/Archives/edgar/data/1375365/000137536526000022/smci-20260630.htm",
+      "date": "2026-08-31"
+     }
+    }
+   ]
   },
   "SNDK": {
    "cik": 2023554,
@@ -1639,8 +2502,41 @@
       "url": "https://www.sec.gov/Archives/edgar/data/932787/000093278726000009/stm-20251231.htm",
       "date": "2026-02-26"
      }
+    },
+    {
+     "counterparty": "TSLA",
+     "label": "Tesla",
+     "relation": "customer",
+     "named": true,
+     "share": null,
+     "quote": "Our major customers include (in alphabetical order) Apple, Bosch, Continental, Denso, HP, Mobileye, Samsung, SpaceX, Tesla and Vitesco.",
+     "mentions": 1,
+     "filing": {
+      "form": "20-F",
+      "accession": "0000932787-26-000009",
+      "url": "https://www.sec.gov/Archives/edgar/data/932787/000093278726000009/stm-20251231.htm",
+      "date": "2026-02-26"
+     }
     }
    ]
+  },
+  "TSLA": {
+   "cik": 1318605,
+   "name": "Tesla, Inc.",
+   "asOf": "2026-07-23",
+   "filing": {
+    "form": "10-K",
+    "accession": "0001628280-26-003952",
+    "url": "https://www.sec.gov/Archives/edgar/data/1318605/000162828026003952/tsla-20251231.htm",
+    "date": "2026-01-29"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001628280-26-049270",
+    "url": "https://www.sec.gov/Archives/edgar/data/1318605/000162828026049270/tsla-20260630.htm",
+    "date": "2026-07-23"
+   },
+   "links": []
   },
   "TSM": {
    "cik": 1046179,
@@ -1688,12 +2584,18 @@
   "TXN": {
    "cik": 97476,
    "name": "TEXAS INSTRUMENTS INC",
-   "asOf": "2026-02-06",
+   "asOf": "2026-07-24",
    "filing": {
     "form": "10-K",
     "accession": "0000097476-26-000059",
     "url": "https://www.sec.gov/Archives/edgar/data/97476/000009747626000059/txn-20251231.htm",
     "date": "2026-02-06"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0000097476-26-000152",
+    "url": "https://www.sec.gov/Archives/edgar/data/97476/000009747626000152/txn-20260630.htm",
+    "date": "2026-07-24"
    },
    "links": [
     {
@@ -1713,17 +2615,173 @@
     }
    ]
   },
+  "UMC": {
+   "cik": 1033767,
+   "name": "UNITED MICROELECTRONICS CORP",
+   "asOf": "2026-04-30",
+   "filing": {
+    "form": "20-F",
+    "accession": "0001193125-26-193757",
+    "url": "https://www.sec.gov/Archives/edgar/data/1033767/000119312526193757/d91630d20f.htm",
+    "date": "2026-04-30"
+   },
+   "links": [
+    {
+     "counterparty": "INTC",
+     "label": "Intel",
+     "relation": "customer",
+     "named": true,
+     "share": null,
+     "quote": "Our primary customers, in terms of our sales revenues, include premier integrated device manufacturers, such as Texas Instruments and Intel, plus leading fabless design companies, such as MediaTek, Realtek and Novatek.",
+     "mentions": 2,
+     "filing": {
+      "form": "20-F",
+      "accession": "0001193125-26-193757",
+      "url": "https://www.sec.gov/Archives/edgar/data/1033767/000119312526193757/d91630d20f.htm",
+      "date": "2026-04-30"
+     }
+    },
+    {
+     "counterparty": "TXN",
+     "label": "Texas Instruments",
+     "relation": "customer",
+     "named": true,
+     "share": null,
+     "quote": "Our primary customers, in terms of our sales revenues, include premier integrated device manufacturers, such as Texas Instruments and Intel, plus leading fabless design companies, such as MediaTek, Realtek and Novatek.",
+     "mentions": 3,
+     "filing": {
+      "form": "20-F",
+      "accession": "0001193125-26-193757",
+      "url": "https://www.sec.gov/Archives/edgar/data/1033767/000119312526193757/d91630d20f.htm",
+      "date": "2026-04-30"
+     }
+    },
+    {
+     "counterparty": "ASX",
+     "label": "ASE",
+     "relation": "supplier",
+     "named": true,
+     "share": null,
+     "quote": "We outsource assembly and test services to leading assembly and test service providers, including Siliconware Precision Industries Co., Ltd., or Siliconware, and Advanced Semiconductor Engineering Inc. in Taiwan.",
+     "mentions": 1,
+     "filing": {
+      "form": "20-F",
+      "accession": "0001193125-26-193757",
+      "url": "https://www.sec.gov/Archives/edgar/data/1033767/000119312526193757/d91630d20f.htm",
+      "date": "2026-04-30"
+     }
+    }
+   ]
+  },
+  "VRT": {
+   "cik": 1674101,
+   "name": "Vertiv Holdings Co",
+   "asOf": "2026-07-29",
+   "filing": {
+    "form": "10-K",
+    "accession": "0001674101-26-000008",
+    "url": "https://www.sec.gov/Archives/edgar/data/1674101/000167410126000008/vrt-20251231.htm",
+    "date": "2026-02-13"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001628280-26-050609",
+    "url": "https://www.sec.gov/Archives/edgar/data/1674101/000162828026050609/vrt-20260630.htm",
+    "date": "2026-07-29"
+   },
+   "links": [
+    {
+     "counterparty": "ETN",
+     "label": "Eaton",
+     "relation": "competitor",
+     "named": true,
+     "share": null,
+     "quote": "These competitors may have comparatively greater financial, technical and marketing resources available to them and would include Schneider Electric, S.E., Eaton Corporation Plc, Legrand SA, and Huawei Investment & Holding Co., Ltd, each of which has a large, global presence and compete directly in the markets in which we operate.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001674101-26-000008",
+      "url": "https://www.sec.gov/Archives/edgar/data/1674101/000167410126000008/vrt-20251231.htm",
+      "date": "2026-02-13"
+     }
+    }
+   ]
+  },
   "VST": {
    "cik": 1692819,
    "name": "Vistra Corp.",
-   "asOf": "2026-02-27",
+   "asOf": "2026-08-10",
    "filing": {
     "form": "10-K",
     "accession": "0001692819-26-000006",
     "url": "https://www.sec.gov/Archives/edgar/data/1692819/000169281926000006/vistra-20251231.htm",
     "date": "2026-02-27"
    },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001692819-26-000019",
+    "url": "https://www.sec.gov/Archives/edgar/data/1692819/000169281926000019/vistra-20260630.htm",
+    "date": "2026-08-10"
+   },
    "links": []
+  },
+  "WDC": {
+   "cik": 106040,
+   "name": "WESTERN DIGITAL CORP",
+   "asOf": "2026-08-14",
+   "filing": {
+    "form": "10-K",
+    "accession": "0001628280-26-057139",
+    "url": "https://www.sec.gov/Archives/edgar/data/106040/000162828026057139/wdc-20260703.htm",
+    "date": "2026-08-14"
+   },
+   "links": [
+    {
+     "counterparty": null,
+     "label": "One customer",
+     "relation": "customer",
+     "named": false,
+     "share": 16,
+     "quote": "For 2026, three customers accounted for 16%, 15%, and 13%, respectively, of our net revenue.",
+     "mentions": 3,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001628280-26-057139",
+      "url": "https://www.sec.gov/Archives/edgar/data/106040/000162828026057139/wdc-20260703.htm",
+      "date": "2026-08-14"
+     }
+    },
+    {
+     "counterparty": null,
+     "label": "Another customer",
+     "relation": "customer",
+     "named": false,
+     "share": 15,
+     "quote": "For 2026, three customers accounted for 16%, 15%, and 13%, respectively, of our net revenue.",
+     "mentions": 3,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001628280-26-057139",
+      "url": "https://www.sec.gov/Archives/edgar/data/106040/000162828026057139/wdc-20260703.htm",
+      "date": "2026-08-14"
+     }
+    },
+    {
+     "counterparty": null,
+     "label": "A third customer",
+     "relation": "customer",
+     "named": false,
+     "share": 13,
+     "quote": "For 2026, three customers accounted for 16%, 15%, and 13%, respectively, of our net revenue.",
+     "mentions": 3,
+     "filing": {
+      "form": "10-K",
+      "accession": "0001628280-26-057139",
+      "url": "https://www.sec.gov/Archives/edgar/data/106040/000162828026057139/wdc-20260703.htm",
+      "date": "2026-08-14"
+     }
+    }
+   ]
   }
  },
  "missing": {}

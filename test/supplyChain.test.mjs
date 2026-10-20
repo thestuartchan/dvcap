@@ -1,6 +1,6 @@
 // test/supplyChain.test.mjs — supplier / customer / competitor links from filings (lib/supplyChain.js).
 // Fake companies and made-up sentences throughout; the real counterparty table is not used.
-import { filingText, sentences, linksInSentence, extractLinks, edgesOf, edgeWeight, neighbours, graph, mapFor } from '../lib/supplyChain.js';
+import { filingText, sentences, linksInSentence, extractLinks, mergeQuarter, edgesOf, edgeWeight, neighbours, graph, mapFor } from '../lib/supplyChain.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
@@ -18,6 +18,9 @@ eq('a named foundry is a supplier', L('We rely on Abacus to manufacture all of o
 eq('named competitors', L('Our competitors include Abacus and Defco.'), [['ABC', 'competitor', true, null], ['DEF', 'competitor', true, null]]);
 eq('a named customer with its stated share', L('Sales to Abacus accounted for 14% of our total revenue in fiscal 2026.'), [['ABC', 'customer', true, 14]]);
 eq('two named customers share no single figure', L('Sales to Abacus and Defco accounted for 14% and 11% of revenue.'), [['ABC', 'customer', true, null], ['DEF', 'customer', true, null]]);
+eq('named customers pair with their shares when the filing says respectively', L('Direct sales to Abacus and Defco accounted for 29.8% and 11.1% of our net sales, respectively, for 2025.'),
+  [['ABC', 'customer', true, 29.8], ['DEF', 'customer', true, 11.1]]);
+eq('the filer as the other side\'s provider is not supply', L('Abacus designates us as its preferred provider of packaging services for semiconductors manufactured by Abacus.'), []);
 eq('customer AND competitor in one sentence is left out', L('Abacus is both a significant customer and a competitor.'), []);
 eq('supplier AND customer wording is left out', L('We purchase from Abacus, which is also a customer.'), []);
 eq('the filer never links to itself', L('Xyzzy relies on its own foundries.'), []);
@@ -60,6 +63,36 @@ eq('a ranked customer over ascending years keeps the latest', L('Our largest cus
     [['One customer', 16], ['Another customer', 15], ['A third customer', 12], ['A fourth customer', 11]]);
   const u = 'In fiscal 2026, customers in several regions accounted for 30%, 25% and 20% of revenue. In fiscal 2024, one customer accounted for approximately 17% of total revenues.';
   eq("an older year is dropped even when the newest year's sentence can't be read", extractLinks(u, { filer: 'XYZ', counterparties: T }), []);
+  const old = 'The Company had one customer that represented 11% of total net revenue in fiscal 2023.';
+  eq('a customer share two years before the filing is not current', extractLinks(old, { filer: 'XYZ', filing: { date: '2025-12-18' }, counterparties: T }), []);
+  eq('one year before the filing is current', extractLinks(old, { filer: 'XYZ', filing: { date: '2024-02-01' }, counterparties: T }).map(l => l.share), [11]);
+  const dup = 'Direct sales to Abacus and Defco accounted for 29.8% and 11.1% of our net sales, respectively, for 2025. In 2025 and 2024 one customer accounted for 29.8% and 30.8% of total net sales, respectively.';
+  eq('an unnamed share that matches a named customer is that customer', extractLinks(dup, { filer: 'XYZ', filing: { date: '2026-02-20' }, counterparties: T }).map(l => [l.label, l.share]),
+    [['Abacus', 29.8], ['Defco', 11.1]]);
+}
+
+// ── The latest 10-Q on top of the annual report ──
+{
+  const q = 'For the second quarter of fiscal year 2027, one direct customer represented 16% of total revenue. For the first half of fiscal year 2027, three direct customers represented 16%, 15%, and 13% of total revenue.';
+  eq('a 10-Q keeps one period\'s customers, the sentence naming the most', extractLinks(q, { filer: 'XYZ', filing: { form: '10-Q', date: '2026-08-26' }, counterparties: T }).map(l => [l.label, l.share, /first half/.test(l.quote)]),
+    [['One customer', 16, true], ['Another customer', 15, true], ['A third customer', 13, true]]);
+  const K = { form: '10-K' }, Q = { form: '10-Q' };
+  const A = [
+    { counterparty: 'ABC', label: 'Abacus', relation: 'supplier', named: true, share: null, quote: 'annual abacus', mentions: 2, filing: K },
+    { counterparty: 'DEF', label: 'Defco', relation: 'customer', named: true, share: 10, quote: 'annual defco', mentions: 1, filing: K },
+    { counterparty: null, label: 'Customer A', relation: 'customer', named: false, share: 20, quote: 'annual a', mentions: 1, filing: K },
+  ];
+  const Qs = [
+    { counterparty: 'ABC', label: 'Abacus', relation: 'supplier', named: true, share: null, quote: 'quarter abacus', mentions: 1, filing: Q },
+    { counterparty: 'DEF', label: 'Defco', relation: 'customer', named: true, share: 12, quote: 'quarter defco', mentions: 1, filing: Q },
+    { counterparty: 'DEF', label: 'Defco', relation: 'competitor', named: true, share: null, quote: 'quarter rival', mentions: 1, filing: Q },
+  ];
+  eq('merge: a link both state keeps the annual sentence and counts both', mergeQuarter(A, Qs).filter(l => l.counterparty === 'ABC').map(l => [l.quote, l.mentions, l.filing.form]), [['annual abacus', 3, '10-K']]);
+  eq('merge: a share the quarter states is the newer figure, with its sentence', mergeQuarter(A, Qs).filter(l => l.counterparty === 'DEF' && l.relation === 'customer').map(l => [l.share, l.quote, l.filing.form]), [[12, 'quarter defco', '10-Q']]);
+  eq('merge: a link only the quarter states is added', mergeQuarter(A, Qs).some(l => l.relation === 'competitor'), true);
+  eq('merge: annual anonymised customers stand when the quarter gives none', mergeQuarter(A, Qs).filter(l => !l.named).map(l => l.label), ['Customer A']);
+  const QA = [{ counterparty: null, label: 'One customer', relation: 'customer', named: false, share: 16, quote: 'q1', mentions: 1, filing: Q }];
+  eq('merge: the quarter\'s anonymised customers replace the annual ones', mergeQuarter(A, QA).filter(l => !l.named).map(l => [l.label, l.share]), [['One customer', 16]]);
 }
 
 // ── A whole filing ──

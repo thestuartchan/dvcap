@@ -1,6 +1,6 @@
 # Supplier and customer maps
 
-Who sells to whom, for the ~30 companies the dashboard watches. This is the free part of what Bloomberg's SPLC does, built from the one source that can't be second-hand: each company's own annual report on EDGAR.
+Who sells to whom, for the 43 companies in `SC_UNIVERSE`: the AI and semiconductor complex, the mega-caps, and the server, networking and power chain around them. This is the free part of what Bloomberg's SPLC does, built from the one source that can't be second-hand: each company's own reports on EDGAR.
 
 ## Where a link comes from
 
@@ -9,7 +9,8 @@ Who sells to whom, for the ~30 companies the dashboard watches. This is the free
 1. Finds the company's CIK in SEC's ticker file.
 2. Takes its latest annual report from its EDGAR submissions: a 10-K, or a 20-F / 40-F for a foreign filer.
 3. Reads the filing's primary document raw, as HTML, and turns it into sentences. Inline-XBRL headers and hidden blocks are dropped.
-4. Keeps the links that `extractLinks` finds and writes `data/supplychain.json`.
+4. For a 10-K filer, reads its latest 10-Q too when it was filed after the 10-K, and lays it on top with `mergeQuarter`: named links are the union, a share the 10-Q states replaces the annual one, and the 10-Q's anonymised customers replace the annual ones when it gives any. Foreign filers report half-yearly on 6-K with no fixed form, so they are annual only.
+5. Keeps the links that `extractLinks` finds and writes `data/supplychain.json`. A company with a 10-Q read carries it under `quarter`.
 
 Every link stores:
 
@@ -46,7 +47,8 @@ Company names match strictly. A bare "Arm" or "Flex" is an ordinary word, so onl
 - **Anonymised customers stay anonymised.** A filing that says "Customer A, 12%" doesn't say who A is. Naming A would take another primary filing that states it, quoted as its own link. The script never guesses.
 - **Shares are rare.** Most filings name suppliers without amounts, and state revenue shares only for anonymised customers.
 - **The map is one-sided until both companies are read.** A link stated by both companies' filings becomes one edge with two quotes, and draws heavier.
-- **Only annual reports are read.** A supplier change disclosed in a 10-Q or 8-K appears at the next annual report.
+- **Annual reports and the latest 10-Q only.** A supplier change disclosed in an 8-K appears at the next 10-Q or annual report. A 10-Q states the quarter and the year to date in separate sentences; one sentence's set of unnamed customers is kept (the one naming the most), so periods aren't mixed.
+- **Old customer shares are dropped.** A filing whose latest unnamed customer share is for a year two or more before it was filed is saying no customer has reached the threshold since; that share is not shown.
 - **Non-US companies that don't file with the SEC** (Samsung, SK hynix, Tokyo Electron) appear only as counterparties named in others' filings. Their own reports aren't read.
 - **Only the counterparty table is recognised.** A supplier the table doesn't list (Fabrinet, SPIL, Xiaomi, Sony) is not a link, even when the sentence is clear.
 - **Plain statements only.** A relationship the filing implies but doesn't state in one sentence (Microsoft as AMD's console customer, Amazon as Vistra's power buyer) is missed on purpose.
@@ -60,7 +62,9 @@ SEC_USER_AGENT="Your Name you@example.com" node scripts/supplychain-build.mjs NV
 
 EDGAR's fair-access policy refuses requests without a contact address in the User-Agent, and asks for at most ten requests a second. The script reads the contact from `SEC_USER_AGENT`, never stores it, and spaces requests 200 ms apart.
 
-When a company can't be read, it keeps its previous links and is listed under `missing` with the reason. Annual reports change once a year, so a quarterly run is enough.
+When a company can't be read, it keeps its previous links and is listed under `missing` with the reason.
+
+`--if-newer` re-reads only the companies whose latest annual report or 10-Q on EDGAR is newer than the one stored, and leaves the file untouched when none is. The weekly GitHub Action (`.github/workflows/supplychain-refresh.yml`, Sundays 04:40 UTC) runs it that way and commits any change; it needs the repository secret `SEC_USER_AGENT`, and without it says so and stops. A manual run can name tickers to re-read after a rule change.
 
 ## Reading the map (`lib/supplyChain.js`)
 
