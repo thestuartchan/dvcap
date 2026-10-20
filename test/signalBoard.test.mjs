@@ -4,12 +4,14 @@ import { stateOf, flipDistance, THRESHOLDS, CLUSTERS, clusterOf, leanOf, whatFli
   dealerRows, tapeRows, asiaRows, narrativeRows, maRow, ratioSeries, realisedVol, downRunBefore, nextMonthlyOpex, sessionsBetween, nextSession,
   tradeDayCall, checkpointRead, tradeDayBlock, normCdf, zoneOf, TRADE_DAY_MODEL, BAND_STATS, CHECKPOINTS, priorR, snapshotRow, scoreRows, scorecard, KOSPI_TEST, cryptoRows, btc200Break, offHigh, BTC_TEST,
   narrativeState, narrativeFlip, narrativeMetrics, NARRATIVE_RULE, NARRATIVE_TEST,
-  trendDayProb, TREND_MODEL, gammaView, conflictRules, tradeConflict, CONFLICT } from '../lib/signalBoard.js';
+  trendDayProb, TREND_MODEL, gammaView, conflictRules, tradeConflict, CONFLICT,
+  sessionIndex, inBlackout, BLACKOUT, blackoutShare, blackoutRows, templateBlackoutPct, BLACKOUT_GUESS, monthEndRows, lastSessionOfMonth } from '../lib/signalBoard.js';
 import { parseTimeline, joinNarrative, narrativeInputs, NARRATIVE_QUERY, gdeltUrl } from '../lib/narrativeFeed.js';
 import { feedLeaks, gexFeedPayload } from '../lib/gexFeed.js';
 import { readFileSync } from 'node:fs';
 import { CUSHION } from '../lib/trendTells.js';
-import { firstRanges, gammaBoards, signalBoardPayload, impliedOpenFromFutures, preMarketOpen, preOpenGaps, GAP_FUTURES } from '../lib/signalBoardFeed.js';
+import { firstRanges, gammaBoards, signalBoardPayload, impliedOpenFromFutures, preMarketOpen, preOpenGaps, GAP_FUTURES,
+  parseNasdaqCalendar, parseConstituentsCsv, symNorm, earningsInputs, _resetEarningsCache, EARN_STORE, fetchBoardInputs } from '../lib/signalBoardFeed.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
@@ -186,7 +188,7 @@ const narr = (c5, t5, n = 45, end = '2026-10-19') => Array.from({ length: n }, (
 }
 {
   const b = buildSignalBoard({}, { today: '2026-10-20', holidays: [] });
-  eq('an empty board: every dimension present, no cluster reads, no lean, no flips', [new Set(b.rows.map(r => r.dim)).size, b.clusters.every(c => c.state == null), b.lean.state, b.flips.length], [8, true, 'neutral', 0]);
+  eq('an empty board: every dimension present, no cluster reads, no lean, no flips', [new Set(b.rows.map(r => r.dim)).size, b.clusters.every(c => c.state == null), b.lean.state, b.flips.length], [9, true, 'neutral', 0]);   // 9 with 'flows'
 }
 
 // ── CALENDAR ──
@@ -449,6 +451,140 @@ function imp30() { return 0.2 / Math.sqrt(252); }
   const live = await signalBoardPayload({ ...base, now: new Date('2026-10-20T14:05:00Z'), intraday: async (sym) => sym === 'QQQ' ? [bar30('13:30', 594)] : sym === 'SPY' ? [bar30('13:30', 600)] : [], prepost: async () => null });
   eq('in session: the actual open, labelled', [live.trade_day.calls.QQQ.inputs.gap_sigma, live.trade_day.calls.QQQ.inputs.gap_source, live.trade_day.calls.SPY.inputs.gap_sigma], [r2t(0.01 / implied), 'actual open', 0]);
   eq('the pre-open and in-session answers pass the connector\'s banned-word check', [feedLeaks(JSON.stringify(pre)), feedLeaks(JSON.stringify(live))], [[], []]);
+}
+
+// ── FLOWS: BUYBACK BLACKOUT AND MONTH-END REBALANCE (shown, not voted) ──
+{
+  const H = [];
+  const sx = sessionIndex('2026-08-01', '2027-03-31', H);
+  const T = '2026-10-21';   // a Wednesday
+  eq('session shift: 1 forward, 1 back, across a weekend', [sx.shift('2026-10-23', 1), sx.shift('2026-10-26', -1), sx.shift('2026-10-24', 1), sx.shift('2026-10-24', -1), sx.shift(T, 0)], ['2026-10-26', '2026-10-23', '2026-10-26', '2026-10-23', T]);
+  eq('session shift agrees with sessionsBetween', sessionsBetween(T, sx.shift(T, 25), H), 25);
+  // The window's edges: exactly 25 sessions before the report is in; 26 is out; the report day is in;
+  // 2 sessions after is in; 3 is out.
+  eq('blackout edges: −25 in, −26 out, report day in, +2 in, +3 out',
+    [inBlackout(sx, T, sx.shift(T, 25)), inBlackout(sx, T, sx.shift(T, 26)), inBlackout(sx, T, T), inBlackout(sx, T, sx.shift(T, -2)), inBlackout(sx, T, sx.shift(T, -3))],
+    [true, false, true, true, false]);
+  ok('a Saturday reading: Friday\'s report is 0 sessions back, in', inBlackout(sx, '2026-10-24', '2026-10-23'));
+  ok('the rule constants are 25 before and 2 after', BLACKOUT.before === 25 && BLACKOUT.after === 2);
+
+  // Ten members: 8 report within the window, 2 well outside → 80%; caps for all ten → cap-weighted.
+  const members = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+  const dates = Object.fromEntries(members.map((s, i) => [s, [i < 8 ? sx.shift(T, 3 + i) : sx.shift(T, 40)]]));
+  const caps = Object.fromEntries(members.map((s, i) => [s, i < 8 ? 100 : 400]));
+  const sh = blackoutShare(sx, T, { members, dates, caps });
+  eq('equal count 80%, cap-weighted 800 of 1,600 = 50%', [sh.pct, sh.in, sh.n, sh.cap_pct], [80, 8, 10, 50]);
+  eq('cap-weighted not computed when caps cover under 90% of members', blackoutShare(sx, T, { members, dates, caps: { A: 1 } }).cap_pct, null);
+  eq('a member with no known date counts as out', blackoutShare(sx, T, { members: [...members, 'K'], dates, caps }).pct, 72.7);
+
+  const E = { source: 'nasdaq', members, dates, caps, horizon: sx.shift(T, 45), projected: 0, members_source: 'test', as_of: T };
+  const [bb] = blackoutRows({ earnings: E }, { today: T, holidays: H });
+  eq('the row: flows dim, id, 80% → risk-off, not voting', [bb.dim, bb.id, bb.value, bb.state, bb.vote], ['flows', 'buyback_blackout', 80, 'off', false]);
+  eq('…its thresholds as specified', bb.thresholds, { on: 30, off: 70, dir: -1, unit: '% in blackout' });
+  ok('…benchmark says untested, shown not voted', /\[untested — shown, not voted\]/.test(bb.benchmark) && /25 sessions before/.test(bb.benchmark));
+  ok('…the 5-session change: the same eight were already inside 5 sessions ago → 0, flat', bb.roc === 0 && /flat/.test(bb.text));
+  const E2 = { ...E, dates: { ...dates, I: [sx.shift(T, 23)], J: [sx.shift(T, 25)] } };
+  const [bb2] = blackoutRows({ earnings: E2 }, { today: T, holidays: H });
+  ok('…two reporting 23 and 25 sessions out entered within the last 5 → 100%, +20 pts, building', bb2.value === 100 && bb2.roc === 20 && /building/.test(bb2.text));
+  eq('…drops below 50% once four of the eight are 3 sessions past their report', bb.below_50_on, sx.shift(T, 3 + 3 + 3));
+  ok('…flip object toward neutral below 70', bb.flip?.to === 'neutral' && bb.flip.at === 70);
+  ok('…text gives the cap-weighted share and the source', /cap-weighted 50%/.test(bb.text) && /Nasdaq earnings calendar/.test(bb.text));
+
+  // The calendar template: no per-company dates → labelled guess, still a number.
+  const [tb] = blackoutRows({ earnings: { source: null, why: 'per-company dates still loading (3 of 34 sessions read)' } }, { today: T, holidays: H });
+  ok('fallback: the calendar template, labelled [Guessing] in text and benchmark', tb.text.startsWith(BLACKOUT_GUESS) && tb.benchmark.includes(BLACKOUT_GUESS) && tb.vote === false && /still loading/.test(tb.text));
+  ok('template: high in the reporting season, low between seasons', templateBlackoutPct(sx, '2026-10-28') > 70 && templateBlackoutPct(sx, '2026-12-01') < 30 && templateBlackoutPct(sx, '2026-09-10') < 70);
+  eq('no date at all → no state, says so', blackoutRows({}, {}).map(r => [r.state, r.value, r.vote]), [[null, null, false]]);
+
+  // MONTH-END. SPY +3% month to date against flat AGG → +3% drift → sell → risk-off; the mirror → buy → on.
+  const mk = (pts) => pts.map(([date, value]) => ({ date, value }));
+  const spyUp = mk([['2026-09-29', 100], ['2026-09-30', 100], ['2026-10-01', 101], ['2026-10-20', 103]]);
+  const spyDn = mk([['2026-09-30', 100], ['2026-10-20', 97]]);
+  const agg = mk([['2026-09-30', 95], ['2026-10-20', 95]]);
+  const [up] = monthEndRows({ spyTr: spyUp, aggTr: agg }, { today: '2026-10-21', holidays: H });
+  const [dn] = monthEndRows({ spyTr: spyDn, aggTr: agg }, { today: '2026-10-21', holidays: H });
+  eq('drift +3% → equities sold, risk-off; −3% → bought, risk-on', [up.value, up.rebalance, up.state, dn.value, dn.rebalance, dn.state], [3, 'sell', 'off', -3, 'buy', 'on']);
+  eq('…flows dim, not voting, thresholds as specified', [up.dim, up.id, up.vote, up.thresholds], ['flows', 'month_end_rebalance', false, { on: -2, off: 2, dir: -1, unit: '% equity vs bond MTD' }]);
+  ok('…benchmark text as specified', up.benchmark === '60/40-style rebalance pressure from MTD stock-vs-bond drift; ±2% [Guessing on threshold — untested, shown not voted]');
+  eq('roc is sessions to month end (today counted): 21 Oct → 8 to the 30th; no flag outside the last five', [up.roc, up.roc_label, up.month_end, up.flags.length], [8, 'sessions to month end', '2026-10-30', 0]);
+  const at = (today) => monthEndRows({ spyTr: spyUp, aggTr: agg }, { today, holidays: H })[0];
+  eq('the window: 6 left on the 23rd (no flag), 5 on the 26th (flag), 1 on the 30th (flag)', [at('2026-10-23').roc, at('2026-10-23').flags.length, at('2026-10-26').roc, /^month-end window/.test(at('2026-10-26').flags[0]), at('2026-10-30').roc], [6, 0, 5, true, 1]);
+  eq('last session of the month: 31 May 2026 is a Sunday → Fri 29th; Dec 2026 → Thu 31st', [lastSessionOfMonth('2026-05-15'), lastSessionOfMonth('2026-12-10', ['2026-12-25'])], ['2026-05-29', '2026-12-31']);
+  const q = monthEndRows({ spyTr: mk([['2026-08-31', 100], ['2026-09-25', 103]]), aggTr: mk([['2026-08-31', 95], ['2026-09-25', 95]]) }, { today: '2026-09-28', holidays: H })[0];
+  eq('quarter end (September) is marked in the text, the flag and the field', [q.quarter_end, /quarter end/.test(q.text), /quarter end/.test(q.flags[0] || '')], [true, true, true]);
+  ok('a non-quarter month is not marked', up.quarter_end === false && !/quarter/.test(up.text));
+  ok('price returns are said so when adjusted closes were not available', /price returns/.test(monthEndRows({ spyTr: spyUp, aggTr: agg, rebalBasis: 'price' }, { today: '2026-10-21' })[0].text));
+  ok('first session of a month, before its close: drift 0', monthEndRows({ spyTr: spyUp, aggTr: agg }, { today: '2026-11-02' })[0].value === 0);
+  const [noAgg] = monthEndRows({ spyTr: spyUp }, { today: '2026-10-21', holidays: H });
+  eq('fail-soft: no AGG → row present, value and state null, says why', [noAgg.id, noAgg.value, noAgg.state, noAgg.vote, noAgg.text], ['month_end_rebalance', null, null, false, 'not available: no AGG closes']);
+
+  // NOT VOTED: the flows rows move no cluster, no lean and no flip list, however extreme.
+  const base = { qqq: ser(ramp(260, 500, 600), '2026-10-20'), soxx: ser(ramp(260, 200, 260), '2026-10-20'), vix: ser(flat(260, 18), '2026-10-20'), spx: ser(ramp(260, 5000, 6000), '2026-10-20') };
+  const withFlows = { ...base, earnings: E, spyTr: spyUp, aggTr: agg };
+  const b0 = buildSignalBoard(base, { today: T }), b1 = buildSignalBoard(withFlows, { today: T });
+  eq('clusters, lean and flips identical with and without the flows rows', [b1.clusters, b1.lean, b1.flips], [b0.clusters, b0.lean, b0.flips]);
+  ok('the flows rows sit right after the dealers rows', (() => { const ids = b1.rows.map(r => r.id); const i = ids.indexOf('buyback_blackout'); return ids[i - 1] === 'opex' && ids[i + 1] === 'month_end_rebalance'; })());
+  ok('no cluster lists the flows dim', !CLUSTERS.some(c => c.dims.includes('flows')));
+  ok('whatFlips never lists a flows row', !whatFlips(b1.rows, 99).some(f => ['buyback_blackout', 'month_end_rebalance'].includes(f.id)));
+  const snap = snapshotRow(b1, null, T);
+  eq('the snapshot log carries both rows (scored from here on)', [snap.rows.buyback_blackout, snap.rows.month_end_rebalance], [{ v: 80, s: 'off' }, { v: 3, s: 'off' }]);
+  ok('…and the scorecard reads them once forward returns land', !!scorecard([{ ...snap, fwd: { QQQ_1: -1, QQQ_3: -1, QQQ_5: -1, SOXX_1: -1, SOXX_3: -1, SOXX_5: -1 } }]).signals.buyback_blackout?.off);
+}
+
+// ── FLOWS FEED: the earnings calendar, its cache and failing soft ──
+{
+  eq('calendar parse: symbols normalised, caps numeric, empty day → []', [parseNasdaqCalendar({ data: { rows: [{ symbol: 'BRK/B', marketCap: '$1,000,000' }, { symbol: 'PG', marketCap: 'N/A' }] } }), parseNasdaqCalendar({ data: { rows: null } }), parseNasdaqCalendar({ status: { rCode: 400 }, data: null }), parseNasdaqCalendar('x')],
+    [[['BRKB', 1000000], ['PG', null]], [], null, null]);
+  const csv = 'Symbol,Security\n' + Array.from({ length: 500 }, (_, i) => `S${i},Co ${i}`).join('\n') + '\nBRK.B,Berkshire';
+  eq('constituents CSV: 501 symbols, punctuation removed; a short list is refused', [parseConstituentsCsv(csv)?.length, parseConstituentsCsv(csv)?.at(-1), parseConstituentsCsv('Symbol\nA\nB')], [501, 'BRKB', null]);
+  eq('symbol normalising', [symNorm('brk.b'), symNorm('BF/B')], ['BRKB', 'BFB']);
+
+  // A fake Nasdaq: every member reports on one of the next sessions; an in-memory store.
+  const now = new Date('2026-10-21T15:00:00Z');
+  const mem = new Map();
+  const kv = { configured: () => true, get: async (k) => mem.get(k) ?? null, setEx: async (k, v) => { mem.set(k, JSON.parse(JSON.stringify(v))); } };
+  let calls = 0;
+  const names = Array.from({ length: 460 }, (_, i) => `M${i}`);
+  const fetchOk = async (url) => {
+    calls++;
+    if (/constituents/.test(url)) return { ok: true, text: async () => 'Symbol,Security\n' + names.map(n => `${n},x`).join('\n') };
+    const d = url.match(/date=(\d{4}-\d{2}-\d{2})/)[1];
+    const day = Number(d.slice(8, 10));
+    return { ok: true, json: async () => ({ data: { rows: names.filter((_, i) => i % 20 === day % 20).map(n => ({ symbol: n, marketCap: '$10,000' })) } }) };
+  };
+  _resetEarningsCache();
+  const e1 = await earningsInputs({ now, kv, fetchImpl: fetchOk, holidays: [] });
+  eq('first read: per-company dates from the calendar, no errors, stored', [e1.source, e1.members.length, e1.errors.length, !!mem.get(EARN_STORE)], ['nasdaq', 460, 0, true]);
+  const n1 = calls;
+  _resetEarningsCache();
+  const e2 = await earningsInputs({ now, kv, fetchImpl: fetchOk, holidays: [] });
+  eq('same New York day: served from the store, nothing fetched', [e2.source, calls - n1, e2.horizon], ['nasdaq', 0, e1.horizon]);
+  ok('the row reads it', blackoutRows({ earnings: e2 }, { today: '2026-10-21' })[0].text.includes('of 460 S&P 500 members'));
+
+  // Nasdaq down, nothing stored → template fallback and an error naming why; the board still builds.
+  _resetEarningsCache();
+  const down = async (url) => { if (/constituents/.test(url)) throw new Error('down'); return { ok: false, json: async () => ({}) }; };
+  const e3 = await earningsInputs({ now, kv: { configured: () => false }, fetchImpl: down, holidays: [] });
+  ok('source down: no per-company dates, errors listed, bundled member list used', e3.source === null && e3.errors.some(e => /earnings/i.test(e.series)) && /still loading/.test(e3.why));
+  _resetEarningsCache();
+
+  // fetchBoardInputs: the earnings reader throwing and AGG missing never fail the board.
+  const stubs = { now, yahooMap: async () => ({ '2026-10-19': 1, '2026-10-20': 1 }), yahooBarsDaily: async () => [], squeeze: async () => ({ ok: false, rows: [] }),
+    state: async () => ({ series: {} }), xcCache: { get: async () => null }, narrative: async () => ({ series: [], errors: [] }),
+    yahooAdj: async (sym) => (sym === 'AGG' ? { adj: {}, close: {} } : { adj: { '2026-09-30': 100, '2026-10-20': 101 }, close: {} }),
+    earnings: async () => { throw new Error('calendar down'); } };
+  const inp = await fetchBoardInputs(stubs);
+  ok('feed: AGG missing and the earnings reader down are both in errors', inp.errors.some(e => e.series === 'AGG') && inp.errors.some(e => /earnings dates/.test(e.series)));
+  const fb = buildSignalBoard(inp.series, { today: '2026-10-21' });
+  const fr = Object.fromEntries(fb.rows.filter(r => r.dim === 'flows').map(r => [r.id, r]));
+  eq('feed: both rows present; blackout on the template, month-end null with its reason', [Object.keys(fr), fr.buyback_blackout.text.startsWith(BLACKOUT_GUESS), fr.month_end_rebalance.value, fr.month_end_rebalance.state, /no AGG/.test(fr.month_end_rebalance.text)],
+    [['buyback_blackout', 'month_end_rebalance'], true, null, null, true]);
+
+  // The public answer with the flows rows passes the banned-word check.
+  const pub = await signalBoardPayload({ now, inputs: async () => ({ at: now.toISOString(), series: { earnings: { source: 'nasdaq', members: ['A', 'B'], dates: { A: ['2026-10-22'] }, caps: {}, horizon: '2026-12-20', members_source: 'test' }, spyTr: [{ date: '2026-09-30', value: 1 }, { date: '2026-10-20', value: 1.01 }], aggTr: [{ date: '2026-09-30', value: 1 }, { date: '2026-10-20', value: 1 }] }, errors: [{ series: 'S&P 500 earnings dates', error: 'x' }], source: 'test' }),
+    intraday: async () => [], prepost: async () => null, history: { rows: [] }, gamma: async () => ({}) });
+  eq('public payload with the flows rows: no banned word', feedLeaks(JSON.stringify(pub)), []);
+  eq('…and both rows read', pub.board.rows.filter(r => r.dim === 'flows').map(r => [r.id, r.value]), [['buyback_blackout', 50], ['month_end_rebalance', 1]]);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
