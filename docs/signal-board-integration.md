@@ -30,7 +30,7 @@ The Market Read artifact and the two skills live outside this repo, so this PR d
    - the `lean.text` as the section headline;
    - `flips[].text` as "What flips it".
 
-   Rows with `vote: false` (opex, KOSPI, narrative) get a muted "not voted" tag.
+   Rows with `vote: false` (opex, KOSPI, narrative) get a muted "not voted" tag. The narrative row (`ai_narrative`) has two inputs: `value` is the 5-day tone change, `roc` is the 5d-vs-20d coverage change, and `thresholds.coverage_pct` is the coverage gate. Its `flip.text` and `metrics` (share, 5v5, 20v20, tone) say the rest. Show `flip.text` rather than composing one.
 3. **Delete the chips `chip1`–`chip4`** and show the four cluster states in their place. The notes file stops writing `chip*`.
 4. **★ Combined angle:** replace the "≥2 of sections 2–5 agree" rule text with the board's lean. Keep the `conf*` idea cards, but only when their `via` clusters match the board's non-neutral clusters.
 5. **Cross-check:** delete the `x_credit` and `x_breadth` lines. The board's `hy_oas`, `hyg_lqd` and `breadth` rows carry them with thresholds. Keep `x_auction` and `x_skip` (renamed as the day needs).
