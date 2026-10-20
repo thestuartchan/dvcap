@@ -30,7 +30,7 @@ The engine is `lib/signalBoard.js`. Its inputs come from `lib/signalBoardFeed.js
 | Tape: breadth | `lib/marketState.js` breadthComponent (RSP ÷ SPY and IWM ÷ SPY, 20d); `lib/crossCheck.js` computeBreadth (5d / 35d + weekly streak + `narrowing`); `lib/ratios.js` RSP ÷ SPY card; the Market Read `rsp_spy` card | **MERGE** | The board row *is* `breadthComponent`. **Windows differ, which is flagged, not a conflict:** the cross-check's 35-session `narrowing` flag answers a slower question and stays as the skill's raw-data cross-check. |
 | Tape: SOXX and QQQ vs 20/50/100/200dma | `lib/cta.js` (trend-fund replica: 21/63/252-session flips, NQ/ES only); Market Read `sr_levels` (20/50/200-day averages as price levels, page-side); `lib/watchSetup.js` / `lib/yahoo.js` (200-day for single names) | **NEW** row, **KEEP** cta | The CTA replica is a vol-scaled model with its own flip prices. The board gives the plain moving-average distances the brief asks for. The two are different questions, and both are labelled. |
 | Asia: KOSPI | `lib/handoff.js` (Asia → US handoff); `lib/regionTape.js` (region chip, ATR-gated); `lib/koreaFetch.js` (KRX flows); the Daily Brief tiles (TradingView KRX:KOSPI) | **NEW** row (does not vote) | Daily close, ^KS11, which carries KRX's close; the KSE intraday feed is stale and is not read. Crown's pattern is flagged with the tested result: 59.6% vs a 55.7% base, n 416 (`scripts/kospi-crown-backtest.py`). It is not voted. |
-| Narrative: AI headlines | nothing: dvcap has no news feed that is not a model | **NOT WIRED** | The row says so. Wiring it needs a keyless headline source (open question). |
+| Narrative: AI build-out coverage and tone | nothing before this row: dvcap had no news feed that is not a model | **NEW** row (does not vote, flagged for review) | GDELT DOC 2.0 (`lib/narrativeFeed.js`): article counts as a share of all coverage, and GDELT's dictionary tone. No model. The 2017–2026 test found no edge (section 6), so the row is shown and scored but does not vote, as with the Asia row. |
 
 ## 2. Trade-day call: four definitions became one
 
@@ -82,3 +82,37 @@ Folding the stress composite into the board's Macro cluster is a possible follow
 4. **Brent box:** the cross-check box includes today; a breakout needs the box *before* today. **Both kept, labelled:** `rangeOf` for position, the prior 20 sessions for breakout.
 5. **RSP ÷ SPY windows** (20d marketState and board; 5d/35d cross-check; 5d/20d ratio cards). These are different horizons, not different definitions. Flagged and kept.
 6. **"Positioning" naming:** the connector's leak filter rejects any answer containing the word, so the cluster is named "Dealers & vol".
+7. **"key" in a row:** the connector's leak check matches substrings, so "keyless" or "keyword" anywhere in the board fails the whole `get_signal_board` answer. The Narrative row's text avoids both, and a test checks the row against the filter.
+
+## 6. Narrative row: source, rule and test (20 Oct 2026)
+
+**Source.** GDELT DOC 2.0 API (`api.gdeltproject.org/api/v2/doc/doc`): free, no sign-up, no credential. Two daily timelines: `timelinevolraw` (matching articles, plus `norm`, all articles GDELT saw that day) and `timelinetone` (mean tone from GDELT's word dictionary). No LLM and no embedding. It was reachable from the build container through Node's `fetch`, the same call the Vercel function makes. It rate-limits hard: one request every 5 seconds per address, with 429s for minutes after a burst. RSS was not needed as a fallback.
+
+**Query** (`NARRATIVE_QUERY`): `("data center" OR "data centers" OR hyperscaler OR hyperscalers OR "AI capex" OR "AI chip" OR "AI chips" OR "AI spending" OR "AI infrastructure") sourcelang:english`. "data center" also catches non-AI coverage. Since 2023 the AI build-out dominates it: share of all coverage averaged 0.06–0.09% in 2017–2023, 0.11% in 2024, 0.20% in 2025 and 0.41% in 2026.
+
+**Measures** (UTC calendar days; the current day is dropped while it fills, and days with no collection are dropped):
+- share = count ÷ norm;
+- coverage trend = 5-day mean share ÷ 20-day mean share − 1, with 5-vs-prior-5 and 20-vs-prior-20 shown;
+- tone = the article-weighted 5-day mean, and its change against the 5 days before.
+
+**Rule** (`narrativeState`, one pair of numbers for both directions):
+- **risk-off**: coverage ≥ +10% while the tone change is ≤ −0.25, i.e. the story is getting louder and worse;
+- **risk-on**: tone change ≥ +0.25 and coverage ≥ −10%;
+- **neutral** otherwise.
+
+±10% and ±0.25 are the 2017–2026 quartiles of the two measures (p25 −10.9% / p75 +10.5%; −0.25 / +0.25; n 3,518 days). They were set from those distributions, not fitted to returns. Over all days the row reads on 17.8%, neutral 74.3% and off 7.9%.
+
+**Cache.** Each timeline is cached in KV for 3 hours and refreshed on its own, with a 5.5-second gap before the second request. On a failed refresh the last good copy is served for up to 4 days. With nothing usable, the row reads "not available" and the board carries on without it.
+
+**Test** (`scripts/narrative-backtest.mjs`, which uses the row's own functions). The signal for session S is the state through the last UTC day before S. GDELT's day ends at 20:00 New York, after the close, so the trade is entered at S's open. Returns run from open(S) to the close 1, 3 or 5 sessions later. The 3- and 5-session windows overlap. Sessions run 2017-02-01 → 2026-10-19 (n 2,431).
+
+| | SOXX 1d | SOXX 3d | SOXX 5d | QQQ 1d | QQQ 3d | QQQ 5d |
+|---|---|---|---|---|---|---|
+| Spearman, state (−1/0/+1) vs return | +0.010 | +0.018 | +0.009 | +0.003 | +0.018 | +0.005 |
+| Spearman, tone change vs return | +0.005 | +0.034 | +0.034 | −0.008 | +0.027 | +0.010 |
+| Risk-on (n 333): % up / base % up | 50.8 / 51.7 | 57.7 / 55.2 | 57.4 / 56.8 | 53.2 / 53.8 | 62.5 / 57.9 | 59.2 / 59.3 |
+| Risk-off (n 162): % down / base % down | 50.6 / 48.3 | 45.7 / 44.8 | 46.3 / 43.2 | 42.6 / 46.2 | 42.0 / 42.1 | 42.0 / 40.7 |
+
+From 2023 only (n 941; on 126, off 38), Spearman runs from −0.027 to +0.013. Risk-off is followed by a SOXX fall on 52.6% of next sessions against a 46.4% base, but n is only 38. Pre-2023 looks the same as the full sample.
+
+**Verdict: no edge.** Every Spearman is within ±0.035, and the hit rates sit at their base rates. So `NARRATIVE_TEST.edge` is `false`. The row is shown with its state, flagged "under review, not voted", and scored from the snapshot log like every other row. The Narrative cluster therefore reads null and the lean counts three clusters. To make it vote, set `edge: true`, but only once the log or a better query shows an edge.

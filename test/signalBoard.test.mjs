@@ -2,7 +2,10 @@
 // (lib/signalBoard.js), and the feed's pure helpers (lib/signalBoardFeed.js). Synthetic series only.
 import { stateOf, flipDistance, THRESHOLDS, CLUSTERS, clusterOf, leanOf, whatFlips, buildSignalBoard, creditRows, ratesRows, oilRows,
   dealerRows, tapeRows, asiaRows, narrativeRows, maRow, ratioSeries, realisedVol, downRunBefore, nextMonthlyOpex, sessionsBetween, nextSession,
-  tradeDayCall, checkpointRead, tradeDayBlock, normCdf, zoneOf, TRADE_DAY_MODEL, BAND_STATS, CHECKPOINTS, priorR, snapshotRow, scoreRows, scorecard, KOSPI_TEST } from '../lib/signalBoard.js';
+  tradeDayCall, checkpointRead, tradeDayBlock, normCdf, zoneOf, TRADE_DAY_MODEL, BAND_STATS, CHECKPOINTS, priorR, snapshotRow, scoreRows, scorecard, KOSPI_TEST,
+  narrativeState, narrativeFlip, narrativeMetrics, NARRATIVE_RULE, NARRATIVE_TEST } from '../lib/signalBoard.js';
+import { parseTimeline, joinNarrative, narrativeInputs, NARRATIVE_QUERY, gdeltUrl } from '../lib/narrativeFeed.js';
+import { feedLeaks } from '../lib/gexFeed.js';
 import { CUSHION } from '../lib/trendTells.js';
 import { firstRanges } from '../lib/signalBoardFeed.js';
 
@@ -18,6 +21,7 @@ const days = (n, end = '2026-10-16') => {
   return out;
 };
 const ser = (vals, end) => { const ds = days(vals.length, end); return vals.map((v, i) => ({ date: ds[i], value: v })); };
+const r2t = (v) => Math.round(v * 100) / 100;
 const flat = (n, v) => Array.from({ length: n }, () => v);
 const ramp = (n, a, b) => Array.from({ length: n }, (_, i) => a + (b - a) * i / (n - 1));
 
@@ -94,7 +98,75 @@ const ramp = (n, a, b) => Array.from({ length: n }, (_, i) => a + (b - a) * i / 
   const [row] = asiaRows({ kospi: k });
   eq('KOSPI up 2.6% after 2 down closes: flagged, risk-on, no vote', [row.state, row.vote, row.roc, row.flags.length, new RegExp(`n ${KOSPI_TEST.n}`).test(row.flags[0])], ['on', false, 2, 1, true]);
   eq('down-run counts the closes before the last', [downRunBefore(ser([5, 4, 3, 2, 3])), downRunBefore(ser([1, 2, 3])), downRunBefore(ser([3, 2]))], [3, 0, 0]);
-  eq('narrative is not wired, says so, and does not vote', [narrativeRows()[0].state, narrativeRows()[0].vote, /not wired/.test(narrativeRows()[0].text)], [null, false, true]);
+}
+
+// ── NARRATIVE (GDELT AI build-out coverage and tone) ──
+// Calendar-day series ending 2026-10-19: `n` days at share 0.5% (count 50 of 10,000) and tone 1.0, then
+// the last 5 days at count `c5` and tone `t5`.
+const narr = (c5, t5, n = 45, end = '2026-10-19') => Array.from({ length: n }, (_, i) => {
+  const date = new Date(Date.parse(`${end}T12:00:00Z`) - (n - 1 - i) * 864e5).toISOString().slice(0, 10);
+  const tail = i >= n - 5;
+  return { date, count: tail ? c5 : 50, norm: 10000, tone: tail ? t5 : 1.0 };
+});
+{
+  const C = NARRATIVE_RULE.coverage, T = NARRATIVE_RULE.tone;
+  eq('the rule: louder and darker → risk-off; better and not fading → risk-on; else neutral',
+    [narrativeState(25, -0.5), narrativeState(0, 0.5), narrativeState(25, 0.5), narrativeState(-30, 0.5), narrativeState(0, -0.5), narrativeState(25, 0), narrativeState(0, 0)],
+    ['off', 'on', 'on', 'neutral', 'neutral', 'neutral', 'neutral']);
+  eq('thresholds inclusive, the same numbers both ways (±10% coverage, ±0.25 tone)',
+    [narrativeState(C, -T), narrativeState(C - 0.1, -T), narrativeState(C, -T + 0.01), narrativeState(-C, T), narrativeState(-C - 0.1, T), narrativeState(-C, T - 0.01)],
+    ['off', 'neutral', 'neutral', 'on', 'neutral', 'neutral']);
+  eq('missing input → no state', [narrativeState(null, 0.5), narrativeState(5, undefined), narrativeState('x', 1)], [null, null, null]);
+  // Share 0.7% for 5 days against 0.5% → 5d mean 0.7 vs 20d mean 0.55 = +27.3%; tone 0.5 vs 1.0 = −0.5.
+  const m = narrativeMetrics(narr(70, 0.5));
+  eq('metrics: share, 5d vs 20d, 5d vs prior 5, tone and its 5-day change', [m.as_of, m.share_pct, m.cov_5v20, m.cov_5v5, m.cov_20v20, m.tone5, m.tone_chg5], ['2026-10-19', 0.7, 27.3, 40, 10, 0.5, -0.5]);
+  eq('tone is article-weighted', narrativeMetrics([...narr(50, 1.0).slice(0, -2), { date: '2026-10-18', count: 300, norm: 10000, tone: -1 }, { date: '2026-10-19', count: 100, norm: 10000, tone: 2 }]).tone5, r2t((50 * 3 * 1 + 300 * -1 + 100 * 2) / 550));
+  const [off] = narrativeRows({ narrative: narr(70, 0.5) }, { today: '2026-10-20' });
+  const [on] = narrativeRows({ narrative: narr(50, 1.6) }, { today: '2026-10-20' });
+  const [neu] = narrativeRows({ narrative: narr(30, 1.6) }, { today: '2026-10-20' });
+  eq('rows: risk-off, risk-on, and better-but-fading neutral', [off.state, on.state, neu.state], ['off', 'on', 'neutral']);
+  eq('the row carries value (tone change), coverage as its change, thresholds and basis', [off.value, off.roc, off.thresholds.on, off.thresholds.off, off.thresholds.coverage_pct, /quartiles/.test(off.benchmark)], [-0.5, 27.3, 0.25, -0.25, 10, true]);
+  eq('no tested edge → shown, not voted, flagged for review', [NARRATIVE_TEST.edge, off.vote, /under review/.test(off.flags[0])], [false, false, true]);
+  eq('no GDELT → not available, no state, no vote', [narrativeRows({})[0].state, narrativeRows({})[0].vote, /not available/.test(narrativeRows({})[0].text)], [null, false, true]);
+  eq('fewer than 20 days → not available', narrativeRows({ narrative: narr(70, 0.5, 15) })[0].state, null);
+  eq('GDELT stopped more than 4 days ago → not available', [narrativeRows({ narrative: narr(70, 0.5) }, { today: '2026-10-30' })[0].state, /days old/.test(narrativeRows({ narrative: narr(70, 0.5) }, { today: '2026-10-30' })[0].text)], [null, true]);
+  eq('flip: nearest boundary, either measure, in gap units', narrativeFlip(0.2, -0.5), { to: 'off', at: 10, on: 'coverage', dist: 0.49, when: 'at or above', text: 'AI build-out narrative (neutral) → risk-off if the 5d-vs-20d coverage goes to +10%' });
+  eq('flip from risk-on: tone falling under +0.25', [narrativeFlip(0, 0.3).to, narrativeFlip(0, 0.3).on, narrativeFlip(0, 0.3).at, narrativeFlip(0, 0.3).when], ['neutral', 'tone', 0.25, 'below']);
+  eq('the row passes the connector\'s banned-word check', [feedLeaks(JSON.stringify(off)), feedLeaks(JSON.stringify(narrativeRows({})))], [[], []]);
+  ok('the query names the AI build-out terms, English sources', /hyperscaler/.test(NARRATIVE_QUERY) && /"AI capex"/.test(NARRATIVE_QUERY) && /"data center"/.test(NARRATIVE_QUERY) && /sourcelang:english/.test(NARRATIVE_QUERY));
+}
+{
+  // The GDELT parser: the current UTC day dropped (still filling), collection gaps dropped, dates ISO.
+  const now = new Date('2026-10-20T09:00:00Z');
+  const vol = { timeline: [{ data: [{ date: '20261017T000000Z', value: 10, norm: 1000 }, { date: '20261018T000000Z', value: 0, norm: 0 }, { date: '20261019T000000Z', value: 12, norm: 1100 }, { date: '20261020T000000Z', value: 3, norm: 90 }] }] };
+  const tone = { timeline: [{ data: [{ date: '20261017T000000Z', value: 0.4 }, { date: '20261019T000000Z', value: -0.2 }, { date: '20261020T000000Z', value: 1 }] }] };
+  const pv = parseTimeline(vol, 'timelinevolraw', { now }), pt = parseTimeline(tone, 'timelinetone', { now });
+  eq('parse: today and a zero day dropped', [pv.map(o => o.date), pt.map(o => o.date)], [['2026-10-17', '2026-10-19'], ['2026-10-17', '2026-10-19']]);
+  eq('join on date', joinNarrative(pv, pt), [{ date: '2026-10-17', count: 10, norm: 1000, tone: 0.4 }, { date: '2026-10-19', count: 12, norm: 1100, tone: -0.2 }]);
+  eq('parse: rate-limit text or junk → no rows', [parseTimeline(null, 'timelinetone'), parseTimeline({}, 'timelinevolraw')], [[], []]);
+  ok('the request: both timeline modes, daily, unsmoothed, the query encoded', /mode=timelinevolraw/.test(gdeltUrl('timelinevolraw', { now })) && /timelinesmooth=0/.test(gdeltUrl('timelinetone', { now })) && /hyperscaler/.test(decodeURIComponent(gdeltUrl('timelinetone', { now }))));
+}
+{
+  // The cache: fetch both (a 5.5s gap between), serve from cache while fresh, keep the last good copy on a
+  // failed refresh, and with nothing at all return an empty series, never throw.
+  const now = new Date('2026-10-20T09:00:00Z');
+  const body = (mode) => JSON.stringify({ timeline: [{ data: [{ date: '20261019T000000Z', value: mode === 'timelinevolraw' ? 5 : 0.3, norm: 100 }] }] });
+  const store = {}; const kv = { configured: () => true, get: async (k) => store[k] ?? null, setEx: async (k, v) => { store[k] = JSON.parse(JSON.stringify(v)); return true; } };
+  let calls = 0, slept = 0;
+  const good = async (url) => { calls++; return { ok: true, status: 200, text: async () => body(new URL(url).searchParams.get('mode')) }; };
+  const limited = async () => { calls++; return { ok: false, status: 429, text: async () => 'Please limit requests' }; };
+  const sleep = async (ms) => { slept += ms; };
+  const a = await narrativeInputs({ now, fetchImpl: good, sleep, kv });
+  eq('first call: two requests, one 5.5s gap, joined series, live', [calls, slept, a.series, a.source], [2, 5500, [{ date: '2026-10-19', count: 5, norm: 100, tone: 0.3 }], 'live']);
+  const b = await narrativeInputs({ now: new Date(now.getTime() + 3600e3), fetchImpl: good, sleep, kv });
+  eq('within three hours: served from the cache, no request', [calls, b.source, b.series.length], [2, 'kv', 1]);
+  const c = await narrativeInputs({ now: new Date(now.getTime() + 5 * 3600e3), fetchImpl: limited, sleep, kv });
+  eq('a 429 on refresh: one request only, last good copy served, errors named, stale', [calls, c.series.length, c.source, c.errors.length, /skipped/.test(c.errors[1].error)], [3, 1, 'stale', 2, true]);
+  const empty = { configured: () => false, get: async () => null, setEx: async () => true };
+  const d = await narrativeInputs({ now: new Date('2030-01-01T00:00:00Z'), fetchImpl: limited, sleep, kv: { ...empty, configured: () => true } });
+  eq('nothing cached and GDELT refusing → empty series, source none', [d.series, d.source], [[], 'none']);
+  const e = await narrativeInputs({ now, fetchImpl: async () => { throw new Error('connect timeout'); }, sleep, kv: { ...empty, configured: () => true } });
+  eq('a network failure never throws', [e.series, e.source, e.errors.length], [[], 'none', 2]);
 }
 
 // ── CLUSTERS AND LEAN ──
