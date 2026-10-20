@@ -9,7 +9,7 @@ import { parseTimeline, joinNarrative, narrativeInputs, NARRATIVE_QUERY, gdeltUr
 import { feedLeaks, gexFeedPayload } from '../lib/gexFeed.js';
 import { readFileSync } from 'node:fs';
 import { CUSHION } from '../lib/trendTells.js';
-import { firstRanges, gammaBoards } from '../lib/signalBoardFeed.js';
+import { firstRanges, gammaBoards, signalBoardPayload } from '../lib/signalBoardFeed.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
@@ -379,6 +379,32 @@ function imp30() { return 0.2 / Math.sqrt(252); }
   eq('SPY reshaped by gexFeedPayload, QQQ without a board is null, never a recompute by default', [g.SPY.spot, g.SPY.flip.line, g.QQQ, seen.sort()], [774.64, 775.59, null, [['QQQ', false], ['SPY', false]]]);
   const g2 = await gammaBoards({ recompute: true, board: async () => { throw new Error('down'); } });
   eq('a failing board is null, not a failed board', [g2.QQQ, g2.SPY], [null, null]);
+}
+
+{
+  // PUBLIC vs CONNECTOR. The same conflict is computed for both; the public answer (and so the snapshot
+  // committed to the public repo) carries no gamma levels — rule ids, overrides: false, a generic sentence.
+  const ds = days(300, '2026-10-19');
+  const bars = ds.map(d => ({ date: d, open: 600, high: 601, low: 599.5, close: 600 }));
+  const series = { qqqBars: bars, spyBars: bars, vxn: ds.map(d => ({ date: d, value: 20 })), vix: ds.map(d => ({ date: d, value: 20 })), squeeze: ds.map((d, i) => [d, 1e9 + i * 1e6]) };
+  const gb = { spot: 600.37, as_of_utc: '2026-10-19T20:00:00.000Z', mode: 'settled', net_gex_per_1pct: -2.34e9, flip: { line: 605.21, usable: true },
+    call_wall: { strike: 612, gamma: 8e8 }, pin_box: null, trapdoor: { near: { strike: 597.5, gamma: -9e8 } }, expiries: [{ move_1sd: 6.1 }] };
+  const opts = { now: new Date('2026-10-20T11:00:00Z'), inputs: async () => ({ at: '2026-10-20T11:00:00Z', series, errors: [], source: 'test' }),
+    intraday: async () => [], history: { rows: [] }, gamma: async () => ({ QQQ: gb, SPY: null }) };
+  const pub = await signalBoardPayload(opts), con = await signalBoardPayload({ ...opts, full: true });
+  const pq = pub.trade_day.calls.QQQ, cq = con.trade_day.calls.QQQ;
+  eq('both answers compute the same conflict rules on the same call', [pq.zone, pq.conflict?.rules, cq.conflict?.rules], ['lean skip', ['below_flip', 'trapdoor'], ['below_flip', 'trapdoor']]);
+  eq('public: no gamma object, conflict = zone, reads, rule ids, overrides false, generic text', [('gamma' in pq), Object.keys(pq.conflict).sort(), pq.conflict.overrides], [false, ['call_zone', 'gamma_reads', 'overrides', 'rules', 'text'], false]);
+  ok('public: the conflict text carries no number at all', !/\d/.test(pq.conflict.text) && /live gamma shows spot below the flip/.test(pq.conflict.text));
+  const pubJson = JSON.stringify(pub.trade_day);
+  const levels = ['600.37', '605.21', '597.5', '612', '-2.34', '6.1'];
+  eq('public trade_day: none of the board\'s level numbers', levels.filter(v => pubJson.includes(v)), []);
+  eq('public trade_day: none of the gamma level fields', ['"gamma":', 'net_gamma_bn', 'call_wall', 'pin_lo', 'trap_near', 'move_1sd', '"detail"', 'sigma_usd', 'gamma_as_of'].filter(f => pubJson.includes(f)), []);
+  eq('connector: the full gamma object and the level-bearing text', [cq.gamma.spot, cq.gamma.flip, cq.conflict.detail.length, /605\.21/.test(cq.conflict.text)], [600.37, 605.21, 2, true]);
+  const snap = snapshotRow(pub.board, pub.trade_day, pub.today);
+  const snapJson = JSON.stringify(snap);
+  eq('the stored snapshot: rule ids only, no gamma level field or number', [snap.call.QQQ.conflict, levels.filter(v => snapJson.includes(v)), ['net_gamma_bn', 'pin_lo', 'trap_near', '"gamma"'].filter(f => snapJson.includes(f))], [['below_flip', 'trapdoor'], [], []]);
+  eq('both answers pass the connector\'s banned-word check', [feedLeaks(JSON.stringify(pub)), feedLeaks(JSON.stringify(con))], [[], []]);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

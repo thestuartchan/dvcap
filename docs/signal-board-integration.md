@@ -18,12 +18,23 @@ The Market Read artifact and the two skills live outside this repo, so this PR d
   trade_day: { phase, target, as_of, cushion_pct, gex_negative,
                calls: { QQQ: {median_r, mean_r, p_r_ge_1, zone, band: {id, median_r, share_ge_1, n}, implied_1sd, assumed: [], text,
                               p_trend, trend: {p, source: "model"|"band base rate", skill, band_pct, band_n, base_pct, text},
+                              // connector (get_signal_board) only:
                               gamma: {as_of, mode, spot, net_gamma_bn, flip, flip_usable, call_wall, call_wall_gamma_bn, pin_lo, pin_hi, trap_near, move_1sd, stale} | null,
                               conflict: {call_zone, gamma_reads: "pinned"|"unstable", rules: [...], detail: [{id, text}], sigma_usd, gamma_as_of, gamma_mode, overrides: false, text} | null},
+                              // public /api/indicators?board=1 instead: no `gamma` key at all, and
+                              // conflict: {call_zone, gamma_reads, rules: [...], overrides: false, text}   // text has no price level
                         SPY: {...} },
                checkpoints: { QQQ: [{at: "10:00", ok, fr_sigma, band, quiet_below, confirm_at, history, text}, {at: "10:30", ..., history: {..., trend_day_pct, trend_n, trend_base_pct, trend_span}}], SPY: [...] } },
   scorecard: { scored_days, signals: {<row id>: {on|off: {QQQ_1: {n, hit_pct, mean_pct}, ...}}}, calls: {QQQ: {last20, last60}, SPY: {...}} } }
 ```
+
+**Public vs connector.** Gamma levels never leave on the public route:
+- `/api/indicators?board=1`, and so `data/signal_board_history.json`, which is written from it into the public repo, omits each call's `gamma` object.
+- On that route, `conflict` carries only `call_zone`, `gamma_reads`, the rule ids, `overrides: false` and a generic sentence with no price in it (e.g. "live gamma shows a pin near spot").
+- The token-gated `get_signal_board` tool carries the full `gamma` object and the level-bearing `conflict` (`detail`, `sigma_usd`, `gamma_as_of`, `gamma_mode`).
+- Both are computed the same way; only the public answer is trimmed (`publicTradeDay` in `lib/signalBoard.js`).
+- The Market Read page and the Daily Brief read the connector, so they get the full view.
+- The snapshot keeps rule ids only.
 
 ## A. Market Read artifact
 

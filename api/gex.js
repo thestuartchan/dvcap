@@ -86,8 +86,9 @@ async function mcpTool(name, args) {
     // The Signal Board, as /api/indicators?board=1 serves it; the same leak check as the boards.
     try {
       // recompute: true — the connector's gamma tools may mint a recompute, so its conflict flag reads
-      // the same board they would serve.
-      const out = await signalBoardPayload({ recompute: true });
+      // the same board they would serve. full: true — the gamma levels and the level-bearing conflict text,
+      // which the public /api/indicators?board=1 never carries.
+      const out = await signalBoardPayload({ recompute: true, full: true });
       return feedLeaks(JSON.stringify(out)).length ? toolError('signal board unavailable') : toolOk(out);
     } catch { return toolError('signal board unavailable'); }
   }

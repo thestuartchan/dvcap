@@ -188,7 +188,7 @@ The trade-day call reads the SPX-wide cushion and the tape. The gamma board read
 | Lean skip | `trapdoor` | the near trapdoor is below spot and within 0.5σ of it |
 | Selective | none | already the middle call |
 
-A board more than 4 calendar days older than the session being called raises nothing (`gamma.stale: true`). Each call also carries `gamma`, the structure the rules read (spot, flip, net gamma, call wall, pin box, near trapdoor, as-of, mode), so both views are on the answer. The snapshot log keeps `call.<T>.conflict` (rule ids) and `call.<T>.p_trend`, so both are scored from the log like everything else. On the 8 Oct SPY board (the test fixture), spot 774.64 sat below a usable flip at 775.59 with net gamma −$1.83bn per 1%, so a Lean skip call on it carries `below_flip`.
+A board more than 4 calendar days older than the session being called raises nothing (`gamma.stale: true`). On the connector (`get_signal_board`), each call also carries `gamma`, the structure the rules read (spot, flip, net gamma, call wall, pin box, near trapdoor, as-of, mode), so both views are on the answer. **The public `/api/indicators?board=1` carries no gamma levels.** It has no `gamma` object, and its `conflict` is rule ids, `overrides: false` and a generic sentence with no price (`publicTradeDay`). The snapshot is written from that public answer and keeps rule ids only. The snapshot log keeps `call.<T>.conflict` (rule ids) and `call.<T>.p_trend`, so both are scored from the log like everything else. On the 8 Oct SPY board (the test fixture), spot 774.64 sat below a usable flip at 775.59 with net gamma −$1.83bn per 1%, so a Lean skip call on it carries `below_flip`.
 
 ## 10. Quarterly walk-forward refit
 
