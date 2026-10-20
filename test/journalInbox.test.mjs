@@ -592,6 +592,14 @@ globalThis.fetch = realFetch;
   eq('with no book to read it waits as written', processInbox({ notes: [closeNote], trades: T16, today: '2026-10-16', holidays: US }).counts.pending, 1);
   const conf = applyDraft(b.rows, d16, {}, { today: '2026-10-16' });
   eq('…confirmed, it closes the call row the split left', [conf.error ?? null, conf.rowId, conf.rowId && D(conf.rows.find(r => r.id === conf.rowId)).status], [null, 'XYZ-st-40C', 'closed']);
+  // Sync now reads only today's fills: a note for an older trade is told where its fill is read.
+  const sn = processInbox({ notes: [closeNote], trades: [], today: '2026-10-20', holidays: US, rows: [STRADDLE], provisional: true });
+  eq('Sync now, a note from days back: the reason says the daily sync reads its fill', sn.why['t-xyz-close']?.reason,
+    "no XYZ fills today — Sync now reads only today's fills (IBKR's same-day report); a 2026-10-16 trade is matched by the daily sync, which reads the full statement");
+  eq('the daily run keeps its own wording', processInbox({ notes: [closeNote], trades: [], today: '2026-10-20', holidays: US, rows: [STRADDLE] }).why['t-xyz-close']?.reason,
+    "no XYZ orders in the statement yet — the fill may not be in IBKR's report until the day after it trades");
+  eq('a note dated today, on Sync now, keeps the ordinary wording', explainWaiting({ ...closeNote, trade_date: '2026-10-20' }, [], { sameDay: '2026-10-20' }),
+    "no XYZ orders in the statement yet — the fill may not be in IBKR's report until the day after it trades");
   eq('closeView leaves an open note alone', closeView({ ...closeNote, kind: 'open' }, b.rows).instrument.legs.length, 2);
   const up = upgradeDrafts(out.drafts, orderUnits(T), { asOf: '2026-10-14', fillOf });
   const upPair = up.drafts.find(d => d.paired);
