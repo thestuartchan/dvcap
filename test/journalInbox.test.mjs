@@ -5,7 +5,7 @@
 // gate), how it meets its fill, and that nothing a note says reaches the channel or the repo.
 import { validateNote, orderUnits, matchNote, processInbox, applyDraft, journalLine, draftCounts, expectationText,
          tradingDaysBetween, chooseCandidate, appendProcessed, whyNot, explainWaiting, assembledSpreads, fmtPx, amendTargets, productRoot, retryAmends, resolveAmend, amendRow, INBOX_KEY, DRAFTS_KEY,
-         legTargets, pairLegOuts, legOutOf } from '../lib/journalInbox.js';
+         legTargets, pairLegOuts, legOutOf, closeView, exactMatch } from '../lib/journalInbox.js';
 import { derivePosition } from '../lib/positions.js';
 import { upgradeDrafts } from '../lib/sameDayFills.js';
 import { fillOf } from '../lib/journalInbox.js';
@@ -573,6 +573,26 @@ globalThis.fetch = realFetch;
   eq('more than the leg holds: refused', /holds 6/.test(applyDraft([STRADDLE], { ...leg, fill: { ...leg.fill, qty: 9 } }).error || ''), true);
   const buys = out.drafts.filter(d => d.legOut).map(d => ({ ...d, fill: { ...d.fill, side: 'BUY' } }));
   eq('pairLegOuts never pairs legs bought the same way as held', pairLegOuts(buys, [STRADDLE]).made.length, 0);
+
+  // A CLOSE NOTE FOR THE WHOLE STRADDLE, AFTER THE PUTS WENT (16 Oct). The book above holds 3 calls
+  // and no puts; the last order sells the calls, and the note names both legs.
+  const XYZ16 = (id, right, qty, px) => O({ ibOrderID: id, conid: `${id}1`, symbol: `XYZ   261120${right}00040000`, underlyingSymbol: 'XYZ', assetCategory: 'OPT',
+    putCall: right, strike: 40, expiry: '20261120', multiplier: 100, buySell: 'SELL', quantity: -qty, tradePrice: px, ibCommission: -1.5, tradeDate: '20261016', dateTime: '20261016;100500' });
+  const closeNote = validateNote({ id: 't-xyz-close', kind: 'close', written_at: '2026-10-16T17:50:00Z', trade_date: '2026-10-16',
+    instrument: { type: 'COMBO', symbol: 'XYZ', legs: STRADDLE.legs.map(l => ({ ...l, side: 'SELL' })) }, expected: { qty: 3, price: 0.15 }, tag: 'swing', rationale: 'closed the rest' }).note;
+  const T16 = trades(XYZ16('950', 'C', 3, 0.05));
+  const late = processInbox({ notes: [closeNote], trades: T16, today: '2026-10-16', holidays: US, rows: b.rows, seen: out.seen });
+  const d16 = late.drafts.find(d => d.fill?.orderId === '950');
+  eq('a close note for a straddle whose puts are gone matches the calls-only order', [d16?.source, d16?.note?.id, late.fate['950'], late.counts.pending], ['note', 't-xyz-close', 'matched', 0]);
+  eq('…its card says the put leg was already closed, and the price was for both legs', expectationText(d16).text,
+    'IBKR sold 3 @ 0.05 — the note named 2 legs; 40P 2026-11-20 was already closed on the book, so this closes the rest (the note\'s price was for all 2 legs, not compared)');
+  eq('…and it is never an exact match: confirmed by hand', exactMatch(d16).ok, false);
+  const waiting = processInbox({ notes: [closeNote], trades: T16, today: '2026-10-16', holidays: US, rows: [STRADDLE], seen: out.seen });
+  eq('with both legs still open on the book the note waits for both, as before', [waiting.counts.pending, waiting.fate['950']], [1, 'awaitingPair']);
+  eq('with no book to read it waits as written', processInbox({ notes: [closeNote], trades: T16, today: '2026-10-16', holidays: US }).counts.pending, 1);
+  const conf = applyDraft(b.rows, d16, {}, { today: '2026-10-16' });
+  eq('…confirmed, it closes the call row the split left', [conf.error ?? null, conf.rowId, conf.rowId && D(conf.rows.find(r => r.id === conf.rowId)).status], [null, 'XYZ-st-40C', 'closed']);
+  eq('closeView leaves an open note alone', closeView({ ...closeNote, kind: 'open' }, b.rows).instrument.legs.length, 2);
   const up = upgradeDrafts(out.drafts, orderUnits(T), { asOf: '2026-10-14', fillOf });
   const upPair = up.drafts.find(d => d.paired);
   eq('tomorrow\'s statement takes over the pair and keeps its per-leg parts, at the statement\'s numbers', [up.changed, upPair.fill.provisional ?? false, upPair.fill.parts.map(x => [x.orderId, x.rawPrice]), upPair.paired.rowId], [2, false, [['901', 0.2], ['902', 2.9]], 'XYZ-st']);
