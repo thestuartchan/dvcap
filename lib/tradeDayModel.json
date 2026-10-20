@@ -1,0 +1,257 @@
+{
+ "_README": "The trade-day call's coefficients (lib/signalBoard.js TRADE_DAY_MODEL / TREND_MODEL). Written by hand from scripts/trade-day-refit.py; the quarterly refit (.github/workflows/trade-day-refit.yml) only PROPOSES changes under docs/trade-day-refit/ and never edits this file. Market data only.",
+ "fitted": "2026-10-20",
+ "r": {
+  "QQQ": {
+   "const": -0.0824,
+   "cush": -0.0037,
+   "gap": 0.1931,
+   "prevR": 0.1229,
+   "ivchg": 1.4189,
+   "sigma": 0.388,
+   "iv": "VXN",
+   "oos_spearman": 0.33
+  },
+  "SPY": {
+   "const": -0.1369,
+   "cush": -0.0046,
+   "gap": 0.1235,
+   "prevR": 0.1781,
+   "ivchg": 1.1857,
+   "sigma": 0.406,
+   "iv": "VIX",
+   "oos_spearman": 0.39,
+   "model": "SPX"
+  },
+  "fit": "2012–2020, scored 2021–2026 (n 2,182 / 1,454)"
+ },
+ "trend": {
+  "QQQ": {
+   "skill": false,
+   "coef": {
+    "const": 0.36006,
+    "cush": -0.00607,
+    "neg": 0.0331,
+    "gap": 0.1079,
+    "prevR": -0.1046,
+    "ivchg": -0.87013
+   },
+   "base_pct": 49.1,
+   "bands": {
+    "neg": [
+     56.2,
+     317
+    ],
+    "p0": [
+     54.0,
+     404
+    ],
+    "p20": [
+     51.5,
+     586
+    ],
+    "p40": [
+     50.2,
+     671
+    ],
+    "p60": [
+     50.7,
+     672
+    ],
+    "p80": [
+     41.5,
+     987
+    ]
+   },
+   "span": "2012-05-02 → 2026-10-19",
+   "n": 3637,
+   "oos": {
+    "span": "2016-01-04 → 2026-10-19",
+    "n": 2714,
+    "base_rate": 0.496,
+    "brier_model": 0.2495,
+    "brier_base": 0.2504,
+    "brier_band": 0.2493,
+    "bss": 0.0035,
+    "bss_90": [
+     -0.0036,
+     0.0116
+    ],
+    "bss_band": 0.0043,
+    "bss_band_90": [
+     -0.0021,
+     0.012
+    ],
+    "auc": 0.546,
+    "calibration": [
+     [
+      0.403,
+      0.424,
+      543
+     ],
+     [
+      0.441,
+      0.468,
+      543
+     ],
+     [
+      0.473,
+      0.518,
+      542
+     ],
+     [
+      0.51,
+      0.538,
+      543
+     ],
+     [
+      0.565,
+      0.534,
+      543
+     ]
+    ],
+    "calibration_band": [
+     [
+      0.398,
+      0.434,
+      594
+     ],
+     [
+      0.436,
+      0.471,
+      501
+     ],
+     [
+      0.489,
+      0.529,
+      550
+     ],
+     [
+      0.515,
+      0.52,
+      575
+     ],
+     [
+      0.562,
+      0.532,
+      494
+     ]
+    ]
+   }
+  },
+  "SPY": {
+   "skill": false,
+   "coef": {
+    "const": 0.25136,
+    "cush": -0.00427,
+    "neg": 0.20831,
+    "gap": 0.14657,
+    "prevR": -0.15427,
+    "ivchg": -0.91954
+   },
+   "base_pct": 48.5,
+   "bands": {
+    "neg": [
+     57.1,
+     317
+    ],
+    "p0": [
+     52.7,
+     404
+    ],
+    "p20": [
+     48.6,
+     586
+    ],
+    "p40": [
+     47.7,
+     671
+    ],
+    "p60": [
+     50.4,
+     672
+    ],
+    "p80": [
+     43.1,
+     987
+    ]
+   },
+   "span": "2012-05-02 → 2026-10-19",
+   "n": 3637,
+   "oos": {
+    "span": "2016-01-04 → 2026-10-19",
+    "n": 2714,
+    "base_rate": 0.483,
+    "brier_model": 0.2496,
+    "brier_base": 0.25,
+    "brier_band": 0.2496,
+    "bss": 0.0018,
+    "bss_90": [
+     -0.0048,
+     0.0096
+    ],
+    "bss_band": 0.0017,
+    "bss_band_90": [
+     -0.0047,
+     0.0081
+    ],
+    "auc": 0.53,
+    "calibration": [
+     [
+      0.416,
+      0.438,
+      543
+     ],
+     [
+      0.447,
+      0.473,
+      543
+     ],
+     [
+      0.474,
+      0.493,
+      542
+     ],
+     [
+      0.505,
+      0.484,
+      543
+     ],
+     [
+      0.56,
+      0.525,
+      543
+     ]
+    ],
+    "calibration_band": [
+     [
+      0.418,
+      0.457,
+      575
+     ],
+     [
+      0.445,
+      0.434,
+      534
+     ],
+     [
+      0.471,
+      0.502,
+      534
+     ],
+     [
+      0.506,
+      0.502,
+      534
+     ],
+     [
+      0.563,
+      0.52,
+      537
+     ]
+    ]
+   }
+  },
+  "definition": "Trend day: the session's close in the top or bottom 20% of its own high–low range (spec A.2). Not the Gamma tab's trend day (lib/trendTells.js)."
+ }
+}

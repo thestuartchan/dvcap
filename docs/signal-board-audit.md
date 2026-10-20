@@ -139,3 +139,76 @@ SOXX tells the same story (BTC ÷ QQQ risk-on: 58.5% vs 54.5%, p 0.03; the other
 **Lead/lag.** BTC's first close below its 200-day after ≥20 closes above happened 13 times. QQQ fell ≥5% within 20 sessions after 7 of them (54%), against 24% of all days (binomial p 0.02, but the events cluster in sell-offs) and 28% after QQQ's own first close below its 50-day (n 29). The median worst 20-session QQQ drawdown was −5.5%, against −1.9% for all days. Seven of the 13 breaks came while QQQ was still above its 50-day; four of those saw QQQ fall ≥5% within 20 sessions. This becomes a **flag** on the BTC trend row with its numbers, not a vote. **Redundancy:** when the QQQ trend row reads risk-on and BTC's reads risk-off, QQQ's next 5 sessions averaged −0.14% (n 345), against +0.42% when both read risk-on (n 719). This is the same divergence the 200-day flag catches.
 
 **Benchmark.** The KOSPI row did not vote at 59.6% vs 55.7% (n 416). The crypto rows are held to the same bar. All four rows are scored in the snapshot log (`scorecard.signals.btc_*`), and BTC ÷ QQQ can be promoted to a Tape vote once its risk-off side shows an edge there.
+
+## 8. P(trend day) on the trade-day call (spec A.2, 20 Oct 2026)
+
+**Definition.** A trend day is a session whose close lands in the top or bottom 20% of its own high–low range. It is a close-location day with a base rate of about 49%. It is **not** the Gamma tab's trend day (`lib/trendTells.js`: ≥0.6 ATR open→close keeping ≥60% of the range, base ≈24%). The two answer different questions and both stay, each labelled.
+
+**Model.** The model is a logistic regression on the same pre-open inputs as P(R ≥ 1): cushion percentile, a negative-GEX band dummy, |gap| ÷ implied, prior-day R and the overnight IV change. QQQ uses QQQ bars and VXN. SPY uses SPY's own bars and VIX, because the close location belongs to the ETF. The script is `scripts/trade-day-refit.py` (calibrate mode), the coefficients are in `lib/tradeDayModel.json` `trend`, and the code is `trendDayProb` in `lib/signalBoard.js`.
+
+**Out-of-sample test.** The test is walk-forward: each year from 2016 is predicted by a fit on 2012 → the end of the year before. The comparison is against the base rate known at the time and against the cushion band's rate known at the time. The sample is 2016-01-04 → 2026-10-19, n 2,714 per ticker. The full fit runs 2012-05-02 → 2026-10-19, n 3,637.
+
+| | QQQ | SPY |
+|---|---|---|
+| Base rate (OOS window) | 49.6% | 48.3% |
+| Brier: model / base rate / band rate | 0.2495 / 0.2504 / 0.2493 | 0.2496 / 0.2500 / 0.2496 |
+| Brier skill score vs base (90% block bootstrap) | +0.004 [−0.004, +0.012] | +0.002 [−0.005, +0.010] |
+| Band rate's skill score vs base | +0.004 [−0.002, +0.012] | +0.002 [−0.005, +0.008] |
+| AUC | 0.546 | 0.530 |
+| Calibration by predicted quintile, predicted → realised | 40→42, 44→47, 47→52, 51→54, 57→53 | 42→44, 45→47, 47→49, 51→48, 56→53 |
+
+**Verdict: no out-of-sample skill.** In both cases the interval includes zero, and the top quintile is not monotone. So `skill` is `false` for both tickers, and the call shows the **cushion band's base rate** (`trend.source: "band base rate"`). The row text says so. The band rates come from the full 2012–2026 sample:
+
+| Band | neg GEX | <20th | 20–40th | 40–60th | 60–80th | ≥80th | all |
+|---|---|---|---|---|---|---|---|
+| QQQ trend-day % (n) | 56.2 (317) | 54.0 (404) | 51.5 (586) | 50.2 (671) | 50.7 (672) | 41.5 (987) | 49.1 |
+| SPY trend-day % (n) | 57.1 (317) | 52.7 (404) | 48.6 (586) | 47.7 (671) | 50.4 (672) | 43.1 (987) | 48.5 |
+
+The only clear step is the top band, about 8 points below the rest. It is shown as history, not as a forecast with skill.
+
+**Checkpoints.** The trend-day share per checkpoint band was added to `scripts/trade-day-checkpoint-backtest.py` (by first-range quartile) and to `scripts/trade-day-v2-calibrate.py` (by band, carried in `CHECKPOINTS.<T>['10:30'].trend`). The free intraday record supports it only at 10:30, from Yahoo hourly bars 2024-10 → 2026-10 (n 493):
+- QQQ: quiet 43%, middle 44%, confirm 47% against a 45% base.
+- SPY: quiet 37%, middle 44%, confirm 42% against 41%.
+
+So the first hour barely moves the trend-day odds. 10:00 has no trend share, because Yahoo's 30-minute bars reach back only 60 sessions.
+
+## 9. The conflict flag (spec A.6)
+
+The trade-day call reads the SPX-wide cushion and the tape. The gamma board reads the ticker's own strikes. When the two disagree, the call carries a `conflict` object (`tradeConflict` in `lib/signalBoard.js`). **It never changes the call:** `overrides: false`, and the zone, median R and P(R ≥ 1) stand.
+
+**Source of the structure.** It is the board the gamma feed and the connector's `get_gamma_*` tools serve. `feedBoard` moved unchanged from `api/gex.js` to `lib/gexFeedBoard.js`, so both read it, and it is reshaped by `gexFeedPayload` (`lib/gexFeed.js`). Nothing is fetched a second way. The connector's `get_signal_board` may mint a recompute, as its gamma tools do. The public `/api/indicators?board=1` passes `recompute: false`: it serves a kept recompute or the stored board and never fetches a chain. No new serverless function was added (still 12).
+
+**Rules** (fixed; `CONFLICT = { sigma: 0.5, maxAgeDays: 4 }`). σ is the call's `implied_1sd` in dollars, falling back to the board's ±1σ to the nearest expiry.
+
+| Call | Rule id | Fires when |
+|---|---|---|
+| Trade | `pin_box` | spot inside the board's pin box [bottom, top] **and** net gamma at spot > 0 |
+| Trade | `call_wall` | net gamma > 0 **and** the board's call wall has positive gamma **and** spot within 0.5σ of it |
+| Lean skip | `below_flip` | the flip is a usable line (not a fragile zone) **and** spot below it **and** net gamma < 0 |
+| Lean skip | `trapdoor` | the near trapdoor is below spot and within 0.5σ of it |
+| Selective | none | already the middle call |
+
+A board more than 4 calendar days older than the session being called raises nothing (`gamma.stale: true`). On the connector (`get_signal_board`), each call also carries `gamma`, the structure the rules read (spot, flip, net gamma, call wall, pin box, near trapdoor, as-of, mode), so both views are on the answer. **The public `/api/indicators?board=1` carries no gamma levels.** It has no `gamma` object, and its `conflict` is rule ids, `overrides: false` and a generic sentence with no price (`publicTradeDay`). The snapshot is written from that public answer and keeps rule ids only. The snapshot log keeps `call.<T>.conflict` (rule ids) and `call.<T>.p_trend`, so both are scored from the log like everything else. On the 8 Oct SPY board (the test fixture), spot 774.64 sat below a usable flip at 775.59 with net gamma −$1.83bn per 1%, so a Lean skip call on it carries `below_flip`.
+
+## 10. Quarterly walk-forward refit
+
+**Where the coefficients live.** The coefficients moved out of `lib/signalBoard.js` into `lib/tradeDayModel.json`, unchanged. `scripts/trade-day-refit.py --refit` does the refit:
+- The cutoff is the last quarter-end.
+- The current coefficients and a candidate fitted on 2012 → the start of the evaluation window are both scored out of sample on the four quarters to the cutoff.
+- The proposal is the fit on 2012 → the cutoff.
+- It writes `docs/trade-day-refit/{proposed.json, report.md, status.json}` and **never edits `lib/`**.
+
+**Thresholds** (any one opens a proposal):
+- R model: |Δ Brier P(R≥1)| ≥ 0.005, or |Δ Spearman| ≥ 0.03, or the zone differs on ≥ 15% of sessions;
+- P(trend): the skill verdict flips, or |Δ BSS| ≥ 0.01.
+
+**Schedule.** `.github/workflows/trade-day-refit.yml` runs on the first weekday after each quarter-end at 13:23 UTC. The cron fires on the 1st–3rd of Jan/Apr/Jul/Oct, and a guard keeps only the first weekday. Past a threshold, it pushes `refit/trade-day-<cutoff>` and opens a pull request with the report as its body; within the thresholds it commits nothing. It uses free sources only (SqueezeMetrics, Cboe, Yahoo) and the workflow's own `GITHUB_TOKEN`. Opening the pull request needs the repository setting "Allow GitHub Actions to create and approve pull requests". Without it the branch is pushed and the run warns.
+
+**Baseline.** The first run (cutoff 2026-09-30, window 2025-10-01 → 2026-09-30, n 251) is committed under `docs/trade-day-refit/`:
+
+| | Spearman, current vs candidate | Brier, current vs candidate | Zone differs |
+|---|---|---|---|
+| QQQ | 0.231 vs 0.224 | 0.226 vs 0.229 | 2% |
+| SPY | 0.266 vs 0.257 | 0.188 vs 0.192 | 7% |
+
+P(trend) has no skill either way. The verdict is within the thresholds, so there is no proposal.

@@ -9,7 +9,8 @@
 #   2. per cushion band (negative GEX its own band, as lib/trendTells.js CUSHION): the MEDIAN R and the
 #      share of days with R ≥ 1.0, the two figures the board shows beside the band;
 #   3. per checkpoint band (quiet / middle / confirm at 10:00 and 10:30, PR #384's thresholds): the median
-#      R_rest, the share of days with R_rest ≥ its median, and the share whose FULL-day R ended ≥ 1.0.
+#      R_rest, the share of days with R_rest ≥ its median, the share whose FULL-day R ended ≥ 1.0, and the
+#      share that ended a trend day (close in the top or bottom 20% of the day's range; spec A.2).
 #
 # Definitions (market data only; nothing here reads an account):
 #   implied  prior close VXN (QQQ) / VIX (SPX, SPY) ÷ 100 ÷ √252
@@ -107,14 +108,15 @@ for (sym, cp), (quiet, conf) in CP.items():
         if len(g) != need or g.hm.iloc[0] != '09:30': continue
         o = g.o.iloc[0]; c_hm = '10:00' if cp == 30 else '10:30'
         first, rest = g[g.hm < c_hm], g[g.hm >= c_hm]
-        recs.append(dict(date=d, fr=(first.h.max() - first.l.min()) / o, rest=(rest.h.max() - rest.l.min()) / rest.o.iloc[0], R=(g.h.max() - g.l.min()) / o))
+        loc = (g.c.iloc[-1] - g.l.min()) / (g.h.max() - g.l.min())
+        recs.append(dict(date=d, fr=(first.h.max() - first.l.min()) / o, rest=(rest.h.max() - rest.l.min()) / rest.o.iloc[0], R=(g.h.max() - g.l.min()) / o, td=float(loc >= 0.8 or loc <= 0.2)))
     s = pd.DataFrame(recs).set_index('date').join(daily[dname][['imp']], how='inner').dropna()
     s['FR'] = s.fr / s.imp; s['Rr'] = s.rest / s.imp; s['Rd'] = s.R / s.imp
     med = s.Rr.median(); res = {}
     for lab, m in [('quiet', s.FR < quiet), ('middle', (s.FR >= quiet) & (s.FR < conf)), ('confirm', s.FR >= conf)]:
         a = s[m]
-        res[lab] = dict(n=int(len(a)), rest_median=round(float(a.Rr.median()), 2), rest_ge_median=round(float((a.Rr >= med).mean()), 2), day_ge1=round(float((a.Rd >= 1).mean()), 2))
+        res[lab] = dict(n=int(len(a)), rest_median=round(float(a.Rr.median()), 2), rest_ge_median=round(float((a.Rr >= med).mean()), 2), day_ge1=round(float((a.Rd >= 1).mean()), 2), trend=round(float(a.td.mean()), 2))
     out['checkpoints'][f'{sym}_{"10:00" if cp == 30 else "10:30"}'] = dict(quiet_below=quiet, confirm_at=conf, sample=f'{s.index[0].date()}→{s.index[-1].date()}', **res)
-    print(f'  {sym} {"10:00" if cp == 30 else "10:30"} ({s.index[0].date()}→{s.index[-1].date()}, n {len(s)}): ' + ' · '.join(f'{k}: n {v["n"]}, R_rest med {v["rest_median"]}, ≥med {v["rest_ge_median"]:.0%}, day R≥1 {v["day_ge1"]:.0%}' for k, v in res.items()))
+    print(f'  {sym} {"10:00" if cp == 30 else "10:30"} ({s.index[0].date()}→{s.index[-1].date()}, n {len(s)}): ' + ' · '.join(f'{k}: n {v["n"]}, R_rest med {v["rest_median"]}, ≥med {v["rest_ge_median"]:.0%}, day R≥1 {v["day_ge1"]:.0%}, trend {v["trend"]:.0%}' for k, v in res.items()))
 
 print('\nJSON\n' + json.dumps(out, default=float))

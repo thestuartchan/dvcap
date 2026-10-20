@@ -19,6 +19,8 @@
 #   R_rest    (high − low from the checkpoint to the close) ÷ price at the checkpoint ÷ implied
 #             (a full-day implied, so a typical value is below 1: most of the day's time has not gone)
 #   cushion   SqueezeMetrics SPX GEX at the prior close, percentile vs the 252 rows before it
+#   trend day the session's close in the top or bottom 20% of its own high–low range (spec A.2; the
+#             trade-day call's P(trend), scripts/trade-day-refit.py), read from the same intraday bars
 #
 # Inputs, fetched into one directory $D first:
 #   curl -sS https://squeezemetrics.com/monitor/static/DIX.csv -o $D/dix.csv
@@ -111,7 +113,7 @@ def sessions(sym, f, step):
     for d, g in df.groupby('date'):
         if len(g) != need or g.hm.iloc[0] != '09:30': continue
         o = g.o.iloc[0]
-        rec = dict(date=d, open=o, H=g.h.max(), L=g.l.min())
+        rec = dict(date=d, open=o, H=g.h.max(), L=g.l.min(), C=g.c.iloc[-1])
         for cp, label in ([('10:00', 30), ('10:30', 60)] if step == 30 else [('10:30', 60)]):
             first, rest = g[g.hm < cp], g[g.hm >= cp]
             rec[f'fr{label}'] = (first.h.max() - first.l.min()) / o
@@ -140,10 +142,13 @@ for sym, dname in [('QQQ', 'QQQ'), ('SPY', 'SPX')]:
         cps = [30, 60] if step == 30 else [60]
         for cp in cps:
             z = s.copy()
+            loc = (z.C - z.L) / (z.H - z.L); z['TD'] = ((loc >= 0.8) | (loc <= 0.2)).astype(float)
             z['FR'] = z[f'fr{cp}'] / z.imp; z['Rr'] = z[f'rest{cp}'] / z.imp; z['FN'] = z[f'fnet{cp}'] / z.imp
             z['lpre'] = np.log(z.pre); z['lFR'] = np.log(z.FR.clip(lower=1e-3))
             z['p_pre'] = walk_forward(z, ['lpre'], 'Rr'); z['p_fr'] = walk_forward(z, ['lFR'], 'Rr'); z['p_both'] = walk_forward(z, ['lpre', 'lFR'], 'Rr')
             t = z.dropna(subset=['p_both'])
+            if not len(t):   # a short intraday file (Yahoo's 30m reaches back 60 days) leaves nothing to score
+                print(f'\n  {sym} {"30m" if step == 30 else "1h"} checkpoint {"10:00" if cp == 30 else "10:30"}: n={len(z)}, fewer than the 120 sessions the walk-forward needs; skipped'); continue
             src = f'{sym} {"30m" if step == 30 else "1h"} bars, checkpoint {"10:00" if cp == 30 else "10:30"}'
             print(f'\n  {src}: {z.index[0].date()} → {z.index[-1].date()}, n={len(z)} (walk-forward scored n={len(t)}, from {t.index[0].date()})')
             print(f'    in-sample Spearman vs R_rest: FR {spear(z.FR, z.Rr):+.2f} · pre-open model {spear(z.pre, z.Rr):+.2f} · first-{cp} net move {spear(z.FN, z.Rr):+.2f} · FR vs pre-open {spear(z.FR, z.pre):+.2f}')
@@ -159,6 +164,7 @@ for sym, dname in [('QQQ', 'QQQ'), ('SPY', 'SPX')]:
             print(f'    FR quartile cut-points (× implied 1σ): {np.round(z.FR.quantile([.25, .5, .75]).values, 2).tolist()} · median R_rest {z.Rr.median():.2f}')
             fq = pd.qcut(z.FR, 4, labels=['Q1', 'Q2', 'Q3', 'Q4'])
             print('    by FR quartile: ' + ' · '.join(f'{k}: R_rest mean {g.Rr.mean():.2f} med {g.Rr.median():.2f}, day R≥1 {(g.R >= 1).mean():.0%}' for k, g in z.groupby(fq, observed=True)))
+            print(f'    trend-day share (close in the top/bottom 20% of the range), base {z.TD.mean():.0%}: ' + ' · '.join(f'{k} {g.TD.mean():.0%}' for k, g in z.groupby(fq, observed=True)))
             # the brief's tell, and a few nearby thresholds
             for thr in ([0.25, 0.35, 0.5] if cp == 30 else [0.35, 0.5, 0.65, 0.8]):
                 a, b = z[z.FR > thr], z[z.FR <= thr]
