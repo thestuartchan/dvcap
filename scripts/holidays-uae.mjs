@@ -28,7 +28,8 @@ const file = JSON.parse(readFileSync(filePath, 'utf8'));
 const cal = uaeCalendar({ circulars: src.circulars || [], ics: src.ics || '', today });
 // A source that read nothing must not empty the calendar: keep what is there.
 if (!cal.closed.length && !cal.tentative.length) { console.log('nothing read from either source — calendar left as it is'); process.exit(1); }
-const { file: next, changed } = mergeUae(file, cal, { today, checkedAt: new Date().toISOString() });
-writeFileSync(filePath, JSON.stringify(next, null, 2) + '\n');
+const { file: next, changed, wrote } = mergeUae(file, cal, { today, checkedAt: new Date().toISOString() });
+// Nothing moved and the weekly heartbeat is not due: the file is left exactly as it was.
+if (wrote) writeFileSync(filePath, JSON.stringify(next, null, 2) + '\n');
 const ahead = next.UAE.closed.filter(d => d >= today);
-console.log(`UAE: ${ahead.length} closures ahead (${ahead.slice(0, 6).join(', ')}${ahead.length > 6 ? ', …' : ''}); tentative ${next.UAE.tentative.length} (${next.UAE.tentative.slice(0, 6).join(', ')}); ${changed ? 'changed' : 'no change to dates'}`);
+console.log(`UAE: ${ahead.length} closures ahead (${ahead.slice(0, 6).join(', ')}${ahead.length > 6 ? ', …' : ''}); tentative ${next.UAE.tentative.length} (${next.UAE.tentative.slice(0, 6).join(', ')}); ${changed ? 'changed' : 'no change to dates'}${wrote ? '' : ' — file untouched'}`);

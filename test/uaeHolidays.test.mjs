@@ -87,11 +87,13 @@ const moved = mergeUae({ UAE: { closed: ['2026-12-02', '2026-12-04'], half: [] }
 eq('a future date this wrote and the circulars no longer support is removed', moved.file.UAE.closed, ['2026-12-02']);
 eq('the same dates again: no change', mergeUae(file, cal, { today: '2026-10-21' }).changed, false);
 
-// ── WHEN TO LOOK ─────────────────────────────────────────────────────────────
-eq('never checked → check', checkDue({}, { now: new Date('2026-10-21T05:00:00Z') }).due, true);
-eq('the evening run, twelve hours after the morning one → check', checkDue({ _uae: { checkedAt: '2026-10-21T05:00:00Z' } }, { now: new Date('2026-10-21T17:00:00Z') }).due, true);
-eq('a late schedule landing an hour after the last → skip', checkDue({ _uae: { checkedAt: '2026-10-21T05:00:00Z' } }, { now: new Date('2026-10-21T06:00:00Z') }).due, false);
+// ── WHEN TO LOOK, AND WHEN TO WRITE ──────────────────────────────────────────
+eq('every run looks', [checkDue({}, { now: new Date('2026-10-21T05:00:00Z') }).due, checkDue({ _uae: { checkedAt: '2026-10-21T05:00:00Z' } }, { now: new Date('2026-10-21T06:00:00Z') }).due], [true, true]);
 eq('an open closure is named in the reason', /awaiting resumption/.test(checkDue({ _uae: { checkedAt: '2026-03-02T05:00:00Z', openClosure: { from: '2026-03-02' } } }, { now: new Date('2026-03-02T17:00:00Z') }).why), true);
+const quiet = mergeUae(file, cal, { today: '2026-10-21', checkedAt: '2026-10-21T17:00:00Z' });
+eq('nothing moved: the file is left exactly as it was — no commit, no redeploy', [quiet.wrote, quiet.file === file, quiet.file._uae.checkedAt], [false, true, '2026-10-21T05:00:00Z']);
+eq('…until the weekly heartbeat records the check', mergeUae(file, cal, { today: '2026-10-28', checkedAt: '2026-10-28T05:00:00Z' }).wrote, true);
+eq('a moved date is written at once', mergeUae(file, { ...cal, closed: [...cal.closed, '2026-12-04'] }, { today: '2026-10-21', checkedAt: '2026-10-21T17:00:00Z' }).wrote, true);
 
 // ── THE SESSION READS IT ─────────────────────────────────────────────────────
 eq('a confirmed closure is a holiday for a .AE name', marketState('XYZ.AE', new Date('2026-12-02T08:00:00Z')), 'holiday');
