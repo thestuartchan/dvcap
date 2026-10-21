@@ -10,7 +10,10 @@ import { weekHighlights } from '../lib/calendar.js';
 import { auctionEvents } from '../lib/auctions.js';
 import { postLong } from '../lib/discord.js';
 import { marketState, localHour, localMinutesOfDay, localDateIn, isWeekendIn, localWeekday, closedExchanges, halfDayLabels, freshness, freshnessText, sessionCloseMin, sessionCountdown } from '../lib/sessions.js';
-import { kvGetJson, kvSetJson, kvConfigured } from '../lib/kv.js';
+import { kvGetJson, kvSetJson, kvConfigured, kvSetNxEx } from '../lib/kv.js';
+import { preOpenDispatch } from '../lib/preOpenDispatch.js';
+import HOLIDAYS from '../data/holidays.json' with { type: 'json' };
+const HOLIDAYS_US_CLOSED = HOLIDAYS?.US?.closed || [];
 import { coreSpread } from '../lib/inflation.js';
 
 // One key, one small object per region. A skipped brief left NO trace anywhere — the only detector
@@ -1222,5 +1225,11 @@ export default async function handler(req, res) {
   }
   // Only the scheduled runs log; a browser hitting the route to read a brief does not commit.
   if (req.query.cron === '1') r.body = { ...(r.body || {}), regimeLog: await logRegime(req) };
+  // The US cron also starts the pre-open GitHub jobs, which GitHub's own scheduler runs hours late
+  // (lib/preOpenDispatch.js): once a day, before 09:20 New York, never on a US closure.
+  if (req.query.cron === '1' && String(req.query.region || '').toLowerCase() === 'us' && req.query.all !== '1') {
+    r.body = { ...(r.body || {}), preOpen: await preOpenDispatch({ usClosed: HOLIDAYS_US_CLOSED,
+      kv: { configured: kvConfigured, setNx: kvSetNxEx } }) };
+  }
   res.status(r.status).json(r.body);
 }
