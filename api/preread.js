@@ -10,8 +10,9 @@ import { weekHighlights } from '../lib/calendar.js';
 import { auctionEvents } from '../lib/auctions.js';
 import { postLong } from '../lib/discord.js';
 import { marketState, localHour, localMinutesOfDay, localDateIn, isWeekendIn, localWeekday, closedExchanges, halfDayLabels, freshness, freshnessText, sessionCloseMin, sessionCountdown } from '../lib/sessions.js';
-import { kvGetJson, kvSetJson, kvConfigured, kvSetNxEx } from '../lib/kv.js';
-import { preOpenDispatch } from '../lib/preOpenDispatch.js';
+import { kvGetJson, kvSetJson, kvConfigured, kvSetNxEx, kvSetJsonEx, kvDel } from '../lib/kv.js';
+import { preOpenDispatch, dispatchHealth, LAST_KEY as PREOPEN_LAST_KEY } from '../lib/preOpenDispatch.js';
+import { hasSessionCookie, refuse } from '../lib/apiauth.js';
 import HOLIDAYS from '../data/holidays.json' with { type: 'json' };
 const HOLIDAYS_US_CLOSED = HOLIDAYS?.US?.closed || [];
 import { coreSpread } from '../lib/inflation.js';
@@ -1207,7 +1208,25 @@ async function logRegime(req) {
   }
 }
 
+const PREOPEN_KV = { configured: kvConfigured, setNx: kvSetNxEx, get: kvGetJson, set: kvSetJsonEx, del: kvDel };
+
 export default async function handler(req, res) {
+  // ?preopen=status (GET) / ?preopen=retry (POST) — the pre-open dispatch for Data health, behind the
+  // dashboard session. Status codes, times and workflow names only.
+  const preopen = String(req.query.preopen || '');
+  if (preopen === 'status' || preopen === 'retry') {
+    if (!(await hasSessionCookie(req))) return refuse(res);
+    res.setHeader('Cache-Control', 'private, no-store');
+    if (preopen === 'retry' && req.method !== 'POST') return res.status(405).json({ error: 'POST to retry' });
+    const ran = preopen === 'retry' ? await preOpenDispatch({ usClosed: HOLIDAYS_US_CLOSED, kv: PREOPEN_KV, by: 'retry' }) : null;
+    const last = kvConfigured() ? await kvGetJson(PREOPEN_LAST_KEY) : null;
+    return res.status(200).json({ ok: true, ran, health: dispatchHealth(last, { usClosed: HOLIDAYS_US_CLOSED }) });
+  }
+  // The US cron starts the pre-open GitHub jobs FIRST, alongside the brief rather than after it, so a
+  // slow brief or a timeout cannot keep them from starting (lib/preOpenDispatch.js): once a day,
+  // before 09:20 New York, never on a US closure.
+  const preOpenRun = (req.query.cron === '1' && String(req.query.region || '').toLowerCase() === 'us' && req.query.all !== '1')
+    ? preOpenDispatch({ usClosed: HOLIDAYS_US_CLOSED, kv: PREOPEN_KV }) : null;
   const r = req.query.all === '1'
     ? await runAll(req)
     : await runRegion((req.query.region || 'asia').toLowerCase(), req);
@@ -1225,11 +1244,6 @@ export default async function handler(req, res) {
   }
   // Only the scheduled runs log; a browser hitting the route to read a brief does not commit.
   if (req.query.cron === '1') r.body = { ...(r.body || {}), regimeLog: await logRegime(req) };
-  // The US cron also starts the pre-open GitHub jobs, which GitHub's own scheduler runs hours late
-  // (lib/preOpenDispatch.js): once a day, before 09:20 New York, never on a US closure.
-  if (req.query.cron === '1' && String(req.query.region || '').toLowerCase() === 'us' && req.query.all !== '1') {
-    r.body = { ...(r.body || {}), preOpen: await preOpenDispatch({ usClosed: HOLIDAYS_US_CLOSED,
-      kv: { configured: kvConfigured, setNx: kvSetNxEx } }) };
-  }
+  if (preOpenRun) r.body = { ...(r.body || {}), preOpen: await preOpenRun };
   res.status(r.status).json(r.body);
 }

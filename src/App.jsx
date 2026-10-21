@@ -38,7 +38,7 @@ import { fmtCcy } from "../lib/fxrates.js";
 import { realizedCurve } from "../lib/positions.js";
 import { DEFAULT_TARGET_PCT } from "../lib/sizing.js";
 import { computeMarketState, stateLogRow, STAGE_LABEL } from "../lib/marketState.js";
-import { StateView, DriversView, FeedHealth, StreetCompare, Fold, CrossCheckHealth } from "./MarketState.jsx";
+import { StateView, DriversView, FeedHealth, StreetCompare, Fold, CrossCheckHealth, PreOpenHealth } from "./MarketState.jsx";
 import { PlanView } from "./PlanView.jsx";
 import { expectedRank } from "../lib/plan.js";
 import { observationAge } from "../lib/gates.js";
@@ -7279,6 +7279,7 @@ export default function App() {
             }} />
             <FeedHealth feed={stateFeed} indErrors={liveInd?.feedErrors} indUpdated={indUpdated ? indUpdated.toISOString() : null} />
             <CrossCheckHealth xc={xcHealth} />
+            <PreOpenHealth />
             <HandKeptLedgerPanel ledger={ledger} />
             <CoveragePanel onOpenTicker={(sym) => runGo({ tab: "ticker", symbol: sym })} />
           </div>
