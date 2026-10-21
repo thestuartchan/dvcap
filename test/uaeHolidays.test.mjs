@@ -1,6 +1,6 @@
 // lib/uaeHolidays.js — DFM / ADX closures from DFM's circulars. The texts below are the circulars'
 // own wording (public exchange notices), trimmed.
-import { parseAnnual, parseOneOff, parseIcs, uaeCalendar, mergeUae, checkDue, occasionOf, isAnnualCircular, isOneOffCircular } from '../lib/uaeHolidays.js';
+import { parseAnnual, parseOneOff, parseResumption, circularKind, parseIcs, uaeCalendar, mergeUae, checkDue, occasionOf, isAnnualCircular, isOneOffCircular } from '../lib/uaeHolidays.js';
 import { marketState } from '../lib/sessions.js';
 
 let pass = 0, fail = 0;
@@ -11,6 +11,10 @@ const PROPHET = `Circular No.: 11/2026 Issuance Date: 24/08/2026 Trading Holiday
 const HIJRI = `Circular No.: 09/2026 Issuance Date: 11/06/2026 Trading Holiday due to New Hijri Year 1448 Kindly note that, on the occasion of New Hijri Year 1448, Market will be closed on Monday 15th of June 2026 and will resume work on Tuesday 16th of June 2026.`;
 const ADHA = `Circular No.: 08/2026 Issuance Date: 19/05/2026 Trading Holiday due to Eid Al Adha 2026 Kindly note that, on the occasion of Eid Al Adha, DFM will be closed from Tuesday, May 26, 2026, to Sunday, May 31, 2026. The official working and trading will resume on Monday, June 01, 2026.`;
 const NATIONAL = `Circular No.: Issuance Date: 11/2025 28/11/2025 Trading Holiday due to United Arab Emirates 54th National Day Holiday The Dubai Financial Market will be closed on the occasion of the 54th United Arab Emirates National Day on Monday 1st December 2025 and Tuesday 2nd December 2025. Business operations will resume on Wednesday 3rd December 2025.`;
+const CLOSURE = `Circular No.: 03/2026 Issuance Date: 01/03/2026 Market closure Dubai Financial Market (DFM) refers to the announcement issued by the UAE Capital Market Authority regarding the closure of the capital markets. DFM confirms that trading on the Dubai Financial Market will be suspended effective Monday, 2 March 2026 and on Tuesday 3 March 2026, in line with the Authority’s decision. Market participants are advised to follow official announcement issued by the UAE Capital Market Authority and Dubai Financial Market for further updates.`;
+const RESUME = `Circular No.: 05/2026 Issuance Date: 03/03/2026 Resumption of Trading Dubai Financial Market (DFM) refers to the announcement issued by the UAE Capital Markets Authority (CMA) regarding the resumption of trading on UAE capital markets on Wednesday,4March 2026.In line with the CMA's decision, DFM announces the resumption of trading on the Dubai Financial Market on Wednesday, 4 March 2026.`;
+const OPEN = `Market closure. Trading on the Dubai Financial Market will be suspended effective Monday, 2 March 2026 until further notice.`;
+const ONE_NAME = `Trading in the shares of XYZ PJSC listed on the Dubai Financial Market will be suspended on Monday, 2 March 2026 pending disclosure.`;
 const ICS = ['BEGIN:VCALENDAR',
   'BEGIN:VEVENT', 'DTSTART;VALUE=DATE:20270310', 'SUMMARY:Eid al-Fitr (tentative)', 'DESCRIPTION:Public holiday\\nDate is tentative and may change.', 'END:VEVENT',
   'BEGIN:VEVENT', 'DTSTART;VALUE=DATE:20271202', 'SUMMARY:National Day', 'DESCRIPTION:Public holiday', 'END:VEVENT',
@@ -35,6 +39,21 @@ eq('occasions', ['EID AL FITR', 'ARAFAH (HAJ) DAY', "HIJRI NEW YEAR'S DAY", 'Mou
 eq('which circulars are which', [isAnnualCircular('Trading and Settlement Holidays for the Calendar Year 2026 for Securities Market (Excluding Derivatives contracts)'),
   isAnnualCircular('Trading and Settlement Holidays for the Calendar Year 2026 for Derivatives contracts'),
   isOneOffCircular('Trading Holiday due to Eid Al Adha 2026'), isOneOffCircular('Revision in Expiry Date for Single Stock Futures due to Eid Al Fitr 2026 Holiday')], [true, false, true, false]);
+
+// ── CLOSURES THE REGULATOR ORDERS ───────────────────────────────────────────
+eq('"suspended effective Monday, 2 March … and on Tuesday 3 March" — both days', parseOneOff(CLOSURE)?.dates, ['2026-03-02', '2026-03-03']);
+eq('the resumption day, even written "Wednesday,4March 2026"', parseResumption(RESUME), '2026-03-04');
+eq('kinds: market closure, resumption, holiday, annual', [
+  circularKind({ headline: 'Market Closure', text: CLOSURE }), circularKind({ headline: 'Resumption of Trading', text: RESUME }),
+  circularKind({ headline: 'Trading Holiday due to Eid Al Adha 2026', text: ADHA }), circularKind({ headline: 'Trading and Settlement Holidays for the Calendar Year 2026 for Securities Market (Excluding Derivatives contracts)', text: ANNUAL })],
+  ['closure', 'resumption', 'closure', 'annual']);
+eq('one company\'s suspension is not the market closing', [circularKind({ headline: 'Suspension of Trading in XYZ PJSC Shares', text: ONE_NAME }), circularKind({ headline: 'Trading Suspension', text: ONE_NAME })], [null, null]);
+const ordered = uaeCalendar({ circulars: [{ no: '03/2026', date: '2026-03-01', headline: 'Market Closure', text: CLOSURE }], today: '2026-10-21' });
+eq('a closure with dates closes them', ordered.closed, ['2026-03-02', '2026-03-03']);
+const openNow = uaeCalendar({ circulars: [{ no: '03/2026', date: '2026-03-01', headline: 'Market Closure', text: OPEN }], today: '2026-03-03' });
+eq('"until further notice" with no resumption yet: closed through today, and said so', [openNow.closed, openNow.openClosure], [['2026-03-02', '2026-03-03'], { from: '2026-03-02', circular: 'DFM 03/2026' }]);
+const openThen = uaeCalendar({ circulars: [{ no: '03/2026', date: '2026-03-01', headline: 'Market Closure', text: OPEN }, { no: '05/2026', date: '2026-03-03', headline: 'Resumption of Trading', text: RESUME }], today: '2026-10-21' });
+eq('…and the resumption circular ends it the day before trading restarts', [openThen.closed, openThen.openClosure], [['2026-03-02', '2026-03-03'], null]);
 
 // ── THE FEED ─────────────────────────────────────────────────────────────────
 eq('public holidays only, not observances or public-sector days', parseIcs(ICS).map(r => [r.date, r.tentative]), [['2027-03-10', true], ['2027-12-02', false]]);
@@ -69,11 +88,10 @@ eq('a future date this wrote and the circulars no longer support is removed', mo
 eq('the same dates again: no change', mergeUae(file, cal, { today: '2026-10-21' }).changed, false);
 
 // ── WHEN TO LOOK ─────────────────────────────────────────────────────────────
-eq('never checked → check', checkDue({}, { today: '2026-10-21' }).due, true);
-eq('quiet month, checked 3 days ago → wait', checkDue({ _uae: { checkedAt: '2026-10-18T05:00:00Z' }, UAE: { tentative: [] } }, { today: '2026-10-21' }).due, false);
-eq('quiet month, checked 8 days ago → check', checkDue({ _uae: { checkedAt: '2026-10-13T05:00:00Z' }, UAE: { tentative: [] } }, { today: '2026-10-21' }).due, true);
-eq('a tentative date within three weeks → daily', checkDue({ _uae: { checkedAt: '2027-02-27T05:00:00Z' }, UAE: { tentative: ['2027-03-10'] } }, { today: '2027-02-28' }).due, true);
-eq('December → daily', checkDue({ _uae: { checkedAt: '2026-12-09T05:00:00Z' }, UAE: { tentative: [] } }, { today: '2026-12-10' }).due, true);
+eq('never checked → check', checkDue({}, { now: new Date('2026-10-21T05:00:00Z') }).due, true);
+eq('the evening run, twelve hours after the morning one → check', checkDue({ _uae: { checkedAt: '2026-10-21T05:00:00Z' } }, { now: new Date('2026-10-21T17:00:00Z') }).due, true);
+eq('a late schedule landing an hour after the last → skip', checkDue({ _uae: { checkedAt: '2026-10-21T05:00:00Z' } }, { now: new Date('2026-10-21T06:00:00Z') }).due, false);
+eq('an open closure is named in the reason', /awaiting resumption/.test(checkDue({ _uae: { checkedAt: '2026-03-02T05:00:00Z', openClosure: { from: '2026-03-02' } } }, { now: new Date('2026-03-02T17:00:00Z') }).why), true);
 
 // ── THE SESSION READS IT ─────────────────────────────────────────────────────
 eq('a confirmed closure is a holiday for a .AE name', marketState('XYZ.AE', new Date('2026-12-02T08:00:00Z')), 'holiday');

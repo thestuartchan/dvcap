@@ -5,8 +5,9 @@ Reads two public sources and writes their text, unparsed, for scripts/holidays-u
 (lib/uaeHolidays.js holds every rule):
 
   1. DFM's circulars — the list the exchange's own Circulars page loads (api2.dfm.ae, no login),
-     and the PDF of each holiday circular from the last ~15 months: the annual "Trading and
-     Settlement Holidays for the Calendar Year" list and each one-off "Trading Holiday due to".
+     and the PDF of each holiday, closure and resumption circular from the last ~15 months: the
+     annual "Trading and Settlement Holidays for the Calendar Year" list, each one-off "Trading
+     Holiday due to", and a regulator-ordered "Market Closure" / "Resumption of Trading".
   2. The UAE public-holiday calendar (Google's public ICS feed), which marks unconfirmed dates
      "(tentative)" — used only for a year DFM has not published yet.
 
@@ -44,7 +45,9 @@ def circulars():
     for c in rows:
         head = (c.get('Headline') or '').strip()
         date = (c.get('CircularDate') or '')[:10]
-        if 'holiday' not in head.lower() or date < since:
+        # Holidays, and the closures and resumptions the regulator orders (lib/uaeHolidays.js
+        # circularKind decides which are market-wide).
+        if not any(k in head.lower() for k in ('holiday', 'closure', 'closed', 'suspen', 'resum')) or date < since:
             continue
         res = [r.get('Url') for r in (c.get('Resources') or []) if (r.get('Url') or '').lower().split('?')[0].endswith('.pdf')]
         if not res:
