@@ -1,7 +1,7 @@
 // test/signalBoard.test.mjs — the Signal Board's state logic, clusters, lean and the trade-day call v2
 // (lib/signalBoard.js), and the feed's pure helpers (lib/signalBoardFeed.js). Synthetic series only.
 import { stateOf, flipDistance, THRESHOLDS, CLUSTERS, clusterOf, leanOf, whatFlips, buildSignalBoard, creditRows, ratesRows, oilRows,
-  dealerRows, tapeRows, asiaRows, narrativeRows, maRow, ratioSeries, realisedVol, downRunBefore, nextMonthlyOpex, sessionsBetween, nextSession,
+  dealerRows, tapeRows, softwareRow, asiaRows, narrativeRows, maRow, ratioSeries, realisedVol, downRunBefore, nextMonthlyOpex, sessionsBetween, nextSession,
   tradeDayCall, checkpointRead, tradeDayBlock, normCdf, zoneOf, TRADE_DAY_MODEL, BAND_STATS, CHECKPOINTS, priorR, snapshotRow, scoreRows, scorecard, KOSPI_TEST, cryptoRows, btc200Break, offHigh, BTC_TEST,
   narrativeState, narrativeFlip, narrativeMetrics, NARRATIVE_RULE, NARRATIVE_TEST,
   trendDayProb, TREND_MODEL, gammaView, conflictRules, tradeConflict, CONFLICT,
@@ -94,6 +94,13 @@ const ramp = (n, a, b) => Array.from({ length: n }, (_, i) => a + (b - a) * i / 
   { const alt = ser(Array.from({ length: 21 }, (_, i) => (i % 2 ? 101 : 100)));
     const want = Math.log(1.01) * Math.sqrt(20 / 19) * Math.sqrt(252) * 100;
     eq('realised vol: annualised close-to-close, in vol points; too short → null', [Math.abs(realisedVol(alt, 20) - want) < 1e-6, realisedVol(ser([1, 2]), 20)], [true, null]); }
+  { // Software vs semis: shown, never a vote; ORCL ÷ IGV rides along as a side reading.
+    const igv = ser(ramp(30, 100, 110)), smh = ser(flat(30, 500)), orcl = ser(ramp(30, 140, 126));
+    const sw = softwareRow({ igv, smh, orcl });
+    eq('IGV ÷ SMH up ~7% over 20 sessions: software leading, top-quartile state, no vote', [sw.id, sw.vote, sw.state, /software leading/.test(sw.text), sw.orcl_igv_20d < 0], ['igv_smh', false, 'off', true, true]);
+    eq('the row is in the Tape rows and never moves the Tape cluster', tapeRows({ rsp, qqq, spy: ser(flat(30, 600)), iwm: ser(flat(30, 200)), igv, smh }).find(r => r.id === 'igv_smh').vote, false);
+    eq('no IGV/SMH closes → no state, said why', [softwareRow({}).state, softwareRow({}).text], [null, 'no IGV/SMH closes']);
+  }
   eq('ratioSeries only on dates both have', ratioSeries([{ date: 'a', value: 2 }, { date: 'b', value: 4 }], [{ date: 'b', value: 2 }]), [{ date: 'b', value: 2 }]);
 }
 {

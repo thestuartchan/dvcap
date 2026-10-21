@@ -212,3 +212,11 @@ A board more than 4 calendar days older than the session being called raises not
 | SPY | 0.266 vs 0.257 | 0.188 vs 0.192 | 7% |
 
 P(trend) has no skill either way. The verdict is within the thresholds, so there is no proposal.
+
+## Software vs semis row (`igv_smh`, shown, not voted)
+
+IGV ÷ SMH over 20 sessions, with ORCL ÷ IGV as a side reading in the row text. Quartiles of the 20-session change, Yahoo adjusted closes 2012-06 → 2026-10 (n 3,598): p25 −3.57%, p75 +2.50%; the row reads "software leading" at or above +2.5% and "chips leading" at or below −3.6%.
+
+Why it doesn't vote: QQQ's next 20 sessions were up 68% after a top-quartile reading (n 896) and 64% after a bottom-quartile one (n 890), against 68% on all days, and the 2012–18 and 2019–26 halves point opposite ways. It is a rotation gauge (where money is moving inside tech), not a direction call. The row's on/off colouring follows the threshold rule (chips leading = on), nothing more.
+
+ORCL ÷ IGV separates the two readings of a rising IGV ÷ SMH: ORCL falling with the chips means AI build-out funding stress; ORCL rising with software means a broad software bid.
