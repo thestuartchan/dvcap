@@ -1,0 +1,66 @@
+# UAE (DFM / ADX) holidays, from DFM's own circulars (scripts/holidays-uae-fetch.py → .mjs).
+#
+# WHY DAILY. Eid, Arafat Day, the Hijri New Year and the Prophet's Birthday follow the moon; DFM
+# confirms each with a circular a few days before (5–14 in 2025–26). The job wakes every day and
+# asks lib/uaeHolidays.js checkDue whether to look: daily within three weeks of a tentative date
+# and through December–January (the annual calendar circular), otherwise once a week. A day that is
+# not due ends after one step. Manual runs always check.
+#
+# WHERE IT GOES. data/holidays.json (UAE, _uae), committed to main only when something changed;
+# the commit redeploys. The log prints counts and public exchange dates — nothing about the account.
+name: holidays uae
+
+on:
+  schedule:
+    - cron: '35 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: holidays-fetch
+  cancel-in-progress: false
+
+jobs:
+  uae:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Is a check due?
+        id: due
+        env:
+          FORCE: ${{ github.event_name == 'workflow_dispatch' }}
+        run: node scripts/holidays-uae.mjs --check data/holidays.json
+      - uses: actions/setup-python@v7
+        if: steps.due.outputs.due == 'true'
+        with:
+          python-version: '3.12'
+      - name: Read DFM's holiday circulars and the UAE public calendar
+        if: steps.due.outputs.due == 'true'
+        run: |
+          pip install --quiet pypdf==6.21.1
+          python scripts/holidays-uae-fetch.py "$RUNNER_TEMP/uae-sources.json"
+      - name: Merge into the holiday file
+        if: steps.due.outputs.due == 'true'
+        run: node scripts/holidays-uae.mjs "$RUNNER_TEMP/uae-sources.json" data/holidays.json
+      - name: Commit
+        if: steps.due.outputs.due == 'true'
+        run: |
+          if git diff --quiet -- data/holidays.json; then echo "no change to commit"; exit 0; fi
+          git config user.name "dvcap-bot"
+          git config user.email "dvcap-bot@users.noreply.github.com"
+          git add data/holidays.json
+          git commit -m "Holidays auto — UAE (DFM circulars) @ $(date -u +%F)"
+          for i in 1 2 3; do
+            if git push origin HEAD:main; then exit 0; fi
+            git fetch origin main && git rebase origin/main || exit 1
+            sleep $((i * 5))
+          done
+          echo "::error::could not push after three attempts"; exit 1

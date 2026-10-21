@@ -1,7 +1,7 @@
 // Dirham (AED) and the UAE exchanges (DFM, ADX) end to end: the quote symbol a statement row gets,
 // the session it trades in, the currency the sizer converts, the journal's dollar figure, the cash
 // book, and how the money prints. Tickers are made up (XYZ, ABC).
-import { quoteSymbolFor, listingCheck } from '../lib/listings.js';
+import { quoteSymbolFor, listingCheck, statementMark } from '../lib/listings.js';
 import { consoleSymbolOf, exchangeZone } from '../lib/fillAudit.js';
 import { USD_PER } from '../lib/dayTradeJournal.js';
 import { ccyOfSymbol } from '../lib/holdTypes.js';
@@ -27,6 +27,13 @@ eq('a bare dirham row is told its quote symbol', listingCheck({ symbol: 'XYZ' },
 eq('…and a row already on .AE is left alone', listingCheck({ symbol: 'XYZ.AE' }, { root: 'XYZ', listingExchange: 'DFM', currency: 'AED' }), null);
 eq('a dirham fill is named <root>.AE', consoleSymbolOf({ symbol: 'XYZ', currency: 'AED', assetCategory: 'STK' }), 'XYZ.AE');
 eq('a dirham fill dates in Dubai', exchangeZone('AED'), 'Asia/Dubai');
+
+// ── NO FEED PRICE: THE STATEMENT'S CLOSE ─────────────────────────────────────
+const note = { asOf: '2026-10-20', marks: { r1: { mark: 4.12, listing: 'ADX' }, r2: { mark: 0 } } };
+eq('an unpriced share row takes IBKR\'s close, dated', statementMark({ id: 'r1' }, note), { price: 4.12, asOf: '2026-10-20' });
+eq('…not an option row', statementMark({ id: 'r1' }, note, { derivative: true }), null);
+eq('…not a future', statementMark({ id: 'r1', margined: true }, note), null);
+eq('…not a zero or missing mark', [statementMark({ id: 'r2' }, note), statementMark({ id: 'r3' }, note), statementMark({ id: 'r1' }, null)], [null, null, null]);
 
 // ── THE SESSION ──────────────────────────────────────────────────────────────
 eq('.AE trades on the UAE session', exchangeFor('XYZ.AE'), 'UAE');

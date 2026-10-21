@@ -5956,6 +5956,7 @@ export default function App() {
     files: {
       holidaysThrough: Object.entries(HOLIDAYS).filter(([k]) => !k.startsWith("_")).flatMap(([, v]) => [...(v?.closed || []), ...(v?.half || [])]).sort().at(-1) ?? null,
       calendarEvents: Array.isArray(CALENDAR) ? CALENDAR : (CALENDAR?.events || []),
+      uae: HOLIDAYS.UAE ? { ...HOLIDAYS.UAE, checkedAt: HOLIDAYS._uae?.checkedAt ?? null, names: HOLIDAYS._uae?.names ?? {} } : null,
     },
   }), [manualStore, pbData, kofiaSaved, liveInd, effectiveRecessionSources, sbFeedTop]);
   const regimeProbFor = (id) => (derivedRegimes || fallbackRegimes)[

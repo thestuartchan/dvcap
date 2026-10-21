@@ -27,7 +27,7 @@ import { ASSETS } from "../lib/assets.js";
 import { derivePosition, applyRolls, splitIntoTrades, collapseFills, oversellSplit, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, archiveCurve } from "../lib/positions.js";
 import { sideOf, isShort, openSideFor, closeSideFor, geometryCheck, levelVocab, fillVerb, SIDES, SIDE_LABEL, DEFAULT_SIDE } from "../lib/side.js";
 import { fmtPrice } from "../lib/price.js";
-import { markGap } from "../lib/listings.js";
+import { markGap, statementMark } from "../lib/listings.js";
 import { archivePeriods, hiddenSummary, returnStats, splitReturns, archiveKindOf, archiveSorter, ARCHIVE_KINDS, ARCHIVE_SORTS, GRAINS } from "../lib/archive.js";
 import { isOptionTrade } from "../lib/tradecard.js";
 import { CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy, resolveRowCurrency } from "../lib/fxrates.js";
@@ -387,7 +387,7 @@ const {
   delFill, sizeOpen, setSizeOpen, justMoved, drafts, setDraft, clearDraft, chip, ccyChip, fitChip,
   kindCol, money, pnlCol,
   equityBase, baseCcy, fxRates, baseRisk, targetPct, numOrNull,
-  livePositions, sameDayMissing, flexMarks, listingFixes,
+  livePositions, sameDayMissing, flexMarks, listingFixes, statementMarkOf,
 } = ctx;
   const price = priceOf(r);
   const q = prices?.[quoteSym(r)];
@@ -636,6 +636,12 @@ const {
         ) : (
         <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }} title="Last price and today's move on the tape — not your return">
           <span style={{ fontSize: 14, fontWeight: 700 }}>{fmtPrice(price, { maxDp: priceMaxDp(r.symbol) })}</span>
+          {q?.price == null && statementMarkOf?.(r) && (
+            <span title="The quote feed has no price for this listing (Yahoo carries no ADX names). Valued at IBKR's close mark from the last statement."
+              style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.4, color: C.amber, background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 4, padding: "0 5px", whiteSpace: "nowrap" }}>
+              IBKR CLOSE{statementMarkOf(r).asOf ? ` ${statementMarkOf(r).asOf}` : ""}
+            </span>
+          )}
           <span style={{ fontSize: 11.5, fontWeight: 700, color: q?.changePercent == null ? C.muted : q.changePercent >= 0 ? C.green : C.red, whiteSpace: "nowrap" }}>
             {q?.changePercent == null ? "" : `${q.changePercent >= 0 ? "▲" : "▼"}${Math.abs(q.changePercent).toFixed(2)}%`}
           </span>
@@ -3328,7 +3334,14 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     const pinned = typeof r === "string" ? null : rateForRow(r);
     return convert(v, ccy, baseCcy, pinned != null ? { ...fxRates, [ccy]: pinned } : fxRates);
   };
-  const underlyingPriceOf = (r) => prices?.[quoteSym(r)]?.price ?? null;
+  // ── IBKR'S CLOSE, WHEN THE FEED HAS NOTHING (21 Oct) ──────────────────────
+  // Yahoo prices the Dubai (DFM) listings and none of the Abu Dhabi (ADX) ones, so an ADX share
+  // would sit unpriced: no value, no P&L, nothing in the book. The last IBKR statement carries a
+  // close mark for every line it holds (the Flex note's `marks`, by row). A share row the feed
+  // returns nothing for is valued at that mark, and the row says it is IBKR's close of that date —
+  // a day old at best, never shown as live. A row with a live price never uses it.
+  const statementMarkOf = (r) => statementMark(r, flexNote, { derivative: isDerivativeRow(r) });
+  const underlyingPriceOf = (r) => prices?.[quoteSym(r)]?.price ?? statementMarkOf(r)?.price ?? null;
 
   // ── sizing context ──
   const numOrNull = (v) => (v == null || v === "" || !Number.isFinite(+v)) ? null : +v;
@@ -3367,7 +3380,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   // passes through with its quote.
   const exposureRows = useMemo(
     () => baseRows.flatMap(r => exposureLines({ ...r, livePrice: isDerivativeRow(r) ? null : underlyingPriceOf(r) })),
-    [baseRows, prices]);   // eslint-disable-line
+    [baseRows, prices, flexNote]);   // eslint-disable-line
   // COMPUTED ONCE, USED IN BOTH — the tile reports the book, the sizer decides what may be added
   // to it, and two separate totals on one panel would let it refuse a trade against a number it
   // is not showing.
@@ -3424,7 +3437,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     // WATCHING → OPEN → CLOSED → ARCHIVED, from the fills and the close stamp (lib/lifecycle.js).
     const state = stateOf(r, { now: nowMs });
     return { ...r, pnl, sug, sizeMode: mode, stopLevel: stopLevel || null, opt, state };
-  }), [baseRows, prices, feedGreeks, feedSpots, equityBase, baseRisk, targetPct, baseCcy, mergedSizing, liveRegime?.id, consensusRegime?.id, creditDanger, contested, regimeDiverged, todayISO]);   // eslint-disable-line
+  }), [baseRows, prices, flexNote, feedGreeks, feedSpots, equityBase, baseRisk, targetPct, baseCcy, mergedSizing, liveRegime?.id, consensusRegime?.id, creditDanger, contested, regimeDiverged, todayISO]);   // eslint-disable-line
 
   const tabs     = useMemo(() => byState(derivedRows, { now: nowMs }), [derivedRows]);   // eslint-disable-line
   const setups   = tabs.WATCHING;
@@ -4271,7 +4284,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     sameDayMissing: flexNote?.sameDay?.missing || [],
     // The last statement's close mark per row, and rows it found quoted off the wrong listing
     // (lib/listings.js) — for the row's WRONG-PRICE chip.
-    flexMarks: flexNote?.marks || null,
+    flexMarks: flexNote?.marks || null, statementMarkOf,
     listingFixes: (flexNote?.needsYou || []).filter(n => n.quoteAs && n.id),
     // So a row can show the name the feed resolved its symbol to when the static map has none.
     atrFor,
