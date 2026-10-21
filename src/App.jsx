@@ -54,7 +54,7 @@ import { growthPulse, marketPulse, monthlyPulse, growthAxis } from "../lib/growt
 import { marketInflation, nowcastInflation, printedInflation, inflationAxis } from "../lib/inflationAxis.js";
 import { measuredAxes, axesLogRow } from "../lib/quadrant.js";
 import { handKeptLedger } from "../lib/ledger.js";
-import { handEntryPlan } from "../lib/handEntry.js";
+import { handEntryPlan, newerKofia } from "../lib/handEntry.js";
 import CALENDAR from "../data/calendar.json";
 import { FED_LANGUAGE_STATUS } from "../lib/fedLanguage.js";
 import { announced, RECESSION_SOURCES, recessionAsOfState, parseProbability, recessionSrcKey, mergeRecessionSources, CONSENSUS_VINTAGE, FALLBACK_REGIMES, regimeSnapshot, regimeLogRow, RECESSION_SOURCE_CADENCE, ANNOUNCED_PRINTS, LABOR_ANNOUNCED } from "../lib/regimeEngine.js";
@@ -1985,8 +1985,22 @@ function HandEntryRow({ r, isOpen, onToggle, renderEditor }) {
       </div>
       <div style={{ fontSize: 11, color: C.lbl, marginTop: 3, lineHeight: 1.45 }}>
         {r.editable ? r.rule : r.whyNot}
-        {r.source && <> · <a href={r.source.url} target="_blank" rel="noopener noreferrer" style={{ color: C.blue, fontWeight: 700 }}>{r.source.label} ↗</a></>}
+        {(r.sources || (r.source ? [r.source] : [])).map(s => <span key={s.url}> · <a href={s.url} target="_blank" rel="noopener noreferrer" style={{ color: C.blue, fontWeight: 700 }}>{s.label} ↗</a></span>)}
       </div>
+      {r.parts?.length > 1 && (
+        <div style={{ marginTop: 4, display: "grid", gap: 2 }}>
+          {r.parts.map(p => {
+            const pt = LEDGER_TONE[p.state] || LEDGER_TONE.undated;
+            return (
+              <div key={p.key} style={{ fontSize: 11.5, color: C.muted, display: "flex", gap: 6, alignItems: "baseline" }}>
+                <b style={{ color: pt.tok ? pt.tok.color : C.muted, minWidth: 52, fontSize: 10, letterSpacing: 0.4 }}>{p.state.toUpperCase()}</b>
+                <span style={{ color: C.mid }}>{p.label}</span>
+                <span>{p.asOf ? `last ${p.asOf}` : "never entered"}{p.days != null ? ` · ${p.days}d` : ""}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {isOpen && <div style={{ marginTop: 8 }}>{renderEditor(r.editor)}</div>}
     </div>
   );
@@ -4711,7 +4725,7 @@ function KoreaManualEntry({ kofia, gate2 = null, onSaved }) {
     try {
       const r = await fetch("/api/korea-save?fetch=1", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}", credentials: "include" });
       const j = await r.json().catch(() => ({}));
-      if (j.latest) setSavedLatest(j.latest);
+      if (j.latest) { setSavedLatest(j.latest); onSaved?.(j.latest); }
       if (j.lastFetch) setFetchedNow(j.lastFetch);
       if (!r.ok) setMsg({ ok: false, text: j.error || ("Fetch failed " + r.status) });
       else setMsg({ ok: j.ok, text: (j.changed ? "Fetched — new readings below. " : "Fetched — nothing new since the last read. ") + (j.ok ? "" : (j.report || []).filter(l => /FAILED/.test(l)).join(" · ")) });
@@ -4733,6 +4747,7 @@ function KoreaManualEntry({ kofia, gate2 = null, onSaved }) {
       if (!r.ok) setMsg({ ok: false, text: j.error || ("Save failed " + r.status) });
       else {
         if (j.latest) setSavedLatest(j.latest);   // show the saved values immediately — no refresh
+        onSaved?.(j.latest || null);              // …and hand them up, so the hub's age updates too
         setMsg({ ok: true, text: `Saved ${j.saved.join(", ")}${j.missing?.length ? " · kept prior: " + j.missing.join(", ") : ""}. Values updated below; committing in the background so the Pre-Reads pick it up too.` });
         setBlob(""); setU7709(""); setFNet(""); setINet(""); setRNet("");
       }
@@ -5393,7 +5408,7 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, errorBy = {}
 
           {/* Korea manual entry (KOFIA paste + 7709 units) — shown when Asia is active */}
           {regions.includes("asia") && byRegion.asia?.kofia &&
-            <KoreaManualEntry kofia={byRegion.asia.kofia} gate2={byRegion.asia.won?.gate2 ?? null} onSaved={onRefresh} />}
+            <KoreaManualEntry kofia={byRegion.asia.kofia} gate2={byRegion.asia.won?.gate2 ?? null} onSaved={() => onRefresh()} />}
 
           {/* Southbound Stock Connect (SMIC mainland flow) — same class as the Korea flow panel,
               shown alongside it when Asia is active. Self-fetches its own manual store. */}
@@ -5920,8 +5935,10 @@ export default function App() {
   // ?smic=1 answer, so the ledger can say the flow is automatic rather than "missing".
   const [sbFeedTop, setSbFeedTop] = useState(null);
   useEffect(() => { fetch("/api/indicators?smic=1").then(r => r.json()).then(j => setSbFeedTop(j?.southbound || null)).catch(() => {}); }, []);
+  // A Korea save's answer, held until the redeploy carries it into the Asia payload (newerKofia).
+  const [kofiaSaved, setKofiaSaved] = useState(null);
   const ledger = useMemo(() => handKeptLedger({
-    manual: manualStore || {}, kofia: pbData?.asia?.kofia?.latest || null,
+    manual: manualStore || {}, kofia: newerKofia(pbData?.asia?.kofia?.latest || null, kofiaSaved),
     consts: {
       consensusVintage: CONSENSUS_VINTAGE, recessionSources: effectiveRecessionSources, recessionCadence: RECESSION_SOURCE_CADENCE,
       fedLanguage: FED_LANGUAGE_STATUS, secYields: SEC_YIELDS, southboundFeed: sbFeedTop,
@@ -5937,7 +5954,7 @@ export default function App() {
       holidaysThrough: Object.entries(HOLIDAYS).filter(([k]) => !k.startsWith("_")).flatMap(([, v]) => [...(v?.closed || []), ...(v?.half || [])]).sort().at(-1) ?? null,
       calendarEvents: Array.isArray(CALENDAR) ? CALENDAR : (CALENDAR?.events || []),
     },
-  }), [manualStore, pbData, liveInd, effectiveRecessionSources, sbFeedTop]);
+  }), [manualStore, pbData, kofiaSaved, liveInd, effectiveRecessionSources, sbFeedTop]);
   const regimeProbFor = (id) => (derivedRegimes || fallbackRegimes)[
     { stag: "stagflation", ref: "reflationary", def: "deflationary", inf: "inflationary" }[id]
   ];
@@ -7245,7 +7262,7 @@ export default function App() {
               if (editor === "ism") return <IsmEntryPanel entry={ismEntry} onChange={(v) => { setIsmEntry(v); refreshManual(); }} />;
               if (editor === "usfr") return <UsfrSecYieldForm liveInd={liveInd} onSaved={refreshManual} />;
               if (editor === "korea") return pbData?.asia?.kofia
-                ? <KoreaManualEntry kofia={pbData.asia.kofia} gate2={pbData.asia.won?.gate2 ?? null} onSaved={() => fetchPlaybookRegion("asia")} />
+                ? <KoreaManualEntry kofia={pbData.asia.kofia} gate2={pbData.asia.won?.gate2 ?? null} onSaved={(latest) => { if (latest) setKofiaSaved(latest); fetchPlaybookRegion("asia"); }} />
                 : <div style={{ fontSize: 12, color: C.muted }}>Loading the Asia payload the Korea entry reads…</div>;
               if (editor === "fedPath") return <FedPathCard effr={liveInd?.fedPathFeed?.effr ?? liveInd?.currentFedFunds ?? null} feed={liveInd?.fedPathFeed ?? null} onSaved={refreshManual} />;
               if (editor === "southbound") return <SouthboundPanel onSaved={refreshManual} />;
