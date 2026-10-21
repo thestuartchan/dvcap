@@ -613,6 +613,17 @@ globalThis.fetch = realFetch;
   eq('with no book at all, the same once the window has passed', processInbox({ notes: [closeNote], trades: T16, today: '2026-10-21', holidays: US }).fate['950'], 'matched');
   eq('an open note never takes part of its legs', processInbox({ notes: [{ ...closeNote, kind: 'open' }], trades: T16, today: '2026-10-21', holidays: US }).fate['950'] === 'matched', false);
   eq('closeView leaves an open note alone', closeView({ ...closeNote, kind: 'open' }, b.rows).instrument.legs.length, 2);
+  // A CLOSE WRITTEN WITH THE POSITION'S SIDES (21 Oct): the legs named BUY / BUY, as held, for an
+  // order that sold them. Tried again with the sides flipped; flagged, and confirmed by hand.
+  const heldNote = { ...closeNote, id: 't-xyz-close-held', instrument: { ...closeNote.instrument, legs: closeNote.instrument.legs.map(l => ({ ...l, side: 'BUY' })) } };
+  const hm = processInbox({ notes: [heldNote], trades: T16, today: '2026-10-16', holidays: US, rows: b.rows, seen: out.seen });
+  const dh = hm.drafts.find(d => d.fill?.orderId === '950');
+  eq('a close note naming its legs as held (BUY) matches the order that sold them', [dh?.note?.id, hm.fate['950'], hm.counts.pending], ['t-xyz-close-held', 'matched', 0]);
+  eq('…its card says the sides were flipped', /matched with every side flipped/.test(expectationText(dh)?.text || ''), true);
+  eq('…never an exact match', exactMatch(dh).ok, false);
+  eq('…with no book, once the window has passed, the same', processInbox({ notes: [heldNote], trades: T16, today: '2026-10-21', holidays: US }).fate['950'], 'matched');
+  eq('a close written with the order\'s own sides is not flagged', d16.checks.some(c => c.mirrored), false);
+  eq('an open note is never flipped', processInbox({ notes: [{ ...heldNote, kind: 'open' }], trades: T16, today: '2026-10-16', holidays: US }).fate['950'] === 'matched', false);
   const up = upgradeDrafts(out.drafts, orderUnits(T), { asOf: '2026-10-14', fillOf });
   const upPair = up.drafts.find(d => d.paired);
   eq('tomorrow\'s statement takes over the pair and keeps its per-leg parts, at the statement\'s numbers', [up.changed, upPair.fill.provisional ?? false, upPair.fill.parts.map(x => [x.orderId, x.rawPrice]), upPair.paired.rowId], [2, false, [['901', 0.2], ['902', 2.9]], 'XYZ-st']);
