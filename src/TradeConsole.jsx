@@ -4624,12 +4624,13 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       <JournalDrafts journal={journal} rows={rows} onConfirm={confirmDraft} onDismiss={dismissDraft} onChoose={chooseDraft} onDrop={dropNote} onToAmend={noteToAmend}
         onConfirmMany={confirmMany} onSyncNow={kvOn ? syncNow : null} syncBusy={syncBusy} syncMsg={syncMsg} busy={journalBusy} msg={journalMsg} />
 
-      {/* ── ONE-TIME CARRY-OVER ── the old trade sheet's fills, before it is retired. Gone once marked done. */}
-      <FillAudit rows={rows} sheet={settings.brokerSheet || ""} setSheet={(v) => { setSettings(s => ({ ...s, brokerSheet: v })); touch(); }}
+      {/* ── ONE-TIME CARRY-OVER ── the old trade sheet's fills, before it is retired. Gone entirely once
+          marked done (21 Oct: the rollback strip it left behind is not needed; snapshots stay in the store). */}
+      {!settings.sheetReconciledAt && <FillAudit rows={rows} sheet={settings.brokerSheet || ""} setSheet={(v) => { setSettings(s => ({ ...s, brokerSheet: v })); touch(); }}
         onAddFill={addBrokerFill} onAddRow={addBrokerRow}
         snapshots={snapshots} onSnapshot={takeSnapshot} onRestore={restoreSnapshot} onUndo={undoCarry}
         retired={!!settings.sheetReconciledAt}
-        onRetire={() => { setSettings(s => ({ ...s, brokerSheet: null, sheetReconciledAt: new Date().toISOString() })); touch(); }} />
+        onRetire={() => { setSettings(s => ({ ...s, brokerSheet: null, sheetReconciledAt: new Date().toISOString() })); touch(); }} />}
 
       {/* ── CURRENT PORTFOLIO ──
           Same visual idiom as the Smart Money tab (donut for weight, horizontal bars for the

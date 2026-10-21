@@ -600,6 +600,16 @@ globalThis.fetch = realFetch;
     "no XYZ orders in the statement yet — the fill may not be in IBKR's report until the day after it trades");
   eq('a note dated today, on Sync now, keeps the ordinary wording', explainWaiting({ ...closeNote, trade_date: '2026-10-20' }, [], { sameDay: '2026-10-20' }),
     "no XYZ orders in the statement yet — the fill may not be in IBKR's report until the day after it trades");
+  // The book does not say the puts are gone (still a straddle row, or no row at all): inside the note's
+  // window it waits for the other leg; once the window has passed, the calls-only order is the close.
+  const later = processInbox({ notes: [closeNote], trades: T16, today: '2026-10-21', holidays: US, rows: [STRADDLE], seen: out.seen });
+  const dl = later.drafts.find(d => d.fill?.orderId === '950');
+  eq('after the window, a close whose order carried only some legs matches that order', [dl?.source, dl?.note?.id, later.fate['950'], later.counts.pending], ['note', 't-xyz-close', 'matched', 0]);
+  eq('…and says which legs were not in it, without comparing price', expectationText(dl).text,
+    "IBKR sold 3 @ 0.05 — the note named 2 legs; 40P 2026-11-20 was not in this order (closed in an earlier one, or still open — check the book), so this closes the rest (the note's price was for all 2 legs, not compared)");
+  eq('…never an exact match', exactMatch(dl).ok, false);
+  eq('with no book at all, the same once the window has passed', processInbox({ notes: [closeNote], trades: T16, today: '2026-10-21', holidays: US }).fate['950'], 'matched');
+  eq('an open note never takes part of its legs', processInbox({ notes: [{ ...closeNote, kind: 'open' }], trades: T16, today: '2026-10-21', holidays: US }).fate['950'] === 'matched', false);
   eq('closeView leaves an open note alone', closeView({ ...closeNote, kind: 'open' }, b.rows).instrument.legs.length, 2);
   const up = upgradeDrafts(out.drafts, orderUnits(T), { asOf: '2026-10-14', fillOf });
   const upPair = up.drafts.find(d => d.paired);
