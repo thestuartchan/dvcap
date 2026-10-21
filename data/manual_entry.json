@@ -556,11 +556,10 @@
   },
   "secYields": {
     "USFR": {
-      "value": 3.75,
-      "asOf": "2026-09-24",
-      "enteredAt": "2026-09-27T16:52:53.775Z",
-      "dtb3AtAsOf": 3.88,
-      "dtb3Basis": "30-day average of DTB3 ending on asOf (FRED, 21 obs 2026-08-26..09-24)"
+      "value": 3.98,
+      "asOf": "2026-10-21",
+      "enteredAt": "2026-10-21T06:47:43.999Z",
+      "dtb3AtAsOf": 4.1
     }
   },
   "ism": {
