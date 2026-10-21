@@ -28,6 +28,7 @@ import { derivePosition, applyRolls, splitIntoTrades, collapseFills, oversellSpl
 import { sideOf, isShort, openSideFor, closeSideFor, geometryCheck, levelVocab, fillVerb, SIDES, SIDE_LABEL, DEFAULT_SIDE } from "../lib/side.js";
 import { fmtPrice } from "../lib/price.js";
 import { markGap, statementMark } from "../lib/listings.js";
+import { currentStop, stopChange, setInitialStop, stopStory, entered } from "../lib/stops.js";
 import { archivePeriods, hiddenSummary, returnStats, splitReturns, archiveKindOf, archiveSorter, ARCHIVE_KINDS, ARCHIVE_SORTS, GRAINS } from "../lib/archive.js";
 import { isOptionTrade } from "../lib/tradecard.js";
 import { CURRENCY_CODES, fxSymbolsFor, ratesFrom, convert, fxRisk, fmtCcy, resolveRowCurrency } from "../lib/fxrates.js";
@@ -383,7 +384,7 @@ const echoesDate = (label, iso) => {
 
 const PositionRow = ({ r, mode, ctx, reorder = false, prevId = null, nextId = null, idx = 0, dragIdx = -1 }) => {
 const {
-  prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel,
+  prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel, updInitialStop,
   delFill, sizeOpen, setSizeOpen, justMoved, drafts, setDraft, clearDraft, chip, ccyChip, fitChip,
   kindCol, money, pnlCol,
   equityBase, baseCcy, fxRates, baseRisk, targetPct, numOrNull,
@@ -985,6 +986,19 @@ const {
                 </div>
               );
             })}
+            {/* ── THE STOP R IS MEASURED FROM (lib/stops.js) ── once the trade holds a fill. The
+                stop above can be trailed freely; R keeps the stop the trade was entered with, and
+                the moves are listed. Typed here, it is a reconstruction and says so on the card. */}
+            {entered(r) && (currentStop(r) || r.initialStop || (r.stopHistory || []).length > 0 || d.status === "closed") && (
+              <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap", margin: "2px 0 7px", fontSize: 11.5, color: C.muted }}>
+                <span style={{ fontWeight: 800, color: C.lbl, letterSpacing: 0.4, textTransform: "uppercase", fontSize: 10.5 }}>Initial stop (for R)</span>
+                <NumCommit dk={`is:${r.id}`} drafts={drafts} setDraft={setDraft} clearDraft={clearDraft} value={r.initialStop?.at ?? null}
+                  placeholder={currentStop(r)?.at != null ? String(currentStop(r).at) : "price"} width={88}
+                  onCommit={v => updInitialStop(r.id, v)} />
+                <span>{stopStory(r) || "No stop recorded — no R until one is set."}
+                  {!r.initialStop && currentStop(r) && " Moving the stop keeps this one as the initial stop."}</span>
+              </div>
+            )}
             {/* ── THE STOP THE VENUE ENFORCES ─────────────────────────────────────────────────
                 At up to 40x the exchange closes the position before any stop of yours is reached.
                 The risk model above assumes the stop is the binding constraint, so when the
@@ -3732,13 +3746,27 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     upd(id, { levels: [...(r.levels || []), { id: Math.random().toString(36).slice(2, 8), kind, at: null, to: null, note: "",
       ...(closed ? { backfilled: new Date().toISOString().slice(0, 10) } : {}) }] });
   };
+  // ── THE STOP'S HISTORY (lib/stops.js) ── once a row holds a fill, any change to the stop in
+  // force — a new price, deleting it, turning it into another kind — records the stop the trade was
+  // entered with (the first time) and logs the move, so R keeps measuring the risk actually taken.
+  const stopPatch = (r, levels) => {
+    const before = currentStop(r), after = currentStop({ levels });
+    return stopChange(r, before?.at ?? null, after?.at ?? null, { today: new Date().toISOString().slice(0, 10), on: before?.on || null });
+  };
   const updLevel = (id, lid, patch) => {
     const r = rows.find(x => x.id === id); if (!r) return;
-    upd(id, { levels: (r.levels || []).map(l => l.id === lid ? { ...l, ...patch } : l) });
+    const levels = (r.levels || []).map(l => l.id === lid ? { ...l, ...patch } : l);
+    upd(id, { levels, ...stopPatch(r, levels) });
   };
   const delLevel = (id, lid) => {
     const r = rows.find(x => x.id === id); if (!r) return;
-    upd(id, { levels: (r.levels || []).filter(l => l.id !== lid) });
+    const levels = (r.levels || []).filter(l => l.id !== lid);
+    upd(id, { levels, ...stopPatch(r, levels) });
+  };
+  // Typed by hand: a trade whose entry stop was never recorded (marked reconstructed).
+  const updInitialStop = (id, at) => {
+    const r = rows.find(x => x.id === id); if (!r) return;
+    upd(id, setInitialStop(r, at, { today: new Date().toISOString().slice(0, 10), on: currentStop(r)?.on || null }));
   };
   // One entry point for every "record what I did" action. "stopped" is a SELL of the whole
   // position prefilled at the stop price — it is the most common exit and had no obvious path.
@@ -4277,7 +4305,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   }, [fillFor, rows, derivedRows, atrBySym, atrFetch, equityBase, fxRates, baseCcy, coverage, prices]);
 
   const ctx = {
-    prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel,
+    prices, priceOf, liveRegime, expanded, setExpanded, upd, del, splitRow, collapseRow, addLevel, updLevel, delLevel, updInitialStop,
     delFill, draftFill, fillFor, setFillFor, saveFill, declineFill, archiveRow, restoreRow, sizeOpen, setSizeOpen, justMoved: moved?.id ?? null, drafts, setDraft, clearDraft, nInput, chip, ccyChip, fitChip, kindCol, money, pnlCol,
     equityBase, baseCcy, fxRates, regimeCtx, mergedSizing, baseRisk, targetPct, numOrNull,
     // Same-day fills the last statement did not contain, flagged on their fill (lib/sameDayFills.js).

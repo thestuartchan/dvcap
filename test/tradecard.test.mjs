@@ -484,7 +484,7 @@ eq('sorted by exit date', order[0].includes('CLOSED_LAST'), true);
   // is the case the old footer (only counting trades WITHOUT a stop) would have said nothing about.
   const card = buildClosedCard([derive(row([{ kind: 'stop', at: 37.50, backfilled: '2026-09-11' }]))],
     { today: '2026-09-11' });
-  eq('the footer says what † means', /† R from a stop recorded after the trade closed/.test(card.embeds[0].footer?.text || ''), true);
+  eq('the footer says what † means', /† R from a stop reconstructed after the trade was entered/.test(card.embeds[0].footer?.text || ''), true);
   // And both absences can be named at once — a card naming only one implies the rest are solid.
   const mixed = buildClosedCard([
     derive(row([{ kind: 'stop', at: 37.50, backfilled: '2026-09-11' }])),
