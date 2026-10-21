@@ -546,7 +546,7 @@ const INCOME_PLAYS = [
       {t:"NNN",  name:"NNN REIT",        yield:"5.7%", note:"35yr dividend increases. 3,500+ retail properties."},
       {t:"WPC",  name:"W.P. Carey",      yield:"5.9%", note:"Industrial + retail + office. International exposure."},
       {t:"STAG", name:"STAG Industrial", yield:"4.3%", note:"Industrial/logistics. Monthly dividend."},
-      {t:"EMAAR.AE", name:"Emaar Properties (DFM)", yield:"7.0%", note:"~7% dividend yield. Dominant Dubai developer. Tied to UAE premium property demand. Zero UAE tax. Price: check DFM directly.", link:"https://www.dfm.ae"},
+      {t:"EMAAR.AE", name:"Emaar Properties (DFM)", yield:"7.0%", note:"~7% dividend yield. Dominant Dubai developer. Tied to UAE premium property demand. Zero UAE tax. Priced live as EMAAR.AE (Yahoo, DFM).", link:"https://www.dfm.ae"},
     ],
   },
   {
@@ -562,7 +562,7 @@ const INCOME_PLAYS = [
       {t:"SCHD", name:"Schwab US Dividend Equity ETF",  yield:"3.8%", note:"Best dividend growth ETF. Quality-screened."},
       {t:"VIG",  name:"Vanguard Dividend Appreciation", yield:"1.8%", note:"Dividend growth focus. Lower yield, higher quality."},
       {t:"FTS",  name:"Fortis Inc (TSX/NYSE)",          yield:"3.3%", note:"Utility · 52 consecutive dividend increases. ~3.3% yield. Regulated utility. 15% Canadian withholding tax."},
-      {t:"DEWA.AE", name:"DEWA (DFM)",                  yield:"4.5%", note:"Utility · Dubai electricity/water monopoly. ~4-5% yield. Regime-agnostic defensive income. Zero UAE tax. Check DFM for price.", link:"https://www.dfm.ae"},
+      {t:"DEWA.AE", name:"DEWA (DFM)",                  yield:"4.5%", note:"Utility · Dubai electricity/water monopoly. ~4-5% yield. Regime-agnostic defensive income. Zero UAE tax. Priced live as DEWA.AE (Yahoo, DFM).", link:"https://www.dfm.ae"},
       {t:"0005.HK", name:"HSBC Holdings (HKEX)",        yield:"6.5%", note:"Financials · ~6-7% yield. Global bank, Asia-focused. Consistent dividends. Zero HK withholding tax.", link:"https://www.hkex.com.hk"},
       {t:"FAB.AE", name:"First Abu Dhabi Bank (ADX)",   yield:"5.5%", note:"Financials · UAE's largest bank. ~5-6% yield. USD-pegged income. Zero UAE tax. Check ADX for price.", link:"https://www.adx.ae"},
       {t:"1299.HK", name:"AIA Group (HKEX)",            yield:"2.0%", note:"Financials · Pan-Asian life insurer. ~2% yield but strong dividend growth. Growing Asian middle class tailwind. Zero HK withholding tax.", link:"https://www.hkex.com.hk"},
@@ -2897,7 +2897,9 @@ function ActionBadge({ action }) {
   const [fg, bg, lbl] = M[action] || [P.gray500, C.inset, action];
   return <span style={{ background: bg, color: fg, border: "1px solid " + alpha(fg, 0x33), borderRadius: 4, padding: "1px 6px", fontSize: 11, fontWeight: 700 }}>{lbl}</span>;
 }
-// Exchange deep-links for foreign names Yahoo doesn't cover (manual price entry).
+// Exchange deep-links for UAE names, for the manual price entry. Yahoo prices the DFM names
+// (DEWA, EMAAR) but no ADX name (checked 21 Oct 2026: FAB, ADNOCGAS, ADNOCDIST, EAND, ALDAR, ADIB),
+// so the ADX ones need the hand-entered price.
 const EXCHANGE_LINKS = {
   "DEWA.AE":     "https://www.dfm.ae/the-exchange/market-information/company/DEWA/trading",
   "ADNOCGAS.AE": "https://www.adx.ae/English/Pages/SecurityDetails.aspx?Symbol=ADNOCGAS",
@@ -4959,6 +4961,7 @@ function pbGeo(sym) {
   if (sym.endsWith(".TW")) return "TW";
   if (sym.endsWith(".T")) return "JP";
   if (/\.(AS|PA|DE|L)$/.test(sym)) return "EU";
+  if (sym.endsWith(".AE")) return "AE";
   return "US";
 }
 

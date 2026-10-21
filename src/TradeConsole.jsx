@@ -1849,7 +1849,7 @@ function PositionSizer({ book = null, nlv = null, nlvAsOf = null, calendar = nul
     // fallback, and neither being present reads as "not checked", never as "none".
     catalysts: cat?.ok && Array.isArray(cat.macro) ? cat.macro : calendar, indicative: !!greek?.indicative, asOf: greek?.asOf ?? null,
     entered: Number(qty) > 0 ? Number(qty) : null,
-    hold: holdArg,
+    hold: holdArg, fx,
     // The factor: typed if typed, else the table's, else 1. A missing ETF ATR falls back to the
     // underlying's × |factor| and is labelled derived. The bucket follows the hold intent.
     ...(kind === "stock" ? (() => {
@@ -1859,14 +1859,15 @@ function PositionSizer({ book = null, nlv = null, nlvAsOf = null, calendar = nul
                bucket: holdBeyond ? "position" : null, holdBeyond,
                positionBookUsd: book?.buckets?.positionUsd ?? null, swingUsedUsd: book?.buckets?.swingUsd ?? null };
     })() : {}),
-  }), [ready, kind, right, root, expiry, strike, px, pxEff, greek, nlv, book, calendar, qty, cat, deltaEff, markEff, deltaSource, held, exempt, futRes, levIn, under, holdBeyond, holdArg]);
+  }), [ready, kind, right, root, expiry, strike, px, pxEff, greek, nlv, book, calendar, qty, cat, deltaEff, markEff, deltaSource, held, exempt, futRes, levIn, under, holdBeyond, holdArg, fx]);
 
   // ── EXPOSURE, CORRELATION-AWARE (lib/holdTypes.js) ──────────────────────────
   // The book's exposure per UNDERLYING (a leveraged ETF summed under what it tracks, at ρ 1.0),
   // with this trade added at the size the panel is reporting — the entered one if typed. ρ is
   // daily returns over 120 sessions, kept in this browser and recomputed weekly.
   const candKey = kind === "future" ? (fut?.parent || root) : exposureRootOf(root);
-  const candUsd = result?.ok ? Math.abs((result.entered != null ? result.enteredDelta : result.deltaAdded) || 0) * (kind === "future" ? 1 : fx) : 0;
+  // The sizer's delta is in dollars already (lib/sizer.js `fx`), for every currency.
+  const candUsd = result?.ok ? Math.abs((result.entered != null ? result.enteredDelta : result.deltaAdded) || 0) : 0;
   const exposures = useMemo(() => {
     if (!result?.ok || !candKey) return null;
     const m = {};
@@ -2741,6 +2742,9 @@ function ExposureTile({ book, err, nlvAsOf = null, children = null }) {
           </summary>
           <div style={{ display: "grid", gap: 2, marginTop: 4, paddingLeft: 12 }}>
             <div>USD cash {book.cashEquivalents.usdCash == null ? <i>— {book.cashEquivalents.usdCashNote}</i> : money(book.cashEquivalents.usdCash)}</div>
+            {(book.cashEquivalents.otherCash || []).map(c => (
+              <div key={c.currency}>{c.currency} cash {fmtCcy(c.amount, c.currency)} {c.usd == null ? <i>— no {c.currency} rate yet, left out of the total</i> : <span style={{ color: C.lbl }}>≈ {money(c.usd)}</span>}</div>
+            ))}
             {book.cashEquivalents.lines.map(l => (
               <div key={l.symbol}>{l.kind === "bill" ? `T-bill ${l.symbol}${l.expiry ? ` (matures ${l.expiry})` : ""}` : l.symbol} {money(l.value)}
                 <span style={{ color: C.lbl }}> · {l.source === "statement" ? "IBKR statement, at market" : "console row"}</span></div>
