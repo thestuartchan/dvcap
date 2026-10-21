@@ -324,7 +324,8 @@ const TODAY = '2026-10-01';
   eq('legs filled an hour apart are not paired', assembledSpreads(n, orderUnits(trades(legs('100000', '110500')))).length, 0);
   // The 30 Sep case: legs first offered as unjournaled, the note matched on a later run.
   const first = processInbox({ notes: [], trades: apart, today: TODAY, holidays: US });
-  eq('before the note, two unjournaled legs', first.counts.unjournaled, 2);
+  // Same minute, different contracts: one combo before any note arrives (assembleCombos, 21 Oct).
+  eq('before the note, the two legs are one unjournaled combo', [first.counts.unjournaled, first.drafts.map(x => x.fill.orderId)], [1, ['910+911']]);
   const later = processInbox({ notes: [n], trades: apart, today: TODAY, holidays: US, seen: first.seen, drafts: first.drafts });
   eq('the note then claims both and withdraws their unjournaled drafts', [later.drafts.map(x => x.id).sort(), later.counts.drafted], [['d-910+911'], 1]);
   // Confirming it against the row the position sync already added adopts that fill.
@@ -545,7 +546,8 @@ globalThis.fetch = realFetch;
   eq('fate: the paired orders say so', [out.fate['901'], out.fate['902'], out.fate['903']], ['paired', 'paired', 'unjournaled']);
   const again = processInbox({ trades: T, today: '2026-10-14', holidays: US, rows: [STRADDLE], provisional: true, drafts: out.drafts, seen: out.seen });
   eq('a second run changes nothing', again.drafts.map(d => d.id).sort(), out.drafts.map(d => d.id).sort());
-  eq('no rows given: the three single-leg cards, as before', processInbox({ trades: T, today: '2026-10-14', holidays: US }).drafts.length, 3);
+  // With no row to close, the call and put sold in the same minute are still one combo (assembleCombos).
+  eq('no rows given: the pair sold together is one card, the put alone another', processInbox({ trades: T, today: '2026-10-14', holidays: US }).drafts.map(d => d.fill.orderId).sort(), ['901+902', '903']);
   eq('legTargets: a sale of the put reduces the straddle\'s put leg; a purchase would add to it', [legTargets(leg.fill, [STRADDLE]).map(t => [t.rowId, t.leg]), legTargets({ ...leg.fill, side: 'BUY' }, [STRADDLE]).length], [[['XYZ-st', 1]], 0]);
 
   // Confirmed in order: the pair, then the put alone.

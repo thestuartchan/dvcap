@@ -157,6 +157,12 @@ function DraftCard({ d, rows, onConfirm, onDismiss, onChoose, busy }) {
           ({(d.fill.parts || []).map(p => p.orderId).join(" + ")}); they were sold together, so confirming records one sale on that trade.
         </div>
       )}
+      {d.assembled && (
+        <div style={{ fontSize: 12, color: C.mid, lineHeight: 1.45 }}>
+          One combo: IBKR reported its {d.assembled.orders} legs as separate orders ({(d.fill.parts || []).map(p => p.orderId).join(" + ")}), filled within a minute of each other.
+          Confirming records one {d.assembled.orders === 2 ? "two" : d.assembled.orders}-leg trade.
+        </div>
+      )}
       {!d.paired && d.legOut?.ambiguous && (
         <div style={{ fontSize: 12, color: C.amber, fontWeight: 700 }}>
           This leg belongs to {d.legOut.ambiguous.length} open trades ({d.legOut.ambiguous.map(x => x.rowId).join(", ")}) — nothing will be split.
