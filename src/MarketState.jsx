@@ -9,7 +9,7 @@
 //
 // Pure rendering: App fetches and computes, these draw. Nothing here reads private data.
 import { dubaiEtStamp } from "../lib/timeFmt.js";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { C, alpha } from "./theme.js";
 import { Card, SLabel, StaleChip } from "./ui.jsx";
 import { REGIME_PALETTE } from "../lib/regimes.js";
@@ -707,6 +707,38 @@ const XC_LABEL = {
   breadth: "RSP / SPY", auctions: "Treasury auctions", positioning: "CFTC COT", gamma_independent: "DIX / GEX (SqueezeMetrics)",
   sentiment_aaii: "AAII sentiment", put_call: "Put/call (Cboe)",
 };
+// ── PRE-OPEN DISPATCH ── whether the 12:42 UTC cron got the signal board and the gamma recompute
+// started on GitHub today (lib/preOpenDispatch.js dispatchHealth), with a retry before 09:20 New York.
+const PREOPEN_TONE = { ok: TONE.good, failed: TONE.bad, missed: TONE.bad, waiting: TONE.info, idle: TONE.info };
+export function PreOpenHealth() {
+  const [st, setSt] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const load = (opts) => fetch(`/api/preread?preopen=${opts ? "retry" : "status"}`, { credentials: "include", ...(opts || {}) })
+    .then(r => r.json()).then(j => setSt(j?.ok ? j : { error: j?.error || "not loaded" }))
+    .catch(e => setSt({ error: String(e?.message || e) }));
+  useEffect(() => { load(); }, []);
+  const h = st?.health;
+  const retry = () => { setBusy(true); load({ method: "POST" }).finally(() => setBusy(false)); };
+  return (
+    <Card style={{ display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+        <SLabel>Pre-open GitHub jobs</SLabel>
+        {h && <Chip v={h.status} tone={PREOPEN_TONE[h.status] || TONE.info} />}
+      </div>
+      <div style={{ fontSize: 12.5, color: C.text, lineHeight: 1.5, overflowWrap: "anywhere" }}>
+        {st?.error ? `not loaded — ${st.error}` : h ? h.line : "loading…"}
+        {h?.last?.at && <span style={{ color: C.muted }}> · last try {fmtWhen(h.last.at)}{h.last.by === "retry" ? " (by hand)" : ""}</span>}
+      </div>
+      {h?.canRetry && h.status !== "ok" && (
+        <div><button type="button" onClick={retry} disabled={busy}
+          style={{ font: "inherit", fontSize: 12, padding: "4px 10px", borderRadius: 6, border: "1px solid " + C.bdr, background: C.inset, color: C.text, cursor: busy ? "default" : "pointer" }}>
+          {busy ? "Dispatching…" : "Retry now"}</button></div>
+      )}
+      <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5 }}>The signal board snapshot and the settled-OI gamma recompute, started from the US pre-read cron because GitHub runs their own schedules hours late. A retry dispatches only the jobs GitHub has not yet accepted today, and only before 09:20 New York.</div>
+    </Card>
+  );
+}
+
 export function CrossCheckHealth({ xc }) {
   if (!xc) return null;
   const rows = Object.entries(xc.blocks || {});
