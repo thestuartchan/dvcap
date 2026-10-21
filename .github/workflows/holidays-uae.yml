@@ -1,10 +1,12 @@
 # UAE (DFM / ADX) holidays, from DFM's own circulars (scripts/holidays-uae-fetch.py → .mjs).
 #
-# WHY DAILY. Eid, Arafat Day, the Hijri New Year and the Prophet's Birthday follow the moon; DFM
-# confirms each with a circular a few days before (5–14 in 2025–26). The job wakes every day and
-# asks lib/uaeHolidays.js checkDue whether to look: daily within three weeks of a tentative date
-# and through December–January (the annual calendar circular), otherwise once a week. A day that is
-# not due ends after one step. Manual runs always check.
+# WHY TWICE A DAY. Eid, Arafat Day, the Hijri New Year and the Prophet's Birthday follow the moon;
+# DFM confirms each 5–14 days ahead. A closure the regulator orders comes at a day's notice — DFM's
+# "Market Closure" 03/2026 was issued Sunday 1 March for Monday 2 March — and its "Resumption of
+# Trading" when it ends. So the job looks every morning (04:35 UTC, before the 10:00 Dubai open)
+# and every evening (16:35 UTC, after announcements made past the close). GitHub runs schedules
+# hours late at times; either run landing before the next open is enough. checkDue skips a run
+# within ten hours of the last. Manual runs always check.
 #
 # WHERE IT GOES. data/holidays.json (UAE, _uae), committed to main only when something changed;
 # the commit redeploys. The log prints counts and public exchange dates — nothing about the account.
@@ -13,6 +15,7 @@ name: holidays uae
 on:
   schedule:
     - cron: '35 4 * * *'
+    - cron: '35 16 * * *'
   workflow_dispatch:
 
 permissions:

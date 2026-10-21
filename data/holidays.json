@@ -246,6 +246,8 @@
       "2025-12-01",
       "2025-12-02",
       "2026-01-01",
+      "2026-03-02",
+      "2026-03-03",
       "2026-03-19",
       "2026-03-20",
       "2026-05-26",
@@ -270,17 +272,20 @@
     ]
   },
   "_uae": {
-    "source": "DFM circulars (annual calendar + one-off holiday circulars); UAE public calendar for years DFM has not published",
-    "checkedAt": "2026-10-21T09:24:28.017Z",
+    "source": "DFM circulars (annual calendar, holiday, closure and resumption circulars); UAE public calendar for years DFM has not published",
+    "checkedAt": "2026-10-21T10:55:22.815Z",
     "basis": {
       "2026": "dfm-annual",
       "2027": "feed"
     },
+    "openClosure": null,
     "managed": [
       "2025-09-05",
       "2025-12-01",
       "2025-12-02",
       "2026-01-01",
+      "2026-03-02",
+      "2026-03-03",
       "2026-03-19",
       "2026-03-20",
       "2026-05-26",
@@ -297,6 +302,8 @@
       "2025-12-01": "United Arab Emirates 54th National Day Holiday · DFM 11/2025",
       "2025-12-02": "United Arab Emirates 54th National Day Holiday · DFM 11/2025",
       "2026-01-01": "NEW YEAR'S DAY · DFM 12/2025",
+      "2026-03-02": "Market Closure · DFM 03/2026",
+      "2026-03-03": "Market Closure · DFM 03/2026",
       "2026-03-19": "Eid Al Fitr 2026 · DFM 06/2026",
       "2026-03-20": "Eid Al Fitr 2026 · DFM 06/2026",
       "2026-05-26": "Eid Al Adha 2026 · DFM 08/2026",

@@ -14,7 +14,7 @@ const today = new Date().toISOString().slice(0, 10);
 if (process.argv.includes('--check')) {
   const file = JSON.parse(readFileSync(args[0] || 'data/holidays.json', 'utf8'));
   const force = process.env.FORCE === 'true';
-  const c = checkDue(file, { today });
+  const c = checkDue(file, { now: new Date() });
   const due = force || c.due;
   console.log(`UAE holidays: ${due ? 'checking' : 'not due'} — ${force ? 'run by hand' : c.why}`);
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `due=${due}\n`);
