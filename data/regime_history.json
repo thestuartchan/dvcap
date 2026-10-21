@@ -4586,24 +4586,34 @@
       "reflationary_p": 17,
       "deflationary_p": 12,
       "inflationary_p": 5,
-      "hawkish_repricing": null,
+      "hawkish_repricing": "REFLATIONARY_GROWTH",
       "live_regime": "stag",
-      "view_regime": null,
-      "pinned": null,
-      "hyg_chg": null,
-      "hyg_qqq_divergence": null,
+      "view_regime": "stag",
+      "pinned": true,
+      "hyg_chg": 0.01,
+      "hyg_qqq_divergence": -0.11,
       "inputs": {
         "weightedRecessionProb": 13.5,
         "cpi": 3.71725,
         "kalshi2027": 21,
-        "tape": null,
-        "ladderSpread": null,
+        "tape": {
+          "gold": "down",
+          "tlt": "up",
+          "xlu": "up",
+          "xlp": "up",
+          "spy": "up",
+          "qqq": "up",
+          "iwm": "up",
+          "btc": "up",
+          "breakevenBp": 0
+        },
+        "ladderSpread": 0.25,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.29,
-        "tenY": 5.15,
-        "twoY": 4.77,
-        "consensusAlive": 0.997,
+        "oas": 3.31,
+        "tenY": 5.09,
+        "twoY": 4.74,
+        "consensusAlive": 0.995,
         "regimeVintage": "fresh"
       },
       "axes": {
@@ -4611,7 +4621,7 @@
           "state": "turning-down",
           "lean": 1,
           "market": {
-            "verdict": "CONTRACTING",
+            "verdict": "SOFTENING",
             "lean": -1,
             "usable": 5,
             "of": 5
@@ -4625,7 +4635,7 @@
           "monthly": {
             "verdict": "EXPANDING",
             "lean": 1,
-            "usable": 4,
+            "usable": 3,
             "of": 4
           }
         },
@@ -4658,19 +4668,19 @@
         "regime": {
           "id": "inf",
           "probs": {
-            "ref": 26,
-            "inf": 44,
-            "stag": 19,
-            "def": 11
+            "ref": 28,
+            "inf": 48,
+            "stag": 15,
+            "def": 9
           },
-          "g": 0.23,
-          "gDrift": -1.15,
+          "g": 0.31,
+          "gDrift": -0.87,
           "i": 0.13,
           "iDrift": -0.67,
           "drifting": "def"
         },
         "conditions": {
-          "score": 64.9,
+          "score": 63.9,
           "band": "caution",
           "comps": {
             "credit": 82,
@@ -4678,8 +4688,8 @@
             "ratesVol": 68,
             "realYield": 87,
             "funding": 32,
-            "breadth": 59,
-            "dollar": 73
+            "breadth": 54,
+            "dollar": 64
           }
         },
         "policy": {
@@ -4687,11 +4697,11 @@
           "hikeOdds": 16,
           "liq4w": 8
         },
-        "sizing": 0.62,
+        "sizing": 0.63,
         "stage": 2
       },
-      "source": "cron",
-      "loggedAt": "2026-10-21T01:02:41.039Z"
+      "source": "client+cron",
+      "loggedAt": "2026-10-21T06:28:21.362Z"
     }
   ]
 }
