@@ -4595,7 +4595,7 @@
       "inputs": {
         "weightedRecessionProb": 13.5,
         "cpi": 3.71725,
-        "kalshi2027": 21,
+        "kalshi2027": 22,
         "tape": {
           "gold": "down",
           "tlt": "up",
@@ -4621,8 +4621,8 @@
           "state": "turning-down",
           "lean": 1,
           "market": {
-            "verdict": "SOFTENING",
-            "lean": -1,
+            "verdict": "MIXED",
+            "lean": 0,
             "usable": 5,
             "of": 5
           },
@@ -4668,27 +4668,27 @@
         "regime": {
           "id": "inf",
           "probs": {
-            "ref": 28,
-            "inf": 48,
-            "stag": 15,
-            "def": 9
+            "ref": 31,
+            "inf": 53,
+            "stag": 10,
+            "def": 6
           },
-          "g": 0.32,
-          "gDrift": -0.95,
+          "g": 0.41,
+          "gDrift": -0.75,
           "i": 0.13,
           "iDrift": -0.67,
           "drifting": "def"
         },
         "conditions": {
-          "score": 63.8,
+          "score": 61.2,
           "band": "caution",
           "comps": {
             "credit": 82,
-            "equityVol": 43,
-            "ratesVol": 68,
+            "equityVol": 37,
+            "ratesVol": 62,
             "realYield": 87,
             "funding": 30,
-            "breadth": 54,
+            "breadth": 49,
             "dollar": 61
           }
         },
@@ -4697,11 +4697,11 @@
           "hikeOdds": 14,
           "liq4w": 8
         },
-        "sizing": 0.63,
+        "sizing": 0.65,
         "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-21T12:54:09.635Z"
+      "loggedAt": "2026-10-21T14:07:12.560Z"
     }
   ]
 }
