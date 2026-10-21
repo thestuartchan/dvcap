@@ -16,6 +16,10 @@
 # are 07:15 / 09:25 EDT, 12:15 and 14:25 UTC are 07:15 / 09:25 EST — and the job runs only when New
 # York's own clock is within 20 minutes of one of the two targets, so exactly two run each day.
 #
+# ON TIME. GitHub runs these schedules 3–6 hours late, outside the 20-minute gate, so they skip. The
+# Vercel US pre-read cron (12:42 UTC: 08:42 EDT / 07:42 EST) now dispatches this workflow, which GitHub
+# starts at once and which passes the gate (lib/preOpenDispatch.js); the schedules stay as the backup.
+#
 # NOT A VERCEL CRON, for the reason gex-snapshot.yml gives: Vercel executed only the first entries
 # of a longer cron list, and this needs the service key the settled route checks (authorised()).
 name: gex recompute

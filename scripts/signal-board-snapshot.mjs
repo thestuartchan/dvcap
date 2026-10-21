@@ -28,10 +28,17 @@ if (!process.argv.includes('--score')) {
   const r = await fetch(BOARD_URL, { headers: { 'User-Agent': 'dvcap-signal-board' }, signal: AbortSignal.timeout(90000) });
   const p = await r.json();
   if (!p?.ok || !p.board) { console.error(`board not served: HTTP ${r.status}, ok=${p?.ok}`); process.exit(1); }
-  if (p.trade_day?.phase === 'in session') { console.error('the US session is open — a snapshot now would read a partial bar; skipped'); process.exit(1); }
-  const row = snapshotRow(p.board, p.trade_day, p.today);
-  store.rows = [...store.rows.filter(x => x.date !== row.date), row].sort((a, b) => a.date.localeCompare(b.date)).slice(-MAX_ROWS);
-  console.log(`snapshot ${row.date}: as of ${row.as_of}, call for ${row.target}, lean ${row.lean}, clusters ${JSON.stringify(row.clusters)}`);
+  // IN SESSION: NO ROW, BUT NOT A FAILURE (20 Oct). GitHub ran the 12:50 UTC schedule at 17:33 UTC,
+  // mid-session; a snapshot then would read a partial bar, so none is taken. That is the guard doing
+  // its job, so it is a warning, not a red run — and the scoring below still runs, which is
+  // time-insensitive. The on-time trigger is the Vercel pre-read cron (lib/preOpenDispatch.js).
+  if (p.trade_day?.phase === 'in session') {
+    console.log('::warning::the US session is open — a snapshot now would read a partial bar, so no row today from this run; scoring only');
+  } else {
+    const row = snapshotRow(p.board, p.trade_day, p.today);
+    store.rows = [...store.rows.filter(x => x.date !== row.date), row].sort((a, b) => a.date.localeCompare(b.date)).slice(-MAX_ROWS);
+    console.log(`snapshot ${row.date}: as of ${row.as_of}, call for ${row.target}, lean ${row.lean}, clusters ${JSON.stringify(row.clusters)}`);
+  }
 }
 
 // ── SCORE ── closes and each session's R, from a year of daily bars.

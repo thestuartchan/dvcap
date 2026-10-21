@@ -10,6 +10,11 @@ name: signal board
 # 13:30 UTC (EDT) / 14:30 UTC (EST) open, so no snapshot ever reads a partial session. A missed run loses
 # that day's row; the scoring heals on the next run.
 #
+# ON TIME. GitHub runs this schedule hours late (20 Oct: 12:50 UTC ran at 17:33 UTC, mid-session, and took
+# no row). The Vercel US pre-read cron (12:42 UTC) now dispatches this workflow, which GitHub starts at
+# once (lib/preOpenDispatch.js); the schedule below stays as the backup. Run in session, the snapshot
+# takes no row and says so as a warning, and the scoring still runs.
+#
 # The log prints states and counts only — public market statistics.
 
 on:
