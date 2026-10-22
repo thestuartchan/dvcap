@@ -4705,9 +4705,9 @@
     },
     {
       "date": "2026-10-22",
-      "stagflation_p": 55,
-      "reflationary_p": 9,
-      "deflationary_p": 31,
+      "stagflation_p": 66,
+      "reflationary_p": 17,
+      "deflationary_p": 12,
       "inflationary_p": 5,
       "hawkish_repricing": null,
       "live_regime": "stag",
@@ -4716,49 +4716,49 @@
       "hyg_chg": null,
       "hyg_qqq_divergence": null,
       "inputs": {
-        "weightedRecessionProb": 15,
-        "cpi": 0,
+        "weightedRecessionProb": 13.5,
+        "cpi": 3.71725,
         "kalshi2027": 21,
         "tape": null,
         "ladderSpread": null,
-        "u3": 4.1,
-        "empPop": 58.9,
-        "oas": 0,
-        "tenY": 0,
-        "twoY": 0,
-        "consensusAlive": 0.867,
+        "u3": 4.2,
+        "empPop": 59.2,
+        "oas": 3.33,
+        "tenY": 5.12,
+        "twoY": 4.79,
+        "consensusAlive": 0.997,
         "regimeVintage": "fresh"
       },
       "axes": {
         "growth": {
-          "state": "market-only",
-          "lean": -1,
+          "state": "turning-down",
+          "lean": 1,
           "market": {
-            "verdict": "SOFTENING",
-            "lean": -1,
+            "verdict": "MIXED",
+            "lean": 0,
             "usable": 5,
             "of": 5
           },
           "weekly": {
-            "verdict": "INSUFFICIENT",
-            "lean": null,
-            "usable": 0,
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 4,
             "of": 4
           },
           "monthly": {
-            "verdict": "INSUFFICIENT",
-            "lean": null,
-            "usable": 1,
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 4,
             "of": 4
           }
         },
         "inflation": {
-          "state": "nowcast-only",
-          "lean": 0,
+          "state": "turning-cool",
+          "lean": 1,
           "market": {
-            "verdict": "INSUFFICIENT",
-            "lean": null,
-            "usable": 1,
+            "verdict": "BETWEEN",
+            "lean": 0,
+            "usable": 3,
             "of": 3
           },
           "nowcast": {
@@ -4768,53 +4768,53 @@
             "of": 2
           },
           "printed": {
-            "verdict": "INSUFFICIENT",
-            "lean": null,
-            "usable": 0,
+            "verdict": "HOT",
+            "lean": 1,
+            "usable": 3,
             "of": 3
           }
         },
-        "quadrant": null,
-        "quadrantRead": "between quadrants — the inflation axis is flat"
+        "quadrant": "inf",
+        "quadrantRead": "growth firm, inflation hot"
       },
       "state": {
         "regime": {
-          "id": "stag",
+          "id": "inf",
           "probs": {
-            "ref": 13,
-            "inf": 13,
-            "stag": 37,
-            "def": 37
+            "ref": 31,
+            "inf": 53,
+            "stag": 10,
+            "def": 6
           },
-          "g": -0.2,
-          "gDrift": 0,
-          "i": 0,
-          "iDrift": 0,
-          "drifting": null
+          "g": 0.41,
+          "gDrift": -0.75,
+          "i": 0.13,
+          "iDrift": -0.67,
+          "drifting": "def"
         },
         "conditions": {
-          "score": 61.2,
+          "score": 66.4,
           "band": "caution",
           "comps": {
             "credit": 82,
-            "equityVol": 37,
-            "ratesVol": 62,
-            "realYield": 87,
+            "equityVol": 67,
+            "ratesVol": 60,
+            "realYield": 84,
             "funding": 30,
-            "breadth": 49,
-            "dollar": 61
+            "breadth": 52,
+            "dollar": 55
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 100,
+          "hikeOdds": 14,
           "liq4w": 8
         },
-        "sizing": 0.48,
+        "sizing": 0.65,
         "stage": 2
       },
       "source": "cron",
-      "loggedAt": "2026-10-22T00:57:55.749Z"
+      "loggedAt": "2026-10-22T08:45:56.437Z"
     }
   ]
 }
