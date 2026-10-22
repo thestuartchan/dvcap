@@ -220,3 +220,22 @@ IGV ÷ SMH over 20 sessions, with ORCL ÷ IGV as a side reading in the row text.
 Why it doesn't vote: QQQ's next 20 sessions were up 68% after a top-quartile reading (n 896) and 64% after a bottom-quartile one (n 890), against 68% on all days, and the 2012–18 and 2019–26 halves point opposite ways. It is a rotation gauge (where money is moving inside tech), not a direction call. The row's on/off colouring follows the threshold rule (chips leading = on), nothing more.
 
 ORCL ÷ IGV separates the two readings of a rising IGV ÷ SMH: ORCL falling with the chips means AI build-out funding stress; ORCL rising with software means a broad software bid.
+
+### Platforms vs chips side reading (`mags_soxx_20d`, shown, not voted)
+
+MAGS ÷ SOXX over 20 sessions, a second side reading on the software row next to `orcl_igv_20d` ("Platforms vs chips (MAGS ÷ SOXX)"). It never votes and never changes the row's state. Quartiles of the 20-session change, IBKR closes 2023-04 → 2026-10 (n 887): p25 −4.35%, p75 +3.65%; the reading says "platforms beating chips" above +3.65%, "chips beating platforms" below −4.35%, otherwise "in range". With no MAGS or SOXX closes it is null and left out of the row text; the row itself is unaffected.
+
+Overlap: corr 0.76 with IGV ÷ SMH (0.81 non-overlapping) and −0.23 with NVDA ÷ META. It largely restates the row it sits on, which is why it is a side reading and not a row.
+
+Forward test (next 20 sessions): after a top-quartile reading QQQ averaged +2.7% and was up 73% of the time, against +2.0% / 69% on all days. No SOXX edge, no drawdown edge.
+
+Regime, crossing the sign of each ratio's 20-session change (next 20 sessions):
+
+| Cell | QQQ | SOXX | QQQ fell 5%+ |
+|---|---|---|---|
+| Both up | +2.10% | +2.73% | 30% |
+| MAGS÷SOXX up, IGV÷SMH down | +2.40% | +4.27% | 12% |
+| MAGS÷SOXX down, IGV÷SMH up | +0.99% | +3.28% | 29% |
+| Both down | +1.89% | +3.98% | 17% |
+
+When both are positive the row carries a note (`regime_note`, also appended to the row text): "Software and platforms both beating chips: since 2023, QQQ fell 5%+ within 20 sessions 30% of the time in this regime vs 21% on all days (n=53 non-overlapping, one regime; context, not a vote)."

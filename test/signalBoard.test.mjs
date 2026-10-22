@@ -1,7 +1,7 @@
 // test/signalBoard.test.mjs — the Signal Board's state logic, clusters, lean and the trade-day call v2
 // (lib/signalBoard.js), and the feed's pure helpers (lib/signalBoardFeed.js). Synthetic series only.
 import { stateOf, flipDistance, THRESHOLDS, CLUSTERS, clusterOf, leanOf, whatFlips, buildSignalBoard, creditRows, ratesRows, oilRows,
-  dealerRows, tapeRows, softwareRow, asiaRows, narrativeRows, maRow, ratioSeries, realisedVol, downRunBefore, nextMonthlyOpex, sessionsBetween, nextSession,
+  dealerRows, tapeRows, softwareRow, magsSoxxRead, MAGS_SOXX_REGIME_NOTE, asiaRows, narrativeRows, maRow, ratioSeries, realisedVol, downRunBefore, nextMonthlyOpex, sessionsBetween, nextSession,
   tradeDayCall, checkpointRead, tradeDayBlock, normCdf, zoneOf, TRADE_DAY_MODEL, BAND_STATS, CHECKPOINTS, priorR, snapshotRow, scoreRows, scorecard, KOSPI_TEST, cryptoRows, btc200Break, offHigh, BTC_TEST,
   narrativeState, narrativeFlip, narrativeMetrics, NARRATIVE_RULE, NARRATIVE_TEST,
   trendDayProb, TREND_MODEL, gammaView, conflictRules, tradeConflict, CONFLICT,
@@ -100,6 +100,23 @@ const ramp = (n, a, b) => Array.from({ length: n }, (_, i) => a + (b - a) * i / 
     eq('IGV ÷ SMH up ~7% over 20 sessions: software leading, top-quartile state, no vote', [sw.id, sw.vote, sw.state, /software leading/.test(sw.text), sw.orcl_igv_20d < 0], ['igv_smh', false, 'off', true, true]);
     eq('the row is in the Tape rows and never moves the Tape cluster', tapeRows({ rsp, qqq, spy: ser(flat(30, 600)), iwm: ser(flat(30, 200)), igv, smh }).find(r => r.id === 'igv_smh').vote, false);
     eq('no IGV/SMH closes → no state, said why', [softwareRow({}).state, softwareRow({}).text], [null, 'no IGV/SMH closes']);
+    // MAGS ÷ SOXX side reading: quartile read, regime note only when both ratios rise, missing data → null.
+    eq('MAGS ÷ SOXX read: > +3.65 platforms, < −4.35 chips, else in range; null/NaN → null',
+      [magsSoxxRead(3.7), magsSoxxRead(3.65), magsSoxxRead(0), magsSoxxRead(-4.35), magsSoxxRead(-4.4), magsSoxxRead(null), magsSoxxRead(NaN)],
+      ['platforms beating chips', 'in range', 'in range', 'in range', 'chips beating platforms', null, null]);
+    const soxx = ser(flat(30, 250)), magsUp = ser(ramp(30, 50, 55)), magsDn = ser(ramp(30, 55, 50));
+    const both = softwareRow({ igv, smh, orcl, mags: magsUp, soxx });
+    eq('both IGV ÷ SMH and MAGS ÷ SOXX up: platforms read, regime note, row state and vote unchanged',
+      [both.mags_soxx_20d > 3.65, both.mags_soxx_read, both.regime_note, both.text.includes(MAGS_SOXX_REGIME_NOTE), both.state, both.vote],
+      [true, 'platforms beating chips', MAGS_SOXX_REGIME_NOTE, true, sw.state, false]);
+    const split = softwareRow({ igv, smh, orcl, mags: magsDn, soxx });
+    const swDn = softwareRow({ igv: ser(ramp(30, 110, 100)), smh, mags: magsUp, soxx });
+    eq('regime note only when both are positive (MAGS ÷ SOXX down, or IGV ÷ SMH down → none)',
+      [split.mags_soxx_20d < 0, split.mags_soxx_read, split.regime_note, swDn.regime_note, /in this regime/.test(split.text + swDn.text)],
+      [true, 'chips beating platforms', null, null, false]);
+    eq('no MAGS (or SOXX) closes → side reading null, no note, rest of the row intact',
+      [sw.mags_soxx_20d, sw.mags_soxx_read, sw.regime_note, /MAGS/.test(sw.text), softwareRow({ igv, smh, mags: magsUp }).mags_soxx_20d, sw.state],
+      [null, null, null, false, null, 'off']);
   }
   eq('ratioSeries only on dates both have', ratioSeries([{ date: 'a', value: 2 }, { date: 'b', value: 4 }], [{ date: 'b', value: 2 }]), [{ date: 'b', value: 2 }]);
 }
