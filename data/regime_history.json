@@ -4733,10 +4733,10 @@
         "ladderSpread": 1.71,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.29,
-        "tenY": 5.15,
-        "twoY": 4.77,
-        "consensusAlive": 0.995,
+        "oas": 3.33,
+        "tenY": 5.12,
+        "twoY": 4.79,
+        "consensusAlive": 0.997,
         "regimeVintage": "fresh"
       },
       "axes": {
@@ -4744,8 +4744,8 @@
           "state": "turning-down",
           "lean": 1,
           "market": {
-            "verdict": "SOFTENING",
-            "lean": -1,
+            "verdict": "MIXED",
+            "lean": 0,
             "usable": 5,
             "of": 5
           },
@@ -4791,13 +4791,13 @@
         "regime": {
           "id": "inf",
           "probs": {
-            "ref": 28,
-            "inf": 48,
-            "stag": 15,
-            "def": 9
+            "ref": 30,
+            "inf": 50,
+            "stag": 13,
+            "def": 7
           },
-          "g": 0.32,
-          "gDrift": -0.95,
+          "g": 0.33,
+          "gDrift": -0.75,
           "i": 0.13,
           "iDrift": -0.67,
           "drifting": "def"
@@ -4817,14 +4817,14 @@
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 14,
+          "hikeOdds": 12,
           "liq4w": 8
         },
-        "sizing": 0.63,
+        "sizing": 0.64,
         "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-22T12:29:11.873Z"
+      "loggedAt": "2026-10-22T12:55:47.450Z"
     }
   ]
 }
