@@ -44,16 +44,16 @@ const base = {
 // ── THE CARD ─────────────────────────────────────────────────────────────────
 {
   const e = buildIdeaCard(base, { now: NOW });
-  eq('title: no rank', e.title, 'NVDA · 27 Nov 190/210 call spread');
-  eq('description: play · side · sector in bold, tag in italics, then the thesis', e.description, '**Event · Bullish · Semis**\n*AI capex re-rate*\nHyperscaler guides keep rising into the print.');
-  eq('fields in order', e.fields.map(f => f.name), ['Catalyst', 'Expiry', 'Numbers (per contract)', 'Trigger', 'Wrong if', 'Exit', 'Alternatives compared']);
+  eq('title: no rank', e.title, '🟢 NVDA · 27 Nov 190/210 call spread');
+  eq('description: play · side · sector in bold, tag in italics, then the thesis', e.description, '**⚡ Event · Bullish · Semis**\n*AI capex re-rate*\nHyperscaler guides keep rising into the print.');
+  eq('fields in order', e.fields.map(f => f.name), ['📅 Catalyst', '⏳ Expiry', '📊 Numbers (per contract)', '🎯 Trigger', '❌ Wrong if', '🏁 Exit', '🔀 Alternatives compared']);
   eq('inline on the first two only', e.fields.map(f => !!f.inline), [true, true, false, false, false, false, false]);
   eq('debit economics on one line', e.fields[2].value, 'Cost 6.4 · Max gain 13.6 · R:R 2.13 · Odds of profit 38% · Breakeven 196.4 · EV 0.85');
   eq('up to four alternatives, the rest counted', e.fields[6].value, '• Long call\n• Put spread\n• Calendar\n• Diagonal\n• +1 more not shown');
   eq('footer', e.footer.text, 'Priced 21 Oct close · Idea card, not a position');
   eq('timestamp is now', e.timestamp, NOW.toISOString());
   const sparse = buildIdeaCard({ id: 'x', ticker: 'SPY', structure: 'Put', side: 'Bearish' }, { now: NOW });
-  eq('empty fields are skipped', [sparse.title, sparse.description, sparse.fields.map(f => f.name)], ['SPY · Put', '**Bearish**', []]);
+  eq('empty fields are skipped', [sparse.title, sparse.description, sparse.fields.map(f => f.name)], ['🔴 SPY · Put', '**Bearish**', []]);
   eq('credit economics', economics({ kind: 'credit', cost: 3.1, rr: 0.48, oddsNeeded: 68, oddsEst: 74, ev: 0.22 }),
      'Risk/credit 3.1 · R:R 0.48 · Needs 68% vs est. 74% · EV 0.22');
   eq('unknown kind → no economics', economics({ kind: 'mystery', cost: 1 }), '');
@@ -67,14 +67,17 @@ const base = {
     alts: ['Alt one', 'Alt two', 'Alt three'], plannedR: 'SENTINEL_CARD_R' }, rank: 7 };
   const e = buildIdeaCard(withCard, { now: NOW });
   ok('card thesis replaces the long one', e.description.endsWith('Short thesis.') && !e.description.includes('Hyperscaler'));
-  eq('card fields win', ['Trigger', 'Wrong if', 'Exit'].map(n => e.fields.find(f => f.name === n).value), ['Short trigger.', 'Short wrong.', 'Short exit.']);
-  eq('at most two alternatives, no counter', e.fields.find(f => f.name === 'Also considered').value, '• Alt one\n• Alt two');
+  eq('card fields win', ['🎯 Trigger', '❌ Wrong if', '🏁 Exit'].map(n => e.fields.find(f => f.name === n).value), ['Short trigger.', 'Short wrong.', 'Short exit.']);
+  eq('at most two alternatives, no counter', e.fields.find(f => f.name === '🔀 Also considered').value, '• Alt one\n• Alt two');
   ok('rank never reaches the card', !JSON.stringify(e).includes('#7'));
   ok('unknown keys inside card are dropped', !JSON.stringify(e).includes('SENTINEL_CARD_R') && !('plannedR' in publicIdea(withCard).card));
   const smug = buildIdeaCard({ ...base, card: { trigger: { contracts: 24680 } } }, { now: NOW });
-  ok('an object inside card is not rendered; falls back to entry', !JSON.stringify(smug).includes('24680') && smug.fields.find(f => f.name === 'Trigger').value === base.entry);
+  ok('an object inside card is not rendered; falls back to entry', !JSON.stringify(smug).includes('24680') && smug.fields.find(f => f.name === '🎯 Trigger').value === base.entry);
   eq('card: an array is ignored', publicIdea({ ...base, card: ['x'] }).card, null);
 }
+
+eq('side emoji per class', ['Long', 'Short', 'Short vol', 'Neutral'].map(x => buildIdeaCard({ ticker: 'X', side: x }, { now: NOW }).title.split(' ')[0]), ['🟢', '🔴', '🟡', '⚪']);
+ok('thesis play gets the compass', buildIdeaCard({ ticker: 'X', play: 'Thesis' }, { now: NOW }).description.startsWith('**🧭 Thesis'));
 
 // ── COLOUR ───────────────────────────────────────────────────────────────────
 eq('Bullish → green', colorFor('Bullish'), COLORS.bull);
@@ -102,7 +105,7 @@ eq('catalyst field carries text and stamps', buildIdeaCard(base, { now: NOW }).f
   ok('title capped at 256 with marker', big.title.length <= LIMITS.title && big.title.endsWith(TRIM_MARK));
   ok('description within 4096 with marker', big.description.length <= LIMITS.description && big.description.endsWith(TRIM_MARK));
   ok('every field value within 1024', big.fields.every(f => f.value.length <= LIMITS.fieldValue));
-  ok('a cut field shows the marker', big.fields.find(f => f.name === 'Trigger').value.endsWith(TRIM_MARK));
+  ok('a cut field shows the marker', big.fields.find(f => f.name === '🎯 Trigger').value.endsWith(TRIM_MARK));
   const total = big.title.length + big.description.length + big.footer.text.length + big.fields.reduce((n, f) => n + f.name.length + f.value.length, 0);
   ok(`total within 6000 (${total})`, total <= LIMITS.total);
   ok('fields within 25', big.fields.length <= LIMITS.fields);
