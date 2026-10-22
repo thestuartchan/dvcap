@@ -4733,7 +4733,7 @@
         "ladderSpread": 1.71,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.33,
+        "oas": 3.27,
         "tenY": 5.12,
         "twoY": 4.79,
         "consensusAlive": 0.997,
@@ -4741,11 +4741,11 @@
       },
       "axes": {
         "growth": {
-          "state": "turning-down",
+          "state": "confirmed",
           "lean": 1,
           "market": {
-            "verdict": "MIXED",
-            "lean": 0,
+            "verdict": "EXPANDING",
+            "lean": 1,
             "usable": 5,
             "of": 5
           },
@@ -4791,40 +4791,40 @@
         "regime": {
           "id": "inf",
           "probs": {
-            "ref": 30,
-            "inf": 50,
-            "stag": 13,
-            "def": 7
+            "ref": 32,
+            "inf": 55,
+            "stag": 8,
+            "def": 5
           },
-          "g": 0.33,
-          "gDrift": -0.75,
+          "g": 0.42,
+          "gDrift": -0.55,
           "i": 0.13,
           "iDrift": -0.67,
           "drifting": "def"
         },
         "conditions": {
-          "score": 65.4,
+          "score": 62,
           "band": "caution",
           "comps": {
-            "credit": 82,
-            "equityVol": 61,
-            "ratesVol": 60,
+            "credit": 72,
+            "equityVol": 52,
+            "ratesVol": 69,
             "realYield": 84,
             "funding": 30,
-            "breadth": 52,
-            "dollar": 59
+            "breadth": 46,
+            "dollar": 61
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 12,
+          "hikeOdds": 10,
           "liq4w": 8
         },
-        "sizing": 0.64,
+        "sizing": 0.66,
         "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-22T12:56:49.681Z"
+      "loggedAt": "2026-10-22T14:05:51.010Z"
     }
   ]
 }
