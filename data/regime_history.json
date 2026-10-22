@@ -4709,34 +4709,34 @@
       "reflationary_p": 17,
       "deflationary_p": 12,
       "inflationary_p": 5,
-      "hawkish_repricing": "REFLATIONARY_GROWTH",
+      "hawkish_repricing": "INSUFFICIENT_DATA",
       "live_regime": "stag",
       "view_regime": "stag",
-      "pinned": true,
-      "hyg_chg": 0.18,
-      "hyg_qqq_divergence": -0.87,
+      "pinned": false,
+      "hyg_chg": -0.35,
+      "hyg_qqq_divergence": 2.15,
       "inputs": {
         "weightedRecessionProb": 13.5,
         "cpi": 3.71725,
-        "kalshi2027": 20,
+        "kalshi2027": 21,
         "tape": {
-          "gold": "up",
+          "gold": "down",
           "tlt": "up",
           "xlu": "up",
-          "xlp": "down",
-          "spy": "up",
-          "qqq": "up",
-          "iwm": "up",
+          "xlp": "up",
+          "spy": "down",
+          "qqq": "down",
+          "iwm": "down",
           "btc": "up",
-          "breakevenBp": null
+          "breakevenBp": 3
         },
-        "ladderSpread": 1.71,
+        "ladderSpread": -3.06,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.27,
-        "tenY": 5.12,
-        "twoY": 4.79,
-        "consensusAlive": 0.997,
+        "oas": 3.23,
+        "tenY": 5.1,
+        "twoY": 4.77,
+        "consensusAlive": 0.984,
         "regimeVintage": "fresh"
       },
       "axes": {
@@ -4744,9 +4744,9 @@
           "state": "confirmed",
           "lean": 1,
           "market": {
-            "verdict": "EXPANDING",
-            "lean": 1,
-            "usable": 5,
+            "verdict": "INSUFFICIENT",
+            "lean": null,
+            "usable": 0,
             "of": 5
           },
           "weekly": {
@@ -4766,9 +4766,9 @@
           "state": "turning-cool",
           "lean": 1,
           "market": {
-            "verdict": "BETWEEN",
-            "lean": 0,
-            "usable": 3,
+            "verdict": "INSUFFICIENT",
+            "lean": null,
+            "usable": 0,
             "of": 3
           },
           "nowcast": {
@@ -4791,40 +4791,40 @@
         "regime": {
           "id": "inf",
           "probs": {
-            "ref": 32,
-            "inf": 55,
-            "stag": 8,
-            "def": 5
+            "ref": 27,
+            "inf": 72,
+            "stag": 1,
+            "def": 0
           },
-          "g": 0.42,
-          "gDrift": -0.55,
-          "i": 0.13,
-          "iDrift": -0.67,
-          "drifting": "def"
+          "g": 0.75,
+          "gDrift": 0,
+          "i": 0.24,
+          "iDrift": 0,
+          "drifting": null
         },
         "conditions": {
-          "score": 63.1,
+          "score": 64.4,
           "band": "caution",
           "comps": {
             "credit": 72,
-            "equityVol": 59,
-            "ratesVol": 71,
+            "equityVol": 65,
+            "ratesVol": 73,
             "realYield": 84,
             "funding": 30,
-            "breadth": 43,
+            "breadth": 41,
             "dollar": 56
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 6,
+          "hikeOdds": 16,
           "liq4w": 8
         },
-        "sizing": 0.66,
+        "sizing": 0.68,
         "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-22T17:38:56.551Z"
+      "loggedAt": "2026-10-22T19:50:02.527Z"
     }
   ]
 }
