@@ -16,6 +16,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/ideas-card",
+      "destination": "/api/tradecard?card=ideas"
+    },
+    {
       "source": "/api/g/:slug/:ticker",
       "destination": "/api/gex?feed=:slug&symbol=:ticker"
     },
