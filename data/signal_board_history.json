@@ -127,8 +127,24 @@
           "conflict": null
         }
       },
-      "fwd": null,
-      "realised": null
+      "fwd": {
+        "QQQ_1": -2.6,
+        "QQQ_3": null,
+        "QQQ_5": null,
+        "SOXX_1": -6,
+        "SOXX_3": null,
+        "SOXX_5": null
+      },
+      "realised": {
+        "QQQ": {
+          "date": "2026-10-22",
+          "r": 1
+        },
+        "SPY": {
+          "date": "2026-10-22",
+          "r": 0.7
+        }
+      }
     }
   ]
 }
