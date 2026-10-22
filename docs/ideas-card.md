@@ -21,7 +21,7 @@ should not be public. The webhook is bound to that one channel, so ideas cannot 
 ## What a card shows: per-contract economics, never size
 
 The card is built from a whitelist of fields: ticker, structure, thesis and its tag, play, side,
-sector, rank, catalyst and its time (shown as Discord timestamps in each reader's own timezone),
+sector, catalyst and its time (shown as Discord timestamps in each reader's own timezone),
 entry, invalidation, exit, expiry, up to four alternatives, the price note and status. It also shows
 **per-contract** economics: cost, max gain, R:R, odds, breakeven and EV.
 
@@ -57,3 +57,13 @@ The body is the **whole** desired set. An idea missing from it has its card dele
   next call retries that card.
 - If a card is deleted by hand while its idea has not changed, the route does not notice. The card
   comes back on the next change to that idea.
+
+## Short card (`card`)
+
+An idea may carry `card: {thesis, trigger, wrong, exit, alts}`, a pre-abbreviated public summary.
+When present the Discord card is built from it (one-line fields, at most two alternatives under
+"Also considered"); the long fields are the fallback. Keys inside `card` are whitelisted like the
+rest. Rank is no longer shown: it is the board's order, not a property of the idea.
+
+Colour (left bar): green = long/bullish, red = short/bearish, amber = a volatility play
+(long or short vol), grey = anything else.
