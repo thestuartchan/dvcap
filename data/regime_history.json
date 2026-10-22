@@ -4709,24 +4709,34 @@
       "reflationary_p": 17,
       "deflationary_p": 12,
       "inflationary_p": 5,
-      "hawkish_repricing": null,
+      "hawkish_repricing": "REFLATIONARY_GROWTH",
       "live_regime": "stag",
-      "view_regime": null,
-      "pinned": null,
-      "hyg_chg": null,
-      "hyg_qqq_divergence": null,
+      "view_regime": "stag",
+      "pinned": true,
+      "hyg_chg": 0.18,
+      "hyg_qqq_divergence": -0.87,
       "inputs": {
         "weightedRecessionProb": 13.5,
         "cpi": 3.71725,
         "kalshi2027": 21,
-        "tape": null,
-        "ladderSpread": null,
+        "tape": {
+          "gold": "up",
+          "tlt": "up",
+          "xlu": "up",
+          "xlp": "down",
+          "spy": "up",
+          "qqq": "up",
+          "iwm": "up",
+          "btc": "up",
+          "breakevenBp": null
+        },
+        "ladderSpread": 1.71,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.33,
-        "tenY": 5.12,
-        "twoY": 4.79,
-        "consensusAlive": 0.997,
+        "oas": 3.29,
+        "tenY": 5.15,
+        "twoY": 4.77,
+        "consensusAlive": 0.995,
         "regimeVintage": "fresh"
       },
       "axes": {
@@ -4734,8 +4744,8 @@
           "state": "turning-down",
           "lean": 1,
           "market": {
-            "verdict": "MIXED",
-            "lean": 0,
+            "verdict": "SOFTENING",
+            "lean": -1,
             "usable": 5,
             "of": 5
           },
@@ -4781,28 +4791,28 @@
         "regime": {
           "id": "inf",
           "probs": {
-            "ref": 31,
-            "inf": 53,
-            "stag": 10,
-            "def": 6
+            "ref": 28,
+            "inf": 48,
+            "stag": 15,
+            "def": 9
           },
-          "g": 0.41,
-          "gDrift": -0.75,
+          "g": 0.32,
+          "gDrift": -0.95,
           "i": 0.13,
           "iDrift": -0.67,
           "drifting": "def"
         },
         "conditions": {
-          "score": 66.4,
+          "score": 65.4,
           "band": "caution",
           "comps": {
             "credit": 82,
-            "equityVol": 67,
+            "equityVol": 61,
             "ratesVol": 60,
             "realYield": 84,
             "funding": 30,
             "breadth": 52,
-            "dollar": 55
+            "dollar": 59
           }
         },
         "policy": {
@@ -4810,11 +4820,11 @@
           "hikeOdds": 14,
           "liq4w": 8
         },
-        "sizing": 0.65,
+        "sizing": 0.63,
         "stage": 2
       },
-      "source": "cron",
-      "loggedAt": "2026-10-22T08:45:56.437Z"
+      "source": "client+cron",
+      "loggedAt": "2026-10-22T12:29:11.873Z"
     }
   ]
 }
