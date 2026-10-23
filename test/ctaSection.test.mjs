@@ -25,7 +25,7 @@ const lines = s.split('\n');
   eq('a far trigger is not shown', lines[1], '• **crude** max long 84% · crowded');
   eq('neutral, with the level that tips it', lines[5], '• **gold** neutral — tips net short below **4,273.95** (−1.4%)');
   eq('the key says what the numbers and marks mean', lines[6], '_How to read: % = share of the model\'s maximum long or short · crowded = 80%+ (little left to add, the most to unwind if the trend turns) · ▲▼ = a 20-point move this week_');
-  eq('then what a level is, and what it is not', lines[7], '_A level = the daily close that sets the funds trading the other way, shown when within 3 normal days; an intraday poke through it does not count · a model of trend funds, not their orders_');
+  eq('then what a level is, and what it is not', lines[7], '_The model trades a little on every close; a level = the daily close where one of its windows changes sides, shown when within 3 normal days; an intraday poke through it does not count · a model of trend funds, not their orders_');
   for (const l of lines) ok(`observational: "${l.replace(/\*/g, '').slice(2, 40)}"`, assertObservational(l).ok);
 }
 {
@@ -38,6 +38,20 @@ const lines = s.split('\n');
   eq('no book, no section', ctaSection(null), null);
   eq('a book with no usable market, no section', ctaSection({ markets: [{ key: 'ES', ok: false }] }), null);
   eq('the names', Object.keys(CTA_NAMES), ['ES', 'NQ', 'ZN', 'DX', 'CL', 'GC']);
+}
+{
+  // Gold after the 22 Oct close: net short, sold on the close, a level each way within three days.
+  const gold = { key: 'GC', ok: true, live: false, position: -0.39, stance: 'short', change: -0.12, today: -0.09,
+    cut: { label: '3m', flip: 4077, flipPct: 0.92, flipSigmas: 0.72 },
+    levels: { sell: { label: '12m', flip: 4065.4, flipPct: 0.63, flipSigmas: 0.49, turns: 'short', effect: 'covers the short' },
+              buy: { label: '3m', flip: 4077, flipPct: 0.92, flipSigmas: 0.72, turns: 'long', effect: 'covers the short' } } };
+  const g = { ...gold, price: 4039.8, levels: { sell: null, buy: gold.levels.buy } };
+  const line = ctaSection({ at: book.at, markets: [g] }, { now }).split('\n')[0];
+  eq('a short that grew on the close says so, with its level each way', line, '• **gold** short 39% · 9 pts of model selling on the close — above **4,077** (+0.9%) covers the short');
+  const both = ctaSection({ at: book.at, markets: [{ ...gold, levels: { sell: { label: '3m', flip: 4070.8, flipPct: -0.54, flipSigmas: -0.42, effect: 'adds to the short' }, buy: { label: '12m', flip: 4109.1, flipPct: 0.4, flipSigmas: 0.31, effect: 'covers the short' } } }] }, { now }).split('\n')[0];
+  eq('both levels near: both said, with what each does', both, '• **gold** short 39% · 9 pts of model selling on the close — below **4,070.8** (−0.5%) adds to the short · above **4,109.1** (+0.4%) covers the short');
+  ok('a live session\'s trade is not said: it has not closed', !/on the close/.test(ctaSection({ at: book.at, markets: [{ ...g, live: true }] }, { now })));
+  ok('observational', assertObservational(both).ok);
 }
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

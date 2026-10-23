@@ -1,5 +1,5 @@
 // test/cta.test.mjs — the CTA replica (lib/cta.js), on synthetic series whose answers are known.
-import { ctaMarket, sigmaDaily, windowScore, blend, blendedFlip, stanceOf, nearestCut, ctaSummary,
+import { ctaMarket, sigmaDaily, windowScore, blend, blendedFlip, stanceOf, nearestCut, ctaSummary, flowLevels, priceForPosition,
          LOOKBACKS, MIN_BARS, CTA_MARKETS, CROWDED, NEUTRAL, priceDp, globexTradeDate, closesForModel, isWeekendDate } from '../lib/cta.js';
 import { closeBeforeFrom } from '../lib/yahoo.js';
 import { marketState } from '../lib/sessions.js';
@@ -84,6 +84,38 @@ const N = MIN_BARS + 20;
   eq('scenarios run −2σ to +2σ', m.scenarios.map(s => s.sigmas), [-2, -1, 0, 1, 2]);
   ok('and the position rises with price', m.scenarios.every((s, i, a) => i === 0 || s.position >= a[i - 1].position));
   eq('the flat scenario is the hold', m.scenarios[2].position, m.hold);
+}
+
+// ── WHAT IT TRADES, AND WHERE IT SELLS OR BUYS (23 Oct) ───────────────────────
+{
+  const c = [...series(N - 15, { drift: 0.003 })];
+  for (let i = 0; i < 15; i++) c.push(c.at(-1) * Math.exp(-0.012 + (i % 2 ? 0.004 : -0.004)));
+  const m = ctaMarket(c);
+  const prev = ctaMarket(c.slice(0, -1));
+  eq('settled: today is the position change on the close, against the day before', m.today, +(m.position - prev.position).toFixed(2));
+  eq('settled: the funds carry this close\'s position into the next', m.held, m.position);
+  ok('the pivot is where the next close leaves the position unchanged', Math.abs(blend(m.pivot, LOOKBACKS.map(w => c[c.length - w.days]), sigmaDaily(c)) - m.position) < 0.005);
+  ok('scenario trades are against the held position', m.scenarios.every(s => Math.abs(s.trade - (s.position - m.held)) < 0.011));
+  ok('below the pivot it sells, above it buys', m.scenarios.filter(s => s.price < m.pivot).every(s => s.trade <= 0) && m.scenarios.filter(s => s.price > m.pivot).every(s => s.trade >= 0));
+  const live = ctaMarket(c, { live: true });
+  eq('live: the funds still carry the last settled close\'s position', live.held, prev.position);
+  eq('live: today is what it would trade if the session closed here', live.today, +(live.position - prev.position).toFixed(2));
+  eq('a target past saturation has no price', priceForPosition(2, [100, 100, 100], 0.01), null);
+  const max = ctaMarket(series(N, { drift: 0.01 }));
+  eq('at the maximum there is no pivot to give', [max.position, max.pivot], [1, null]);
+}
+{
+  // Gold, 22 Oct: net short, the three-month window long just under price, the twelve-month short just over it.
+  const gold = { ok: true, price: 4092.8, position: -0.3, windows: [
+    { label: '1m', score: -0.92, flip: 4318.4, flipPct: 5.51, flipSigmas: 4.2 },
+    { label: '3m', score: 0.05, flip: 4070.8, flipPct: -0.54, flipSigmas: -0.42 },
+    { label: '12m', score: -0.02, flip: 4109.1, flipPct: 0.4, flipSigmas: 0.31 } ] };
+  const L = flowLevels(gold);
+  eq('both ways: the sell level below price, and what it does to a short', [L.sell.label, L.sell.flip, L.sell.turns, L.sell.effect], ['3m', 4070.8, 'short', 'adds to the short']);
+  eq('…and the buy level above it', [L.buy.label, L.buy.flip, L.buy.turns, L.buy.effect], ['12m', 4109.1, 'long', 'covers the short']);
+  const long = flowLevels({ ...gold, position: 0.5 });
+  eq('for a long the same levels cut and add', [long.sell.effect, long.buy.effect], ['cuts the long', 'adds to the long']);
+  eq('nothing above price: no buy level', flowLevels({ ...gold, windows: gold.windows.filter(w => w.flip < gold.price) }).buy, null);
 }
 
 // ── A CUT IS JUDGED AGAINST THE NET POSITION ─────────────────────────────────
