@@ -4857,9 +4857,9 @@
         "u3": 4.2,
         "empPop": 59.2,
         "oas": 3.27,
-        "tenY": 5.12,
-        "twoY": 4.79,
-        "consensusAlive": 0.995,
+        "tenY": 5.13,
+        "twoY": 4.81,
+        "consensusAlive": 0.997,
         "regimeVintage": "fresh"
       },
       "axes": {
@@ -4926,16 +4926,16 @@
           "drifting": "def"
         },
         "conditions": {
-          "score": 64.1,
+          "score": 63.9,
           "band": "caution",
           "comps": {
             "credit": 72,
-            "equityVol": 60,
+            "equityVol": 58,
             "ratesVol": 74,
             "realYield": 85,
             "funding": 30,
             "breadth": 41,
-            "dollar": 64
+            "dollar": 67
           }
         },
         "policy": {
@@ -4947,7 +4947,7 @@
         "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-23T06:09:42.511Z"
+      "loggedAt": "2026-10-23T08:45:56.641Z"
     }
   ]
 }
