@@ -1,6 +1,6 @@
 // test/wallRoll.test.mjs — the wall roll: each monthly's call and put wall, session to session,
 // read in English. Hand-made rows whose answers are known by construction.
-import { expiryPeaks, wallRoll, callRead, putRead, boxVerdict, ROLL_READ_SESSIONS } from '../lib/wallRoll.js';
+import { expiryPeaks, wallRoll, callRead, putRead, boxVerdict, swing, ROLL_READ_SESSIONS } from '../lib/wallRoll.js';
 import { backfillPeaks, RAW_KEY } from '../lib/gexStore.js';
 import { feedLeaks, gexFeedPayload, wallRollBlock } from '../lib/gexFeed.js';
 let pass = 0, fail = 0;
@@ -100,6 +100,26 @@ const rows = [
   eq('…and no banned word anywhere in the payload', feedLeaks(JSON.stringify(f)), []);
   eq('no roll passed (SPX): no field at all', 'wall_roll' in gexFeedPayload('SPX', { row: { spot: 1 } }, { today: '2026-10-13' }), false);
   eq('nothing logged: unavailable with its reason', wallRollBlock(wallRoll([])), { available: false, reason: 'no wall history logged yet' });
+}
+// ── A WALL SWINGING BETWEEN STRIKES (23 Oct, the QQQ card) ──
+{
+  const q = (date, spot, nov, dec) => ({ date, spot, expiryPeaks: [{ e: '2026-11-20', c: nov[0], p: nov[1] }, { e: '2026-12-18', c: dec[0], p: dec[1] }] });
+  const qq = [
+    q('2026-10-15', 726, [760, 720], [760, 690]), q('2026-10-16', 710, [760, 700], [760, 690]),
+    q('2026-10-19', 718, [760, 700], [760, 690]), q('2026-10-20', 718, [775, 700], [780, 690]),
+    q('2026-10-21', 725, [775, 700], [780, 690]), q('2026-10-22', 703, [760, 700], [770, 690]),
+  ];
+  const w = wallRoll(qq, { today: '2026-10-23', symbol: 'QQQ' });
+  const [nov, dec] = w.expiries;
+  eq('a wall back where it started after a swing is unsettled, not unchanged', [nov.call.dir, nov.call.zone], ['unsettled', { lo: 760, hi: 775, now: 760 }]);
+  eq('…and says so', nov.read.call.text, 'Ceiling unsettled: the Nov 20 call wall has swung between 760 and 775 this week (now 760) while QQQ fell 3.2% — two strikes of near-equal weight trading places, so read it as a 760–775 zone, not a move.');
+  eq('760 → 780 → 770 against a falling price is a zone, not a lifted ceiling', [dec.call.dir, dec.call.zone, /lifted/.test(dec.read.call.text)], ['unsettled', { lo: 760, hi: 780, now: 770 }, false]);
+  eq('a single step down stays a move', [nov.put.dir, /Hedges following price down/.test(nov.read.put.text)], ['down', true]);
+  eq('an unsettled side makes no box claim', [nov.read.box, dec.read.box], [null, null]);
+  eq('steps in one direction are not a swing', swing([{ c: 790 }, { c: 795 }, { c: 800 }], 'c'), null);
+  eq('no change at all is not a swing', swing([{ c: 790 }, { c: 790 }], 'c'), null);
+  eq('both sides swinging: the box edges are zones', boxVerdict('unsettled', 'unsettled'), 'Both walls are swinging between strikes: the box edges are zones this week, not lines.');
+  ok('feed-safe wording', !feedLeaks(JSON.stringify(w)).length);
 }
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
