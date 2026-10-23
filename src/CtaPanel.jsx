@@ -1,7 +1,7 @@
 // src/CtaPanel.jsx — where trend funds (CTAs) probably sit, on the Daily Overview.
 //
-// STATE → EVIDENCE → WHAT FLIPS IT, per market: the replica's position and how it has moved over a
-// week; the three windows behind it; and the prices that would cut it. It is a MODEL of mechanical
+// STATE → TRADE → LEVELS, per market: the replica's position and how it has moved over a
+// week; the three windows behind it; what it traded on the latest close and where the next one sells or buys. It is a MODEL of mechanical
 // trend funds rebuilt from public prices (lib/cta.js), not their orders, and the card says so.
 import { dubaiEt } from "../lib/timeFmt.js";
 import { useEffect, useState } from "react";
@@ -51,22 +51,36 @@ function PositionBar({ pos }) {
   );
 }
 
-// THE TRIGGER, IN WORDS. What the level does, not what it is called: for a long, where selling
-// starts; for a short, where covering starts; for a neutral market, the net-flat price where the
-// three windows cancel and the model tips to one side.
-function KeyLevel({ m }) {
-  const c = m.cut;
-  const dist = (x) => `${signed(x.flipPct)}%, ${signed(x.flipSigmas)} daily σ`;
-  let lead;
-  if (!c) lead = <span>No window flip on the reducing side</span>;
-  else if (c.net) lead = <span>Tips net {c.tips} {c.side} <b style={{ color: C.text }}>{fmtPx(c.flip)}</b> ({dist(c)}) — where the three windows cancel</span>;
-  else if (m.position > 0) lead = <span>Selling starts below <b style={{ color: C.text }}>{fmtPx(c.flip)}</b> ({dist(c)}), where the {c.label} window turns short</span>;
-  else lead = <span>Covering starts above <b style={{ color: C.text }}>{fmtPx(c.flip)}</b> ({dist(c)}), where the {c.label} window turns long</span>;
+// WHAT IT TRADES, AND WHERE (23 Oct). The score is continuous, so the model trades on every close,
+// not only at a flip: the line says what it traded on the latest close, the next close's pivot (it
+// sells below, buys above) and how hard, then the nearest level each way where a window changes
+// sides — both directions, whatever the position, so a short that grows is as visible as one cut.
+const pts = (v) => Math.round(Math.abs(v ?? 0) * 100);
+function Flow({ m }) {
+  const L = m.levels || {};
+  const dist = (x) => `${signed(x.flipPct)}%, ${signed(x.flipSigmas)}σ`;
+  const sc = (k) => m.scenarios.find(s => s.sigmas === k);
+  const perSigma = sc(1)?.trade != null && sc(-1)?.trade != null ? (sc(1).trade - sc(-1).trade) / 2 : null;
+  const today = m.today == null || pts(m.today) === 0 ? null
+    : m.live ? <span>{m.today > 0 ? "Buying" : "Selling"} today: <b style={{ color: C.text }}>{pts(m.today)} pts</b> if it closed here ({pct(m.held)} → {pct(m.position)})</span>
+    : <span>{m.today > 0 ? "Bought" : "Sold"} <b style={{ color: C.text }}>{pts(m.today)} pts</b> on the close ({pct(m.position - m.today)} → {pct(m.position)})</span>;
+  const label = { fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: C.lbl, marginRight: 6 };
   return (
-    <div style={{ marginTop: 5, fontSize: 12, color: C.mid, lineHeight: 1.55 }}>
-      <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: C.lbl, marginRight: 6 }}>Key level</span>
-      {lead}
-      {c && !c.net && m.flip != null && <span style={{ color: C.muted }}> · net flat at {fmtPx(m.flip)} ({signed(m.flipPct)}%)</span>}
+    <div style={{ marginTop: 5, fontSize: 12, color: C.mid, lineHeight: 1.6 }}>
+      <div>
+        <span style={label}>Trading</span>
+        {today ? <>{today} · </> : <span>No trade on the latest close · </span>}
+        {m.pivot != null
+          ? <span>next close: sells below <b style={{ color: C.text }}>{fmtPx(m.pivot)}</b>, buys above ({signed(m.pivotPct)}%){perSigma != null && <span style={{ color: C.muted }}> · about {pts(perSigma)} pts per 1σ move</span>}</span>
+          : <span style={{ color: C.muted }}>at its maximum {m.position > 0 ? "long" : "short"}: it adds nothing more until price turns</span>}
+      </div>
+      <div>
+        <span style={label}>Levels</span>
+        {L.sell ? <span>below <b style={{ color: C.text }}>{fmtPx(L.sell.flip)}</b> ({dist(L.sell)}) the {L.sell.label} window turns short — <b>{L.sell.effect}</b></span> : <span style={{ color: C.muted }}>no window turns short below</span>}
+        <span style={{ color: C.muted }}> · </span>
+        {L.buy ? <span>above <b style={{ color: C.text }}>{fmtPx(L.buy.flip)}</b> ({dist(L.buy)}) the {L.buy.label} window turns long — <b>{L.buy.effect}</b></span> : <span style={{ color: C.muted }}>no window turns long above</span>}
+        {m.flip != null && <span style={{ color: C.muted }}> · net flat {fmtPx(m.flip)} ({signed(m.flipPct)}%)</span>}
+      </div>
     </div>
   );
 }
@@ -122,10 +136,10 @@ function MarketRow({ m }) {
           </span>
         )}
       </div>
-      <KeyLevel m={m} />
+      <Flow m={m} />
       <Windows m={m} />
       <div style={{ marginTop: 2, fontSize: 11.5, color: C.muted, lineHeight: 1.55, fontVariantNumeric: "tabular-nums" }}>
-        Position at −2σ {pct(sc(-2))} · −1σ {pct(sc(-1))} · unchanged {pct(sc(0))} · +1σ {pct(sc(1))} · +2σ {pct(sc(2))}
+        Next close at −2σ {pct(sc(-2))} · −1σ {pct(sc(-1))} · unchanged {pct(sc(0))} · +1σ {pct(sc(1))} · +2σ {pct(sc(2))}
         {m.roll === "high" && <span> · levels in front-month terms; the longer windows span contract rolls</span>}
       </div>
       <CotLine c={m.cot} />
@@ -181,8 +195,10 @@ export function CtaPanel() {
           </div>
           <div style={{ marginTop: 8, fontSize: 11.5, color: C.muted, lineHeight: 1.55 }}>
             How to read it: the net position is what the model holds — the average of its 1-, 3- and
-            12-month windows, ±100% at the maximum — so read it for crowding. The key level is the nearest
-            price that changes it, so read it as the trigger. The 1-month window is the fast money and
+            12-month windows, ±100% at the maximum — so read it for crowding. Each window's score moves with
+            price, so the model trades a little on every close: Trading says what it did on the latest close and
+            the next close's pivot — it sells below, buys above. Levels are the nearest price each way where a
+            window changes sides, and what that does to the position. The 1-month window is the fast money and
             usually flips first; the 12-month is the slow backdrop. A model of where trend funds probably
             sit, not their orders.
             Flip levels apply to {live ? "today's" : "the next"} close. No dollar flow is estimated. The CFTC's
