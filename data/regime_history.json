@@ -4841,7 +4841,7 @@
       "inputs": {
         "weightedRecessionProb": 13.5,
         "cpi": 3.71725,
-        "kalshi2027": 21,
+        "kalshi2027": 20,
         "tape": {
           "gold": "down",
           "tlt": "up",
@@ -4856,7 +4856,7 @@
         "ladderSpread": -6.47,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.27,
+        "oas": 3.4,
         "tenY": 5.13,
         "twoY": 4.81,
         "consensusAlive": 0.997,
@@ -4886,11 +4886,11 @@
           }
         },
         "inflation": {
-          "state": "turning-cool",
+          "state": "split",
           "lean": 1,
           "market": {
-            "verdict": "BETWEEN",
-            "lean": 0,
+            "verdict": "HOT",
+            "lean": 1,
             "usable": 3,
             "of": 3
           },
@@ -4914,28 +4914,28 @@
         "regime": {
           "id": "inf",
           "probs": {
-            "ref": 32,
-            "inf": 55,
-            "stag": 8,
-            "def": 5
+            "ref": 20,
+            "inf": 67,
+            "stag": 10,
+            "def": 3
           },
           "g": 0.42,
           "gDrift": -0.55,
-          "i": 0.13,
-          "iDrift": -0.67,
+          "i": 0.28,
+          "iDrift": -0.33,
           "drifting": "def"
         },
         "conditions": {
-          "score": 66.6,
+          "score": 68.2,
           "band": "caution",
           "comps": {
-            "credit": 72,
-            "equityVol": 71,
+            "credit": 82,
+            "equityVol": 67,
             "ratesVol": 74,
             "realYield": 85,
             "funding": 32,
             "breadth": 41,
-            "dollar": 66
+            "dollar": 64
           }
         },
         "policy": {
@@ -4943,11 +4943,11 @@
           "hikeOdds": 12,
           "liq4w": 31
         },
-        "sizing": 0.66,
+        "sizing": 0.65,
         "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-23T12:34:51.422Z"
+      "loggedAt": "2026-10-23T13:48:29.652Z"
     }
   ]
 }
