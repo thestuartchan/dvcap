@@ -5071,6 +5071,129 @@
       },
       "source": "client",
       "loggedAt": "2026-10-24T12:25:55.146Z"
+    },
+    {
+      "date": "2026-10-25",
+      "stagflation_p": 66,
+      "reflationary_p": 17,
+      "deflationary_p": 12,
+      "inflationary_p": 5,
+      "hawkish_repricing": "INSUFFICIENT_DATA",
+      "live_regime": "stag",
+      "view_regime": "stag",
+      "pinned": true,
+      "hyg_chg": -0.06,
+      "hyg_qqq_divergence": -0.05,
+      "inputs": {
+        "weightedRecessionProb": 13.5,
+        "cpi": 3.71725,
+        "kalshi2027": 22,
+        "tape": {
+          "gold": "down",
+          "tlt": "down",
+          "xlu": "down",
+          "xlp": "down",
+          "spy": "down",
+          "qqq": "flat",
+          "iwm": "down",
+          "btc": "down",
+          "breakevenBp": 2
+        },
+        "ladderSpread": 0.8,
+        "u3": 4.2,
+        "empPop": 59.2,
+        "oas": 3.4,
+        "tenY": 4.96,
+        "twoY": 4.65,
+        "consensusAlive": 0.989,
+        "regimeVintage": "fresh"
+      },
+      "state": {
+        "regime": {
+          "id": "inf",
+          "probs": {
+            "ref": 22,
+            "inf": 71,
+            "stag": 5,
+            "def": 2
+          },
+          "g": 0.49,
+          "gDrift": -0.27,
+          "i": 0.28,
+          "iDrift": -0.33,
+          "drifting": null
+        },
+        "conditions": {
+          "score": 66.2,
+          "band": "caution",
+          "comps": {
+            "credit": 82,
+            "equityVol": 62,
+            "ratesVol": 70,
+            "realYield": 82,
+            "funding": 32,
+            "breadth": 40,
+            "dollar": 67
+          }
+        },
+        "policy": {
+          "stance": "tightening",
+          "hikeOdds": 10,
+          "liq4w": 31
+        },
+        "sizing": 0.66,
+        "stage": 2
+      },
+      "axes": {
+        "growth": {
+          "state": "confirmed",
+          "lean": 1,
+          "market": {
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 5,
+            "of": 5
+          },
+          "weekly": {
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 4,
+            "of": 4
+          },
+          "monthly": {
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 3,
+            "of": 4
+          }
+        },
+        "inflation": {
+          "state": "split",
+          "lean": 1,
+          "market": {
+            "verdict": "HOT",
+            "lean": 1,
+            "usable": 3,
+            "of": 3
+          },
+          "nowcast": {
+            "verdict": "BETWEEN",
+            "lean": 0,
+            "usable": 2,
+            "of": 2
+          },
+          "printed": {
+            "verdict": "HOT",
+            "lean": 1,
+            "usable": 3,
+            "of": 3
+          }
+        },
+        "quadrant": "inf",
+        "quadrantRead": "growth firm, inflation hot"
+      },
+      "source": "client",
+      "loggedAt": "2026-10-25T20:17:45.690Z"
     }
   ]
 }
