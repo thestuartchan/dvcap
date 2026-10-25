@@ -4721,9 +4721,17 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
         // A margined row is EXCLUDED ON PURPOSE, not missing. Counting the two together made the
         // card warn "2 positions not shown — no live price" about MGC and MNQ, which had prices and
         // were deliberately kept out of these totals. Two different facts, two different lines.
-        const missing = held.filter(h => !h.margined && !(h.mvBase != null && h.mvBase > 0)).length;
-        const totalMv = priced.reduce((a, h) => a + h.mvBase, 0);
-        const pie = priced.map(h => ({ name: h.symbol, value: +h.mvBase.toFixed(2), pct: totalMv ? +((h.mvBase / totalMv) * 100).toFixed(1) : 0 }))
+        // A SHORT IS A POSITION, NOT A MISSING PRICE. Its market value is negative, so it failed the
+        // "> 0" test above and was counted as "not shown — no live price" (QQQ, 25 Oct), though it
+        // was priced. It is shown in the donut at its absolute value, labelled short, and stays out
+        // of Invested, which is the long book's capital.
+        const shorts = held.filter(h => !h.margined && h.mvBase != null && h.mvBase < 0);
+        const shortMv = shorts.reduce((a, h) => a + h.mvBase, 0);
+        const missing = held.filter(h => !h.margined && !(h.mvBase != null && h.mvBase !== 0)).length;
+        const totalMv = priced.reduce((a, h) => a + h.mvBase, 0) - shortMv;
+        const pie = [...priced.map(h => ({ name: h.symbol, value: +h.mvBase.toFixed(2) })),
+          ...shorts.map(h => ({ name: `${h.symbol} short`, value: +(-h.mvBase).toFixed(2), signed: +h.mvBase.toFixed(2) }))]
+          .map(e => ({ ...e, pct: totalMv ? +((e.value / totalMv) * 100).toFixed(1) : 0 }))
           .sort((a, b) => b.value - a.value);
         // Cash equivalents are out of the trading book's P&L: an accumulating fund's (IB01's) price
         // drift is its yield, and USFR's is noise around its distribution — neither is a trade.
@@ -4740,9 +4748,10 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           <Card>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
               <SLabel>Current portfolio</SLabel>
-              <span style={{ fontSize: 12, color: C.muted }}>{priced.length} priced position{priced.length === 1 ? "" : "s"} · {baseCcy}</span>
+              <span style={{ fontSize: 12, color: C.muted }}>{priced.length + shorts.length} priced position{priced.length + shorts.length === 1 ? "" : "s"}{shorts.length ? ` (${shorts.length} short)` : ""} · {baseCcy}</span>
               <div style={{ marginLeft: "auto", display: "flex", gap: 16, alignItems: "baseline", fontSize: 13 }}>
                 <span title="market value of the trading book — cash equivalents are counted as cash"><span style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800 }}>INVESTED </span><b>{fmtCcy(investedMv, baseCcy)}</b></span>
+                {shorts.length > 0 && <span title={`market value of the short position${shorts.length === 1 ? "" : "s"} (${shorts.map(h => h.symbol).join(", ")}) — not in Invested`}><span style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800 }}>SHORT </span><b>{fmtCcy(shortMv, baseCcy)}</b></span>}
                 {cashPct != null && <span title="100% less invested ÷ equity — USD cash and cash equivalents"><span style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800 }}>CASH &amp; EQUIV. </span><b>{cashPct}%</b></span>}
                 <span title={`unrealised ${fmtCcy(openUn, baseCcy)} + realised on partial exits ${fmtCcy(openRe, baseCcy)}`}><span style={{ color: C.lbl, fontSize: 10.5, fontWeight: 800 }}>P&amp;L ON OPEN NAMES </span>
                   <b style={{ color: pnlCol(bars.reduce((a, b) => a + b.total, 0)) }}>{fmtCcy(bars.reduce((a, b) => a + b.total, 0), baseCcy)}</b></span>
@@ -4773,7 +4782,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
                       label={(e) => (e.pct >= 5 ? `${e.name} ${e.pct}%` : "")} labelLine={false} fontSize={10}>
                       {pie.map((e, i) => <Cell key={e.name} fill={PAL[i % PAL.length]} />)}
                     </Pie>
-                    <Tooltip formatter={(v, n, p) => [`${fmtCcy(v, baseCcy)} (${p?.payload?.pct}%)`, n]}
+                    <Tooltip formatter={(v, n, p) => [`${fmtCcy(p?.payload?.signed ?? v, baseCcy)} (${p?.payload?.pct}%)`, n]}
                       contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid " + C.bdr }} />
                   </PieChart>
                 </ResponsiveContainer>
@@ -4809,7 +4818,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
             </div>
             {pie.filter(p => p.pct < 5).length > 0 && (
               <div style={{ fontSize: 11, color: C.lbl, marginTop: 8, lineHeight: 1.5 }}>
-                <b style={{ color: C.muted }}>Under 5% of the invested book:</b> {pie.filter(p => p.pct < 5).map(p => `${p.name} ${p.pct}%`).join(" · ")}
+                <b style={{ color: C.muted }}>Under 5% by market value:</b> {pie.filter(p => p.pct < 5).map(p => `${p.name} ${p.pct}%`).join(" · ")}
               </div>
             )}
             {margined.length > 0 && (
@@ -4819,7 +4828,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
               </div>
             )}
             <div style={{ fontSize: 11, color: C.lbl, marginTop: 8, paddingTop: 8, borderTop: "1px solid " + C.bdr, lineHeight: 1.5 }}>
-              Realised bars are profit already taken on scale-outs, so a position can show both at once. Cash % assumes your account equity above is the whole book.
+              Realised bars are profit already taken on scale-outs, so a position can show both at once. A short is sized by its absolute value in the donut and is not in Invested. Cash % assumes your account equity above is the whole book.
             </div>
             </>)}
           </Card>
