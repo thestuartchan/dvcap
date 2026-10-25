@@ -46,6 +46,7 @@ import { appendRun, SIZER_RUNS_KEY, MAX_RUNS } from '../lib/sizer.js';
 import { catalystLookup } from '../lib/catalystFeed.js';
 import { runJournal } from '../lib/journalStore.js';
 import { journalLine, orderUnits } from '../lib/journalInbox.js';
+import { journaledDayTrades, dayTradeLine } from '../lib/dayTradeCards.js';
 import { parseTradeConfirms, tcSections } from '../lib/flexTrades.js';
 import { adoptProvisional, tcQueryId, TC_QUERY_ENV, TC_WAITS_MS, SYNC_NOW_MIN_INTERVAL_S, skipOnSameDay, syncNowLine, recordLag, lagText } from '../lib/sameDayFills.js';
 import { hasSessionCookie, hasJournalReadKey } from '../lib/apiauth.js';
@@ -112,7 +113,8 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   // is part of the batch: written only with it, and a share or futures root it CORRECTED is held to
   // the same Open Positions check as everything the batch changes. A provisional fill the statement
   // does not contain is flagged, never deleted.
-  const adoption = adoptProvisional(rows, orderUnits(parseTrades(got.xml)), { asOf });
+  const statementUnits = orderUnits(parseTrades(got.xml));
+  const adoption = adoptProvisional(rows, statementUnits, { asOf });
   const adoptedDerived = adoption.changed
     ? adoption.rows.map(r => ({ ...r, derived: derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side }) }))
     : withDerived;
@@ -160,6 +162,17 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   const expiry = expiryCloses(withDerived, rec.report.filter(r => r.kind === 'option-missing-at-broker'),
     { eae: parseOptionEae(got.xml), present: eaeSectionPresent(got.xml), asOf });
   result.expiries = { closes: expiry.closes.map(c => ({ id: c.rowId, root: c.root, contract: c.contract, date: c.fill.date })), waiting: expiry.waiting };
+  // ── A CARD THAT TURNED OUT TO BE A DAY TRADE (lib/dayTradeCards.js) ──────────
+  // Opened on the console, taken flat at IBKR inside 24 hours: the closing orders went to the
+  // day-trading journal, and the card was left open. Said as what it is, with the day it closed —
+  // and the "not at IBKR" and expiry lines for the same card are dropped, because both sent the
+  // reader looking for something that did not happen.
+  const dayTradeCards = journaledDayTrades(withDerived, statementUnits);
+  const dayTradeIds = new Set(dayTradeCards.map(d => d.rowId));
+  expiry.waiting = expiry.waiting.filter(w => !dayTradeIds.has(w.id) && !(w.ids || []).some(id => dayTradeIds.has(id)));
+  expiry.closes = expiry.closes.filter(c => !dayTradeIds.has(c.rowId));
+  result.expiries.waiting = expiry.waiting;
+  result.expiries.closes = result.expiries.closes.filter(c => !dayTradeIds.has(c.id));
   // ── TRADES ────────────────────────────────────────────────────────────────
   // The Open Positions section cannot say whether an exit was recorded — a sold position is simply
   // absent, which looks identical to one the console never knew about. The Trades section can.
@@ -314,7 +327,8 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
       ...rec.ambiguous.map(a => ({ what: 'ambiguous — two rows share this symbol', root: a.root })),
       ...rec.report.filter(r => r.kind === 'missing-at-broker').map(r => ({ what: 'open here, not at the broker', root: r.root, id: r.id })),
       // Option contracts, by contract rather than by underlying (lib/flex.js optionFindings).
-      ...optionFindings(rec).map(o => ({ what: o.kind === 'option-differs' ? `${o.contract}: console ${o.qty.console}, statement ${o.qty.ibkr}`
+      ...dayTradeCards.map(d => ({ what: dayTradeLine(d), root: d.root, id: d.rowId, dayTrade: true })),
+      ...optionFindings(rec).filter(o => !(o.ids || []).some(id => dayTradeIds.has(id))).map(o => ({ what: o.kind === 'option-differs' ? `${o.contract}: console ${o.qty.console}, statement ${o.qty.ibkr}`
                                             : o.kind === 'option-not-in-console' ? `${o.contract}: held at IBKR, not in the console`
                                             : `${o.contract}: in the console, not at IBKR`, root: o.root, id: o.ids?.[0] || null })),
       ...((tradePlan?.report) || []).map(r => ({ what: r.kind.replace(/-/g, ' '), root: r.root })),
