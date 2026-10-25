@@ -1,6 +1,6 @@
 {
  "_README": "Supplier, customer and competitor links read from each company's own latest annual report on EDGAR, plus its latest 10-Q when filed after it (scripts/supplychain-build.mjs; method in docs/supply-chain.md). Each link quotes the sentence and names the filing it came from. relation = what the counterparty is to the filer. named=false is an anonymised customer as the filing states it.",
- "_generated": "2026-10-19T14:59:58.394Z",
+ "_generated": "2026-10-25T09:25:01.323Z",
  "companies": {
   "AAPL": {
    "cik": 320193,
@@ -1419,12 +1419,18 @@
   "LRCX": {
    "cik": 707549,
    "name": "LAM RESEARCH CORP",
-   "asOf": "2026-08-07",
+   "asOf": "2026-10-22",
    "filing": {
     "form": "10-K",
     "accession": "0000707549-26-000037",
     "url": "https://www.sec.gov/Archives/edgar/data/707549/000070754926000037/lrcx-20260628.htm",
     "date": "2026-08-07"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0000707549-26-000054",
+    "url": "https://www.sec.gov/Archives/edgar/data/707549/000070754926000054/lrcx-20260927.htm",
+    "date": "2026-10-22"
    },
    "links": [
     {
@@ -1582,7 +1588,7 @@
   "META": {
    "cik": 1326801,
    "name": "Meta Platforms, Inc.",
-   "asOf": "2026-07-30",
+   "asOf": "2026-10-22",
    "filing": {
     "form": "10-K",
     "accession": "0001628280-26-003942",
@@ -1591,9 +1597,9 @@
    },
    "quarter": {
     "form": "10-Q",
-    "accession": "0001628280-26-050705",
-    "url": "https://www.sec.gov/Archives/edgar/data/1326801/000162828026050705/meta-20260630.htm",
-    "date": "2026-07-30"
+    "accession": "0001628280-26-066773",
+    "url": "https://www.sec.gov/Archives/edgar/data/1326801/000162828026066773/meta-20260930.htm",
+    "date": "2026-10-22"
    },
    "links": [
     {
@@ -2523,7 +2529,7 @@
   "TSLA": {
    "cik": 1318605,
    "name": "Tesla, Inc.",
-   "asOf": "2026-07-23",
+   "asOf": "2026-10-22",
    "filing": {
     "form": "10-K",
     "accession": "0001628280-26-003952",
@@ -2532,9 +2538,9 @@
    },
    "quarter": {
     "form": "10-Q",
-    "accession": "0001628280-26-049270",
-    "url": "https://www.sec.gov/Archives/edgar/data/1318605/000162828026049270/tsla-20260630.htm",
-    "date": "2026-07-23"
+    "accession": "0001628280-26-066775",
+    "url": "https://www.sec.gov/Archives/edgar/data/1318605/000162828026066775/tsla-20260930.htm",
+    "date": "2026-10-22"
    },
    "links": []
   },
@@ -2584,7 +2590,7 @@
   "TXN": {
    "cik": 97476,
    "name": "TEXAS INSTRUMENTS INC",
-   "asOf": "2026-07-24",
+   "asOf": "2026-10-23",
    "filing": {
     "form": "10-K",
     "accession": "0000097476-26-000059",
@@ -2593,9 +2599,9 @@
    },
    "quarter": {
     "form": "10-Q",
-    "accession": "0000097476-26-000152",
-    "url": "https://www.sec.gov/Archives/edgar/data/97476/000009747626000152/txn-20260630.htm",
-    "date": "2026-07-24"
+    "accession": "0000097476-26-000169",
+    "url": "https://www.sec.gov/Archives/edgar/data/97476/000009747626000169/txn-20260930.htm",
+    "date": "2026-10-23"
    },
    "links": [
     {
@@ -2728,12 +2734,18 @@
   "WDC": {
    "cik": 106040,
    "name": "WESTERN DIGITAL CORP",
-   "asOf": "2026-08-14",
+   "asOf": "2026-10-23",
    "filing": {
     "form": "10-K",
     "accession": "0001628280-26-057139",
     "url": "https://www.sec.gov/Archives/edgar/data/106040/000162828026057139/wdc-20260703.htm",
     "date": "2026-08-14"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001628280-26-066933",
+    "url": "https://www.sec.gov/Archives/edgar/data/106040/000162828026066933/wdc-20261002.htm",
+    "date": "2026-10-23"
    },
    "links": [
     {
@@ -2741,14 +2753,14 @@
      "label": "One customer",
      "relation": "customer",
      "named": false,
-     "share": 16,
-     "quote": "For 2026, three customers accounted for 16%, 15%, and 13%, respectively, of our net revenue.",
-     "mentions": 3,
+     "share": 14,
+     "quote": "For the three months ended October 2, 2026, two customers accounted for 14 % and 13 %, respectively, of the Company’s net revenue.",
+     "mentions": 1,
      "filing": {
-      "form": "10-K",
-      "accession": "0001628280-26-057139",
-      "url": "https://www.sec.gov/Archives/edgar/data/106040/000162828026057139/wdc-20260703.htm",
-      "date": "2026-08-14"
+      "form": "10-Q",
+      "accession": "0001628280-26-066933",
+      "url": "https://www.sec.gov/Archives/edgar/data/106040/000162828026066933/wdc-20261002.htm",
+      "date": "2026-10-23"
      }
     },
     {
@@ -2756,29 +2768,14 @@
      "label": "Another customer",
      "relation": "customer",
      "named": false,
-     "share": 15,
-     "quote": "For 2026, three customers accounted for 16%, 15%, and 13%, respectively, of our net revenue.",
-     "mentions": 3,
-     "filing": {
-      "form": "10-K",
-      "accession": "0001628280-26-057139",
-      "url": "https://www.sec.gov/Archives/edgar/data/106040/000162828026057139/wdc-20260703.htm",
-      "date": "2026-08-14"
-     }
-    },
-    {
-     "counterparty": null,
-     "label": "A third customer",
-     "relation": "customer",
-     "named": false,
      "share": 13,
-     "quote": "For 2026, three customers accounted for 16%, 15%, and 13%, respectively, of our net revenue.",
-     "mentions": 3,
+     "quote": "For the three months ended October 2, 2026, two customers accounted for 14 % and 13 %, respectively, of the Company’s net revenue.",
+     "mentions": 1,
      "filing": {
-      "form": "10-K",
-      "accession": "0001628280-26-057139",
-      "url": "https://www.sec.gov/Archives/edgar/data/106040/000162828026057139/wdc-20260703.htm",
-      "date": "2026-08-14"
+      "form": "10-Q",
+      "accession": "0001628280-26-066933",
+      "url": "https://www.sec.gov/Archives/edgar/data/106040/000162828026066933/wdc-20261002.htm",
+      "date": "2026-10-23"
      }
     }
    ]
