@@ -4623,6 +4623,19 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
                       {ackBusy === n.id ? "…" : "Accept IBKR's cost basis"}
                     </button>
                   )}
+                  {/* A card whose round trip was a day trade (lib/dayTradeCards.js): the trade lives
+                      in the day-trading journal, so the card goes — removed, not closed at 0. */}
+                  {n.dayTrade && n.id && rows.some(x => x.id === n.id) && (
+                    <button onClick={() => {
+                      const row = rows.find(x => x.id === n.id);
+                      if (!window.confirm(`Remove the ${row?.symbol || n.root} card? The round trip is in the day-trading journal; this takes it out of the console.`)) return;
+                      del(n.id);
+                      setAckMsg({ ok: true, text: `${n.root} card removed — Save to cloud` });
+                    }}
+                      style={{ cursor: "pointer", background: C.surf, color: C.red, border: "1.5px solid " + C.red, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800 }}>
+                      Remove card
+                    </button>
+                  )}
                 </span>
               ))}
 
