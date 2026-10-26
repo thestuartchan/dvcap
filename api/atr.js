@@ -22,6 +22,7 @@ import { earningsReactions } from '../lib/holdTypes.js';
 import { lastSettledSession } from '../lib/ratios.js';
 import { authorised, refusalReason } from '../lib/apiauth.js';
 import { fetchDes } from '../lib/secDes.js';
+import { runMls, readMls } from '../lib/mlsFeed.js';
 
 
 // ── ?future=CL — A CONTRACT FAMILY, RESOLVED ─────────────────────────────────
@@ -146,6 +147,16 @@ export default async function handler(req, res) {
     }
     res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=3600');
     return res.status(200).json(await readBreakLog());
+  }
+  // ── ?mls=1 — THE MOMENTUM-LEADERS PAPER TRIAL (lib/mls.js, lib/mlsFeed.js) ──
+  // GET: the paper ledger, signed-in or service key only — a model portfolio, but the one a live
+  // account will mirror. &write=1 replays every settled session since the last run (the daily
+  // workflow, .github/workflows/mls-paper.yml).
+  if (String(req.query?.mls || '') === '1') {
+    res.setHeader('Cache-Control', 'private, no-store');
+    if (!(await authorised(req))) return res.status(401).json({ ok: false, error: 'unauthorised', why: refusalReason(req) });
+    try { return res.status(200).json(String(req.query?.write || '') === '1' ? await runMls() : await readMls()); }
+    catch (e) { return res.status(200).json({ ok: false, reason: String(e?.message || e).slice(0, 160) }); }
   }
   // ── ?squeeze=1 — SqueezeMetrics' daily SPX dealer-gamma estimate (lib/squeeze.js), the last
   // ~2 years, for the Gamma tab's percentile tell. Market data only.

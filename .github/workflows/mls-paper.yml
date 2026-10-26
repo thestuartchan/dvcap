@@ -1,0 +1,43 @@
+name: mls paper trial
+
+# The Momentum-Leaders paper trial (lib/mls.js): after each US close the route replays every settled
+# session since the last run — fills yesterday's queued orders at today's opening prints, marks the
+# close, queues tomorrow's exits and buys — and stores the private ledger in Redis.
+#
+# 21:45 UTC is after the 16:00 New York close in both halves of the year. A missed run heals itself:
+# the next one replays the sessions it missed, in order, from the bars.
+#
+# The ledger is private and the log below prints counts only, because Actions logs are public.
+
+on:
+  schedule:
+    - cron: '45 21 * * 1-5'
+  workflow_dispatch:
+
+concurrency:
+  group: mls-paper
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Replay the settled sessions
+        env:
+          KEY: ${{ secrets.TRADECARD_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then echo "::error::TRADECARD_KEY is not set"; exit 1; fi
+          code=$(curl -sS -o /tmp/mls.json -w '%{http_code}' --max-time 280 \
+            -H "x-tradecard-key: $KEY" \
+            "https://dvcap.vercel.app/api/atr?mls=1&write=1") || true
+          echo "HTTP $code"
+          python3 - <<'PY' || head -c 200 /tmp/mls.json
+          import json
+          d = json.load(open('/tmp/mls.json'))
+          log = d.get('log') or []
+          print('ok', d.get('ok'), '| replayed', d.get('replayed'), '| coverage', d.get('coverage'),
+                '| fills', sum(len(x.get('filled') or []) for x in log), '| exits queued', sum(len(x.get('exits') or []) for x in log),
+                '| buys queued', sum(len(x.get('queued') or []) for x in log), '| note', d.get('note') or d.get('reason'))
+          PY
+          [ "$code" = "200" ]
