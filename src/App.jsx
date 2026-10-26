@@ -53,6 +53,7 @@ function trendBps(series, lookbackDays) {
 import { growthPulse, marketPulse, monthlyPulse, growthAxis } from "../lib/growth.js";
 import { marketInflation, nowcastInflation, printedInflation, inflationAxis } from "../lib/inflationAxis.js";
 import { measuredAxes, axesLogRow } from "../lib/quadrant.js";
+import { MlsPanel } from "./MlsPanel.jsx";
 import { handKeptLedger } from "../lib/ledger.js";
 import { handEntryPlan, newerKofia } from "../lib/handEntry.js";
 import CALENDAR from "../data/calendar.json";
@@ -6925,6 +6926,7 @@ export default function App() {
       { id: "console",    label: "🎚️ Console"        },
       { id: "insurance",  label: "🛡️ Hedges"         },
       { id: "income",     label: "💰 Income"         },
+      { id: "mls",        label: "🧪 Paper trial"    },
     ] },
     // PLAN — posture by regime × conditions, the stage and what each transition changes, with the
     // houses' view (Smart Money) beside it as the research it is.
@@ -7284,6 +7286,9 @@ export default function App() {
             <CoveragePanel onOpenTicker={(sym) => runGo({ tab: "ticker", symbol: sym })} />
           </div>
         )}
+
+        {/* ── THE PAPER TRIAL (src/MlsPanel.jsx) ── */}
+        {tab === "mls" && <MlsPanel />}
 
         {/* ── PLAN ── */}
         {tab === "plan" && (

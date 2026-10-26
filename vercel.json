@@ -12,6 +12,9 @@
   "functions": {
     "api/preread.js": {
       "includeFiles": "data/render/**"
+    },
+    "api/atr.js": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
