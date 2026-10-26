@@ -18,7 +18,8 @@ import { contractsByRoot, markOf } from '../lib/instruments.js';
 import { fetchCboeGreeks } from '../lib/cboe.js';
 import { derivePosition, positionPnl, levelHits, applyRolls } from '../lib/positions.js';
 import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard, isStaleEvent, isOptionTrade } from '../lib/tradecard.js';
-import { upsertCard, post, remove, send, webhookFromEnv, walletWebhookFromEnv, ideasWebhookFromEnv, mentionFromEnv, alertTtlMin, CARD_KEY, IDEAS_CARD_KEY } from '../lib/discord.js';
+import { upsertCard, post, remove, send, webhookFromEnv, walletWebhookFromEnv, ideasWebhookFromEnv, eventsWebhookFromEnv, postWithFiles, editWithFiles, mentionFromEnv, alertTtlMin, CARD_KEY, IDEAS_CARD_KEY } from '../lib/discord.js';
+import { parseUpsert, eventPayload, cardHash, roleFromEnv, EVENTS_CARD_KEY } from '../lib/eventcard.js';
 import { authorised as gate, refusalReason, hasIdeasToken, refuse } from '../lib/apiauth.js';
 import { reconcileIdeas } from '../lib/ideacard.js';
 import { fetchWallets } from '../lib/wallet.js';
@@ -412,8 +413,82 @@ export async function ideasCard(req, res, { webhook = ideasWebhookFromEnv(), kv 
   }
 }
 
+// ── MACRO EVENT CARDS, IN A FOURTH CHANNEL ───────────────────────────────────
+// POST /api/event-card (vercel.json rewrites it to ?card=event here — still 12 of 12 functions).
+// Same door as the ideas cards (x-ideas-token): the caller is the same Claude session that keeps
+// the ideas channel, and this token opens nothing else. Actions:
+//   { action: 'upsert', id, heading, text, image_b64 }  post, or edit the same message in place
+//   { action: 'delete', id }                            remove the message and forget it
+//   { action: 'list' }                                  ids, headings and times — no content
+// Redis keeps id → { messageId, hash, heading, postedAt, updatedAt }. See docs/event-card.md.
+const EVENTS_LOCK_KEY = `${EVENTS_CARD_KEY}:lock`;
+export async function eventCard(req, res, {
+  webhook = eventsWebhookFromEnv(), roleId = roleFromEnv(),
+  kv = { get: kvGetJson, set: kvSetJson, lock: kvSetNxEx, unlock: kvDel, configured: kvConfigured },
+  poster = postWithFiles, editor = editWithFiles, remover = remove, now = () => new Date(),
+} = {}) {
+  res.setHeader('Cache-Control', 'private, no-store');
+  if (!hasIdeasToken(req)) return refuse(res, 'not authorised for the event cards');
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  let body = req.body;
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { return res.status(400).json({ error: 'the body is not JSON' }); } }
+  const action = String(body?.action || 'upsert');
+  if (!kv.configured()) return res.status(200).json({ ok: false, reason: 'no store — Redis is not configured' });
+  if (action === 'list') {
+    const stored = (await kv.get(EVENTS_CARD_KEY)) || {};
+    const cards = Object.entries(stored.cards || {}).map(([id, c]) => ({ id, heading: c.heading, postedAt: c.postedAt, updatedAt: c.updatedAt }));
+    return res.status(200).json({ ok: true, cards });
+  }
+  if (!webhook) return res.status(200).json({ ok: false, reason: 'no webhook' });
+  if (!(await kv.lock(EVENTS_LOCK_KEY, { at: now().toISOString() }, 60))) return res.status(200).json({ ok: false, reason: 'busy — another event-card call is running' });
+  try {
+    const stored = (await kv.get(EVENTS_CARD_KEY)) || {};
+    const cards = { ...(stored.cards || {}) };
+    if (action === 'delete') {
+      const id = String(body?.id || '');
+      const c = cards[id];
+      if (!c) return res.status(200).json({ ok: true, deleted: false, reason: 'unknown id' });
+      if (!(await remover(webhook, c.messageId))) return res.status(200).json({ ok: false, reason: 'Discord refused the delete' });
+      delete cards[id];
+      await kv.set(EVENTS_CARD_KEY, { cards, updatedAt: now().toISOString() });
+      return res.status(200).json({ ok: true, deleted: true, id });
+    }
+    if (action !== 'upsert') return res.status(400).json({ error: `unknown action ${action}` });
+    const p = parseUpsert(body);
+    if (!p.ok) return res.status(400).json({ error: p.error });
+    const card = p.card;
+    const hash = cardHash(card);
+    const prev = cards[card.id];
+    if (prev && prev.hash === hash) return res.status(200).json({ ok: true, id: card.id, result: 'unchanged' });
+    const payload = eventPayload(card, { roleId });
+    const files = [{ filename: card.filename, bytes: card.bytes }];
+    let result, messageId = prev?.messageId || null;
+    if (messageId) {
+      const e = await editor(webhook, messageId, payload, files);
+      if (e.ok) result = 'edited';
+      else if (!e.gone) return res.status(200).json({ ok: false, id: card.id, reason: 'Discord refused the edit' });
+      else messageId = null;
+    }
+    if (!messageId) {
+      messageId = await poster(webhook, payload, files);
+      if (!messageId) return res.status(200).json({ ok: false, id: card.id, reason: 'Discord refused the post' });
+      result = 'posted';
+    }
+    const at = now().toISOString();
+    cards[card.id] = { messageId, hash, heading: card.heading, postedAt: result === 'posted' ? at : (prev?.postedAt || at), updatedAt: at };
+    const saved = await kv.set(EVENTS_CARD_KEY, { cards, updatedAt: at });
+    return res.status(200).json({ ok: !!saved, id: card.id, result, ...(saved ? {} : { warning: 'posted, but the message id was not saved — a refresh would post a second message' }) });
+  } catch (e) {
+    console.error('eventcard', e?.message || e);
+    return res.status(200).json({ ok: false, error: String(e?.message || e) });
+  } finally {
+    await kv.unlock(EVENTS_LOCK_KEY);
+  }
+}
+
 export default async function handler(req, res) {
   if (String(req.query?.card || '') === 'ideas') return ideasCard(req, res);
+  if (String(req.query?.card || '') === 'event') return eventCard(req, res);
   if (req.method !== 'GET' && req.method !== 'POST') { res.status(405).json({ error: 'method not allowed' }); return; }
   if (!(await authorised(req))) { res.status(401).json({ error: 'unauthorised', why: refusalReason(req) }); return; }
   if (String(req.query?.card || '') === 'wallet') {
