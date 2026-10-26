@@ -273,10 +273,10 @@
         }
       },
       "fwd": {
-        "QQQ_1": 0.1,
+        "QQQ_1": -0.01,
         "QQQ_3": null,
         "QQQ_5": null,
-        "SOXX_1": 0.65,
+        "SOXX_1": 0.53,
         "SOXX_3": null,
         "SOXX_5": null
       },
@@ -290,6 +290,135 @@
           "r": 0.53
         }
       }
+    },
+    {
+      "date": "2026-10-26",
+      "at": "2026-10-26T12:43:25.427Z",
+      "as_of": "2026-10-23",
+      "target": "2026-10-26",
+      "rows": {
+        "hyg_lqd": {
+          "v": -0.187,
+          "s": "neutral"
+        },
+        "hy_oas": {
+          "v": 17,
+          "s": "off"
+        },
+        "ust10y": {
+          "v": -13.9,
+          "s": "on"
+        },
+        "move": {
+          "v": 87,
+          "s": "off"
+        },
+        "brent_box": {
+          "v": 64.6,
+          "s": "neutral"
+        },
+        "cushion": {
+          "v": 23.413,
+          "s": "neutral"
+        },
+        "vix_rv": {
+          "v": 1.922,
+          "s": "on"
+        },
+        "vix9d_vix": {
+          "v": null,
+          "s": null
+        },
+        "skew": {
+          "v": 86.111,
+          "s": "off"
+        },
+        "put_call": {
+          "v": 84,
+          "s": "off"
+        },
+        "opex": {
+          "v": 19,
+          "s": "neutral"
+        },
+        "buyback_blackout": {
+          "v": 78.5,
+          "s": "off"
+        },
+        "month_end_rebalance": {
+          "v": -2.211,
+          "s": "on"
+        },
+        "rsp_qqq": {
+          "v": 8.411,
+          "s": "on"
+        },
+        "breadth": {
+          "v": 4.1,
+          "s": "on"
+        },
+        "igv_smh": {
+          "v": 20.024,
+          "s": "off"
+        },
+        "soxx_ma": {
+          "v": 1,
+          "s": "off"
+        },
+        "qqq_ma": {
+          "v": 1,
+          "s": "off"
+        },
+        "kospi": {
+          "v": -1.456,
+          "s": "off"
+        },
+        "btc_ma": {
+          "v": 2,
+          "s": "neutral"
+        },
+        "btc_qqq": {
+          "v": 1.969,
+          "s": "neutral"
+        },
+        "eth_btc": {
+          "v": -8.165,
+          "s": "off"
+        },
+        "btc_dd": {
+          "v": -29.756,
+          "s": "neutral"
+        },
+        "ai_narrative": {
+          "v": null,
+          "s": null
+        }
+      },
+      "clusters": {
+        "macro": "off",
+        "dealers": "off",
+        "tape": "neutral",
+        "narrative": null
+      },
+      "lean": "off",
+      "call": {
+        "QQQ": {
+          "median_r": 0.97,
+          "p1": 0.47,
+          "zone": "selective",
+          "p_trend": 0.52,
+          "conflict": null
+        },
+        "SPY": {
+          "median_r": 0.89,
+          "p1": 0.38,
+          "zone": "lean skip",
+          "p_trend": 0.49,
+          "conflict": null
+        }
+      },
+      "fwd": null,
+      "realised": null
     }
   ]
 }
