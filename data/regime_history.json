@@ -5273,28 +5273,28 @@
         "regime": {
           "id": "inf",
           "probs": {
-            "ref": 20,
-            "inf": 67,
-            "stag": 10,
-            "def": 3
+            "ref": 21,
+            "inf": 72,
+            "stag": 5,
+            "def": 2
           },
-          "g": 0.42,
-          "gDrift": -0.55,
+          "g": 0.51,
+          "gDrift": -0.35,
           "i": 0.28,
           "iDrift": -0.33,
-          "drifting": "def"
+          "drifting": null
         },
         "conditions": {
-          "score": 63.9,
+          "score": 62.8,
           "band": "caution",
           "comps": {
             "credit": 76,
-            "equityVol": 53,
-            "ratesVol": 71,
+            "equityVol": 47,
+            "ratesVol": 72,
             "realYield": 82,
             "funding": 40,
-            "breadth": 40,
-            "dollar": 67
+            "breadth": 41,
+            "dollar": 65
           }
         },
         "policy": {
@@ -5302,11 +5302,11 @@
           "hikeOdds": 10,
           "liq4w": 31
         },
-        "sizing": 0.65,
+        "sizing": 0.66,
         "stage": 2
       },
       "source": "cron",
-      "loggedAt": "2026-10-26T14:09:52.725Z"
+      "loggedAt": "2026-10-26T15:27:56.425Z"
     }
   ]
 }
