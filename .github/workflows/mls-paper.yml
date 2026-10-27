@@ -4,14 +4,17 @@ name: mls paper trial
 # session since the last run — fills yesterday's queued orders at today's opening prints, marks the
 # close, queues tomorrow's exits and buys — and stores the private ledger in Redis.
 #
-# 21:45 UTC is after the 16:00 New York close in both halves of the year. A missed run heals itself:
-# the next one replays the sessions it missed, in order, from the bars.
+# 21:45 UTC is after the 16:00 New York close in both halves of the year, and 03:30 UTC retries it.
+# A missed run heals itself: the next one replays the sessions it missed, in order, from the bars.
 #
 # The ledger is private and the log below prints counts only, because Actions logs are public.
 
 on:
   schedule:
     - cron: '45 21 * * 1-5'
+    # A retry: GitHub's scheduler can run hours late, and Yahoo's daily bar can lag the close. A
+    # second run on a session already replayed does nothing.
+    - cron: '30 3 * * 2-6'
   workflow_dispatch:
 
 concurrency:
@@ -40,4 +43,4 @@ jobs:
                 '| fills', sum(len(x.get('filled') or []) for x in log), '| exits queued', sum(len(x.get('exits') or []) for x in log),
                 '| buys queued', sum(len(x.get('queued') or []) for x in log), '| note', d.get('note') or d.get('reason'))
           PY
-          [ "$code" = "200" ]
+          [ "$code" = "200" ] && python3 -c "import json,sys; sys.exit(0 if json.load(open('/tmp/mls.json')).get('ok') else 1)"

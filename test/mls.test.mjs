@@ -106,6 +106,10 @@ eq('class shares map to Yahoo symbols', [yahooSym('BRKB'), yahooSym('BFB'), yaho
     : { status: 404, ok: false };
   const r2 = await runMls({ fetchImpl: spyOnly, kv, now: Date.parse('2026-11-04T22:00:00Z') });
   eq('members missing: nothing traded, nothing stored', [r2.ok, /members loaded/.test(r2.reason), store['dvcap:mls:paper:v1']], [false, true, undefined]);
+  // Every name loads, but Yahoo's bars stop the session before the one that has settled (26 Oct).
+  const behind = async () => ({ status: 200, ok: true, json: async () => ({ chart: { result: [{ timestamp: [Date.parse('2026-11-03T14:30:00Z') / 1000], meta: { gmtoffset: 0 }, indicators: { quote: [{ open: [1], high: [1], low: [1], close: [1] }] } }] } }) });
+  const r3 = await runMls({ fetchImpl: behind, kv, now: Date.parse('2026-11-04T22:00:00Z') });
+  eq('bars that stop before the settled session: a failure, nothing stored', [r3.ok, /end 2026-11-03, before the settled session 2026-11-04/.test(r3.reason), store['dvcap:mls:paper:v1']], [false, true, undefined]);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
