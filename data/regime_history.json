@@ -5323,7 +5323,7 @@
       "inputs": {
         "weightedRecessionProb": 13.5,
         "cpi": 3.71725,
-        "kalshi2027": 20,
+        "kalshi2027": 22,
         "tape": {
           "gold": "down",
           "tlt": "up",
@@ -5338,7 +5338,7 @@
         "ladderSpread": -0.68,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.38,
+        "oas": 3.3,
         "tenY": 5,
         "twoY": 4.69,
         "consensusAlive": 0.994,
@@ -5396,40 +5396,40 @@
         "regime": {
           "id": "inf",
           "probs": {
-            "ref": 21,
-            "inf": 72,
-            "stag": 5,
-            "def": 2
+            "ref": 22,
+            "inf": 74,
+            "stag": 3,
+            "def": 1
           },
-          "g": 0.51,
-          "gDrift": -0.35,
+          "g": 0.59,
+          "gDrift": -0.15,
           "i": 0.28,
           "iDrift": -0.33,
           "drifting": null
         },
         "conditions": {
-          "score": 63,
+          "score": 61,
           "band": "caution",
           "comps": {
-            "credit": 76,
-            "equityVol": 46,
-            "ratesVol": 65,
+            "credit": 72,
+            "equityVol": 43,
+            "ratesVol": 62,
             "realYield": 82,
             "funding": 52,
-            "breadth": 43,
-            "dollar": 66
+            "breadth": 42,
+            "dollar": 69
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 10,
+          "hikeOdds": 8,
           "liq4w": 31
         },
-        "sizing": 0.66,
+        "sizing": 0.67,
         "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-27T14:54:33.946Z"
+      "loggedAt": "2026-10-27T18:19:57.674Z"
     }
   ]
 }
