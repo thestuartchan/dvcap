@@ -23,6 +23,10 @@
       "destination": "/api/tradecard?card=ideas"
     },
     {
+      "source": "/api/event-card",
+      "destination": "/api/tradecard?card=event"
+    },
+    {
       "source": "/api/g/:slug/:ticker",
       "destination": "/api/gex?feed=:slug&symbol=:ticker"
     },
