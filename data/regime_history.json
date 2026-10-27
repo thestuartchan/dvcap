@@ -5310,9 +5310,9 @@
     },
     {
       "date": "2026-10-27",
-      "stagflation_p": 65,
+      "stagflation_p": 66,
       "reflationary_p": 17,
-      "deflationary_p": 13,
+      "deflationary_p": 12,
       "inflationary_p": 5,
       "hawkish_repricing": "INSUFFICIENT_DATA",
       "live_regime": "stag",
@@ -5322,7 +5322,7 @@
       "hyg_qqq_divergence": 0.18,
       "inputs": {
         "weightedRecessionProb": 13.5,
-        "cpi": 3.35302,
+        "cpi": 3.71725,
         "kalshi2027": 21,
         "tape": {
           "gold": "down",
@@ -5338,26 +5338,26 @@
         "ladderSpread": -0.68,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.11,
-        "tenY": 5.22,
-        "twoY": 4.75,
-        "consensusAlive": 0.9,
+        "oas": 3.38,
+        "tenY": 5,
+        "twoY": 4.69,
+        "consensusAlive": 0.994,
         "regimeVintage": "fresh"
       },
       "axes": {
         "growth": {
-          "state": "data-only",
+          "state": "confirmed",
           "lean": 1,
           "market": {
-            "verdict": "INSUFFICIENT",
-            "lean": null,
-            "usable": 0,
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 5,
             "of": 5
           },
           "weekly": {
-            "verdict": "INSUFFICIENT",
-            "lean": null,
-            "usable": 1,
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 4,
             "of": 4
           },
           "monthly": {
@@ -5368,68 +5368,68 @@
           }
         },
         "inflation": {
-          "state": "printed-only",
-          "lean": 0,
+          "state": "split",
+          "lean": 1,
           "market": {
-            "verdict": "INSUFFICIENT",
-            "lean": null,
-            "usable": 0,
+            "verdict": "HOT",
+            "lean": 1,
+            "usable": 3,
             "of": 3
           },
           "nowcast": {
-            "verdict": "INSUFFICIENT",
-            "lean": null,
-            "usable": 0,
-            "of": 2
-          },
-          "printed": {
             "verdict": "BETWEEN",
             "lean": 0,
             "usable": 2,
+            "of": 2
+          },
+          "printed": {
+            "verdict": "HOT",
+            "lean": 1,
+            "usable": 3,
             "of": 3
           }
         },
-        "quadrant": null,
-        "quadrantRead": "between quadrants — the inflation axis is flat"
+        "quadrant": "inf",
+        "quadrantRead": "growth firm, inflation hot"
       },
       "state": {
         "regime": {
-          "id": "ref",
+          "id": "inf",
           "probs": {
-            "ref": 50,
-            "inf": 50,
-            "stag": 0,
-            "def": 0
+            "ref": 22,
+            "inf": 74,
+            "stag": 3,
+            "def": 1
           },
-          "g": 0.75,
-          "gDrift": 0,
-          "i": 0,
-          "iDrift": 0,
+          "g": 0.59,
+          "gDrift": -0.15,
+          "i": 0.28,
+          "iDrift": -0.33,
           "drifting": null
         },
         "conditions": {
-          "score": 63.3,
+          "score": 63.5,
           "band": "caution",
           "comps": {
             "credit": 76,
-            "equityVol": 51,
+            "equityVol": 52,
             "ratesVol": 69,
             "realYield": 82,
             "funding": 40,
             "breadth": 42,
-            "dollar": 65
+            "dollar": 66
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 22,
+          "hikeOdds": 10,
           "liq4w": 31
         },
-        "sizing": 0.72,
+        "sizing": 0.67,
         "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-27T07:00:30.436Z"
+      "loggedAt": "2026-10-27T08:45:53.378Z"
     }
   ]
 }
