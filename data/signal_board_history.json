@@ -274,10 +274,10 @@
       },
       "fwd": {
         "QQQ_1": -0.01,
-        "QQQ_3": null,
+        "QQQ_3": 2.3,
         "QQQ_5": null,
         "SOXX_1": 0.53,
-        "SOXX_3": null,
+        "SOXX_3": 7.17,
         "SOXX_5": null
       },
       "realised": {
@@ -562,8 +562,24 @@
           "conflict": null
         }
       },
-      "fwd": null,
-      "realised": null
+      "fwd": {
+        "QQQ_1": 1.19,
+        "QQQ_3": null,
+        "QQQ_5": null,
+        "SOXX_1": 3.65,
+        "SOXX_3": null,
+        "SOXX_5": null
+      },
+      "realised": {
+        "QQQ": {
+          "date": "2026-10-27",
+          "r": 0.77
+        },
+        "SPY": {
+          "date": "2026-10-27",
+          "r": 0.66
+        }
+      }
     }
   ]
 }
