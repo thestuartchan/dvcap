@@ -5310,54 +5310,54 @@
     },
     {
       "date": "2026-10-27",
-      "stagflation_p": 66,
+      "stagflation_p": 65,
       "reflationary_p": 17,
-      "deflationary_p": 12,
+      "deflationary_p": 13,
       "inflationary_p": 5,
       "hawkish_repricing": "INSUFFICIENT_DATA",
       "live_regime": "stag",
       "view_regime": "stag",
-      "pinned": false,
-      "hyg_chg": 0.14,
-      "hyg_qqq_divergence": 3.23,
+      "pinned": true,
+      "hyg_chg": -0.24,
+      "hyg_qqq_divergence": 0.18,
       "inputs": {
         "weightedRecessionProb": 13.5,
-        "cpi": 3.71725,
+        "cpi": 3.35302,
         "kalshi2027": 21,
         "tape": {
           "gold": "down",
           "tlt": "up",
           "xlu": "up",
-          "xlp": "up",
-          "spy": "down",
+          "xlp": "flat",
+          "spy": "flat",
           "qqq": "down",
           "iwm": "down",
-          "btc": "down",
-          "breakevenBp": 2
+          "btc": "up",
+          "breakevenBp": -2
         },
-        "ladderSpread": -6.47,
+        "ladderSpread": -0.68,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.27,
-        "tenY": 5.13,
-        "twoY": 4.81,
-        "consensusAlive": 0.972,
+        "oas": 3.11,
+        "tenY": 5.22,
+        "twoY": 4.75,
+        "consensusAlive": 0.9,
         "regimeVintage": "fresh"
       },
       "axes": {
         "growth": {
-          "state": "confirmed",
+          "state": "data-only",
           "lean": 1,
           "market": {
-            "verdict": "EXPANDING",
-            "lean": 1,
-            "usable": 5,
+            "verdict": "INSUFFICIENT",
+            "lean": null,
+            "usable": 0,
             "of": 5
           },
           "weekly": {
-            "verdict": "EXPANDING",
-            "lean": 1,
-            "usable": 4,
+            "verdict": "INSUFFICIENT",
+            "lean": null,
+            "usable": 1,
             "of": 4
           },
           "monthly": {
@@ -5368,47 +5368,47 @@
           }
         },
         "inflation": {
-          "state": "turning-cool",
-          "lean": 1,
+          "state": "printed-only",
+          "lean": 0,
           "market": {
-            "verdict": "BETWEEN",
-            "lean": 0,
-            "usable": 3,
+            "verdict": "INSUFFICIENT",
+            "lean": null,
+            "usable": 0,
             "of": 3
           },
           "nowcast": {
-            "verdict": "BETWEEN",
-            "lean": 0,
-            "usable": 2,
+            "verdict": "INSUFFICIENT",
+            "lean": null,
+            "usable": 0,
             "of": 2
           },
           "printed": {
-            "verdict": "HOT",
-            "lean": 1,
-            "usable": 3,
+            "verdict": "BETWEEN",
+            "lean": 0,
+            "usable": 2,
             "of": 3
           }
         },
-        "quadrant": "inf",
-        "quadrantRead": "growth firm, inflation hot"
+        "quadrant": null,
+        "quadrantRead": "between quadrants — the inflation axis is flat"
       },
       "state": {
         "regime": {
-          "id": "inf",
+          "id": "ref",
           "probs": {
-            "ref": 32,
-            "inf": 55,
-            "stag": 8,
-            "def": 5
+            "ref": 50,
+            "inf": 50,
+            "stag": 0,
+            "def": 0
           },
-          "g": 0.42,
-          "gDrift": -0.55,
-          "i": 0.13,
-          "iDrift": -0.67,
-          "drifting": "def"
+          "g": 0.75,
+          "gDrift": 0,
+          "i": 0,
+          "iDrift": 0,
+          "drifting": null
         },
         "conditions": {
-          "score": 63.2,
+          "score": 63.3,
           "band": "caution",
           "comps": {
             "credit": 76,
@@ -5417,19 +5417,19 @@
             "realYield": 82,
             "funding": 40,
             "breadth": 42,
-            "dollar": 64
+            "dollar": 65
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 8,
+          "hikeOdds": 22,
           "liq4w": 31
         },
-        "sizing": 0.66,
+        "sizing": 0.72,
         "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-10-27T05:12:41.992Z"
+      "loggedAt": "2026-10-27T07:00:30.436Z"
     }
   ]
 }
