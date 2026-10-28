@@ -18,8 +18,8 @@ import { contractsByRoot, markOf } from '../lib/instruments.js';
 import { fetchCboeGreeks } from '../lib/cboe.js';
 import { derivePosition, positionPnl, levelHits, applyRolls } from '../lib/positions.js';
 import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard, isStaleEvent, isOptionTrade } from '../lib/tradecard.js';
-import { upsertCard, post, remove, send, webhookFromEnv, walletWebhookFromEnv, ideasWebhookFromEnv, eventsWebhookFromEnv, postWithFiles, editWithFiles, mentionFromEnv, alertTtlMin, CARD_KEY, IDEAS_CARD_KEY } from '../lib/discord.js';
-import { parseUpsert, eventPayload, cardHash, roleFromEnv, EVENTS_CARD_KEY } from '../lib/eventcard.js';
+import { upsertCard, post, remove, send, webhookFromEnv, walletWebhookFromEnv, ideasWebhookFromEnv, eventsWebhookFromEnv, postWithFiles, editWithFiles, webhookInfo, mentionFromEnv, alertTtlMin, CARD_KEY, IDEAS_CARD_KEY } from '../lib/discord.js';
+import { parseUpsert, eventPayload, cardHash, roleFromEnv, EVENTS_CARD_KEY, jumpLink, noticePayload } from '../lib/eventcard.js';
 import { authorised as gate, refusalReason, hasIdeasToken, refuse } from '../lib/apiauth.js';
 import { reconcileIdeas } from '../lib/ideacard.js';
 import { fetchWallets } from '../lib/wallet.js';
@@ -417,15 +417,18 @@ export async function ideasCard(req, res, { webhook = ideasWebhookFromEnv(), kv 
 // POST /api/event-card (vercel.json rewrites it to ?card=event here — still 12 of 12 functions).
 // Same door as the ideas cards (x-ideas-token): the caller is the same Claude session that keeps
 // the ideas channel, and this token opens nothing else. Actions:
-//   { action: 'upsert', id, heading, text, image_b64 }  post, or edit the same message in place
+//   { action: 'upsert', id, heading, text, image_b64, notify? }  post, or edit the same message in place;
+//                                                       with `notify`, an edit also posts an "updated" notice
+//                                                       linking to the card (the previous notice is removed)
 //   { action: 'delete', id }                            remove the message and forget it
 //   { action: 'list' }                                  ids, headings and times — no content
-// Redis keeps id → { messageId, hash, heading, postedAt, updatedAt }. See docs/event-card.md.
+// Redis keeps id → { messageId, noticeId?, hash, heading, postedAt, updatedAt }. See docs/event-card.md.
 const EVENTS_LOCK_KEY = `${EVENTS_CARD_KEY}:lock`;
 export async function eventCard(req, res, {
   webhook = eventsWebhookFromEnv(), roleId = roleFromEnv(),
   kv = { get: kvGetJson, set: kvSetJson, lock: kvSetNxEx, unlock: kvDel, configured: kvConfigured },
   poster = postWithFiles, editor = editWithFiles, remover = remove, now = () => new Date(),
+  notifier = post, info = webhookInfo,
 } = {}) {
   res.setHeader('Cache-Control', 'private, no-store');
   if (!hasIdeasToken(req)) return refuse(res, 'not authorised for the event cards');
@@ -449,6 +452,7 @@ export async function eventCard(req, res, {
       const c = cards[id];
       if (!c) return res.status(200).json({ ok: true, deleted: false, reason: 'unknown id' });
       if (!(await remover(webhook, c.messageId))) return res.status(200).json({ ok: false, reason: 'Discord refused the delete' });
+      if (c.noticeId) await remover(webhook, c.noticeId);
       delete cards[id];
       await kv.set(EVENTS_CARD_KEY, { cards, updatedAt: now().toISOString() });
       return res.status(200).json({ ok: true, deleted: true, id });
@@ -475,9 +479,22 @@ export async function eventCard(req, res, {
       result = 'posted';
     }
     const at = now().toISOString();
-    cards[card.id] = { messageId, hash, heading: card.heading, postedAt: result === 'posted' ? at : (prev?.postedAt || at), updatedAt: at };
+    // The notice: only for a refresh of a card already in the channel (an edit, or a re-post of a
+    // card that had been deleted by hand), never for a first post. A failed notice never fails the
+    // upsert — the card itself is what matters.
+    let noticeId = prev?.noticeId || null, notice;
+    if (card.notify && prev) {
+      const where = await info(webhook).catch(() => null);
+      const jump = jumpLink(where?.guildId, where?.channelId, messageId);
+      const id = await notifier(webhook, noticePayload(card, { jump, roleId }));
+      if (id) {
+        if (noticeId) await remover(webhook, noticeId);
+        noticeId = id; notice = jump ? 'posted' : 'posted without a link';
+      } else notice = 'failed';
+    }
+    cards[card.id] = { messageId, ...(noticeId ? { noticeId } : {}), hash, heading: card.heading, postedAt: result === 'posted' ? at : (prev?.postedAt || at), updatedAt: at };
     const saved = await kv.set(EVENTS_CARD_KEY, { cards, updatedAt: at });
-    return res.status(200).json({ ok: !!saved, id: card.id, result, ...(saved ? {} : { warning: 'posted, but the message id was not saved — a refresh would post a second message' }) });
+    return res.status(200).json({ ok: !!saved, id: card.id, result, ...(notice ? { notice } : {}), ...(saved ? {} : { warning: 'posted, but the message id was not saved — a refresh would post a second message' }) });
   } catch (e) {
     console.error('eventcard', e?.message || e);
     return res.status(200).json({ ok: false, error: String(e?.message || e) });

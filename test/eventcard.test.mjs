@@ -1,6 +1,6 @@
 // test/eventcard.test.mjs — macro event cards (lib/eventcard.js) and their door
 // (/api/event-card → api/tradecard.js ?card=event): post once, edit in place, never a second message.
-import { parseUpsert, eventPayload, cardHash, roleFromEnv } from '../lib/eventcard.js';
+import { parseUpsert, eventPayload, cardHash, roleFromEnv, jumpLink, noticePayload } from '../lib/eventcard.js';
 import { eventCard } from '../api/tradecard.js';
 import { IDEAS_TOKEN_ENV, IDEAS_TOKEN_HEADER } from '../lib/apiauth.js';
 
@@ -53,6 +53,43 @@ gone = false;
 eq('list shows the card, no content', (await run({ action: 'list' })).cards.map(x => x.id), ['fomc-2026-10-28']);
 eq('delete removes it', (await run({ action: 'delete', id: 'fomc-2026-10-28' })).deleted, true);
 eq('list is empty after', (await run({ action: 'list' })).cards, []);
+
+// ── UPDATE NOTICES ───────────────────────────────────────────────────────────
+eq('notify is optional', parseUpsert(good).card.notify, null);
+eq('notify is one line', parseUpsert({ ...good, notify: 'yields\nrefreshed' }).card.notify, 'yields refreshed');
+eq('jump link from numeric ids', jumpLink('111111', '222222', '333333'), 'https://discord.com/channels/111111/222222/333333');
+eq('no jump link from junk ids', jumpLink('x', '222222', '333333'), null);
+eq('notice: line, link, ping', noticePayload({ heading: 'FOMC', notify: 'yields refreshed' }, { jump: 'https://discord.com/channels/1/2/3', roleId: '42424242' }).content,
+  '🔄 **FOMC** updated: yields refreshed\n→ https://discord.com/channels/1/2/3\n<@&42424242>');
+eq('notice pings only the role', noticePayload({ heading: 'FOMC', notify: 'x' }, { roleId: '42424242' }).allowed_mentions, { parse: [], roles: ['42424242'] });
+
+{
+  const st = {}; const log = []; let n = 900000;
+  const kv2 = { configured: () => true, get: async (k) => st[k] ?? null, set: async (k, v) => { st[k] = v; return true; }, lock: async () => true, unlock: async () => true };
+  const d2 = {
+    webhook: 'https://discord.com/api/webhooks/1/abc', roleId: '42424242', kv: kv2,
+    poster: async () => { log.push('card'); return String(++n); },
+    editor: async (_w, id) => { log.push(`edit ${id}`); return { ok: true, gone: false }; },
+    remover: async (_w, id) => { log.push(`delete ${id}`); return true; },
+    notifier: async (_w, p) => { log.push(`notice ${p.content.split('\n')[1] || ''}`); return String(++n); },
+    info: async () => ({ guildId: '111111', channelId: '222222' }),
+  };
+  const go = async (body) => { const res = mkRes(); await eventCard(mkReq(body), res, d2); return res.body; };
+  const first = await go({ ...good, notify: 'ignored on a first post' });
+  eq('first post sends no notice', [first.result, first.notice ?? null, log], ['posted', null, ['card']]);
+  const r1 = await go({ ...good, text: 'Refreshed once.', notify: 'yields refreshed' });
+  eq('refresh edits and posts a linked notice', [r1.result, r1.notice, log.slice(1)], ['edited', 'posted', ['edit 900001', 'notice → https://discord.com/channels/111111/222222/900001']]);
+  await go({ ...good, text: 'Refreshed twice.', notify: 'gamma refreshed' });
+  eq('second refresh replaces the old notice', log.slice(3), ['edit 900001', 'notice → https://discord.com/channels/111111/222222/900001', 'delete 900002']);
+  eq('…and stores the new notice id', st['dvcap:discord:events:v1'].cards['fomc-2026-10-28'].noticeId, '900003');
+  const r3 = await go({ ...good, text: 'Quiet refresh.' });
+  eq('a refresh without notify posts nothing extra', [r3.notice ?? null, log.slice(6)], [null, ['edit 900001']]);
+  d2.notifier = async () => null;
+  const r4 = await go({ ...good, text: 'Notice fails.', notify: 'x' });
+  eq('a failed notice never fails the card', [r4.ok, r4.result, r4.notice], [true, 'edited', 'failed']);
+  await go({ action: 'delete', id: 'fomc-2026-10-28' });
+  eq('delete also removes the notice', log.slice(-2), ['delete 900001', 'delete 900003']);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
