@@ -4,17 +4,22 @@ name: mls paper trial
 # session since the last run — fills yesterday's queued orders at today's opening prints, marks the
 # close, queues tomorrow's exits and buys — and stores the private ledger in Redis.
 #
-# 21:45 UTC is after the 16:00 New York close in both halves of the year, and 03:30 UTC retries it.
+# WHEN (29 Oct). The first schedule was 21:45 UTC, just after the close. GitHub started it three
+# hours late every time (00:45-01:15 UTC), and on two of three evenings Yahoo's SPY history still
+# ended the session before, so the run refused to trade and failed. By 05:50 UTC the bar was there,
+# and the runs that started between 06:50 and 09:55 UTC all succeeded. So the run is overnight:
+# 05:15 UTC, with a retry at 09:15 UTC — before the 13:30 UTC open even if GitHub runs them four
+# hours late. Nothing is lost by waiting: every fill is computed from the bars, never the clock.
 # A missed run heals itself: the next one replays the sessions it missed, in order, from the bars.
 #
 # The ledger is private and the log below prints counts only, because Actions logs are public.
 
 on:
   schedule:
-    - cron: '45 21 * * 1-5'
-    # A retry: GitHub's scheduler can run hours late, and Yahoo's daily bar can lag the close. A
-    # second run on a session already replayed does nothing.
-    - cron: '30 3 * * 2-6'
+    - cron: '15 5 * * 2-6'
+    # A retry: GitHub's scheduler can run hours late, and Yahoo's daily bar can lag. A second run on
+    # a session already replayed does nothing.
+    - cron: '15 9 * * 2-6'
   workflow_dispatch:
 
 concurrency:
