@@ -1,7 +1,7 @@
 // test/cta.test.mjs — the CTA replica (lib/cta.js), on synthetic series whose answers are known.
 import { ctaMarket, sigmaDaily, windowScore, blend, blendedFlip, stanceOf, nearestCut, ctaSummary, flowLevels, priceForPosition,
-         LOOKBACKS, MIN_BARS, CTA_MARKETS, CROWDED, NEUTRAL, priceDp, globexTradeDate, closesForModel, isWeekendDate } from '../lib/cta.js';
-import { closeBeforeFrom } from '../lib/yahoo.js';
+         LOOKBACKS, MIN_BARS, CTA_MARKETS, CROWDED, NEUTRAL, priceDp, globexTradeDate, closesForModel, isWeekendDate, settlementFor } from '../lib/cta.js';
+import { closeBeforeFrom, priceBeforeEt } from '../lib/yahoo.js';
 import { marketState } from '../lib/sessions.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -219,6 +219,42 @@ const N = MIN_BARS + 20;
                                 { live: true, tradeDate: globexTradeDate(new Date('2026-10-06T23:00:00Z')), settled: c[tue] });
   eq('Tuesday evening: Tuesday\'s close, then the live price, as Wednesday\'s session',
      [tueEve.evening, tueEve.date, tueEve.closes.length, tueEve.closes.at(-2), tueEve.closes.at(-1), tueEve.settled], [true, '2026-10-07', tue + 2, c[tue], livePx, c[tue]]);
+}
+
+
+// ── THE CLOSE IS THE SETTLEMENT ───────────────────────────────────────────────
+// After the close Yahoo's last bar can hold the 17:00 last trade; the model's close is the
+// settlement. Made-up prices; the shape is 28 Oct's, when the two were 223 points apart.
+{
+  const t = (iso) => Date.parse(iso) / 1000;
+  // Five-minute bars, New York EDT (−4h): 15:50, 15:55, 16:00 and 16:55 on the 28th, one on the 27th.
+  const five = { meta: { gmtoffset: -18000 }, timestamp: [t('2026-10-27T20:55:00Z'), t('2026-10-28T19:50:00Z'), t('2026-10-28T19:55:00Z'), t('2026-10-28T20:00:00Z'), t('2026-10-28T20:55:00Z')],
+    indicators: { quote: [{ close: [500, 1001, 1002, 1010, 980] }] } };
+  eq('the price at the settlement time: the last bar that started before it', priceBeforeEt(five, '2026-10-28', '16:00'), 1002);
+  eq('the 17:00 last trade from the same bars', priceBeforeEt(five, '2026-10-28', '17:00'), 980);
+  eq('New York time from the zone, not the chart\'s (wrong) offset', priceBeforeEt(five, '2026-10-27', '17:00'), 500);
+  eq('none for a day the series lacks', priceBeforeEt(five, '2026-10-26', '16:00'), null);
+  // A clock change inside the five days: 3 Nov 2025 is EST (−5h), so 16:00 New York is 21:00Z.
+  const est = { timestamp: [t('2025-11-03T20:55:00Z'), t('2025-11-03T21:00:00Z')], indicators: { quote: [{ close: [7, 8] }] } };
+  eq('…and across a clock change', priceBeforeEt(est, '2025-11-03', '16:00'), 7);
+
+  eq('the bar still holds the last trade: the settlement-time price stands in', settlementFor(980, { settle: 1002, last: 980 }), 1002);
+  eq('the bar no longer matches the last trade: it is the settlement, left alone', settlementFor(1003.5, { settle: 1002, last: 980 }), null);
+  eq('nothing read, nothing replaced', [settlementFor(980, {}), settlementFor(980, { settle: null, last: 980 })], [null, null]);
+
+  const bars = [{ date: '2026-10-26', close: 990 }, { date: '2026-10-27', close: 995 }, { date: '2026-10-28', close: 980 }];
+  const shut = closesForModel(bars, { live: false, tradeDate: '2026-10-28', finished: 1002 });
+  eq('market shut: the finished day reads its settlement', [shut.closes, shut.evening, shut.date, shut.settled], [[990, 995, 1002], false, '2026-10-28', 1002]);
+  eq('in the day session the live price is left as it is', closesForModel(bars, { live: true, tradeDate: '2026-10-28', finished: 1002 }).closes.at(-1), 980);
+  eq('a weekend-dated bar is never given one', closesForModel([...bars, { date: '2026-10-31', close: 977 }], { live: false, finished: 1002 }).closes, [990, 995, 980]);
+  // The evening on a bar of its own, dated the finished day (28 Oct, 02:30 UTC).
+  const splitBars = [...bars, { date: '2026-10-28', close: 970 }];
+  const ev = closesForModel(splitBars, { live: true, tradeDate: '2026-10-29' });
+  eq('evening bar of its own: the day counted once, then the live price', [ev.closes, ev.evening, ev.date], [[990, 995, 980, 970], true, '2026-10-29']);
+  eq('…and the finished day takes its settlement when it still holds the last trade', closesForModel(splitBars, { live: true, tradeDate: '2026-10-29', finished: 1002 }).closes, [990, 995, 1002, 970]);
+  eq('…never the stray `settled` meant for a folded bar', closesForModel(splitBars, { live: true, tradeDate: '2026-10-29', settled: 1 }).closes, [990, 995, 980, 970]);
+  eq('every market with a contract has a settlement time; the dollar index has none',
+     CTA_MARKETS.map(m => [m.key, m.settleEt ?? null]), [['NQ', '16:00'], ['ES', '16:00'], ['ZN', '15:00'], ['DX', null], ['CL', '14:30'], ['GC', '13:30']]);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
