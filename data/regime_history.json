@@ -5556,12 +5556,12 @@
     },
     {
       "date": "2026-10-29",
-      "stagflation_p": 66,
-      "reflationary_p": 17,
+      "stagflation_p": 26,
+      "reflationary_p": 57,
       "deflationary_p": 12,
       "inflationary_p": 5,
       "hawkish_repricing": null,
-      "live_regime": "stag",
+      "live_regime": "ref",
       "view_regime": null,
       "pinned": null,
       "hyg_chg": null,
@@ -5569,7 +5569,7 @@
       "inputs": {
         "weightedRecessionProb": 13.5,
         "cpi": 3.71725,
-        "kalshi2027": 20,
+        "kalshi2027": 22,
         "tape": null,
         "ladderSpread": null,
         "u3": 4.2,
@@ -5632,27 +5632,27 @@
         "regime": {
           "id": "inf",
           "probs": {
-            "ref": 21,
-            "inf": 72,
-            "stag": 5,
-            "def": 2
+            "ref": 20,
+            "inf": 67,
+            "stag": 10,
+            "def": 3
           },
-          "g": 0.51,
-          "gDrift": -0.35,
+          "g": 0.42,
+          "gDrift": -0.55,
           "i": 0.28,
           "iDrift": -0.33,
-          "drifting": null
+          "drifting": "def"
         },
         "conditions": {
-          "score": 55.6,
+          "score": 54.7,
           "band": "caution",
           "comps": {
             "credit": 58,
-            "equityVol": 35,
-            "ratesVol": 60,
+            "equityVol": 36,
+            "ratesVol": 49,
             "realYield": 79,
-            "funding": 66,
-            "breadth": 40,
+            "funding": 78,
+            "breadth": 34,
             "dollar": 53
           }
         },
@@ -5661,11 +5661,11 @@
           "hikeOdds": 82,
           "liq4w": 31
         },
-        "sizing": 0.66,
+        "sizing": 0.65,
         "stage": 4
       },
       "source": "cron",
-      "loggedAt": "2026-10-29T08:45:58.369Z"
+      "loggedAt": "2026-10-29T14:10:53.769Z"
     }
   ]
 }
