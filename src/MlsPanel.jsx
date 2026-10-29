@@ -42,7 +42,7 @@ export function MlsPanel() {
   if (err) return <Card><SLabel>Paper trial — momentum leaders</SLabel>{head}<div style={{ color: C.amber, fontWeight: 700, fontSize: 12.5 }}>Could not load the ledger: {err}</div></Card>;
   if (!d) return <Card><SLabel>Paper trial — momentum leaders</SLabel>{head}<div style={{ color: C.muted, fontSize: 12.5 }}>Loading…</div></Card>;
   const s = d.summary;
-  if (!s?.started) return <Card><SLabel>Paper trial — momentum leaders</SLabel>{head}<div style={{ color: C.mid, fontSize: 12.5 }}>Not started yet — the first run reads the next US close (21:45 UTC, weekdays) and queues its first buys for the following open.</div></Card>;
+  if (!s?.started) return <Card><SLabel>Paper trial — momentum leaders</SLabel>{head}<div style={{ color: C.mid, fontSize: 12.5 }}>Not started yet — the first run reads the latest US close overnight (05:15 UTC) and queues its first buys for the following open.</div></Card>;
   const h = d.history || [];
   const spy0 = h.find(x => x.spy != null)?.spy;
   const chart = h.map(x => ({ date: x.date, Paper: +(x.equity / s.capital * 100).toFixed(2), SPY: spy0 && x.spy != null ? +(x.spy / spy0 * 100).toFixed(2) : null }));
