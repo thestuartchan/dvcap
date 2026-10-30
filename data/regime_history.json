@@ -5669,20 +5669,20 @@
     },
     {
       "date": "2026-10-30",
-      "stagflation_p": 26,
-      "reflationary_p": 57,
-      "deflationary_p": 12,
+      "stagflation_p": 55,
+      "reflationary_p": 20,
+      "deflationary_p": 20,
       "inflationary_p": 5,
       "hawkish_repricing": null,
-      "live_regime": "ref",
-      "view_regime": null,
-      "pinned": null,
+      "live_regime": "stag",
+      "view_regime": "stag",
+      "pinned": false,
       "hyg_chg": null,
       "hyg_qqq_divergence": null,
       "inputs": {
-        "weightedRecessionProb": 13.5,
+        "weightedRecessionProb": 15,
         "cpi": 3.71725,
-        "kalshi2027": 22,
+        "kalshi2027": 25,
         "tape": null,
         "ladderSpread": null,
         "u3": 4.2,
@@ -5690,8 +5690,8 @@
         "oas": 3.14,
         "tenY": 5.05,
         "twoY": 4.67,
-        "consensusAlive": 0.994,
-        "regimeVintage": "fresh"
+        "consensusAlive": 0.689,
+        "regimeVintage": "decayed"
       },
       "axes": {
         "growth": {
@@ -5742,20 +5742,7 @@
         "quadrantRead": "growth firm, inflation hot"
       },
       "state": {
-        "regime": {
-          "id": "inf",
-          "probs": {
-            "ref": 21,
-            "inf": 72,
-            "stag": 5,
-            "def": 2
-          },
-          "g": 0.51,
-          "gDrift": -0.35,
-          "i": 0.28,
-          "iDrift": -0.33,
-          "drifting": null
-        },
+        "regime": null,
         "conditions": {
           "score": 54.5,
           "band": "caution",
@@ -5771,14 +5758,14 @@
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 70,
+          "hikeOdds": null,
           "liq4w": -37
         },
-        "sizing": 0.66,
+        "sizing": 0.8,
         "stage": 4
       },
-      "source": "cron",
-      "loggedAt": "2026-10-30T02:10:41.689Z"
+      "source": "client+cron",
+      "loggedAt": "2026-10-30T02:12:24.471Z"
     }
   ]
 }
