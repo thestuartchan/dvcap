@@ -7,76 +7,76 @@
       "delta": 62000000
     },
     "kospi": {
-      "value": 5937.66,
+      "value": 5730.74,
       "unit": "P",
-      "asOf": "2026-10-29",
-      "delta": -74.78,
-      "pct": -1.24
+      "asOf": "2026-10-30",
+      "delta": -206.92,
+      "pct": -3.48
     },
     "deposits": {
-      "value": 88297500,
+      "value": 88713283,
       "unit": "백만원",
-      "asOf": "2026-10-28",
-      "delta": -1805479,
-      "pct": -2
+      "asOf": "2026-10-29",
+      "delta": 415783,
+      "pct": 0.47
     },
     "marginLoans": {
-      "value": 29329009,
+      "value": 29088592,
       "unit": "백만원",
-      "asOf": "2026-10-28",
-      "delta": -308180,
-      "pct": -1.04
+      "asOf": "2026-10-29",
+      "delta": -240418,
+      "pct": -0.82
     },
     "cma": {
-      "value": 100586148,
+      "value": 101431780,
       "unit": "백만원",
-      "asOf": "2026-10-28",
-      "delta": -181333,
-      "pct": -0.18
+      "asOf": "2026-10-29",
+      "delta": 845633,
+      "pct": 0.84
     },
     "kr3yGovt": {
-      "value": 3.766,
+      "value": 3.715,
       "unit": "%",
-      "asOf": "2026-10-29",
-      "delta": -0.033,
-      "pct": -0.87
+      "asOf": "2026-10-30",
+      "delta": -0.051,
+      "pct": -1.35
     },
     "kr3yCorp": {
-      "value": 4.449,
+      "value": 4.407,
       "unit": "%",
-      "asOf": "2026-10-29",
-      "delta": -0.032,
-      "pct": -0.71
+      "asOf": "2026-10-30",
+      "delta": -0.042,
+      "pct": -0.94
     },
     "instNet": {
-      "value": -13,
+      "value": 754,
       "unit": "십억원",
-      "asOf": "2026-10-29"
+      "asOf": "2026-10-30"
     },
     "foreignNet": {
-      "value": 666,
+      "value": -1615,
       "unit": "십억원",
-      "asOf": "2026-10-29"
+      "asOf": "2026-10-30"
     },
     "retailNet": {
-      "value": -987,
+      "value": 578,
       "unit": "십억원",
-      "asOf": "2026-10-29"
+      "asOf": "2026-10-30"
     },
     "foreignNetKq": {
-      "value": -117,
+      "value": 0,
       "unit": "십억원",
-      "asOf": "2026-10-29"
+      "asOf": "2026-10-30"
     },
     "instNetKq": {
-      "value": -71,
+      "value": -134,
       "unit": "십억원",
-      "asOf": "2026-10-29"
+      "asOf": "2026-10-30"
     },
     "retailNetKq": {
-      "value": 199,
+      "value": 125,
       "unit": "십억원",
-      "asOf": "2026-10-29"
+      "asOf": "2026-10-30"
     }
   },
   "history": [
@@ -3744,6 +3744,57 @@
         "value": 199,
         "asOf": "2026-10-29"
       }
+    },
+    {
+      "savedAt": "2026-10-30T14:03:31.482Z",
+      "kospi": {
+        "value": 5730.74,
+        "asOf": "2026-10-30"
+      },
+      "deposits": {
+        "value": 88713283,
+        "asOf": "2026-10-29"
+      },
+      "marginLoans": {
+        "value": 29088592,
+        "asOf": "2026-10-29"
+      },
+      "cma": {
+        "value": 101431780,
+        "asOf": "2026-10-29"
+      },
+      "kr3yGovt": {
+        "value": 3.715,
+        "asOf": "2026-10-30"
+      },
+      "kr3yCorp": {
+        "value": 4.407,
+        "asOf": "2026-10-30"
+      },
+      "foreignNet": {
+        "value": -1615,
+        "asOf": "2026-10-30"
+      },
+      "instNet": {
+        "value": 754,
+        "asOf": "2026-10-30"
+      },
+      "retailNet": {
+        "value": 578,
+        "asOf": "2026-10-30"
+      },
+      "foreignNetKq": {
+        "value": 0,
+        "asOf": "2026-10-30"
+      },
+      "instNetKq": {
+        "value": -134,
+        "asOf": "2026-10-30"
+      },
+      "retailNetKq": {
+        "value": 125,
+        "asOf": "2026-10-30"
+      }
     }
   ],
   "series": {
@@ -4153,6 +4204,13 @@
         "unit": "백만원",
         "delta": -308180,
         "pct": -1.04
+      },
+      {
+        "date": "2026-10-29",
+        "value": 29088592,
+        "unit": "백만원",
+        "delta": -240418,
+        "pct": -0.82
       }
     ],
     "deposits": [
@@ -4561,6 +4619,13 @@
         "unit": "백만원",
         "delta": -1805479,
         "pct": -2
+      },
+      {
+        "date": "2026-10-29",
+        "value": 88713283,
+        "unit": "백만원",
+        "delta": 415783,
+        "pct": 0.47
       }
     ],
     "cma": [
@@ -4969,6 +5034,13 @@
         "unit": "백만원",
         "delta": -181333,
         "pct": -0.18
+      },
+      {
+        "date": "2026-10-29",
+        "value": 101431780,
+        "unit": "백만원",
+        "delta": 845633,
+        "pct": 0.84
       }
     ],
     "kospi": [
@@ -5377,6 +5449,13 @@
         "unit": "P",
         "delta": -74.78,
         "pct": -1.24
+      },
+      {
+        "date": "2026-10-30",
+        "value": 5730.74,
+        "unit": "P",
+        "delta": -206.92,
+        "pct": -3.48
       }
     ],
     "kr3yGovt": [
@@ -5785,6 +5864,13 @@
         "unit": "%",
         "delta": -0.033,
         "pct": -0.87
+      },
+      {
+        "date": "2026-10-30",
+        "value": 3.715,
+        "unit": "%",
+        "delta": -0.051,
+        "pct": -1.35
       }
     ],
     "kr3yCorp": [
@@ -6193,6 +6279,13 @@
         "unit": "%",
         "delta": -0.032,
         "pct": -0.71
+      },
+      {
+        "date": "2026-10-30",
+        "value": 4.407,
+        "unit": "%",
+        "delta": -0.042,
+        "pct": -0.94
       }
     ],
     "units7709": [
@@ -6883,6 +6976,13 @@
         "unit": "십억원",
         "delta": null,
         "pct": null
+      },
+      {
+        "date": "2026-10-30",
+        "value": -1615,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
       }
     ],
     "instNet": [
@@ -7305,6 +7405,13 @@
         "unit": "십억원",
         "delta": null,
         "pct": null
+      },
+      {
+        "date": "2026-10-30",
+        "value": 754,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
       }
     ],
     "retailNet": [
@@ -7713,6 +7820,13 @@
         "unit": "십억원",
         "delta": null,
         "pct": null
+      },
+      {
+        "date": "2026-10-30",
+        "value": 578,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
       }
     ],
     "foreignNetKq": [
@@ -7845,6 +7959,13 @@
       {
         "date": "2026-10-29",
         "value": -117,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
+      },
+      {
+        "date": "2026-10-30",
+        "value": 0,
         "unit": "십억원",
         "delta": null,
         "pct": null
@@ -7983,6 +8104,13 @@
         "unit": "십억원",
         "delta": null,
         "pct": null
+      },
+      {
+        "date": "2026-10-30",
+        "value": -134,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
       }
     ],
     "retailNetKq": [
@@ -8118,23 +8246,29 @@
         "unit": "십억원",
         "delta": null,
         "pct": null
+      },
+      {
+        "date": "2026-10-30",
+        "value": 125,
+        "unit": "십억원",
+        "delta": null,
+        "pct": null
       }
     ]
   },
   "lastFetch": {
-    "at": "2026-10-29T17:24:52.442Z",
+    "at": "2026-10-30T14:03:31.482Z",
     "by": "schedule",
     "ok": true,
-    "changed": false,
+    "changed": true,
     "sources": {
-      "kofia": "nothing new",
-      "krx": "nothing new"
+      "kofia": "updated",
+      "krx": "updated"
     },
     "report": [
-      "KOFIA: kospi 2026-10-29, deposits 2026-10-28, marginLoans 2026-10-28, cma 2026-10-28, kr3yGovt 2026-10-29, kr3yCorp 2026-10-29",
-      "KOFIA: nothing new",
-      "KRX KOSPI: 2026-10-29 foreign 666 · inst -13 · retail -987 (십억원)",
-      "KRX KOSDAQ: 2026-10-29 foreign -117 · inst -71 · retail 199 (십억원)"
+      "KOFIA: kospi 2026-10-30, deposits 2026-10-29, marginLoans 2026-10-29, cma 2026-10-29, kr3yGovt 2026-10-30, kr3yCorp 2026-10-30",
+      "KRX KOSPI: 2026-10-30 foreign -1615 · inst 754 · retail 578 (십억원)",
+      "KRX KOSDAQ: 2026-10-30 foreign 0 · inst -134 · retail 125 (십억원)"
     ]
   }
 }
