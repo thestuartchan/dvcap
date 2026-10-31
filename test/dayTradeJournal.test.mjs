@@ -196,5 +196,30 @@ eq('a window is required, ordered, and bounded', [journalRange({}).error != null
   eq('when IBKR did book the loss, its own figure stands, unmarked', [booked[0]?.pnl, booked[0]?.expired ?? null], [-601, null]);
 }
 
+// ── AN EXERCISE OR ASSIGNMENT IS NOT A TRADE (31 Oct 2026) ──
+// The feed books the option leaving at 0 and the shares it delivers under the same order id. A put
+// spread held from before, both legs in the money at expiry: the long put exercised (sold at 0,
+// shares sold at the strike), the short put assigned (bought at 0, shares bought at the strike).
+// Fake ticker, made-up figures.
+{
+  const T = (id, order, cls, side, size, price, time, realized = 0, fee = 0) => ({ trade_id: id, order_id: order, symbol: 'XYZ', sec_type: cls, side, size, price,
+    net_amount: size * price * (cls === 'STK' ? 1 : 100), trade_time: time, realized_pnl: realized, commission: fee, currency: 'USD' });
+  const at = '2026-10-31T03:01:46Z';
+  const delivery = [T('x1', 31, 'OPT', 'SELL', 2, 0, at), T('x2', 31, 'STK', 'SELL', 200, 45, at),
+    T('x3', 32, 'OPT', 'BUY', 2, 0, at), T('x4', 32, 'STK', 'BUY', 200, 50, at)];
+  eq('the legs and their shares, flat to flat under one root: no round trip', roundTripsFromIbkr({ trades: delivery, positions: [], since: '2026-10-01' }), []);
+  // Expiry bookings of two legs held from before, in orders of their own: they pair up while the
+  // underlying is grouped, but nothing was traded.
+  const legs = [T('y1', 41, 'OPT', 'SELL', 3, 0, at), T('y2', 42, 'OPT', 'BUY', 3, 0, at)];
+  eq('bookings at 0 alone are not a round trip', roundTripsFromIbkr({ trades: legs, positions: [], since: '2026-10-01' }), []);
+  // An option bought that day and exercised at the close: its value went into the shares, so it is
+  // not a worthless expiry and is left out rather than counted at its full premium.
+  const held = [T('z1', 51, 'OPT', 'BUY', 1, 2.5, '2026-10-30T19:00:00Z', 0, 1), T('z2', 52, 'OPT', 'SELL', 1, 0, at), T('z3', 52, 'STK', 'SELL', 100, 50, at)];
+  eq('a same-day option exercised is not counted as a total loss', roundTripsFromIbkr({ trades: held, positions: [], since: '2026-10-01' }), []);
+  // The worthless expiry still counts: a booking at 0 with no delivery in its order.
+  const lost = roundTripsFromIbkr({ trades: [T('w1', 61, 'OPT', 'BUY', 1, 2.5, '2026-10-30T19:00:00Z', 0, 1), T('w2', null, 'OPT', 'SELL', 1, 0, at)], positions: [], since: '2026-10-01' });
+  eq('…while a worthless expiry still loses its premium', [lost.length, lost[0]?.pnl, lost[0]?.expired], [1, -251, true]);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
