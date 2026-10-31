@@ -21,7 +21,7 @@ import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard, isStaleE
 import { upsertCard, post, remove, send, webhookFromEnv, walletWebhookFromEnv, ideasWebhookFromEnv, eventsWebhookFromEnv, postWithFiles, editWithFiles, webhookInfo, mentionFromEnv, alertTtlMin, CARD_KEY, IDEAS_CARD_KEY } from '../lib/discord.js';
 import { parseUpsert, eventPayload, cardHash, roleFromEnv, EVENTS_CARD_KEY, jumpLink, noticePayload } from '../lib/eventcard.js';
 import { authorised as gate, refusalReason, hasIdeasToken, refuse } from '../lib/apiauth.js';
-import { reconcileIdeas } from '../lib/ideacard.js';
+import { reconcileIdeas, parseAlerts, alertPayload } from '../lib/ideacard.js';
 import { fetchWallets } from '../lib/wallet.js';
 import { fetchSpotContext, fetchHyperliquid, fetchHlAccount, fetchHlSpot, fetchHlOrders } from '../lib/hyperliquid.js';
 import { diffHoldings, walletPublicView, buildWalletCard, mergePending, perpPublicView, publishable, inheritProvenance, rememberProvenance, applyMemory, publishReport, pinsFromMemory, symbolKey, carryUnanswered } from '../lib/walletcard.js';
@@ -387,24 +387,45 @@ export async function refreshWallet({ post = false, clock = new Date() } = {}) {
 // x-ideas-token header: the dashboard session and the service key do not open it, and the ideas
 // token opens nothing else (lib/apiauth.js). Unset token → nobody gets in.
 const IDEAS_LOCK_KEY = `${IDEAS_CARD_KEY}:lock`;
-export async function ideasCard(req, res, { webhook = ideasWebhookFromEnv(), kv = { get: kvGetJson, set: kvSetJson, lock: kvSetNxEx, unlock: kvDel, configured: kvConfigured }, sender = send } = {}) {
+export async function ideasCard(req, res, { webhook = ideasWebhookFromEnv(), kv = { get: kvGetJson, set: kvSetJson, lock: kvSetNxEx, unlock: kvDel, configured: kvConfigured }, sender = send, notifier = post, info = webhookInfo, mention = mentionFromEnv() } = {}) {
   res.setHeader('Cache-Control', 'private, no-store');
   if (!hasIdeasToken(req)) return refuse(res, 'not authorised for the ideas card');
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   if (!webhook) return res.status(200).json({ ok: false, reason: 'no webhook' });
   let body = req.body;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { return res.status(400).json({ error: 'the body is not JSON' }); } }
-  if (!body || typeof body !== 'object' || !Array.isArray(body.ideas)) return res.status(400).json({ error: 'expected { ideas: [...] }' });
+  // `alerts` (optional) are trigger notices posted as NEW messages; with alerts and no `ideas`, the
+  // call only notifies and leaves the cards alone (a missing `ideas` is NOT an empty set).
+  const hasAlerts = Array.isArray(body?.alerts) && body.alerts.length > 0;
+  if (!body || typeof body !== 'object' || (!Array.isArray(body.ideas) && !hasAlerts)) return res.status(400).json({ error: 'expected { ideas: [...] } and/or { alerts: [...] }' });
   if (!kv.configured()) return res.status(200).json({ ok: false, reason: 'no store — Redis is not configured, there is nowhere to keep the message ids' });
   // ONE RECONCILE AT A TIME. Two overlapping calls would each see the same stored map and each
   // post the same new idea — two cards for one idea. The lock expires on its own.
   if (!(await kv.lock(IDEAS_LOCK_KEY, { at: new Date().toISOString() }, 120))) return res.status(200).json({ ok: false, reason: 'busy — another ideas sync is running' });
   try {
     const stored = (await kv.get(IDEAS_CARD_KEY)) || {};
-    const r = await reconcileIdeas(body.ideas, { webhook, state: stored.cards || {}, send: sender });
-    const saved = await kv.set(IDEAS_CARD_KEY, { cards: r.state, updatedAt: new Date().toISOString() });
+    const r = Array.isArray(body.ideas)
+      ? await reconcileIdeas(body.ideas, { webhook, state: stored.cards || {}, send: sender })
+      : { posted: [], edited: [], deleted: [], unchanged: [], errors: [], state: stored.cards || {} };
+    const sent = Array.isArray(stored.alertsSent) ? stored.alertsSent.slice(-50) : [];
+    const alerted = [], skipped = [];
+    if (hasAlerts) {
+      const { alerts, errors } = parseAlerts(body.alerts);
+      r.errors.push(...errors);
+      let where = null;
+      for (const a of alerts) {
+        if (sent.includes(a.key)) { skipped.push(a.id || a.key); continue; }
+        const mid = a.id && r.state?.[a.id]?.messageId;
+        if (mid && !where) where = await info(webhook).catch(() => null);
+        const jump = mid ? jumpLink(where?.guildId, where?.channelId, mid) : null;
+        const id = await notifier(webhook, alertPayload(a, { mention, jump }));
+        if (id) { sent.push(a.key); alerted.push(a.id || a.key); }
+        else r.errors.push({ id: a.id, error: 'alert post failed' });
+      }
+    }
+    const saved = await kv.set(IDEAS_CARD_KEY, { cards: r.state, alertsSent: sent.slice(-50), updatedAt: new Date().toISOString() });
     if (!saved) r.errors.push({ error: 'could not save the message ids — the next call may re-post' });
-    return res.status(200).json({ ok: r.errors.length === 0, posted: r.posted, edited: r.edited, deleted: r.deleted, unchanged: r.unchanged, errors: r.errors });
+    return res.status(200).json({ ok: r.errors.length === 0, posted: r.posted, edited: r.edited, deleted: r.deleted, unchanged: r.unchanged, ...(hasAlerts ? { alerted, skipped } : {}), errors: r.errors });
   } catch (e) {
     console.error('ideascard', e?.message || e);
     return res.status(200).json({ ok: false, posted: [], edited: [], deleted: [], unchanged: [], errors: [{ error: String(e?.message || e) }] });
