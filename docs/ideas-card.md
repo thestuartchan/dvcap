@@ -72,7 +72,7 @@ Colour (left bar): green = long/bullish, red = short/bearish, amber = a volatili
 
 A card edit is silent in Discord, so when a trigger fires on an idea the caller can also send
 `alerts`: `{ "alerts": [{ "id": "<idea id>", "text": "<one line>" }] }`. Each is posted as a NEW
-message in the ideas channel (that is what Discord notifies on), pinging `DISCORD_USER_ID` when set
+message in the ideas channel (that is what Discord notifies on), pinging `DISCORD_IDEAS_USER_ID` when set (its own variable: the trade alerts' `DISCORD_USER_ID` is not used here)
 and linking back to the idea's card.
 
 - `alerts` may come with or without `ideas`. Without `ideas`, the call only notifies; the cards are

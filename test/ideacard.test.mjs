@@ -8,6 +8,7 @@ import { buildIdeaCard, publicIdea, colorFor, discordTimestamps, clip, economics
          COLORS, LIMITS, TRIM_MARK, MAX_IDEAS, IDEA_FIELDS, parseAlerts, alertPayload, MAX_ALERTS } from '../lib/ideacard.js';
 import { hasIdeasToken, hasServiceKey, IDEAS_TOKEN_ENV, IDEAS_TOKEN_HEADER, SERVICE_KEY_ENVS, JOURNAL_READ_ENV } from '../lib/apiauth.js';
 import { ideasCard } from '../api/tradecard.js';
+import { ideasMentionFromEnv } from '../lib/discord.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `\n     got  ${JSON.stringify(g)}\n     want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -264,6 +265,7 @@ try {
   eq('alerts that read like size or fills are refused by name', [priv.body.alerted, priv.body.errors.length, posts.length], [[], 2, 1]);
   eq('the cap', parseAlerts(Array.from({ length: MAX_ALERTS + 2 }, (_, i) => ({ id: 'i' + i, text: 'level hit ' + i }))).alerts.length, MAX_ALERTS);
   eq('no mention configured: no ping', alertPayload({ text: 't' }).allowed_mentions, { parse: [], users: [] });
+  eq('idea alerts read their own mention, not the trade alerts\' one', [ideasMentionFromEnv({ DISCORD_USER_ID: '444444' }), ideasMentionFromEnv({ DISCORD_IDEAS_USER_ID: '555555' })], [null, '555555']);
   eq('a body with neither ideas nor alerts is a 400', (await call(good, { alerts: [] })).code, 400);
 } finally {
   for (const n of ENVS) { if (saved[n] === undefined) delete process.env[n]; else process.env[n] = saved[n]; }

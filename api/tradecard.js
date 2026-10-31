@@ -18,7 +18,7 @@ import { contractsByRoot, markOf } from '../lib/instruments.js';
 import { fetchCboeGreeks } from '../lib/cboe.js';
 import { derivePosition, positionPnl, levelHits, applyRolls } from '../lib/positions.js';
 import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard, isStaleEvent, isOptionTrade } from '../lib/tradecard.js';
-import { upsertCard, post, remove, send, webhookFromEnv, walletWebhookFromEnv, ideasWebhookFromEnv, eventsWebhookFromEnv, postWithFiles, editWithFiles, webhookInfo, mentionFromEnv, alertTtlMin, CARD_KEY, IDEAS_CARD_KEY } from '../lib/discord.js';
+import { upsertCard, post, remove, send, webhookFromEnv, walletWebhookFromEnv, ideasWebhookFromEnv, eventsWebhookFromEnv, postWithFiles, editWithFiles, webhookInfo, mentionFromEnv, ideasMentionFromEnv, alertTtlMin, CARD_KEY, IDEAS_CARD_KEY } from '../lib/discord.js';
 import { parseUpsert, eventPayload, cardHash, roleFromEnv, EVENTS_CARD_KEY, jumpLink, noticePayload } from '../lib/eventcard.js';
 import { authorised as gate, refusalReason, hasIdeasToken, refuse } from '../lib/apiauth.js';
 import { reconcileIdeas, parseAlerts, alertPayload } from '../lib/ideacard.js';
@@ -387,7 +387,7 @@ export async function refreshWallet({ post = false, clock = new Date() } = {}) {
 // x-ideas-token header: the dashboard session and the service key do not open it, and the ideas
 // token opens nothing else (lib/apiauth.js). Unset token → nobody gets in.
 const IDEAS_LOCK_KEY = `${IDEAS_CARD_KEY}:lock`;
-export async function ideasCard(req, res, { webhook = ideasWebhookFromEnv(), kv = { get: kvGetJson, set: kvSetJson, lock: kvSetNxEx, unlock: kvDel, configured: kvConfigured }, sender = send, notifier = post, info = webhookInfo, mention = mentionFromEnv() } = {}) {
+export async function ideasCard(req, res, { webhook = ideasWebhookFromEnv(), kv = { get: kvGetJson, set: kvSetJson, lock: kvSetNxEx, unlock: kvDel, configured: kvConfigured }, sender = send, notifier = post, info = webhookInfo, mention = ideasMentionFromEnv() } = {}) {
   res.setHeader('Cache-Control', 'private, no-store');
   if (!hasIdeasToken(req)) return refuse(res, 'not authorised for the ideas card');
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
