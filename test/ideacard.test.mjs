@@ -5,9 +5,10 @@
 // bookkeeping — taken, ladder, planned R, a note, the outcome — and none of it may reach Discord.
 // Sentinels are distinctive so a leak cannot hide inside an ordinary-looking number.
 import { buildIdeaCard, publicIdea, colorFor, discordTimestamps, clip, economics, cardHash, reconcileIdeas, ideaPayload,
-         COLORS, LIMITS, TRIM_MARK, MAX_IDEAS, IDEA_FIELDS } from '../lib/ideacard.js';
+         COLORS, LIMITS, TRIM_MARK, MAX_IDEAS, IDEA_FIELDS, parseAlerts, alertPayload, MAX_ALERTS } from '../lib/ideacard.js';
 import { hasIdeasToken, hasServiceKey, IDEAS_TOKEN_ENV, IDEAS_TOKEN_HEADER, SERVICE_KEY_ENVS, JOURNAL_READ_ENV } from '../lib/apiauth.js';
 import { ideasCard } from '../api/tradecard.js';
+import { ideasMentionFromEnv } from '../lib/discord.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `\n     got  ${JSON.stringify(g)}\n     want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -246,6 +247,26 @@ try {
   ok('the lock is released after a run', m.store.locked === false);
   m.store.locked = true;
   eq('an overlapping run is refused, not doubled', (await call(good, { ideas: [base] }, { kv: m })).body.reason, 'busy — another ideas sync is running');
+  m.store.locked = false;
+
+  // ── TRIGGER ALERTS ──
+  const a = memKv({ cards: { xsw: { messageId: '1234567890', hash: 'h' } } });
+  const posts = [];
+  const notifier = async (_w, payload) => { posts.push(payload); return String(9000000 + posts.length); };
+  const info = async () => ({ guildId: '111111', channelId: '222222' });
+  const al = await call(good, { alerts: [{ id: 'xsw', text: 'XSW ÷ SOXX closed 0.4410, at or below 0.4415' }] }, { kv: a, notifier, info, mention: '333333' });
+  eq('alerts-only call: posted, cards untouched', [al.body.alerted, al.body.deleted, al.body.ok], [['xsw'], [], true]);
+  ok('alert pings the owner and links the card', /<@333333>/.test(posts[0].content) && /discord\.com\/channels\/111111\/222222\//.test(posts[0].content));
+  eq('only the owner can be mentioned', posts[0].allowed_mentions, { parse: [], users: ['333333'] });
+  ok('the card survives an alerts-only call', !!a.store.v.cards.xsw);
+  const dup = await call(good, { alerts: [{ id: 'xsw', text: 'XSW ÷ SOXX closed 0.4410, at or below 0.4415' }] }, { kv: a, notifier, info, mention: '333333' });
+  eq('the same alert twice pings once', [dup.body.alerted, dup.body.skipped, posts.length], [[], ['xsw'], 1]);
+  const priv = await call(good, { alerts: [{ id: 'xsw', text: 'filled 3 contracts at 4.10' }, { id: 'q', text: 'sized 1.5R' }] }, { kv: a, notifier, info });
+  eq('alerts that read like size or fills are refused by name', [priv.body.alerted, priv.body.errors.length, posts.length], [[], 2, 1]);
+  eq('the cap', parseAlerts(Array.from({ length: MAX_ALERTS + 2 }, (_, i) => ({ id: 'i' + i, text: 'level hit ' + i }))).alerts.length, MAX_ALERTS);
+  eq('no mention configured: no ping', alertPayload({ text: 't' }).allowed_mentions, { parse: [], users: [] });
+  eq('idea alerts read their own mention, not the trade alerts\' one', [ideasMentionFromEnv({ DISCORD_USER_ID: '444444' }), ideasMentionFromEnv({ DISCORD_IDEAS_USER_ID: '555555' })], [null, '555555']);
+  eq('a body with neither ideas nor alerts is a 400', (await call(good, { alerts: [] })).code, 400);
 } finally {
   for (const n of ENVS) { if (saved[n] === undefined) delete process.env[n]; else process.env[n] = saved[n]; }
 }

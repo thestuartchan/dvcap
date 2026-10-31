@@ -67,3 +67,17 @@ rest. Rank is no longer shown: it is the board's order, not a property of the id
 
 Colour (left bar): green = long/bullish, red = short/bearish, amber = a volatility play
 (long or short vol), grey = anything else.
+
+## Trigger alerts
+
+A card edit is silent in Discord, so when a trigger fires on an idea the caller can also send
+`alerts`: `{ "alerts": [{ "id": "<idea id>", "text": "<one line>" }] }`. Each is posted as a NEW
+message in the ideas channel (that is what Discord notifies on), pinging `DISCORD_IDEAS_USER_ID` when set (its own variable: the trade alerts' `DISCORD_USER_ID` is not used here)
+and linking back to the idea's card.
+
+- `alerts` may come with or without `ideas`. Without `ideas`, the call only notifies; the cards are
+  left alone (a missing `ideas` is not an empty set).
+- At most 5 per call, 400 characters each. Text that reads like size, a fill or the book (`1.5R`,
+  `filled`, `contracts`, `NLV`, …) is refused by name and not posted.
+- Each alert is keyed on id + text; a key already sent (last 50 kept) is skipped, so a retry never
+  pings twice. The response adds `alerted` and `skipped`.
