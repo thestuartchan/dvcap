@@ -47,6 +47,7 @@ import { catalystLookup } from '../lib/catalystFeed.js';
 import { runJournal } from '../lib/journalStore.js';
 import { journalLine, orderUnits } from '../lib/journalInbox.js';
 import { journaledDayTrades, dayTradeLine } from '../lib/dayTradeCards.js';
+import { statementExits, exitLine, exitFix } from '../lib/optionExits.js';
 import { parseTradeConfirms, tcSections } from '../lib/flexTrades.js';
 import { adoptProvisional, tcQueryId, TC_QUERY_ENV, TC_WAITS_MS, SYNC_NOW_MIN_INTERVAL_S, skipOnSameDay, syncNowLine, recordLag, lagText } from '../lib/sameDayFills.js';
 import { hasSessionCookie, hasJournalReadKey } from '../lib/apiauth.js';
@@ -173,6 +174,14 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   expiry.closes = expiry.closes.filter(c => !dayTradeIds.has(c.rowId));
   result.expiries.waiting = expiry.waiting;
   result.expiries.closes = result.expiries.closes.filter(c => !dayTradeIds.has(c.id));
+  // ── AN OPTION CARD CLOSED AT IBKR, THE EXIT NEVER RECORDED (lib/optionExits.js) ──
+  // The statement's own closing orders, offered as the fill. Such a card is not an expiry either.
+  const exits = statementExits(withDerived, statementUnits, rec.report.filter(r => r.kind === 'option-missing-at-broker'), { skip: dayTradeIds });
+  const exitIds = new Set(exits.map(x => x.rowId));
+  expiry.waiting = expiry.waiting.filter(w => !exitIds.has(w.id) && !(w.ids || []).some(id => exitIds.has(id)));
+  expiry.closes = expiry.closes.filter(c => !exitIds.has(c.rowId));
+  result.expiries.waiting = expiry.waiting;
+  result.expiries.closes = result.expiries.closes.filter(c => !exitIds.has(c.id));
   // ── TRADES ────────────────────────────────────────────────────────────────
   // The Open Positions section cannot say whether an exit was recorded — a sold position is simply
   // absent, which looks identical to one the console never knew about. The Trades section can.
@@ -328,7 +337,8 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
       ...rec.report.filter(r => r.kind === 'missing-at-broker').map(r => ({ what: 'open here, not at the broker', root: r.root, id: r.id })),
       // Option contracts, by contract rather than by underlying (lib/flex.js optionFindings).
       ...dayTradeCards.map(d => ({ what: dayTradeLine(d), root: d.root, id: d.rowId, dayTrade: true })),
-      ...optionFindings(rec).filter(o => !(o.ids || []).some(id => dayTradeIds.has(id))).map(o => ({ what: o.kind === 'option-differs' ? `${o.contract}: console ${o.qty.console}, statement ${o.qty.ibkr}`
+      ...exits.map(x => ({ what: exitLine(x), root: x.root, id: x.rowId, fix: exitFix(x) })),
+      ...optionFindings(rec).filter(o => !(o.ids || []).some(id => dayTradeIds.has(id) || exitIds.has(id))).map(o => ({ what: o.kind === 'option-differs' ? `${o.contract}: console ${o.qty.console}, statement ${o.qty.ibkr}`
                                             : o.kind === 'option-not-in-console' ? `${o.contract}: held at IBKR, not in the console`
                                             : `${o.contract}: in the console, not at IBKR`, root: o.root, id: o.ids?.[0] || null })),
       ...((tradePlan?.report) || []).map(r => ({ what: r.kind.replace(/-/g, ' '), root: r.root })),
