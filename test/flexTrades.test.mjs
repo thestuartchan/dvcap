@@ -578,5 +578,29 @@ eq('a fill carries the id that stops it being recorded twice', fillFrom({ tradeI
   ok('and so does the channel message', /tell\(rec2, asOf/.test(src));
 }
 
+// ── AN EXERCISE AND AN ASSIGNMENT AT ONE INSTANT (1 Nov 2026) ──
+// A put spread taken to delivery: the long put exercised (200 sold) and the short put assigned
+// (200 bought), both at the same second, on top of 4 shares already held. The statement lists the
+// sale first. Applied in that order the sale was clamped to the 4 held and the purchase opened
+// 200 — a position the broker never had, so the whole batch was refused. Fake ticker.
+{
+  const at = '20261030;162000';
+  const xml = T({ tradeID: '601', symbol: 'CCC', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'SELL', quantity: -200, tradePrice: 45, ibCommission: 0, tradeDate: '20261030', dateTime: at })
+    + T({ tradeID: '602', symbol: 'CCC', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'BUY', quantity: 200, tradePrice: 50, ibCommission: 0, tradeDate: '20261030', dateTime: at });
+  const row = { id: 'CCC-open', symbol: 'CCC', currency: 'USD', fills: [{ id: 'f0', side: 'buy', qty: 4, price: 50, date: '2026-10-01' }] };
+  const plan = planTrades(withDerived([row]), parseTrades(xml), { from: '2026-10-01' });
+  eq('the purchase goes before the sale at the same instant', plan.apply.map(a => a.fill.side), ['buy', 'sell']);
+  const after = withDerived(applyPlan(withDerived([row]), plan));
+  eq('so the 4 shares held are still 4 afterwards', after[0].derived.qty, 4);
+  const pos = POS({ symbol: 'CCC', assetCategory: 'STK', currency: 'USD', multiplier: 1, position: 4, costBasisPrice: 50 });
+  eq('and the batch reconciles with the statement', verify(after, pos, { derive, roots: ['CCC'] }).ok, true);
+  // A short at the same instant: the sale opens, so it goes first.
+  const shortRow = { id: 'CCC-short', symbol: 'CCC', currency: 'USD', side: 'short', fills: [{ id: 's0', side: 'sell', qty: 4, price: 50, date: '2026-10-01' }] };
+  eq('for a short the sale goes first', planTrades(withDerived([shortRow]), parseTrades(xml), { from: '2026-10-01' }).apply.map(a => a.fill.side), ['sell', 'buy']);
+  // Different instants keep the statement's own order.
+  const apart = xml.replace(`tradeID="602"`, `tradeID="603"`).replace(new RegExp(`(tradeID="603"[^>]*)dateTime="${at}"`), `$1dateTime="20261030;090000"`);
+  eq('at different times, the earlier fill goes first', planTrades(withDerived([row]), parseTrades(apart), { from: '2026-10-01' }).apply.map(a => a.fill.tradeId.split(':')[0]), ['603', '601']);
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
