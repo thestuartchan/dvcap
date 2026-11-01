@@ -258,7 +258,7 @@ ok('an hour late does not', !at(7, 40, 7).accept);
   const cfg = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
   const sched = Object.fromEntries(cfg.crons.map(c => [c.path.match(/region=(\w+)/)[1], c.schedule]));
   eq('asia cron is Sun-Thu UTC', sched.asia, '42 22 * * 0-4');
-  eq('us cron is Mon-Fri UTC', sched.us, '42 12 * * 1-5');
+  eq('us cron is Mon-Fri UTC', sched.us, '42 13 * * 1-5');
   ok('neither entry fires all seven days', !Object.values(sched).some(v => v.endsWith('* * *')));
   // vercel.json is schema-validated; an unknown key can reject the whole deployment.
   ok('no extra keys on any cron entry',
