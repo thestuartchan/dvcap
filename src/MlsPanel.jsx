@@ -29,14 +29,28 @@ export function MlsPanel() {
       .catch(e => setErr(String(e.message || e)));
   }, []);
   const rules = d?.rules;
+  // Rules as a grid to scan, not a paragraph. Figures come from the ledger's own rules once loaded.
+  const n = (x) => +(x * 100).toFixed(2);   // 0.035 → 3.5, never 3.5000000000000004
+  const rows = [
+    ["Buy", "Top-20% momentum, above 200-day · RSI(2) < 15 · close in bottom ¼ of range"],
+    ["Sell", `First close above prior high · or ${rules?.maxHold ?? 20} sessions`],
+    ...(rules ? [
+      ["Size", `${rules.slots} × ${n(rules.slotWeight)}% · max ${(rules.slots * rules.slotWeight).toFixed(1)}× gross · ${rules.newPerDay} new/day`],
+      ["Pause", `Breadth ≤ ${n(rules.breadthMin)}% above 200-day · or −${n(rules.pauseDrawdown)}% from peak`],
+      ["Fills", `Next open · ${rules.costBps} bp/side · cash ${n(rules.cashRate)}% · margin ${n(rules.marginRate)}%`],
+    ] : []),
+  ];
   const head = (
-    <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.5, marginBottom: 10 }}>
-      Paper trial of the S&amp;P 500 momentum-leaders snapback: buy a top-20% momentum name above its 200-day when RSI(2) &lt; 15
-      and it closes in the bottom quarter of its range; sell on the first close above the prior high or after 20 sessions.
-      {rules ? ` ${rules.slots} positions × ${rules.slotWeight * 100}% (max ${(rules.slots * rules.slotWeight).toFixed(1)}× gross), ${rules.newPerDay} new a day, ` +
-        `no new buys while half or fewer of the index are above their 200-day or the account is ${rules.pauseDrawdown * 100}% below its peak. ` +
-        `Fills at the next real opening print, ${rules.costBps} bp a side; cash earns ${rules.cashRate * 100}%, margin costs ${rules.marginRate * 100}%.` : ""}
-      {" "}Backtest (2008–2026, point-in-time S&amp;P 500): 17.2% a year, worst drawdown −22%, against SPY's 11.2% and −52%.
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 12, rowGap: 3, fontSize: 12, lineHeight: 1.45 }}>
+        {rows.map(([k, v]) => [
+          <div key={k} style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4, paddingTop: 1 }}>{k}</div>,
+          <div key={k + "v"} style={{ color: C.mid }}>{v}</div>,
+        ])}
+      </div>
+      <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>
+        <b style={{ color: C.text }}>Backtest 2008–26:</b> <b style={{ color: C.green }}>17.2%/yr</b>, worst DD −22% · SPY 11.2%/yr, −52%
+      </div>
     </div>
   );
   if (err) return <Card><SLabel>Paper trial — momentum leaders</SLabel>{head}<div style={{ color: C.amber, fontWeight: 700, fontSize: 12.5 }}>Could not load the ledger: {err}</div></Card>;
