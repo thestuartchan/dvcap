@@ -1,6 +1,6 @@
 {
  "_README": "Supplier, customer and competitor links read from each company's own latest annual report on EDGAR, plus its latest 10-Q when filed after it (scripts/supplychain-build.mjs; method in docs/supply-chain.md). Each link quotes the sentence and names the filing it came from. relation = what the counterparty is to the filer. named=false is an anonymised customer as the filing states it.",
- "_generated": "2026-10-25T09:25:01.323Z",
+ "_generated": "2026-11-01T11:29:59.261Z",
  "companies": {
   "AAPL": {
    "cik": 320193,
@@ -291,7 +291,7 @@
   "AMKR": {
    "cik": 1047127,
    "name": "AMKOR TECHNOLOGY, INC.",
-   "asOf": "2026-07-28",
+   "asOf": "2026-10-27",
    "filing": {
     "form": "10-K",
     "accession": "0001047127-26-000014",
@@ -300,9 +300,9 @@
    },
    "quarter": {
     "form": "10-Q",
-    "accession": "0001047127-26-000046",
-    "url": "https://www.sec.gov/Archives/edgar/data/1047127/000104712726000046/amkr-20260630.htm",
-    "date": "2026-07-28"
+    "accession": "0001047127-26-000052",
+    "url": "https://www.sec.gov/Archives/edgar/data/1047127/000104712726000052/amkr-20260930.htm",
+    "date": "2026-10-27"
    },
    "links": [
     {
@@ -340,7 +340,7 @@
   "AMZN": {
    "cik": 1018724,
    "name": "AMAZON COM INC",
-   "asOf": "2026-07-31",
+   "asOf": "2026-10-30",
    "filing": {
     "form": "10-K",
     "accession": "0001018724-26-000004",
@@ -349,9 +349,9 @@
    },
    "quarter": {
     "form": "10-Q",
-    "accession": "0001018724-26-000026",
-    "url": "https://www.sec.gov/Archives/edgar/data/1018724/000101872426000026/amzn-20260630.htm",
-    "date": "2026-07-31"
+    "accession": "0001018724-26-000040",
+    "url": "https://www.sec.gov/Archives/edgar/data/1018724/000101872426000040/amzn-20260930.htm",
+    "date": "2026-10-30"
    },
    "links": []
   },
@@ -866,7 +866,7 @@
   "GEV": {
    "cik": 1996810,
    "name": "GE Vernova Inc.",
-   "asOf": "2026-07-22",
+   "asOf": "2026-10-28",
    "filing": {
     "form": "10-K",
     "accession": "0001996810-26-000015",
@@ -875,9 +875,9 @@
    },
    "quarter": {
     "form": "10-Q",
-    "accession": "0001996810-26-000148",
-    "url": "https://www.sec.gov/Archives/edgar/data/1996810/000199681026000148/gev-20260630.htm",
-    "date": "2026-07-22"
+    "accession": "0001996810-26-000163",
+    "url": "https://www.sec.gov/Archives/edgar/data/1996810/000199681026000163/gev-20260930.htm",
+    "date": "2026-10-28"
    },
    "links": []
   },
@@ -987,7 +987,7 @@
   "GLW": {
    "cik": 24741,
    "name": "CORNING INC /NY",
-   "asOf": "2026-07-29",
+   "asOf": "2026-10-29",
    "filing": {
     "form": "10-K",
     "accession": "0000024741-26-000124",
@@ -996,16 +996,16 @@
    },
    "quarter": {
     "form": "10-Q",
-    "accession": "0000024741-26-000255",
-    "url": "https://www.sec.gov/Archives/edgar/data/24741/000002474126000255/glw-20260630.htm",
-    "date": "2026-07-29"
+    "accession": "0000024741-26-000279",
+    "url": "https://www.sec.gov/Archives/edgar/data/24741/000002474126000279/glw-20260930.htm",
+    "date": "2026-10-29"
    },
    "links": []
   },
   "GOOGL": {
    "cik": 1652044,
    "name": "Alphabet Inc.",
-   "asOf": "2026-07-23",
+   "asOf": "2026-10-29",
    "filing": {
     "form": "10-K",
     "accession": "0001652044-26-000018",
@@ -1014,9 +1014,9 @@
    },
    "quarter": {
     "form": "10-Q",
-    "accession": "0001652044-26-000071",
-    "url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204426000071/goog-20260630.htm",
-    "date": "2026-07-23"
+    "accession": "0001652044-26-000084",
+    "url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204426000084/goog-20260930.htm",
+    "date": "2026-10-29"
    },
    "links": []
   },
@@ -1162,7 +1162,7 @@
   "INTC": {
    "cik": 50863,
    "name": "INTEL CORP",
-   "asOf": "2026-07-24",
+   "asOf": "2026-10-30",
    "filing": {
     "form": "10-K",
     "accession": "0000050863-26-000011",
@@ -1171,9 +1171,9 @@
    },
    "quarter": {
     "form": "10-Q",
-    "accession": "0000050863-26-000157",
-    "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086326000157/intc-20260627.htm",
-    "date": "2026-07-24"
+    "accession": "0000050863-26-000191",
+    "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086326000191/intc-20260926.htm",
+    "date": "2026-10-30"
    },
    "links": [
     {
@@ -1361,12 +1361,18 @@
   "KLAC": {
    "cik": 319201,
    "name": "KLA CORP",
-   "asOf": "2026-08-06",
+   "asOf": "2026-10-29",
    "filing": {
     "form": "10-K",
     "accession": "0000319201-26-000027",
     "url": "https://www.sec.gov/Archives/edgar/data/319201/000031920126000027/klac-20260630.htm",
     "date": "2026-08-06"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0000319201-26-000034",
+    "url": "https://www.sec.gov/Archives/edgar/data/319201/000031920126000034/klac-20260930.htm",
+    "date": "2026-10-29"
    },
    "links": [
     {
@@ -1404,14 +1410,29 @@
      "label": "One customer",
      "relation": "customer",
      "named": false,
-     "share": 19,
-     "quote": "In each of the fiscal years ended June 30, 2026 and 2025, one customer accounted for approximately 19 % of total revenues.",
+     "share": 21,
+     "quote": "In the three months ended September 30, 2026, two customers accounted for approximately 21 % and 13 % of total revenues each.",
      "mentions": 1,
      "filing": {
-      "form": "10-K",
-      "accession": "0000319201-26-000027",
-      "url": "https://www.sec.gov/Archives/edgar/data/319201/000031920126000027/klac-20260630.htm",
-      "date": "2026-08-06"
+      "form": "10-Q",
+      "accession": "0000319201-26-000034",
+      "url": "https://www.sec.gov/Archives/edgar/data/319201/000031920126000034/klac-20260930.htm",
+      "date": "2026-10-29"
+     }
+    },
+    {
+     "counterparty": null,
+     "label": "Another customer",
+     "relation": "customer",
+     "named": false,
+     "share": 13,
+     "quote": "In the three months ended September 30, 2026, two customers accounted for approximately 21 % and 13 % of total revenues each.",
+     "mentions": 1,
+     "filing": {
+      "form": "10-Q",
+      "accession": "0000319201-26-000034",
+      "url": "https://www.sec.gov/Archives/edgar/data/319201/000031920126000034/klac-20260930.htm",
+      "date": "2026-10-29"
      }
     }
    ]
@@ -1761,12 +1782,18 @@
   "MSFT": {
    "cik": 789019,
    "name": "MICROSOFT CORP",
-   "asOf": "2026-07-29",
+   "asOf": "2026-10-28",
    "filing": {
     "form": "10-K",
     "accession": "0001193125-26-323660",
     "url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526323660/msft-20260630.htm",
     "date": "2026-07-29"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001193125-26-436133",
+    "url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526436133/msft-20260930.htm",
+    "date": "2026-10-28"
    },
    "links": [
     {
@@ -1776,7 +1803,7 @@
      "named": true,
      "share": null,
      "quote": "For fiscal year 2026, we recorded revenue from commercial arrangements with OpenAI, inclusive of revenue-sharing payments, of $ 24.1 billion, and accounts receivable from OpenAI as of June 30, 2026 was $ 6.0 billion.",
-     "mentions": 1,
+     "mentions": 2,
      "filing": {
       "form": "10-K",
       "accession": "0001193125-26-323660",
@@ -1986,7 +2013,7 @@
   "NXPI": {
    "cik": 1413447,
    "name": "NXP Semiconductors N.V.",
-   "asOf": "2026-07-28",
+   "asOf": "2026-10-27",
    "filing": {
     "form": "10-K",
     "accession": "0001413447-26-000008",
@@ -1995,9 +2022,9 @@
    },
    "quarter": {
     "form": "10-Q",
-    "accession": "0001413447-26-000045",
-    "url": "https://www.sec.gov/Archives/edgar/data/1413447/000141344726000045/nxpi-20260628.htm",
-    "date": "2026-07-28"
+    "accession": "0001413447-26-000059",
+    "url": "https://www.sec.gov/Archives/edgar/data/1413447/000141344726000059/nxpi-20260927.htm",
+    "date": "2026-10-27"
    },
    "links": [
     {
@@ -2443,12 +2470,18 @@
   "SNDK": {
    "cik": 2023554,
    "name": "Sandisk Corp",
-   "asOf": "2026-08-17",
+   "asOf": "2026-10-30",
    "filing": {
     "form": "10-K",
     "accession": "0001628280-26-057406",
     "url": "https://www.sec.gov/Archives/edgar/data/2023554/000162828026057406/sndk-20260703.htm",
     "date": "2026-08-17"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001628280-26-068601",
+    "url": "https://www.sec.gov/Archives/edgar/data/2023554/000162828026068601/sndk-20261002.htm",
+    "date": "2026-10-30"
    },
    "links": [
     {
@@ -2682,7 +2715,7 @@
   "VRT": {
    "cik": 1674101,
    "name": "Vertiv Holdings Co",
-   "asOf": "2026-07-29",
+   "asOf": "2026-10-28",
    "filing": {
     "form": "10-K",
     "accession": "0001674101-26-000008",
@@ -2691,9 +2724,9 @@
    },
    "quarter": {
     "form": "10-Q",
-    "accession": "0001628280-26-050609",
-    "url": "https://www.sec.gov/Archives/edgar/data/1674101/000162828026050609/vrt-20260630.htm",
-    "date": "2026-07-29"
+    "accession": "0001628280-26-067893",
+    "url": "https://www.sec.gov/Archives/edgar/data/1674101/000162828026067893/vrt-20260930.htm",
+    "date": "2026-10-28"
    },
    "links": [
     {
