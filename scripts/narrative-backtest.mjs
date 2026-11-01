@@ -16,6 +16,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { gdeltUrl, parseTimeline, joinNarrative } from '../lib/narrativeFeed.js';
 import { narrativeMetrics, narrativeState } from '../lib/signalBoard.js';
+import { exchangeClock } from '../lib/yahoo.js';
 
 const argi = process.argv.indexOf('--cache');
 const CACHE = argi > 0 ? process.argv[argi + 1] : null;
@@ -50,8 +51,8 @@ async function yahoo(sym) {
   return r.json();
 }
 const bars = (j) => {
-  const res = j.chart.result[0], q = res.indicators.quote[0];
-  return res.timestamp.map((t, i) => ({ date: new Date((t - 4 * 3600) * 1000).toISOString().slice(0, 10), open: q.open[i], close: q.close[i] }))
+  const res = j.chart.result[0], q = res.indicators.quote[0], clock = exchangeClock(res.meta);   // the bar's own date, either clock season
+  return res.timestamp.map((t, i) => ({ date: clock(t).date, open: q.open[i], close: q.close[i] }))
     .filter(b => Number.isFinite(b.open) && Number.isFinite(b.close));
 };
 

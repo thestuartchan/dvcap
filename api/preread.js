@@ -1003,7 +1003,10 @@ async function runRegion(region, req) {
   // cost attached. `tense` survives because a manual US run after 20:00 UTC is describing a closed
   // session and must not claim a pin on options that have already expired.
   if (region === 'us') {
-    const usClosedNow = new Date().getUTCHours() * 60 + new Date().getUTCMinutes() >= 20 * 60;
+    // New York's own clock (1 Nov 2026): a fixed 20:00 UTC was 16:00 only in summer — in winter it
+    // called a live 15:00 session closed, and after midnight UTC it said 'preview' again.
+    const nyMin = localMinutesOfDay('America/New_York');
+    const usClosedNow = nyMin >= 16 * 60 || nyMin < 4 * 60;
     const tense = usClosedNow ? 'closed' : 'preview';
     try {
       const g = await gexBlock(liveSpot, tense, { publishing: req.query.post === '1' });

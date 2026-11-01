@@ -357,7 +357,7 @@ const PE = (k, oi, e, T, iv = 0.22) => ({ type: 'put', strike: k, oi, iv, T, exp
   const at = atmIvByExpiry(chain, 742, { now });
   eq('a strike at spot is used alone, the sentinel vol dropped', [at[0].iv, at[0].strikes], [0.15, [742]]);
   eq('strikes that do not straddle spot: null, not the nearest wing', a[1].iv, null);
-  eq('years to the 16:00 ET close', a[2].years, +((Date.parse('2026-10-30T21:00:00Z') - Date.parse(now)) / (365 * 864e5)).toFixed(5));
+  eq('years to the 16:00 ET close (20:00 UTC on an EDT date)', a[2].years, +((Date.parse('2026-10-30T20:00:00Z') - Date.parse(now)) / (365 * 864e5)).toFixed(5));
   eq('no spot, no rows', atmIvByExpiry(chain, null), []);
 }
 // ── SPX's grid, folded: near expiries as they are, the rest one column (12 Oct) ──

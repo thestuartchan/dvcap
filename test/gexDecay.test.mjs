@@ -95,8 +95,10 @@ const c = (expiry, type, strike, oi, iv = 0.22) => ({ expiry, type, strike, oi, 
 // Both facts are true at once and the useful sentence says so: most of it goes, and the strike
 // survives because later books peak there too.
 {
+  // 120,000, not 90,000 (1 Nov 2026): the 0DTE book had been sized against a close at 21:00 UTC,
+  // an hour late on this September date; with the real 16:00 EDT it is 45% of the strike, not most.
   const chain = [
-    c('2026-09-10', 'put', 700, 90000),
+    c('2026-09-10', 'put', 700, 120000),
     c('2026-09-18', 'put', 700, 20000), c('2026-09-18', 'put', 690, 5000),
     c('2026-09-18', 'call', 730, 10000), c('2026-09-10', 'call', 730, 5000),
   ];

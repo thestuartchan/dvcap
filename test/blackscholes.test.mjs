@@ -84,7 +84,12 @@ const near = (n, g, w, tol) => { const good = g != null && Math.abs(g - w) <= to
 // ── year fractions ───────────────────────────────────────────────────────────
 {
   near('a year out is a year', yearsTo('2027-09-01', '2026-09-01T21:00:00Z'), 1, 0.01);
-  near('a week out', yearsTo('2026-09-08', '2026-09-01T21:00:00Z'), 7 / 365, 1e-6);
+  near('a week out, close to close (16:00 EDT is 20:00 UTC)', yearsTo('2026-09-08', '2026-09-01T20:00:00Z'), 7 / 365, 1e-6);
+  // The close is 16:00 New York in both seasons (1 Nov 2026): a fixed 21:00 UTC ran every summer T
+  // an hour long and kept a 0DTE contract alive for an hour after the bell.
+  eq('a summer 0DTE is gone at 16:30 EDT', yearsTo('2026-09-01', '2026-09-01T20:30:00Z'), null);
+  ok('a winter 0DTE still has 30 minutes at 15:30 EST', Math.abs(yearsTo('2026-11-02', '2026-11-02T20:30:00Z') - 30 / 60 / 24 / 365) < 1e-9);
+  near('a week out in winter, close to close (16:00 EST is 21:00 UTC)', yearsTo('2026-11-09', '2026-11-02T21:00:00Z'), 7 / 365, 1e-6);
   // Expiry is anchored to the close, not midnight — an expiry dated today is still hours of gamma.
   ok('an expiry dated today is not yet expired in the morning', yearsTo('2026-09-01', '2026-09-01T13:00:00Z') > 0);
   eq('but is gone after the close', yearsTo('2026-09-01', '2026-09-01T22:00:00Z'), null);
