@@ -2,7 +2,7 @@
 // (lib/optionExits.js). Made-up tickers, order ids, contracts and sizes.
 import { parseTradeConfirms } from '../lib/flexTrades.js';
 import { orderUnits } from '../lib/journalInbox.js';
-import { statementExits, exitLine, exitFix } from '../lib/optionExits.js';
+import { statementExits, exitWindow, exitLine, exitFix } from '../lib/optionExits.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
@@ -58,6 +58,19 @@ const onCard = { ...cccCard, fills: [...cccCard.fills, { id: 'f2', side: 'sell',
 eq('the exit already on the card is not offered again', statementExits([onCard], units(ccc), missing('CCC', cccLegs)), []);
 eq('a card the day-trade check already named is skipped', statementExits([cccCard], units(ccc), missing('CCC', cccLegs), { skip: new Set(['ccc-strangle']) }), []);
 eq('a closed card is left alone', statementExits([{ ...cccCard, derived: { status: 'closed', qty: 0 } }], units(ccc), missing('CCC', cccLegs)), []);
+
+// HOW FAR BACK TO READ (1 Nov 2026). The daily statement is one session; a card sold the day before
+// was never in it. The window starts at the card's last fill and is asked for only when it reaches
+// before the statement in hand.
+eq('a card gone before the day\'s statement: read back to its last fill', exitWindow([cccCard], missing('CCC', cccLegs), { statementFrom: '2026-10-30', asOf: '2026-10-30' }), { from: '2026-10-26', to: '2026-10-30' });
+eq('the day\'s statement already reaches it: no second read', exitWindow([cccCard], missing('CCC', cccLegs), { statementFrom: '2026-10-26', asOf: '2026-10-30' }), null);
+eq('no card gone at IBKR: no second read', exitWindow([cccCard], [], { statementFrom: '2026-10-30', asOf: '2026-10-30' }), null);
+eq('a card the day-trade check named: no second read', exitWindow([cccCard], missing('CCC', cccLegs), { skip: new Set(['ccc-strangle']), statementFrom: '2026-10-30', asOf: '2026-10-30' }), null);
+const old = { ...cccCard, fills: [{ ...cccCard.fills[0], date: '2026-01-02' }] };
+eq('never more than IBKR\'s 92 days', exitWindow([old], missing('CCC', cccLegs), { statementFrom: '2026-10-30', asOf: '2026-10-30' }), { from: '2026-07-30', to: '2026-10-30' });
+// The orders from the earlier day, read through the wider window, are the exit.
+const sold = [...ccc.slice(2)];
+eq('read through the window, the earlier day\'s orders are the exit', statementExits([cccCard], units(sold), missing('CCC', cccLegs)).map(x => x.fill.orders), [['9002', '9003']]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

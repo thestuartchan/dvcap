@@ -47,7 +47,7 @@ import { catalystLookup } from '../lib/catalystFeed.js';
 import { runJournal } from '../lib/journalStore.js';
 import { journalLine, orderUnits } from '../lib/journalInbox.js';
 import { journaledDayTrades, dayTradeLine } from '../lib/dayTradeCards.js';
-import { statementExits, exitLine, exitFix } from '../lib/optionExits.js';
+import { statementExits, exitWindow, exitLine, exitFix } from '../lib/optionExits.js';
 import { parseTradeConfirms, tcSections } from '../lib/flexTrades.js';
 import { adoptProvisional, tcQueryId, TC_QUERY_ENV, TC_WAITS_MS, SYNC_NOW_MIN_INTERVAL_S, skipOnSameDay, syncNowLine, recordLag, lagText } from '../lib/sameDayFills.js';
 import { hasSessionCookie, hasJournalReadKey } from '../lib/apiauth.js';
@@ -176,7 +176,18 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   result.expiries.closes = result.expiries.closes.filter(c => !dayTradeIds.has(c.id));
   // ── AN OPTION CARD CLOSED AT IBKR, THE EXIT NEVER RECORDED (lib/optionExits.js) ──
   // The statement's own closing orders, offered as the fill. Such a card is not an expiry either.
-  const exits = statementExits(withDerived, statementUnits, rec.report.filter(r => r.kind === 'option-missing-at-broker'), { skip: dayTradeIds });
+  // The day's statement holds one session; a card closed before it needs the days since its last
+  // fill, asked for by date range only when such a card exists. A failed read keeps the day's.
+  const missingOpts = rec.report.filter(r => r.kind === 'option-missing-at-broker');
+  let exitUnits = statementUnits;
+  const back = exitWindow(withDerived, missingOpts, { skip: dayTradeIds, statementFrom: isoDate(got.statement.fromDate), asOf });
+  if (back) {
+    try {
+      const wide = await fetchStatement({ token, queryId, range: back });
+      if (wide.ok) exitUnits = orderUnits(parseTrades(wide.xml));
+    } catch { /* the day's statement stands */ }
+  }
+  const exits = statementExits(withDerived, exitUnits, missingOpts, { skip: dayTradeIds });
   const exitIds = new Set(exits.map(x => x.rowId));
   expiry.waiting = expiry.waiting.filter(w => !exitIds.has(w.id) && !(w.ids || []).some(id => exitIds.has(id)));
   expiry.closes = expiry.closes.filter(c => !exitIds.has(c.rowId));
