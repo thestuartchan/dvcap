@@ -8,8 +8,12 @@
 # anything the account owner CHANGES is already live; this exists only for price drift and for level
 # alerts firing while nobody is looking. Four checkpoints a day covers that:
 #
-#   13:35 UTC  just after the US open        20:05 UTC  just after the US close
+#   14:35 UTC  after the US open             21:05 UTC  after the US close
 #   17:00 UTC  midday                        01:35 UTC  the HK open, for the two HK positions
+#
+# The two US times hold in BOTH clock seasons (1 Nov 2026): 14:35 UTC is 10:35 EDT / 09:35 EST and
+# 21:05 UTC is 17:05 EDT / 16:05 EST. The old 13:35 and 20:05 were right only in summer — in winter
+# they landed 55 minutes before the open and an hour before the close.
 #
 # COST, since a minute of CI per curl adds up. GitHub bills each job at a one-minute minimum, so
 # 4 runs × 5 weekdays ≈ 20 minutes a week, ~87 a month — against 2,000 free for a private repo, and
@@ -26,9 +30,9 @@ name: trade card
 
 on:
   schedule:
-    - cron: '35 13 * * 1-5'
+    - cron: '35 14 * * 1-5'
     - cron: '0 17 * * 1-5'
-    - cron: '5 20 * * 1-5'
+    - cron: '5 21 * * 1-5'
     - cron: '35 1 * * 1-5'
   workflow_dispatch:
 

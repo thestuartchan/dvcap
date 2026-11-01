@@ -158,6 +158,10 @@ const FIX = readFileSync(new URL('./fixtures-occ-qqq.txt', import.meta.url), 'ut
   // A weekend has no close of its own — a Saturday fetch still describes Friday's settlement.
   eq('a Sunday walks back to Friday', priorUsClose(T('2026-09-13T10:00:00Z')).toISOString(), '2026-09-11T20:00:00.000Z');
   eq('and a Saturday likewise', priorUsClose(T('2026-09-12T10:00:00Z')).toISOString(), '2026-09-11T20:00:00.000Z');
+  // In winter the close is 21:00 UTC (1 Nov 2026): at 20:30 UTC — 15:30 EST — the session is still
+  // open, so the last close is yesterday's, and the overnight file is the right one.
+  eq('15:30 EST is before today\u2019s close: the last one is Friday\u2019s, still on EDT', priorUsClose(T('2026-11-02T20:30:00Z')).toISOString(), '2026-10-30T20:00:00.000Z');
+  eq('16:30 EST is after it', priorUsClose(T('2026-11-02T21:30:00Z')).toISOString(), '2026-11-02T21:00:00.000Z');
 
   // UNKNOWN IS NOT TRUE. On a first observation there is no evidence the file rolled, and treating
   // the absence of evidence as a pass is how a stale book gets drawn as a current one.
