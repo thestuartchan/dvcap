@@ -1,7 +1,7 @@
 // test/trendTells.test.mjs — the trend-day tells and their fifteen-year rates (lib/trendTells.js).
 import { tellsFor, tellsHeadline, shownTells, firstHourBands, BACKTEST, BASE_RATE, cushionBand, CUSHION, zoneOf, bandLean } from '../lib/trendTells.js';
 import { parseDix, gexPercentile } from '../lib/squeeze.js';
-import { firstHourFrom } from '../lib/yahoo.js';
+import { firstHourFrom, closeBeforeFrom, exchangeClock } from '../lib/yahoo.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
@@ -69,6 +69,23 @@ eq('range ÷ implied falls band by band, on both symbols', [CUSHION.every((b, i)
     [{ band: 'p60', leanQqq: 'lean skip', leanSpx: 'lean skip' }, true]);
   const n = tellsFor({ gexPct: 0.01, gexValue: -2e9 }).find(t => t.key === 'gex');
   eq('negative GEX is named as such and is a trade day', [n.cushion.band, n.text.startsWith('negative — ')], ['neg', true]);
+}
+
+// ── ACROSS THE CLOCK CHANGE (1 Nov 2026) ──
+// Yahoo sends today's offset, not each bar's. On the morning New York left daylight time it read
+// −5h, so bars struck in EDT were read an hour early: every daily bar a date behind, and no 09:30
+// first-hour bar before the change. Each stamp is now read on the exchange's own clock.
+{
+  const s = (iso) => Date.parse(iso) / 1000;
+  const meta = { exchangeTimezoneName: 'America/New_York', gmtoffset: -18000 };   // as sent after the change
+  const clock = exchangeClock(meta);
+  eq('a daily bar at midnight EDT keeps its own date', clock(s('2026-10-30T04:00:00Z')).date, '2026-10-30');
+  eq('and one at midnight EST its own', clock(s('2026-11-02T05:00:00Z')).date, '2026-11-02');
+  const res = { meta, timestamp: [s('2026-10-30T13:30:00Z'), s('2026-11-02T14:30:00Z')], indicators: { quote: [{ open: [700, 702], close: [701, 703] }] } };
+  eq('the 09:30 bar on both sides of the change', Object.keys(firstHourFrom(res)), ['2026-10-30', '2026-11-02']);
+  const hourly = { meta, timestamp: [s('2026-10-30T19:00:00Z'), s('2026-10-30T20:00:00Z')], indicators: { quote: [{ close: [10, 11] }] } };
+  eq('a 16:00 cut-off read in EDT for an EDT day: the 16:00 bar is after it', closeBeforeFrom(hourly, '2026-10-30', 16), 10);
+  eq('with no zone, the offset is the fallback', exchangeClock({ gmtoffset: -14400 })(s('2026-10-30T04:00:00Z')).date, '2026-10-30');
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
