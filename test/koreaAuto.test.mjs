@@ -3,8 +3,8 @@
 // Fixtures are the real shapes of the two pages as of 1 Oct 2026: the KOFIA front page's <dl>
 // blocks and the KRX front-page widget's JSON. What matters most is that a reading from either
 // passes the same guards a hand paste does, and that an intraday partial is never stored as a day.
-import { kofiaPasteFromHtml, kofiaFromHtml, krxFlowsFromJson, flowIsFinal, seoulClock } from '../lib/koreaAuto.js';
-import { normaliseStore, unitProblems, applyKofia, applyFlows, appendSnapshot, storeChanged, KOSDAQ_FLOW_KEYS } from '../lib/koreaStore.js';
+import { kofiaPasteFromHtml, kofiaFromHtml, krxFlowsFromJson, flowIsFinal, seoulClock, csopUnitsFromJson } from '../lib/koreaAuto.js';
+import { normaliseStore, unitProblems, applyKofia, applyFlows, applyUnits7709, appendSnapshot, storeChanged, KOSDAQ_FLOW_KEYS } from '../lib/koreaStore.js';
 import { readFileSync } from 'node:fs';
 import { fetchKoreaInto, seoulStamp } from '../lib/koreaFetch.js';
 let pass = 0, fail = 0;
@@ -102,6 +102,27 @@ const KRX = { output: [
   eq('7709 units are untouched', store.latest.units7709, real.latest.units7709);
 }
 
+// ── CSOP 7709 UNITS (1 Nov 2026) ── the API CSOP's own product page reads. Made-up counts.
+const CSOP = [
+  { Ticker: '7709 HK', Currency: 'USD', NAV: 2.9, Shares: 1100000000, HstDateFormat: '2026-10-30', FundId: 'HK-SKHY-2L' },
+  { Ticker: '7709 HK', Currency: 'HKD', NAV: 22.8, Shares: 1100000000, HstDateFormat: '2026-10-30', FundId: 'HK-SKHY-2L' },
+];
+{
+  eq('units and their NAV date', csopUnitsFromJson(CSOP), { date: '2026-10-30', value: 1100000000 });
+  eq('a renamed count is not a reading', csopUnitsFromJson([{ Ticker: '7709 HK', Units: 1, HstDateFormat: '2026-10-30' }]), null);
+  eq('nor is an undated one', csopUnitsFromJson([{ Ticker: '7709 HK', Shares: 5 }]), null);
+  eq('nor another fund', csopUnitsFromJson([{ Ticker: '7747 HK', Shares: 5, HstDateFormat: '2026-10-30' }]), null);
+  const st = normaliseStore({ latest: { units7709: { value: 1200000000, asOf: '2026-10-27', delta: null } }, history: [],
+    series: { units7709: [{ date: '2026-10-27', value: 1200000000, unit: 'units' }] } });
+  const r = applyUnits7709(st, { date: '2026-10-30', value: 1100000000 });
+  eq('the delta is against the prior dated reading', [r.saved, st.latest.units7709], [true, { value: 1100000000, asOf: '2026-10-30', delta: -100000000 }]);
+  eq('and the series gains the day', st.series.units7709.map(o => o.date), ['2026-10-27', '2026-10-30']);
+  const again = applyUnits7709(st, { date: '2026-10-30', value: 1100000000 });
+  eq('the same day again keeps its delta against the day before', [again.saved, st.latest.units7709.delta], [true, -100000000]);
+  eq('a threefold jump is refused', applyUnits7709(st, { date: '2026-11-02', value: 4000000000 }).saved, false);
+  eq('…and changes nothing', st.latest.units7709.asOf, '2026-10-30');
+}
+
 // ── THE FETCH, AND ITS STAMP ──
 {
   const base = () => normaliseStore({ latest: {
@@ -110,22 +131,23 @@ const KRX = { output: [
   const res = (body, { json = false, cookie = null } = {}) => ({ ok: true, status: 200,
     headers: { getSetCookie: () => (cookie ? [cookie] : []) },
     text: async () => body, json: async () => (json ? body : JSON.parse(body)) });
-  const stub = ({ kofia = PAGE, krx = KRX, krxDown = false } = {}) => async (url) => {
+  const stub = ({ kofia = PAGE, krx = KRX, krxDown = false, csop = CSOP } = {}) => async (url) => {
     if (url.includes('kofia')) return res(kofia);
+    if (url.includes('csopasset')) return res(csop, { json: true });
     if (krxDown) throw new Error('connect ETIMEDOUT');
     if (url.includes('getJsonData')) return res(krx, { json: true });
     return res('<html></html>', { cookie: 'JSESSIONID=abc; Path=/' });
   };
   const s1 = base();
   const a = await fetchKoreaInto(s1, { now: NOW, by: 'button', fetchImpl: stub() });
-  eq('a good read: both sources, readings changed', [a.failed, a.changed, a.sources], [false, true, { kofia: 'updated', krx: 'updated' }]);
+  eq('a good read: every source, readings changed', [a.failed, a.changed, a.sources], [false, true, { kofia: 'updated', krx: 'updated', csop: 'updated' }]);
   eq('the stamp says when, who, and that it worked', [s1.lastFetch.at, s1.lastFetch.by, s1.lastFetch.ok, s1.lastFetch.changed], [NOW.toISOString(), 'button', true, true]);
   const later = new Date(NOW.getTime() + 3600e3);
   const b = await fetchKoreaInto(s1, { now: later, fetchImpl: stub() });
   eq('the same pages an hour later: nothing new, but the stamp moves', [b.changed, b.sources.kofia, s1.lastFetch.at, s1.lastFetch.by], [false, 'nothing new', later.toISOString(), 'schedule']);
   const s2 = base();
   const c = await fetchKoreaInto(s2, { now: NOW, fetchImpl: stub({ krxDown: true }) });
-  eq('KRX down: KOFIA still lands, the stamp records the failure', [c.failed, c.sources, s2.lastFetch.ok, !!s2.latest.marginLoans], [true, { kofia: 'updated', krx: 'failed' }, false, true]);
+  eq('KRX down: KOFIA still lands, the stamp records the failure', [c.failed, c.sources, s2.lastFetch.ok, !!s2.latest.marginLoans], [true, { kofia: 'updated', krx: 'failed', csop: 'updated' }, false, true]);
   ok('…with the reason in the report', s2.lastFetch.report.some(l => /KRX FAILED — connect ETIMEDOUT/.test(l)));
   const s3 = base();
   const d = await fetchKoreaInto(s3, { now: new Date('2026-10-01T02:00:00Z'), fetchImpl: stub() });
