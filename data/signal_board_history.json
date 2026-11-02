@@ -420,10 +420,10 @@
       "fwd": {
         "QQQ_1": 1.11,
         "QQQ_3": 3.01,
-        "QQQ_5": -2.55,
+        "QQQ_5": -1.97,
         "SOXX_1": 2.85,
         "SOXX_3": 9.15,
-        "SOXX_5": -3.07
+        "SOXX_5": -1.4
       },
       "realised": {
         "QQQ": {
@@ -709,10 +709,10 @@
       },
       "fwd": {
         "QQQ_1": 0.6,
-        "QQQ_3": -4.83,
+        "QQQ_3": -4.26,
         "QQQ_5": null,
         "SOXX_1": 2.13,
-        "SOXX_3": -9.3,
+        "SOXX_3": -7.74,
         "SOXX_5": null
       },
       "realised": {
@@ -1003,23 +1003,152 @@
         }
       },
       "fwd": {
-        "QQQ_1": -4.04,
+        "QQQ_1": -3.47,
         "QQQ_3": null,
         "QQQ_5": null,
-        "SOXX_1": -9.8,
+        "SOXX_1": -8.24,
         "SOXX_3": null,
         "SOXX_5": null
       },
       "realised": {
         "QQQ": {
           "date": "2026-10-30",
-          "r": 1.11
+          "r": 1.37
         },
         "SPY": {
           "date": "2026-10-30",
-          "r": 1.05
+          "r": 1.35
         }
       }
+    },
+    {
+      "date": "2026-11-02",
+      "at": "2026-11-02T13:40:00.769Z",
+      "as_of": "2026-10-30",
+      "target": "2026-11-02",
+      "rows": {
+        "hyg_lqd": {
+          "v": 0.088,
+          "s": "neutral"
+        },
+        "hy_oas": {
+          "v": -14,
+          "s": "on"
+        },
+        "ust10y": {
+          "v": -7.4,
+          "s": "on"
+        },
+        "move": {
+          "v": 83,
+          "s": "off"
+        },
+        "brent_box": {
+          "v": 56.6,
+          "s": "neutral"
+        },
+        "cushion": {
+          "v": 5.952,
+          "s": "off"
+        },
+        "vix_rv": {
+          "v": 1.656,
+          "s": "on"
+        },
+        "vix9d_vix": {
+          "v": null,
+          "s": null
+        },
+        "skew": {
+          "v": 78.373,
+          "s": "off"
+        },
+        "put_call": {
+          "v": 79,
+          "s": "off"
+        },
+        "opex": {
+          "v": 14,
+          "s": "neutral"
+        },
+        "buyback_blackout": {
+          "v": 54.5,
+          "s": "neutral"
+        },
+        "month_end_rebalance": {
+          "v": 0,
+          "s": "neutral"
+        },
+        "rsp_qqq": {
+          "v": 12.999,
+          "s": "on"
+        },
+        "breadth": {
+          "v": 6,
+          "s": "on"
+        },
+        "igv_smh": {
+          "v": 16.083,
+          "s": "off"
+        },
+        "soxx_ma": {
+          "v": 0,
+          "s": "off"
+        },
+        "qqq_ma": {
+          "v": 1,
+          "s": "off"
+        },
+        "kospi": {
+          "v": 2.239,
+          "s": "on"
+        },
+        "btc_ma": {
+          "v": 2,
+          "s": "neutral"
+        },
+        "btc_qqq": {
+          "v": -0.82,
+          "s": "neutral"
+        },
+        "eth_btc": {
+          "v": -2.032,
+          "s": "neutral"
+        },
+        "btc_dd": {
+          "v": -26.833,
+          "s": "neutral"
+        },
+        "ai_narrative": {
+          "v": null,
+          "s": null
+        }
+      },
+      "clusters": {
+        "macro": "on",
+        "dealers": "off",
+        "tape": "neutral",
+        "narrative": null
+      },
+      "lean": "neutral",
+      "call": {
+        "QQQ": {
+          "median_r": 1.18,
+          "p1": 0.67,
+          "zone": "trade",
+          "p_trend": 0.54,
+          "conflict": null
+        },
+        "SPY": {
+          "median_r": 1.14,
+          "p1": 0.63,
+          "zone": "trade",
+          "p_trend": 0.53,
+          "conflict": null
+        }
+      },
+      "fwd": null,
+      "realised": null
     }
   ]
 }
