@@ -217,7 +217,7 @@ const hoursFlat = () => mSeries('AWHMAN', monthly('2026-08', 16, () => 40.5));
 {
   const p = monthlyPulse({ cfnai: cfnaiAt(0.12), tempHelp: tempFlat(), hours: hoursFlat() }, { now: NOW });
   eq('three usable monthly legs of four — ISM is not entered', [p.usable, p.of], [3, 4]);
-  ok('and the missing entry is named without instructing anyone', /no ISM entry — hand-keyed monthly/.test(p.excluded[0].reason));
+  ok('and the missing entry is named without instructing anyone', /no ISM reading — the PR Newswire feed did not answer and nothing was entered by hand/.test(p.excluded[0].reason));
   eq('an index above zero with flat temp help and hours is EXPANDING on the sum', [p.verdict, p.score], ['EXPANDING', 1]);
   const c = p.legs.find(l => l.key === 'cfnai');
   ok('the index reads above trend', /above trend/.test(c.read));
@@ -312,7 +312,7 @@ const ism = (manufacturing, newOrders, services, asOf = '2026-09-01', period = '
   const p = monthlyPulse({}, { now: NOW, ism: ism(49.0, 48.0, 51.0, '2026-08-01', '2026-07') });
   const l = p.legs.find(x => x.key === 'ism');
   eq(`an entry older than ${ISM_STALE_DAYS} days is excluded, not footnoted`, l.available, false);
-  ok('with its date and age', /ISM entry from 2026-08-01 is 44 days old/.test(l.reason));
+  ok('with its date and age', /ISM reading from 2026-08-01 is 44 days old/.test(l.reason));
   eq('the same entry is fresh a fortnight earlier — the clock is an input', monthlyPulse({}, { now: new Date('2026-08-30T14:00:00Z'), ism: ism(49.0, 48.0, 51.0, '2026-08-01', '2026-07') }).legs.find(x => x.key === 'ism').available, true);
   eq('no entry at all is excluded', monthlyPulse({}, { now: NOW }).legs.find(x => x.key === 'ism').available, false);
   eq('an entry with no release date is excluded', monthlyPulse({}, { now: NOW, ism: { latest: { manufacturing: 50 } } }).legs.find(x => x.key === 'ism').available, false);

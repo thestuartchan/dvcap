@@ -14,6 +14,7 @@ import { fredJsonEx } from '../lib/fred.js';
 import { fetchIsharesSecYield } from '../lib/fundYield.js';
 import { correlationPayload } from '../lib/impliedCorrelation.js';
 import { chinaPayload } from '../lib/chinaFeed.js';
+import { fetchIsmFeed } from '../lib/ismFetch.js';
 
 export default async function handler(req, res) {
   // ── ?impliedcorr=1 — COR1M, VIXEQ − VIX and DSPX (lib/impliedCorrelation.js) ──────────────────
@@ -915,8 +916,9 @@ export default async function handler(req, res) {
       fredLatest("EFFR"),       // the effective rate the ZQ strip is read against
     ]);
     // The ZQ strip needs the effective rate, so it runs after the fan-out rather than inside it.
-    const fedPathFeed = await fetchFedPathStrip(effrRaw?.value > 0 ? effrRaw.value : null);
-
+    const [fedPathFeed, ismFeed] = await Promise.all([fetchFedPathStrip(effrRaw?.value > 0 ? effrRaw.value : null),
+      // ISM's PMIs from its own release on PR Newswire (lib/ismFeed.js), KV-cached; the hand entry outranks it per month.
+      fetchIsmFeed().catch(e => ({ ok: false, error: String(e?.message || e).slice(0, 160) }))]);
     // ── Yield spread history: prefer FRED's published series ──────────────────
     // The merge below is kept as a fallback only. Merging DGS10 and DGS2 requires both legs
     // to carry the same date, so any per-leg publication lag silently truncates the spread —
@@ -1029,6 +1031,8 @@ export default async function handler(req, res) {
       inflationAxis: { ...inflationSeriesRaw, oil: oilSeriesRaw, cleveland: clevelandRaw },
       // The market-implied Fed path from the ZQ strip (replaces the daily hand entry; the entry outranks it for its own date).
       fedPathFeed,
+      // ISM PMIs from PR Newswire — { ok, latest, series } in the hand entry's shape (lib/ismFeed.js mergeIsm).
+      ismFeed,
       termPremium: termPremiumRaw,   // Section B — model estimate; use direction/trend only
       dxy:      dxyRaw.latest,
       dxyPrev:  dxyRaw.prev,

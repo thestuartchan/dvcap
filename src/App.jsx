@@ -81,6 +81,7 @@ import { COMPANY_NAMES } from '../lib/companyNames.js';  // one map, shared with
 import { dubaiEt, dubaiEtStamp } from "../lib/timeFmt.js";
 import { leadRegion, regionStamps } from "../lib/overviewRegions.js";
 import { ChinaPanel } from "./ChinaPanel.jsx";
+import { mergeIsm } from "../lib/ismFeed.js";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
 const SC = [C.blue,C.green,P.amber600,P.violet700,P.amber700,P.pink700,P.teal700,P.amber500];
@@ -1792,7 +1793,7 @@ function GrowthLegBlock({ title, p, kind }) {
 // One print a month, from the release, into data/manual_entry.json by the same route as the Fed
 // path. The growth leg ages it from the release date and drops it after thirty-five days, so a
 // missed month reads as a missing input rather than as last month's economy.
-function IsmEntryPanel({ entry, onChange }) {
+function IsmEntryPanel({ entry, feed = null, onChange }) {
   const lastMonth = (() => { const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - 1); return d.toISOString().slice(0, 7); })();
   const [period, setPeriod] = useState(lastMonth);
   const [pmi, setPmi] = useState("");
@@ -1802,7 +1803,9 @@ function IsmEntryPanel({ entry, onChange }) {
   const [open, setOpen] = useState(false);
   const [msg, setMsg] = useState(null);
   const [saving, setSaving] = useState(false);
-  const L = entry?.latest || null;
+  // The month shown is the feed merged with the hand entry (lib/ismFeed.js mergeIsm); saving still writes the hand entry.
+  const L = mergeIsm(feed?.ok ? feed : null, entry).latest;
+  const auto = !!feed?.ok && L?.source === "prnewswire";
   async function save() {
     setSaving(true); setMsg(null);
     try {
@@ -1827,12 +1830,13 @@ function IsmEntryPanel({ entry, onChange }) {
   return (
     <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <HandKept asOf={L?.asOf || null} cadenceDays={35} what="from the ISM release, first business day of the month" />
-        {L ? <span style={{ fontSize: 11.5, color: C.mid }}>ISM {L.manufacturing}{L.newOrders != null ? ` · new orders ${L.newOrders}` : ""}{L.services != null ? ` · services ${L.services}` : ""} · {L.period}</span>
-           : <span style={{ fontSize: 11.5, color: C.amber }}>no ISM entered</span>}
+        {auto ? <span style={{ fontSize: 10.5, fontWeight: 800, color: C.green, textTransform: "uppercase", letterSpacing: 0.4 }}>auto · ISM via PR Newswire</span>
+              : <HandKept asOf={L?.asOf || null} cadenceDays={35} what="from the ISM release, first business day of the month" />}
+        {L ? <span style={{ fontSize: 11.5, color: C.mid }}>ISM {L.manufacturing}{L.newOrders != null ? ` · new orders ${L.newOrders}` : ""}{L.services != null ? ` · services ${L.services}` : ""} · {L.period}{L.asOf ? ` · released ${L.asOf}` : ""}{L.source === "hand" || L.source === "hand+prnewswire" ? " · typed" : ""}</span>
+           : <span style={{ fontSize: 11.5, color: C.amber }}>no ISM reading{feed && !feed.ok ? ` — PR Newswire feed: ${feed.error || "no answer"}` : ""}</span>}
         <button onClick={() => setOpen(o => !o)}
           style={{ cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 700 }}>
-          {open ? "close" : "enter this month"}
+          {open ? "close" : auto ? "override a month" : "enter this month"}
         </button>
         {msg && <span style={{ fontSize: 11.5, color: msg.ok ? C.green : C.amber, fontWeight: 700 }}>{msg.text}</span>}
       </div>
@@ -1853,11 +1857,11 @@ function IsmEntryPanel({ entry, onChange }) {
   );
 }
 
-function GrowthPulsePanel({ growth, market, monthly, ism, onIsmChange }) {
+function GrowthPulsePanel({ growth, market, monthly, ism, ismFeed, onIsmChange }) {
   if (!growth && !market && !monthly) return null;
   const weekly = growthPulse(growth || {});
   const mkt = marketPulse(market || {});
-  const mon = monthlyPulse(monthly || {}, { ism });
+  const mon = monthlyPulse(monthly || {}, { ism: mergeIsm(ismFeed?.ok ? ismFeed : null, ism) });
   const axis = growthAxis({ market: mkt, weekly, monthly: mon });
   // The card's own status: agreement takes the legs' shared status; any disagreement is WATCH,
   // because a turning point is the state that is not actionable alone.
@@ -1885,7 +1889,7 @@ function GrowthPulsePanel({ growth, market, monthly, ism, onIsmChange }) {
             <div>CFNAI 3m:&nbsp;&nbsp;&nbsp;&nbsp;≥0 trend · ≤−0.70 recession signal</div>
             <div>Temp help:&nbsp;&nbsp;&nbsp;±1.5% over 3 months</div>
             <div>Mfg hours:&nbsp;&nbsp;&nbsp;±0.3h over 3 months</div>
-            <div>ISM:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;≥52 momentum · &lt;50 contraction · hand-kept, 35d</div>
+            <div>ISM:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;≥52 momentum · &lt;50 contraction · from ISM's release on PR Newswire, 35d</div>
           </div>
           <div style={{ fontSize: 11.5, color: tok.color, lineHeight: 1.55, marginTop: 6 }}>
             The market leads the weekly data by one to three months; the weekly data leads the monthly leading series by another month; all three lead the payroll headline below. One axis, four vintages.
@@ -1895,7 +1899,7 @@ function GrowthPulsePanel({ growth, market, monthly, ism, onIsmChange }) {
       <GrowthLegBlock title="Market-implied" p={mkt} kind="market" />
       <GrowthLegBlock title="Weekly data" p={weekly} kind="weekly" />
       <GrowthLegBlock title="Monthly leading" p={mon} kind="monthly" />
-      <IsmEntryPanel entry={ism} onChange={onIsmChange} />
+      <IsmEntryPanel entry={ism} feed={ismFeed} onChange={onIsmChange} />
     </Card>
   );
 }
@@ -5951,7 +5955,7 @@ export default function App() {
     consts: {
       consensusVintage: CONSENSUS_VINTAGE, recessionSources: effectiveRecessionSources, recessionCadence: RECESSION_SOURCE_CADENCE,
       fedLanguage: FED_LANGUAGE_STATUS, secYields: SEC_YIELDS, southboundFeed: sbFeedTop,
-      fedPathFeed: liveInd?.fedPathFeed ?? null,
+      fedPathFeed: liveInd?.fedPathFeed ?? null, ismFeed: liveInd?.ismFeed ?? null,
       analystBoard: { asOf: "2026-06-29", cadence: 90 }, recessionProse: { asOf: "2026-09-30", cadence: 30 },
       announced: {
         pceCore: { ...ANNOUNCED_PRINTS.pceCore, fredAsOf: liveInd?.asOf?.pceCoreCurrent ?? null },
@@ -7224,7 +7228,7 @@ export default function App() {
           <DriversView st={mstate} feed={stateFeed}
             deep={{
               growth: [
-                { title: "Growth legs", hint: "market-implied, weekly claims and activity, monthly surveys", render: () => <GrowthPulsePanel growth={liveInd?.growth} market={liveInd?.growthMarket} monthly={liveInd?.growthMonthly} ism={ismEntry} onIsmChange={setIsmEntry} /> },
+                { title: "Growth legs", hint: "market-implied, weekly claims and activity, monthly surveys", render: () => <GrowthPulsePanel growth={liveInd?.growth} market={liveInd?.growthMarket} monthly={liveInd?.growthMonthly} ism={ismEntry} ismFeed={liveInd?.ismFeed} onIsmChange={setIsmEntry} /> },
                 { title: "Labour", hint: "payrolls, unemployment, emp-pop, Sahm", render: () => <LaborPanel labor={laborView} extras={laborExtras} announced={laborAnnounced} /> },
                 { title: "Classic recession signals", hint: "the yield curve and the long-lead indicators", render: () => INDICATORS.filter(ind => ind.id !== "unemp" && ind.id !== "credit").map(ind => <IndicatorChart key={ind.id} ind={ind} live={liveInd} />) },
               ],
@@ -7270,7 +7274,7 @@ export default function App() {
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <HandEntryHub ledger={ledger} renderEditor={(editor) => {
               // The same components, props and save paths as on their own tabs.
-              if (editor === "ism") return <IsmEntryPanel entry={ismEntry} onChange={(v) => { setIsmEntry(v); refreshManual(); }} />;
+              if (editor === "ism") return <IsmEntryPanel entry={ismEntry} feed={liveInd?.ismFeed} onChange={(v) => { setIsmEntry(v); refreshManual(); }} />;
               if (editor === "usfr") return <UsfrSecYieldForm liveInd={liveInd} onSaved={refreshManual} />;
               if (editor === "korea") return pbData?.asia?.kofia
                 ? <KoreaManualEntry kofia={pbData.asia.kofia} gate2={pbData.asia.won?.gate2 ?? null} onSaved={(latest) => { if (latest) setKofiaSaved(latest); fetchPlaybookRegion("asia"); }} />
