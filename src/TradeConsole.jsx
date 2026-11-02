@@ -42,7 +42,8 @@ import { sizeTrade, sizeFuture, sizerRun, reconcileRuns, mismatchReview, capRevi
 import { leverageFor, SWING, roomInWrappers } from "../lib/leverage.js";
 import { modelledDelta } from "../lib/blackscholes.js";
 import { stateOf, byState, afterFill, thesisOk, archivePatch, restorePatch, hoursToArchive, TABS } from "../lib/lifecycle.js";
-import { uniqueRowIds } from "../lib/rowIds.js";
+import { normalizeRows } from "../lib/rowRepairs.js";
+import { fitId } from "../lib/rowIds.js";
 import { parseCommand, resolveCandidates, commandRow, commandSummary, firstFill, priceText } from "../lib/commandBar.js";
 import { actionItems } from "../lib/actions.js";
 import { applyDraft, LEVEL_LABEL as JOURNAL_LEVEL_LABEL } from "../lib/journalInbox.js";
@@ -3143,7 +3144,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   useEffect(() => {
     try {
       const c = JSON.parse(localStorage.getItem(LS) || "null");
-      if (c) { setRows(uniqueRowIds(backfillMultipliers(c.rows || []).rows).rows); setSettings(s => ({ ...s, ...(c.settings || {}) })); }
+      if (c) { setRows(normalizeRows(backfillMultipliers(c.rows || []).rows).rows); setSettings(s => ({ ...s, ...(c.settings || {}) })); }
     } catch { /* no cache */ }
     readLive().then(j => {
       setLoadErr(null);
@@ -3166,9 +3167,11 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           const back = backfillMultipliers(c.rows);
           // ONE CARD, ONE ID (lib/rowIds.js): two cards sharing an id were edited together. Renamed
           // the way the sync renames them, and saved so the fix sticks.
-          const uniq = uniqueRowIds(back.rows);
+          // CREDIT COMBOS stored long at a negative price are turned into the short cards they are
+          // (lib/rowRepairs.js), the same way the sync and the Discord card read them.
+          const uniq = normalizeRows(back.rows);
           setRows(uniq.rows);
-          if (uniq.renamed.length) touch();
+          if (uniq.renamed.length || uniq.fixed.length) touch();
           if (back.changed || back.review.length) setMultNote({ fixed: back.fixed, review: back.review });
         }
         else if (Array.isArray(c.watchlist)) setRows(migrateV1(c.watchlist));   // one-time v1 → v2
@@ -3743,14 +3746,24 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     const kept = (r.fills || []).map(f => (adopt.has(f.id) && !f.tradeId ? { ...f, tradeId: adopt.get(f.id) } : f));
     const add = (fix.fills || []).filter(f => !f.id || !have.has(f.id)).map(f => ({
       id: f.id || Math.random().toString(36).slice(2, 8), date: f.date, side: f.side, qty: f.qty, price: f.price,
-      note: f.note || "from the IBKR statement", ...(f.tradeId ? { tradeId: String(f.tradeId) } : {}) }));
+      note: f.note || "from the IBKR statement", ...(f.tradeId ? { tradeId: String(f.tradeId) } : {}), ...(f.transfer ? { transfer: true } : {}) }));
     const fills = [...kept, ...add];
     const before = derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side });
     const after = derivePosition(fills, { multiplier: r.multiplier, side: r.side });
-    upd(rowId, { fills, ...afterFill(before, after) });
-    setAckMsg({ ok: true, text: `recorded ${add.length} fill${add.length === 1 ? "" : "s"} from the statement on ${label}${after.status !== before.status ? ` — the card is now ${after.status}` : ""}` });
-    if (after.status !== before.status) { setBookTab(after.status === "closed" ? "CLOSED" : after.status === "open" ? "OPEN" : "WATCHING"); }
-    setExpanded(rowId);
+    // A LEG-OUT makes one card per leg; a ROLL makes the new card, or links the one the statement
+    // already added (lib/optionLedger.js). Made once: a card whose id is already there is left alone.
+    const ids = new Set(rows.map(x => x.id));
+    const made = (fix.newRows || []).filter(n => n?.id && !ids.has(n.id)).map(n => ({ ...n,
+      fills: (n.fills || []).map(f => ({ id: f.id, date: f.date, side: f.side, qty: f.qty, price: f.price, note: f.note || "",
+        ...(f.tradeId ? { tradeId: String(f.tradeId) } : {}), ...(f.transfer ? { transfer: true } : {}) })) }));
+    const link = fix.link && ids.has(fix.link.rowId) ? fix.link : null;
+    setRows(p => [...p.map(x => x.id === rowId ? { ...x, fills, ...afterFill(before, after) }
+      : link && x.id === link.rowId && !x.rolledFrom ? { ...x, rolledFrom: link.rolledFrom } : x), ...made]);
+    touch();
+    const extra = made.length ? ` — ${made.length} new card${made.length === 1 ? "" : "s"} (${made.map(n => n.id).join(", ")})` : link ? ` — linked ${link.rowId} as the roll` : "";
+    setAckMsg({ ok: true, text: `recorded ${add.length} fill${add.length === 1 ? "" : "s"} from the statement on ${label}${after.status !== before.status ? ` — the card is now ${after.status}` : ""}${extra} — Save to cloud` });
+    if (after.status !== before.status && !made.length) { setBookTab(after.status === "closed" ? "CLOSED" : after.status === "open" ? "OPEN" : "WATCHING"); }
+    setExpanded(made[0]?.id || rowId);
   };
 
   // Replace one row with one row PER TRADE, in place so the order of the book is preserved. Each
@@ -3768,7 +3781,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
         ...r,
         // An option card's symbol is its underlying: the contract goes in the id too, or two legs
         // opened the same day are split onto one id (lib/rowIds.js).
-        id: `${r.symbol}-${(r.legs || []).map(l => `${l.right || ""}${l.strike ?? ""}`).join("")}${(r.legs || []).length ? "-" : ""}${(d0 || d1 || i).toString().replace(/-/g, "")}-${i}`,
+        id: fitId(`${r.symbol}-${(r.legs || []).map(l => `${l.right || ""}${l.strike ?? ""}`).join("")}${(r.legs || []).length ? "-" : ""}${(d0 || d1 || i).toString().replace(/-/g, "")}`, String(i)),
         trade: r.trade || (closed && d1 && d1 !== d0 ? `${d0.slice(5)} → ${d1.slice(5)}` : d0 ? `from ${d0.slice(5)}` : `trade ${i + 1}`),
         fills: use,
       };
@@ -3991,7 +4004,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       const r = await fetch(`/api/manual-entry?snapshot=${encodeURIComponent(label)}`, { credentials: "include", cache: "no-store" });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j?.snapshot) return { ok: false, error: j?.error || `HTTP ${r.status}` };
-      setRows(uniqueRowIds(backfillMultipliers(j.snapshot.rows || []).rows).rows);
+      setRows(normalizeRows(backfillMultipliers(j.snapshot.rows || []).rows).rows);
       setSettings(s => ({ ...s, ...(j.snapshot.settings || {}) }));
       touch();
       return { ok: true, rows: (j.snapshot.rows || []).length };
@@ -4635,6 +4648,28 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
               {flexNote.needsYou.map((n, i) => (
                 <span key={i} style={{ background: C.surf, border: "1px solid " + C.bdr, borderRadius: 7, padding: "2px 8px", display: "inline-flex", gap: 8, alignItems: "center" }}>
                   <span><b>{n.root}</b> · {n.what}{n.fix ? <> — <i>{n.fix.text}</i></> : null}</span>
+                  {/* ── ONE TRADE ON SEVERAL CARDS (lib/optionLedger.js sameTradeCards) ──
+                      Keep the card that is the trade; the others are deleted (a cloud snapshot
+                      keeps the previous book). "Separate trades" says they are not one, for good. */}
+                  {n.sameTrade?.length > 1 && n.sameTrade.filter(c => rows.some(r => r.id === c.id)).map(c => (
+                    <button key={c.id} onClick={() => {
+                      const others = n.sameTrade.map(x => x.id).filter(id => id !== c.id);
+                      if (typeof window !== "undefined" && !window.confirm(`Keep ${n.root} ${c.label} and delete the other ${others.length} card${others.length === 1 ? "" : "s"} for this trade?`)) return;
+                      setRows(p => p.filter(r => !others.includes(r.id))); touch();
+                      setAckMsg({ ok: true, text: `kept ${n.root} ${c.label}; deleted ${others.length} duplicate card${others.length === 1 ? "" : "s"} — Save to cloud` });
+                    }} style={{ cursor: "pointer", background: C.surf, color: C.blue, border: "1.5px solid " + C.blue, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800 }}>
+                      Keep {c.label}
+                    </button>
+                  ))}
+                  {n.sameTrade?.length > 1 && (
+                    <button onClick={() => {
+                      const ids = n.sameTrade.map(x => x.id);
+                      setRows(p => p.map(r => ids.includes(r.id) ? { ...r, notSameTradeAs: [...new Set([...(r.notSameTradeAs || []), ...ids.filter(x => x !== r.id)])] } : r)); touch();
+                      setAckMsg({ ok: true, text: `${n.root}: marked as separate trades — Save to cloud` });
+                    }} style={{ cursor: "pointer", background: "none", color: C.lbl, border: "1px solid " + C.bdr, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 700 }}>
+                      Separate trades
+                    </button>
+                  )}
                   {/* ── RECORD IT ──
                       IBKR is the record. The reconciliation has computed the fill that closes the
                       gap; this opens the fill form on that row with it filled in, so the operator
@@ -4643,7 +4678,8 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
                   {n.fix && n.id && (() => {
                     const row = rows.find(x => x.id === n.id);
                     if (!row) return null;
-                    const many = (n.fix.fills?.length || 0) > 1;
+                    // Several fills, a leg-out or a roll: recorded together, in one click.
+                    const many = (n.fix.fills?.length || 0) > 1 || (n.fix.newRows?.length || 0) > 0 || !!n.fix.link;
                     const f0 = n.fix.fills?.[0];
                     return (
                       <button onClick={() => {
@@ -4663,7 +4699,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
                         note: f0?.note || (f0?.tradeId ? `IBKR trade ${f0.tradeId}, commission included` : `reconciling fill — IBKR statement ${flexNote.asOf || ""}`.trim()),
                       }); }}
                         style={{ cursor: "pointer", background: C.surf, color: C.blue, border: "1.5px solid " + C.blue, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800 }}>
-                        {many ? `Record all ${n.fix.fills.length}` : "Record it"}
+                        {n.fix.newRows?.length || n.fix.link ? "Record it" : many ? `Record all ${n.fix.fills.length}` : "Record it"}
                       </button>
                     );
                   })()}

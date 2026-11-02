@@ -17,5 +17,9 @@ eq('nothing duplicated: the very same array back', uniqueRowIds(same).rows === s
 eq('a share card with no legs: named after its first fill', uniqueRowIds([{ id: 'X', fills: [{ id: 'f1' }] }, { id: 'X', fills: [{ id: 'f2' }] }]).rows[1].id, 'X-f2');
 eq('a name already taken is not reused', uniqueRowIds([{ id: 'X' }, { id: 'X-dup' }, { id: 'X' }]).rows.map(r => r.id), ['X', 'X-dup', 'X-dup-2']);
 
+const long = 'Z'.repeat(48);
+const fitted = uniqueRowIds([{ id: long, legs: [{ right: 'P', strike: 520 }] }, { id: long, legs: [{ right: 'C', strike: 545 }] }]).rows[1].id;
+eq('a renamed id fits the store\'s 48 characters, so a save cannot cut it back', [fitted.length <= 48, fitted.endsWith('-C545'), fitted !== long], [true, true, true]);
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

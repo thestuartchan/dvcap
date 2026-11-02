@@ -243,6 +243,9 @@ function sanitizeRow(r) {
     // The row a leg came out of when a multi-leg position was split (lib/journalInbox.js
     // legOutApply) — so the closed card can post the whole trade once (lib/tradecard.js splitRootOf).
     ...(cs(r.splitFrom, 48) ? { splitFrom: cs(r.splitFrom, 48) } : {}),
+    // Cards the owner said are separate trades, so the same-trade check stops asking
+    // (lib/optionLedger.js sameTradeCards). Ids only.
+    ...(Array.isArray(r.notSameTradeAs) && r.notSameTradeAs.length ? { notSameTradeAs: r.notSameTradeAs.map(x => cs(x, 64)).filter(Boolean).slice(0, 12) } : {}),
     // The IBKR cost basis for a position where the two accountings legitimately disagree — the
     // console is average-cost, IBKR reports the lots it actually matched, and after a partial exit
     // they diverge permanently (ARM: 331.56 here, 409.26 there). Recording the broker's number

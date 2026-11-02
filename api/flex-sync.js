@@ -38,7 +38,7 @@ const PENDING_TTL_S = 15 * 60;
 const SYNC_BUDGET_MS = 50000;
 import { derivePosition, splitIntoTrades } from '../lib/positions.js';
 import { parseOptionEae, eaeSectionPresent } from '../lib/optionExpiry.js';
-import { optionPlans, positionsByContract, planLine, planFix, autoApplies, applyPlans, ledgerWindow } from '../lib/optionLedger.js';
+import { optionPlans, positionsByContract, costsByContract, planLine, planFix, autoApplies, applyPlans, ledgerWindow, sameTradeCards, sameTradeLine, rolledContracts, coveredBy, entrylessCards, entrylessLine } from '../lib/optionLedger.js';
 import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, unrecordedTrades, dropCreatedAdds } from '../lib/flexTrades.js';
 import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf, planAck, reconcilingFill, flexEnv, flexConfigured, isoDate, optionFindings, addLabel, cashBookOf, optionMarksOf, classOf, optionContractOf } from '../lib/flex.js';
 import { post, webhookFromEnv } from '../lib/discord.js';
@@ -52,7 +52,7 @@ import { runJournal } from '../lib/journalStore.js';
 import { journalLine, orderUnits } from '../lib/journalInbox.js';
 import { journaledDayTrades, dayTradeLine } from '../lib/dayTradeCards.js';
 import { readExitWindow, lookbackLine } from '../lib/exitLookback.js';
-import { uniqueRowIds } from '../lib/rowIds.js';
+import { normalizeRows } from '../lib/rowRepairs.js';
 import { parseTradeConfirms, tcSections } from '../lib/flexTrades.js';
 import { adoptProvisional, tcQueryId, TC_QUERY_ENV, TC_WAITS_MS, SYNC_NOW_MIN_INTERVAL_S, skipOnSameDay, syncNowLine, recordLag, lagText } from '../lib/sameDayFills.js';
 import { hasSessionCookie, hasJournalReadKey } from '../lib/apiauth.js';
@@ -107,7 +107,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   const stored = await kvGetJson(CONSOLE_KEY);
   // One card, one id — renamed exactly as the console renames them on load (lib/rowIds.js), so the
   // banner's "Record it" opens the card it names.
-  const rows = uniqueRowIds(Array.isArray(stored?.rows) ? stored.rows : []).rows;
+  const rows = normalizeRows(Array.isArray(stored?.rows) ? stored.rows : []).rows;
   // NOTE: no applyRolls. A rolled position's entry is back-adjusted for the card; the broker reports
   // the contract, not the trade, so reconciling against the adjusted figure would disagree with
   // every statement for ever. And CLOSED rows are passed in as well as open ones — the statement is
@@ -194,15 +194,27 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
     }
   }
   const historyShort = !!(lookback && !lookback.units);
-  const optPositions = positionsByContract((got.statement.positions || []).filter(p => classOf(p) === 'option'), optionContractOf);
-  const plans = optionPlans(withDerived, { positions: optPositions, units: ledgerUnits, eae: ledgerEae, asOf, flagged, skip: dayTradeIds, eaePresent: eaeSectionPresent(got.xml) });
+  const optLines = (got.statement.positions || []).filter(p => classOf(p) === 'option');
+  const optPositions = positionsByContract(optLines, optionContractOf);
+  const plans = optionPlans(withDerived, { positions: optPositions, costs: costsByContract(optLines, optionContractOf), units: ledgerUnits, eae: ledgerEae, asOf, flagged, skip: dayTradeIds, eaePresent: eaeSectionPresent(got.xml) });
+  // A ROLL makes (or links) the card for the contracts it opened — so the statement does not also add
+  // them as a card of their own, which would hold the new position twice.
+  const rolled = rolledContracts(plans);
+  if (rolled.size) {
+    const covered = coveredBy(rolled);
+    rec.adds = rec.adds.filter(r => !covered(r));
+    result.adds = rec.adds;
+  }
   // Only expirations at 0 are written without asking (scheduled runs, as before); everything else
   // is offered with the fills filled in.
   const autoPlans = plans.filter(autoApplies);
   const plannedIds = new Set(plans.filter(p => p.state === 'plan' || !historyShort).map(p => p.rowId));
   result.expiries = { closes: autoPlans.map(p => ({ id: p.rowId, root: p.root, contract: p.contract, date: p.fills.at(-1)?.date || null })), waiting: [] };
+  // ONE TRADE ON SEVERAL CARDS: named, never resolved here — the console asks which card to keep.
+  const sameTrades = sameTradeCards(rows, { asOf });
+  const entryless = entrylessCards(rows);
   // Counts only: this response can reach a public workflow log.
-  result.options = { flagged: flagged.size, explained: plans.filter(p => p.state === 'plan').length, unexplained: plans.filter(p => p.state !== 'plan').length,
+  result.options = { sameTrade: sameTrades.length, entryless: entryless.length, flagged: flagged.size, explained: plans.filter(p => p.state === 'plan').length, unexplained: plans.filter(p => p.state !== 'plan').length,
     history: lookback ? lookback.state : (back ? 'none' : 'day') };
   // ── TRADES ────────────────────────────────────────────────────────────────
   // The Open Positions section cannot say whether an exit was recorded — a sold position is simply
@@ -359,6 +371,9 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
       ...rec.report.filter(r => r.kind === 'missing-at-broker').map(r => ({ what: 'open here, not at the broker', root: r.root, id: r.id })),
       // Option contracts, by contract rather than by underlying (lib/flex.js optionFindings).
       ...dayTradeCards.map(d => ({ what: dayTradeLine(d), root: d.root, id: d.rowId, dayTrade: true })),
+      // First, because it inflates every P&L figure until it is resolved.
+      ...sameTrades.map(g => ({ what: sameTradeLine(g), root: g.root, sameTrade: g.cards })),
+      ...entryless.map(c => ({ what: entrylessLine(c), root: c.root, id: c.id })),
       // The option ledger: one line per card, with "Record it" carrying the fills. A plan the
       // scheduled run writes by itself (expirations at 0) is listed only on a dry run.
       ...plans.filter(p => p.state === 'plan' ? (!apply || !autoApplies(p)) : !historyShort)
