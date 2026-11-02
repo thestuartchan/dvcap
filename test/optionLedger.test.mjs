@@ -1,7 +1,7 @@
 // test/optionLedger.test.mjs — every way an option card can drift from IBKR, read from IBKR's own
 // record (lib/optionLedger.js). Statement-shaped rows (<Order>, <OptionEAE>) through the real
 // parsers. Fake tickers, made-up figures.
-import { optionPlans, positionsByContract, planLine, planFix, autoApplies, applyPlans, ledgerWindow } from '../lib/optionLedger.js';
+import { optionPlans, positionsByContract, costsByContract, planLine, planFix, autoApplies, applyPlans, ledgerWindow, sameTradeCards, sameTradeLine, rolledContracts, coveredBy, entrylessCards, entrylessLine } from '../lib/optionLedger.js';
 import { parseTrades } from '../lib/flexTrades.js';
 import { orderUnits } from '../lib/journalInbox.js';
 import { parseOptionEae } from '../lib/optionExpiry.js';
@@ -96,7 +96,7 @@ const brief = (p) => p.state === 'plan' ? p.fills.map(f => `${f.kind}:${f.side} 
   const back = [ord({ k: 55, pc: 'P', side: 'BUY', q: 3, px: 0.8, d: '20261028', oid: 601 }), ord({ k: 48, pc: 'P', side: 'SELL', q: 3, px: 0.2, d: '20261028', oid: 601 })];
   eq('a credit spread bought back as a combo: a buy of the card at the net debit', run([pcs], { orders: back }).map(brief), [['trade:buy 3@0.6 2026-10-28']]);
   const rolled = [ord({ k: 55, pc: 'P', side: 'BUY', q: 3, px: 0.8, d: '20261028', oid: 602 })];
-  eq('one leg closed on its own: said, not guessed', run([pcs], { orders: rolled, held: [[48, 'P', 3]] }).map(brief), ['its legs changed by different amounts at IBKR (a leg closed or rolled on its own)']);
+  eq('one leg closed on its own, no price for every leg on one day: said, not guessed', run([pcs], { orders: rolled, held: [[48, 'P', 3]] }).map(brief), ['its legs were traded on their own at IBKR, and no order priced every leg on one day to divide its cost — split it by hand']);
   const both = [
     ord({ k: 55, pc: 'P', side: 'BUY', q: 3, px: 0.8, d: '20261024', oid: 603 }), ord({ k: 48, pc: 'P', side: 'SELL', q: 3, px: 0.2, d: '20261024', oid: 603 }),
     ord({ k: 55, pc: 'P', side: 'SELL', q: 1, px: 1.0, d: '20261026', oid: 604 }), ord({ k: 48, pc: 'P', side: 'BUY', q: 1, px: 0.3, d: '20261026', oid: 604 }),
@@ -163,6 +163,100 @@ const brief = (p) => p.state === 'plan' ? p.fills.map(f => `${f.kind}:${f.side} 
   const plans = optionPlans(rows, { positions: positionsByContract(st.positions.filter(p => classOf(p) === 'option'), optionContractOf), units: orderUnits(parseTrades(x)), eae: parseOptionEae(x), asOf: EXPI, flagged });
   eq('…and the ledger explains each: a partial close, and an exit', plans.map(p => [p.rowId, brief(p)]), [['part', ['trade:sell 1@3.1 2026-10-23']], ['gone', ['trade:sell 1@1.45 2026-10-29']]]);
   eq('…the hand-typed entry of the first adopted by its order', plans[0].adopt, [{ fillId: 'h', tradeId: '900' }]);
+}
+
+// ── 11. ONE TRADE ON SEVERAL CARDS ──
+{
+  const strangle = card('s', 'long', [leg('P', 520), leg('C', 545)], [{ id: 'a', side: 'buy', qty: 1, price: 15.87, date: '2026-10-27' }, { id: 'b', side: 'sell', qty: 1, price: 1.85, date: '2026-10-29' }]);
+  const p = card('p', 'long', [leg('P', 520)], [{ id: 'a', side: 'buy', qty: 1, price: 9.21, date: '2026-10-27' }, { id: 'b', side: 'sell', qty: 1, price: 1.45, date: '2026-10-29' }]);
+  const c = card('c', 'long', [leg('C', 545)], [{ id: 'a', side: 'buy', qty: 1, price: 6.66, date: '2026-10-27' }, { id: 'b', side: 'sell', qty: 1, price: 0.39, date: '2026-10-29' }]);
+  const g = sameTradeCards([strangle, p, c], { asOf: '2026-11-02' });
+  eq('the strangle and its two legs on their own cards: one trade on three cards', g.map(x => x.cards.map(k => k.id)), [['s', 'p', 'c']]);
+  eq('…said, with the cards named', /one trade on 3 cards — 520P\/545C \(closed\), 520P \(closed\), 545C \(closed\)/.test(sameTradeLine(g[0])), true);
+  // A proper leg-out: the parent hands its units to the legs on the 28th, at cost.
+  const parent = card('s', 'long', [leg('P', 520), leg('C', 545)], [{ id: 'a', side: 'buy', qty: 1, price: 15.87, date: '2026-10-27' }, { id: 't', side: 'sell', qty: 1, price: 15.87, date: '2026-10-28', transfer: true }]);
+  const legP = card('p', 'long', [leg('P', 520)], [{ id: 't', side: 'buy', qty: 1, price: 9.21, date: '2026-10-28', transfer: true }, { id: 'b', side: 'sell', qty: 1, price: 1.45, date: '2026-10-29' }], 'ZZZ');
+  const legC = card('c', 'long', [leg('C', 545)], [{ id: 't', side: 'buy', qty: 1, price: 6.66, date: '2026-10-28', transfer: true }, { id: 'b', side: 'sell', qty: 1, price: 0.39, date: '2026-10-29' }], 'ZZZ');
+  eq('a leg-out split (linked to its parent) is one trade, not a duplicate', sameTradeCards([parent, { ...legP, splitFrom: 's' }, { ...legC, splitFrom: 's' }], { asOf: '2026-11-02' }), []);
+  eq('linked, but the parent still held after the split and was sold again: a double count', sameTradeCards([strangle, { ...p, splitFrom: 's' }, { ...c, splitFrom: 's' }], { asOf: '2026-11-02' }).map(x => x.cards.length), [3]);
+  const later = card('n', 'long', [leg('P', 520)], [{ id: 'a', side: 'buy', qty: 1, price: 2, date: '2026-10-29' }]);
+  eq('the same contract bought again after the first card closed: two trades', sameTradeCards([p, later], { asOf: '2026-11-02' }), []);
+  eq('marked as separate trades by hand: left alone', sameTradeCards([{ ...strangle, notSameTradeAs: ['p', 'c'] }, p, c], { asOf: '2026-11-02' }), []);
+  const old = { ...p, fills: p.fills.map(f => ({ ...f, date: f.date.replace('2026-10', '2026-07') })) };
+  const oldC = { ...c, fills: c.fills.map(f => ({ ...f, date: f.date.replace('2026-10', '2026-07') })) };
+  eq('closed long ago: not raised again', sameTradeCards([old, { ...oldC, legs: old.legs }], { asOf: '2026-11-02' }), []);
+}
+
+// ── 12. LEG-OUTS: the card splits into one card per leg ──
+{
+  // A strangle bought as one combo; the put sold on its own on the 29th, the call still held.
+  const s2 = card('str', 'long', [leg('P', 520), leg('C', 545)], [{ id: 'f1', side: 'buy', qty: 2, price: 8.5, date: '2026-10-26', tradeId: '300' }]);
+  const orders = [
+    ord({ k: 520, pc: 'P', side: 'BUY', q: 2, px: 4.0, d: '20261026', oid: 300 }), ord({ k: 545, pc: 'C', side: 'BUY', q: 2, px: 4.5, d: '20261026', oid: 300 }),
+    ord({ k: 520, pc: 'P', side: 'SELL', q: 2, px: 1.5, d: '20261029', oid: 310 }),
+  ];
+  const [p] = run([s2], { orders, held: [[545, 'C', 2]] });
+  eq('one leg sold on its own: a split, not "unexplained"', [p.state, p.kind, p.newRows.map(n => n.id)], ['plan', 'split', ['str-520P', 'str-545C']]);
+  eq('the card hands its 2 units over at its average cost, no P&L', [p.fills[0].transfer, p.fills[0].side, p.fills[0].qty, p.fills[0].price, p.fills[0].date], [true, 'sell', 2, 8.5, '2026-10-29']);
+  eq('the cost is divided by the entry order\'s leg prices (4.00 / 4.50 of 8.50)', p.newRows.map(n => n.fills[0].price), [4, 4.5]);
+  eq('the put card records its sale; the call card just holds', p.newRows.map(n => n.fills.filter(f => !f.transfer).map(f => `${f.side} ${f.qty}@${f.price}`)), [['sell 2@1.5'], []]);
+  eq('each leg card names the card it came from (one trade on the closed card)', p.newRows.map(n => [n.splitFrom, n.tags.includes('split'), /^transfer in: split from str on 2026-10-29/.test(n.fills[0].note)]), [['str', true, true], ['str', true, true]]);
+  eq('the banner says what happened', planLine(p), '2026-10-30 P 520 / 2026-10-30 C 545: legged out at IBKR — 520P sold 2 at 1.50 on 2026-10-29; 545C still held — splits into one card per leg, cost divided by IBKR order 300 on 2026-10-26');
+  eq('…offered, never written by itself', [autoApplies(p), planFix(p).newRows.length], [false, 2]);
+  // No order priced both legs (entry outside the window): IBKR's own cost basis per leg.
+  const x = stmt([ord({ k: 520, pc: 'P', side: 'SELL', q: 2, px: 1.5, d: '20261029', oid: 310 })]);
+  const costs = costsByContract([{ root: 'ZZZ', strike: 520, putCall: 'P', expiry: EXP, costBasisPrice: 3.9 }, { root: 'ZZZ', strike: 545, putCall: 'C', expiry: EXP, costBasisPrice: 4.6 }], optionContractOf);
+  const [q] = optionPlans([s2], { positions: pos([[545, 'C', 2]]), costs, units: orderUnits(parseTrades(x)), eae: [], asOf: EXPI });
+  eq('…or by IBKR\'s cost basis per leg', [q.kind, q.refFrom, q.newRows.map(n => n.fills[0].price)], ['split', 'IBKR\'s cost basis per leg', [3.9, 4.6]]);
+  // A credit spread: one leg bought back on its own.
+  const pcs2 = card('pcs2', 'short', [leg('P', 55, 'long'), leg('P', 48, 'short')], [{ id: 'a', side: 'sell', qty: 3, price: 1.5, date: '2026-10-20', tradeId: '600' }]);
+  const o2 = [ord({ k: 55, pc: 'P', side: 'SELL', q: 3, px: 2.2, d: '20261020', oid: 600 }), ord({ k: 48, pc: 'P', side: 'BUY', q: 3, px: 0.7, d: '20261020', oid: 600 }),
+    ord({ k: 55, pc: 'P', side: 'BUY', q: 3, px: 0.8, d: '20261028', oid: 611 })];
+  const [c2] = run([pcs2], { orders: o2, held: [[48, 'P', 3]] });
+  eq('a credit spread legged out: the short leg bought back, the long leg kept', c2.newRows.map(n => [n.side, n.fills.map(f => `${f.side} ${f.qty}@${f.price}`)]), [['short', ['sell 3@2.2', 'buy 3@0.8']], ['long', ['buy 3@0.7']]]);
+}
+
+// ── 13. ROLLS: the card closes and the new contract carries its P&L ──
+{
+  const lc = card('lc', 'long', [leg('C', 100)], [{ id: 'a', side: 'buy', qty: 2, price: 3, date: '2026-10-20', tradeId: '700' }]);
+  const rollOrder = [ord({ k: 100, pc: 'C', side: 'SELL', q: 2, px: 5, d: '20261027', oid: 710 }), ord({ k: 110, pc: 'C', side: 'BUY', q: 2, px: 2.2, d: '20261027', oid: 710, exp: '20261120' })];
+  const x = stmt(rollOrder);
+  const posR = positionsByContract([{ root: 'ZZZ', strike: 110, putCall: 'C', expiry: '20261120', qty: 2 }], optionContractOf);
+  const [p] = optionPlans([lc], { positions: posR, units: orderUnits(parseTrades(x)), eae: [], asOf: EXPI });
+  eq('rolled up and out in one order: the card closes at the order\'s price', brief(p), ['trade:sell 2@5 2026-10-27']);
+  eq('…and a new card for the new contract names it', p.newRows.map(n => [n.rolledFrom, n.side, n.legs.map(l => `${l.strike}${l.right} ${l.expiry}`), n.fills.map(f => `${f.side} ${f.qty}@${f.price}`)]),
+    [['lc', 'long', ['110C 2026-11-20'], ['buy 2@2.2']]]);
+  eq('the banner says it rolled', /rolled into 110C \(a new card, P&L carried\)/.test(planLine(p)), true);
+  eq('the statement does not add the new contract a second time', rolledContracts([p]).size === 1 && coveredBy(rolledContracts([p]))(card('z', 'long', [{ right: 'C', strike: 110, expiry: '2026-11-20', side: 'long', ratio: 1 }], [])), true);
+  // The new contract already on a card the statement added: linked, not made twice.
+  const added = card('ZZZ-flex-opt-110', 'long', [{ right: 'C', strike: 110, expiry: '2026-11-20', side: 'long', ratio: 1 }], [{ id: 'f0', side: 'buy', qty: 2, price: 2.2, date: '2026-10-27' }]);
+  const [q] = optionPlans([lc, added], { positions: posR, units: orderUnits(parseTrades(x)), eae: [], asOf: EXPI });
+  eq('already on a card: that card is linked', [q.link, (q.newRows || []).length], [{ rowId: 'ZZZ-flex-opt-110', rolledFrom: 'lc' }, 0]);
+  // Closed with one order, the new contract opened by another the same day.
+  const sep = stmt([ord({ k: 100, pc: 'C', side: 'SELL', q: 2, px: 5, d: '20261027', oid: 720 }), ord({ k: 110, pc: 'C', side: 'BUY', q: 2, px: 2.2, d: '20261027', oid: 721, exp: '20261120' })]);
+  const [r2] = optionPlans([lc], { positions: posR, units: orderUnits(parseTrades(sep)), eae: [], asOf: EXPI });
+  eq('the same shape opened the same day by its own order: a roll as well', r2.newRows.map(n => n.rolledFrom), ['lc']);
+  // A plain close with nothing opened: no roll.
+  eq('closed and nothing opened: no roll', optionPlans([lc], { positions: new Map(), units: orderUnits(parseTrades(stmt([ord({ k: 100, pc: 'C', side: 'SELL', q: 2, px: 5, d: '20261027', oid: 730 })]))), eae: [], asOf: EXPI })[0].roll, undefined);
+  // A put credit spread rolled down as one 4-leg order: a new short card at the new credit.
+  const pcs3 = card('pcs3', 'short', [leg('P', 55, 'long'), leg('P', 48, 'short')], [{ id: 'a', side: 'sell', qty: 1, price: 1.5, date: '2026-10-20', tradeId: '800' }]);
+  const r4 = stmt([ord({ k: 55, pc: 'P', side: 'BUY', q: 1, px: 3.0, d: '20261027', oid: 810 }), ord({ k: 48, pc: 'P', side: 'SELL', q: 1, px: 1.0, d: '20261027', oid: 810 }),
+    ord({ k: 50, pc: 'P', side: 'SELL', q: 1, px: 2.0, d: '20261027', oid: 810, exp: '20261120' }), ord({ k: 43, pc: 'P', side: 'BUY', q: 1, px: 0.6, d: '20261027', oid: 810, exp: '20261120' })]);
+  const posS = positionsByContract([{ root: 'ZZZ', strike: 50, putCall: 'P', expiry: '20261120', qty: -1 }, { root: 'ZZZ', strike: 43, putCall: 'P', expiry: '20261120', qty: 1 }], optionContractOf);
+  const [s4] = optionPlans([pcs3], { positions: posS, units: orderUnits(parseTrades(r4)), eae: [], asOf: EXPI });
+  eq('a credit spread rolled as one order: closed at the debit, a new short card at the new credit', [brief(s4), s4.newRows.map(n => [n.side, n.legs.map(l => `${l.strike}${l.right}:${l.side}`), n.fills[0].side, n.fills[0].price])],
+    [['trade:buy 1@2 2026-10-27'], [['short', ['50P:long', '43P:short'], 'sell', 1.4]]]);
+}
+
+// ── 14. WHAT THE STORE KEEPS ──
+{
+  const lc = card('lc', 'long', [leg('C', 100)], [{ id: 'a', side: 'buy', qty: 2, price: 3, date: '2026-10-20', tradeId: '700' }]);
+  const big = stmt([ord({ k: 100, pc: 'C', side: 'SELL', q: 1, px: 5, d: '20261027', oid: 123456789012 }), ord({ k: 100, pc: 'C', side: 'SELL', q: 1, px: 5.1, d: '20261028', oid: 123456789013 })]);
+  const [p] = optionPlans([lc], { positions: new Map(), units: orderUnits(parseTrades(big)), eae: [], asOf: EXPI });
+  eq('every fill id fits the store\'s 16 characters, and two fills keep two ids', [p.fills.every(f => f.id.length <= 16), new Set(p.fills.map(f => f.id)).size], [true, 2]);
+  const lost = card('g', 'long', [leg('P', 295), leg('P', 300, 'short')], [{ id: 'x', side: 'sell', qty: 1, price: 0, date: '2026-10-30' }]);
+  eq('a card left with an exit and no entry: named', entrylessCards([lost, lc]).map(c => c.id), ['g']);
+  eq('…and said plainly', /\+295P −300P: this card has no entry/.test(entrylessLine(entrylessCards([lost])[0])), true);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

@@ -13,6 +13,8 @@
 // lib/tradecard.js from a whitelisted projection of a row, so a size or a dollar figure cannot
 // reach Discord even by accident. See the header of that file.
 
+import { normalizeRows } from '../lib/rowRepairs.js';
+import { entrylessCards } from '../lib/optionLedger.js';
 import { kvGetJson, kvSetJson, kvConfigured, kvSetNxEx, kvDel, CONSOLE_KEY, OPTION_MARKS_KEY, WALLET_SNAPSHOT_KEY, WALLET_PROVENANCE_KEY, WALLET_PENDING_KEY } from '../lib/kv.js';
 import { contractsByRoot, markOf } from '../lib/instruments.js';
 import { fetchCboeGreeks } from '../lib/cboe.js';
@@ -59,7 +61,8 @@ async function quotesFor(symbols, origin) {
 // announced twice on every refresh.
 export async function snapshot(origin) {
   const stored = await kvGetJson(CONSOLE_KEY);
-  const rows = Array.isArray(stored?.rows) ? stored.rows : [];
+  // Read as the console reads it (lib/rowRepairs.js): one id per card, credit combos as short cards.
+  const rows = normalizeRows(Array.isArray(stored?.rows) ? stored.rows : []).rows;
   const live = rows.filter(r => derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side }).status !== 'closed');
   // ── OPTION MARKS ── An option row's symbol is its UNDERLYING, so the quote above prices the
   // underlying, not the contract. The contract comes from CBOE's delayed feed (the one the console's
@@ -156,7 +159,10 @@ export async function refresh(origin, { now = Date.now() } = {}) {
   // position that replaced it. Left here it would post as a completed winner that no longer exists.
   // A trade carried over from the old sheet (tag broker-fills) is history, not news: it stays off
   // the public card, which would otherwise fill with months-old exits the moment it was imported.
-  const closedRows = rows.filter(r => r.derived.status === 'closed' && !r.derived.rolledInto && showsOnCard(r) && !(r.tags || []).includes('broker-fills'));
+  // A card with an exit and no entry (lib/optionLedger.js entrylessCards) has no P&L to post; the
+  // statement banner names it until it is fixed.
+  const noEntry = new Set(entrylessCards(rows).map(c => c.id));
+  const closedRows = rows.filter(r => r.derived.status === 'closed' && !r.derived.rolledInto && showsOnCard(r) && !(r.tags || []).includes('broker-fills') && !noEntry.has(r.id));
   // `related`: every row, so a trade split leg by leg waits off the card until its last piece is
   // closed and then posts once (lib/tradecard.js splitRootOf).
   const closed = buildClosedCard(closedRows, { updatedAt: new Date(now).toISOString(), related: rows });
