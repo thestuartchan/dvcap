@@ -33,6 +33,9 @@ const SEEN_KEY = 'dvcap:flex:seen:v1';
 // keeps a reference for minutes, not hours.
 const PENDING_KEY = 'dvcap:flex:pending:v1';
 const PENDING_TTL_S = 15 * 60;
+// The function has 60 seconds (vercel.json). The ranged exit read gets what the day's statement
+// left of this, so the call returns — and says "still reading" — instead of being cut off.
+const SYNC_BUDGET_MS = 50000;
 import { derivePosition, splitIntoTrades } from '../lib/positions.js';
 import { expiryCloses, applyExpiryCloses, parseOptionEae, eaeSectionPresent } from '../lib/optionExpiry.js';
 import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, unrecordedTrades, dropCreatedAdds } from '../lib/flexTrades.js';
@@ -48,6 +51,7 @@ import { runJournal } from '../lib/journalStore.js';
 import { journalLine, orderUnits } from '../lib/journalInbox.js';
 import { journaledDayTrades, dayTradeLine } from '../lib/dayTradeCards.js';
 import { statementExits, exitWindow, exitLine, exitFix } from '../lib/optionExits.js';
+import { readExitWindow, lookbackLine } from '../lib/exitLookback.js';
 import { parseTradeConfirms, tcSections } from '../lib/flexTrades.js';
 import { adoptProvisional, tcQueryId, TC_QUERY_ENV, TC_WAITS_MS, SYNC_NOW_MIN_INTERVAL_S, skipOnSameDay, syncNowLine, recordLag, lagText } from '../lib/sameDayFills.js';
 import { hasSessionCookie, hasJournalReadKey } from '../lib/apiauth.js';
@@ -86,6 +90,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   if (!kvConfigured()) return { ok: false, error: 'Redis not configured — there is nowhere to read the console from' };
 
   const { token, queryId } = flexEnv();
+  const startedAt = Date.now();
   let pending = null;
   try { pending = await kvGetJson(PENDING_KEY); } catch { /* start fresh */ }
   const got = await fetchStatement({ token, queryId, pending });
@@ -181,11 +186,12 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   const missingOpts = rec.report.filter(r => r.kind === 'option-missing-at-broker');
   let exitUnits = statementUnits;
   const back = exitWindow(withDerived, missingOpts, { skip: dayTradeIds, statementFrom: isoDate(got.statement.fromDate), asOf });
+  // Resumed across Re-checks, kept once read, and fitted to the time left (lib/exitLookback.js).
+  let lookback = null;
   if (back) {
-    try {
-      const wide = await fetchStatement({ token, queryId, range: back });
-      if (wide.ok) exitUnits = orderUnits(parseTrades(wide.xml));
-    } catch { /* the day's statement stands */ }
+    const kv = { get: kvGetJson, set: (k, v, ttl) => kvSetJsonEx(k, v, ttl) };
+    lookback = await readExitWindow(back, { token, queryId, kv, budgetMs: Math.max(3000, SYNC_BUDGET_MS - (Date.now() - startedAt)) });
+    if (lookback.units) exitUnits = lookback.units;
   }
   const exits = statementExits(withDerived, exitUnits, missingOpts, { skip: dayTradeIds });
   const exitIds = new Set(exits.map(x => x.rowId));
@@ -349,6 +355,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
       // Option contracts, by contract rather than by underlying (lib/flex.js optionFindings).
       ...dayTradeCards.map(d => ({ what: dayTradeLine(d), root: d.root, id: d.rowId, dayTrade: true })),
       ...exits.map(x => ({ what: exitLine(x), root: x.root, id: x.rowId, fix: exitFix(x) })),
+      ...(lookback && !lookback.units ? [{ what: lookbackLine(back, lookback), root: 'IBKR', lookback: lookback.state }] : []),
       ...optionFindings(rec).filter(o => !(o.ids || []).some(id => dayTradeIds.has(id) || exitIds.has(id))).map(o => ({ what: o.kind === 'option-differs' ? `${o.contract}: console ${o.qty.console}, statement ${o.qty.ibkr}`
                                             : o.kind === 'option-not-in-console' ? `${o.contract}: held at IBKR, not in the console`
                                             : `${o.contract}: in the console, not at IBKR`, root: o.root, id: o.ids?.[0] || null })),
