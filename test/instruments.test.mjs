@@ -90,7 +90,8 @@ const TODAY = '2026-09-24';
   eq('symbol is the underlying', row.symbol, 'SOFI');
   eq('instrument is a spread', row.instrument, 'spread');
   eq('the multiplier is the option\'s', row.multiplier, 100);
-  eq('hard date defaulted', row.hardDate, '2026-11-13');
+  // The default is worked out from the legs, not stored (2 Nov 2026): a stored default went stale.
+  eq('hard date defaulted (expiry − 7, from the legs, not stored)', [row.hardDate, defaultHardDate(row.legs)], [undefined, '2026-11-13']);
   eq('one opening fill at the combo price', [row.fills.length, row.fills[0].side, row.fills[0].qty, row.fills[0].price], [1, 'buy', 15, 0.85]);
   const d = derivePosition(row.fills, { multiplier: 100, side: 'long' });
   eq('15 open at 0.85', [d.qty, d.avgCost, d.spent], [15, 0.85, 1275]);

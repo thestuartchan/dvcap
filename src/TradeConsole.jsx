@@ -53,7 +53,7 @@ import JournalDrafts from "./JournalDrafts.jsx";
 import FillAudit from "./FillAudit.jsx";
 import { undoCarryOver } from "../lib/fillAudit.js";
 import { useRef } from "react";
-import { isDerivativeRow, underlyingOf, legLabel, optionDerived, exposureLines, optionRow, optionLevelVocab, hardDateCheck, defaultHardDate,
+import { isDerivativeRow, underlyingOf, legLabel, optionDerived, exposureLines, optionRow, optionLevelVocab, hardDateCheck, defaultHardDate, staleHardDates,
          markOf, spreadShape, INSTRUMENTS, INSTRUMENT_LABEL, LEG_RIGHTS, LEG_SIDES, MAX_LEGS, expiryLabel, instrumentOf } from "../lib/instruments.js";
 // A stable empty object for memo dependencies: a fresh `{}` on every render would recompute the
 // whole book each time the feed had nothing to say.
@@ -1390,10 +1390,10 @@ const ContractPanel = ({ r, ctx }) => {
       <LegTable legs={legs} setLegs={setLegs} compact />
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
         <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Hard exit date<br />
-          <input type="date" value={r.hardDate || o.hardDate || ""} max={o.hardDateLimit || undefined} onChange={e => upd(r.id, { hardDate: e.target.value || null })}
+          <input type="date" value={r.hardDate || o.hardDate || ""} max={o.hardDateLimit || undefined} onChange={e => upd(r.id, { hardDate: e.target.value || null, hardDateSet: !!e.target.value })}
             style={{ padding: "5px 8px", border: "1.5px solid " + (hd.ok ? (o.hardDateReached ? C.red : C.bdr) : C.red), borderRadius: 7, fontSize: 12.5, background: C.surf, color: C.text }} />
           <span style={{ display: "block", fontWeight: 500, color: hd.ok ? (o.hardDateReached ? C.red : C.muted) : C.red, fontSize: 10.5, marginTop: 2, maxWidth: 240, lineHeight: 1.4 }}>
-            {!hd.ok ? `⚠ ${hd.reason}` : !o.legs.length ? "set once a leg has an expiry — defaults to expiry − 7 days" : o.hardDateReached ? "⏰ reached — decide today" : o.hardDateDefault ? `expiry − 7 days · no later than ${o.hardDateLimit}` : `set by you · no later than ${o.hardDateLimit}`}
+            {!hd.ok ? `⚠ ${hd.reason}` : !o.legs.length ? "set once a leg has an expiry — defaults to expiry − 7 days" : o.hardDateReached ? "⏰ reached — decide today" : o.hardDateDefault ? `expiry − 7 days · no later than ${o.hardDateLimit}` : r.hardDateSet ? `set by you · no later than ${o.hardDateLimit} · clear it for expiry − 7` : `saved on the card, not chosen here · clear it for expiry − 7 · no later than ${o.hardDateLimit}`}
           </span>
         </label>
         <label style={{ fontSize: 11.5, color: C.lbl, fontWeight: 700 }}>Mark if no feed <span style={{ fontWeight: 400, color: C.muted }}>(combo)</span><br />
@@ -3757,7 +3757,8 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   const bookCheck = useMemo(() => ({
     same: sameTradeCards(rows, { asOf: new Date().toISOString().slice(0, 10) }),
     noEntry: entrylessCards(rows),
-  }), [rows]);
+    staleHard: staleHardDates(derivedRows),
+  }), [rows, derivedRows]);
   const keepCard = (group, keepId) => {
     const others = group.cards.map(x => x.id).filter(id => id !== keepId);
     const kept = group.cards.find(c => c.id === keepId);
@@ -4473,7 +4474,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
               </button>
             );
           })()}
-          {ackMsg && !(bookCheck.same.length || bookCheck.noEntry.length) && !(flexNote && flexNote.at !== noteSeen && (flexNote.applied || flexNote.needsYou?.length || flexNote.discarded)) && (
+          {ackMsg && !(bookCheck.same.length || bookCheck.noEntry.length || bookCheck.staleHard.length) && !(flexNote && flexNote.at !== noteSeen && (flexNote.applied || flexNote.needsYou?.length || flexNote.discarded)) && (
             <span style={{ fontSize: 11.5, fontWeight: 700, color: ackMsg.ok ? C.green : C.amber }}>{ackMsg.text}</span>
           )}
           {saveMsg && <span style={{ fontSize: 12, color: C.mid }}>{saveMsg}</span>}
@@ -4630,9 +4631,9 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           ⚠ The server did not answer ({loadErr}). Showing this browser's saved copy — the IBKR sync note, cash book and journal may be old, and Save will not reach other devices until it does.
         </div>
       )}
-      {(bookCheck.same.length > 0 || bookCheck.noEntry.length > 0) && (
+      {(bookCheck.same.length > 0 || bookCheck.noEntry.length > 0 || bookCheck.staleHard.length > 0) && (
         <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 12, background: C.aBg, border: "1.5px solid " + C.aBdr }}>
-          <div style={{ fontSize: 11, fontWeight: 800, color: C.amber, letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 6 }}>Book check · {bookCheck.same.length + bookCheck.noEntry.length}</div>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.amber, letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 6 }}>Book check · {bookCheck.same.length + bookCheck.noEntry.length + bookCheck.staleHard.length}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: C.mid }}>
             {bookCheck.same.map((g, i) => (
               <div key={`s${i}`} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
@@ -4652,6 +4653,15 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
                   style={{ cursor: "pointer", background: C.surf, color: C.blue, border: "1.5px solid " + C.blue, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800 }}>Open card</button>
                 <button onClick={() => { if (typeof window !== "undefined" && !window.confirm(`Delete the ${c.root} ${c.label} card? It has no entry, so it has no P&L to keep.`)) return; setRows(p => p.filter(r => r.id !== c.id)); touch(); setAckMsg({ ok: true, text: `deleted ${c.root} ${c.label} — Save to cloud` }); }}
                   style={{ cursor: "pointer", background: "none", color: C.red, border: "1px solid " + C.bdr, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800 }}>Delete card</button>
+              </div>
+            ))}
+            {bookCheck.staleHard.map(c => (
+              <div key={`h${c.id}`} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                <span><b style={{ color: C.text }}>{c.root}</b> · {c.label}: hard exit {c.stored} is earlier than expiry − 7 ({c.default}) — likely carried over from another contract</span>
+                <button onClick={() => { upd(c.id, { hardDate: null, hardDateSet: false }); setAckMsg({ ok: true, text: `${c.root} ${c.label}: hard exit now ${c.default} (expiry − 7) — Save to cloud` }); }}
+                  style={{ cursor: "pointer", background: C.surf, color: C.blue, border: "1.5px solid " + C.blue, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800 }}>Use {c.default}</button>
+                <button onClick={() => { upd(c.id, { hardDateSet: true }); setAckMsg({ ok: true, text: `${c.root} ${c.label}: hard exit kept at ${c.stored} — Save to cloud` }); }}
+                  style={{ cursor: "pointer", background: "none", color: C.lbl, border: "1px solid " + C.bdr, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 700 }}>Keep {c.stored}</button>
               </div>
             ))}
             {ackMsg && <div style={{ fontSize: 11.5, color: ackMsg.ok ? C.green : C.amber, fontWeight: 700 }}>{ackMsg.text}</div>}

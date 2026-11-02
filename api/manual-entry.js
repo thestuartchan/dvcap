@@ -266,6 +266,8 @@ function sanitizeRow(r) {
     ...(r.underlying ? { underlying: String(r.underlying).toUpperCase().slice(0, 12) } : {}),
     ...(Array.isArray(r.legs) && r.legs.length ? { legs: r.legs.map(sanitizeLeg).filter(Boolean).slice(0, 4) } : {}),
     ...(/^\d{4}-\d{2}-\d{2}$/.test(String(r.hardDate || '')) ? { hardDate: String(r.hardDate) } : {}),
+    // A hard date someone chose, as against one saved by an older build (lib/instruments.js optionRow).
+    ...(r.hardDateSet === true ? { hardDateSet: true } : {}),
     ...(cn(r.mark) != null ? { mark: cn(r.mark) } : {}),
     // ── THE CARD'S STATE (console rework, Step 3) ──
     // When the row went flat (the 24h archive clock), a hand decision to archive or restore, and
