@@ -50,7 +50,7 @@ import { catalystLookup } from '../lib/catalystFeed.js';
 import { runJournal } from '../lib/journalStore.js';
 import { journalLine, orderUnits } from '../lib/journalInbox.js';
 import { journaledDayTrades, dayTradeLine } from '../lib/dayTradeCards.js';
-import { statementExits, exitWindow, exitLine, exitFix } from '../lib/optionExits.js';
+import { statementExits, exitWindow, exitLine, exitFix, missLine } from '../lib/optionExits.js';
 import { readExitWindow, lookbackLine } from '../lib/exitLookback.js';
 import { parseTradeConfirms, tcSections } from '../lib/flexTrades.js';
 import { adoptProvisional, tcQueryId, TC_QUERY_ENV, TC_WAITS_MS, SYNC_NOW_MIN_INTERVAL_S, skipOnSameDay, syncNowLine, recordLag, lagText } from '../lib/sameDayFills.js';
@@ -193,8 +193,13 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
     lookback = await readExitWindow(back, { token, queryId, kv, budgetMs: Math.max(3000, SYNC_BUDGET_MS - (Date.now() - startedAt)) });
     if (lookback.units) exitUnits = lookback.units;
   }
-  const exits = statementExits(withDerived, exitUnits, missingOpts, { skip: dayTradeIds });
+  const exitMisses = [];
+  const exits = statementExits(withDerived, exitUnits, missingOpts, { skip: dayTradeIds, misses: exitMisses });
   const exitIds = new Set(exits.map(x => x.rowId));
+  // A card looked for and not matched says why, in place of the expiry line that sent the reader to
+  // IBKR for an expiration that never happened. Only while the read itself succeeded.
+  const missIds = new Set(lookback && !lookback.units ? [] : exitMisses.map(m => m.rowId));
+  expiry.waiting = expiry.waiting.filter(w => !missIds.has(w.id) && !(w.ids || []).some(id => missIds.has(id)));
   expiry.waiting = expiry.waiting.filter(w => !exitIds.has(w.id) && !(w.ids || []).some(id => exitIds.has(id)));
   expiry.closes = expiry.closes.filter(c => !exitIds.has(c.rowId));
   result.expiries.waiting = expiry.waiting;
@@ -356,7 +361,8 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
       ...dayTradeCards.map(d => ({ what: dayTradeLine(d), root: d.root, id: d.rowId, dayTrade: true })),
       ...exits.map(x => ({ what: exitLine(x), root: x.root, id: x.rowId, fix: exitFix(x) })),
       ...(lookback && !lookback.units ? [{ what: lookbackLine(back, lookback), root: 'IBKR', lookback: lookback.state }] : []),
-      ...optionFindings(rec).filter(o => !(o.ids || []).some(id => dayTradeIds.has(id) || exitIds.has(id))).map(o => ({ what: o.kind === 'option-differs' ? `${o.contract}: console ${o.qty.console}, statement ${o.qty.ibkr}`
+      ...exitMisses.filter(m => missIds.has(m.rowId)).map(m => ({ what: missLine(m, back?.from), root: m.root, id: m.rowId })),
+      ...optionFindings(rec).filter(o => !(o.ids || []).some(id => dayTradeIds.has(id) || exitIds.has(id) || missIds.has(id))).map(o => ({ what: o.kind === 'option-differs' ? `${o.contract}: console ${o.qty.console}, statement ${o.qty.ibkr}`
                                             : o.kind === 'option-not-in-console' ? `${o.contract}: held at IBKR, not in the console`
                                             : `${o.contract}: in the console, not at IBKR`, root: o.root, id: o.ids?.[0] || null })),
       ...((tradePlan?.report) || []).map(r => ({ what: r.kind.replace(/-/g, ' '), root: r.root })),

@@ -2,7 +2,7 @@
 // (lib/optionExits.js). Made-up tickers, order ids, contracts and sizes.
 import { parseTradeConfirms } from '../lib/flexTrades.js';
 import { orderUnits } from '../lib/journalInbox.js';
-import { statementExits, exitWindow, exitLine, exitFix } from '../lib/optionExits.js';
+import { statementExits, exitWindow, exitLine, exitFix, missLine } from '../lib/optionExits.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
@@ -51,7 +51,20 @@ near('…at the net debit paid', y?.fill.price, 0.6);
 eq('only part sold: not a clean exit', statementExits([cccCard], units(ccc.slice(0, 3).concat(opt({ root: 'CCC', k: 520, pc: 'P', side: 'SELL', q: 1, px: 1.5, d: '20261029', oid: 9003 }))), missing('CCC', cccLegs)), []);
 eq('one leg still at IBKR: not this case', statementExits([cccCard], units(ccc), missing('CCC', [cccLegs[0]])), []);
 eq('sold more than the card held (a reversal): left alone', statementExits([cccCard], units([...ccc.slice(0, 3), opt({ root: 'CCC', k: 520, pc: 'P', side: 'SELL', q: 3, px: 1.5, d: '20261029', oid: 9003 })]), missing('CCC', cccLegs)), []);
-eq('added to before going flat: left alone', statementExits([cccCard], units([...ccc.slice(0, 2), opt({ root: 'CCC', k: 545, pc: 'C', side: 'BUY', q: 1, px: 5, d: '20261027', oid: 9004 }), ...ccc.slice(2)]), missing('CCC', cccLegs)), []);
+// Added to (2 → 3) and then sold all 3: the last close is larger than the card holds.
+eq('added to before going flat: left alone', statementExits([cccCard], units([...ccc.slice(0, 2), opt({ root: 'CCC', k: 545, pc: 'C', side: 'BUY', q: 1, px: 5, d: '20261027', oid: 9004 }), opt({ root: 'CCC', k: 545, pc: 'C', side: 'SELL', q: 3, px: 6.0, d: '20261029', t: '143000', oid: 9002 }), ccc[3]]), missing('CCC', cccLegs)), []);
+// Sold, bought back in, sold again: an opening order inside the run back to the card's size.
+eq('re-entered inside the closing run: left alone', statementExits([cccCard], units([...ccc.slice(0, 2), opt({ root: 'CCC', k: 545, pc: 'C', side: 'SELL', q: 1, px: 6, d: '20261027', oid: 9005 }), opt({ root: 'CCC', k: 545, pc: 'C', side: 'BUY', q: 1, px: 5, d: '20261028', oid: 9006 }), opt({ root: 'CCC', k: 545, pc: 'C', side: 'SELL', q: 1, px: 6, d: '20261029', oid: 9007 }), ccc[3]]), missing('CCC', cccLegs)), []);
+// MSFT, 2 Nov: the card's entry typed by hand (no IBKR order id), so the entry order is in the
+// window and not recognised as the card's own. Walking back from flat, it is never reached.
+{
+  const typed = { ...cccCard, fills: [{ id: 'f1', side: 'buy', qty: 2, price: 8.5, date: '2026-10-26' }] };
+  eq('entry typed by hand: the exit is still found', statementExits([typed], units(ccc), missing('CCC', cccLegs)).map(x => x.fill.orders), [['9002', '9003']]);
+  const misses = [];
+  statementExits([typed], units(ccc.slice(0, 2)), missing('CCC', cccLegs), { misses });
+  eq('no exit in the statements: said, with why, no sizes', [misses.length, misses[0]?.why], [1, '2026-10-30 P 520: no closing orders after its last opening order']);
+  eq('…and the banner line sends the reader to record it', /exit was not found in the statements back to 2026-10-26 .* record it by hand/.test(missLine(misses[0], '2026-10-26')), true);
+}
 const twin = { ...cccCard, id: 'ccc-other', fills: [{ id: 'g1', side: 'buy', qty: 2, price: 8.4, date: '2026-10-26' }] };
 eq('a contract on two open cards cannot say which it closed', statementExits([cccCard, twin], units(ccc), missing('CCC', cccLegs)), []);
 const onCard = { ...cccCard, fills: [...cccCard.fills, { id: 'f2', side: 'sell', qty: 2, price: 7.5, date: '2026-10-29', tradeId: '9002+9003' }] };
