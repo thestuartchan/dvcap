@@ -32,6 +32,7 @@ near('…at the legs\' combined price', x?.fill.price, 7.5);
 eq('the trade id carries both orders, so the card stays matched to IBKR', x?.fill.tradeId, '9002+9003');
 eq('the banner line names the day and the orders', /closed at IBKR on 2026-10-29 \(orders 9002, 9003\)/.test(exitLine(x)), true);
 const fx = exitFix(x);
+eq('the label rounds to the cent, the fill keeps the exact price', [/ at 1\.45 on /.test(exitFix({ ...x, fill: { ...x.fill, price: 1.452896924 } }).text), exitFix({ ...x, fill: { ...x.fill, price: 1.452896924 } }).fills[0].price], [true, 1.452896924]);
 eq('the fix the "Record it" button opens the fill form with', [fx.side, fx.fills[0].qty, fx.fills[0].date, fx.fills[0].tradeId], ['reduce', 2, '2026-10-29', '9002+9003']);
 
 // DDD: a put credit spread (row short, legs written as the spread sold) bought back as one combo.
