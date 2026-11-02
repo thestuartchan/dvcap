@@ -44,6 +44,7 @@ import { modelledDelta } from "../lib/blackscholes.js";
 import { stateOf, byState, afterFill, thesisOk, archivePatch, restorePatch, hoursToArchive, TABS } from "../lib/lifecycle.js";
 import { normalizeRows } from "../lib/rowRepairs.js";
 import { fitId } from "../lib/rowIds.js";
+import { sameTradeCards, sameTradeLine, entrylessCards, entrylessLine } from "../lib/optionLedger.js";
 import { parseCommand, resolveCandidates, commandRow, commandSummary, firstFill, priceText } from "../lib/commandBar.js";
 import { actionItems } from "../lib/actions.js";
 import { applyDraft, LEVEL_LABEL as JOURNAL_LEVEL_LABEL } from "../lib/journalInbox.js";
@@ -3728,6 +3729,47 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     };
     setTimeout(seek, 30);
   };
+  // ── RE-CHECK AGAINST IBKR ── the banner's button and the sync chip both call this, so a sync is
+  // always one click away — the banner itself only shows when the last run left something to do.
+  const recheckIbkr = async () => {
+    setRecheckBusy(true); setAckMsg(null);
+    // STILL BUILDING IS NOT A FAILURE. IBKR builds the statement on request and a slow day
+    // outlasts one call's ~45s; the server keeps the statement it asked for, so asking
+    // again a little later collects it rather than starting over. Three tries, said plainly.
+    try {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const j = await fetch("/api/flex-sync?apply=1&trades=1", { credentials: "include" }).then(r => r.json());
+        if (j?.retryable && attempt < 3) {
+          setAckMsg({ ok: true, text: `IBKR is still building the statement — asking again in 30s (try ${attempt + 1} of 3)…` });
+          await new Promise(r => setTimeout(r, 30000));
+          continue;
+        }
+        setAckMsg({ ok: !j?.error, text: j?.error ? (j.retryable ? `IBKR is still building the statement after three tries — the morning run will pick it up, or try again in a few minutes (${j.error})` : j.error) : `re-checked against the ${j?.asOf || "latest"} statement` });
+        break;
+      }
+      refreshLive();
+    } catch (e) { setAckMsg({ ok: false, text: String(e.message || e) }); }
+    setRecheckBusy(false);
+  };
+  // ── BOOK CHECK (lib/optionLedger.js) ── computed here from the cards themselves, so it shows the
+  // moment there is something to fix — not only after a sync wrote a banner, which a quiet sync never
+  // does (2 Nov 2026: the MSFT duplicates had nowhere to appear).
+  const bookCheck = useMemo(() => ({
+    same: sameTradeCards(rows, { asOf: new Date().toISOString().slice(0, 10) }),
+    noEntry: entrylessCards(rows),
+  }), [rows]);
+  const keepCard = (group, keepId) => {
+    const others = group.cards.map(x => x.id).filter(id => id !== keepId);
+    const kept = group.cards.find(c => c.id === keepId);
+    if (typeof window !== "undefined" && !window.confirm(`Keep ${group.root} ${kept?.label || ""} and delete the other ${others.length} card${others.length === 1 ? "" : "s"} for this trade?`)) return;
+    setRows(p => p.filter(r => !others.includes(r.id))); touch();
+    setAckMsg({ ok: true, text: `kept ${group.root} ${kept?.label || ""}; deleted ${others.length} duplicate card${others.length === 1 ? "" : "s"} — Save to cloud` });
+  };
+  const markSeparate = (group) => {
+    const ids = group.cards.map(x => x.id);
+    setRows(p => p.map(r => ids.includes(r.id) ? { ...r, notSameTradeAs: [...new Set([...(r.notSameTradeAs || []), ...ids.filter(x => x !== r.id)])] } : r)); touch();
+    setAckMsg({ ok: true, text: `${group.root}: marked as separate trades — Save to cloud` });
+  };
   // ── WHAT IBKR DID, RECORDED (lib/optionLedger.js) ──
   // Several fills from the statement — a sale then a buy-back, a spread closed and re-opened — are
   // facts, not decisions, so they go onto the card together: appended once (by id), with IBKR's
@@ -4424,13 +4466,16 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           {kvOn !== false && (() => {
             const st = syncStatus(flexNote);
             return (
-              <span title={st.title} style={{ fontSize: 11.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+              <button disabled={recheckBusy} onClick={recheckIbkr} title={`${st.title || ""}\nClick to re-check against IBKR now.`.trim()} style={{ cursor: "pointer", fontSize: 11.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
                 color: st.tone === "ok" ? C.green : C.amber, background: st.tone === "ok" ? C.gBg : C.aBg,
-                border: "1px solid " + (st.tone === "ok" ? C.gBdr : C.aBdr) }}>
-                {st.tone === "ok" ? "✓ " : ""}{st.text}
-              </span>
+                border: "1px solid " + (st.tone === "ok" ? C.gBdr : C.aBdr), opacity: recheckBusy ? 0.6 : 1 }}>
+                {recheckBusy ? "re-checking…" : <>{st.tone === "ok" ? "✓ " : ""}{st.text} · ↻</>}
+              </button>
             );
           })()}
+          {ackMsg && !(bookCheck.same.length || bookCheck.noEntry.length) && !(flexNote && flexNote.at !== noteSeen && (flexNote.applied || flexNote.needsYou?.length || flexNote.discarded)) && (
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: ackMsg.ok ? C.green : C.amber }}>{ackMsg.text}</span>
+          )}
           {saveMsg && <span style={{ fontSize: 12, color: C.mid }}>{saveMsg}</span>}
           {/* ── PRICES AS OF ── the oldest quote from an open market the book is valued at, in this
               device's clock; stale by the quote module's own test (lib/consoleStamps.js). */}
@@ -4585,6 +4630,34 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           ⚠ The server did not answer ({loadErr}). Showing this browser's saved copy — the IBKR sync note, cash book and journal may be old, and Save will not reach other devices until it does.
         </div>
       )}
+      {(bookCheck.same.length > 0 || bookCheck.noEntry.length > 0) && (
+        <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 12, background: C.aBg, border: "1.5px solid " + C.aBdr }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.amber, letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 6 }}>Book check · {bookCheck.same.length + bookCheck.noEntry.length}</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: C.mid }}>
+            {bookCheck.same.map((g, i) => (
+              <div key={`s${i}`} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                <span><b style={{ color: C.text }}>{g.root}</b> · {sameTradeLine(g)}:</span>
+                {g.cards.map(c => (
+                  <button key={c.id} onClick={() => keepCard(g, c.id)}
+                    style={{ cursor: "pointer", background: C.surf, color: C.blue, border: "1.5px solid " + C.blue, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800 }}>Keep {c.label}{c.status === "closed" ? " (closed)" : ""}</button>
+                ))}
+                <button onClick={() => markSeparate(g)}
+                  style={{ cursor: "pointer", background: "none", color: C.lbl, border: "1px solid " + C.bdr, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 700 }}>Separate trades</button>
+              </div>
+            ))}
+            {bookCheck.noEntry.map(c => (
+              <div key={`e${c.id}`} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                <span><b style={{ color: C.text }}>{c.root}</b> · {entrylessLine(c)}</span>
+                <button onClick={() => goToRow(c.id, `${c.root} ${c.label} is open below — ↩ Restore it if it is archived, then ✕ Remove this trade (or enter the entry), and Save to cloud`)}
+                  style={{ cursor: "pointer", background: C.surf, color: C.blue, border: "1.5px solid " + C.blue, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800 }}>Open card</button>
+                <button onClick={() => { if (typeof window !== "undefined" && !window.confirm(`Delete the ${c.root} ${c.label} card? It has no entry, so it has no P&L to keep.`)) return; setRows(p => p.filter(r => r.id !== c.id)); touch(); setAckMsg({ ok: true, text: `deleted ${c.root} ${c.label} — Save to cloud` }); }}
+                  style={{ cursor: "pointer", background: "none", color: C.red, border: "1px solid " + C.bdr, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800 }}>Delete card</button>
+              </div>
+            ))}
+            {ackMsg && <div style={{ fontSize: 11.5, color: ackMsg.ok ? C.green : C.amber, fontWeight: 700 }}>{ackMsg.text}</div>}
+          </div>
+        </div>
+      )}
       {flexNote && flexNote.at !== noteSeen && (flexNote.applied || flexNote.needsYou?.length || flexNote.discarded) && (
         <div style={{ padding: "10px 13px", borderRadius: 10, border: "1.5px solid " + (flexNote.needsYou?.length || flexNote.discarded ? C.aBdr : C.bdr), background: flexNote.needsYou?.length || flexNote.discarded ? C.aBg : C.surf }}>
           <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
@@ -4606,26 +4679,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
                 The note is written by the scheduled run (weekdays 12:00Z). A change made here —
                 a fill recorded, a cost basis accepted — is not reflected until the next run unless
                 this asks for one. Same call the schedule makes; it writes only what reconciles. */}
-            <button disabled={recheckBusy} onClick={async () => {
-              setRecheckBusy(true); setAckMsg(null);
-              // STILL BUILDING IS NOT A FAILURE. IBKR builds the statement on request and a slow day
-              // outlasts one call's ~45s; the server keeps the statement it asked for, so asking
-              // again a little later collects it rather than starting over. Three tries, said plainly.
-              try {
-                for (let attempt = 1; attempt <= 3; attempt++) {
-                  const j = await fetch("/api/flex-sync?apply=1&trades=1", { credentials: "include" }).then(r => r.json());
-                  if (j?.retryable && attempt < 3) {
-                    setAckMsg({ ok: true, text: `IBKR is still building the statement — asking again in 30s (try ${attempt + 1} of 3)…` });
-                    await new Promise(r => setTimeout(r, 30000));
-                    continue;
-                  }
-                  setAckMsg({ ok: !j?.error, text: j?.error ? (j.retryable ? `IBKR is still building the statement after three tries — the morning run will pick it up, or try again in a few minutes (${j.error})` : j.error) : `re-checked against the ${j?.asOf || "latest"} statement` });
-                  break;
-                }
-                refreshLive();
-              } catch (e) { setAckMsg({ ok: false, text: String(e.message || e) }); }
-              setRecheckBusy(false);
-            }} style={{ marginLeft: "auto", cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 700, opacity: recheckBusy ? 0.5 : 1 }}>
+            <button disabled={recheckBusy} onClick={recheckIbkr} style={{ marginLeft: "auto", cursor: "pointer", background: C.surf, color: C.mid, border: "1.5px solid " + C.bdr, borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 700, opacity: recheckBusy ? 0.5 : 1 }}>
               {recheckBusy ? "checking…" : "↻ Re-check now"}
             </button>
             <button onClick={() => { setNoteSeen(flexNote.at); try { localStorage.setItem(FLEX_SEEN_LS, flexNote.at); } catch { /* quota */ } }}
@@ -4645,31 +4699,9 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           {ackMsg && <div style={{ marginTop: 6, fontSize: 11.5, color: ackMsg.ok ? C.green : C.amber, fontWeight: 700 }}>{ackMsg.text}</div>}
           {flexNote.needsYou?.length > 0 && (
             <div style={{ marginTop: 6, fontSize: 11.5, color: C.mid, display: "flex", gap: 7, flexWrap: "wrap" }}>
-              {flexNote.needsYou.map((n, i) => (
+              {flexNote.needsYou.filter(n => !n.sameTrade && !bookCheck.noEntry.some(c => c.id === n.id && /has no entry/.test(n.what || ""))).map((n, i) => (
                 <span key={i} style={{ background: C.surf, border: "1px solid " + C.bdr, borderRadius: 7, padding: "2px 8px", display: "inline-flex", gap: 8, alignItems: "center" }}>
                   <span><b>{n.root}</b> · {n.what}{n.fix ? <> — <i>{n.fix.text}</i></> : null}</span>
-                  {/* ── ONE TRADE ON SEVERAL CARDS (lib/optionLedger.js sameTradeCards) ──
-                      Keep the card that is the trade; the others are deleted (a cloud snapshot
-                      keeps the previous book). "Separate trades" says they are not one, for good. */}
-                  {n.sameTrade?.length > 1 && n.sameTrade.filter(c => rows.some(r => r.id === c.id)).map(c => (
-                    <button key={c.id} onClick={() => {
-                      const others = n.sameTrade.map(x => x.id).filter(id => id !== c.id);
-                      if (typeof window !== "undefined" && !window.confirm(`Keep ${n.root} ${c.label} and delete the other ${others.length} card${others.length === 1 ? "" : "s"} for this trade?`)) return;
-                      setRows(p => p.filter(r => !others.includes(r.id))); touch();
-                      setAckMsg({ ok: true, text: `kept ${n.root} ${c.label}; deleted ${others.length} duplicate card${others.length === 1 ? "" : "s"} — Save to cloud` });
-                    }} style={{ cursor: "pointer", background: C.surf, color: C.blue, border: "1.5px solid " + C.blue, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800 }}>
-                      Keep {c.label}
-                    </button>
-                  ))}
-                  {n.sameTrade?.length > 1 && (
-                    <button onClick={() => {
-                      const ids = n.sameTrade.map(x => x.id);
-                      setRows(p => p.map(r => ids.includes(r.id) ? { ...r, notSameTradeAs: [...new Set([...(r.notSameTradeAs || []), ...ids.filter(x => x !== r.id)])] } : r)); touch();
-                      setAckMsg({ ok: true, text: `${n.root}: marked as separate trades — Save to cloud` });
-                    }} style={{ cursor: "pointer", background: "none", color: C.lbl, border: "1px solid " + C.bdr, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 700 }}>
-                      Separate trades
-                    </button>
-                  )}
                   {/* ── RECORD IT ──
                       IBKR is the record. The reconciliation has computed the fill that closes the
                       gap; this opens the fill form on that row with it filled in, so the operator
