@@ -37,9 +37,10 @@ const PENDING_TTL_S = 15 * 60;
 // left of this, so the call returns — and says "still reading" — instead of being cut off.
 const SYNC_BUDGET_MS = 50000;
 import { derivePosition, splitIntoTrades } from '../lib/positions.js';
-import { expiryCloses, applyExpiryCloses, parseOptionEae, eaeSectionPresent } from '../lib/optionExpiry.js';
+import { parseOptionEae, eaeSectionPresent } from '../lib/optionExpiry.js';
+import { optionPlans, positionsByContract, planLine, planFix, autoApplies, applyPlans, ledgerWindow } from '../lib/optionLedger.js';
 import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, unrecordedTrades, dropCreatedAdds } from '../lib/flexTrades.js';
-import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf, planAck, reconcilingFill, flexEnv, flexConfigured, isoDate, optionFindings, addLabel, cashBookOf, optionMarksOf } from '../lib/flex.js';
+import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf, planAck, reconcilingFill, flexEnv, flexConfigured, isoDate, optionFindings, addLabel, cashBookOf, optionMarksOf, classOf, optionContractOf } from '../lib/flex.js';
 import { post, webhookFromEnv } from '../lib/discord.js';
 import { refresh } from './tradecard.js';
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
@@ -50,7 +51,6 @@ import { catalystLookup } from '../lib/catalystFeed.js';
 import { runJournal } from '../lib/journalStore.js';
 import { journalLine, orderUnits } from '../lib/journalInbox.js';
 import { journaledDayTrades, dayTradeLine } from '../lib/dayTradeCards.js';
-import { statementExits, exitWindow, exitLine, exitFix, missLine } from '../lib/optionExits.js';
 import { readExitWindow, lookbackLine } from '../lib/exitLookback.js';
 import { uniqueRowIds } from '../lib/rowIds.js';
 import { parseTradeConfirms, tcSections } from '../lib/flexTrades.js';
@@ -164,49 +164,46 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
     // Rows quoted off a different listing from the one IBKR holds (lib/listings.js). Symbols only.
     listings: rec.listings.map(l => ({ id: l.id, root: l.root, quoteAs: l.quoteAs, current: l.current, explicit: l.explicit })),
   };
-  // ── EXPIRED OPTIONS (lib/optionExpiry.js) ─────────────────────────────────
-  // A console option gone from the statement after its expiry is closed at 0 only where IBKR's
-  // Option Exercises, Assignments and Expirations section books it as an Expiration; an exercise or
-  // assignment, or no section at all, is left for a person.
-  const expiry = expiryCloses(withDerived, rec.report.filter(r => r.kind === 'option-missing-at-broker'),
-    { eae: parseOptionEae(got.xml), present: eaeSectionPresent(got.xml), asOf });
-  result.expiries = { closes: expiry.closes.map(c => ({ id: c.rowId, root: c.root, contract: c.contract, date: c.fill.date })), waiting: expiry.waiting };
   // ── A CARD THAT TURNED OUT TO BE A DAY TRADE (lib/dayTradeCards.js) ──────────
   // Opened on the console, taken flat at IBKR inside 24 hours: the closing orders went to the
-  // day-trading journal, and the card was left open. Said as what it is, with the day it closed —
-  // and the "not at IBKR" and expiry lines for the same card are dropped, because both sent the
-  // reader looking for something that did not happen.
+  // day-trading journal. Said as what it is, and left out of the option ledger below, whose fills
+  // would count the trade twice.
   const dayTradeCards = journaledDayTrades(withDerived, statementUnits);
   const dayTradeIds = new Set(dayTradeCards.map(d => d.rowId));
-  expiry.waiting = expiry.waiting.filter(w => !dayTradeIds.has(w.id) && !(w.ids || []).some(id => dayTradeIds.has(id)));
-  expiry.closes = expiry.closes.filter(c => !dayTradeIds.has(c.rowId));
-  result.expiries.waiting = expiry.waiting;
-  result.expiries.closes = result.expiries.closes.filter(c => !dayTradeIds.has(c.id));
-  // ── AN OPTION CARD CLOSED AT IBKR, THE EXIT NEVER RECORDED (lib/optionExits.js) ──
-  // The statement's own closing orders, offered as the fill. Such a card is not an expiry either.
-  // The day's statement holds one session; a card closed before it needs the days since its last
-  // fill, asked for by date range only when such a card exists. A failed read keeps the day's.
-  const missingOpts = rec.report.filter(r => r.kind === 'option-missing-at-broker');
-  let exitUnits = statementUnits;
-  const back = exitWindow(withDerived, missingOpts, { skip: dayTradeIds, statementFrom: isoDate(got.statement.fromDate), asOf });
-  // Resumed across Re-checks, kept once read, and fitted to the time left (lib/exitLookback.js).
+  // ── EVERY OPTION CARD IBKR DISAGREES WITH (lib/optionLedger.js) ────────────────
+  // One engine for all of it — a close before expiry (whole or part), an add, an expiry, an
+  // exercise, an assignment, a card whose entry was typed by hand: IBKR's orders and its
+  // exercises/assignments/expirations since the card's last recorded fill, read back to the
+  // shortest run that explains the gap. The reconciliation decides WHICH cards disagree (and owns
+  // what is left out: day trades, journal-only roots); the ledger says why and what to record.
+  // The day's statement holds one session, so a card that drifted earlier needs the days since its
+  // last fill — read by date range, resumed across Re-checks, kept once read (lib/exitLookback.js).
+  const OPT_DRIFT = new Set(['option-differs', 'option-missing-at-broker']);
+  const flagged = new Set(rec.report.filter(r => OPT_DRIFT.has(r.kind)).flatMap(r => r.ids || []));
+  const dayEae = parseOptionEae(got.xml);
+  let ledgerUnits = statementUnits, ledgerEae = dayEae;
+  const back = ledgerWindow(withDerived, flagged, { skip: dayTradeIds, statementFrom: isoDate(got.statement.fromDate), asOf });
   let lookback = null;
   if (back) {
     const kv = { get: kvGetJson, set: (k, v, ttl) => kvSetJsonEx(k, v, ttl) };
     lookback = await readExitWindow(back, { token, queryId, kv, budgetMs: Math.max(3000, SYNC_BUDGET_MS - (Date.now() - startedAt)) });
-    if (lookback.units) exitUnits = lookback.units;
+    if (lookback.units) {
+      ledgerUnits = lookback.units;
+      const seenEae = new Set();
+      ledgerEae = [...(lookback.eae || []), ...dayEae].filter(e => { const k = `${e.root}|${e.expiry}|${e.right}|${e.strike}|${e.type}|${e.date}`; return seenEae.has(k) ? false : (seenEae.add(k), true); });
+    }
   }
-  const exitMisses = [];
-  const exits = statementExits(withDerived, exitUnits, missingOpts, { skip: dayTradeIds, misses: exitMisses });
-  const exitIds = new Set(exits.map(x => x.rowId));
-  // A card looked for and not matched says why, in place of the expiry line that sent the reader to
-  // IBKR for an expiration that never happened. Only while the read itself succeeded.
-  const missIds = new Set(lookback && !lookback.units ? [] : exitMisses.map(m => m.rowId));
-  expiry.waiting = expiry.waiting.filter(w => !missIds.has(w.id) && !(w.ids || []).some(id => missIds.has(id)));
-  expiry.waiting = expiry.waiting.filter(w => !exitIds.has(w.id) && !(w.ids || []).some(id => exitIds.has(id)));
-  expiry.closes = expiry.closes.filter(c => !exitIds.has(c.rowId));
-  result.expiries.waiting = expiry.waiting;
-  result.expiries.closes = result.expiries.closes.filter(c => !exitIds.has(c.id));
+  const historyShort = !!(lookback && !lookback.units);
+  const optPositions = positionsByContract((got.statement.positions || []).filter(p => classOf(p) === 'option'), optionContractOf);
+  const plans = optionPlans(withDerived, { positions: optPositions, units: ledgerUnits, eae: ledgerEae, asOf, flagged, skip: dayTradeIds, eaePresent: eaeSectionPresent(got.xml) });
+  // Only expirations at 0 are written without asking (scheduled runs, as before); everything else
+  // is offered with the fills filled in.
+  const autoPlans = plans.filter(autoApplies);
+  const plannedIds = new Set(plans.filter(p => p.state === 'plan' || !historyShort).map(p => p.rowId));
+  result.expiries = { closes: autoPlans.map(p => ({ id: p.rowId, root: p.root, contract: p.contract, date: p.fills.at(-1)?.date || null })), waiting: [] };
+  // Counts only: this response can reach a public workflow log.
+  result.options = { flagged: flagged.size, explained: plans.filter(p => p.state === 'plan').length, unexplained: plans.filter(p => p.state !== 'plan').length,
+    history: lookback ? lookback.state : (back ? 'none' : 'day') };
   // ── TRADES ────────────────────────────────────────────────────────────────
   // The Open Positions section cannot say whether an exit was recorded — a sold position is simply
   // absent, which looks identical to one the console never knew about. The Trades section can.
@@ -324,7 +321,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
     // to the channel.
     nav: got.statement.nav || null,
     applied: !!(fresh.length || plan.ack.length || (apply && tradeRows) || closingExpiries),
-    expired: closingExpiries ? expiry.closes.map(c => c.contract) : [],
+    expired: closingExpiries ? autoPlans.map(p => p.contract) : [],
     // Counts for the console's status line (lib/flexStatus.js) — how many of the statement's
     // positions the console agrees with, so a quiet run reads as checked rather than as absent.
     agree: rec.agree.length,
@@ -362,14 +359,15 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
       ...rec.report.filter(r => r.kind === 'missing-at-broker').map(r => ({ what: 'open here, not at the broker', root: r.root, id: r.id })),
       // Option contracts, by contract rather than by underlying (lib/flex.js optionFindings).
       ...dayTradeCards.map(d => ({ what: dayTradeLine(d), root: d.root, id: d.rowId, dayTrade: true })),
-      ...exits.map(x => ({ what: exitLine(x), root: x.root, id: x.rowId, fix: exitFix(x) })),
-      ...(lookback && !lookback.units ? [{ what: lookbackLine(back, lookback), root: 'IBKR', lookback: lookback.state }] : []),
-      ...exitMisses.filter(m => missIds.has(m.rowId)).map(m => ({ what: missLine(m, back?.from), root: m.root, id: m.rowId })),
-      ...optionFindings(rec).filter(o => !(o.ids || []).some(id => dayTradeIds.has(id) || exitIds.has(id) || missIds.has(id))).map(o => ({ what: o.kind === 'option-differs' ? `${o.contract}: console ${o.qty.console}, statement ${o.qty.ibkr}`
+      // The option ledger: one line per card, with "Record it" carrying the fills. A plan the
+      // scheduled run writes by itself (expirations at 0) is listed only on a dry run.
+      ...plans.filter(p => p.state === 'plan' ? (!apply || !autoApplies(p)) : !historyShort)
+        .map(p => ({ what: planLine(p), root: p.root, id: p.rowId, ...(p.state === 'plan' ? { fix: planFix(p) } : {}) })),
+      ...(historyShort ? [{ what: lookbackLine(back, lookback), root: 'IBKR', lookback: lookback.state }] : []),
+      ...optionFindings(rec).filter(o => !(o.ids || []).some(id => dayTradeIds.has(id) || plannedIds.has(id))).map(o => ({ what: o.kind === 'option-differs' ? `${o.contract}: console ${o.qty.console}, statement ${o.qty.ibkr}`
                                             : o.kind === 'option-not-in-console' ? `${o.contract}: held at IBKR, not in the console`
                                             : `${o.contract}: in the console, not at IBKR`, root: o.root, id: o.ids?.[0] || null })),
       ...((tradePlan?.report) || []).map(r => ({ what: r.kind.replace(/-/g, ' '), root: r.root })),
-      ...expiry.waiting.map(w => ({ what: `${w.contract}: ${w.note}`, root: w.root, id: w.id || w.ids?.[0] || null })),
       ...adoption.missing.map(m => ({ what: `same-day fill of ${m.date} is not in this statement — kept, provisional; check it against IBKR`, root: m.symbol, id: m.rowId })),
       ...adoption.ambiguous.map(m => ({ what: `same-day fill of ${m.date} matches more than one statement order — kept, provisional`, root: m.symbol, id: m.rowId })),
     ].slice(0, 12),
@@ -386,7 +384,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   // announce anything actionable, once, and again only if what is wrong changes.
   if (apply) result.told = await tell(rec2, asOf, apply && tradeRows ? tradePlan : null, journal);
   const writingTrades = apply && !!tradeRows;
-  const closingExpiries = apply && expiry.closes.length > 0;
+  const closingExpiries = apply && autoPlans.length > 0;
   if (!fresh.length && !plan.ack.length && !writingTrades && !closingExpiries && !from0) {
     if (apply) await kvSetJson(FLEX_NOTE_KEY, noteOf());
     return result;
@@ -394,7 +392,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
 
   const acked = new Map(plan.ack.map(a => [a.id, a.to]));
   const base = writingTrades ? tradeRows : rows;
-  const merged = applyExpiryCloses(base.map(r => acked.has(r.id) ? { ...r, costBasisAck: acked.get(r.id) } : r), closingExpiries ? expiry.closes : []);
+  const merged = applyPlans(base.map(r => acked.has(r.id) ? { ...r, costBasisAck: acked.get(r.id) } : r), closingExpiries ? autoPlans : []);
   const settings = from0 ? { ...(stored?.settings || {}), flexTradesFrom: from0 } : (stored?.settings || {});
   // A new revision (lib/consoleRev.js): a browser holding the copy from before this write is
   // refused on its next save rather than putting these fills back the way they were.
