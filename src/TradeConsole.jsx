@@ -42,6 +42,7 @@ import { sizeTrade, sizeFuture, sizerRun, reconcileRuns, mismatchReview, capRevi
 import { leverageFor, SWING, roomInWrappers } from "../lib/leverage.js";
 import { modelledDelta } from "../lib/blackscholes.js";
 import { stateOf, byState, afterFill, thesisOk, archivePatch, restorePatch, hoursToArchive, TABS } from "../lib/lifecycle.js";
+import { uniqueRowIds } from "../lib/rowIds.js";
 import { parseCommand, resolveCandidates, commandRow, commandSummary, firstFill, priceText } from "../lib/commandBar.js";
 import { actionItems } from "../lib/actions.js";
 import { applyDraft, LEVEL_LABEL as JOURNAL_LEVEL_LABEL } from "../lib/journalInbox.js";
@@ -3142,7 +3143,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   useEffect(() => {
     try {
       const c = JSON.parse(localStorage.getItem(LS) || "null");
-      if (c) { setRows(backfillMultipliers(c.rows || []).rows); setSettings(s => ({ ...s, ...(c.settings || {}) })); }
+      if (c) { setRows(uniqueRowIds(backfillMultipliers(c.rows || []).rows).rows); setSettings(s => ({ ...s, ...(c.settings || {}) })); }
     } catch { /* no cache */ }
     readLive().then(j => {
       setLoadErr(null);
@@ -3163,7 +3164,11 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
         // separate write path. Idempotent: a row that already carries a multiplier is untouched.
         if (Array.isArray(c.rows)) {
           const back = backfillMultipliers(c.rows);
-          setRows(back.rows);
+          // ONE CARD, ONE ID (lib/rowIds.js): two cards sharing an id were edited together. Renamed
+          // the way the sync renames them, and saved so the fix sticks.
+          const uniq = uniqueRowIds(back.rows);
+          setRows(uniq.rows);
+          if (uniq.renamed.length) touch();
           if (back.changed || back.review.length) setMultNote({ fixed: back.fixed, review: back.review });
         }
         else if (Array.isArray(c.watchlist)) setRows(migrateV1(c.watchlist));   // one-time v1 → v2
@@ -3697,6 +3702,29 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   // Which groups the open list shows (tag, Cash, Untagged); empty = all.
   const openFilter = (Array.isArray(settings.openFilter) ? settings.openFilter : []).filter(g => LIST_GROUPS.includes(g));
   const setOpenFilter = (v) => { setSettings(s => ({ ...s, openFilter: v })); touch(); };
+  // ── TAKE ME TO THAT CARD (2 Nov 2026) ──
+  // The banner's "Record it" expanded the card and scrolled to it — when the card was on screen.
+  // On another tab, behind a tag filter or a search, the form opened where nobody could see it and
+  // the button seemed to do nothing. Now it switches to the card's tab, lifts a filter or search
+  // that hides it, scrolls once the card has rendered, and always says what it did.
+  const goToRow = (id, done) => {
+    const dr = derivedRows.find(x => x.id === id);
+    if (!dr) { setAckMsg({ ok: false, text: "that card is no longer in the console — Re-check" }); return; }
+    const st = stateOf(dr, { now: Date.now() });
+    if (bookQuery) setBookQuery("");
+    if (bookTab !== tabFor(st)) setBookTab(st);
+    if (st === "OPEN" && openFilter.length && filterByGroups([dr], openFilter).length === 0) setSettings(x => ({ ...x, openFilter: [] }));
+    setExpanded(id);
+    const sel = `[data-row="${String(id).replace(/["\\]/g, "\\$&")}"]`;
+    let tries = 0;
+    const seek = () => {
+      const el = typeof document !== "undefined" ? document.querySelector(sel) : null;
+      if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); setAckMsg({ ok: true, text: done }); return; }
+      if (++tries < 20) setTimeout(seek, 50);
+      else setAckMsg({ ok: false, text: "couldn't bring that card on screen — find it under its tab and record the exit there" });
+    };
+    setTimeout(seek, 30);
+  };
 
   // Replace one row with one row PER TRADE, in place so the order of the book is preserved. Each
   // new row inherits the thesis and levels but gets its own id and a date-range label, because from
@@ -3711,7 +3739,9 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       const closed = derivePosition(use, { multiplier: r.multiplier, side: r.side }).status === "closed";
       return {
         ...r,
-        id: `${r.symbol}-${(d0 || d1 || i).toString().replace(/-/g, "")}-${i}`,
+        // An option card's symbol is its underlying: the contract goes in the id too, or two legs
+        // opened the same day are split onto one id (lib/rowIds.js).
+        id: `${r.symbol}-${(r.legs || []).map(l => `${l.right || ""}${l.strike ?? ""}`).join("")}${(r.legs || []).length ? "-" : ""}${(d0 || d1 || i).toString().replace(/-/g, "")}-${i}`,
         trade: r.trade || (closed && d1 && d1 !== d0 ? `${d0.slice(5)} → ${d1.slice(5)}` : d0 ? `from ${d0.slice(5)}` : `trade ${i + 1}`),
         fills: use,
       };
@@ -3933,7 +3963,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       const r = await fetch(`/api/manual-entry?snapshot=${encodeURIComponent(label)}`, { credentials: "include", cache: "no-store" });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j?.snapshot) return { ok: false, error: j?.error || `HTTP ${r.status}` };
-      setRows(backfillMultipliers(j.snapshot.rows || []).rows);
+      setRows(uniqueRowIds(backfillMultipliers(j.snapshot.rows || []).rows).rows);
       setSettings(s => ({ ...s, ...(j.snapshot.settings || {}) }));
       touch();
       return { ok: true, rows: (j.snapshot.rows || []).length };
@@ -4586,7 +4616,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
                     const row = rows.find(x => x.id === n.id);
                     if (!row) return null;
                     return (
-                      <button onClick={() => { setExpanded(row.id); setTimeout(() => { try { document.querySelector(`[data-row="${row.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }); } catch { /* no DOM */ } }, 60); setFillFor({
+                      <button onClick={() => { goToRow(row.id, `the exit form is open on ${n.root} ${(n.what || "").split(":")[0]} — check it and press Enter to record`); setFillFor({
                         rowId: row.id,
                         side: n.fix.side === "add" ? openSideFor(row.side) : closeSideFor(row.side),
                         intent: n.fix.side === "add" ? "buy" : "sell",

@@ -52,6 +52,7 @@ import { journalLine, orderUnits } from '../lib/journalInbox.js';
 import { journaledDayTrades, dayTradeLine } from '../lib/dayTradeCards.js';
 import { statementExits, exitWindow, exitLine, exitFix, missLine } from '../lib/optionExits.js';
 import { readExitWindow, lookbackLine } from '../lib/exitLookback.js';
+import { uniqueRowIds } from '../lib/rowIds.js';
 import { parseTradeConfirms, tcSections } from '../lib/flexTrades.js';
 import { adoptProvisional, tcQueryId, TC_QUERY_ENV, TC_WAITS_MS, SYNC_NOW_MIN_INTERVAL_S, skipOnSameDay, syncNowLine, recordLag, lagText } from '../lib/sameDayFills.js';
 import { hasSessionCookie, hasJournalReadKey } from '../lib/apiauth.js';
@@ -104,7 +105,9 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   if (!got.ok) return { ok: false, error: got.error, retryable: !!got.retryable };
 
   const stored = await kvGetJson(CONSOLE_KEY);
-  const rows = Array.isArray(stored?.rows) ? stored.rows : [];
+  // One card, one id — renamed exactly as the console renames them on load (lib/rowIds.js), so the
+  // banner's "Record it" opens the card it names.
+  const rows = uniqueRowIds(Array.isArray(stored?.rows) ? stored.rows : []).rows;
   // NOTE: no applyRolls. A rolled position's entry is back-adjusted for the card; the broker reports
   // the contract, not the trade, so reconciling against the adjusted figure would disagree with
   // every statement for ever. And CLOSED rows are passed in as well as open ones — the statement is
