@@ -6038,66 +6038,76 @@
     },
     {
       "date": "2026-11-02",
-      "stagflation_p": 26,
-      "reflationary_p": 57,
+      "stagflation_p": 66,
+      "reflationary_p": 17,
       "deflationary_p": 12,
       "inflationary_p": 5,
-      "hawkish_repricing": null,
-      "live_regime": "ref",
-      "view_regime": null,
-      "pinned": null,
-      "hyg_chg": null,
-      "hyg_qqq_divergence": null,
+      "hawkish_repricing": "INSUFFICIENT_DATA",
+      "live_regime": "stag",
+      "view_regime": "stag",
+      "pinned": true,
+      "hyg_chg": -0.06,
+      "hyg_qqq_divergence": -0.05,
       "inputs": {
-        "weightedRecessionProb": 13.4,
+        "weightedRecessionProb": 13.5,
         "cpi": 3.71725,
-        "kalshi2027": 20,
-        "tape": null,
-        "ladderSpread": null,
+        "kalshi2027": 21,
+        "tape": {
+          "gold": "down",
+          "tlt": "down",
+          "xlu": "down",
+          "xlp": "down",
+          "spy": "down",
+          "qqq": "flat",
+          "iwm": "down",
+          "btc": "down",
+          "breakevenBp": 2
+        },
+        "ladderSpread": 0.8,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.26,
-        "tenY": 4.98,
-        "twoY": 4.61,
-        "consensusAlive": 0.983,
+        "oas": 3.4,
+        "tenY": 4.96,
+        "twoY": 4.65,
+        "consensusAlive": 0.944,
         "regimeVintage": "fresh"
       },
       "axes": {
         "growth": {
-          "state": "confirmed",
+          "state": "data-only",
           "lean": 1,
           "market": {
-            "verdict": "EXPANDING",
-            "lean": 1,
-            "usable": 5,
+            "verdict": "INSUFFICIENT",
+            "lean": null,
+            "usable": 0,
             "of": 5
           },
           "weekly": {
-            "verdict": "EXPANDING",
-            "lean": 1,
-            "usable": 4,
+            "verdict": "INSUFFICIENT",
+            "lean": null,
+            "usable": 1,
             "of": 4
           },
           "monthly": {
             "verdict": "EXPANDING",
             "lean": 1,
-            "usable": 4,
+            "usable": 3,
             "of": 4
           }
         },
         "inflation": {
-          "state": "split",
+          "state": "printed-only",
           "lean": 1,
           "market": {
-            "verdict": "HOT",
-            "lean": 1,
-            "usable": 3,
+            "verdict": "INSUFFICIENT",
+            "lean": null,
+            "usable": 0,
             "of": 3
           },
           "nowcast": {
-            "verdict": "BETWEEN",
-            "lean": 0,
-            "usable": 2,
+            "verdict": "INSUFFICIENT",
+            "lean": null,
+            "usable": 0,
             "of": 2
           },
           "printed": {
@@ -6114,15 +6124,15 @@
         "regime": {
           "id": "inf",
           "probs": {
-            "ref": 21,
-            "inf": 72,
-            "stag": 5,
-            "def": 2
+            "ref": 1,
+            "inf": 98,
+            "stag": 1,
+            "def": 0
           },
-          "g": 0.51,
-          "gDrift": -0.35,
-          "i": 0.28,
-          "iDrift": -0.33,
+          "g": 0.67,
+          "gDrift": 0,
+          "i": 0.67,
+          "iDrift": 0,
           "drifting": null
         },
         "conditions": {
@@ -6140,14 +6150,14 @@
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 76,
+          "hikeOdds": 90,
           "liq4w": -37
         },
-        "sizing": 0.66,
+        "sizing": 0.64,
         "stage": 2
       },
-      "source": "cron",
-      "loggedAt": "2026-11-02T01:53:46.262Z"
+      "source": "client+cron",
+      "loggedAt": "2026-11-02T04:51:08.431Z"
     }
   ]
 }
