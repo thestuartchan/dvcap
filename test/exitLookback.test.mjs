@@ -54,7 +54,7 @@ const base = { token: 'T', queryId: 'Q', sleep: async () => {} };
 {
   const r = await readExitWindow(back, { ...base, kv: memKv(), fetchImpl: seq('<FlexStatementResponse><Status>Fail</Status><ErrorCode>1020</ErrorCode><ErrorMessage>Invalid request</ErrorMessage></FlexStatementResponse>') });
   eq('refused: failed, with the reason', [r.state, /1020/.test(r.error)], ['failed', true]);
-  eq('the banner says to Re-check or record by hand', /record the exit by hand/.test(lookbackLine(back, r)), true);
+  eq('the banner says to Re-check or record by hand', /record it by hand/.test(lookbackLine(back, r)), true);
 }
 
 // ── THE WAIT FITS THE TIME LEFT ──

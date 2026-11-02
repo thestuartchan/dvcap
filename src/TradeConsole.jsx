@@ -3725,6 +3725,33 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     };
     setTimeout(seek, 30);
   };
+  // ── WHAT IBKR DID, RECORDED (lib/optionLedger.js) ──
+  // Several fills from the statement — a sale then a buy-back, a spread closed and re-opened — are
+  // facts, not decisions, so they go onto the card together: appended once (by id), with IBKR's
+  // order ids, and the card's lifecycle follows what they did. A hand-typed entry the sync matched
+  // to its order is stamped with that order's id on the way.
+  const stampTradeIds = (rowId, adopt = []) => {
+    const by = new Map((adopt || []).map(a => [a.fillId, String(a.tradeId)]));
+    if (!by.size) return;
+    setRows(p => p.map(r => r.id !== rowId ? r : { ...r, fills: (r.fills || []).map(f => (by.has(f.id) && !f.tradeId ? { ...f, tradeId: by.get(f.id) } : f)) }));
+    touch();
+  };
+  const recordStatementFills = (rowId, fix, label) => {
+    const r = rows.find(x => x.id === rowId); if (!r) return;
+    const adopt = new Map((fix.adopt || []).map(a => [a.fillId, String(a.tradeId)]));
+    const have = new Set((r.fills || []).map(f => f.id));
+    const kept = (r.fills || []).map(f => (adopt.has(f.id) && !f.tradeId ? { ...f, tradeId: adopt.get(f.id) } : f));
+    const add = (fix.fills || []).filter(f => !f.id || !have.has(f.id)).map(f => ({
+      id: f.id || Math.random().toString(36).slice(2, 8), date: f.date, side: f.side, qty: f.qty, price: f.price,
+      note: f.note || "from the IBKR statement", ...(f.tradeId ? { tradeId: String(f.tradeId) } : {}) }));
+    const fills = [...kept, ...add];
+    const before = derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side });
+    const after = derivePosition(fills, { multiplier: r.multiplier, side: r.side });
+    upd(rowId, { fills, ...afterFill(before, after) });
+    setAckMsg({ ok: true, text: `recorded ${add.length} fill${add.length === 1 ? "" : "s"} from the statement on ${label}${after.status !== before.status ? ` — the card is now ${after.status}` : ""}` });
+    if (after.status !== before.status) { setBookTab(after.status === "closed" ? "CLOSED" : after.status === "open" ? "OPEN" : "WATCHING"); }
+    setExpanded(rowId);
+  };
 
   // Replace one row with one row PER TRADE, in place so the order of the book is preserved. Each
   // new row inherits the thesis and levels but gets its own id and a date-range label, because from
@@ -3823,7 +3850,8 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     // statement reconciles against, since both legs keep the prices that were actually traded.
     const held = derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side });
     const split = oversellSplit(held, { side: f.side, qty });
-    const mkFill = (q) => ({ id: Math.random().toString(36).slice(2, 8), date: f.date, side: f.side, qty: q, price, note: f.note || "" });
+    // A fill opened from the statement keeps IBKR's order id, so the next sync knows it by id.
+    const mkFill = (q) => ({ id: Math.random().toString(36).slice(2, 8), date: f.date, side: f.side, qty: q, price, note: f.note || "", ...(f.tradeId && !split ? { tradeId: String(f.tradeId) } : {}) });
     const fills = [...(r.fills || []), mkFill(split ? split.closeQty : qty)];
     // A LIFECYCLE CHANGE needs saying out loud. Selling the last unit moves the row out of Open
     // positions and into a section that is collapsed by default, so with no announcement the row
@@ -4615,18 +4643,27 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
                   {n.fix && n.id && (() => {
                     const row = rows.find(x => x.id === n.id);
                     if (!row) return null;
+                    const many = (n.fix.fills?.length || 0) > 1;
+                    const f0 = n.fix.fills?.[0];
                     return (
-                      <button onClick={() => { goToRow(row.id, `the exit form is open on ${n.root} ${(n.what || "").split(":")[0]} — check it and press Enter to record`); setFillFor({
+                      <button onClick={() => {
+                        // SEVERAL FILLS (lib/optionLedger.js): what IBKR did, recorded together.
+                        if (many) { recordStatementFills(row.id, n.fix, `${n.root} ${(n.what || "").split(":")[0]}`); return; }
+                        // A hand-typed entry the sync matched to its IBKR order gets that order's id.
+                        if (n.fix.adopt?.length) stampTradeIds(row.id, n.fix.adopt);
+                        goToRow(row.id, `the form is open on ${n.root} ${(n.what || "").split(":")[0]} — check it and press Enter to record`);
+                        setFillFor({
                         rowId: row.id,
                         side: n.fix.side === "add" ? openSideFor(row.side) : closeSideFor(row.side),
                         intent: n.fix.side === "add" ? "buy" : "sell",
                         // From the statement's own trade line when it has one — exact price, day and trade id.
-                        qty: n.fix.fills?.[0] ? n.fix.fills[0].qty : n.fix.qty, price: n.fix.fills?.[0] ? n.fix.fills[0].price : (n.fix.price ?? ""),
-                        date: n.fix.fills?.[0]?.date || n.fix.date || flexNote.asOf || new Date().toISOString().slice(0, 10),
-                        note: n.fix.fills?.[0]?.tradeId ? `IBKR trade ${n.fix.fills[0].tradeId}, commission included` : `reconciling fill — IBKR statement ${flexNote.asOf || ""}`.trim(),
+                        qty: f0 ? f0.qty : n.fix.qty, price: f0 ? f0.price : (n.fix.price ?? ""),
+                        date: f0?.date || n.fix.date || flexNote.asOf || new Date().toISOString().slice(0, 10),
+                        tradeId: f0?.tradeId || null,
+                        note: f0?.note || (f0?.tradeId ? `IBKR trade ${f0.tradeId}, commission included` : `reconciling fill — IBKR statement ${flexNote.asOf || ""}`.trim()),
                       }); }}
                         style={{ cursor: "pointer", background: C.surf, color: C.blue, border: "1.5px solid " + C.blue, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800 }}>
-                        Record it
+                        {many ? `Record all ${n.fix.fills.length}` : "Record it"}
                       </button>
                     );
                   })()}

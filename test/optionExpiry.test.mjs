@@ -1,6 +1,7 @@
-// test/optionExpiry.test.mjs — closing a console option IBKR booked as expired (lib/optionExpiry.js).
+// test/optionExpiry.test.mjs — reading IBKR's exercises/assignments/expirations (lib/optionExpiry.js);
+// what is done with them is tested in test/optionLedger.test.mjs.
 // Fake ticker, made-up contracts and sizes.
-import { parseOptionEae, eaeSectionPresent, expiryCloses, applyExpiryCloses } from '../lib/optionExpiry.js';
+import { parseOptionEae, eaeSectionPresent } from '../lib/optionExpiry.js';
 import { reconcile, parseStatement } from '../lib/flex.js';
 
 let pass = 0, fail = 0;
@@ -15,35 +16,6 @@ const xml = EAE([
 eq('the section is recognised, empty or not', [eaeSectionPresent(xml), eaeSectionPresent('<OptionEAE />'), eaeSectionPresent('<Trades/>')], [true, true, false]);
 eq('each event with its contract and kind', parseOptionEae(xml).map(e => [e.root, e.right, e.strike, e.expiry, e.type]),
   [['XYZ', 'C', 100, '2026-10-16', 'expiration'], ['XYZ', 'P', 90, '2026-10-16', 'assignment']]);
-
-const row = (id, legs, side = 'long', qty = 4) => ({ id, symbol: 'XYZ', underlying: 'XYZ', side, legs, fills: [{ id: 'f0', side: side === 'long' ? 'buy' : 'sell', qty, price: 1.5, date: '2026-10-14' }],
-  derived: { status: 'open', qty } });
-const call = row('xyz-call', [{ right: 'C', strike: 100, expiry: '2026-10-16', side: 'long', ratio: 1 }]);
-const put = row('xyz-put', [{ right: 'P', strike: 90, expiry: '2026-10-16', side: 'long', ratio: 1 }], 'short', 2);
-const miss = (c, ids) => ({ kind: 'option-missing-at-broker', root: 'XYZ', contract: 'label', c, ids });
-const missing = [miss({ root: 'XYZ', expiry: '2026-10-16', type: 'call', strike: 100 }, ['xyz-call']), miss({ root: 'XYZ', expiry: '2026-10-16', type: 'put', strike: 90 }, ['xyz-put'])];
-
-const out = expiryCloses([call, put], missing, { eae: parseOptionEae(xml), present: true, asOf: '2026-10-16' });
-eq('an Expiration closes the row at 0, on the date IBKR booked it, for the whole open size',
-  out.closes.map(c => [c.rowId, c.fill.side, c.fill.qty, c.fill.price, c.fill.date]), [['xyz-call', 'sell', 4, 0, '2026-10-16']]);
-eq('an assignment is left for a person — it delivered shares', out.waiting.map(w => [w.id, w.kind]), [['xyz-put', 'option-exercised']]);
-eq('without the section nothing closes, and it says which section to add', (() => {
-  const o = expiryCloses([call], [missing[0]], { eae: [], present: false, asOf: '2026-10-16' });
-  return [o.closes.length, o.waiting[0].kind, /Option Exercises, Assignments and Expirations/.test(o.waiting[0].note)];
-})(), [0, 'expiry-unrecorded', true]);
-eq('a contract not yet expired is not touched', expiryCloses([call], [missing[0]], { eae: parseOptionEae(xml), present: true, asOf: '2026-10-15' }), { closes: [], waiting: [] });
-eq('the section silent on a contract leaves it for a person', expiryCloses([call], [missing[0]], { eae: [], present: true, asOf: '2026-10-16' }).waiting.map(w => w.kind), ['expiry-not-in-statement']);
-{
-  const spread = row('xyz-vert', [{ right: 'C', strike: 100, expiry: '2026-10-16', side: 'long', ratio: 1 }, { right: 'C', strike: 110, expiry: '2026-10-16', side: 'short', ratio: 1 }]);
-  const eae2 = parseOptionEae(EAE([{ underlyingSymbol: 'XYZ', putCall: 'C', strike: '100', expiry: '20261016', date: '20261016', transactionType: 'Expiration', quantity: '-4' }]));
-  const legMiss = [miss({ root: 'XYZ', expiry: '2026-10-16', type: 'call', strike: 100 }, ['xyz-vert']), miss({ root: 'XYZ', expiry: '2026-10-16', type: 'call', strike: 110 }, ['xyz-vert'])];
-  eq('a spread closes only when every leg has an Expiration', expiryCloses([spread], legMiss, { eae: eae2, present: true, asOf: '2026-10-16' }).waiting.map(w => w.kind), ['expiry-not-in-statement']);
-}
-{
-  const closes = expiryCloses([call], [missing[0]], { eae: parseOptionEae(xml), present: true, asOf: '2026-10-16' }).closes;
-  const once = applyExpiryCloses([call], closes);
-  eq('the closing fill is appended once, never twice', [once[0].fills.length, applyExpiryCloses(once, closes)[0].fills.length], [2, 2]);
-}
 
 // ── The journal's options are not added to the console ──
 {
