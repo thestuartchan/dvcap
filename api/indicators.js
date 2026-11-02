@@ -13,6 +13,7 @@ import { fetchSouthbound } from "../lib/hkexSouthbound.js";
 import { fredJsonEx } from '../lib/fred.js';
 import { fetchIsharesSecYield } from '../lib/fundYield.js';
 import { correlationPayload } from '../lib/impliedCorrelation.js';
+import { chinaPayload } from '../lib/chinaFeed.js';
 
 export default async function handler(req, res) {
   // ── ?impliedcorr=1 — COR1M, VIXEQ − VIX and DSPX (lib/impliedCorrelation.js) ──────────────────
@@ -84,6 +85,17 @@ export default async function handler(req, res) {
       const p = await crossCheckPayload();
       res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=900");
       return res.status(200).json({ ok: true, at: p.as_of_utc, blocks: crossCheckHealth(p) });
+    } catch (e) {
+      return res.status(200).json({ ok: false, error: String(e?.message || e).slice(0, 160) });
+    }
+  }
+
+  // ?china=1 — the China read (lib/chinaRead.js): five rows and a verdict from Southbound, the CSI
+  // 300, USD/CNH, HSTECH/KWEB and the official PMI. Its own read: it does not vote on the board.
+  if (String(req.query?.china ?? '') === '1') {
+    try {
+      res.setHeader("Cache-Control", "s-maxage=900, stale-while-revalidate=3600");
+      return res.status(200).json(await chinaPayload());
     } catch (e) {
       return res.status(200).json({ ok: false, error: String(e?.message || e).slice(0, 160) });
     }
