@@ -80,6 +80,7 @@ import { parseSecYieldPaste, parseYieldValue } from "../lib/fundYield.js";
 import { COMPANY_NAMES } from '../lib/companyNames.js';  // one map, shared with the trade console
 import { dubaiEt, dubaiEtStamp } from "../lib/timeFmt.js";
 import { leadRegion, regionStamps } from "../lib/overviewRegions.js";
+import { ChinaPanel } from "./ChinaPanel.jsx";
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
 const SC = [C.blue,C.green,P.amber600,P.violet700,P.amber700,P.pink700,P.teal700,P.amber500];
@@ -5413,6 +5414,10 @@ function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, errorBy = {}
           {/* Korea manual entry (KOFIA paste + 7709 units) — shown when Asia is active */}
           {regions.includes("asia") && byRegion.asia?.kofia &&
             <KoreaManualEntry kofia={byRegion.asia.kofia} gate2={byRegion.asia.won?.gate2 ?? null} onSaved={() => onRefresh()} />}
+
+          {/* The China read (lib/chinaRead.js) — five rows and a verdict, ahead of the Southbound
+              detail it draws on. Its own read; it does not vote on the Signal Board. */}
+          {regions.includes("asia") && <ChinaPanel />}
 
           {/* Southbound Stock Connect (SMIC mainland flow) — same class as the Korea flow panel,
               shown alongside it when Asia is active. Self-fetches its own manual store. */}
