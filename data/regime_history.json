@@ -6174,12 +6174,12 @@
       "inputs": {
         "weightedRecessionProb": 14.2,
         "cpi": 3.71725,
-        "kalshi2027": 19,
+        "kalshi2027": 21,
         "tape": null,
         "ladderSpread": null,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.44,
+        "oas": 3.43,
         "tenY": 4.94,
         "twoY": 4.56,
         "consensusAlive": 0.994,
@@ -6249,16 +6249,16 @@
           "drifting": null
         },
         "conditions": {
-          "score": 69,
+          "score": 69.5,
           "band": "caution",
           "comps": {
-            "credit": 76,
-            "equityVol": 72,
-            "ratesVol": 67,
+            "credit": 80,
+            "equityVol": 69,
+            "ratesVol": 68,
             "realYield": 76,
             "funding": 96,
-            "breadth": 21,
-            "dollar": 49
+            "breadth": 20,
+            "dollar": 50
           }
         },
         "policy": {
@@ -6270,7 +6270,7 @@
         "stage": 2
       },
       "source": "cron",
-      "loggedAt": "2026-11-03T15:01:42.008Z"
+      "loggedAt": "2026-11-03T16:32:17.706Z"
     }
   ]
 }
