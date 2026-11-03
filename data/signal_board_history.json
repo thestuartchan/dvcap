@@ -710,10 +710,10 @@
       "fwd": {
         "QQQ_1": 0.6,
         "QQQ_3": -4.26,
-        "QQQ_5": null,
+        "QQQ_5": -5.03,
         "SOXX_1": 2.13,
         "SOXX_3": -7.74,
-        "SOXX_5": null
+        "SOXX_5": -9.45
       },
       "realised": {
         "QQQ": {
@@ -1004,10 +1004,10 @@
       },
       "fwd": {
         "QQQ_1": -3.47,
-        "QQQ_3": null,
+        "QQQ_3": -4.24,
         "QQQ_5": null,
         "SOXX_1": -8.24,
-        "SOXX_3": null,
+        "SOXX_3": -9.95,
         "SOXX_5": null
       },
       "realised": {
@@ -1147,8 +1147,24 @@
           "conflict": null
         }
       },
-      "fwd": null,
-      "realised": null
+      "fwd": {
+        "QQQ_1": 0.57,
+        "QQQ_3": null,
+        "QQQ_5": null,
+        "SOXX_1": 2,
+        "SOXX_3": null,
+        "SOXX_5": null
+      },
+      "realised": {
+        "QQQ": {
+          "date": "2026-11-03",
+          "r": 0.41
+        },
+        "SPY": {
+          "date": "2026-11-03",
+          "r": 0.46
+        }
+      }
     },
     {
       "date": "2026-11-03",
@@ -1276,8 +1292,24 @@
           "conflict": null
         }
       },
-      "fwd": null,
-      "realised": null
+      "fwd": {
+        "QQQ_1": 0.57,
+        "QQQ_3": null,
+        "QQQ_5": null,
+        "SOXX_1": 2,
+        "SOXX_3": null,
+        "SOXX_5": null
+      },
+      "realised": {
+        "QQQ": {
+          "date": "2026-11-03",
+          "r": 0.41
+        },
+        "SPY": {
+          "date": "2026-11-03",
+          "r": 0.46
+        }
+      }
     }
   ]
 }
