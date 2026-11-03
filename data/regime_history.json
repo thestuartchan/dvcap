@@ -6174,7 +6174,7 @@
       "inputs": {
         "weightedRecessionProb": 14.2,
         "cpi": 3.71725,
-        "kalshi2027": 20,
+        "kalshi2027": 19,
         "tape": null,
         "ladderSpread": null,
         "u3": 4.2,
@@ -6238,27 +6238,27 @@
           "id": "inf",
           "probs": {
             "ref": 8,
-            "inf": 80,
-            "stag": 11,
+            "inf": 85,
+            "stag": 6,
             "def": 1
           },
-          "g": 0.42,
-          "gDrift": -0.55,
+          "g": 0.51,
+          "gDrift": -0.35,
           "i": 0.46,
           "iDrift": -0.33,
-          "drifting": "stag"
+          "drifting": null
         },
         "conditions": {
-          "score": 68.9,
+          "score": 69,
           "band": "caution",
           "comps": {
             "credit": 76,
-            "equityVol": 74,
-            "ratesVol": 65,
+            "equityVol": 72,
+            "ratesVol": 67,
             "realYield": 76,
-            "funding": 92,
-            "breadth": 24,
-            "dollar": 47
+            "funding": 96,
+            "breadth": 21,
+            "dollar": 49
           }
         },
         "policy": {
@@ -6266,11 +6266,11 @@
           "hikeOdds": 79,
           "liq4w": -37
         },
-        "sizing": 0.63,
+        "sizing": 0.64,
         "stage": 2
       },
       "source": "cron",
-      "loggedAt": "2026-11-03T08:45:53.662Z"
+      "loggedAt": "2026-11-03T15:01:37.659Z"
     }
   ]
 }
