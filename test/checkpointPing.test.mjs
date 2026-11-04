@@ -24,8 +24,8 @@ const run = async (hm, t, kv = store(), calls = []) => {
   const r = await checkpointPing({ now: ET(hm), webhook: 'webhook', kv,
     payload: async () => ({ today: '2026-11-04', trade_day: t }),
     upsert: async (_w, id, body) => { calls.push({ id, body }); return { id: id || 'msg1', created: !id }; } });
-  const e = calls.at(-1)?.body?.embeds?.[0];
-  return { r, calls, kv, e, text: e ? [e.title, e.description, ...e.fields.map(f => `${f.name}\n${f.value}`)].join('\n') : '' };
+  const es = calls.at(-1)?.body?.embeds || [], e = es[0];
+  return { r, calls, kv, e, es, text: es.map(x => `${x.title}\n${x.description}`).join('\n') };
 };
 const spy = (t, f10 = 0.45, band = 'confirm') => { t.calls.SPY = { ok: true, implied_1sd: 5, p_r_ge_1: 0.5 };
   t.checkpoints.SPY = [{ ticker: 'SPY', at: '10:00', ok: f10 != null, fr_sigma: f10, band, quiet_below: 0.25, confirm_at: 0.4 }, { ticker: 'SPY', at: '10:30', ok: false, quiet_below: 0.32, confirm_at: 0.55 }]; return t; };
@@ -37,8 +37,8 @@ const spy = (t, f10 = 0.45, band = 'confirm') => { t.calls.SPY = { ok: true, imp
 {
   const a = await run('08:40', spy(td({ phase: 'before the open', verdict: 'check', p: 0.58 })));
   ok('pre-open posts a card, no mention', a.r.fired && a.r.created && a.calls[0].body.content === '' && JSON.stringify(a.calls[0].body.allowed_mentions) === '{"parse":[]}');
-  ok('…green when P with the gap ≥ 0.55, factual label', a.e.color === COLOUR.green && a.text.includes('**Pre-open** 58% leaning moving') && a.e.description.includes('🟢 QQQ Moving'));
-  ok('…QQQ and SPY in their own sections, one top line', a.e.fields.map(f => f.name.split(' ')[0]).join() === 'QQQ,SPY' && a.e.fields[1].value.includes('**Pre-open** 50% coin flip') && a.e.description.includes('SPY Undecided'));
+  ok('…green when P with the gap ≥ 0.55, factual label', a.e.color === COLOUR.green && a.text.includes('**Pre-open** 58% leaning moving') && a.e.title.includes('QQQ · Current read: Moving day'));
+  ok('…two stacked embeds, QQQ then SPY, each its own colour', a.es.length === 2 && a.es[0].title.includes('QQQ') && a.es[1].title.includes('SPY · Current read: Undecided') && a.es[1].color === COLOUR.yellow && a.es[1].description.includes('**Pre-open** 50% coin flip'));
   eq('…yellow below 0.55', (await run('08:40', td({ phase: 'before the open', p: 0.5 }))).e.color, COLOUR.yellow);
   eq('…red on a likely-quiet morning', (await run('08:40', td({ phase: 'before the open', verdict: 'free', p: 0.2 }))).e.color, COLOUR.red);
   { const bad = a.text.match(/\bsit\b|stand down|your call|\bdecide\b|make plans/i); eq('no instructions anywhere', bad && bad[0], null); }
@@ -49,7 +49,7 @@ const spy = (t, f10 = 0.45, band = 'confirm') => { t.calls.SPY = { ok: true, imp
   const m = await run('00:35', withCalls(td({ phase: 'before the open', verdict: 'check' })), kv, calls);
   ok('morning posts the card, yellow on a coin-flip morning', m.r.fired && m.r.created && m.e.color === COLOUR.yellow && m.text.includes('**Morning** 41% coin flip'));
   const p2 = await run('08:40', withCalls(td({ phase: 'before the open', p: 0.58 })), kv, calls);
-  ok('pre-open edits the morning card and recolours it', calls[1].id === 'msg1' && !p2.r.created && p2.e.color === COLOUR.green && p2.e.fields[0].value.includes('**Morning**') && p2.e.fields[0].value.includes('**Pre-open**'));
+  ok('pre-open edits the morning card and recolours it', calls[1].id === 'msg1' && !p2.r.created && p2.e.color === COLOUR.green && p2.e.description.includes('**Morning**') && p2.e.description.includes('**Pre-open**'));
   eq('morning on a likely-quiet day: red', (await run('00:35', withCalls(td({ phase: 'before the open', verdict: 'free' })))).e.color, COLOUR.red);
 }
 {
@@ -66,7 +66,7 @@ const spy = (t, f10 = 0.45, band = 'confirm') => { t.calls.SPY = { ok: true, imp
   const mid = await run('10:02', td({ f10: 0.4 }));
   ok('10:00 middle: yellow', mid.e.color === COLOUR.yellow && mid.text.includes('**10:00** 0.4σ middle'));
   ok('10:00 confirm: green', (await run('10:02', td({ verdict: 'free', f10: 0.62 }))).e.color === COLOUR.green);
-  { const x = await run('10:02', spy(td({ f10: 0.2 }))); ok('colour follows QQQ; SPY shows its own read', x.e.color === COLOUR.red && x.e.description.includes('🔴 QQQ Quiet') && x.e.description.includes('🟢 SPY Moving')); }
+  { const x = await run('10:02', spy(td({ f10: 0.2 }))); ok('QQQ red and SPY green: each card keeps its own colour', x.es[0].color === COLOUR.red && x.es[1].color === COLOUR.green && x.es[1].title.includes('SPY · Current read: Moving day')); }
   eq('10:00 not read yet: skipped', (await run('10:02', td({}))).r.skipped, 'the 10:00 read is not in yet');
 }
 {
