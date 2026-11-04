@@ -78,6 +78,12 @@ const spy = (t, f10 = 0.45, band = 'confirm') => { t.calls.SPY = { ok: true, imp
   eq('10:30 no signal: yellow', (await run('10:32', td({ f10: 0.4, f1030: 0.5 }))).e.color, COLOUR.yellow);
 }
 {
+  // A pre-open layer stored by the old single-card version is rebuilt, not dropped.
+  const kv = store(); kv.m.set(CHECKPOINT_PING_KEY, { date: '2026-11-04', messageId: 'old1', layers: { pre: { id: 'pre', status: 'yellow', title: 'x', value: 'y' } } });
+  const calls = [], r = await run('10:02', td({ f10: 0.6 }), kv, calls);
+  ok('old-format layer rebuilt and the same message edited', calls[0].id === 'old1' && r.e.description.includes('**Pre-open**') && r.e.description.includes('**10:00**'));
+}
+{
   eq('no session today: nothing', (await run('10:02', { ...td({ f10: 0.7 }), phase: 'closed' })).r.skipped, 'no session today');
   eq('no webhook: nothing', (await checkpointPing({ now: ET('10:02'), webhook: null, kv: store(), payload: async () => ({}), upsert: async () => ({}) })).skipped, 'no webhook');
 }
