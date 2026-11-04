@@ -84,6 +84,10 @@ const spy = (t, f10 = 0.45, band = 'confirm') => { t.calls.SPY = { ok: true, imp
   ok('old-format layer rebuilt and the same message edited', calls[0].id === 'old1' && r.e.description.includes('**Pre-open**') && r.e.description.includes('**10:00**'));
 }
 {
+  const r = await run('08:40', withCalls(td({ phase: 'before the open', p: 0.58 })));
+  ok('a card born at 08:40 still carries the morning read', r.e.description.startsWith('🟡 **Morning** 41% coin flip') && r.e.description.includes('**Pre-open**'));
+}
+{
   eq('no session today: nothing', (await run('10:02', { ...td({ f10: 0.7 }), phase: 'closed' })).r.skipped, 'no session today');
   eq('no webhook: nothing', (await checkpointPing({ now: ET('10:02'), webhook: null, kv: store(), payload: async () => ({}), upsert: async () => ({}) })).skipped, 'no webhook');
 }
