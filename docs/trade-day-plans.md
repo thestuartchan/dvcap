@@ -125,8 +125,8 @@ The card goes out through `.github/workflows/checkpoint-ping.yml` → `api/trade
 `lib/checkpointPing.js`: **one embed card a day** in the daytrade channel (`DISCORD_DAYTRADE_WEBHOOK`, falling
 back to the trades channel), posted at 00:30 ET (08:30 Dubai in EDT, 09:30 in EST, 9–10 hours before the open) and **edited in place** after. No mention (Stu, 4 Nov
 2026), so edits are silent. The card colour is the current read: **green** moving day, **yellow** undecided,
-**red** quiet. Labels are factual, never instructions. QQQ sets the colour; SPY rides along (a SPY confirm under
-a non-confirming QQQ reads yellow). Each layer is written at most once per New York day.
+**red** quiet. Labels are factual, never instructions. Layout (Stu, 4 Nov 2026): one message, **two stacked embeds**, QQQ on top and SPY below. Each is titled
+with its **current read** and coloured by it, so QQQ green and SPY red show as they are. One short line per layer. Each layer is written at most once per New York day.
 
 **UNTESTED** marks a number with no backtest behind it. "All days" means the rate is from every
 session, not from this verdict's days only.
