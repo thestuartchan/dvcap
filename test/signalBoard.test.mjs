@@ -489,10 +489,10 @@ function imp30() { return 0.2 / Math.sqrt(252); }
 {
   const call = (p, gap = null) => ({ ok: true, p_r_ge_1: p, inputs: { gap_sigma: gap, gap_source: gap == null ? null : 'futures-implied (NQ=F 08:35 ET)' } });
   eq('plans: 0.29 free, 0.30 check, 0.49 check, 0.50 desk', [0.29, 0.30, 0.49, 0.50].map(p => plansVerdict(call(p), p).verdict), ['free', 'check', 'check', 'desk']);
-  eq('plans labels', ['free', 'check', 'desk'].map(v => PLANS_LABEL[v]), ['Free: make plans', 'Check at 17:35 Dubai (08:35 ET)', 'Desk: likely a moving day']);
+  eq('plans labels', ['free', 'check', 'desk'].map(v => PLANS_LABEL[v]), ['Likely quiet', 'Coin flip', 'Likely moving']);
   const f = plansVerdict(call(0.22), 0.22, { confirmUsd: 1.9 });
   ok('a free reason names the miss rate and the checkpoint distance', /1 in 7 went big/.test(f.reason) && f.reason.includes('$1.90'));
-  eq('a check day with a gap gets a lean: desk at ≥0.55, else lean free', [plansVerdict(call(0.58, 0.8), 0.40).pre_open.label, plansVerdict(call(0.50, 0.4), 0.40).pre_open.label], ['Desk: sit for the open', 'Lean free: decide at 10:00 ET']);
+  eq('a check day with a gap gets a lean: desk at ≥0.55, else lean free', [plansVerdict(call(0.58, 0.8), 0.40).pre_open.label, plansVerdict(call(0.50, 0.4), 0.40).pre_open.label], ["Leaning moving: 62% of such days reached 1.0×", "Coin flip: 43% of such days reached 1.0×"]);
   eq('a desk day gets one too; a free day or no gap gets none', [plansVerdict(call(0.52, 0.2), 0.51).pre_open.lean, plansVerdict(call(0.40), 0.40).pre_open, plansVerdict(call(0.60, 1), 0.25).pre_open], ['lean free', null, null]);
   eq('no call → no verdict, and it says so', [plansVerdict({ ok: false, why: 'no cushion' }, null).verdict, plansVerdict({ ok: false, why: 'no cushion' }, null).reason], [null, 'QQQ: no call (no cushion), so no plans verdict.']);
   eq('PLANS: the SPY cut-offs are kept for reference', [PLANS.SPY.free_below, PLANS.SPY.desk_at], [0.30, 0.50]);

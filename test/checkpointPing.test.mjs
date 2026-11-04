@@ -1,7 +1,6 @@
-// test/checkpointPing.test.mjs — the layered trade-day pings (lib/checkpointPing.js): 08:40 pre-open on
-// Check/Desk days, 10:00 confirm every day plus the outcome on Check/Desk days, 10:30 only after a 10:00
-// middle. No network, Redis or Discord: everything is injected.
-import { checkpointPing, stageMessage, checkpointMessage, stageAt, CHECKPOINT_PING_KEY, STAGES } from '../lib/checkpointPing.js';
+// test/checkpointPing.test.mjs — the daily trade-day card (lib/checkpointPing.js): one embed posted at the
+// first layer and edited in place, colour = current read, no mention, QQQ and SPY. No network, Redis or Discord: everything is injected.
+import { checkpointPing, stageLayer, renderCard, stageAt, CHECKPOINT_PING_KEY, STAGES, COLOUR } from '../lib/checkpointPing.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
@@ -20,61 +19,57 @@ const td = ({ verdict = 'check', f10 = null, f1030 = null, phase = 'in session',
 const store = () => { const m = new Map(); return { m, configured: () => true, get: async k => m.get(k) ?? null, set: async (k, v) => { m.set(k, v); return true; } }; };
 // 2026-11-04 is EST: ET = UTC − 5.
 const ET = (hm) => new Date(`2026-11-04T${String(+hm.slice(0, 2) + 5).padStart(2, '0')}:${hm.slice(3)}:00Z`);
-const run = async (hm, t, kv = store()) => {
-  const sent = [];
-  const r = await checkpointPing({ now: ET(hm), webhook: 'webhook', mentionId: '123456', kv,
-    payload: async () => ({ today: '2026-11-04', trade_day: t }), poster: async (_w, m) => { sent.push(m); return 'msg1'; } });
-  return { r, sent, kv, text: sent[0]?.content || '' };
+const run = async (hm, t, kv = store(), calls = []) => {
+  const r = await checkpointPing({ now: ET(hm), webhook: 'webhook', kv,
+    payload: async () => ({ today: '2026-11-04', trade_day: t }),
+    upsert: async (_w, id, body) => { calls.push({ id, body }); return { id: id || 'msg1', created: !id }; } });
+  const e = calls.at(-1)?.body?.embeds?.[0];
+  return { r, calls, kv, e, text: e ? [e.title, e.description, ...e.fields.map(f => `${f.name}\n${f.value}`)].join('\n') : '' };
 };
+const spy = (t, f10 = 0.45, band = 'confirm') => { t.calls.SPY = { ok: true, implied_1sd: 5, p_r_ge_1: 0.5 };
+  t.checkpoints.SPY = [{ ticker: 'SPY', at: '10:00', ok: f10 != null, fr_sigma: f10, band, quiet_below: 0.25, confirm_at: 0.4 }, { ticker: 'SPY', at: '10:30', ok: false, quiet_below: 0.32, confirm_at: 0.55 }]; return t; };
 
 {
   eq('the clock picks the layer', ['08:30', '08:40', '09:30', '10:02', '10:32', '11:05'].map(h => stageAt(h)?.id ?? null), [null, 'pre', null, '10:00', '10:30', null]);
   eq('three layers', STAGES.map(s => s.id), ['pre', '10:00', '10:30']);
 }
 {
-  // LAYER 2, 08:40 ET.
-  const a = await run('08:40', td({ phase: 'before the open', p: 0.58 }));
-  eq('pre-open: a Check day posts once', [a.r.fired, a.sent.length, a.r.stage], [true, 1, 'pre']);
-  ok('…label → value rows: verdict, P with the gap, the lean', a.text.includes('**Morning verdict:** Check (P 41%)') && a.text.includes('**P with the gap:** 58% (gap 0.4σ') && a.text.includes('**Lean:** Desk: sit for the open'));
-  ok('…and both checkpoints\' dollar levels', a.text.includes('**10:00 ET:** confirm ≥ $3.80 · quiet < $2.51') && a.text.includes('**10:30 ET:** confirm ≥ $5.32 · quiet < $3.27'));
-  ok('…with the mention', a.text.startsWith('<@123456> ') && a.sent[0].allowed_mentions.users[0] === '123456');
-  ok('below 0.55: lean free', (await run('08:40', td({ phase: 'before the open', verdict: 'desk', p: 0.53 }))).text.includes('**Lean:** Lean free: decide at 10:00 ET'));
-  eq('pre-open: a Free day posts nothing', (await run('08:40', td({ phase: 'before the open', verdict: 'free' }))).sent.length, 0);
-  ok('no gap read: says so, leans free', (await run('08:40', td({ phase: 'before the open', gap: null }))).text.includes('**P with the gap:** not read (gap 0 (no NQ=F print'));
-  const again = await run('08:50', td({ phase: 'before the open' }), a.kv);
-  eq('pre-open: once a day', [again.sent.length, again.r.skipped], [0, 'already sent today']);
+  const a = await run('08:40', spy(td({ phase: 'before the open', verdict: 'check', p: 0.58 })));
+  ok('pre-open posts a card, no mention', a.r.fired && a.r.created && a.calls[0].body.content === '' && JSON.stringify(a.calls[0].body.allowed_mentions) === '{"parse":[]}');
+  ok('…green when P with the gap ≥ 0.55, factual label', a.e.color === COLOUR.green && a.text.includes('Pre-open · Leaning moving') && a.text.includes('62% of such days reached 1.0×') && a.text.includes('Now: Moving day'));
+  ok('…carries the morning verdict and SPY', a.text.includes('Morning · Coin flip') && a.text.includes('SPY P(≥1.0×) with the gap **50%**'));
+  eq('…yellow below 0.55', (await run('08:40', td({ phase: 'before the open', p: 0.5 }))).e.color, COLOUR.yellow);
+  eq('…red on a likely-quiet morning', (await run('08:40', td({ phase: 'before the open', verdict: 'free', p: 0.2 }))).e.color, COLOUR.red);
+  ok('no instructions anywhere', !/sit|stand down|your call|decide|make plans/i.test(a.text));
 }
 {
-  // LAYER 3, 10:00 ET.
-  const free = await run('10:02', td({ verdict: 'free', f10: 0.62 }));
-  ok('10:00 confirm posts on a Free day', free.r.fired && free.text.includes('Confirm, a moving day') && free.text.includes('0.62σ ≥ 0.5σ') && free.text.includes('**Morning verdict:** Free'));
-  eq('10:00 quiet or middle on a Free day: nothing', [(await run('10:02', td({ verdict: 'free', f10: 0.2 }))).sent.length, (await run('10:02', td({ verdict: 'free', f10: 0.4 }))).sent.length], [0, 0]);
-  ok('10:00 quiet on a Check day: stand down', (await run('10:02', td({ f10: 0.2 }))).text.includes('**QQQ 10:00 ET: Quiet: stand down**'));
-  const mid = await run('10:02', td({ verdict: 'desk', f10: 0.4 }));
-  ok('10:00 middle on a Desk day: re-check 10:30, with the 10:30 levels', mid.text.includes('Middle: re-check 10:30') && mid.text.includes('**10:30 ET:** confirm ≥ $5.32'));
-  ok('10:00 confirm on a Check day: the confirm message', (await run('10:02', td({ f10: 0.7 }))).text.includes('Confirm, a moving day'));
+  // One card a day: later layers edit the same message and recolour it.
+  const kv = store(), calls = [];
+  await run('08:40', td({ phase: 'before the open', p: 0.58 }), kv, calls);
+  const b = await run('10:02', td({ f10: 0.2 }), kv, calls);
+  eq('10:00 edits the same card', [calls.length, calls[1].id, b.r.created], [2, 'msg1', false]);
+  ok('…now red, quiet start, history rate', b.e.color === COLOUR.red && b.text.includes('QQQ Quiet start') && b.text.includes('67% of such days ended ≥1.0× (n 138)') && b.text.includes('Pre-open'));
+  const again = await run('10:15', td({ f10: 0.2 }), kv, calls);
+  eq('each layer once a day', [again.r.fired, again.r.skipped, calls.length], [false, 'already sent today', 2]);
+}
+{
+  const mid = await run('10:02', td({ f10: 0.4 }));
+  ok('10:00 middle: yellow', mid.e.color === COLOUR.yellow && mid.text.includes('10:00 ET · Middle'));
+  ok('10:00 confirm: green', (await run('10:02', td({ verdict: 'free', f10: 0.62 }))).e.color === COLOUR.green);
+  ok('a SPY confirm under a quiet QQQ reads undecided', (await run('10:02', spy(td({ f10: 0.2 })))).e.color === COLOUR.yellow);
   eq('10:00 not read yet: skipped', (await run('10:02', td({}))).r.skipped, 'the 10:00 read is not in yet');
-  const kv = store();
-  await run('08:40', td({ phase: 'before the open' }), kv);
-  const first = await run('10:02', td({ f10: 0.4 }), kv), second = await run('10:15', td({ f10: 0.4 }), kv);
-  eq('a layer already sent does not stop the next one; each posts once', [first.sent.length, second.sent.length, Object.keys(kv.m.get(CHECKPOINT_PING_KEY).sent)], [1, 0, ['pre', '10:00']]);
 }
 {
-  // 10:30 ET: only after a Check/Desk 10:00 middle.
-  ok('10:30 after middle: confirm at ≥ 0.70σ', (await run('10:32', td({ f10: 0.4, f1030: 0.8 }))).text.includes('**QQQ 10:30 ET: Confirm, a moving day**'));
-  ok('10:30 after middle: stand down below 0.43σ', (await run('10:32', td({ f10: 0.4, f1030: 0.42 }))).text.includes('Quiet: stand down'));
-  ok('10:30 after middle, in between: no signal', (await run('10:32', td({ f10: 0.4, f1030: 0.5 }))).text.includes('No signal: your call'));
-  eq('10:30 after a 10:00 confirm or quiet: nothing', [(await run('10:32', td({ f10: 0.6, f1030: 0.8 }))).sent.length, (await run('10:32', td({ f10: 0.2, f1030: 0.3 }))).sent.length], [0, 0]);
-  eq('10:30 on a Free day: nothing', (await run('10:32', td({ verdict: 'free', f10: 0.4, f1030: 0.8 }))).sent.length, 0);
+  const kv = store(), calls = [];
+  await run('10:02', td({ f10: 0.4, f1030: 0.8 }), kv, calls);
+  const c = await run('10:32', td({ f10: 0.4, f1030: 0.8 }), kv, calls);
+  ok('10:30 after a middle: green moving day, same card', c.e.color === COLOUR.green && c.text.includes('10:30 ET · Moving day') && calls[1].id === 'msg1');
+  eq('10:30 after a 10:00 confirm or quiet: nothing', [(await run('10:32', td({ f10: 0.6, f1030: 0.8 }))).calls.length, (await run('10:32', td({ f10: 0.2, f1030: 0.3 }))).calls.length], [0, 0]);
+  eq('10:30 no signal: yellow', (await run('10:32', td({ f10: 0.4, f1030: 0.5 }))).e.color, COLOUR.yellow);
 }
 {
-  eq('outside every window: skipped', (await run('12:00', td({ f10: 0.7 }))).r.fired, false);
-  eq('no session (holiday payload): skipped', (await run('10:02', td({ f10: 0.7, phase: 'after the close' }))).r.skipped, 'no session today');
-  const r = await checkpointPing({ now: ET('10:05'), webhook: null, payload: async () => ({}), kv: store(), poster: async () => 'x' });
-  eq('no webhook: nothing posts, and it says so', [r.ok, r.skipped], [false, 'no webhook']);
-  eq('no mention configured: nobody is pingable', stageMessage('10:00', td({ f10: 0.7 })).allowed_mentions, { users: [] });
-  eq('checkpointMessage (first version) is still the 10:00 confirm or null', [!!checkpointMessage(td({ f10: 0.7 })), checkpointMessage(td({ f10: 0.4 }))], [true, null]);
+  eq('no session today: nothing', (await run('10:02', { ...td({ f10: 0.7 }), phase: 'closed' })).r.skipped, 'no session today');
+  eq('no webhook: nothing', (await checkpointPing({ now: ET('10:02'), webhook: null, kv: store(), payload: async () => ({}), upsert: async () => ({}) })).skipped, 'no webhook');
 }
-
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
-process.exit(fail ? 1 : 0);
+if (fail) process.exit(1);

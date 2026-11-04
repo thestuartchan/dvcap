@@ -14,12 +14,14 @@ A moving day means R ≥ 1.0, where R = session high − low ÷ open ÷ implied 
 **Which P.** The verdict always reads the **morning** probability, which is the call with gap 0 and IV
 unchanged. That is what the backtest scored, because the morning decision is made before the gap is
 known. Once a gap is known (futures-implied, pre-market or the actual open), `calls.QQQ.p_r_ge_1` moves
-with it. A `check` or `desk` day then also gets `plans.pre_open`, which leans to "Desk: sit for the open"
-when that P is ≥ 0.55, and otherwise to "Lean free: decide at 10:00 ET". The board informs. It never
+with it. A `check` or `desk` day then also gets `plans.pre_open`, which leans to "Leaning moving"
+when that P is ≥ 0.55, and otherwise to "Coin flip". The board informs. It never
 blocks a trade.
 
 Source: `scripts/trade-day-plans-backtest.py` (it imports the panels and fits of
 `scripts/trade-day-refit.py`), run on 4 Nov 2026. The constants are in `lib/signalBoard.js` `PLANS`.
+
+> Labels are factual, not instructions (Stu, 4 Nov 2026): each post states the read and what such days did historically.
 
 ## Backtest
 
@@ -119,29 +121,31 @@ indicative only. Across all days, the 10:00 confirm band historically ended ≥ 
 
 ## The three layers: decision table
 
-The posts go out through `.github/workflows/checkpoint-ping.yml` → `api/tradecard.js?card=checkpoint` →
-`lib/checkpointPing.js`. Each is one Discord message to the daytrade channel (`DISCORD_DAYTRADE_WEBHOOK`, falling back to the trades channel) that mentions you via `DISCORD_DAYTRADE_USER_ID`, and the
-mention is what makes the phone notify. The run picks the layer from the New York clock. Each layer
-posts at most once per New York day.
+The card goes out through `.github/workflows/checkpoint-ping.yml` → `api/tradecard.js?card=checkpoint` →
+`lib/checkpointPing.js`: **one embed card a day** in the daytrade channel (`DISCORD_DAYTRADE_WEBHOOK`, falling
+back to the trades channel), posted at the first layer and **edited in place** after. No mention (Stu, 4 Nov
+2026), so edits are silent. The card colour is the current read: **green** moving day, **yellow** undecided,
+**red** quiet. Labels are factual, never instructions. QQQ sets the colour; SPY rides along (a SPY confirm under
+a non-confirming QQQ reads yellow). Each layer is written at most once per New York day.
 
 **UNTESTED** marks a number with no backtest behind it. "All days" means the rate is from every
 session, not from this verdict's days only.
 
 | layer | when | day | reading | post | what history says |
 |---|---|---|---|---|---|
-| 1 Morning | Dubai morning (board only, no post) | — | P < 0.30 | **Free**: make plans | 29–35% reach R ≥ 1.0; 1 in 7–8 big (R ≥ 1.3) |
-| | | — | 0.30 ≤ P < 0.50 | **Check** | 45–47% reach R ≥ 1.0 |
-| | | — | P ≥ 0.50 | **Desk** | 61–64% reach R ≥ 1.0; 23–25% end < 0.9 |
-| 2 Pre-open | 08:40 ET (17:40 Dubai) | Check, Desk | P with gap ≥ 0.55 | "Desk: sit for the open" + 10:00/10:30 $ levels | Check+Desk days: 62% reach 1.0×, 38% big, 27% end < 0.9 (Check 58%, Desk 65%) |
-| | | Check, Desk | P with gap < 0.55 | "Lean free: decide at 10:00 ET" + $ levels | 43% reach 1.0×, 18% big, 47% end < 0.9 (Check 43%, Desk 54%) |
-| | | Free | — | nothing | the safety net is layer 3 |
-| 3 First 30 min | 10:00 ET | every day | ≥ 0.50σ | "Confirm, a moving day" | all days: 67% end ≥ 1.0× (n 138); caught 5 of 13 free-day big days |
-| | | Check, Desk | < 0.33σ | "Quiet: stand down" | all days: 13% still end ≥ 1.0× (n 122); on Check/Desk days only: **UNTESTED** |
-| | | Check, Desk | 0.33–0.50σ | "Middle: re-check 10:30" | all days: 27% end ≥ 1.0× (n 186) |
-| | | Free | < 0.50σ | nothing | — |
-| 3b First hour | 10:30 ET | Check/Desk after a 10:00 middle | ≥ 0.70σ | "Confirm, a moving day" | all days: 78% end ≥ 1.0× (n 232); after a 10:00 middle: **UNTESTED** |
-| | | same | < 0.43σ | "Quiet: stand down" | all days: 18% end ≥ 1.0× (n 244); after a 10:00 middle: **UNTESTED** |
-| | | same | 0.43–0.70σ | "No signal: your call" | all days: 36% end ≥ 1.0× (n 467); after a 10:00 middle: **UNTESTED** |
+| 1 Morning | Dubai morning (board only, no post) | — | P < 0.30 | **Likely quiet** (red) | 29–35% reach R ≥ 1.0; 1 in 7–8 big (R ≥ 1.3) |
+| | | — | 0.30 ≤ P < 0.50 | **Coin flip** (yellow) | 45–47% reach R ≥ 1.0 |
+| | | — | P ≥ 0.50 | **Likely moving** (green) | 61–64% reach R ≥ 1.0; 23–25% end < 0.9 |
+| 2 Pre-open | 08:40 ET (17:40 Dubai) | Coin flip, Likely moving | P with gap ≥ 0.55 | "Leaning moving" + 10:00/10:30 $ levels | Check+Desk days: 62% reach 1.0×, 38% big, 27% end < 0.9 (Check 58%, Desk 65%) |
+| | | Coin flip, Likely moving | P with gap < 0.55 | "Coin flip" + $ levels | 43% reach 1.0×, 18% big, 47% end < 0.9 (Check 43%, Desk 54%) |
+| | | Free | — | the card, red | the safety net is layer 3 |
+| 3 First 30 min | 10:00 ET | every day | ≥ 0.50σ | "Moving day" (green) | all days: 67% end ≥ 1.0× (n 138); caught 5 of 13 free-day big days |
+| | | Check, Desk | < 0.33σ | "Quiet" (red) | all days: 13% still end ≥ 1.0× (n 122); on Check/Desk days only: **UNTESTED** |
+| | | Check, Desk | 0.33–0.50σ | "Middle" (yellow) | all days: 27% end ≥ 1.0× (n 186) |
+| | | Free | < 0.50σ | written to the card (yellow/red) | — |
+| 3b First hour | 10:30 ET | any day after a 10:00 middle | ≥ 0.70σ | "Moving day" (green) | all days: 78% end ≥ 1.0× (n 232); after a 10:00 middle: **UNTESTED** |
+| | | same | < 0.43σ | "Quiet" (red) | all days: 18% end ≥ 1.0× (n 244); after a 10:00 middle: **UNTESTED** |
+| | | same | 0.43–0.70σ | "No signal" (yellow) | all days: 36% end ≥ 1.0× (n 467); after a 10:00 middle: **UNTESTED** |
 
 Notes on the numbers:
 - **Layers 1–2** come from the walk-forward 2016 → 2026-11 and the production coefficients 2021 →. Layer 2
@@ -149,8 +153,8 @@ Notes on the numbers:
   split will be a little less sharp (**UNTESTED** live).
 - **Layer 3** is `CHECKPOINTS` in `lib/signalBoard.js`: 30-minute bars 2025-01 → 2026-10 for 10:00, hourly
   bars 2023-01 → 2026-10 for 10:30.
-- **10:30 confirm on a Free day:** not posted. It would have caught 3 more of the 13 free-day big days (8
-  with either checkpoint, against 5 at 10:00). Adding it is one condition in `stageMessage`.
+- **10:30 on a Free day:** now written after a 10:00 middle like any other day. It would have caught 3 more
+  of the 13 free-day big days (8 with either checkpoint, against 5 at 10:00).
 - **False alarms on Free days** (10:00 confirm on a day that stays small): last 60 sessions only. Of 21
   free days, it fired on 4: 2 reached 1.0× and 1 ended big (indicative only).
 
