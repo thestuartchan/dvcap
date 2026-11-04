@@ -26,7 +26,7 @@ The Market Read artifact and the two skills live outside this repo, so this PR d
                         SPY: {...} },
                checkpoints: { QQQ: [{at: "10:00", ok, fr_sigma, band, quiet_below, confirm_at, history, text}, {at: "10:30", ..., history: {..., trend_day_pct, trend_n, trend_base_pct, trend_span}}], SPY: [...] },
                plans: { ticker: "QQQ", verdict: "free"|"check"|"desk"|null, label, p, p_basis, cutoffs: {free_below, desk_at, pre_open_desk_at},
-                        provisional: false, backtested, reason, pre_open: null | {p, gap_sigma, gap_source, lean: "desk"|"checkpoint", text},
+                        provisional: false, backtested, reason, pre_open: null | {p, gap_sigma, gap_source, lean: "desk"|"lean free", label, text},
                         checkpoint: {at: "10:00", confirm_sigma, confirm_usd} } },   // docs/trade-day-plans.md
   scorecard: { scored_days, signals: {<row id>: {on|off: {QQQ_1: {n, hit_pct, mean_pct}, ...}}}, calls: {QQQ: {last20, last60}, SPY: {...}} } }
 ```

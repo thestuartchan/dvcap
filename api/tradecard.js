@@ -537,8 +537,9 @@ export default async function handler(req, res) {
   if (String(req.query?.card || '') === 'event') return eventCard(req, res);
   if (req.method !== 'GET' && req.method !== 'POST') { res.status(405).json({ error: 'method not allowed' }); return; }
   if (!(await authorised(req))) { res.status(401).json({ error: 'unauthorised', why: refusalReason(req) }); return; }
-  // THE 10:00 ET CHECKPOINT PING (lib/checkpointPing.js): one message with a mention when QQQ's first 30
-  // minutes confirm a moving day. Same gate and the same trades webhook as the card; quiet days post nothing.
+  // THE LAYERED TRADE-DAY PINGS (lib/checkpointPing.js): 08:40 ET pre-open on Check/Desk days, the 10:00 ET
+  // confirm on every day plus the outcome on Check/Desk days, 10:30 ET after a 10:00 middle. The layer comes
+  // from the New York clock. Same gate and the same trades webhook and mention as the card.
   if (String(req.query?.card || '') === 'checkpoint') {
     try {
       res.status(200).json(await checkpointPing({ now: new Date(), payload: signalBoardPayload, webhook: webhookFromEnv(), mentionId: mentionFromEnv(), poster: post,

@@ -1,22 +1,29 @@
-# Pings the trades channel when QQQ's first 30 minutes confirm a moving day (lib/checkpointPing.js).
+# The layered trade-day pings to the trades channel (lib/checkpointPing.js, docs/trade-day-plans.md):
+#   08:40 ET  pre-open, Check and Desk days only: P with the futures gap, the lean, the 10:00 / 10:30 levels
+#   10:00 ET  a confirm on every day; on Check and Desk days also "Quiet: stand down" / "Middle: re-check 10:30"
+#   10:30 ET  only after a Check/Desk day's 10:00 middle: confirm or stand down
 #
-# WHY. The morning plans verdict says "free" on about 4 days in 10, and about 1 in 7 of those still turn
-# into a big day. The 10:00 ET checkpoint (first 30 min range ≥ 0.50 × implied 1σ) is the safety net;
-# this makes it a phone notification. Quiet and middle days post nothing.
-#
-# WHEN. Just after 10:00 New York. GitHub cron is UTC and has no DST, so both offsets are listed
-# (14:xx UTC is 10:xx EDT, 15:xx UTC is 10:xx EST); the endpoint answers "outside 10:00–10:45 ET" for
-# the pair that does not apply. The second run of each pair is a retry for a late or dropped schedule
-# (GitHub's scheduler is best-effort); Redis keeps one ping per day, so a repeat is harmless.
-# COST: 4 one-minute runs a weekday, ~20 minutes a week.
+# WHEN. GitHub cron is UTC and has no DST, so each layer is listed at both offsets (12:xx/14:xx UTC are
+# EDT, 13:xx/15:xx are EST). The endpoint picks the layer from the New York clock, and the offset that
+# does not apply answers "outside the layer windows". Each layer has a retry about 12 minutes later,
+# because GitHub's scheduler is best-effort. Redis keeps one post per layer per day, so a repeat is
+# harmless. COST: 12 one-minute runs a weekday, about an hour a week.
 name: checkpoint ping
 
 on:
   schedule:
-    - cron: '2 14 * * 1-5'
+    - cron: '40 12 * * 1-5'    # 08:40 EDT
+    - cron: '52 12 * * 1-5'
+    - cron: '40 13 * * 1-5'    # 08:40 EST
+    - cron: '52 13 * * 1-5'
+    - cron: '2 14 * * 1-5'     # 10:02 EDT
     - cron: '14 14 * * 1-5'
-    - cron: '2 15 * * 1-5'
+    - cron: '2 15 * * 1-5'     # 10:02 EST
     - cron: '14 15 * * 1-5'
+    - cron: '32 14 * * 1-5'    # 10:32 EDT
+    - cron: '44 14 * * 1-5'
+    - cron: '32 15 * * 1-5'    # 10:32 EST
+    - cron: '44 15 * * 1-5'
   workflow_dispatch:
 
 concurrency:
@@ -28,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Read the 10:00 checkpoint and ping on a confirm
+      - name: Post this layer's ping, if it has one
         run: |
           # Same service key as the trade card (TRADECARD_KEY, docs/api-auth.md).
           code=$(curl -sS -o /tmp/out.json -w '%{http_code}' --max-time 60 \
