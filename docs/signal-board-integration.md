@@ -24,7 +24,10 @@ The Market Read artifact and the two skills live outside this repo, so this PR d
                               // public /api/indicators?board=1 instead: no `gamma` key at all, and
                               // conflict: {call_zone, gamma_reads, rules: [...], overrides: false, text}   // text has no price level
                         SPY: {...} },
-               checkpoints: { QQQ: [{at: "10:00", ok, fr_sigma, band, quiet_below, confirm_at, history, text}, {at: "10:30", ..., history: {..., trend_day_pct, trend_n, trend_base_pct, trend_span}}], SPY: [...] } },
+               checkpoints: { QQQ: [{at: "10:00", ok, fr_sigma, band, quiet_below, confirm_at, history, text}, {at: "10:30", ..., history: {..., trend_day_pct, trend_n, trend_base_pct, trend_span}}], SPY: [...] },
+               plans: { ticker: "QQQ", verdict: "free"|"check"|"desk"|null, label, p, p_basis, cutoffs: {free_below, desk_at, pre_open_desk_at},
+                        provisional: false, backtested, reason, pre_open: null | {p, gap_sigma, gap_source, lean: "desk"|"checkpoint", text},
+                        checkpoint: {at: "10:00", confirm_sigma, confirm_usd} } },   // docs/trade-day-plans.md
   scorecard: { scored_days, signals: {<row id>: {on|off: {QQQ_1: {n, hit_pct, mean_pct}, ...}}}, calls: {QQQ: {last20, last60}, SPY: {...}} } }
 ```
 
@@ -58,6 +61,7 @@ The Market Read artifact and the two skills live outside this repo, so this PR d
    - **Conflict:** when `conflict` is non-null, show an amber "⚠ gamma disagrees" line under the ticker's chip with `conflict.text`. The zone chip stays as the call made it; never recolour or replace it. When `gamma.stale` is true, show "gamma board stale — no conflict check" instead.
 
    Show `trade_day.checkpoints` as two small lines per ticker, with the threshold before the window closes and the band and history after it.
+   **Plans:** show `trade_day.plans.label` as the morning headline, with `plans.reason` beneath it and `plans.pre_open.text` when present. `plans.p` is the morning P (gap 0) and can differ from `calls.QQQ.p_r_ge_1` once a gap is read; that difference is intended (docs/trade-day-plans.md).
 8. **Keep everything else as is:**
    - the `ratios`/`corr` cards and their stats, which are charts;
    - `sr_levels`, the gamma datasets, `spx_map`, `cal`, `earn`, `history`, `px_hist`, `us02y` and `ib`.

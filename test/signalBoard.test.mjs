@@ -5,6 +5,7 @@ import { stateOf, flipDistance, THRESHOLDS, CLUSTERS, clusterOf, leanOf, whatFli
   tradeDayCall, checkpointRead, tradeDayBlock, normCdf, zoneOf, TRADE_DAY_MODEL, BAND_STATS, CHECKPOINTS, priorR, snapshotRow, scoreRows, scorecard, KOSPI_TEST, cryptoRows, btc200Break, offHigh, BTC_TEST,
   narrativeState, narrativeFlip, narrativeMetrics, NARRATIVE_RULE, NARRATIVE_TEST,
   trendDayProb, TREND_MODEL, gammaView, conflictRules, tradeConflict, CONFLICT,
+  plansVerdict, PLANS, PLANS_LABEL,
   sessionIndex, inBlackout, BLACKOUT, blackoutShare, blackoutRows, templateBlackoutPct, BLACKOUT_GUESS, monthEndRows, lastSessionOfMonth } from '../lib/signalBoard.js';
 import { parseTimeline, joinNarrative, narrativeInputs, NARRATIVE_QUERY, gdeltUrl } from '../lib/narrativeFeed.js';
 import { feedLeaks, gexFeedPayload } from '../lib/gexFeed.js';
@@ -475,6 +476,27 @@ function imp30() { return 0.2 / Math.sqrt(252); }
   const live = await signalBoardPayload({ ...base, now: new Date('2026-10-20T14:05:00Z'), intraday: async (sym) => sym === 'QQQ' ? [bar30('13:30', 594)] : sym === 'SPY' ? [bar30('13:30', 600)] : [], prepost: async () => null });
   eq('in session: the actual open, labelled', [live.trade_day.calls.QQQ.inputs.gap_sigma, live.trade_day.calls.QQQ.inputs.gap_source, live.trade_day.calls.SPY.inputs.gap_sigma], [r2t(0.01 / implied), 'actual open', 0]);
   eq('the pre-open and in-session answers pass the connector\'s banned-word check', [feedLeaks(JSON.stringify(pre)), feedLeaks(JSON.stringify(live))], [[], []]);
+
+  // THE PLANS VERDICT reads the MORNING probability (gap 0, IV unchanged) even once a gap is known.
+  const morning = tradeDayBlock(S, { target: '2026-10-20' }), withGap = tradeDayBlock(S, { target: '2026-10-20', pre: g });
+  eq('plans: QQQ, backtested cut-offs, not provisional', [morning.plans.ticker, morning.plans.cutoffs, morning.plans.provisional], ['QQQ', { free_below: 0.30, desk_at: 0.50, pre_open_desk_at: 0.55 }, false]);
+  eq('plans p = the gap-0 call\'s p, before and after the gap', [morning.plans.p, withGap.plans.p], [morning.calls.QQQ.p_r_ge_1, morning.calls.QQQ.p_r_ge_1]);
+  ok('…while the call itself moves with the gap', withGap.calls.QQQ.p_r_ge_1 > morning.calls.QQQ.p_r_ge_1);
+  eq('plans: the 10:00 confirm distance = 0.50 × implied 1σ', morning.plans.checkpoint, { at: '10:00', confirm_sigma: 0.5, confirm_usd: r2t(0.5 * morning.calls.QQQ.implied_1sd) });
+  eq('the existing fields are untouched', Object.keys(withGap).filter(k => k !== 'plans'), ['target', 'as_of', 'cushion_pct', 'gex_negative', 'calls', 'checkpoints']);
+  eq('plans travel on the public payload', [typeof pre.trade_day.plans?.verdict, pre.trade_day.plans.cutoffs.desk_at], ['string', 0.5]);
+}
+{
+  const call = (p, gap = null) => ({ ok: true, p_r_ge_1: p, inputs: { gap_sigma: gap, gap_source: gap == null ? null : 'futures-implied (NQ=F 08:35 ET)' } });
+  eq('plans: 0.29 free, 0.30 check, 0.49 check, 0.50 desk', [0.29, 0.30, 0.49, 0.50].map(p => plansVerdict(call(p), p).verdict), ['free', 'check', 'check', 'desk']);
+  eq('plans labels', ['free', 'check', 'desk'].map(v => PLANS_LABEL[v]), ['Free: make plans', 'Check at 17:35 Dubai (08:35 ET)', 'Desk: likely a moving day']);
+  const f = plansVerdict(call(0.22), 0.22, { confirmUsd: 1.9 });
+  ok('a free reason names the miss rate and the checkpoint distance', /1 in 7 went big/.test(f.reason) && f.reason.includes('$1.90'));
+  eq('a check day with a gap gets a lean: desk at ≥0.55, else the checkpoint', [plansVerdict(call(0.58, 0.8), 0.40).pre_open.lean, plansVerdict(call(0.50, 0.4), 0.40).pre_open.lean], ['desk', 'checkpoint']);
+  eq('no lean without a gap, or on a free/desk day', [plansVerdict(call(0.40), 0.40).pre_open, plansVerdict(call(0.60, 1), 0.25).pre_open], [null, null]);
+  eq('no call → no verdict, and it says so', [plansVerdict({ ok: false, why: 'no cushion' }, null).verdict, plansVerdict({ ok: false, why: 'no cushion' }, null).reason], [null, 'QQQ: no call (no cushion), so no plans verdict.']);
+  eq('PLANS: the SPY cut-offs are kept for reference', [PLANS.SPY.free_below, PLANS.SPY.desk_at], [0.30, 0.50]);
+  eq('no banned word in any reason', feedLeaks(JSON.stringify([f, plansVerdict(call(0.58, 0.8), 0.40), plansVerdict(call(0.7), 0.7)])), []);
 }
 
 // ── FLOWS: BUYBACK BLACKOUT AND MONTH-END REBALANCE (shown, not voted) ──

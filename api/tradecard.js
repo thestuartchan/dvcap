@@ -24,6 +24,8 @@ import { upsertCard, post, remove, send, webhookFromEnv, walletWebhookFromEnv, i
 import { parseUpsert, eventPayload, cardHash, roleFromEnv, EVENTS_CARD_KEY, jumpLink, noticePayload } from '../lib/eventcard.js';
 import { authorised as gate, refusalReason, hasIdeasToken, refuse } from '../lib/apiauth.js';
 import { reconcileIdeas, parseAlerts, alertPayload } from '../lib/ideacard.js';
+import { checkpointPing } from '../lib/checkpointPing.js';
+import { signalBoardPayload } from '../lib/signalBoardFeed.js';
 import { fetchWallets } from '../lib/wallet.js';
 import { fetchSpotContext, fetchHyperliquid, fetchHlAccount, fetchHlSpot, fetchHlOrders } from '../lib/hyperliquid.js';
 import { diffHoldings, walletPublicView, buildWalletCard, mergePending, perpPublicView, publishable, inheritProvenance, rememberProvenance, applyMemory, publishReport, pinsFromMemory, symbolKey, carryUnanswered } from '../lib/walletcard.js';
@@ -535,6 +537,15 @@ export default async function handler(req, res) {
   if (String(req.query?.card || '') === 'event') return eventCard(req, res);
   if (req.method !== 'GET' && req.method !== 'POST') { res.status(405).json({ error: 'method not allowed' }); return; }
   if (!(await authorised(req))) { res.status(401).json({ error: 'unauthorised', why: refusalReason(req) }); return; }
+  // THE 10:00 ET CHECKPOINT PING (lib/checkpointPing.js): one message with a mention when QQQ's first 30
+  // minutes confirm a moving day. Same gate and the same trades webhook as the card; quiet days post nothing.
+  if (String(req.query?.card || '') === 'checkpoint') {
+    try {
+      res.status(200).json(await checkpointPing({ now: new Date(), payload: signalBoardPayload, webhook: webhookFromEnv(), mentionId: mentionFromEnv(), poster: post,
+        kv: { configured: kvConfigured, get: kvGetJson, set: kvSetJson } }));
+    } catch (e) { console.error('checkpoint ping', e); res.status(200).json({ ok: false, error: String(e?.message || e) }); }
+    return;
+  }
   if (String(req.query?.card || '') === 'wallet') {
     const post = /^(1|true|yes)$/i.test(String(req.query?.post || ''));
     try { res.status(200).json(await refreshWallet({ post })); }
