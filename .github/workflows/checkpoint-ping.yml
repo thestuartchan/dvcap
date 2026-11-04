@@ -1,17 +1,23 @@
-# The layered trade-day pings to the trades channel (lib/checkpointPing.js, docs/trade-day-plans.md):
-#   08:40 ET  pre-open, Check and Desk days only: P with the futures gap, the lean, the 10:00 / 10:30 levels
-#   10:00 ET  a confirm on every day; on Check and Desk days also "Quiet: stand down" / "Middle: re-check 10:30"
-#   10:30 ET  only after a Check/Desk day's 10:00 middle: confirm or stand down
+# The daily trade-day card in the daytrade channel (lib/checkpointPing.js, docs/trade-day-plans.md), one
+# embed edited in place, colour = current read:
+#   00:30 ET  morning card (08:30 / 09:30 Dubai): likely quiet / coin flip / likely moving
+#   08:40 ET  pre-open: P with the futures gap, QQQ and SPY levels
+#   10:00 ET  first 30 minutes: moving day / middle / quiet start
+#   10:30 ET  only after a 10:00 middle
 #
 # WHEN. GitHub cron is UTC and has no DST, so each layer is listed at both offsets (12:xx/14:xx UTC are
 # EDT, 13:xx/15:xx are EST). The endpoint picks the layer from the New York clock, and the offset that
 # does not apply answers "outside the layer windows". Each layer has a retry about 12 minutes later,
 # because GitHub's scheduler is best-effort. Redis keeps one post per layer per day, so a repeat is
-# harmless. COST: 12 one-minute runs a weekday, about an hour a week.
+# harmless. COST: 16 one-minute runs a weekday, about an hour a week.
 name: checkpoint ping
 
 on:
   schedule:
+    - cron: '30 4 * * 1-5'     # 00:30 EDT  morning card (08:30 Dubai)
+    - cron: '42 4 * * 1-5'
+    - cron: '30 5 * * 1-5'     # 00:30 EST  morning card (09:30 Dubai)
+    - cron: '42 5 * * 1-5'
     - cron: '40 12 * * 1-5'    # 08:40 EDT
     - cron: '52 12 * * 1-5'
     - cron: '40 13 * * 1-5'    # 08:40 EST
