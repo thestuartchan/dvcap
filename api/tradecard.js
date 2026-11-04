@@ -20,7 +20,7 @@ import { contractsByRoot, markOf } from '../lib/instruments.js';
 import { fetchCboeGreeks } from '../lib/cboe.js';
 import { derivePosition, positionPnl, levelHits, applyRolls } from '../lib/positions.js';
 import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard, isStaleEvent, isOptionTrade } from '../lib/tradecard.js';
-import { upsertCard, post, remove, send, webhookFromEnv, walletWebhookFromEnv, ideasWebhookFromEnv, eventsWebhookFromEnv, postWithFiles, editWithFiles, webhookInfo, mentionFromEnv, ideasMentionFromEnv, alertTtlMin, CARD_KEY, IDEAS_CARD_KEY } from '../lib/discord.js';
+import { upsertCard, post, remove, send, webhookFromEnv, walletWebhookFromEnv, ideasWebhookFromEnv, eventsWebhookFromEnv, daytradeWebhookFromEnv, daytradeMentionFromEnv, postWithFiles, editWithFiles, webhookInfo, mentionFromEnv, ideasMentionFromEnv, alertTtlMin, CARD_KEY, IDEAS_CARD_KEY } from '../lib/discord.js';
 import { parseUpsert, eventPayload, cardHash, roleFromEnv, EVENTS_CARD_KEY, jumpLink, noticePayload } from '../lib/eventcard.js';
 import { authorised as gate, refusalReason, hasIdeasToken, refuse } from '../lib/apiauth.js';
 import { reconcileIdeas, parseAlerts, alertPayload } from '../lib/ideacard.js';
@@ -539,10 +539,11 @@ export default async function handler(req, res) {
   if (!(await authorised(req))) { res.status(401).json({ error: 'unauthorised', why: refusalReason(req) }); return; }
   // THE LAYERED TRADE-DAY PINGS (lib/checkpointPing.js): 08:40 ET pre-open on Check/Desk days, the 10:00 ET
   // confirm on every day plus the outcome on Check/Desk days, 10:30 ET after a 10:00 middle. The layer comes
-  // from the New York clock. Same gate and the same trades webhook and mention as the card.
+  // from the New York clock. Same gate as the card; posts to the daytrade channel (DISCORD_DAYTRADE_WEBHOOK,
+  // mention DISCORD_DAYTRADE_USER_ID), falling back to the trades webhook and mention when unset.
   if (String(req.query?.card || '') === 'checkpoint') {
     try {
-      res.status(200).json(await checkpointPing({ now: new Date(), payload: signalBoardPayload, webhook: webhookFromEnv(), mentionId: mentionFromEnv(), poster: post,
+      res.status(200).json(await checkpointPing({ now: new Date(), payload: signalBoardPayload, webhook: daytradeWebhookFromEnv() || webhookFromEnv(), mentionId: daytradeWebhookFromEnv() ? daytradeMentionFromEnv() : mentionFromEnv(), poster: post,
         kv: { configured: kvConfigured, get: kvGetJson, set: kvSetJson } }));
     } catch (e) { console.error('checkpoint ping', e); res.status(200).json({ ok: false, error: String(e?.message || e) }); }
     return;

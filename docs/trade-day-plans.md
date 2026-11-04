@@ -120,7 +120,7 @@ indicative only. Across all days, the 10:00 confirm band historically ended ≥ 
 ## The three layers: decision table
 
 The posts go out through `.github/workflows/checkpoint-ping.yml` → `api/tradecard.js?card=checkpoint` →
-`lib/checkpointPing.js`. Each is one Discord message to the trades channel that mentions you, and the
+`lib/checkpointPing.js`. Each is one Discord message to the daytrade channel (`DISCORD_DAYTRADE_WEBHOOK`, falling back to the trades channel) that mentions you via `DISCORD_DAYTRADE_USER_ID`, and the
 mention is what makes the phone notify. The run picks the layer from the New York clock. Each layer
 posts at most once per New York day.
 
