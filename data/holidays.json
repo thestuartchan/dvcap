@@ -273,7 +273,7 @@
   },
   "_uae": {
     "source": "DFM circulars (annual calendar, holiday, closure and resumption circulars); UAE public calendar for years DFM has not published",
-    "checkedAt": "2026-10-28T21:17:20.426Z",
+    "checkedAt": "2026-11-04T22:07:19.695Z",
     "basis": {
       "2026": "dfm-annual",
       "2027": "feed"
