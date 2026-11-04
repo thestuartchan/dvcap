@@ -145,10 +145,12 @@ export function ScenarioBoard({ scenarios, board }) {
         );
       })}
       <div style={{ marginTop: 10, fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
-        Each leg is a 20-session trend in its own volatility: it switches on past ±0.5σ and off only
-        once it fades inside ±0.25σ, so a trend sitting on the line does not flicker. Active means
-        every leg holds; building, at least half the directional ones. Korea and China read their own
-        feeds and carry no strip.
+        Each leg is a 20-session trend in its own volatility (5 sessions where the leg says so): it
+        switches on past ±0.5σ and off only once it fades inside ±0.25σ, so a trend sitting on the line
+        does not flicker. Active means every leg holds; building, at least half the directional ones.
+        Rotations describe money moving inside equities and do not move the stance. These describe the
+        tape: over ten years most said little about the next 20 sessions (docs/scenario-board-backtest.md).
+        Korea and China read their own feeds and carry no strip.
       </div>
     </Card>
   );
