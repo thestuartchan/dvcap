@@ -857,10 +857,10 @@
       "fwd": {
         "QQQ_1": -1.42,
         "QQQ_3": -6.14,
-        "QQQ_5": null,
+        "QQQ_5": -4.55,
         "SOXX_1": -1.55,
         "SOXX_3": -13.08,
-        "SOXX_5": null
+        "SOXX_5": -14.25
       },
       "realised": {
         "QQQ": {
@@ -1441,8 +1441,24 @@
         "verdict": "check",
         "p": 0.4
       },
-      "fwd": null,
-      "realised": null
+      "fwd": {
+        "QQQ_1": 1.06,
+        "QQQ_3": null,
+        "QQQ_5": null,
+        "SOXX_1": -3.75,
+        "SOXX_3": null,
+        "SOXX_5": null
+      },
+      "realised": {
+        "QQQ": {
+          "date": "2026-11-04",
+          "r": 1.02
+        },
+        "SPY": {
+          "date": "2026-11-04",
+          "r": 0.66
+        }
+      }
     }
   ]
 }
