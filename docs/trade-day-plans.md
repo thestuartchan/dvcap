@@ -123,7 +123,7 @@ indicative only. Across all days, the 10:00 confirm band historically ended ≥ 
 
 The card goes out through `.github/workflows/checkpoint-ping.yml` → `api/tradecard.js?card=checkpoint` →
 `lib/checkpointPing.js`: **one embed card a day** in the daytrade channel (`DISCORD_DAYTRADE_WEBHOOK`, falling
-back to the trades channel), posted at the first layer and **edited in place** after. No mention (Stu, 4 Nov
+back to the trades channel), posted at 00:30 ET (08:30 Dubai in EDT, 09:30 in EST, 9–10 hours before the open) and **edited in place** after. No mention (Stu, 4 Nov
 2026), so edits are silent. The card colour is the current read: **green** moving day, **yellow** undecided,
 **red** quiet. Labels are factual, never instructions. QQQ sets the colour; SPY rides along (a SPY confirm under
 a non-confirming QQQ reads yellow). Each layer is written at most once per New York day.
@@ -133,7 +133,7 @@ session, not from this verdict's days only.
 
 | layer | when | day | reading | post | what history says |
 |---|---|---|---|---|---|
-| 1 Morning | Dubai morning (board only, no post) | — | P < 0.30 | **Likely quiet** (red) | 29–35% reach R ≥ 1.0; 1 in 7–8 big (R ≥ 1.3) |
+| 1 Morning | 00:30 ET (08:30 / 09:30 Dubai): posts the card | — | P < 0.30 | **Likely quiet** (red) | 29–35% reach R ≥ 1.0; 1 in 7–8 big (R ≥ 1.3) |
 | | | — | 0.30 ≤ P < 0.50 | **Coin flip** (yellow) | 45–47% reach R ≥ 1.0 |
 | | | — | P ≥ 0.50 | **Likely moving** (green) | 61–64% reach R ≥ 1.0; 23–25% end < 0.9 |
 | 2 Pre-open | 08:40 ET (17:40 Dubai) | Coin flip, Likely moving | P with gap ≥ 0.55 | "Leaning moving" + 10:00/10:30 $ levels | Check+Desk days: 62% reach 1.0×, 38% big, 27% end < 0.9 (Check 58%, Desk 65%) |

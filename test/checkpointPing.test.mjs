@@ -19,6 +19,7 @@ const td = ({ verdict = 'check', f10 = null, f1030 = null, phase = 'in session',
 const store = () => { const m = new Map(); return { m, configured: () => true, get: async k => m.get(k) ?? null, set: async (k, v) => { m.set(k, v); return true; } }; };
 // 2026-11-04 is EST: ET = UTC − 5.
 const ET = (hm) => new Date(`2026-11-04T${String(+hm.slice(0, 2) + 5).padStart(2, '0')}:${hm.slice(3)}:00Z`);
+const withCalls = (t) => { t.calls.QQQ.median_r = 0.91; return t; };
 const run = async (hm, t, kv = store(), calls = []) => {
   const r = await checkpointPing({ now: ET(hm), webhook: 'webhook', kv,
     payload: async () => ({ today: '2026-11-04', trade_day: t }),
@@ -30,8 +31,8 @@ const spy = (t, f10 = 0.45, band = 'confirm') => { t.calls.SPY = { ok: true, imp
   t.checkpoints.SPY = [{ ticker: 'SPY', at: '10:00', ok: f10 != null, fr_sigma: f10, band, quiet_below: 0.25, confirm_at: 0.4 }, { ticker: 'SPY', at: '10:30', ok: false, quiet_below: 0.32, confirm_at: 0.55 }]; return t; };
 
 {
-  eq('the clock picks the layer', ['08:30', '08:40', '09:30', '10:02', '10:32', '11:05'].map(h => stageAt(h)?.id ?? null), [null, 'pre', null, '10:00', '10:30', null]);
-  eq('three layers', STAGES.map(s => s.id), ['pre', '10:00', '10:30']);
+  eq('the clock picks the layer', ['00:20', '00:35', '08:30', '08:40', '09:30', '10:02', '10:32', '11:05'].map(h => stageAt(h)?.id ?? null), [null, 'morning', null, 'pre', null, '10:00', '10:30', null]);
+  eq('four layers', STAGES.map(s => s.id), ['morning', 'pre', '10:00', '10:30']);
 }
 {
   const a = await run('08:40', spy(td({ phase: 'before the open', verdict: 'check', p: 0.58 })));
@@ -41,6 +42,15 @@ const spy = (t, f10 = 0.45, band = 'confirm') => { t.calls.SPY = { ok: true, imp
   eq('…yellow below 0.55', (await run('08:40', td({ phase: 'before the open', p: 0.5 }))).e.color, COLOUR.yellow);
   eq('…red on a likely-quiet morning', (await run('08:40', td({ phase: 'before the open', verdict: 'free', p: 0.2 }))).e.color, COLOUR.red);
   ok('no instructions anywhere', !/sit|stand down|your call|decide|make plans/i.test(a.text));
+}
+{
+  // MORNING, 00:30 ET (08:30/09:30 Dubai): the card is born here, then edited all day.
+  const kv = store(), calls = [];
+  const m = await run('00:35', withCalls(td({ phase: 'before the open', verdict: 'check' })), kv, calls);
+  ok('morning posts the card, yellow on a coin-flip morning', m.r.fired && m.r.created && m.e.color === COLOUR.yellow && m.text.includes('Morning · Coin flip') && m.text.includes('**41%**'));
+  const p2 = await run('08:40', withCalls(td({ phase: 'before the open', p: 0.58 })), kv, calls);
+  ok('pre-open edits the morning card and recolours it', calls[1].id === 'msg1' && !p2.r.created && p2.e.color === COLOUR.green && p2.e.fields.filter(f => f.name.includes('Morning')).length === 1);
+  eq('morning on a likely-quiet day: red', (await run('00:35', withCalls(td({ phase: 'before the open', verdict: 'free' })))).e.color, COLOUR.red);
 }
 {
   // One card a day: later layers edit the same message and recolour it.
