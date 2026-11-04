@@ -6278,24 +6278,34 @@
       "reflationary_p": 57,
       "deflationary_p": 12,
       "inflationary_p": 5,
-      "hawkish_repricing": null,
+      "hawkish_repricing": "INSUFFICIENT_DATA",
       "live_regime": "ref",
-      "view_regime": null,
-      "pinned": null,
-      "hyg_chg": null,
-      "hyg_qqq_divergence": null,
+      "view_regime": "ref",
+      "pinned": false,
+      "hyg_chg": 0.08,
+      "hyg_qqq_divergence": -0.39,
       "inputs": {
-        "weightedRecessionProb": 14.2,
+        "weightedRecessionProb": 13.4,
         "cpi": 3.71725,
-        "kalshi2027": 23,
-        "tape": null,
-        "ladderSpread": null,
+        "kalshi2027": 21,
+        "tape": {
+          "gold": "flat",
+          "tlt": "down",
+          "xlu": "down",
+          "xlp": "down",
+          "spy": "up",
+          "qqq": "up",
+          "iwm": "up",
+          "btc": "up",
+          "breakevenBp": -5
+        },
+        "ladderSpread": 2.18,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.43,
-        "tenY": 4.91,
-        "twoY": 4.59,
-        "consensusAlive": 0.994,
+        "oas": 3.26,
+        "tenY": 4.98,
+        "twoY": 4.61,
+        "consensusAlive": 0.972,
         "regimeVintage": "fresh"
       },
       "axes": {
@@ -6322,7 +6332,7 @@
           }
         },
         "inflation": {
-          "state": "confirmed",
+          "state": "split",
           "lean": 1,
           "market": {
             "verdict": "HOT",
@@ -6331,8 +6341,8 @@
             "of": 3
           },
           "nowcast": {
-            "verdict": "HOT",
-            "lean": 1,
+            "verdict": "BETWEEN",
+            "lean": 0,
             "usable": 2,
             "of": 2
           },
@@ -6350,40 +6360,40 @@
         "regime": {
           "id": "inf",
           "probs": {
-            "ref": 8,
-            "inf": 85,
-            "stag": 6,
-            "def": 1
+            "ref": 21,
+            "inf": 72,
+            "stag": 5,
+            "def": 2
           },
           "g": 0.51,
           "gDrift": -0.35,
-          "i": 0.46,
+          "i": 0.28,
           "iDrift": -0.33,
           "drifting": null
         },
         "conditions": {
-          "score": 70.1,
-          "band": "stress",
+          "score": 61.2,
+          "band": "caution",
           "comps": {
-            "credit": 80,
-            "equityVol": 74,
-            "ratesVol": 68,
+            "credit": 61,
+            "equityVol": 56,
+            "ratesVol": 64,
             "realYield": 78,
-            "funding": 96,
-            "breadth": 22,
-            "dollar": 33
+            "funding": 86,
+            "breadth": 29,
+            "dollar": 40
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 73,
+          "hikeOdds": 79,
           "liq4w": -37
         },
-        "sizing": 0.48,
-        "stage": 3
+        "sizing": 0.66,
+        "stage": 2
       },
-      "source": "cron",
-      "loggedAt": "2026-11-04T02:45:23.457Z"
+      "source": "client+cron",
+      "loggedAt": "2026-11-04T08:14:39.185Z"
     }
   ]
 }
