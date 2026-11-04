@@ -2,9 +2,9 @@
   "_README": "Korea manual-entry store (KOFIA margin loans / deposits / CMA / KOSPI / KR 3Y yields + CSOP 7709 units). Written by api/korea-save.js (dashboard paste → GitHub commit); read server-side by the Pre-Read and dashboard. `latest` = current value per field (raw units: 백만원 for currency, % for yields, points for KOSPI, integer for 7709 units) + its own asOf. `history` = append-only snapshots for the trend view. Do not hand-edit unless fixing a bad save.",
   "latest": {
     "units7709": {
-      "value": 1081000000,
-      "asOf": "2026-11-03",
-      "delta": -14500000
+      "value": 1077000000,
+      "asOf": "2026-11-04",
+      "delta": -4000000
     },
     "kospi": {
       "value": 5683.8,
@@ -4070,6 +4070,61 @@
         "value": 1081000000,
         "asOf": "2026-11-03"
       }
+    },
+    {
+      "savedAt": "2026-11-04T18:37:45.734Z",
+      "kospi": {
+        "value": 5683.8,
+        "asOf": "2026-11-04"
+      },
+      "deposits": {
+        "value": 88241278,
+        "asOf": "2026-11-03"
+      },
+      "marginLoans": {
+        "value": 28950185,
+        "asOf": "2026-11-03"
+      },
+      "cma": {
+        "value": 97878570,
+        "asOf": "2026-11-03"
+      },
+      "kr3yGovt": {
+        "value": 3.714,
+        "asOf": "2026-11-04"
+      },
+      "kr3yCorp": {
+        "value": 4.4,
+        "asOf": "2026-11-04"
+      },
+      "foreignNet": {
+        "value": -2453,
+        "asOf": "2026-11-04"
+      },
+      "instNet": {
+        "value": 1133,
+        "asOf": "2026-11-04"
+      },
+      "retailNet": {
+        "value": 963,
+        "asOf": "2026-11-04"
+      },
+      "foreignNetKq": {
+        "value": 10,
+        "asOf": "2026-11-04"
+      },
+      "instNetKq": {
+        "value": 72,
+        "asOf": "2026-11-04"
+      },
+      "retailNetKq": {
+        "value": -71,
+        "asOf": "2026-11-04"
+      },
+      "units7709": {
+        "value": 1077000000,
+        "asOf": "2026-11-04"
+      }
     }
   ],
   "series": {
@@ -6976,6 +7031,13 @@
         "unit": "units",
         "delta": -14500000,
         "pct": -1.32
+      },
+      {
+        "date": "2026-11-04",
+        "value": 1077000000,
+        "unit": "units",
+        "delta": -4000000,
+        "pct": -0.37
       }
     ],
     "foreignNet": [
@@ -8805,20 +8867,21 @@
     ]
   },
   "lastFetch": {
-    "at": "2026-11-04T15:21:53.755Z",
+    "at": "2026-11-04T18:37:45.734Z",
     "by": "schedule",
     "ok": true,
     "changed": true,
     "sources": {
-      "kofia": "updated",
-      "krx": "updated",
-      "csop": "nothing new"
+      "kofia": "nothing new",
+      "krx": "nothing new",
+      "csop": "updated"
     },
     "report": [
       "KOFIA: kospi 2026-11-04, deposits 2026-11-03, marginLoans 2026-11-03, cma 2026-11-03, kr3yGovt 2026-11-04, kr3yCorp 2026-11-04",
+      "KOFIA: nothing new",
       "KRX KOSPI: 2026-11-04 foreign -2453 · inst 1133 · retail 963 (십억원)",
       "KRX KOSDAQ: 2026-11-04 foreign 10 · inst 72 · retail -71 (십억원)",
-      "CSOP 7709: 2026-11-03 1081.0M units (-14.5M)"
+      "CSOP 7709: 2026-11-04 1077.0M units (-4.0M)"
     ]
   }
 }
