@@ -6287,7 +6287,7 @@
       "inputs": {
         "weightedRecessionProb": 14.2,
         "cpi": 3.71725,
-        "kalshi2027": 23,
+        "kalshi2027": 21,
         "tape": {
           "gold": "flat",
           "tlt": "down",
@@ -6302,7 +6302,7 @@
         "ladderSpread": 2.18,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.43,
+        "oas": 3.4,
         "tenY": 4.91,
         "twoY": 4.59,
         "consensusAlive": 0.994,
@@ -6372,28 +6372,28 @@
           "drifting": null
         },
         "conditions": {
-          "score": 70.2,
-          "band": "stress",
+          "score": 63.6,
+          "band": "caution",
           "comps": {
-            "credit": 80,
-            "equityVol": 74,
-            "ratesVol": 68,
+            "credit": 85,
+            "equityVol": 36,
+            "ratesVol": 64,
             "realYield": 78,
-            "funding": 96,
-            "breadth": 22,
-            "dollar": 34
+            "funding": 100,
+            "breadth": 21,
+            "dollar": 35
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 79,
+          "hikeOdds": 82,
           "liq4w": -37
         },
-        "sizing": 0.48,
-        "stage": 3
+        "sizing": 0.64,
+        "stage": 2
       },
       "source": "client+cron",
-      "loggedAt": "2026-11-04T08:45:58.380Z"
+      "loggedAt": "2026-11-04T15:21:13.013Z"
     }
   ]
 }
