@@ -31,7 +31,7 @@ const spy = (t, f10 = 0.45, band = 'confirm') => { t.calls.SPY = { ok: true, imp
   t.checkpoints.SPY = [{ ticker: 'SPY', at: '10:00', ok: f10 != null, fr_sigma: f10, band, quiet_below: 0.25, confirm_at: 0.4 }, { ticker: 'SPY', at: '10:30', ok: false, quiet_below: 0.32, confirm_at: 0.55 }]; return t; };
 
 {
-  eq('the clock picks the layer', ['00:20', '00:35', '08:30', '08:40', '09:30', '10:02', '10:32', '11:05'].map(h => stageAt(h)?.id ?? null), [null, 'morning', null, 'pre', null, '10:00', '10:30', null]);
+  eq('the clock picks the layer', ['00:20', '00:35', '04:05', '08:30', '08:40', '09:30', '10:02', '10:32', '11:05'].map(h => stageAt(h)?.id ?? null), [null, 'morning', 'morning', 'morning', 'pre', null, '10:00', '10:30', null]);
   eq('four layers', STAGES.map(s => s.id), ['morning', 'pre', '10:00', '10:30']);
 }
 {
