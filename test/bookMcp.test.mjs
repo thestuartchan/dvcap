@@ -102,6 +102,16 @@ const req = (token, body, method = 'POST') => ({ method, query: { bookmcp: token
   ok('the gamma token does not open it', !bookTokenMatches(TOKEN, { MCP_CONNECTOR_TOKEN: TOKEN }));
 }
 
+// ── TINY PRICES ──────────────────────────────────────────────────────────────
+{
+  const fop = withSnap({ id: 'zzj-1', symbol: 'ZZJ', multiplier: 1, side: 'long',
+    legs: [{ right: 'C', strike: 0.0064, expiry: '2026-12-04', side: 'long' }, { right: 'C', strike: 0.0066, expiry: '2026-12-04', side: 'short' }],
+    fills: [{ date: '2026-10-23', side: 'buy', qty: 1, price: 0.000049 }] }, 0.00002, { markSource: 'close' });
+  const v = positionView(fop);
+  eq('a price near 0.00005 keeps its digits', [v.avgCost, v.mark, v.legs[0].strike], [0.000049, 0.00002, 0.0064]);
+  eq('ordinary prices are unchanged', [positionView(spread).avgCost, positionView(spread).mark, positionView(spread).underlying], [3, 4.25, 57.1]);
+}
+
 // ── THE CHECK PAGE ───────────────────────────────────────────────────────────
 {
   eq('unset', [bookSecretReport({}).configured, bookSecretReport({}).sha256_prefix], [false, null]);
