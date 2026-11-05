@@ -8,8 +8,9 @@ const near = (a, b, t) => Math.abs(a - b) <= t;
 
 // ── THE SET ──────────────────────────────────────────────────────────────────
 {
-  eq('twenty scenarios on bars — both sides of the tape', SCENARIO_DEFS.map(d => d.id),
-     ['A', 'B', 'C', 'GS', 'SF', 'D', 'CU', 'SD', 'AI', 'SL', 'RR', 'EX', 'RF', 'RO', 'DR', 'AR', 'SW', 'MP', 'CR', 'SC']);
+  eq('eighteen scenarios on bars — both sides of the tape', SCENARIO_DEFS.map(d => d.id),
+     ['A', 'B', 'C', 'GS', 'SF', 'D', 'CU', 'SD', 'AI', 'SL', 'EX', 'RF', 'RO', 'DR', 'AR', 'SW', 'MP', 'SC']);
+  ok('re-risking and carry rebuilds were dropped as duplicates of soft landing', !SCENARIO_DEFS.some(d => d.id === 'RR' || d.id === 'CR'));
   eq('five groups', GROUPS.map(g => g.id), ['rates', 'stress', 'riskon', 'rotation', 'book']);
   ok('every scenario sits in a group that exists', SCENARIO_DEFS.every(d => GROUPS.some(g => g.id === d.group)));
   ok('the board is no longer only bad news: supportive scenarios outside rates',

@@ -2,7 +2,7 @@
 
 **Answer first:** the board describes the tape well and forecasts it poorly. Most scenarios are followed by roughly the base 20-session return, and most **relative** moves reverse rather than continue. Three held up in both halves of the decade: **Reflation**, **Small caps on falling yields** and **Memory loses leadership** (all SMH well above base).
 
-## Recommendation
+## Recommendation (Stu approved 5 Nov 2026; the tables below include the two dropped scenarios as tested)
 
 | Scenario | Keep? | Why |
 |---|---|---|
@@ -15,8 +15,8 @@
 | **Defensive rotation** | Keep | Active now; not a duplicate (Credit crack shares 47% of its days) |
 | **Software over semis** | Keep (as a description) | Names the software-vs-chips theme; the spread **reversed** in 60% of episodes (−0.9 pts) |
 | **Selling exhausting** (reworked) | Keep | Now gated on a credit crack or CTA de-risking in the last 10 sessions. After it fires, the sell-off resumed **35%** of the time vs **48%** on other post-sell-off days; median run 5 sessions (was 3) |
-| **Re-risking** | Drop | Shares 74% of its days with Soft landing |
-| **Carry rebuilds** | Drop | Shares 78% of its days with Soft landing; a USD/JPY level alert covers the intervention case better |
+| **Re-risking** | Dropped (5 Nov) | Shares 74% of its days with Soft landing |
+| **Carry rebuilds** | Dropped (5 Nov) | Shares 78% of its days with Soft landing; a USD/JPY level alert covers the intervention case better |
 
 - **The adverse scenarios are followed by above-base returns** (Credit crack: SPY +2.4%, 73% up). They describe a sell-off that has already happened; they are not sell signals.
 - **Posture:** supportive scenarios take 0.5 off the risk-off score when active (like Duration bid holds). Rotations and the book's relative scenarios (software, memory) leave it unchanged.
