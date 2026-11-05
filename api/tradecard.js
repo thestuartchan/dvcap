@@ -25,7 +25,7 @@ import { parseUpsert, eventPayload, cardHash, roleFromEnv, EVENTS_CARD_KEY, jump
 import { authorised as gate, refusalReason, hasIdeasToken, hasCronSecret, refuse } from '../lib/apiauth.js';
 import { reconcileIdeas, parseAlerts, alertPayload } from '../lib/ideacard.js';
 import { checkpointPing } from '../lib/checkpointPing.js';
-import { bookRpc, bookTokenMatches, bookRateBucket, ipHashOf, BOOK_RATE_PER_MIN } from '../lib/bookMcp.js';
+import { bookRpc, bookTokenMatches, bookRateBucket, ipHashOf, bookSecretReport, bookRequestShape, BOOK_RATE_PER_MIN, BOOK_LOG_KEY } from '../lib/bookMcp.js';
 import { signalBoardPayload } from '../lib/signalBoardFeed.js';
 import { fetchWallets } from '../lib/wallet.js';
 import { fetchSpotContext, fetchHyperliquid, fetchHlAccount, fetchHlSpot, fetchHlOrders } from '../lib/hyperliquid.js';
@@ -543,7 +543,9 @@ export async function serveBookMcp(req, res, { env = process.env, snap = snapsho
     const n = await kvIncrEx(bookRateBucket(ipHashOf(ip)), 60).catch(() => null);
     if (n != null && n > BOOK_RATE_PER_MIN) { res.setHeader('Retry-After', '60'); return res.status(429).json({ error: `limit is ${BOOK_RATE_PER_MIN} requests a minute` }); }
   }
-  if (!bookTokenMatches(req.query?.bookmcp, env)) return res.status(404).json({ error: 'not found' });
+  const matched = bookTokenMatches(req.query?.bookmcp, env);
+  await logBook(req, matched);
+  if (!matched) return res.status(404).json({ error: 'not found' });
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return res.status(405).json({ error: 'POST only' }); }
   let body = req.body;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { return res.status(400).json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }); } }
@@ -558,8 +560,25 @@ export async function serveBookMcp(req, res, { env = process.env, snap = snapsho
   return res.status(200).send(JSON.stringify(Array.isArray(body) ? out : out[0]));
 }
 
+// The last 20 book-connector requests as SHAPES (lib/bookMcp.js bookRequestShape): never the token,
+// never an IP. What claude.ai's connector check actually sent is seen rather than guessed.
+async function logBook(req, matched) {
+  if (!kvConfigured()) return;
+  try {
+    const log = (await kvGetJson(BOOK_LOG_KEY).catch(() => null)) || [];
+    await kvSetJson(BOOK_LOG_KEY, [...log, bookRequestShape(req, matched)].slice(-20));
+  } catch { /* a log that fails must not fail the request */ }
+}
+
 export default async function handler(req, res) {
   if (req.query?.bookmcp != null) return serveBookMcp(req, res);
+  // ?bookcheck=1 — is the book connector's secret deployed, and usable in a URL? Behind the login.
+  if (String(req.query?.bookcheck || '') === '1') {
+    res.setHeader('Cache-Control', 'private, no-store');
+    if (!(await authorised(req))) return res.status(401).json({ error: 'sign in to the dashboard first' });
+    const recent = kvConfigured() ? ((await kvGetJson(BOOK_LOG_KEY).catch(() => null)) || []).slice(-20).reverse() : null;
+    return res.status(200).json({ ...bookSecretReport(process.env), recent });
+  }
   if (String(req.query?.card || '') === 'ideas') return ideasCard(req, res);
   if (String(req.query?.card || '') === 'event') return eventCard(req, res);
   if (req.method !== 'GET' && req.method !== 'POST') { res.status(405).json({ error: 'method not allowed' }); return; }

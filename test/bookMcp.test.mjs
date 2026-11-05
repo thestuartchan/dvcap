@@ -1,6 +1,6 @@
 // test/bookMcp.test.mjs — the book connector for the Position Desk (lib/bookMcp.js, api/tradecard.js serveBookMcp).
 // Fake tickers only.
-import { positionView, bookView, bookRpc, bookTokenMatches, BOOK_TOKEN_ENV } from '../lib/bookMcp.js';
+import { positionView, bookView, bookRpc, bookTokenMatches, bookSecretReport, bookRequestShape, BOOK_TOKEN_ENV } from '../lib/bookMcp.js';
 import { handleRpc, TOOLS } from '../lib/gammaMcp.js';
 import { derivePosition, positionPnl } from '../lib/positions.js';
 import { serveBookMcp } from '../api/tradecard.js';
@@ -100,6 +100,18 @@ const req = (token, body, method = 'POST') => ({ method, query: { bookmcp: token
   r = fakeRes(); await serveBookMcp(req(TOKEN, [1, 2].map(id => ({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'get_positions' } }))), r, { env, snap: async () => { reads++; return [spread]; } });
   eq('a batch reads the book once', [r.body.length, reads], [2, 1]);
   ok('the gamma token does not open it', !bookTokenMatches(TOKEN, { MCP_CONNECTOR_TOKEN: TOKEN }));
+}
+
+// ── THE CHECK PAGE ───────────────────────────────────────────────────────────
+{
+  eq('unset', [bookSecretReport({}).configured, bookSecretReport({}).sha256_prefix], [false, null]);
+  const good = bookSecretReport({ [BOOK_TOKEN_ENV]: 'Ab3-_.~' + 'x'.repeat(30) + '\n', VERCEL_ENV: 'production' });
+  eq('a URL-safe secret, trailing newline trimmed', [good.configured, good.length, good.long_enough, good.url_safe, good.env], [true, 37, true, true, 'production']);
+  ok('never the secret itself', !JSON.stringify(good).includes('xxxxxxxxxx'));
+  eq('symbols a URL cannot carry are flagged', ['a/b', 'a#b', 'a?b', 'a%b', 'a+b', 'a b'].map(c => bookSecretReport({ [BOOK_TOKEN_ENV]: c + 'y'.repeat(32) }).url_safe), [false, false, false, false, false, false]);
+  const shape = bookRequestShape({ method: 'POST', headers: { accept: 'application/json', 'x-forwarded-for': '1.2.3.4' }, query: { bookmcp: TOKEN }, body: { jsonrpc: '2.0', id: 1, method: 'initialize' } }, false, new Date('2026-11-05T20:00:00Z'));
+  eq('the log keeps a shape', [shape.method, shape.matched, shape.rpc, shape.accept], ['POST', false, 'initialize', 'application/json']);
+  ok('never the token or the IP', !/b{20}|1\.2\.3\.4/.test(JSON.stringify(shape)));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
