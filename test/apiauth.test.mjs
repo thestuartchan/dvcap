@@ -4,7 +4,7 @@
 // equity, the IBKR account, and the endpoint that rebuilds and POSTS the Discord card. The
 // middleware matches "/" and nothing else, so each route has to check for itself and the ones that
 // did were the ones somebody remembered.
-import { authorised, hasSessionCookie, hasServiceKey, serviceKeyConfigured, refusalReason, SERVICE_KEY_ENVS } from '../lib/apiauth.js';
+import { authorised, hasSessionCookie, hasServiceKey, hasCronSecret, serviceKeyConfigured, refusalReason, SERVICE_KEY_ENVS } from '../lib/apiauth.js';
 import fs from 'node:fs';
 import { mintSession, verifySession, sessionCookie, readCookie, sameDigest, SESSION_ENV, SESSION_MAX_AGE_S } from '../lib/session.js';
 
@@ -163,6 +163,23 @@ clear();
   ok('and the middleware verifies through it', /verifySession\s*\(/.test(fs.readFileSync('middleware.js', 'utf8')));
   ok('the middleware awaits that verification', /await\s+verifySession/.test(fs.readFileSync('middleware.js', 'utf8')));
   ok('and is async, or the await would be a syntax error', /export\s+default\s+async\s+function\s+middleware/.test(fs.readFileSync('middleware.js', 'utf8')));
+}
+
+// THE VERCEL CRON SECRET opens the checkpoint card only, fails closed, and is never a service key.
+{
+  const keep = { CRON_SECRET: process.env.CRON_SECRET, TRADECARD_KEY: process.env.TRADECARD_KEY };
+  const bearer = (v) => ({ headers: { authorization: `Bearer ${v}` }, query: {} });
+  delete process.env.CRON_SECRET;
+  ok('cron secret unset: nobody passes', !hasCronSecret(bearer('anything')));
+  process.env.CRON_SECRET = 'cron-secret-value-0123456789';
+  ok('the right bearer passes', hasCronSecret(bearer('cron-secret-value-0123456789')));
+  ok('a wrong bearer fails', !hasCronSecret(bearer('cron-secret-value-0123456780')));
+  ok('no header fails', !hasCronSecret({ headers: {}, query: {} }));
+  ok('it is not a service key', !hasServiceKey({ headers: { 'x-tradecard-key': 'cron-secret-value-0123456789' }, query: {} }) || process.env.TRADECARD_KEY === 'cron-secret-value-0123456789');
+  process.env.TRADECARD_KEY = 'cron-secret-value-0123456789';
+  ok('a cron secret equal to the service key is refused', !hasCronSecret(bearer('cron-secret-value-0123456789')));
+  for (const [k, v] of Object.entries(keep)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  ok('the route checks it on the checkpoint branch only', /card \|\| ''\) === 'checkpoint' && hasCronSecret\(req\)/.test(fs.readFileSync('api/tradecard.js', 'utf8')));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

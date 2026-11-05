@@ -22,7 +22,7 @@ import { derivePosition, positionPnl, levelHits, applyRolls } from '../lib/posit
 import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard, isStaleEvent, isOptionTrade } from '../lib/tradecard.js';
 import { upsertCard, post, remove, send, webhookFromEnv, walletWebhookFromEnv, ideasWebhookFromEnv, eventsWebhookFromEnv, daytradeWebhookFromEnv, postWithFiles, editWithFiles, webhookInfo, mentionFromEnv, ideasMentionFromEnv, alertTtlMin, CARD_KEY, IDEAS_CARD_KEY } from '../lib/discord.js';
 import { parseUpsert, eventPayload, cardHash, roleFromEnv, EVENTS_CARD_KEY, jumpLink, noticePayload } from '../lib/eventcard.js';
-import { authorised as gate, refusalReason, hasIdeasToken, refuse } from '../lib/apiauth.js';
+import { authorised as gate, refusalReason, hasIdeasToken, hasCronSecret, refuse } from '../lib/apiauth.js';
 import { reconcileIdeas, parseAlerts, alertPayload } from '../lib/ideacard.js';
 import { checkpointPing } from '../lib/checkpointPing.js';
 import { signalBoardPayload } from '../lib/signalBoardFeed.js';
@@ -536,7 +536,9 @@ export default async function handler(req, res) {
   if (String(req.query?.card || '') === 'ideas') return ideasCard(req, res);
   if (String(req.query?.card || '') === 'event') return eventCard(req, res);
   if (req.method !== 'GET' && req.method !== 'POST') { res.status(405).json({ error: 'method not allowed' }); return; }
-  if (!(await authorised(req))) { res.status(401).json({ error: 'unauthorised', why: refusalReason(req) }); return; }
+  // The checkpoint card also opens to Vercel's scheduler (CRON_SECRET, lib/apiauth.js), and only this card.
+  const cronCheckpoint = String(req.query?.card || '') === 'checkpoint' && hasCronSecret(req);
+  if (!cronCheckpoint && !(await authorised(req))) { res.status(401).json({ error: 'unauthorised', why: refusalReason(req) }); return; }
   // THE LAYERED TRADE-DAY PINGS (lib/checkpointPing.js): 08:40 ET pre-open on Check/Desk days, the 10:00 ET
   // confirm on every day plus the outcome on Check/Desk days, 10:30 ET after a 10:00 middle. The layer comes
   // from the New York clock. Same gate as the card. One embed card a day in the daytrade channel
