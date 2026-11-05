@@ -8,20 +8,22 @@ const near = (a, b, t) => Math.abs(a - b) <= t;
 
 // ── THE SET ──────────────────────────────────────────────────────────────────
 {
-  eq('sixteen scenarios on bars — both sides of the tape', SCENARIO_DEFS.map(d => d.id),
-     ['A', 'B', 'C', 'GS', 'SF', 'D', 'CU', 'SD', 'AI', 'SL', 'RR', 'EX', 'RF', 'RO', 'DR', 'AR']);
+  eq('twenty scenarios on bars — both sides of the tape', SCENARIO_DEFS.map(d => d.id),
+     ['A', 'B', 'C', 'GS', 'SF', 'D', 'CU', 'SD', 'AI', 'SL', 'RR', 'EX', 'RF', 'RO', 'DR', 'AR', 'SW', 'MP', 'CR', 'SC']);
   eq('five groups', GROUPS.map(g => g.id), ['rates', 'stress', 'riskon', 'rotation', 'book']);
   ok('every scenario sits in a group that exists', SCENARIO_DEFS.every(d => GROUPS.some(g => g.id === d.group)));
   ok('the board is no longer only bad news: supportive scenarios outside rates',
      SCENARIO_DEFS.filter(d => d.side === 'supportive' && d.group !== 'rates').length >= 4);
   ok('rotations do not move the stance (neither supportive nor adverse)', SCENARIO_DEFS.filter(d => d.group === 'rotation').every(d => d.side === 'rotation'));
   ok('every "not" points at a scenario on the board', SCENARIO_DEFS.every(d => d.not.every(x => SCENARIO_DEFS.some(o => o.id === x.id))));
-  ok('every leg names a series that exists', SCENARIO_DEFS.every(d => d.legs.every(l => SERIES[l.series])));
+  ok('every leg names a series that exists, or gates on scenarios that exist',
+     SCENARIO_DEFS.every(d => d.legs.every(l => l.dir === 'recent' ? l.after.every(id => SCENARIO_DEFS.some(o => o.id === id)) : SERIES[l.series])));
+  ok('selling exhausting is gated on a credit crack or CTA de-risking', SCENARIO_DEFS.find(d => d.id === 'EX').legs.some(l => l.required && l.after.join() === 'D,SD'));
   ok('every scenario states what it means, what to expect and what it is not', SCENARIO_DEFS.every(d => d.meaning && d.expect?.length && d.not?.length));
   ok('credit is high yield AGAINST Treasuries, not HYG alone', SERIES.CREDIT.ratio.join('/') === 'HYG/IEI');
   ok('and no scenario reads HYG on its own', !SCENARIO_DEFS.some(d => d.legs.some(l => l.series === 'HYG')));
   eq('the symbols fetched', [...BOARD_SYMBOLS].sort(), ['CL=F', 'DX-Y.NYB', 'GLD', 'HYG', 'IEI', 'JPY=X', 'QQQ', 'SMH', 'SPY', 'TLT', '^FVX', '^TNX', '^TYX', '^VIX',
-     'RSP', 'IWD', 'IWF', 'XLF', 'XLV', 'XLP', 'XLU', 'HG=F', 'EEM'].sort());
+     'RSP', 'IWD', 'IWF', 'XLF', 'XLV', 'XLP', 'XLU', 'HG=F', 'EEM', 'IGV', 'MU', 'IWM'].sort());
   eq('horizon and thresholds', [WINDOW, VOL_LOOKBACK, ENTER, EXIT], [20, 60, 0.5, 0.25]);
 }
 
@@ -95,6 +97,7 @@ function bars(values, start = '2025-01-01') {
     '^FVX': lvl(4, 0.01, N - 40), '^TYX': lvl(4.5, 0.002, N - 40),
     'DX-Y.NYB': bars(series(N, 0, 0.003, 100).map((v, i) => (i > N - 40 ? v * Math.exp((i - (N - 40)) * 0.002) : v))),
     RSP: flat(180), IWD: flat(190), IWF: flat(400), XLF: flat(50), XLV: flat(150), XLP: flat(80), XLU: flat(75), 'HG=F': flat(4.5), EEM: flat(45),
+    IGV: flat(110), MU: flat(200), IWM: flat(240),
   };
   const b = evaluateBoard(input);
   const C = b.scenarios.find(s => s.id === 'C');
@@ -130,6 +133,27 @@ function bars(values, start = '2025-01-01') {
   ok('health care up and staples down by as much leave it near flat', Math.abs(dr({ XLV: grind(150, 0.003), XLP: grind(80, -0.003) }).value) < 0.25);
   const noEem = evaluateBoard({ ...input, EEM: [] });
   eq('a missing basket or ratio member is no data', noEem.scenarios.find(s => s.id === 'RF').status, 'NO DATA');
+}
+
+// ── A GATE: ACTIVE ONLY AFTER ANOTHER SCENARIO ───────────────────────────────
+{
+  const N = 400;
+  const flat = (v) => bars(series(N, 0, 0.01, v));
+  // SPY trends up for 40 sessions, then goes flat for 30: X is active, then switches off.
+  const spy = bars(series(N, 0, 0.01, 500).map((x, i) => x * Math.exp(Math.min(Math.max(i - (N - 70), 0), 40) * 0.004)));
+  const X = { id: 'X', group: 'rates', legs: [{ series: 'SPY', dir: 'up', label: 'S&P rising' }] };
+  const gate = (within) => ({ series: '@X', after: ['X'], dir: 'recent', within, required: true, label: 'after X' });
+  const G = (within) => ({ id: 'G' + within, group: 'rates', legs: [gate(within), { series: 'TLT', dir: 'notUp', label: 'TLT not rising' }] });
+  const b = evaluateBoard({ SPY: spy, TLT: flat(90) }, { defs: [X, G(10), G(400)], keepDays: true });
+  const [x, g10, gAll] = b.scenarios;
+  const lastX = x.days.map(d => d.status).lastIndexOf('ACTIVE');
+  ok('the gating scenario was active and has since switched off', lastX > 0 && x.status !== 'ACTIVE');
+  const after = x.days.length - 1 - lastX;
+  eq('ten sessions after it, the gate has closed and the gated scenario is quiet', g10.status, after >= 10 ? 'QUIET' : 'ACTIVE');
+  ok('and it says how long ago', /none in the last 10 sessions|last active/.test(g10.legs[0].display));
+  eq('a long enough gate keeps it open', gAll.status, 'ACTIVE');
+  const never = evaluateBoard({ SPY: flat(500), TLT: flat(90) }, { defs: [X, G(10)] }).scenarios[1];
+  eq('never gated: quiet, even with every other leg met', [never.status, never.legs[1].met], ['QUIET', true]);
 }
 
 // ── THE NEW LEG KINDS ────────────────────────────────────────────────────────

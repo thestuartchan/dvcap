@@ -15,7 +15,7 @@
 // Usage:  NODE_USE_ENV_PROXY=1 node scripts/scenario-board-backtest.mjs [--cache DIR] [--out FILE]
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { yahooDailyOHLC } from '../lib/yahoo.js';
-import { evaluateBoard, BOARD_SYMBOLS, SCENARIO_DEFS, GROUPS, alignCloses, WINDOW, VOL_LOOKBACK } from '../lib/scenarioBoard.js';
+import { evaluateBoard, BOARD_SYMBOLS, SCENARIO_DEFS, GROUPS, alignCloses, WINDOW, VOL_LOOKBACK, SHORT } from '../lib/scenarioBoard.js';
 
 const arg = (k) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : null; };
 const CACHE = arg('--cache');
@@ -62,7 +62,7 @@ const col = (sym, field) => {
   let last = null;
   return cal.map(d => (by[d] != null && by[d] > 0 ? (last = +by[d]) : last));
 };
-const px = Object.fromEntries(['SPY', 'QQQ', 'SMH', 'RSP', 'TLT'].map(s => [s, { o: col(s, 'open'), c: col(s, 'close') }]));
+const px = Object.fromEntries(['SPY', 'QQQ', 'SMH', 'RSP', 'TLT', 'IGV', 'MU', 'IWM'].map(s => [s, { o: col(s, 'open'), c: col(s, 'close') }]));
 // open(S+1) → close(S+H), log return in %.
 const fwd = (sym, i) => {
   const o = px[sym].o[i + 1], c = px[sym].c[i + HORIZON];
@@ -126,7 +126,7 @@ const results = board.scenarios.map(s => {
 });
 
 // ── REPORT ───────────────────────────────────────────────────────────────────
-const NEW = new Set(['SL', 'RR', 'EX', 'RF', 'RO', 'DR', 'AR']);
+const NEW = new Set(['SL', 'RR', 'EX', 'RF', 'RO', 'DR', 'AR', 'SW', 'MP', 'CR', 'SC']);
 const f1 = (x) => (x == null ? '—' : `${x > 0 ? '+' : x < 0 ? '−' : ''}${Math.abs(x).toFixed(1)}`);
 const pct = (x) => (x == null ? '—' : `${Math.round(100 * x)}%`);
 const lines = [];
@@ -172,6 +172,93 @@ for (const r of results) {
   lines.push(`| ${NEW.has(r.id) ? '**' + r.name + '**' : r.name} | ${c(h1, 'SPY')} | ${c(h2, 'SPY')} | ${c(h1, 'SMH')} | ${c(h2, 'SMH')} | ${c(h1, 'EW−SPY')} | ${c(h2, 'EW−SPY')} |`);
 }
 lines.push('');
+
+// ── DOES THE RELATIVE MOVE CONTINUE? ─────────────────────────────────────────
+// For the scenarios that are a pair, the question a pair trade asks: after it switches on, does the
+// spread keep going the scenario's way over the next 20 sessions?
+{
+  const rel = (a, b) => (i) => { const x = fwd(a, i), y = fwd(b, i); return x == null || y == null ? null : x - y; };
+  const PAIRS = [
+    ['RO', 'Equal-weight − S&P', rel('RSP', 'SPY'), +1],
+    ['SC', 'Small caps − S&P', rel('IWM', 'SPY'), +1],
+    ['SW', 'Software − semis', rel('IGV', 'SMH'), +1],
+    ['MP', 'Memory − semis', rel('MU', 'SMH'), -1],
+    ['AR', 'Semis − S&P', rel('SMH', 'SPY'), +1],
+    ['AI', 'Semis − S&P', rel('SMH', 'SPY'), -1],
+  ];
+  lines.push(`## Does the relative move continue? (next ${HORIZON} sessions, in the scenario's direction)`);
+  lines.push('');
+  lines.push(`| Scenario | Spread | Episodes | Median, scenario's way | Share continuing | Base median | Base share |`);
+  lines.push(`|---|---|---|---|---|---|---|`);
+  for (const [id, label, f, sign] of PAIRS) {
+    const sc = board.scenarios.find(x => x.id === id);
+    if (!sc) continue;
+    const st = sc.days.map(d => d.status);
+    const starts = [];
+    for (let k = 0; k < st.length; k++) if (st[k] === 'ACTIVE' && (k === 0 || st[k - 1] !== 'ACTIVE') && !st.slice(Math.max(0, k - MERGE_GAP - 1), k).includes('ACTIVE')) starts.push(idx[dates[k]]);
+    const xs = starts.map(i => { const v = f(i); return v == null ? null : sign * v; });
+    const bs = dates.map(d => { const v = f(idx[d]); return v == null ? null : sign * v; });
+    lines.push(`| ${sc.name} | ${label} | ${xs.filter(x => x != null).length} | ${f1(median(xs))} pts | ${pct(upShare(xs))} | ${f1(median(bs))} pts | ${pct(upShare(bs))} |`);
+  }
+  lines.push('');
+}
+
+// ── SELLING EXHAUSTING: THE VARIANTS ─────────────────────────────────────────
+// What a hedge holder needs to know: once it fires, does the sell-off come back? "Resumed" = SPY
+// closes below its lowest close of the 20 sessions before the signal, within the next 20 sessions.
+// The comparison is every session with the gate open (credit crack or CTA de-risking active in the
+// last 10 sessions): the days you would otherwise be deciding whether to keep the hedges.
+{
+  const L = (series, dir, label, window) => (window ? { series, dir, label, window } : { series, dir, label });
+  const gate = { series: '@D,SD', after: ['D', 'SD'], dir: 'recent', within: 10, required: true, label: 'after D/SD' };
+  const base = (id, legs) => ({ id, group: 'riskon', name: id, side: 'supportive', weight: 1, legs });
+  const vix5 = L('VIX', 'down', 'VIX falling 5', SHORT), spy5 = L('SPY', 'up', 'S&P rising 5', SHORT);
+  const VARIANTS = [
+    ['v0 · first version: replica already cut + VIX↓5 + S&P↑5 (no gate)', base('V0', [L('CTAPOS', 'low', 'replica cut'), vix5, spy5])],
+    ['v1 · gate + VIX↓5 + S&P↑5 (on the board)', base('V1', [gate, vix5, spy5])],
+    ['v2 · gate + VIX↓5 + S&P↑5 + replica already cut', base('V2', [gate, L('CTAPOS', 'low', 'replica cut'), vix5, spy5])],
+    ['v3 · gate + VIX↓5 + S&P↑5 + credit recovering over 5 sessions', base('V3', [gate, vix5, spy5, L('CREDIT', 'up', 'credit 5', SHORT)])],
+  ];
+  const defs = [...SCENARIO_DEFS.filter(d => d.id === 'D' || d.id === 'SD'), ...VARIANTS.map(v => v[1])];
+  const vb = evaluateBoard(boardBars, { history, keepDays: true, defs });
+  const byId = Object.fromEntries(vb.scenarios.map(s => [s.id, s.days.map(d => d.status)]));
+  const spyC = px.SPY.c;
+  const vixC = col('^VIX', 'close');
+  const resumed = (i) => {
+    if (i - 20 < 0 || i + HORIZON >= spyC.length) return null;
+    const low = Math.min(...spyC.slice(i - 20, i + 1));
+    return spyC.slice(i + 1, i + HORIZON + 1).some(c => c < low);
+  };
+  const vixChg = (i) => (vixC[i] && vixC[i + HORIZON] ? 100 * Math.log(vixC[i + HORIZON] / vixC[i]) : null);
+  const gateOpen = dates.map((_, k) => [byId.D, byId.SD].some(r => r.slice(Math.max(0, k - 9), k + 1).includes('ACTIVE')));
+  const stats = (ks) => {
+    const is = ks.map(k => idx[dates[k]]);
+    const rs = is.map(resumed).filter(x => x != null);
+    return { n: rs.length, resumed: rs.length ? rs.filter(Boolean).length / rs.length : null,
+             spy: median(is.map(i => fwd('SPY', i))), vix: median(is.map(vixChg)) };
+  };
+  const gb = stats(gateOpen.map((g, k) => (g ? k : -1)).filter(k => k >= 0));
+  lines.push(`## Selling exhausting: which version tells you the sell-off is over?`);
+  lines.push('');
+  lines.push(`"Sell-off resumed" = SPY closed below its lowest close of the prior 20 sessions within the next ${HORIZON}. Lower is better: a hedge sold on the signal would have been missed less often.`);
+  lines.push('');
+  lines.push(`| Version | Episodes | Median run | Sell-off resumed | SPY next ${HORIZON} | VIX next ${HORIZON} |`);
+  lines.push(`|---|---|---|---|---|---|`);
+  lines.push(`| *Comparison: every session within 10 of a credit crack or CTA de-risking* | ${gb.n} sessions | — | ${pct(gb.resumed)} | ${f1(gb.spy)}% | ${f1(gb.vix)}% |`);
+  for (const [label, d] of VARIANTS) {
+    const st = byId[d.id];
+    const eps = [];
+    for (let k = 0; k < st.length; k++) {
+      if (st[k] !== 'ACTIVE') continue;
+      const prev = eps.at(-1);
+      if (prev && k - prev.end <= MERGE_GAP + 1) prev.end = k; else eps.push({ start: k, end: k });
+      while (k + 1 < st.length && st[k + 1] === 'ACTIVE') { k++; eps.at(-1).end = k; }
+    }
+    const r = stats(eps.map(e => e.start));
+    lines.push(`| ${label} | ${eps.length} | ${median(eps.map(e => e.end - e.start + 1)) ?? '—'} | ${pct(r.resumed)} | ${f1(r.spy)}% | ${f1(r.vix)}% |`);
+  }
+  lines.push('');
+}
 const md = lines.join('\n') + '\n';
 if (OUT) writeFileSync(OUT, md);
 process.stdout.write(md);
