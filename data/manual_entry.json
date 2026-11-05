@@ -605,6 +605,14 @@
       "oas_actual_chg": -0.01,
       "direction_agreed": false,
       "loggedAt": "2026-11-04T19:38:47.022Z"
+    },
+    {
+      "date": "2026-11-04",
+      "hyg_chg": 0.08,
+      "hyg_qqq_divergence": -0.39,
+      "oas_actual_chg": -0.08,
+      "direction_agreed": true,
+      "loggedAt": "2026-11-05T15:37:21.450Z"
     }
   ],
   "intervention": {
