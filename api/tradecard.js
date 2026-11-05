@@ -15,7 +15,7 @@
 
 import { normalizeRows } from '../lib/rowRepairs.js';
 import { entrylessCards } from '../lib/optionLedger.js';
-import { kvGetJson, kvSetJson, kvConfigured, kvSetNxEx, kvDel, CONSOLE_KEY, OPTION_MARKS_KEY, WALLET_SNAPSHOT_KEY, WALLET_PROVENANCE_KEY, WALLET_PENDING_KEY } from '../lib/kv.js';
+import { kvGetJson, kvSetJson, kvConfigured, kvSetNxEx, kvDel, kvIncrEx, CONSOLE_KEY, OPTION_MARKS_KEY, WALLET_SNAPSHOT_KEY, WALLET_PROVENANCE_KEY, WALLET_PENDING_KEY } from '../lib/kv.js';
 import { contractsByRoot, markOf } from '../lib/instruments.js';
 import { fetchCboeGreeks } from '../lib/cboe.js';
 import { derivePosition, positionPnl, levelHits, applyRolls } from '../lib/positions.js';
@@ -25,6 +25,7 @@ import { parseUpsert, eventPayload, cardHash, roleFromEnv, EVENTS_CARD_KEY, jump
 import { authorised as gate, refusalReason, hasIdeasToken, hasCronSecret, refuse } from '../lib/apiauth.js';
 import { reconcileIdeas, parseAlerts, alertPayload } from '../lib/ideacard.js';
 import { checkpointPing } from '../lib/checkpointPing.js';
+import { bookRpc, bookTokenMatches, bookRateBucket, ipHashOf, BOOK_RATE_PER_MIN } from '../lib/bookMcp.js';
 import { signalBoardPayload } from '../lib/signalBoardFeed.js';
 import { fetchWallets } from '../lib/wallet.js';
 import { fetchSpotContext, fetchHyperliquid, fetchHlAccount, fetchHlSpot, fetchHlOrders } from '../lib/hyperliquid.js';
@@ -532,7 +533,33 @@ export async function eventCard(req, res, {
   }
 }
 
+// THE BOOK CONNECTOR (lib/bookMcp.js): POST /api/book/<token>, rewritten here as ?bookmcp=. Its own
+// secret (BOOK_MCP_TOKEN); a wrong or unset token is a 404, before anything is read. Read-only: the
+// same snapshot the Discord card is built from, through bookView's whitelist.
+export async function serveBookMcp(req, res, { env = process.env, snap = snapshot } = {}) {
+  res.setHeader('Cache-Control', 'private, no-store');
+  if (kvConfigured()) {
+    const ip = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim() || String(req.headers?.['x-real-ip'] || '') || 'unknown';
+    const n = await kvIncrEx(bookRateBucket(ipHashOf(ip)), 60).catch(() => null);
+    if (n != null && n > BOOK_RATE_PER_MIN) { res.setHeader('Retry-After', '60'); return res.status(429).json({ error: `limit is ${BOOK_RATE_PER_MIN} requests a minute` }); }
+  }
+  if (!bookTokenMatches(req.query?.bookmcp, env)) return res.status(404).json({ error: 'not found' });
+  if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return res.status(405).json({ error: 'POST only' }); }
+  let body = req.body;
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { return res.status(400).json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }); } }
+  const proto = req.headers?.['x-forwarded-proto'] || 'https';
+  const origin = `${proto}://${req.headers?.host}`;
+  let pending = null;                                // one snapshot per request, however many calls it carries
+  const snapshotOnce = () => (pending ??= snap(origin));
+  const msgs = Array.isArray(body) ? body : [body];
+  const out = (await Promise.all(msgs.map(m => bookRpc(m, { snapshot: snapshotOnce })))).filter(Boolean);
+  if (!out.length) return res.status(202).end();
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  return res.status(200).send(JSON.stringify(Array.isArray(body) ? out : out[0]));
+}
+
 export default async function handler(req, res) {
+  if (req.query?.bookmcp != null) return serveBookMcp(req, res);
   if (String(req.query?.card || '') === 'ideas') return ideasCard(req, res);
   if (String(req.query?.card || '') === 'event') return eventCard(req, res);
   if (req.method !== 'GET' && req.method !== 'POST') { res.status(405).json({ error: 'method not allowed' }); return; }
