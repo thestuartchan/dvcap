@@ -6410,7 +6410,7 @@
       "inputs": {
         "weightedRecessionProb": 14.2,
         "cpi": 3.71725,
-        "kalshi2027": 21,
+        "kalshi2027": 23,
         "tape": {
           "gold": "up",
           "tlt": "up",
@@ -6425,10 +6425,10 @@
         "ladderSpread": -8.73,
         "u3": 4.2,
         "empPop": 59.2,
-        "oas": 3.4,
-        "tenY": 4.91,
-        "twoY": 4.59,
-        "consensusAlive": 0.989,
+        "oas": 3.32,
+        "tenY": 4.95,
+        "twoY": 4.61,
+        "consensusAlive": 0.994,
         "regimeVintage": "fresh"
       },
       "axes": {
@@ -6509,14 +6509,14 @@
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 82,
+          "hikeOdds": 68,
           "liq4w": -37
         },
         "sizing": 0.5,
         "stage": 3
       },
       "source": "client+cron",
-      "loggedAt": "2026-11-05T20:02:46.880Z"
+      "loggedAt": "2026-11-05T20:17:41.709Z"
     }
   ]
 }
