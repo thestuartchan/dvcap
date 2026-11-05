@@ -41,6 +41,18 @@
     {
       "source": "/api/mcp/:token/:rest*",
       "destination": "/api/gex?mcp=:token&mcprest=:rest*"
+    },
+    {
+      "source": "/api/book/:token",
+      "destination": "/api/tradecard?bookmcp=:token"
+    },
+    {
+      "source": "/api/book/:token/",
+      "destination": "/api/tradecard?bookmcp=:token"
+    },
+    {
+      "source": "/api/book/:token/:rest*",
+      "destination": "/api/tradecard?bookmcp=:token"
     }
   ]
 }
