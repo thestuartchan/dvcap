@@ -6397,20 +6397,20 @@
     },
     {
       "date": "2026-11-05",
-      "stagflation_p": 26,
-      "reflationary_p": 57,
-      "deflationary_p": 12,
+      "stagflation_p": 55,
+      "reflationary_p": 20,
+      "deflationary_p": 20,
       "inflationary_p": 5,
       "hawkish_repricing": null,
-      "live_regime": "ref",
-      "view_regime": null,
-      "pinned": null,
+      "live_regime": "stag",
+      "view_regime": "stag",
+      "pinned": false,
       "hyg_chg": null,
       "hyg_qqq_divergence": null,
       "inputs": {
-        "weightedRecessionProb": 14.2,
+        "weightedRecessionProb": 15,
         "cpi": 3.71725,
-        "kalshi2027": 19,
+        "kalshi2027": 25,
         "tape": null,
         "ladderSpread": null,
         "u3": 4.2,
@@ -6418,8 +6418,8 @@
         "oas": 3.4,
         "tenY": 4.95,
         "twoY": 4.61,
-        "consensusAlive": 0.994,
-        "regimeVintage": "fresh"
+        "consensusAlive": 0.656,
+        "regimeVintage": "decayed"
       },
       "axes": {
         "growth": {
@@ -6470,43 +6470,30 @@
         "quadrantRead": "growth firm, inflation hot"
       },
       "state": {
-        "regime": {
-          "id": "inf",
-          "probs": {
-            "ref": 20,
-            "inf": 74,
-            "stag": 5,
-            "def": 1
-          },
-          "g": 0.51,
-          "gDrift": -0.35,
-          "i": 0.31,
-          "iDrift": -0.67,
-          "drifting": "ref"
-        },
+        "regime": null,
         "conditions": {
-          "score": 63.6,
+          "score": 62.7,
           "band": "caution",
           "comps": {
             "credit": 85,
-            "equityVol": 40,
+            "equityVol": 35,
             "ratesVol": 60,
             "realYield": 79,
             "funding": 100,
             "breadth": 17,
-            "dollar": 37
+            "dollar": 38
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 82,
+          "hikeOdds": null,
           "liq4w": -37
         },
-        "sizing": 0.66,
+        "sizing": 0.8,
         "stage": 2
       },
-      "source": "cron",
-      "loggedAt": "2026-11-05T08:45:57.303Z"
+      "source": "client+cron",
+      "loggedAt": "2026-11-05T11:13:51.289Z"
     }
   ]
 }
