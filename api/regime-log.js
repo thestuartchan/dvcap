@@ -9,11 +9,39 @@
 // twenty times a day produces one row, and a later intraday state supersedes an earlier one.
 // Uses the same GitHub commit-back store as the Korea entry — no new infrastructure.
 
-import { hasSessionCookie, refuse } from '../lib/apiauth.js';
+import { hasSessionCookie, hasCronSecret, refuse } from '../lib/apiauth.js';
+import { tick, statusView, LAST_KEY as CRON_LAST_KEY } from '../lib/cronRouter.js';
+import { dispatchOne } from '../lib/preOpenDispatch.js';
+import { kvConfigured, kvGetJson, kvSetJson, kvSetNxEx } from '../lib/kv.js';
+import HOLIDAYS from '../data/holidays.json' with { type: 'json' };
 import { readRegimeStore, writeRegimeRow, logConfigured, HAS_CONTENT } from '../lib/regimeLog.js';
 // The store, the merge and the commit live in lib/regimeLog.js, shared with the pre-read cron.
 
+// THE SCHEDULER (lib/cronRouter.js). Vercel calls ?tick=1 every minute, signed with CRON_SECRET;
+// ?tick=status (behind the dashboard login) lists every job, its next slot and its last outcome.
+// It lives in this route because the deployment is at its function limit, not because it has
+// anything to do with the regime log.
+const usClosed = () => HOLIDAYS?.US?.closed || [];
+async function cronTick(req, res) {
+  res.setHeader('Cache-Control', 'private, no-store');
+  if (String(req.query.tick) === 'status') {
+    if (!(await hasSessionCookie(req))) return res.status(401).json({ error: 'sign in to the dashboard first' });
+    const last = kvConfigured() ? ((await kvGetJson(CRON_LAST_KEY).catch(() => null)) || {}) : {};
+    return res.status(200).json({ now: new Date().toISOString(), cronSecret: !!String(process.env.CRON_SECRET || '').trim(), jobs: statusView(last, Date.now(), { usClosed: usClosed() }) });
+  }
+  if (!hasCronSecret(req)) return res.status(401).json({ error: 'cron secret missing or wrong' });
+  if (!kvConfigured()) return res.status(200).json({ ok: false, why: 'KV not configured: slots cannot be claimed, so nothing runs' });
+  const host = process.env.VERCEL_PROJECT_PRODUCTION_URL || req.headers.host;
+  const out = await tick({
+    now: Date.now(), usClosed: usClosed(), origin: `https://${host}`, env: process.env,
+    kv: { setNx: kvSetNxEx, get: kvGetJson, set: kvSetJson },
+    dispatch: (wf) => dispatchOne(wf, { env: process.env, fetchImpl: fetch, now: new Date() }),
+  });
+  return res.status(200).json({ ok: true, ...out });
+}
+
 export default async function handler(req, res) {
+  if (req.query?.tick != null) return cronTick(req, res);
   // GET → read the log back (for the sparkline). No auth needed to read.
   if (req.method === 'GET') {
     if (!logConfigured()) return res.status(200).json({ rows: [], note: 'store not configured' });

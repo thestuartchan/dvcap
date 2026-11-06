@@ -256,10 +256,12 @@ ok('an hour late does not', !at(7, 40, 7).accept);
 // this that no runtime test would otherwise touch.
 {
   const cfg = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
-  const sched = Object.fromEntries(cfg.crons.map(c => [c.path.match(/region=(\w+)/)[1], c.schedule]));
+  // Region crons only; the per-minute scheduler tick (lib/cronRouter.js) carries no region.
+  const sched = Object.fromEntries(cfg.crons.filter(c => /region=/.test(c.path)).map(c => [c.path.match(/region=(\w+)/)[1], c.schedule]));
   eq('asia cron is Sun-Thu UTC', sched.asia, '42 22 * * 0-4');
   eq('us cron is Mon-Fri UTC', sched.us, '42 13 * * 1-5');
   ok('neither entry fires all seven days', !Object.values(sched).some(v => v.endsWith('* * *')));
+  eq('one scheduler tick, every minute', cfg.crons.filter(c => /tick=1/.test(c.path)).map(c => c.schedule), ['* * * * *']);
   // vercel.json is schema-validated; an unknown key can reject the whole deployment.
   ok('no extra keys on any cron entry',
      cfg.crons.every(c => JSON.stringify(Object.keys(c).sort()) === '["path","schedule"]'));
@@ -337,8 +339,11 @@ ok('an hour late does not', !at(7, 40, 7).accept);
   ])].sort();
   eq('the declared regions are the ones actually scheduled, wherever the timer lives',
      [...SCHEDULED_REGIONS].sort(), scheduled);
-  eq('vercel still holds two, which is the Hobby cap', crons.length, 2);
-  ok('and EU is the one that had to move off it', wfRegions.includes('eu'));
+  // Vercel Pro (6 Nov 2026): the per-minute scheduler (lib/cronRouter.js) runs every region too.
+  const { JOBS } = await import('../lib/cronRouter.js');
+  const routerRegions = [...new Set(JOBS.filter(j => j.path?.startsWith('/api/preread')).map(j => j.path.match(/region=(\w+)/)[1]))].sort();
+  eq('the scheduler runs all three regions', routerRegions, ['asia', 'eu', 'us']);
+  eq('vercel holds the two region crons plus the scheduler tick', crons.length, 3);
 
   // EU is a real region and is now watched like the others.
   ok('EU is a real region', !!UNIVERSE.eu);

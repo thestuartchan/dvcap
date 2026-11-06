@@ -7,6 +7,10 @@
     {
       "path": "/api/preread?region=us&post=1&cron=1",
       "schedule": "42 13 * * 1-5"
+    },
+    {
+      "path": "/api/regime-log?tick=1",
+      "schedule": "* * * * *"
     }
   ],
   "functions": {
@@ -15,6 +19,9 @@
     },
     "api/atr.js": {
       "maxDuration": 60
+    },
+    "api/regime-log.js": {
+      "maxDuration": 300
     }
   },
   "rewrites": [
