@@ -6524,24 +6524,34 @@
       "reflationary_p": 57,
       "deflationary_p": 12,
       "inflationary_p": 5,
-      "hawkish_repricing": null,
+      "hawkish_repricing": "DISINFLATIONARY_EASING",
       "live_regime": "ref",
-      "view_regime": null,
-      "pinned": null,
-      "hyg_chg": null,
-      "hyg_qqq_divergence": null,
+      "view_regime": "ref",
+      "pinned": false,
+      "hyg_chg": -0.41,
+      "hyg_qqq_divergence": 4.95,
       "inputs": {
         "weightedRecessionProb": 14.2,
         "cpi": 3.71725,
-        "kalshi2027": 26,
-        "tape": null,
-        "ladderSpread": null,
+        "kalshi2027": 21,
+        "tape": {
+          "gold": "up",
+          "tlt": "up",
+          "xlu": "up",
+          "xlp": "up",
+          "spy": "down",
+          "qqq": "down",
+          "iwm": "down",
+          "btc": "down",
+          "breakevenBp": -4
+        },
+        "ladderSpread": -9.15,
         "u3": 4.2,
         "empPop": 59.2,
         "oas": 3.32,
-        "tenY": 4.9,
-        "twoY": 4.58,
-        "consensusAlive": 0.994,
+        "tenY": 4.95,
+        "twoY": 4.61,
+        "consensusAlive": 0.989,
         "regimeVintage": "fresh"
       },
       "axes": {
@@ -6608,7 +6618,7 @@
           "drifting": "ref"
         },
         "conditions": {
-          "score": 75.8,
+          "score": 76,
           "band": "stress",
           "comps": {
             "credit": 82,
@@ -6617,19 +6627,19 @@
             "realYield": 79,
             "funding": 100,
             "breadth": 17,
-            "dollar": 39
+            "dollar": 44
           }
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 65,
+          "hikeOdds": 73,
           "liq4w": -74
         },
         "sizing": 0.5,
         "stage": 3
       },
-      "source": "cron",
-      "loggedAt": "2026-11-06T02:51:47.443Z"
+      "source": "client+cron",
+      "loggedAt": "2026-11-06T07:29:59.693Z"
     }
   ]
 }
