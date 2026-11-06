@@ -17,13 +17,8 @@
 name: wallet card
 
 on:
-  schedule:
-    # WAKE-UPS, NOT A DECISION. GitHub drops most of these: on 2026-09-08 this workflow was
-    # scheduled for ~36 detect runs and one publish and got five, all detect — the 22:00 entry
-    # never fired at all. So the route decides now, from the clock and a recorded date: any run at
-    # or after 22:00 UTC publishes if the day's card has not gone out. These entries only need to
-    # land SOMETIMES in the evening, and there are four chances between 22:00 and midnight.
-    - cron: '*/30 6-23 * * *'
+  # Scheduled by dvcap itself since 6 Nov 2026: lib/cronRouter.js, one on-time Vercel cron every
+  # minute (GitHub ran these 3-6 hours late). This workflow stays for manual runs.
   workflow_dispatch:
     inputs:
       post:

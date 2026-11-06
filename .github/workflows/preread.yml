@@ -44,25 +44,8 @@
 name: pre-read
 
 on:
-  schedule:
-    # EUROPE GETS MANY ATTEMPTS, because it has nothing else. Vercel's two cron slots go to Asia
-    # and the US, so this workflow is Europe's ONLY trigger — and GitHub dropped six of seven
-    # firings when that was measured. One attempt a day against those odds is not a schedule.
-    #
-    # Nine firings, of which four land inside the window in each daylight-saving half:
-    #   BST  window 07:40-09:00 UTC  ->  07:47  08:07  08:27  08:47
-    #   GMT  window 08:40-10:00 UTC  ->  08:47  09:07  09:27  09:47
-    # The same-day dedupe makes every attempt after the first a no-op that says so.
-    - cron: '7,27,47 7,8,9 * * 1-5'
-    # Asia and the US, which have the Vercel entries. This is belt and braces, a few minutes after
-    # them: 12:49 is 08:49 ET in EDT and 13:49 is 08:49 ET in EST, so the backup covers both halves
-    # where a single Vercel entry cannot.
-    # Split because these two are DIFFERENT regions whose UTC day-of-week does not agree.
-    # 12/13 UTC is the US, same calendar day in ET, so Mon-Fri UTC is Mon-Fri ET.
-    # 22 UTC is Asia, the NEXT day in HKT, so Sun-Thu UTC is Mon-Fri HKT. Sharing one
-    # `* * *` line delivered a Saturday-morning Hong Kong pre-read every Friday night.
-    - cron: '49 12,13 * * 1-5'   # US backup
-    - cron: '49 22 * * 0-4'      # Asia backup (UTC Sun-Thu = HKT Mon-Fri)
+  # Scheduled by dvcap itself since 6 Nov 2026: lib/cronRouter.js, one on-time Vercel cron every
+  # minute (GitHub ran these 3-6 hours late). This workflow stays for manual runs.
   workflow_dispatch:
     inputs:
       region:

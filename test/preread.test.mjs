@@ -258,9 +258,12 @@ ok('an hour late does not', !at(7, 40, 7).accept);
   const cfg = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
   // Region crons only; the per-minute scheduler tick (lib/cronRouter.js) carries no region.
   const sched = Object.fromEntries(cfg.crons.filter(c => /region=/.test(c.path)).map(c => [c.path.match(/region=(\w+)/)[1], c.schedule]));
-  eq('asia cron is Sun-Thu UTC', sched.asia, '42 22 * * 0-4');
-  eq('us cron is Mon-Fri UTC', sched.us, '42 13 * * 1-5');
-  ok('neither entry fires all seven days', !Object.values(sched).some(v => v.endsWith('* * *')));
+  // Since 6 Nov 2026 the regions run from the scheduler's table (lib/cronRouter.js), not vercel.json.
+  const { JOBS: J } = await import('../lib/cronRouter.js');
+  const days = (r) => J.find(j => j.id === `preread-${r}`)?.days?.join(',');
+  eq('no region crons left in vercel.json', Object.keys(sched), []);
+  eq('asia runs Sun-Thu UTC (Mon-Fri in Hong Kong)', days('asia'), 'Sun,Mon,Tue,Wed,Thu');
+  eq('us and eu run Mon-Fri UTC', [days('us'), days('eu')], ['Mon,Tue,Wed,Thu,Fri', 'Mon,Tue,Wed,Thu,Fri']);
   eq('one scheduler tick, every minute', cfg.crons.filter(c => /tick=1/.test(c.path)).map(c => c.schedule), ['* * * * *']);
   // vercel.json is schema-validated; an unknown key can reject the whole deployment.
   ok('no extra keys on any cron entry',
@@ -333,9 +336,11 @@ ok('an hour late does not', !at(7, 40, 7).accept);
       if (!/^\s*schedule:/m.test(src)) return [];
       return [...src.matchAll(/api\/preread\?region=(\w+)/g)].map(m => m[1]);
     });
+  const { JOBS: SJ } = await import('../lib/cronRouter.js');
   const scheduled = [...new Set([
     ...crons.map(c => (String(c.path).match(/region=(\w+)/) || [])[1]).filter(Boolean),
     ...wfRegions,
+    ...SJ.filter(j => j.path?.startsWith('/api/preread')).map(j => j.path.match(/region=(\w+)/)[1]),
   ])].sort();
   eq('the declared regions are the ones actually scheduled, wherever the timer lives',
      [...SCHEDULED_REGIONS].sort(), scheduled);
@@ -343,7 +348,8 @@ ok('an hour late does not', !at(7, 40, 7).accept);
   const { JOBS } = await import('../lib/cronRouter.js');
   const routerRegions = [...new Set(JOBS.filter(j => j.path?.startsWith('/api/preread')).map(j => j.path.match(/region=(\w+)/)[1]))].sort();
   eq('the scheduler runs all three regions', routerRegions, ['asia', 'eu', 'us']);
-  eq('vercel holds the two region crons plus the scheduler tick', crons.length, 3);
+  eq('vercel holds only the scheduler tick', crons.length, 1);
+  eq('and no GitHub workflow schedules a region any more', wfRegions, []);
 
   // EU is a real region and is now watched like the others.
   ok('EU is a real region', !!UNIVERSE.eu);

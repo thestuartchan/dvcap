@@ -13,23 +13,8 @@
 name: checkpoint ping
 
 on:
-  schedule:
-    - cron: '30 4 * * 1-5'     # 00:30 EDT  morning card (08:30 Dubai)
-    - cron: '42 4 * * 1-5'
-    - cron: '30 5 * * 1-5'     # 00:30 EST  morning card (09:30 Dubai)
-    - cron: '42 5 * * 1-5'
-    - cron: '40 12 * * 1-5'    # 08:40 EDT
-    - cron: '52 12 * * 1-5'
-    - cron: '40 13 * * 1-5'    # 08:40 EST
-    - cron: '52 13 * * 1-5'
-    - cron: '2 14 * * 1-5'     # 10:02 EDT
-    - cron: '14 14 * * 1-5'
-    - cron: '2 15 * * 1-5'     # 10:02 EST
-    - cron: '14 15 * * 1-5'
-    - cron: '32 14 * * 1-5'    # 10:32 EDT
-    - cron: '44 14 * * 1-5'
-    - cron: '32 15 * * 1-5'    # 10:32 EST
-    - cron: '44 15 * * 1-5'
+  # Scheduled by dvcap itself since 6 Nov 2026: lib/cronRouter.js, one on-time Vercel cron every
+  # minute (GitHub ran these 3-6 hours late). This workflow stays for manual runs.
   workflow_dispatch:
 
 concurrency:

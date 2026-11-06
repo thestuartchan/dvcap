@@ -15,11 +15,8 @@ name: mls paper trial
 # The ledger is private and the log below prints counts only, because Actions logs are public.
 
 on:
-  schedule:
-    - cron: '15 5 * * 2-6'
-    # A retry: GitHub's scheduler can run hours late, and Yahoo's daily bar can lag. A second run on
-    # a session already replayed does nothing.
-    - cron: '15 9 * * 2-6'
+  # Scheduled by dvcap itself since 6 Nov 2026: lib/cronRouter.js, one on-time Vercel cron every
+  # minute (GitHub ran these 3-6 hours late). This workflow stays for manual runs.
   workflow_dispatch:
 
 concurrency:

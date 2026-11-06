@@ -23,8 +23,8 @@
 name: flex sync
 
 on:
-  schedule:
-    - cron: '0 12 * * 1-5'
+  # Scheduled by dvcap itself since 6 Nov 2026: lib/cronRouter.js, one on-time Vercel cron every
+  # minute (GitHub ran these 3-6 hours late). This workflow stays for manual runs.
   workflow_dispatch:
     inputs:
       apply:
