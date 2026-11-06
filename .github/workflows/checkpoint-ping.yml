@@ -1,3 +1,7 @@
+# KEPT FOR NOW (6 Nov 2026), manual run only. The scheduler posts every layer (lib/cronRouter.js job
+# checkpoint). One Claude task on Stu's computer still checks and dispatches this workflow as a backstop;
+# delete this file once that task's prompt drops the step.
+#
 # The daily trade-day card in the daytrade channel (lib/checkpointPing.js, docs/trade-day-plans.md), one
 # embed edited in place, colour = current read:
 #   00:30 ET  morning card (08:30 / 09:30 Dubai): likely quiet / coin flip / likely moving

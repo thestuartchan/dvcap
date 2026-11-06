@@ -91,8 +91,8 @@ happened — which is the right behaviour precisely because it is rare.
 2. In **Vercel → Settings → Environment Variables**, add `DISCORD_WALLET_WEBHOOK` with that URL,
    for Production. Then **redeploy** — an environment variable does not reach an existing
    deployment until something redeploys.
-3. Nothing else. `.github/workflows/walletcard.yml` already polls every 30 minutes between 06:00
-   and 23:00 UTC, and uses the `TRADECARD_KEY` secret this repo already has.
+3. Nothing else. The per-minute scheduler (`lib/cronRouter.js`, job `walletcard`) polls every 30 minutes
+   between 06:00 and 23:30 UTC with the `TRADECARD_KEY` service key.
 
 Unset the variable and the card simply stops posting.
 

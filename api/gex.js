@@ -384,7 +384,7 @@ export default async function handler(req, res) {
     const keep = !(Number.isFinite(spotIn) && spotIn > 0) && await authorised(req);
     // BEFORE OCC'S FILE FOR TODAY ROLLS (~06:00–07:00 ET) a recompute is yesterday's book repriced:
     // it is returned with staleReason 'oi_not_published' and NOT kept, so the stored board stays
-    // yesterday's. The pre-open workflow (gex-recompute.yml) relies on this at 07:15 ET.
+    // yesterday's. The scheduler's gex-recompute job (lib/cronRouter.js) relies on this at 07:15 ET.
     for (const sym of syms) {
       // The stored row's expiries, so the settled map covers the same book as the series it sits
       // beside — otherwise the two disagree about the flip for reasons that are about coverage.

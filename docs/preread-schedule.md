@@ -123,10 +123,10 @@ deadline is the open plus fifteen.
 
 ## The backup trigger
 
-`.github/workflows/preread.yml` fires all three regions at the same hours a few
-minutes later, and is the ONLY trigger Europe has. GitHub's scheduler dropped six
-of seven firings on 2026-09-02/03 and ran others up to 3h24m late, so it is a
-backup and nothing more. The same-day dedupe makes a double delivery impossible.
+Retired 6 Nov 2026. The GitHub backup (`preread.yml`, `preread-eu.yml`) dropped six
+of seven firings on 2026-09-02/03 and ran others up to 3h24m late. Every region now
+runs from the per-minute scheduler (`lib/cronRouter.js`), with a second slot per
+region as the backup. The same-day dedupe makes a double delivery impossible.
 
 ## If a brief goes missing
 

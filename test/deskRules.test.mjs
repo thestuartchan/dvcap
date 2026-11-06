@@ -32,7 +32,7 @@ const ok = (n, c) => eq(n, !!c, true);
   eq('further: ok', evaluateRule({ level: 45, symbol: 'X:ZZQ', cond: 'close_below' }, { quote: q }).state, 'ok');
   eq('a take-profit on the spread\'s value, near within 10%', evaluateRule({ level: 11.25, cond: 'close_above' }, { mark: 10.97 }), { state: 'near', price: 10.97, note: 'value 10.97, 0.28 below 11.25' });
   eq('a date rule is due on the day', evaluateRule({ cond: 'date 2026-11-06' }, { today: '2026-11-06' }).state, 'due');
-  eq('and counts down before it', evaluateRule({ cond: 'date 2026-11-09' }, { today: '2026-11-06' }).note, '3 days to 2026-11-09');
+  eq('and counts down before it', evaluateRule({ cond: 'date 2026-11-09' }, { today: '2026-11-06' }).note, '3 days to Mon 9 Nov');
   eq('a weekly rule waits for the week\'s close', evaluateRule({ level: 50, symbol: 'X:ZZQ', cond: 'weekly_close_below' }, { quote: q, isWeekEnd: false }).state, 'skip');
   eq('and is judged on it', evaluateRule({ level: 50, symbol: 'X:ZZQ', cond: 'weekly_close_below' }, { quote: q, isWeekEnd: true }).state, 'hit');
   eq('no condition on a long stop: below', directionOf({ kind: 'stop' }, 'long'), 'below');
@@ -121,7 +121,12 @@ const ok = (n, c) => eq(n, !!c, true);
   const v = statusView({ 'desk-rules': { slot: '2026-11-06T21:20:00.000Z', ok: false } }, t);
   eq('the summary counts it', healthSummary(v).failed, 1);
   eq('the same-day book runs every 30 min through the session', v.find(x => x.id === 'same-day-book').at, '09:45–16:45 every 30 min');
-  ok('a failure message carries the job and the reason', /desk-rules.*HTTP 500.*boom/.test(failureText({ id: 'desk-rules', slot: '2026-11-06T21:20:00.000Z', status: 500, note: 'boom' })));
+  const ft = failureText({ id: 'desk-rules', slot: '2026-11-06T21:20:00.000Z', status: 500, note: 'boom' });
+  ok('a failure message names the job, its run in Dubai and New York time, and the reason', /Desk rules at the close.*01:20 Dubai.*16:20 ET[\s\S]*boom \(HTTP 500\)/.test(ft));
+  eq('a 200 that said ok:false shows only its reason', failureText({ id: 'same-day-book', slot: '2026-11-06T15:15:00.000Z', status: 200, note: 'not set' }).split('\n')[1], 'not set');
+  eq('no answer: the timeout note, once', failureText({ id: 'gex-recompute', slot: '2026-11-06T12:15:00.000Z', status: null, note: 'no answer within 240s' }).split('\n')[1], 'no answer within 240s');
+  const msg = deskAlertText({ fresh: [{ name: 'ZZQ', rule: { kind: 'stop', state: 'hit', text: 't', note: 'n' } }, { name: 'ZZR', rule: { kind: 'review', state: 'due', text: 't', note: 'n' } }], near: [] }, { today: '2026-11-06' });
+  eq('the headline splits hit from due, with a readable date', msg.split('\n')[0], '**Desk rules at the close · Fri 6 Nov** · 1 hit · 1 due');
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

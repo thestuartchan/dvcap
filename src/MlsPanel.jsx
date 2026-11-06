@@ -1,6 +1,6 @@
 // src/MlsPanel.jsx — the Momentum-Leaders paper trial (lib/mls.js): the paper account against SPY,
 // what it holds, what is queued for the next open, and every closed trade. Read-only; the ledger is
-// written once a session by .github/workflows/mls-paper.yml through /api/atr?mls=1&write=1.
+// written once a session by the scheduler (lib/cronRouter.js mls-paper) through /api/atr?mls=1&write=1.
 import { useEffect, useState } from "react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { C } from "./theme.js";

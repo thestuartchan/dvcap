@@ -31,7 +31,7 @@ if (!process.argv.includes('--score')) {
   // IN SESSION: NO ROW, BUT NOT A FAILURE (20 Oct). GitHub ran the 12:50 UTC schedule at 17:33 UTC,
   // mid-session; a snapshot then would read a partial bar, so none is taken. That is the guard doing
   // its job, so it is a warning, not a red run — and the scoring below still runs, which is
-  // time-insensitive. The on-time trigger is the Vercel pre-read cron (lib/preOpenDispatch.js).
+  // time-insensitive. The on-time trigger is the scheduler's 07:50 New York dispatch (lib/cronRouter.js signal-board).
   if (p.trade_day?.phase === 'in session') {
     console.log('::warning::the US session is open — a snapshot now would read a partial bar, so no row today from this run; scoring only');
   } else {
