@@ -1,5 +1,7 @@
 // test/preOpenDispatch.test.mjs — the pre-open GitHub jobs started from the Vercel cron (lib/preOpenDispatch.js).
 import { dispatchPlan, preOpenDispatch, dispatchHealth, PRE_OPEN_WORKFLOWS, DISPATCH_KEY, LOCK_KEY, LAST_KEY } from '../lib/preOpenDispatch.js';
+// The dispatcher's logic is tested with two workflows; the shipped list is one (see the last block).
+const TWO = ['signal-board.yml', 'gex-recompute.yml'];
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
@@ -7,7 +9,7 @@ const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
 
 const at = (iso) => new Date(iso);
 // ── When ──
-eq('the US cron at 12:42 UTC (08:42 EDT) dispatches both jobs', dispatchPlan({ now: at('2026-10-21T12:42:00Z') }), { go: true, day: '2026-10-21', workflows: ['signal-board.yml', 'gex-recompute.yml'] });
+eq('the US cron at 12:42 UTC (08:42 EDT) dispatches both jobs', dispatchPlan({ now: at('2026-10-21T12:42:00Z'), workflows: TWO }), { go: true, day: '2026-10-21', workflows: ['signal-board.yml', 'gex-recompute.yml'] });
 eq('…and at 12:42 UTC in winter (07:42 EST)', dispatchPlan({ now: at('2026-11-04T12:42:00Z') }).go, true);
 eq('a late backup call after 09:20 New York does not', dispatchPlan({ now: at('2026-10-21T13:25:00Z') }).why, 'past 09:20 New York — too close to the open');
 eq('a weekend does not', dispatchPlan({ now: at('2026-10-24T12:42:00Z') }).why, 'weekend in New York');
@@ -22,7 +24,7 @@ const memKv = () => { const m = new Map(); return { m, configured: () => true,
 const env = { GITHUB_TOKEN: 't', GITHUB_REPO: 'o/r' };
 const fetchFrom = (answer) => { const calls = []; const f = async (url, o) => { const wf = url.split('/actions/workflows/')[1].split('/')[0]; calls.push(`${wf}@${JSON.parse(o.body).ref}`); return answer(wf, calls.length); }; f.calls = calls; return f; };
 const ok204 = () => ({ status: 204, ok: true });
-const opts = { retryWaitMs: 0, env };
+const opts = { retryWaitMs: 0, env, workflows: TWO };
 
 const kv = memKv(), f1 = fetchFrom(ok204);
 const r1 = await preOpenDispatch({ now: at('2026-10-21T12:42:00Z'), kv, fetchImpl: f1, ...opts });
@@ -76,7 +78,7 @@ eq('…and no retry after 09:20', dispatchHealth(bad, { now: at('2026-10-21T14:0
 eq('health: missed when the cron never got there', dispatchHealth(okRec, { now: at('2026-10-22T14:00:00Z') }).status, 'missed');
 eq('health: waiting before the cron', dispatchHealth(null, { now: at('2026-10-22T11:00:00Z') }).status, 'waiting');
 eq('health: idle on a closure', dispatchHealth(null, { now: at('2026-12-25T14:00:00Z'), usClosed: ['2026-12-25'] }).status, 'idle');
-eq('the two jobs', PRE_OPEN_WORKFLOWS, ['signal-board.yml', 'gex-recompute.yml']);
+eq('the shipped list: the Signal Board only (the scheduler runs the gamma recompute itself)', PRE_OPEN_WORKFLOWS, ['signal-board.yml']);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

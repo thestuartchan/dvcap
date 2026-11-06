@@ -160,7 +160,10 @@ const CSOP = [
   const save = readFileSync('api/korea-save.js', 'utf8');
   ok('the hand paste merges through the same code', /from '\.\.\/lib\/koreaStore\.js'/.test(save) && /applyKofia\(store, parsed\.list, snapshot\)/.test(save));
   const wf = readFileSync('.github/workflows/korea-fetch.yml', 'utf8');
-  ok('the workflow runs after the Seoul close on weekdays', /cron: '10 7 \* \* 1-5'/.test(wf) && /cron: '10 11 \* \* 1-5'/.test(wf));
+  // Since 6 Nov 2026 the scheduler (lib/cronRouter.js) dispatches the workflow on time instead of GitHub's own cron.
+  const { JOBS } = await import('../lib/cronRouter.js');
+  const kj = JOBS.find(j => j.workflow === 'korea-fetch.yml');
+  ok('the workflow is dispatched after the Seoul close on weekdays', !!kj && kj.tz === 'UTC' && kj.at.join() === '07:10,11:10' && kj.days.join() === 'Mon,Tue,Wed,Thu,Fri' && /workflow_dispatch/.test(wf));
   ok('and commits only data/korea_kofia.json', /git add data\/korea_kofia\.json/.test(wf) && !/git add -A|git add \./.test(wf));
 }
 
