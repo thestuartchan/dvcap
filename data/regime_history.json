@@ -6517,6 +6517,119 @@
       },
       "source": "client+cron",
       "loggedAt": "2026-11-05T20:17:45.570Z"
+    },
+    {
+      "date": "2026-11-06",
+      "stagflation_p": 26,
+      "reflationary_p": 57,
+      "deflationary_p": 12,
+      "inflationary_p": 5,
+      "hawkish_repricing": null,
+      "live_regime": "ref",
+      "view_regime": null,
+      "pinned": null,
+      "hyg_chg": null,
+      "hyg_qqq_divergence": null,
+      "inputs": {
+        "weightedRecessionProb": 14.2,
+        "cpi": 3.71725,
+        "kalshi2027": 26,
+        "tape": null,
+        "ladderSpread": null,
+        "u3": 4.2,
+        "empPop": 59.2,
+        "oas": 3.32,
+        "tenY": 4.9,
+        "twoY": 4.58,
+        "consensusAlive": 0.994,
+        "regimeVintage": "fresh"
+      },
+      "axes": {
+        "growth": {
+          "state": "confirmed",
+          "lean": 1,
+          "market": {
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 5,
+            "of": 5
+          },
+          "weekly": {
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 4,
+            "of": 4
+          },
+          "monthly": {
+            "verdict": "EXPANDING",
+            "lean": 1,
+            "usable": 4,
+            "of": 4
+          }
+        },
+        "inflation": {
+          "state": "turning-cool",
+          "lean": 1,
+          "market": {
+            "verdict": "BETWEEN",
+            "lean": 0,
+            "usable": 3,
+            "of": 3
+          },
+          "nowcast": {
+            "verdict": "HOT",
+            "lean": 1,
+            "usable": 2,
+            "of": 2
+          },
+          "printed": {
+            "verdict": "HOT",
+            "lean": 1,
+            "usable": 3,
+            "of": 3
+          }
+        },
+        "quadrant": "inf",
+        "quadrantRead": "growth firm, inflation hot"
+      },
+      "state": {
+        "regime": {
+          "id": "inf",
+          "probs": {
+            "ref": 20,
+            "inf": 74,
+            "stag": 5,
+            "def": 1
+          },
+          "g": 0.51,
+          "gDrift": -0.35,
+          "i": 0.31,
+          "iDrift": -0.67,
+          "drifting": "ref"
+        },
+        "conditions": {
+          "score": 75.8,
+          "band": "stress",
+          "comps": {
+            "credit": 82,
+            "equityVol": 98,
+            "ratesVol": 68,
+            "realYield": 79,
+            "funding": 100,
+            "breadth": 17,
+            "dollar": 39
+          }
+        },
+        "policy": {
+          "stance": "tightening",
+          "hikeOdds": 65,
+          "liq4w": -74
+        },
+        "sizing": 0.5,
+        "stage": 3
+      },
+      "source": "cron",
+      "loggedAt": "2026-11-06T02:51:43.605Z"
     }
   ]
 }
