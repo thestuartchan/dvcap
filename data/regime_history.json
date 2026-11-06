@@ -6632,14 +6632,14 @@
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 62,
+          "hikeOdds": 68,
           "liq4w": -74
         },
         "sizing": 0.5,
         "stage": 3
       },
       "source": "client+cron",
-      "loggedAt": "2026-11-06T08:45:57.755Z"
+      "loggedAt": "2026-11-06T09:14:22.041Z"
     }
   ]
 }
