@@ -37,6 +37,8 @@ async function cronTick(req, res) {
     kv: { setNx: kvSetNxEx, get: kvGetJson, set: kvSetJson },
     dispatch: (wf) => dispatchOne(wf, { env: process.env, fetchImpl: fetch, now: new Date() }),
   });
+  // One line per tick that ran something: job, slot, verdict. Nothing from the routes' answers.
+  if (out.ran?.length) console.log(`[cron] ${out.ran.map(r => `${r.id}@${r.slot.slice(11, 16)}Z ${r.ok ? 'ok' : 'FAIL'} ${r.status ?? '-'} ${r.ms}ms${r.ok || !r.note ? '' : ` (${r.note})`}`).join(' · ')}`);
   return res.status(200).json({ ok: true, ...out });
 }
 
