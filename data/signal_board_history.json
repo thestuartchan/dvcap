@@ -568,7 +568,7 @@
         "QQQ_5": -4.37,
         "SOXX_1": 3.91,
         "SOXX_3": 4.48,
-        "SOXX_5": 176.71
+        "SOXX_5": -7.76
       },
       "realised": {
         "QQQ": {
@@ -713,7 +713,7 @@
         "QQQ_5": -4.99,
         "SOXX_1": 2.13,
         "SOXX_3": -7.74,
-        "SOXX_5": 172.96
+        "SOXX_5": -9.01
       },
       "realised": {
         "QQQ": {
@@ -859,8 +859,8 @@
         "QQQ_3": -6.14,
         "QQQ_5": -4.64,
         "SOXX_1": -1.55,
-        "SOXX_3": 160.75,
-        "SOXX_5": 158.89
+        "SOXX_3": -13.08,
+        "SOXX_5": -13.7
       },
       "realised": {
         "QQQ": {
@@ -1005,10 +1005,10 @@
       "fwd": {
         "QQQ_1": -3.47,
         "QQQ_3": -4.2,
-        "QQQ_5": -8.92,
+        "QQQ_5": -9.55,
         "SOXX_1": -8.24,
-        "SOXX_3": 171.47,
-        "SOXX_5": -22.01
+        "SOXX_3": -9.51,
+        "SOXX_5": -22.99
       },
       "realised": {
         "QQQ": {
@@ -1149,10 +1149,10 @@
       },
       "fwd": {
         "QQQ_1": 0.62,
-        "QQQ_3": -4.34,
+        "QQQ_3": -5,
         "QQQ_5": null,
         "SOXX_1": 2.5,
-        "SOXX_3": -70.55,
+        "SOXX_3": -12.77,
         "SOXX_5": null
       },
       "realised": {
@@ -1294,10 +1294,10 @@
       },
       "fwd": {
         "QQQ_1": 0.62,
-        "QQQ_3": -4.34,
+        "QQQ_3": -5,
         "QQQ_5": null,
         "SOXX_1": 2.5,
-        "SOXX_3": -70.55,
+        "SOXX_3": -12.77,
         "SOXX_5": null
       },
       "realised": {
@@ -1591,23 +1591,156 @@
         "p": 0.37
       },
       "fwd": {
-        "QQQ_1": -5.84,
+        "QQQ_1": -6.49,
         "QQQ_3": null,
         "QQQ_5": null,
-        "SOXX_1": -70.34,
+        "SOXX_1": -12.15,
         "SOXX_3": null,
         "SOXX_5": null
       },
       "realised": {
         "QQQ": {
           "date": "2026-11-05",
-          "r": 3.35
+          "r": 3.39
         },
         "SPY": {
           "date": "2026-11-05",
-          "r": 4
+          "r": 4.15
         }
       }
+    },
+    {
+      "date": "2026-11-06",
+      "at": "2026-11-06T12:50:30.274Z",
+      "as_of": "2026-11-05",
+      "target": "2026-11-06",
+      "rows": {
+        "hyg_lqd": {
+          "v": -0.805,
+          "s": "off"
+        },
+        "hy_oas": {
+          "v": 18,
+          "s": "off"
+        },
+        "ust10y": {
+          "v": -15.2,
+          "s": "on"
+        },
+        "move": {
+          "v": 80,
+          "s": "off"
+        },
+        "brent_box": {
+          "v": 17.2,
+          "s": "on"
+        },
+        "cushion": {
+          "v": 9.127,
+          "s": "off"
+        },
+        "vix_rv": {
+          "v": 1.311,
+          "s": "neutral"
+        },
+        "vix9d_vix": {
+          "v": null,
+          "s": null
+        },
+        "skew": {
+          "v": 75.992,
+          "s": "off"
+        },
+        "put_call": {
+          "v": 99,
+          "s": "off"
+        },
+        "opex": {
+          "v": 10,
+          "s": "neutral"
+        },
+        "buyback_blackout": {
+          "v": 30,
+          "s": "on"
+        },
+        "month_end_rebalance": {
+          "v": -3.276,
+          "s": "on"
+        },
+        "rsp_qqq": {
+          "v": 18.263,
+          "s": "on"
+        },
+        "breadth": {
+          "v": 8.1,
+          "s": "on"
+        },
+        "igv_smh": {
+          "v": 22.539,
+          "s": "off"
+        },
+        "soxx_ma": {
+          "v": 0,
+          "s": "off"
+        },
+        "qqq_ma": {
+          "v": 0,
+          "s": "off"
+        },
+        "kospi": {
+          "v": -6.02,
+          "s": "off"
+        },
+        "btc_ma": {
+          "v": 1,
+          "s": "off"
+        },
+        "btc_qqq": {
+          "v": 7.425,
+          "s": "neutral"
+        },
+        "eth_btc": {
+          "v": -0.22,
+          "s": "neutral"
+        },
+        "btc_dd": {
+          "v": -28.342,
+          "s": "neutral"
+        },
+        "ai_narrative": {
+          "v": null,
+          "s": null
+        }
+      },
+      "clusters": {
+        "macro": "off",
+        "dealers": "off",
+        "tape": "neutral",
+        "narrative": null
+      },
+      "lean": "off",
+      "call": {
+        "QQQ": {
+          "median_r": 1.53,
+          "p1": 0.86,
+          "zone": "trade",
+          "p_trend": 0.54,
+          "conflict": null
+        },
+        "SPY": {
+          "median_r": 1.77,
+          "p1": 0.92,
+          "zone": "trade",
+          "p_trend": 0.53,
+          "conflict": null
+        }
+      },
+      "plans": {
+        "verdict": "desk",
+        "p": 0.78
+      },
+      "fwd": null,
+      "realised": null
     }
   ]
 }
