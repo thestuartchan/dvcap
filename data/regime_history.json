@@ -6618,16 +6618,16 @@
           "drifting": "ref"
         },
         "conditions": {
-          "score": 75.5,
+          "score": 75.3,
           "band": "stress",
           "comps": {
             "credit": 82,
-            "equityVol": 95,
+            "equityVol": 94,
             "ratesVol": 68,
             "realYield": 79,
             "funding": 100,
             "breadth": 17,
-            "dollar": 45
+            "dollar": 46
           }
         },
         "policy": {
@@ -6639,7 +6639,7 @@
         "stage": 3
       },
       "source": "client+cron",
-      "loggedAt": "2026-11-06T12:20:29.042Z"
+      "loggedAt": "2026-11-06T12:42:22.758Z"
     }
   ]
 }
