@@ -12,7 +12,7 @@
 import { hasSessionCookie, hasCronSecret, refuse } from '../lib/apiauth.js';
 import { tick, statusView, healthSummary, failureText, nyDayOf, FAIL_ALERT_KEY, LAST_KEY as CRON_LAST_KEY } from '../lib/cronRouter.js';
 import { post, privateWebhookFromEnv } from '../lib/discord.js';
-import { dispatchOne } from '../lib/preOpenDispatch.js';
+import { dispatchOne } from '../lib/githubDispatch.js';
 import { kvConfigured, kvGetJson, kvSetJson, kvSetNxEx } from '../lib/kv.js';
 import HOLIDAYS from '../data/holidays.json' with { type: 'json' };
 import { readRegimeStore, writeRegimeRow, logConfigured, HAS_CONTENT } from '../lib/regimeLog.js';

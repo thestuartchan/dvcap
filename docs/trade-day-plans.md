@@ -121,7 +121,7 @@ indicative only. Across all days, the 10:00 confirm band historically ended ≥ 
 
 ## The three layers: decision table
 
-The card goes out through `.github/workflows/checkpoint-ping.yml` → `api/tradecard.js?card=checkpoint` →
+The card goes out through the scheduler (`lib/cronRouter.js`, job `checkpoint`) → `api/tradecard.js?card=checkpoint` →
 `lib/checkpointPing.js`: **one embed card a day** in the daytrade channel (`DISCORD_DAYTRADE_WEBHOOK`, falling
 back to the trades channel), posted at 00:30 ET (08:30 Dubai in EDT, 09:30 in EST, 9–10 hours before the open) and **edited in place** after. No mention (Stu, 4 Nov
 2026), so edits are silent. The card colour is the current read: **green** moving day, **yellow** undecided,

@@ -136,7 +136,7 @@ export default async function handler(req, res) {
   }
   // ── ?ratios=1 — THE RATIOS BREAK LOG (lib/ratioBreakLog.js) ──
   // GET: the stored log, market data only. &write=1 recomputes every break from two years of closes
-  // and merges it in — the daily run (.github/workflows/ratio-breaks.yml), key-gated because it
+  // and merges it in — the scheduler's daily ratio-breaks job (lib/cronRouter.js), key-gated because it
   // writes.
   if (String(ratios || '') === '1') {
     if (String(req.query?.write || '') === '1') {
@@ -150,8 +150,8 @@ export default async function handler(req, res) {
   }
   // ── ?mls=1 — THE MOMENTUM-LEADERS PAPER TRIAL (lib/mls.js, lib/mlsFeed.js) ──
   // GET: the paper ledger, signed-in or service key only — a model portfolio, but the one a live
-  // account will mirror. &write=1 replays every settled session since the last run (the daily
-  // workflow, .github/workflows/mls-paper.yml).
+  // account will mirror. &write=1 replays every settled session since the last run (the
+  // scheduler's mls-paper job, lib/cronRouter.js).
   if (String(req.query?.mls || '') === '1') {
     res.setHeader('Cache-Control', 'private, no-store');
     if (!(await authorised(req))) return res.status(401).json({ ok: false, error: 'unauthorised', why: refusalReason(req) });

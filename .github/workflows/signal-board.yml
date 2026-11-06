@@ -6,20 +6,18 @@ name: signal board
 # returns, realised R of each trade-day call). The commit redeploys, which is how the scorecard on the
 # board picks it up — the Korea fetch's commit-back pattern.
 #
-# WHEN. 12:50 UTC on weekdays: after Seoul's close and SqueezeMetrics' overnight DIX.csv, before the
-# 13:30 UTC (EDT) / 14:30 UTC (EST) open, so no snapshot ever reads a partial session. A missed run loses
-# that day's row; the scoring heals on the next run.
+# WHEN. 07:50 New York on US trading days, from dvcap's per-minute scheduler (lib/cronRouter.js
+# JOBS signal-board, a workflow_dispatch on the minute): after Seoul's close and SqueezeMetrics'
+# overnight DIX.csv, before the open, so no snapshot reads a partial session. A missed run loses that
+# day's row; the scoring heals on the next run, and the dashboard's Job health panel shows it.
 #
-# ON TIME. GitHub runs this schedule hours late (20 Oct: 12:50 UTC ran at 17:33 UTC, mid-session, and took
-# no row). The Vercel US pre-read cron (12:42 UTC) now dispatches this workflow, which GitHub starts at
-# once (lib/preOpenDispatch.js); the schedule below stays as the backup. Run in session, the snapshot
-# takes no row and says so as a warning, and the scoring still runs.
+# NO GITHUB SCHEDULE (6 Nov 2026). GitHub ran this repository's schedules 3–6 hours late (20 Oct: 12:50
+# UTC ran at 17:33 UTC, mid-session, and took no row). Run in session by hand, the snapshot takes no row
+# and says so as a warning, and the scoring still runs.
 #
 # The log prints states and counts only — public market statistics.
 
 on:
-  schedule:
-    - cron: '50 12 * * 1-5'
   workflow_dispatch:
 
 permissions:
