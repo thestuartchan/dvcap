@@ -54,7 +54,8 @@ import { journaledDayTrades, dayTradeLine } from '../lib/dayTradeCards.js';
 import { readExitWindow, lookbackLine } from '../lib/exitLookback.js';
 import { normalizeRows } from '../lib/rowRepairs.js';
 import { parseTradeConfirms, tcSections } from '../lib/flexTrades.js';
-import { adoptProvisional, tcQueryId, TC_QUERY_ENV, TC_WAITS_MS, SYNC_NOW_MIN_INTERVAL_S, skipOnSameDay, syncNowLine, recordLag, lagText } from '../lib/sameDayFills.js';
+import { adoptProvisional, tcQueryId, TC_QUERY_ENV, TC_WAITS_MS, SYNC_NOW_MIN_INTERVAL_S, skipOnSameDay, syncNowLine, recordLag, lagText, todayNet, TC_TODAY_KEY, TC_TODAY_TTL_S, SAME_DAY_PEEK_MIN_INTERVAL_S } from '../lib/sameDayFills.js';
+import { isCashEquivalent } from '../lib/cashEquivalents.js';
 import { hasSessionCookie, hasJournalReadKey } from '../lib/apiauth.js';
 import { journalOrdersFromFlex } from '../lib/dayTradeJournal.js';
 import { readJournal } from '../lib/journalStore.js';
@@ -473,9 +474,45 @@ export async function syncNow({ now = new Date(), fetchImpl = fetch, sleep } = {
     await kvSetJson(TC_LAG_KEY, store);
     if (lags.length) lag = lagText(lags.sort((a, b) => b.upToMin - a.upToMin)[0]);
   } catch { /* the lag is a measurement, never a reason to fail the sync */ }
+  await keepToday(trades, stored, today, at);
   const line = syncNowLine({ fate: journal.fate, units: journal.units, waitingToday: journal.waitingToday, sections: trades.length ? null : tcSections(got.xml) })
     + (!trades.length && got.xml && !/<TradeConfirms?\b/.test(got.xml) && !/<Order\b/.test(got.xml) ? ' (the report has no Trade Confirmations section — check the query)' : '');
   return { ok: true, at, line, lag, journal: await readJournal() };
+}
+
+// Today's fills the book does not hold yet, per contract (lib/sameDayFills.js todayNet), for the
+// book connector. Written by Sync now and by the scheduler's peek; never a console row.
+async function keepToday(trades, stored, today, at) {
+  try {
+    const known = new Set();
+    for (const r of (Array.isArray(stored?.rows) ? stored.rows : [])) for (const f of (r.fills || [])) if (f.tradeId) known.add(String(f.tradeId));
+    const items = todayNet(trades, { known, today, isCash: isCashEquivalent });
+    await kvSetJsonEx(TC_TODAY_KEY, { date: today, at, items }, TC_TODAY_TTL_S);
+    return items.length;
+  } catch { return null; }   // a summary that fails must not fail the sync
+}
+
+// ?tcpeek=1 — the scheduler's half-hourly read of the same-day report (lib/cronRouter.js
+// same-day-book). It only refreshes the summary above: no journal, no drafts, no console write,
+// which is why it may run on the service key when Sync now may not. It shares Sync now's lock, so a
+// click and a peek never ask IBKR at the same moment. Counts only in the answer.
+export async function sameDayPeek({ now = new Date(), fetchImpl = fetch, sleep } = {}) {
+  const token = flexEnv().token, queryId = tcQueryId();
+  if (!token || !queryId) return { ok: false, why: `${!token ? 'IBKR_FLEX_TOKEN' : TC_QUERY_ENV} is not set` };
+  if (!kvConfigured()) return { ok: false, why: 'Redis is not configured' };
+  if (!(await kvSetNxEx(TC_LOCK_KEY, Date.now(), SAME_DAY_PEEK_MIN_INTERVAL_S))) return { ok: true, skipped: 'a same-day read ran in the last minute' };
+  let pending = null;
+  try { pending = await kvGetJson(TC_PENDING_KEY); } catch { /* start fresh */ }
+  const got = await fetchStatement({ token, queryId, pending, fetchImpl, waits: TC_WAITS_MS, attempts: TC_WAITS_MS.length + 1, ...(sleep ? { sleep } : {}) });
+  try {
+    if (got.pending) await kvSetJsonEx(TC_PENDING_KEY, got.pending, PENDING_TTL_S);
+    else if (pending) await kvSetJsonEx(TC_PENDING_KEY, null, 1);
+  } catch { /* the next run starts fresh */ }
+  if (!got.ok) return { ok: !!got.retryable, why: got.retryable ? 'IBKR is still building the report; the next run reads it' : `the same-day report could not be read: ${String(got.error).slice(0, 100)}` };
+  const trades = parseTradeConfirms(got.xml);
+  const contracts = await keepToday(trades, await kvGetJson(CONSOLE_KEY), nyToday(now), now.toISOString());
+  if (contracts == null) return { ok: false, why: 'the summary could not be written' };
+  return { ok: true, fills: trades.length, contracts };
 }
 
 // ── EXPOSURE: PUBLISHED GREEKS FOR CONTRACTS THE BOOK HOLDS ──────────────────
@@ -603,6 +640,12 @@ export default async function handler(req, res) {
     return;
   }
   if (!(await authorised(req))) { res.status(401).json({ error: 'unauthorised', why: refusalReason(req) }); return; }
+  if (String(req.query?.tcpeek ?? '') === '1') {
+    res.setHeader('Cache-Control', 'private, no-store');
+    try { res.status(200).json(await sameDayPeek()); }
+    catch { console.error('same-day peek failed'); res.status(200).json({ ok: false, why: 'same-day peek failed' }); }
+    return;
+  }
   // ?tc=1 — Sync now. THE CONSOLE'S OWN SESSION ONLY: not the cron's service key, and never the
   // journal token (which passes nothing anywhere — lib/apiauth.js). About one a minute: a click
   // inside the window is answered with how long to wait, not queued.

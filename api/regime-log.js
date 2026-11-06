@@ -10,7 +10,8 @@
 // Uses the same GitHub commit-back store as the Korea entry — no new infrastructure.
 
 import { hasSessionCookie, hasCronSecret, refuse } from '../lib/apiauth.js';
-import { tick, statusView, LAST_KEY as CRON_LAST_KEY } from '../lib/cronRouter.js';
+import { tick, statusView, healthSummary, failureText, nyDayOf, FAIL_ALERT_KEY, LAST_KEY as CRON_LAST_KEY } from '../lib/cronRouter.js';
+import { post, privateWebhookFromEnv } from '../lib/discord.js';
 import { dispatchOne } from '../lib/preOpenDispatch.js';
 import { kvConfigured, kvGetJson, kvSetJson, kvSetNxEx } from '../lib/kv.js';
 import HOLIDAYS from '../data/holidays.json' with { type: 'json' };
@@ -27,7 +28,9 @@ async function cronTick(req, res) {
   if (String(req.query.tick) === 'status') {
     if (!(await hasSessionCookie(req))) return res.status(401).json({ error: 'sign in to the dashboard first' });
     const last = kvConfigured() ? ((await kvGetJson(CRON_LAST_KEY).catch(() => null)) || {}) : {};
-    return res.status(200).json({ now: new Date().toISOString(), cronSecret: !!String(process.env.CRON_SECRET || '').trim(), jobs: statusView(last, Date.now(), { usClosed: usClosed() }) });
+    const jobs = statusView(last, Date.now(), { usClosed: usClosed() });
+    return res.status(200).json({ now: new Date().toISOString(), cronSecret: !!String(process.env.CRON_SECRET || '').trim(),
+      privateChannel: !!privateWebhookFromEnv(), summary: healthSummary(jobs), jobs });
   }
   if (!hasCronSecret(req)) return res.status(401).json({ error: 'cron secret missing or wrong' });
   if (!kvConfigured()) return res.status(200).json({ ok: false, why: 'KV not configured: slots cannot be claimed, so nothing runs' });
@@ -39,6 +42,16 @@ async function cronTick(req, res) {
   });
   // One line per tick that ran something: job, slot, verdict. Nothing from the routes' answers.
   if (out.ran?.length) console.log(`[cron] ${out.ran.map(r => `${r.id}@${r.slot.slice(11, 16)}Z ${r.ok ? 'ok' : 'FAIL'} ${r.status ?? '-'} ${r.ms}ms${r.ok || !r.note ? '' : ` (${r.note})`}`).join(' · ')}`);
+  // A failed job tells Stu in the private channel, once per job per New York day. The note is the
+  // route's own error line (lib/cronRouter.js outcomeOf keeps nothing else from its answer).
+  const failed = (out.ran || []).filter(r => !r.ok);
+  const webhook = failed.length ? privateWebhookFromEnv() : null;
+  if (webhook) {
+    for (const r of failed) {
+      const first = await kvSetNxEx(FAIL_ALERT_KEY(r.id, nyDayOf(Date.now())), 1, 2 * 86400).catch(() => false);
+      if (first) await post(webhook, { content: failureText(r), allowed_mentions: { parse: [] } }).catch(() => null);
+    }
+  }
   return res.status(200).json({ ok: true, ...out });
 }
 

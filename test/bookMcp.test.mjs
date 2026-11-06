@@ -52,7 +52,7 @@ const setup = withSnap({ id: 'zzu-1', symbol: 'ZZU', multiplier: 1, fills: [], l
   eq('its own server name', init.result.serverInfo.name, 'dvcap-book');
   ok('and it says the data is private', /private/i.test(init.result.instructions));
   const list = await bookRpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, { snapshot });
-  eq('one tool', list.result.tools.map(t => t.name), ['get_positions']);
+  eq('two tools: the read, and the Desk rules upload', list.result.tools.map(t => t.name), ['get_positions', 'put_desk_rules']);
   const call = await bookRpc({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'get_positions', arguments: {} } }, { snapshot });
   eq('get_positions answers the open book', JSON.parse(call.result.content[0].text).positions.map(p => p.symbol), ['ZZQ', 'ZZS']);
   const bad = await bookRpc({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'get_positions', arguments: { all: true } } }, { snapshot });

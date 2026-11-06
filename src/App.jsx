@@ -38,7 +38,8 @@ import { fmtCcy } from "../lib/fxrates.js";
 import { realizedCurve } from "../lib/positions.js";
 import { DEFAULT_TARGET_PCT } from "../lib/sizing.js";
 import { computeMarketState, stateLogRow, STAGE_LABEL } from "../lib/marketState.js";
-import { StateView, DriversView, FeedHealth, StreetCompare, Fold, CrossCheckHealth, PreOpenHealth } from "./MarketState.jsx";
+import { StateView, DriversView, FeedHealth, StreetCompare, Fold, CrossCheckHealth, PreOpenHealth, JobHealth } from "./MarketState.jsx";
+import { useJobHealth, jobHealthNote } from "./jobHealth.js";
 import { PlanView } from "./PlanView.jsx";
 import { expectedRank } from "../lib/plan.js";
 import { observationAge } from "../lib/gates.js";
@@ -5860,6 +5861,7 @@ export default function App() {
   // Lands on the first tab of the first group. Declaring Trade Desk first and then opening in the
   // middle of Market Watch is the kind of small incoherence that makes an ordering feel arbitrary.
   const [tab, setTab]           = useState("global");
+  const jobHealth = useJobHealth();     // the scheduler's job states: the Data health tab and the header pill
   // THE GO BAR (src/GoBar.jsx): open state, and the last Gamma symbol it asked for.
   const [goOpen, setGoOpen] = useState(false);
   const [gexRequest, setGexRequest] = useState(null);
@@ -6956,6 +6958,7 @@ export default function App() {
   // fetched for it). Red: the conditions read failed. Amber: serving a last good copy, a feed
   // erroring, or a hand-kept input stale or never entered. Green otherwise.
   const health = (() => {
+    const jobNote = jobHealthNote(jobHealth);
     const feedErrs = Array.isArray(liveInd?.feedErrors) ? liveInd.feedErrors.length : 0;
     const handOut = (ledger?.counts?.stale || 0) + (ledger?.counts?.missing || 0);
     const notes = [];
@@ -6963,7 +6966,8 @@ export default function App() {
     if (stateFeed?.source === "stale") notes.push("gauges on their last good copy");
     if (feedErrs) notes.push(`${feedErrs} feed${feedErrs === 1 ? "" : "s"} erroring`);
     if (handOut) notes.push(`${handOut} hand-kept input${handOut === 1 ? "" : "s"} out of date`);
-    const level = stateFeedStatus.error && !stateFeed ? "red" : notes.length ? "amber" : "green";
+    if (jobNote) notes.push(jobNote);
+    const level = (stateFeedStatus.error && !stateFeed) || jobNote ? "red" : notes.length ? "amber" : "green";
     return { level, title: notes.length ? `Data health: ${notes.join(", ")}. Click for detail.` : "Data health: every input current. Click for detail." };
   })();
   // What a Go bar line does once chosen (lib/goCommands.js says what it means).
@@ -7290,6 +7294,7 @@ export default function App() {
             }} />
             <FeedHealth feed={stateFeed} indErrors={liveInd?.feedErrors} indUpdated={indUpdated ? indUpdated.toISOString() : null} />
             <CrossCheckHealth xc={xcHealth} />
+            <JobHealth st={jobHealth} />
             <PreOpenHealth />
             <HandKeptLedgerPanel ledger={ledger} />
             <CoveragePanel onOpenTicker={(sym) => runGo({ tab: "ticker", symbol: sym })} />
