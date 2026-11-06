@@ -8,7 +8,7 @@
 // measured one, never an input to it.
 //
 // Pure rendering: App fetches and computes, these draw. Nothing here reads private data.
-import { dubaiEtStamp } from "../lib/timeFmt.js";
+import { dubaiEtStamp, dubaiEtNext } from "../lib/timeFmt.js";
 import { useState, useEffect } from "react";
 import { C, alpha } from "./theme.js";
 import { Card, SLabel, StaleChip } from "./ui.jsx";
@@ -735,6 +735,71 @@ export function PreOpenHealth() {
           {busy ? "Dispatching…" : "Retry now"}</button></div>
       )}
       <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5 }}>The signal board snapshot and the settled-OI gamma recompute, started from the US pre-read cron because GitHub runs their own schedules hours late. A retry dispatches only the jobs GitHub has not yet accepted today, and only before 09:20 New York.</div>
+    </Card>
+  );
+}
+
+// ── JOB HEALTH ── every job the per-minute scheduler runs (lib/cronRouter.js JOBS): its last result,
+// and its next run. Red when a job failed or a slot passed with no run. One fetch, shared with the
+// header's health pill (App.jsx), refreshed every five minutes.
+const JOB_LABEL = {
+  "checkpoint": "Daytrade card layers", "tradecard": "Trade card", "walletcard": "Wallet card", "flex-sync": "IBKR statement sync",
+  "gex-recompute": "Gamma recompute (settled OI)", "gex-snapshot-open": "Gamma snapshot, open", "gex-snapshot-close": "Gamma snapshot, close",
+  "mls-paper": "MLS paper trial", "ratio-breaks": "Ratio breaks", "preread-asia": "Pre-read Asia", "preread-eu": "Pre-read Europe",
+  "preread-us": "Pre-read US", "korea-fetch": "Korea data (GitHub)", "same-day-book": "Same-day fills (IBKR)", "desk-rules": "Desk rules at the close",
+};
+const JOB_TONE = { ok: TONE.good, failed: TONE.bad, missed: TONE.bad, waiting: TONE.info };
+const JOB_WORD = { ok: "ok", failed: "failed", missed: "missed", waiting: "waiting" };
+const JOB_ORDER = { failed: 0, missed: 1, waiting: 2, ok: 3 };
+export function JobHealth({ st }) {
+  const s = st?.summary;
+  const jobs = (st?.jobs || []).slice().sort((a, b) => (JOB_ORDER[a.health] ?? 9) - (JOB_ORDER[b.health] ?? 9) || a.id.localeCompare(b.id));
+  const bad = s ? s.failed + s.missed : 0;
+  const cell = { padding: "6px 8px", borderBottom: "1px solid " + C.bdr, verticalAlign: "top" };
+  return (
+    <Card style={{ display: "grid", gap: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+        <SLabel>Scheduled jobs</SLabel>
+        {s && <Chip v={bad ? `${bad} need a look` : `all ${s.ok} ok`} tone={bad ? TONE.bad : TONE.good}
+          title={`${s.ok} ok · ${s.failed} failed · ${s.missed} missed · ${s.waiting} waiting`} />}
+      </div>
+      {st?.error && <div style={{ fontSize: 12.5, color: C.amber, fontWeight: 700 }}>Not loaded: {st.error}</div>}
+      {!st && <div style={{ fontSize: 12.5, color: C.muted }}>Loading…</div>}
+      {jobs.length > 0 && (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 520, fontSize: 12.5 }}>
+            <thead><tr>{["Job", "Last run", "Next"].map(h => <th key={h} style={{ ...cell, textAlign: "left", fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4 }}>{h}</th>)}</tr></thead>
+            <tbody>
+              {jobs.map(j => {
+                const t = JOB_TONE[j.health] || TONE.info;
+                return (
+                  <tr key={j.id}>
+                    <td style={cell}>
+                      <span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 5, background: t.color, marginRight: 8 }} aria-hidden="true" />
+                      <b style={{ color: C.text }}>{JOB_LABEL[j.id] || j.id}</b>
+                      <div style={{ fontSize: 11, color: C.muted, marginLeft: 17 }}>{j.at} · {j.clock}</div>
+                    </td>
+                    <td style={cell}>
+                      <span style={{ fontWeight: 800, color: t.color }}>{JOB_WORD[j.health] || j.health}</span>
+                      {j.last?.at && <span style={{ color: C.muted }}> · {fmtWhen(j.last.at)}{j.last.ms != null ? ` · ${(j.last.ms / 1000).toFixed(1)}s` : ""}</span>}
+                      {j.health === "missed" && j.due && <div style={{ fontSize: 11.5, color: C.red }}>no run for the {fmtWhen(j.due)} slot</div>}
+                      {j.last && !j.last.ok && j.last.note && <div style={{ fontSize: 11.5, color: C.mid, overflowWrap: "anywhere" }}>{j.last.status == null ? "no answer" : `HTTP ${j.last.status}`} · {j.last.note}</div>}
+                    </td>
+                    <td style={{ ...cell, color: C.mid }}>{j.next ? dubaiEtNext(new Date(j.next)) : "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 12, rowGap: 3, fontSize: 11.5, lineHeight: 1.45 }}>
+        {[["Runs", "Vercel, every minute, on the minute"], ["Failed", "the job answered with an error or timed out"], ["Missed", "a slot passed with no run: the scheduler itself was down"],
+          ["Alerts", st?.privateChannel ? "a failure posts once a day to your private Discord channel" : "set DISCORD_PRIVATE_WEBHOOK to get failures on Discord"]].map(([k, v]) => [
+          <div key={k} style={{ fontSize: 10.5, fontWeight: 800, color: C.lbl, textTransform: "uppercase", letterSpacing: 0.4, paddingTop: 1 }}>{k}</div>,
+          <div key={k + "v"} style={{ color: C.mid }}>{v}</div>,
+        ])}
+      </div>
     </Card>
   );
 }

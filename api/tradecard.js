@@ -20,13 +20,17 @@ import { contractsByRoot, markOf } from '../lib/instruments.js';
 import { fetchCboeGreeks } from '../lib/cboe.js';
 import { derivePosition, positionPnl, levelHits, applyRolls } from '../lib/positions.js';
 import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard, isStaleEvent, isOptionTrade } from '../lib/tradecard.js';
-import { upsertCard, post, remove, send, webhookFromEnv, walletWebhookFromEnv, ideasWebhookFromEnv, eventsWebhookFromEnv, daytradeWebhookFromEnv, postWithFiles, editWithFiles, webhookInfo, mentionFromEnv, ideasMentionFromEnv, alertTtlMin, CARD_KEY, IDEAS_CARD_KEY } from '../lib/discord.js';
+import { upsertCard, post, remove, send, webhookFromEnv, walletWebhookFromEnv, ideasWebhookFromEnv, eventsWebhookFromEnv, daytradeWebhookFromEnv, postWithFiles, editWithFiles, webhookInfo, mentionFromEnv, ideasMentionFromEnv, alertTtlMin, CARD_KEY, IDEAS_CARD_KEY, postLong, privateWebhookFromEnv } from '../lib/discord.js';
 import { parseUpsert, eventPayload, cardHash, roleFromEnv, EVENTS_CARD_KEY, jumpLink, noticePayload } from '../lib/eventcard.js';
 import { authorised as gate, refusalReason, hasIdeasToken, hasCronSecret, refuse } from '../lib/apiauth.js';
 import { reconcileIdeas, parseAlerts, alertPayload } from '../lib/ideacard.js';
 import { checkpointPing } from '../lib/checkpointPing.js';
 import { bookRpc, bookTokenMatches, bookRateBucket, ipHashOf, bookSecretReport, bookRequestShape, BOOK_RATE_PER_MIN, BOOK_LOG_KEY } from '../lib/bookMcp.js';
 import { signalBoardPayload } from '../lib/signalBoardFeed.js';
+import { DESK_RULES_KEY, DESK_CHECKS_KEY, runChecks, newHits, deskAlertText, checksView, periodEnds } from '../lib/deskRules.js';
+import { TC_TODAY_KEY } from '../lib/sameDayFills.js';
+import { tvDaily } from '../lib/tradingview.js';
+import HOLIDAYS from '../data/holidays.json' with { type: 'json' };
 import { fetchWallets } from '../lib/wallet.js';
 import { fetchSpotContext, fetchHyperliquid, fetchHlAccount, fetchHlSpot, fetchHlOrders } from '../lib/hyperliquid.js';
 import { diffHoldings, walletPublicView, buildWalletCard, mergePending, perpPublicView, publishable, inheritProvenance, rememberProvenance, applyMemory, publishReport, pinsFromMemory, symbolKey, carryUnanswered } from '../lib/walletcard.js';
@@ -536,7 +540,7 @@ export async function eventCard(req, res, {
 // THE BOOK CONNECTOR (lib/bookMcp.js): POST /api/book/<token>, rewritten here as ?bookmcp=. Its own
 // secret (BOOK_MCP_TOKEN); a wrong or unset token is a 404, before anything is read. Read-only: the
 // same snapshot the Discord card is built from, through bookView's whitelist.
-export async function serveBookMcp(req, res, { env = process.env, snap = snapshot } = {}) {
+export async function serveBookMcp(req, res, { env = process.env, snap = snapshot, bookExtras = readBookExtras, putRules = storeDeskRules } = {}) {
   res.setHeader('Cache-Control', 'private, no-store');
   if (kvConfigured()) {
     const ip = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim() || String(req.headers?.['x-real-ip'] || '') || 'unknown';
@@ -554,10 +558,49 @@ export async function serveBookMcp(req, res, { env = process.env, snap = snapsho
   let pending = null;                                // one snapshot per request, however many calls it carries
   const snapshotOnce = () => (pending ??= snap(origin));
   const msgs = Array.isArray(body) ? body : [body];
-  const out = (await Promise.all(msgs.map(m => bookRpc(m, { snapshot: snapshotOnce })))).filter(Boolean);
+  let more = null;                                   // and one read of the extras
+  const extrasOnce = () => (more ??= bookExtras());
+  const out = (await Promise.all(msgs.map(m => bookRpc(m, { snapshot: snapshotOnce, extras: extrasOnce, putRules })))).filter(Boolean);
   if (!out.length) return res.status(202).end();
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   return res.status(200).send(JSON.stringify(Array.isArray(body) ? out : out[0]));
+}
+
+// What get_positions carries beside the book: today's not-yet-booked fills and the Desk rule states.
+async function readBookExtras() {
+  if (!kvConfigured()) return {};
+  const [sameDay, checks] = await Promise.all([kvGetJson(TC_TODAY_KEY).catch(() => null), kvGetJson(DESK_CHECKS_KEY).catch(() => null)]);
+  return { sameDay, checks: checksView(checks) };
+}
+async function storeDeskRules(mirror) {
+  if (!kvConfigured()) return { ok: false };
+  return { ok: !!(await kvSetJson(DESK_RULES_KEY, mirror)) };
+}
+
+// ?deskrules=1 — the Desk's rules judged on the US close (lib/deskRules.js), 16:20 New York from the
+// scheduler. Prices: TradingView's delayed scanner for a rule's own symbol (the Desk writes rules in
+// TradingView tickers), dvcap's mark for a rule on the position's value. Newly hit rules of Stu's go
+// to the PRIVATE channel only. The answer is counts only: it lands in the scheduler's log.
+export async function deskRulesCheck({ origin, now = new Date(), quote = tvDaily, snap = snapshot, post = postLong, webhook = privateWebhookFromEnv() } = {}) {
+  if (!kvConfigured()) return { ok: false, why: 'Redis is not configured' };
+  const mirror = await kvGetJson(DESK_RULES_KEY);
+  if (!mirror?.positions?.length) return { ok: true, skipped: 'the Desk has not sent its rules yet' };
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(now);
+  const symbols = [...new Set(mirror.positions.flatMap(p => p.rules.map(r => r.symbol)).filter(Boolean))].slice(0, 80);
+  const quotes = {};
+  for (const s of symbols) { const q = await quote(s); if (q) quotes[s] = q; }   // one at a time: a public endpoint
+  const marks = {};
+  if (mirror.positions.some(p => p.dvcapId)) {
+    try { for (const r of await snap(origin)) if (r?.id) marks[r.id] = { mark: r.price ?? null, side: r?.derived?.side === 'short' ? 'short' : 'long' }; }
+    catch { /* rules on a position's value stay unchecked */ }
+  }
+  const prev = await kvGetJson(DESK_CHECKS_KEY).catch(() => null);
+  const checks = runChecks(mirror, { quotes, marks, today, ...periodEnds(today, HOLIDAYS?.US?.closed || []), prev, now: now.toISOString() });
+  await kvSetJson(DESK_CHECKS_KEY, checks);
+  const text = deskAlertText(newHits(prev, checks), { today });
+  let posted = false;
+  if (text && webhook) posted = !!(await post(webhook, text).catch(() => null));
+  return { ok: true, ...checks.counts, symbols: symbols.length, priced: Object.keys(quotes).length, alert: text ? (posted ? 'posted' : webhook ? 'post failed' : 'DISCORD_PRIVATE_WEBHOOK unset') : 'nothing new' };
 }
 
 // The last 20 book-connector requests as SHAPES (lib/bookMcp.js bookRequestShape): never the token,
@@ -594,6 +637,13 @@ export default async function handler(req, res) {
       res.status(200).json(await checkpointPing({ now: new Date(), payload: signalBoardPayload, webhook: daytradeWebhookFromEnv() || webhookFromEnv(), upsert: upsertCard,
         kv: { configured: kvConfigured, get: kvGetJson, set: kvSetJson } }));
     } catch (e) { console.error('checkpoint ping', e); res.status(200).json({ ok: false, error: String(e?.message || e) }); }
+    return;
+  }
+  if (String(req.query?.deskrules || '') === '1') {
+    res.setHeader('Cache-Control', 'private, no-store');
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    try { res.status(200).json(await deskRulesCheck({ origin: `${proto}://${req.headers.host}` })); }
+    catch (e) { console.error('desk rules check failed'); res.status(200).json({ ok: false, why: String(e?.message || e).slice(0, 140) }); }
     return;
   }
   if (String(req.query?.card || '') === 'wallet') {
