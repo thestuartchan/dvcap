@@ -6647,34 +6647,34 @@
       "reflationary_p": 57,
       "deflationary_p": 12,
       "inflationary_p": 5,
-      "hawkish_repricing": "HAWKISH_RATES_REPRICING",
+      "hawkish_repricing": "DISINFLATIONARY_EASING",
       "live_regime": "ref",
       "view_regime": "ref",
       "pinned": false,
-      "hyg_chg": 0.1,
-      "hyg_qqq_divergence": -2.55,
+      "hyg_chg": -0.36,
+      "hyg_qqq_divergence": 4.97,
       "inputs": {
         "weightedRecessionProb": 14.2,
         "cpi": 3.71725,
-        "kalshi2027": 24,
+        "kalshi2027": 22,
         "tape": {
-          "gold": "down",
-          "tlt": "down",
+          "gold": "up",
+          "tlt": "up",
           "xlu": "down",
           "xlp": "down",
-          "spy": "up",
-          "qqq": "up",
-          "iwm": "up",
+          "spy": "down",
+          "qqq": "down",
+          "iwm": "down",
           "btc": "down",
-          "breakevenBp": -2
+          "breakevenBp": -4
         },
-        "ladderSpread": 5.78,
+        "ladderSpread": -8.72,
         "u3": 4.2,
         "empPop": 59.2,
         "oas": 3.32,
-        "tenY": 4.9,
-        "twoY": 4.58,
-        "consensusAlive": 0.989,
+        "tenY": 4.95,
+        "twoY": 4.61,
+        "consensusAlive": 0.983,
         "regimeVintage": "fresh"
       },
       "state": {
@@ -6707,7 +6707,7 @@
         },
         "policy": {
           "stance": "tightening",
-          "hikeOdds": 76,
+          "hikeOdds": 65,
           "liq4w": -74
         },
         "sizing": 0.5,
@@ -6762,7 +6762,7 @@
         "quadrantRead": "growth firm, inflation hot"
       },
       "source": "client",
-      "loggedAt": "2026-11-07T06:17:14.869Z"
+      "loggedAt": "2026-11-07T17:26:46.277Z"
     }
   ]
 }
