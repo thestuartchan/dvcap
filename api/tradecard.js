@@ -20,14 +20,14 @@ import { contractsByRoot, markOf } from '../lib/instruments.js';
 import { fetchCboeGreeks } from '../lib/cboe.js';
 import { derivePosition, positionPnl, levelHits, applyRolls } from '../lib/positions.js';
 import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard, isStaleEvent, isOptionTrade } from '../lib/tradecard.js';
-import { upsertCard, post, remove, send, webhookFromEnv, walletWebhookFromEnv, ideasWebhookFromEnv, eventsWebhookFromEnv, daytradeWebhookFromEnv, postWithFiles, editWithFiles, webhookInfo, mentionFromEnv, ideasMentionFromEnv, alertTtlMin, CARD_KEY, IDEAS_CARD_KEY, postLong, privateWebhookFromEnv } from '../lib/discord.js';
+import { upsertCard, post, remove, send, webhookFromEnv, walletWebhookFromEnv, ideasWebhookFromEnv, eventsWebhookFromEnv, daytradeWebhookFromEnv, postWithFiles, editWithFiles, webhookInfo, mentionFromEnv, ideasMentionFromEnv, alertTtlMin, CARD_KEY, IDEAS_CARD_KEY, privateWebhookFromEnv } from '../lib/discord.js';
 import { parseUpsert, eventPayload, cardHash, roleFromEnv, EVENTS_CARD_KEY, jumpLink, noticePayload } from '../lib/eventcard.js';
 import { authorised as gate, refusalReason, hasIdeasToken, hasCronSecret, refuse } from '../lib/apiauth.js';
 import { reconcileIdeas, parseAlerts, alertPayload } from '../lib/ideacard.js';
 import { checkpointPing } from '../lib/checkpointPing.js';
 import { bookRpc, bookTokenMatches, bookRateBucket, ipHashOf, bookSecretReport, bookRequestShape, BOOK_RATE_PER_MIN, BOOK_LOG_KEY } from '../lib/bookMcp.js';
 import { signalBoardPayload } from '../lib/signalBoardFeed.js';
-import { DESK_RULES_KEY, DESK_CHECKS_KEY, runChecks, newHits, deskAlertText, checksView, periodEnds } from '../lib/deskRules.js';
+import { DESK_RULES_KEY, DESK_CHECKS_KEY, runChecks, newHits, deskAlertCard, checksView, periodEnds } from '../lib/deskRules.js';
 import { TC_TODAY_KEY } from '../lib/sameDayFills.js';
 import { tvDaily } from '../lib/tradingview.js';
 import HOLIDAYS from '../data/holidays.json' with { type: 'json' };
@@ -581,7 +581,7 @@ async function storeDeskRules(mirror) {
 // scheduler. Prices: TradingView's delayed scanner for a rule's own symbol (the Desk writes rules in
 // TradingView tickers), dvcap's mark for a rule on the position's value. Newly hit rules of Stu's go
 // to the PRIVATE channel only. The answer is counts only: it lands in the scheduler's log.
-export async function deskRulesCheck({ origin, now = new Date(), quote = tvDaily, snap = snapshot, post = postLong, webhook = privateWebhookFromEnv() } = {}) {
+export async function deskRulesCheck({ origin, now = new Date(), quote = tvDaily, snap = snapshot, deliver = post, webhook = privateWebhookFromEnv() } = {}) {
   if (!kvConfigured()) return { ok: false, why: 'Redis is not configured' };
   const mirror = await kvGetJson(DESK_RULES_KEY);
   if (!mirror?.positions?.length) return { ok: true, skipped: 'the Desk has not sent its rules yet' };
@@ -597,10 +597,10 @@ export async function deskRulesCheck({ origin, now = new Date(), quote = tvDaily
   const prev = await kvGetJson(DESK_CHECKS_KEY).catch(() => null);
   const checks = runChecks(mirror, { quotes, marks, today, ...periodEnds(today, HOLIDAYS?.US?.closed || []), prev, now: now.toISOString() });
   await kvSetJson(DESK_CHECKS_KEY, checks);
-  const text = deskAlertText(newHits(prev, checks), { today });
+  const card = deskAlertCard(newHits(prev, checks), { today, now: now.toISOString() });
   let posted = false;
-  if (text && webhook) posted = !!(await post(webhook, text).catch(() => null));
-  return { ok: true, ...checks.counts, symbols: symbols.length, priced: Object.keys(quotes).length, alert: text ? (posted ? 'posted' : webhook ? 'post failed' : 'DISCORD_PRIVATE_WEBHOOK unset') : 'nothing new' };
+  if (card && webhook) posted = !!(await deliver(webhook, card).catch(() => null));
+  return { ok: true, ...checks.counts, symbols: symbols.length, priced: Object.keys(quotes).length, alert: card ? (posted ? 'posted' : webhook ? 'post failed' : 'DISCORD_PRIVATE_WEBHOOK unset') : 'nothing new' };
 }
 
 // The last 20 book-connector requests as SHAPES (lib/bookMcp.js bookRequestShape): never the token,

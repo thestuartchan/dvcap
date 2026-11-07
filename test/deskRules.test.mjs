@@ -1,9 +1,9 @@
 // test/deskRules.test.mjs — the Position Desk's rules on the close (lib/deskRules.js), the same-day
 // summary (lib/sameDayFills.js todayNet) and the job health states (lib/cronRouter.js). Fake tickers.
-import { normalizeMirror, evaluateRule, runChecks, newHits, deskAlertText, checksView, periodEnds, directionOf } from '../lib/deskRules.js';
+import { normalizeMirror, evaluateRule, runChecks, newHits, deskAlertCard, checksView, periodEnds, directionOf } from '../lib/deskRules.js';
 import { todayNet, legKeyOf } from '../lib/sameDayFills.js';
 import { attachToday, bookView, bookRpc } from '../lib/bookMcp.js';
-import { JOBS, prevSlot, healthOf, statusView, healthSummary, failureText } from '../lib/cronRouter.js';
+import { JOBS, prevSlot, healthOf, statusView, healthSummary, failureCard } from '../lib/cronRouter.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const ok = (n, c) => eq(n, !!c, true);
@@ -54,9 +54,11 @@ const ok = (n, c) => eq(n, !!c, true);
   eq('day two: Stu\'s stop and take-profit are news, the draft is not', nh.fresh.map(x => x.rule.id), ['s', 't']);
   const again = newHits(day2, runChecks(mirror, { quotes: { 'X:ZZQ': { close: 48, atr: 2 } }, marks: { 'zzq-1': { mark: 11.5 } }, today: '2026-11-09', prev: day2 }));
   eq('still hit the next day: not news again', again.fresh.length, 0);
-  const text = deskAlertText(nh, { today: '2026-11-06' });
-  ok('the message names the position, rule and number', /ZZQ.*Stop: close below 50.*close 49/.test(text));
-  eq('nothing new: no message', deskAlertText({ fresh: [], near: [{}] }), null);
+  const card = deskAlertCard(nh, { today: '2026-11-06', now: 'T' }).embeds[0];
+  eq('a card: title, counts, red for a hit', [card.title, card.description, card.color], ['Desk rules at the close · Fri 6 Nov', '2 hit', 0xe74c3c]);
+  ok('a field per rule: position, rule and the number', card.fields[0].name === '🔴 ZZQ' && /Stop · close below 50/.test(card.fields[0].value) && /close 49/.test(card.fields[0].value));
+  eq('nothing new: no card', deskAlertCard({ fresh: [], near: [{}] }), null);
+  ok('no mentions', JSON.stringify(deskAlertCard(nh, { today: '2026-11-06' }).allowed_mentions) === '{"parse":[]}');
   eq('counts for the log', day2.counts, { hit: 3, due: 0, near: 0, ok: 0, unchecked: 0 });
   const v = checksView(day2);
   eq('the connector carries states, not the rule text', Object.keys(v.positions[0].rules[0]).sort(), ['checkedAt', 'id', 'note', 'price', 'state']);
@@ -121,12 +123,11 @@ const ok = (n, c) => eq(n, !!c, true);
   const v = statusView({ 'desk-rules': { slot: '2026-11-06T21:20:00.000Z', ok: false } }, t);
   eq('the summary counts it', healthSummary(v).failed, 1);
   eq('the same-day book runs every 30 min through the session', v.find(x => x.id === 'same-day-book').at, '09:45–16:45 every 30 min');
-  const ft = failureText({ id: 'desk-rules', slot: '2026-11-06T21:20:00.000Z', status: 500, note: 'boom' });
-  ok('a failure message names the job, its run in Dubai and New York time, and the reason', /Desk rules at the close.*01:20 Dubai.*16:20 ET[\s\S]*boom \(HTTP 500\)/.test(ft));
-  eq('a 200 that said ok:false shows only its reason', failureText({ id: 'same-day-book', slot: '2026-11-06T15:15:00.000Z', status: 200, note: 'not set' }).split('\n')[1], 'not set');
-  eq('no answer: the timeout note, once', failureText({ id: 'gex-recompute', slot: '2026-11-06T12:15:00.000Z', status: null, note: 'no answer within 240s' }).split('\n')[1], 'no answer within 240s');
-  const msg = deskAlertText({ fresh: [{ name: 'ZZQ', rule: { kind: 'stop', state: 'hit', text: 't', note: 'n' } }, { name: 'ZZR', rule: { kind: 'review', state: 'due', text: 't', note: 'n' } }], near: [] }, { today: '2026-11-06' });
-  eq('the headline splits hit from due, with a readable date', msg.split('\n')[0], '**Desk rules at the close · Fri 6 Nov** · 1 hit · 1 due');
+  const ft = failureCard({ id: 'desk-rules', slot: '2026-11-06T21:20:00.000Z', status: 500, note: 'boom' }).embeds[0];
+  eq('a failure card names the job, the reason, the run and the answer', [ft.title, ft.description, ft.fields.map(f => f.value)], ['⚠️ Desk rules at the close failed', 'boom', ['01:20 Dubai (16:20 ET)', 'HTTP 500']]);
+  eq('no answer: the timeout note, and the answer says none', (({ description, fields }) => [description, fields[1].value])(failureCard({ id: 'gex-recompute', slot: '2026-11-06T12:15:00.000Z', status: null, note: 'no answer within 240s' }).embeds[0]), ['no answer within 240s', 'none']);
+  const dc = deskAlertCard({ fresh: [{ name: 'ZZQ', rule: { kind: 'stop', state: 'hit', text: 't', note: 'n' } }, { name: 'ZZR', rule: { kind: 'review', state: 'due', text: 't', note: 'n' } }], near: [] }, { today: '2026-11-06' }).embeds[0];
+  eq('the headline splits hit from due; only due rules go amber', [dc.description, deskAlertCard({ fresh: [{ name: 'ZZR', rule: { kind: 'review', state: 'due' } }], near: [] }).embeds[0].color], ['1 hit · 1 due', 0xf1c40f]);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
