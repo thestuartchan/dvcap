@@ -10,7 +10,7 @@
 // Uses the same GitHub commit-back store as the Korea entry — no new infrastructure.
 
 import { hasSessionCookie, hasCronSecret, refuse } from '../lib/apiauth.js';
-import { tick, statusView, healthSummary, failureText, privateTestText, nyDayOf, FAIL_ALERT_KEY, LAST_KEY as CRON_LAST_KEY } from '../lib/cronRouter.js';
+import { tick, statusView, healthSummary, failureCard, privateTestCard, nyDayOf, FAIL_ALERT_KEY, LAST_KEY as CRON_LAST_KEY } from '../lib/cronRouter.js';
 import { post, privateWebhookFromEnv } from '../lib/discord.js';
 import { dispatchOne } from '../lib/githubDispatch.js';
 import { kvConfigured, kvGetJson, kvSetJson, kvSetNxEx } from '../lib/kv.js';
@@ -40,7 +40,7 @@ async function cronTick(req, res) {
     const webhook = privateWebhookFromEnv();
     if (!webhook) return res.status(200).json({ ok: false, why: 'DISCORD_PRIVATE_WEBHOOK is not set in this deployment (redeploy after adding it)' });
     if (kvConfigured() && !(await kvSetNxEx('dvcap:discord:private:test:v1', 1, 60).catch(() => true))) return res.status(200).json({ ok: false, why: 'a test was sent in the last minute' });
-    const sent = await post(webhook, { content: privateTestText(), allowed_mentions: { parse: [] } }).catch(() => null);
+    const sent = await post(webhook, privateTestCard()).catch(() => null);
     return res.status(200).json(sent ? { ok: true } : { ok: false, why: 'Discord did not accept the message: check the webhook URL' });
   }
   if (!hasCronSecret(req)) return res.status(401).json({ error: 'cron secret missing or wrong' });
@@ -60,7 +60,7 @@ async function cronTick(req, res) {
   if (webhook) {
     for (const r of failed) {
       const first = await kvSetNxEx(FAIL_ALERT_KEY(r.id, nyDayOf(Date.now())), 1, 2 * 86400).catch(() => false);
-      if (first) await post(webhook, { content: failureText(r), allowed_mentions: { parse: [] } }).catch(() => null);
+      if (first) await post(webhook, failureCard(r)).catch(() => null);
     }
   }
   return res.status(200).json({ ok: true, ...out });

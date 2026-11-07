@@ -1,5 +1,5 @@
 // test/cronRouter.test.mjs — the one-tick scheduler (lib/cronRouter.js, api/regime-log.js ?tick).
-import { JOBS, zonedToUtc, dueSlots, allDue, tick, runJob, outcomeOf, nextSlot, statusView, claimKey, LAST_KEY, WINDOW_MIN, privateTestText } from '../lib/cronRouter.js';
+import { JOBS, zonedToUtc, dueSlots, allDue, tick, runJob, outcomeOf, nextSlot, statusView, claimKey, LAST_KEY, WINDOW_MIN, privateTestCard } from '../lib/cronRouter.js';
 import handler from '../api/regime-log.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -76,8 +76,8 @@ function fakeKv() {
 }
 
 {
-  const t = privateTestText(Date.parse('2026-11-07T12:00:00Z'));
-  ok('the test message says what the channel is for, and when', /connected.*16:00 Dubai \(07:00 ET\)[\s\S]*Desk rules/.test(t));
+  const c = privateTestCard(Date.parse('2026-11-07T12:00:00Z')).embeds[0];
+  ok('the test card says what the channel is for, and when', /connected/.test(c.title) && /16:00 Dubai \(07:00 ET\)/.test(c.description) && c.fields.some(f => /Desk rules/.test(f.name)));
 }
 
 // ── THE DOOR ─────────────────────────────────────────────────────────────────
