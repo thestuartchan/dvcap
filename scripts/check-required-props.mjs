@@ -19,7 +19,7 @@ const require = createRequire(import.meta.url);
 const acorn = require('acorn');
 const jsx = require('acorn-jsx');
 const Parser = acorn.Parser.extend(jsx());
-const FILES = ['src/App.jsx', 'src/TradeConsole.jsx', 'src/ui.jsx'];
+const FILES = ['src/App.jsx', 'src/TradeConsole.jsx', 'src/ui.jsx', 'src/pages/TodayPage.jsx', 'src/pages/OpsPage.jsx'];
 
 function walk(node, visit, parent = null) {
   if (!node || typeof node.type !== 'string') return;
