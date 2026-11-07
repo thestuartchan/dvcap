@@ -9,7 +9,6 @@ import { CoveragePanel } from "../CoveragePanel.jsx";
 import { STATUS } from "../../lib/status.js";
 import { FeedHealth, CrossCheckHealth, JobHealth } from "../MarketState.jsx";
 import { handEntryPlan } from "../../lib/handEntry.js";
-  // one map, shared with the trade console
 
 // ── THE HAND-KEPT LEDGER ─────────────────────────────────────────────────────
 // lib/ledger.js builds the list; this renders it. Stale and missing first. Each row: the input,

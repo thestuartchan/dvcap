@@ -21,9 +21,9 @@
 //
 // Comments are stripped, not pattern-matched — the first cut of the sibling check flagged four of
 // its own explanations. A phrase in commentary is history; the same phrase in a string ships.
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 
-const FILES = ['src/App.jsx', 'src/pages/TodayPage.jsx', 'src/pages/OpsPage.jsx'];
+const FILES = ['src/App.jsx', ...readdirSync('src/pages').filter(f => f.endsWith('.jsx')).map(f => 'src/pages/' + f)]  // every page module (src/pages/);
 
 const BANNED = [
   /\bact now\b/i,
