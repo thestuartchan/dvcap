@@ -1,16 +1,12 @@
-import { useState, useEffect, useCallback, useMemo, useRef, Component, Fragment } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Component, Fragment, lazy, Suspense } from "react";
 import { C, P, alpha, THEMES, DEFAULT_THEME, THEME_KEY } from "./theme.js";
 import { SLabel, Card, Btn, StaleChip } from "./ui.jsx";
 import { ASSETS } from "../lib/assets.js";
 import { REGIMES, REGIME_PALETTE } from "../lib/regimes.js";
-import { TradeConsole } from "./TradeConsole.jsx";
-import { GexPanel } from "./GexPanel.jsx";
 import { CtaPanel } from "./CtaPanel.jsx";
-import { RatiosPanel } from "./RatiosPanel.jsx";
-import { CalendarPanel } from "./CalendarPanel.jsx";
-import { TickerPanel } from "./TickerPanel.jsx";
 import { CoveragePanel } from "./CoveragePanel.jsx";
 import { GoBar, GoKey } from "./GoBar.jsx";
+import { PAGES, VIEWS, pageOf } from "./pages/nav.js";
 import { CorrelationPanel } from "./CorrelationPanel.jsx";
 import { ScenarioBoard } from "./ScenarioBoard.jsx";
 import {
@@ -40,7 +36,6 @@ import { DEFAULT_TARGET_PCT } from "../lib/sizing.js";
 import { computeMarketState, stateLogRow, STAGE_LABEL } from "../lib/marketState.js";
 import { StateView, DriversView, FeedHealth, StreetCompare, Fold, CrossCheckHealth, JobHealth } from "./MarketState.jsx";
 import { useJobHealth, jobHealthNote } from "./jobHealth.js";
-import { PlanView } from "./PlanView.jsx";
 import { expectedRank } from "../lib/plan.js";
 import { observationAge } from "../lib/gates.js";
 import { trend as trendOf } from "../lib/series.js";
@@ -54,7 +49,6 @@ function trendBps(series, lookbackDays) {
 import { growthPulse, marketPulse, monthlyPulse, growthAxis } from "../lib/growth.js";
 import { marketInflation, nowcastInflation, printedInflation, inflationAxis } from "../lib/inflationAxis.js";
 import { measuredAxes, axesLogRow } from "../lib/quadrant.js";
-import { MlsPanel } from "./MlsPanel.jsx";
 import { handKeptLedger } from "../lib/ledger.js";
 import { handEntryPlan, newerKofia } from "../lib/handEntry.js";
 import CALENDAR from "../data/calendar.json";
@@ -83,6 +77,18 @@ import { dubaiEt, dubaiEtStamp } from "../lib/timeFmt.js";
 import { leadRegion, regionStamps } from "../lib/overviewRegions.js";
 import { ChinaPanel } from "./ChinaPanel.jsx";
 import { mergeIsm } from "../lib/ismFeed.js";
+
+// A page's own panel loads when the page opens, not with the dashboard: Today paints without the
+// Console's or Gamma's code. Each is its own chunk; the Suspense fallback sits inside the tab's
+// error boundary, so a chunk that fails to load shows that tab's error, not a blank page.
+const named = (load, name) => lazy(() => load().then(m => ({ default: m[name] })));
+const TradeConsole  = named(() => import("./TradeConsole.jsx"), "TradeConsole");
+const GexPanel      = named(() => import("./GexPanel.jsx"), "GexPanel");
+const RatiosPanel   = named(() => import("./RatiosPanel.jsx"), "RatiosPanel");
+const CalendarPanel = named(() => import("./CalendarPanel.jsx"), "CalendarPanel");
+const TickerPanel   = named(() => import("./TickerPanel.jsx"), "TickerPanel");
+const MlsPanel      = named(() => import("./MlsPanel.jsx"), "MlsPanel");
+const PlanView      = named(() => import("./PlanView.jsx"), "PlanView");
 
 // ─── TOKENS ──────────────────────────────────────────────────────────────────
 const SC = [C.blue,C.green,P.amber600,P.violet700,P.amber700,P.pink700,P.teal700,P.amber500];
@@ -5852,9 +5858,6 @@ function WrittenOn({ date }) {
   );
 }
 
-// Data health is not a place you go to read the market; it is the state of the inputs behind every
-// number. It opens from the status dot beside the groups rather than sitting among them.
-const HEALTH_TAB = { id: "health", label: "🩺 Data health" };
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
@@ -6904,56 +6907,10 @@ export default function App() {
     </>
   );
 
-  // ── TWO LEVELS, BECAUSE NINE TABS IN ONE ROW IS A LIST, NOT A STRUCTURE ──
-  // Nine peers scrolling sideways on a phone told you nothing about which of them belonged
-  // together, and the one you wanted was as likely to be off-screen as not. Grouped, the top row
-  // answers "what am I doing" and the second answers "which part of it" — and the second row is
-  // three items rather than nine, which is the difference between scrolling and reading.
-  //
-  // GROUPED BY WHAT YOU ARE LOOKING AT (18 Oct 2026), the way a terminal's functions are: the
-  // market as a whole, one name, your own book, and the plan. It used to be grouped by what you
-  // were doing (act / read / revisit), which put Gamma — a view of one underlying — beside the
-  // Console, and Hedges and Income — which act on positions — under the longer-horizon playbook.
-  // Every view and its id are unchanged; only where it sits moved.
-  const TAB_GROUPS = [
-    // MARKETS reads one measured state: the day's overview, State landing on it, Drivers with every
-    // gauge behind it, Ratios with who is winning in seven pairs (src/RatiosPanel.jsx), and the
-    // calendar of what is coming.
-    { id: "markets", label: "Markets", hint: "read", tabs: [
-      { id: "global",     label: "🌏 Daily Overview" },
-      { id: "state",      label: "🧭 State"          },
-      { id: "drivers",    label: "📈 Drivers"        },
-      { id: "ratios",     label: "⚖️ Ratios"         },
-      { id: "calendar",   label: "📅 Calendar"       },
-    ] },
-    // TICKERS — one underlying at a time: its page (the terminal's DES) and its gamma.
-    { id: "tickers", label: "Tickers", hint: "one name", tabs: [
-      { id: "ticker",     label: "🔎 Ticker"         },
-      { id: "gex",        label: "🌀 Gamma"          },
-    ] },
-    // BOOK — what you hold and what acts on it: the Console, Hedges (phase from the conditions),
-    // Income (ranked on the measured regime mix).
-    { id: "book", label: "Book", hint: "act", tabs: [
-      { id: "console",    label: "🎚️ Console"        },
-      { id: "insurance",  label: "🛡️ Hedges"         },
-      { id: "income",     label: "💰 Income"         },
-      { id: "mls",        label: "🧪 Paper trial"    },
-    ] },
-    // PLAN — posture by regime × conditions, the stage and what each transition changes, with the
-    // houses' view (Smart Money) beside it as the research it is.
-    { id: "plan", label: "Plan", hint: "revisit", tabs: [
-      { id: "plan",       label: "🎯 Plan"           },
-      { id: "street",     label: "🏦 Smart Money"    },
-    ] },
-  ];
-  // Flat list kept so every existing lookup — the error boundary's tab name, most of all — keeps
-  // working against one array rather than each one learning about groups.
-  const TABS = [...TAB_GROUPS.flatMap(g => g.tabs), HEALTH_TAB];
-  // The open group is DERIVED from the open tab, never stored alongside it. Two sources of truth
-  // for "where am I" is how a tab bar ends up highlighting one thing while showing another. Data
-  // health belongs to no group: its own row shows while it is open.
-  const inGroup = TAB_GROUPS.find(g => g.tabs.some(t => t.id === tab)) || null;
-  const activeGroup = inGroup || TAB_GROUPS[0];
+  // ── ONE ROW OF PAGES (src/pages/nav.js) ──
+  // Each page is one job in the order a day runs; a page with several views shows them in a second
+  // row, a page with one shows none. The open page is DERIVED from the open view, never stored.
+  const page = pageOf(tab);
   // THE INPUTS, AT A GLANCE — what the status dot shows, from what is already loaded (nothing is
   // fetched for it). Red: the conditions read failed. Amber: serving a last good copy, a feed
   // erroring, or a hand-kept input stale or never entered. Green otherwise.
@@ -6997,7 +6954,7 @@ export default function App() {
                 📊 Market Watch Dashboard
               </h1>
               <p className="mwd-tagline" style={{ margin: 0, color: C.muted, fontSize: 13 }}>
-                Markets · Tickers · Book · Plan
+                {PAGES.map(p => p.label).join(" · ")}
               </p>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: "100%" }}>
@@ -7040,27 +6997,29 @@ export default function App() {
       </div>
 
       {/* ── STICKY NAV ──
-          Groups, tabs and the regime strip. Roughly a third the height of the old sticky header,
+          Pages, views and the regime strip. Roughly a third the height of the old sticky header,
           which is what makes pinning it worth doing rather than something to scroll past. */}
       <div ref={navRef} className="mwd-sticky-nav" style={{ background: C.surf, borderBottom: "2px solid " + C.bdr, padding: "8px 16px 0", position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ maxWidth: 1080, margin: "0 auto" }}>
-          {/* ── GROUP ROW ──
-              Selecting a group moves to its FIRST tab rather than leaving the second row pointing
-              at a section you are not on. A group button that changes the menu without changing
-              the page is the thing people click twice and then stop trusting. */}
+          {/* ── PAGE ROW ──
+              Choosing a page opens its FIRST view. Ops carries the data-health dot, so the state of
+              the inputs is visible from every page without a separate pill. */}
           <div className="mwd-tabrow mwd-grouprow" style={{ display: "flex", gap: 6, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
-            {TAB_GROUPS.map(g => {
-              const on = !!inGroup && g.id === activeGroup.id;
+            {PAGES.map(pg => {
+              const on = pg.id === page.id;
+              const dot = pg.dot ? { green: C.green, amber: C.amber, red: C.red }[health.level] : null;
+              const title = pg.dot ? health.title : pg.title;
               return (
-                <button key={g.id} className="mwd-group-btn" onClick={() => { if (!on) setTab(g.tabs[0].id); }} style={{
+                <button key={pg.id} className="mwd-group-btn" onClick={() => { if (!on) setTab(pg.tabs[0].id); }} title={title} aria-label={pg.dot ? `${pg.label}. ${health.title}` : pg.label} style={{
                   background: on ? C.blBg : "transparent",
                   border: "1.5px solid " + (on ? C.blue : C.bdr),
                   borderRadius: 999, color: on ? C.blue : C.mid,
-                  padding: "5px 13px", fontSize: 13, fontWeight: 800,
+                  padding: "5px 12px", fontSize: 13, fontWeight: 800,
                   cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+                  display: "inline-flex", alignItems: "center", gap: 6,
                 }}>
-                  {g.label}
-                  <span className="mwd-group-hint" style={{ fontSize: 10, fontWeight: 700, color: on ? C.blue : C.muted, marginLeft: 6 }}>{g.hint}</span>
+                  {dot && <span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: 99, background: dot, display: "inline-block" }} />}
+                  {pg.label}
                 </button>
               );
             })}
@@ -7069,40 +7028,26 @@ export default function App() {
                        cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
               <GoKey small /><span className="mwd-data-label" style={{ color: C.muted }}>/</span>
             </button>
-            {(() => {
-              const on = tab === HEALTH_TAB.id;
-              const dot = { green: C.green, amber: C.amber, red: C.red }[health.level];
-              return (
-                <button className="mwd-nav-pill" onClick={() => setTab(HEALTH_TAB.id)} title={health.title} aria-label={health.title} style={{
-                  background: on ? C.blBg : "transparent", border: "1.5px solid " + (on ? C.blue : C.bdr), borderRadius: 999,
-                  color: on ? C.blue : C.mid, padding: "5px 11px", fontSize: 12, fontWeight: 800, cursor: "pointer",
-                  whiteSpace: "nowrap", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6,
+          </div>
+          {/* ── VIEW ROW — only on a page with more than one view ── */}
+          {page.tabs.length > 1 ? (
+            <div className="mwd-tabrow" style={{ display: "flex", gap: 0, marginTop: 6, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
+              {page.tabs.map(t => (
+                <button key={t.id} onClick={() => setTab(t.id)} style={{
+                  background: "none", border: "none",
+                  borderBottom: "3px solid " + (tab === t.id ? C.blue : "transparent"),
+                  color: tab === t.id ? C.blue : C.muted,
+                  padding: "8px 14px", fontSize: 14, fontWeight: 700,
+                  cursor: "pointer", whiteSpace: "nowrap", marginBottom: -2, flexShrink: 0,
                 }}>
-                  <span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: 99, background: dot, display: "inline-block" }} />
-                  <span className="mwd-data-label">Data</span>
+                  {t.label}
                 </button>
-              );
-            })()}
-          </div>
-          {/* ── TAB ROW — only the open group's tabs ──
-              Three items, not nine. On a phone this is the whole difference between a row you read
-              and a row you scroll hunting for something you cannot see. */}
-          <div className="mwd-tabrow" style={{ display: "flex", gap: 0, marginTop: 6, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
-            {(inGroup ? activeGroup.tabs : [HEALTH_TAB]).map(t => (
-              <button key={t.id} onClick={() => setTab(t.id)} style={{
-                background: "none", border: "none",
-                borderBottom: "3px solid " + (tab === t.id ? C.blue : "transparent"),
-                color: tab === t.id ? C.blue : C.muted,
-                padding: "8px 14px", fontSize: 14, fontWeight: 700,
-                cursor: "pointer", whiteSpace: "nowrap", marginBottom: -2, flexShrink: 0,
-              }}>
-                {t.label}
-              </button>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : <div style={{ height: 8 }} />}
           {/* THE STATE STRIP — on every tab, sticky: the measured regime, conditions and policy
               (lib/marketState.js). The consensus regime and the credit ladder it used to show are
-              on Plan › Smart Money (folded, under the 13F data) and inside the conditions score. */}
+              on Research › Smart Money (folded, under the 13F data) and inside the conditions score. */}
           {(() => {
             const r = mstate.regime, c = mstate.conditions, pol = mstate.policy;
             const chip = (k, v, col, onClick) => (
@@ -7130,12 +7075,12 @@ export default function App() {
                 {chip("Fed", pol?.stance ? `${pol.stance}${pol.next?.hikeOdds != null && pol.next.hikeOdds >= 10 ? ` · hike ${Math.round(pol.next.hikeOdds)}%` : pol.next?.cutOdds != null && pol.next.cutOdds >= 10 ? ` · cut ${Math.round(pol.next.cutOdds)}%` : ""}` : "—",
                   pol?.stance === "tightening" ? C.red : pol?.stance === "easing" ? C.green : C.amber)}
                 {mstate.sizing?.total != null && <><span style={{ color: C.bdr }}>·</span>{chip("Size", `×${mstate.sizing.total.toFixed(2)}`, C.text)}</>}
-                {streetDisagrees && <span title={`The Street's consensus reads ${liveRegime.label} ${regimeProbFor(liveRegime.id)}% — see Plan › Smart Money`}>{flag(`STREET: ${liveRegime.label.toUpperCase()}`)}</span>}
+                {streetDisagrees && <span title={`The Street's consensus reads ${liveRegime.label} ${regimeProbFor(liveRegime.id)}% — see Research › Smart Money`}>{flag(`STREET: ${liveRegime.label.toUpperCase()}`)}</span>}
                 {(() => { const ia = pbData?.us?.interventionAuto; if (!ia?.active) return null;
                   const g = ia.latest?.confirmation?.status === "confirmed" ? "CONFIRMED" : "SUSPECTED";
                   return <span title={ia.headline}>{flag(`⚑ YEN INTERVENTION ${g}`)}</span>; })()}
                 {regimeDiverged && flag("📌 PINNED ≠ LIVE")}
-                {(ledger.counts.stale + ledger.counts.missing) > 0 && <span onClick={() => runGo({ tab: HEALTH_TAB.id, anchor: "hand-entry" })} style={{ cursor: "pointer" }} title={`${ledger.counts.stale} stale, ${ledger.counts.missing} never entered — open the hand-entry list`}>{flag(`✍ ${ledger.counts.stale + ledger.counts.missing} HAND-KEPT OUT`)}</span>}
+                {(ledger.counts.stale + ledger.counts.missing) > 0 && <span onClick={() => runGo({ tab: "health", anchor: "hand-entry" })} style={{ cursor: "pointer" }} title={`${ledger.counts.stale} stale, ${ledger.counts.missing} never entered — open the hand-entry list`}>{flag(`✍ ${ledger.counts.stale + ledger.counts.missing} HAND-KEPT OUT`)}</span>}
                 {stateFeed?.source === "stale" && flag("GAUGES: LAST GOOD COPY")}
               </div>
             );
@@ -7173,7 +7118,8 @@ export default function App() {
           </div>
         )}
 
-        <TabErrorBoundary key={tab} name={(TABS.find(t => t.id === tab)?.label || "This tab").replace(/^\S+\s/, "")}>
+        <TabErrorBoundary key={tab} name={(VIEWS.find(t => t.id === tab)?.label || "This tab").replace(/^\S+\s/, "")}>
+        <Suspense fallback={<div style={{ padding: 24, color: C.muted, fontSize: 13 }}>Loading…</div>}>
 
         {/* ── GAMMA EXPOSURE ──
             Self-contained: its own tab, its own endpoints, its own state. Nothing about it lives
@@ -8099,6 +8045,7 @@ export default function App() {
         )}
 
 
+        </Suspense>
         </TabErrorBoundary>
 
         {/* FOOTER */}

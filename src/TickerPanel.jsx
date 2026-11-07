@@ -1,4 +1,4 @@
-// src/TickerPanel.jsx — Tickers › Ticker page: one name on one screen, the terminal's DES.
+// src/TickerPanel.jsx — Ticker page: one name on one screen, the terminal's DES.
 //
 // What each card reads, and from where:
 //   price and the year's chart     /api/prices and /api/atr?history=1 (Yahoo, as everywhere else)
