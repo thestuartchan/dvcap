@@ -16,7 +16,7 @@ const acorn = require('acorn'); const jsx = require('acorn-jsx');
 const Parser = acorn.Parser.extend(jsx());
 // Every source file, so extracting a tab into its own module cannot create a new blind spot —
 // which is exactly what would have happened when the Console moved out of App.jsx.
-const FILES=['src/App.jsx','src/TradeConsole.jsx','src/ui.jsx'];
+const FILES=['src/App.jsx','src/TradeConsole.jsx','src/ui.jsx','src/pages/TodayPage.jsx','src/pages/OpsPage.jsx'];
 
 const GLOBALS=new Set(['globalThis','console','JSON','Math','Date','Number','String','Boolean','Object','Array','Set','Map','WeakMap','Promise','Symbol','RegExp','Error','TypeError','parseInt','parseFloat','isNaN','isFinite','encodeURIComponent','decodeURIComponent','setTimeout','clearTimeout','setInterval','clearInterval','window','document','navigator','location','localStorage','sessionStorage','fetch','AbortSignal','URL','Notification','Intl','process','undefined','NaN','Infinity','arguments','structuredClone','requestAnimationFrame']);
 

@@ -12,7 +12,7 @@
 // it lives in one place. This holds the line after the prose was cut back.
 //
 // ── SCOPE ────────────────────────────────────────────────────────────────────
-// src/App.jsx only — the reading tabs. TradeConsole.jsx is where trades are actually recorded,
+// src/App.jsx and the page modules — the reading tabs. TradeConsole.jsx is where trades are actually recorded,
 // and "Bought", "Sold", "＋ buy zone" are its controls, not its advice. lib/read.js's own list
 // (buy/sell/trim/exit/allocate…) is deliberately NOT reused here: those are verbs the console's
 // labels legitimately carry, so borrowing them would flag "Sell zone" and teach everyone to
@@ -23,7 +23,7 @@
 // its own explanations. A phrase in commentary is history; the same phrase in a string ships.
 import { readFileSync } from 'node:fs';
 
-const FILES = ['src/App.jsx'];
+const FILES = ['src/App.jsx', 'src/pages/TodayPage.jsx', 'src/pages/OpsPage.jsx'];
 
 const BANNED = [
   /\bact now\b/i,

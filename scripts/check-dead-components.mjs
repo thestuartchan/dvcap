@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import { Parser } from 'acorn';
 import jsx from 'acorn-jsx';
 
-const FILES = ['src/App.jsx', 'src/TradeConsole.jsx', 'src/ui.jsx'];
+const FILES = ['src/App.jsx', 'src/TradeConsole.jsx', 'src/ui.jsx', 'src/pages/TodayPage.jsx', 'src/pages/OpsPage.jsx'];
 const P = Parser.extend(jsx());
 
 // Does this function body produce JSX anywhere inside it?
