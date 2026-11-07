@@ -714,6 +714,12 @@ const JOB_TONE = { ok: TONE.good, failed: TONE.bad, missed: TONE.bad, waiting: T
 const JOB_WORD = { ok: "ok", failed: "failed", missed: "missed", waiting: "waiting" };
 const JOB_ORDER = { failed: 0, missed: 1, waiting: 2, ok: 3 };
 export function JobHealth({ st }) {
+  const [test, setTest] = useState(null);   // null | "sending" | {ok, why}
+  const sendTest = () => {
+    setTest("sending");
+    fetch("/api/regime-log?tick=test-private", { method: "POST", credentials: "include" }).then(r => r.json())
+      .then(j => setTest(j)).catch(e => setTest({ ok: false, why: String(e?.message || e) }));
+  };
   const s = st?.summary;
   const jobs = (st?.jobs || []).slice().sort((a, b) => (JOB_ORDER[a.health] ?? 9) - (JOB_ORDER[b.health] ?? 9) || a.id.localeCompare(b.id));
   const bad = s ? s.failed + s.missed : 0;
@@ -762,6 +768,14 @@ export function JobHealth({ st }) {
           <div key={k + "v"} style={{ color: C.mid }}>{v}</div>,
         ])}
       </div>
+      {st?.privateChannel && (
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
+          <button type="button" onClick={sendTest} disabled={test === "sending"}
+            style={{ font: "inherit", fontSize: 12, padding: "4px 10px", borderRadius: 6, border: "1px solid " + C.bdr, background: C.inset, color: C.text, cursor: test === "sending" ? "default" : "pointer" }}>
+            {test === "sending" ? "Sending…" : "Send test message"}</button>
+          {test && test !== "sending" && <span style={{ fontWeight: 700, color: test.ok ? C.green : C.amber }}>{test.ok ? "Sent: check the private channel" : `Not sent: ${test.why || "no answer"}`}</span>}
+        </div>
+      )}
     </Card>
   );
 }

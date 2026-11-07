@@ -10,7 +10,7 @@
 // Uses the same GitHub commit-back store as the Korea entry — no new infrastructure.
 
 import { hasSessionCookie, hasCronSecret, refuse } from '../lib/apiauth.js';
-import { tick, statusView, healthSummary, failureText, nyDayOf, FAIL_ALERT_KEY, LAST_KEY as CRON_LAST_KEY } from '../lib/cronRouter.js';
+import { tick, statusView, healthSummary, failureText, privateTestText, nyDayOf, FAIL_ALERT_KEY, LAST_KEY as CRON_LAST_KEY } from '../lib/cronRouter.js';
 import { post, privateWebhookFromEnv } from '../lib/discord.js';
 import { dispatchOne } from '../lib/githubDispatch.js';
 import { kvConfigured, kvGetJson, kvSetJson, kvSetNxEx } from '../lib/kv.js';
@@ -31,6 +31,17 @@ async function cronTick(req, res) {
     const jobs = statusView(last, Date.now(), { usClosed: usClosed() });
     return res.status(200).json({ now: new Date().toISOString(), cronSecret: !!String(process.env.CRON_SECRET || '').trim(),
       privateChannel: !!privateWebhookFromEnv(), summary: healthSummary(jobs), jobs });
+  }
+  // ?tick=test-private (POST, dashboard login): one test message to the private channel, from the
+  // deployment's own webhook, so it can be checked without the URL ever leaving Vercel. Once a minute.
+  if (String(req.query.tick) === 'test-private') {
+    if (req.method !== 'POST') return res.status(405).json({ ok: false, why: 'POST from the dashboard' });
+    if (!(await hasSessionCookie(req))) return res.status(401).json({ ok: false, why: 'sign in to the dashboard first' });
+    const webhook = privateWebhookFromEnv();
+    if (!webhook) return res.status(200).json({ ok: false, why: 'DISCORD_PRIVATE_WEBHOOK is not set in this deployment (redeploy after adding it)' });
+    if (kvConfigured() && !(await kvSetNxEx('dvcap:discord:private:test:v1', 1, 60).catch(() => true))) return res.status(200).json({ ok: false, why: 'a test was sent in the last minute' });
+    const sent = await post(webhook, { content: privateTestText(), allowed_mentions: { parse: [] } }).catch(() => null);
+    return res.status(200).json(sent ? { ok: true } : { ok: false, why: 'Discord did not accept the message: check the webhook URL' });
   }
   if (!hasCronSecret(req)) return res.status(401).json({ error: 'cron secret missing or wrong' });
   if (!kvConfigured()) return res.status(200).json({ ok: false, why: 'KV not configured: slots cannot be claimed, so nothing runs' });
