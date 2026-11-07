@@ -1,5 +1,5 @@
 // test/cronRouter.test.mjs — the one-tick scheduler (lib/cronRouter.js, api/regime-log.js ?tick).
-import { JOBS, zonedToUtc, dueSlots, allDue, tick, runJob, outcomeOf, nextSlot, statusView, claimKey, LAST_KEY, WINDOW_MIN } from '../lib/cronRouter.js';
+import { JOBS, zonedToUtc, dueSlots, allDue, tick, runJob, outcomeOf, nextSlot, statusView, claimKey, LAST_KEY, WINDOW_MIN, privateTestText } from '../lib/cronRouter.js';
 import handler from '../api/regime-log.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -75,6 +75,11 @@ function fakeKv() {
   eq('in its own clock', v.find(x => x.id === 'gex-recompute').clock, 'New York');
 }
 
+{
+  const t = privateTestText(Date.parse('2026-11-07T12:00:00Z'));
+  ok('the test message says what the channel is for, and when', /connected.*16:00 Dubai \(07:00 ET\)[\s\S]*Desk rules/.test(t));
+}
+
 // ── THE DOOR ─────────────────────────────────────────────────────────────────
 function fakeRes() {
   const r = { code: null, body: null, headers: {} };
@@ -90,6 +95,10 @@ function fakeRes() {
   eq('no CRON_SECRET: every tick is refused', r.code, 401);
   r = fakeRes(); await handler({ method: 'GET', query: { tick: 'status' }, headers: {} }, r);
   eq('the status page needs the dashboard login', r.code, 401);
+  r = fakeRes(); await handler({ method: 'POST', query: { tick: 'test-private' }, headers: {} }, r);
+  eq('the private-channel test needs the dashboard login', r.code, 401);
+  r = fakeRes(); await handler({ method: 'GET', query: { tick: 'test-private' }, headers: {} }, r);
+  eq('and is a POST', r.code, 405);
   if (saved != null) process.env.CRON_SECRET = saved;
 }
 
