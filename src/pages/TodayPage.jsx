@@ -17,16 +17,14 @@ import { readSnapshot, bookLine, ageText } from "../../lib/bookSnapshot.js";
 import { regimeFlipsIf } from "../../lib/regime.js";
 import { southboundTrend, southboundLevelTrend, southboundRead, ahPremiumRead, sbStale } from "../../lib/southbound.js";
 import { mergeSouthbound } from "../../lib/hkexSouthbound.js";
-import { STATUS } from "../../lib/status.js";
 import { STAGE_LABEL } from "../../lib/marketState.js";
 import { trend as trendOf } from "../../lib/series.js";
 import { handoffChain } from "../../lib/handoff.js";
 import { businessDaysSince } from "../../lib/bondDays.js";
-  // one map, shared with the trade console
-import { dubaiEt } from "../../lib/timeFmt.js";
 import { leadRegion, regionStamps } from "../../lib/overviewRegions.js";
 import { ChinaPanel } from "../ChinaPanel.jsx";
 import { cacheLoad, cacheSave } from "../cache.js";
+import { InterventionAutoBlock } from "./editors.jsx";
 import { PB_REGIONS } from "./regions.js";
 
 // Change over N sessions, in basis points, from a dated FRED series. Returns null rather than
@@ -36,43 +34,6 @@ function trendBps(series, lookbackDays) {
   return t ? Math.round(t.delta * 100) : null;
 }
 
-// The automatic state, as a block: what the scan found, what the MoF has published.
-const fmtMofDay = (iso) => new Date(iso + "T12:00:00Z").toLocaleDateString([], { day: "numeric", month: "short", timeZone: "UTC" });
-export function InterventionAutoBlock({ auto, compact = false }) {
-  if (!auto) return null;
-  const l = auto.latest, st = l?.confirmation?.status;
-  const tok = !auto.active ? { color: C.muted, bg: C.inset, bdr: C.bdr } : st === "confirmed" ? STATUS.ELEVATED : STATUS.WATCH;
-  const grade = !l ? null : st === "confirmed" ? "CONFIRMED" : st === "denied" ? "DENIED" : "SUSPECTED";
-  const recentMonths = (auto.mof?.monthly || []).slice(0, 3);
-  return (
-    <div style={{ padding: "8px 11px", background: tok.bg, border: "1px solid " + tok.bdr, borderRadius: 8, fontSize: 11.5, lineHeight: 1.55 }}>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "baseline" }}>
-        <b style={{ color: tok.color }}>⚑ Yen intervention · automatic</b>
-        <span style={{ color: auto.active ? tok.color : C.muted, fontWeight: 700 }}>
-          {auto.active ? `${grade} ${l.firedOn}` : l ? `last signature ${l.firedOn} (${grade.toLowerCase()}), no longer live` : "no signature in the last month"}
-        </span>
-      </div>
-      {l && (auto.active || !compact) && (
-        <div style={{ color: C.mid, marginTop: 2 }}>
-          USD/JPY {l.movePct}% in {l.windowMin} min from {l.from} ({l.fromHighPct}% off its 60-day high){l.dxyPct != null ? `; DXY ${l.dxyPct}%, the yen moved ${l.yenOverDxy ?? "far more"}× as far` : ""}. {l.confirmation?.why}.
-        </div>
-      )}
-      {!compact && auto.mof && (
-        <div style={{ color: C.muted, marginTop: 3 }}>
-          MoF: {auto.mof.days.length ? `daily data through ${auto.mof.coveredThrough} — ${auto.mof.days.slice(-4).map(d => `${fmtMofDay(d.date)} ¥${(d.amount100mYen / 1e4).toFixed(2)}tn`).join(", ")}` : `no operations in the daily data through ${auto.mof.coveredThrough}`}
-          {recentMonths.length ? ` · monthly: ${recentMonths.map(m => `${fmtMofDay(m.from)}–${fmtMofDay(m.to)} ¥${m.totalBillionYen ? `${(m.totalBillionYen / 1000).toFixed(1)}tn` : "0"}`).join(", ")}` : ""}
-        </div>
-      )}
-      {!compact && (
-        <div style={{ color: C.lbl, fontSize: 10.5, marginTop: 3 }}>
-          Suspected when USD/JPY falls ≥1.0% in an hour (or ≥1.5% in three), ≥2× DXY's move, within 3% of its 60-day high; confirmed or denied from the MoF's daily CSV and monthly totals.
-          {auto.sources?.scan?.at ? ` Scan ${dubaiEt(auto.sources.scan.at)}.` : auto.sources?.scan?.error ? ` Scan failed: ${auto.sources.scan.error}.` : ""}
-          {auto.sources?.mof?.error ? ` MoF fetch failed: ${auto.sources.mof.error} — events stay SUSPECTED.` : ""}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ─── GLOBAL PLAYBOOK TAB ──────────────────────────────────────────────────────
 // Live macro/semi spine + deterministic regime per region, from /api/playbook (no

@@ -9,14 +9,14 @@
 // This walks module -> function -> block scopes and reports references that resolve to nothing in
 // the enclosing chain. It catches all three of those breaks, each of which built cleanly and failed
 // only in the browser.
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const acorn = require('acorn'); const jsx = require('acorn-jsx');
 const Parser = acorn.Parser.extend(jsx());
 // Every source file, so extracting a tab into its own module cannot create a new blind spot —
 // which is exactly what would have happened when the Console moved out of App.jsx.
-const FILES=['src/App.jsx','src/TradeConsole.jsx','src/ui.jsx','src/pages/TodayPage.jsx','src/pages/OpsPage.jsx'];
+const FILES=['src/App.jsx','src/TradeConsole.jsx','src/ui.jsx', ...readdirSync('src/pages').filter(f => f.endsWith('.jsx')).map(f => 'src/pages/' + f)]  // every page module (src/pages/);
 
 const GLOBALS=new Set(['globalThis','console','JSON','Math','Date','Number','String','Boolean','Object','Array','Set','Map','WeakMap','Promise','Symbol','RegExp','Error','TypeError','parseInt','parseFloat','isNaN','isFinite','encodeURIComponent','decodeURIComponent','setTimeout','clearTimeout','setInterval','clearInterval','window','document','navigator','location','localStorage','sessionStorage','fetch','AbortSignal','URL','Notification','Intl','process','undefined','NaN','Infinity','arguments','structuredClone','requestAnimationFrame']);
 

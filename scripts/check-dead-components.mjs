@@ -10,11 +10,11 @@
 // The rule: a module-scope function whose name is Capitalised and which returns JSX must appear as
 // <Name …> somewhere in the same file, or be exported for another file to mount. Anything else is
 // dead UI.
-import fs from 'node:fs';
+import fs, { readdirSync } from 'node:fs';
 import { Parser } from 'acorn';
 import jsx from 'acorn-jsx';
 
-const FILES = ['src/App.jsx', 'src/TradeConsole.jsx', 'src/ui.jsx', 'src/pages/TodayPage.jsx', 'src/pages/OpsPage.jsx'];
+const FILES = ['src/App.jsx', 'src/TradeConsole.jsx', 'src/ui.jsx', ...readdirSync('src/pages').filter(f => f.endsWith('.jsx')).map(f => 'src/pages/' + f)]  // every page module (src/pages/);
 const P = Parser.extend(jsx());
 
 // Does this function body produce JSX anywhere inside it?

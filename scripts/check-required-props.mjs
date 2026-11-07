@@ -13,13 +13,13 @@
 // A prop with a default is never required. An element using spread ({...props}) is skipped, since
 // what it carries cannot be known statically.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const acorn = require('acorn');
 const jsx = require('acorn-jsx');
 const Parser = acorn.Parser.extend(jsx());
-const FILES = ['src/App.jsx', 'src/TradeConsole.jsx', 'src/ui.jsx', 'src/pages/TodayPage.jsx', 'src/pages/OpsPage.jsx'];
+const FILES = ['src/App.jsx', 'src/TradeConsole.jsx', 'src/ui.jsx', ...readdirSync('src/pages').filter(f => f.endsWith('.jsx')).map(f => 'src/pages/' + f)]  // every page module (src/pages/);
 
 function walk(node, visit, parent = null) {
   if (!node || typeof node.type !== 'string') return;
