@@ -11,13 +11,14 @@ const memKv = () => { const m = new Map(); return { m, get: async (k) => m.get(k
 
 // ── Policy ──
 eq('book and ops alerts go to the private channel', ['desk', 'job'].map(channelOf), ['private', 'private']);
+eq('Unusual Whales flow goes to the private channel only (personal-use licence)', channelOf('flow'), 'private');
 eq('console levels and the statement note keep the trades channel', ['console', 'statement'].map(channelOf), ['trades', 'trades']);
 eq('idea triggers keep the ideas channel', channelOf('idea'), 'ideas');
 eq('every source names a channel that exists', Object.values(SOURCES).every(s => CHANNELS[s.channel]), true);
 eq('a channel resolves to its own webhook', ['private', 'trades', 'ideas'].map(c => webhookFor(c, env)), [HOOK(1), HOOK(2), HOOK(3)]);
 eq('a value that is not a Discord webhook is no webhook', webhookFor('private', { DISCORD_PRIVATE_WEBHOOK: 'https://example.com/x' }), null);
 eq('the page sees whether a webhook is set, never its value', JSON.stringify(channelView(env)).includes('tok-'), false);
-eq('and which sources each channel carries', channelView(env).find(c => c.id === 'private').sources, ['desk', 'job']);
+eq('and which sources each channel carries', channelView(env).find(c => c.id === 'private').sources, ['desk', 'job', 'flow']);
 
 // ── Send and log ──
 {

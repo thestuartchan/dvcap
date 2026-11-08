@@ -39,6 +39,7 @@ import { dubaiEtStamp } from "../lib/timeFmt.js";
 const named = (load, name) => lazy(() => load().then(m => ({ default: m[name] })));
 const TradeConsole  = named(() => import("./TradeConsole.jsx"), "TradeConsole");
 const GexPanel      = named(() => import("./GexPanel.jsx"), "GexPanel");
+const FlowPanel     = named(() => import("./FlowPanel.jsx"), "FlowPanel");
 const RatiosPanel   = named(() => import("./RatiosPanel.jsx"), "RatiosPanel");
 const CalendarPanel = named(() => import("./CalendarPanel.jsx"), "CalendarPanel");
 const TickerPanel   = named(() => import("./TickerPanel.jsx"), "TickerPanel");
@@ -1351,6 +1352,8 @@ export default function App() {
         )}
         {/* A Go bar request is spent once Gamma has acted on it, so returning to the tab later opens it as usual. */}
         {tab === "gex" && <GexPanel request={gexRequest} onRequestDone={() => setGexRequest(null)} />}
+        {/* Unusual Whales flow under the board (build step 8): hidden unless the session can read it. */}
+        {tab === "gex" && <FlowPanel />}
         {/* The Console's rows reach the ticker page from the store this browser already loaded; the
             page shows them and sends them nowhere. */}
         {tab === "ticker" && <TickerPanel key={tickerSym} symbol={tickerSym} onSymbol={setTickerSym}
