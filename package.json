@@ -19,7 +19,8 @@
     "@resvg/resvg-wasm": "^2.6.2",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
-    "recharts": "^3.8.1"
+    "recharts": "^3.8.1",
+    "unpdf": "^1.8.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
