@@ -21,7 +21,7 @@ import { fetchCboeGreeks } from '../lib/cboe.js';
 import { derivePosition, positionPnl, levelHits, levelHit, distancePct, applyRolls } from '../lib/positions.js';
 import { sendAlert, ruleList, logView, channelView, ALERT_LOG_KEY, SOURCES } from '../lib/alerts.js';
 import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard, isStaleEvent, isOptionTrade } from '../lib/tradecard.js';
-import { upsertCard, post, remove, send, webhookFromEnv, walletWebhookFromEnv, ideasWebhookFromEnv, eventsWebhookFromEnv, daytradeWebhookFromEnv, postWithFiles, editWithFiles, webhookInfo, mentionFromEnv, ideasMentionFromEnv, alertTtlMin, CARD_KEY, IDEAS_CARD_KEY, privateWebhookFromEnv } from '../lib/discord.js';
+import { upsertCard, post, remove, send, webhookFromEnv, walletWebhookFromEnv, ideasWebhookFromEnv, eventsWebhookFromEnv, daytradeWebhookFromEnv, postWithFiles, editWithFiles, webhookInfo, mentionFromEnv, ideasMentionFromEnv, alertTtlMin, CARD_KEY, IDEAS_CARD_KEY, privateWebhookFromEnv, disclosuresWebhookFromEnv } from '../lib/discord.js';
 import { parseUpsert, eventPayload, cardHash, roleFromEnv, EVENTS_CARD_KEY, jumpLink, noticePayload } from '../lib/eventcard.js';
 import { authorised as gate, refusalReason, hasIdeasToken, hasCronSecret, refuse } from '../lib/apiauth.js';
 import { reconcileIdeas, parseAlerts, alertPayload } from '../lib/ideacard.js';
@@ -31,6 +31,8 @@ import { signalBoardPayload } from '../lib/signalBoardFeed.js';
 import { DESK_RULES_KEY, DESK_CHECKS_KEY, runChecks, newHits, deskAlertCard, checksView, periodEnds } from '../lib/deskRules.js';
 import { TC_TODAY_KEY } from '../lib/sameDayFills.js';
 import { tvDaily } from '../lib/tradingview.js';
+import { runCongress, runInsiderScan, runInsiderRoundup, watchSet, ideaTickers, IDEAS_TICKERS_KEY, DISCLOSURES_EXTRA_KEY } from '../lib/disclosures.js';
+import { secUserAgent } from '../lib/secDes.js';
 import HOLIDAYS from '../data/holidays.json' with { type: 'json' };
 import { fetchWallets } from '../lib/wallet.js';
 import { fetchSpotContext, fetchHyperliquid, fetchHlAccount, fetchHlSpot, fetchHlOrders } from '../lib/hyperliquid.js';
@@ -433,6 +435,14 @@ export async function ideasCard(req, res, { webhook = ideasWebhookFromEnv(), kv 
   // `alerts` (optional) are trigger notices posted as NEW messages; with alerts and no `ideas`, the
   // call only notifies and leaves the cards alone (a missing `ideas` is NOT an empty set).
   const hasAlerts = Array.isArray(body?.alerts) && body.alerts.length > 0;
+  // { disclosuresWatch: [tickers] } — the disclosures watchlist's extra names (lib/disclosures.js),
+  // the WHOLE set each time, kept in Redis so Stu adds or drops a name by asking in chat instead of
+  // editing a Vercel variable. Same ideas token; touches no card. Answered on its own when sent alone.
+  if (Array.isArray(body?.disclosuresWatch)) {
+    const extra = [...watchSet([], body.disclosuresWatch.join(','))];
+    const ok = kvConfigured() ? !!(await kvSetJson(DISCLOSURES_EXTRA_KEY, extra).catch(() => null)) : false;
+    if (!Array.isArray(body.ideas) && !hasAlerts) return res.status(200).json({ ok, disclosuresWatch: extra });
+  }
   if (!body || typeof body !== 'object' || (!Array.isArray(body.ideas) && !hasAlerts)) return res.status(400).json({ error: 'expected { ideas: [...] } and/or { alerts: [...] }' });
   if (!kv.configured()) return res.status(200).json({ ok: false, reason: 'no store — Redis is not configured, there is nowhere to keep the message ids' });
   // ONE RECONCILE AT A TIME. Two overlapping calls would each see the same stored map and each
@@ -462,6 +472,9 @@ export async function ideasCard(req, res, { webhook = ideasWebhookFromEnv(), kv 
       }
     }
     const saved = await kv.set(IDEAS_CARD_KEY, { cards: r.state, alertsSent: sent.slice(-50), updatedAt: new Date().toISOString() });
+    // The disclosures watchlist (lib/disclosures.js): the ideas' tickers, straight to Redis (not the
+    // injected card store, whose one slot is the card map).
+    if (Array.isArray(body.ideas) && kvConfigured()) await kvSetJson(IDEAS_TICKERS_KEY, ideaTickers(body.ideas)).catch(() => {});
     if (!saved) r.errors.push({ error: 'could not save the message ids — the next call may re-post' });
     return res.status(200).json({ ok: r.errors.length === 0, posted: r.posted, edited: r.edited, deleted: r.deleted, unchanged: r.unchanged, ...(hasAlerts ? { alerted, skipped } : {}), errors: r.errors });
   } catch (e) {
@@ -633,6 +646,39 @@ export async function deskRulesCheck({ origin, now = new Date(), quote = tvDaily
   return { ok: true, ...checks.counts, symbols: symbols.length, priced: Object.keys(quotes).length, alert: card ? (posted ? 'posted' : webhook ? 'post failed' : 'DISCORD_PRIVATE_WEBHOOK unset') : 'nothing new' };
 }
 
+
+// ?disclosures=congress|insiders|roundup — politicians' and insiders' trades from the filings
+// themselves (lib/disclosures.js): the House Clerk's index hourly, every new Form 4 across the market
+// every 30 minutes, and Friday's insider roundup. Public-filing data to the PRIVATE disclosures
+// channel. The watchlist maintains itself: dvcap's US book symbols, the tickers of the Trading Ideas
+// cards (stored as the ideas card syncs), plus extra names Claude sends on the ideas endpoint
+// ({ disclosuresWatch: [...] }) when Stu asks in chat — no Vercel variable to edit. The card
+// says "watchlist", never "held". &dry=1 answers with the cards instead of posting (no state written).
+async function pdfText(bytes) {
+  const { getDocumentProxy, extractText } = await import('unpdf');
+  const pdf = await getDocumentProxy(bytes);
+  return (await extractText(pdf, { mergePages: true })).text || '';
+}
+async function disclosureWatch(origin, snap = snapshot) {
+  let syms = [];
+  try { syms = (await snap(origin)).map(r => r?.symbol || r?.underlying || r?.ticker).filter(Boolean); } catch { /* ideas and env only */ }
+  const ideas = (await kvGetJson(IDEAS_TICKERS_KEY).catch(() => null)) || [];
+  const extra = (await kvGetJson(DISCLOSURES_EXTRA_KEY).catch(() => null)) || [];
+  return watchSet([...syms, ...ideas, ...extra]);
+}
+export async function disclosuresRun(kind, { origin, dry = false, now = new Date() } = {}) {
+  if (!kvConfigured()) return { ok: false, why: 'Redis is not configured' };
+  const webhook = disclosuresWebhookFromEnv();
+  const deliver = webhook ? (card) => post(webhook, card) : null;
+  const kv = { get: kvGetJson, set: kvSetJson };
+  const channel = webhook ? 'set' : 'DISCORD_DISCLOSURES_WEBHOOK unset';
+  if (kind === 'roundup') return { ...(await runInsiderRoundup({ now, kv, deliver, dry })), channel };
+  const watch = await disclosureWatch(origin);
+  if (kind === 'congress') return { ...(await runCongress({ now, kv, pdfText, deliver, watch, dry })), watch: watch.size, channel };
+  if (kind === 'insiders') return { ...(await runInsiderScan({ now, kv, ua: secUserAgent(), deliver, watch, dry })), watch: watch.size, channel };
+  return { ok: false, why: 'disclosures must be congress, insiders or roundup' };
+}
+
 // The Rules & Alerts page's data (lib/alerts.js): the Desk rules with the close check's states, the
 // console levels priced now, the last 100 alerts and what went out in the last 7 days per source.
 export async function alertsView({ origin, now = new Date(), snap = snapshot, kv = { get: kvGetJson } } = {}) {
@@ -684,6 +730,13 @@ export default async function handler(req, res) {
       res.status(200).json(await checkpointPing({ now: new Date(), payload: signalBoardPayload, webhook: daytradeWebhookFromEnv() || webhookFromEnv(), upsert: upsertCard,
         kv: { configured: kvConfigured, get: kvGetJson, set: kvSetJson } }));
     } catch (e) { console.error('checkpoint ping', e); res.status(200).json({ ok: false, error: String(e?.message || e) }); }
+    return;
+  }
+  if (req.query?.disclosures != null) {
+    res.setHeader('Cache-Control', 'private, no-store');
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    try { res.status(200).json(await disclosuresRun(String(req.query.disclosures), { origin: `${proto}://${req.headers.host}`, dry: /^(1|true)$/i.test(String(req.query?.dry || '')) })); }
+    catch (e) { console.error('disclosures failed'); res.status(200).json({ ok: false, why: String(e?.message || e).slice(0, 140) }); }
     return;
   }
   // ?alerts=1 — the Rules & Alerts page: every rule with its state, the alert log, the channel policy.
