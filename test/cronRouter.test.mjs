@@ -62,8 +62,12 @@ function fakeKv() {
 {
   eq('a route that says ok:false is a failure, with its reason', outcomeOf(200, { ok: false, why: 'already sent today' }, 5), { ok: false, status: 200, ms: 5, note: 'already sent today' });
   eq('an HTTP error is a failure', outcomeOf(500, null, 1).ok, false);
-  const w = await runJob(job('korea-fetch'), { dispatch: async (wf) => ({ ok: wf === 'korea-fetch.yml', status: 204 }) });
+  const w = await runJob({ id: 'wf', workflow: 'some.yml' }, { dispatch: async (wf) => ({ ok: wf === 'some.yml', status: 204 }) });
   eq('a workflow job dispatches its workflow', [w.ok, w.status], [true, 204]);
+  let seen = null;
+  const k = await runJob(job('korea-fetch'), { origin: 'https://example.test', env: {}, fetchImpl: async (u, o) => { seen = [u, o.method]; return { status: 200, json: async () => ({ ok: true }) }; } });
+  eq('the Korea fetch is a POST to its route on this deployment', [k.ok, seen], [true, ['https://example.test/api/korea-save?fetch=1&scheduled=1', 'POST']]);
+  eq('no job commits data through a GitHub workflow any more', JOBS.filter(j => j.workflow).map(j => j.id), []);
   const t = await runJob({ id: 'x', path: '/api/x', timeoutMs: 1000 }, { origin: 'https://example.test', env: {}, fetchImpl: async () => { const e = new Error('t'); e.name = 'TimeoutError'; throw e; } });
   eq('a timeout says so', [t.ok, t.note], [false, 'no answer within 1s']);
 }
