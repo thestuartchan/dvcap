@@ -1,6 +1,6 @@
 // test/price.test.mjs — a price is rounded by its SCALE, not to two decimal places.
 //
-// Every quote left api/prices.js through `price.toFixed(2)`. For a share that is exactly right —
+// Every quote left lib/routes/prices.js through `price.toFixed(2)`. For a share that is exactly right —
 // cents are the unit one trades in. For anything quoted below a dollar it is destruction, and it
 // happened at the SOURCE, so nothing downstream could recover it.
 //

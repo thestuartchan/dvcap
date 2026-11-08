@@ -5,12 +5,12 @@
 // clicks to reach most views, and the groups mixed things you read every morning with research you
 // open once a week. Now each page is one job, in the order a day runs:
 //
-//   Today → Markets → Gamma → Ticker → Book → Risk & Plan → Research → Ops
+//   Today → Markets → Gamma → Ticker → Book → Risk & Plan → Rules & Alerts → Research → Ops
 //
 // A page with one view has no second row; a page with several (Markets, Risk & Plan, Research)
 // shows its views underneath. Every view keeps its id, so the Go bar (lib/goCommands.js), the error
-// boundary and any saved link still land where they did. Rules & Alerts joins between Risk & Plan
-// and Research when the alert module is one place (build step 5).
+// boundary and any saved link still land where they did. Rules & Alerts (build step 5) sits between
+// Risk & Plan and Research: every rule and every alert, from the one alert module (lib/alerts.js).
 //
 // `dot: true` marks the page whose pill carries the data-health dot (green / amber / red).
 export const PAGES = Object.freeze([
@@ -36,6 +36,9 @@ export const PAGES = Object.freeze([
     { id: "plan",      label: "🎯 Plan"   },
     { id: "insurance", label: "🛡️ Hedges" },
     { id: "income",    label: "💰 Income" },
+  ] },
+  { id: "alerts",   label: "Rules & Alerts", title: "Every rule, its state, and every alert sent", tabs: [
+    { id: "alerts",    label: "🔔 Rules & Alerts" },
   ] },
   { id: "research", label: "Research",    title: "Smart Money (13F) and the paper trial", tabs: [
     { id: "street",    label: "🏦 Smart Money" },

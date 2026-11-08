@@ -3079,7 +3079,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   const [flexNote, setFlexNote] = useState(null);
   // The IBKR statement's cash and cash equivalents at market (lib/flex.js cashBookOf).
   const [cashBook, setCashBook] = useState(null);
-  // Named rollback points of the console (api/manual-entry.js consoleSnapshot) — names and times only.
+  // Named rollback points of the console (lib/routes/manual-entry.js consoleSnapshot) — names and times only.
   const [snapshots, setSnapshots] = useState([]);
   // Journal drafts: notes from chat matched to IBKR fills by the daily run (lib/journalInbox.js).
   const [journal, setJournal] = useState(null);

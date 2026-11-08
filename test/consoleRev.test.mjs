@@ -1,5 +1,5 @@
 // test/consoleRev.test.mjs — a Console save from a stale copy is refused (lib/consoleRev.js,
-// api/manual-entry.js). The handler runs against a Redis stand-in; the rows are made up.
+// lib/routes/manual-entry.js). The handler runs against a Redis stand-in; the rows are made up.
 import { readFileSync } from 'node:fs';
 import { saveCheck, revOf, nextRev } from '../lib/consoleRev.js';
 import { mintSession, sessionCookie } from '../lib/session.js';
@@ -42,7 +42,7 @@ globalThis.fetch = async (url, init = {}) => {
   throw new Error(`unexpected network call in a test: ${url}`);
 };
 const { CONSOLE_KEY } = await import('../lib/kv.js');
-const { default: entry } = await import('../api/manual-entry.js');
+const { default: entry } = await import('../lib/routes/manual-entry.js');
 const cookie = sessionCookie(await mintSession(process.env.DASHBOARD_PASSWORD)).split(';')[0];
 const save = async (consoleIn) => {
   const out = { code: 0, body: null };

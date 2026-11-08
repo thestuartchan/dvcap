@@ -658,8 +658,9 @@ function RecessionPanel({ liveInd, pbData, laborView, liveRegime, recConsensus, 
                     its content and loses the alarm: neutral surface, the chip up front, and the
                     one live number in it (Kalshi) labelled as the only live thing here. */}
                 <div style={{ marginTop: 12, padding: "12px 14px", background: C.bg, border: "1px solid " + C.bdr, borderRadius: 8 }}>
-                  <div style={{ marginBottom: 6 }}><HandKept asOf="2026-09-30" cadenceDays={30} what="after each data event that changes the recession read" /></div>
-                  {/* Rebuilt 2026-09-30 after August core PCE and JOLTS. EVERY NUMBER IS COMPUTED here from
+                  <div style={{ marginBottom: 6 }}><HandKept asOf="2026-11-08" cadenceDays={30} what="after each data event that changes the recession read" /></div>
+                  {/* Reframed 2026-11-08 after the Oct 28 FOMC hold and the October jobs report (rebuilt
+                      2026-09-30 after August core PCE and JOLTS). EVERY NUMBER IS COMPUTED here from
                       the live feeds — payroll changes and quits from the labour block, core CPI / PCE
                       momentum from the index levels (lib/marketState.js inflationMomentum, FRED CPILFESL
                       and PCEPILFE), HY OAS from the state feed, the odds from the recession feeds — so
@@ -684,7 +685,7 @@ function RecessionPanel({ liveInd, pbData, laborView, liveRegime, recConsensus, 
                       <div style={{ display: "grid", gap: 8, color: C.mid, fontSize: 13.5, lineHeight: 1.6 }}>
                         <div>
                           <span style={{ color: C.text, fontWeight: 700 }}>The signal that matters: </span>
-                          the hike the July minutes warned of arrived — 25bp on Sep 16, to 3.75–4.00% — and the futures price {nx?.hikePct != null ? <B>{Math.round(nx.hikePct)}%</B> : "—"} odds of another on {nx?.meeting ? day(nx.meeting) : "the next meeting"}. Near-term recession odds are low; the risk is the one tightening builds, and credit is where it would show first.
+                          the Fed paused on Oct 28 — held at 3.75–4.00% after the Sep 16 hike, 10–2, with Cook and Hammack voting to hike again — and the futures price {nx?.hikePct != null ? <B>{Math.round(nx.hikePct)}%</B> : "—"} odds of a hike on {nx?.meeting ? day(nx.meeting) : "the next meeting"}. Near-term recession odds are low; the risk is the one tightening builds, and credit is where it would show first.
                         </div>
                         <div style={row}>
                           <b style={{ color: C.text }}>Payrolls</b>
@@ -705,7 +706,7 @@ function RecessionPanel({ liveInd, pbData, laborView, liveRegime, recConsensus, 
                         <div>
                           <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.8, textTransform: "uppercase", color: C.lbl, marginBottom: 3 }}>Recession odds — by horizon, not one row</div>
                           <div style={row}>
-                            <span>Calendar 2026 <span style={{ color: C.muted }}>(one quarter left)</span></span>
+                            <span>Calendar 2026 <span style={{ color: C.muted }}>(under two months left)</span></span>
                             <span>Kalshi <B>{odd("Kalshi prediction market")}</B> · Polymarket <B>{odd("Polymarket")}</B> <span style={{ color: C.muted }}>(“by end of 2026”)</span></span>
                             <span>Next 12 months</span>
                             <span>NY Fed yield-curve model <B>{odd("NY Fed Yield Curve Model")}</B> <span style={{ color: C.muted }}>(probit on the 10Y–3M spread{rf["NY Fed Yield Curve Model"]?.asOf ? `, ${day(rf["NY Fed Yield Curve Model"].asOf)}` : ""})</span></span>

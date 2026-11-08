@@ -10,8 +10,9 @@
 // Uses the same GitHub commit-back store as the Korea entry — no new infrastructure.
 
 import { hasSessionCookie, hasCronSecret, refuse } from '../lib/apiauth.js';
-import { tick, statusView, healthSummary, failureCard, privateTestCard, nyDayOf, FAIL_ALERT_KEY, LAST_KEY as CRON_LAST_KEY } from '../lib/cronRouter.js';
+import { tick, statusView, healthSummary, failureCard, privateTestCard, nyDayOf, jobLabel, FAIL_ALERT_KEY, LAST_KEY as CRON_LAST_KEY } from '../lib/cronRouter.js';
 import { post, privateWebhookFromEnv } from '../lib/discord.js';
+import { sendAlert } from '../lib/alerts.js';
 import { dispatchOne } from '../lib/githubDispatch.js';
 import { kvConfigured, kvGetJson, kvSetJson, kvSetNxEx } from '../lib/kv.js';
 import HOLIDAYS from '../data/holidays.json' with { type: 'json' };
@@ -60,7 +61,9 @@ async function cronTick(req, res) {
   if (webhook) {
     for (const r of failed) {
       const first = await kvSetNxEx(FAIL_ALERT_KEY(r.id, nyDayOf(Date.now())), 1, 2 * 86400).catch(() => false);
-      if (first) await post(webhook, failureCard(r)).catch(() => null);
+      // Through the one alert module (lib/alerts.js): private channel, logged against the job.
+      if (first) await sendAlert({ source: 'job', payload: failureCard(r), items: [{ ruleId: `job:${r.id}`, title: `${jobLabel(r.id)} failed${r.note ? ` · ${r.note}` : ''}`, state: 'failed' }] },
+        { deliver: post, kv: { get: kvGetJson, set: kvSetJson }, webhook }).catch(() => null);
     }
   }
   return res.status(200).json({ ok: true, ...out });

@@ -49,6 +49,7 @@ const DriversPage   = named(() => import("./pages/MarketsPage.jsx"), "DriversPag
 const HedgesView    = named(() => import("./pages/RiskPage.jsx"), "HedgesView");
 const IncomeView    = named(() => import("./pages/RiskPage.jsx"), "IncomeView");
 const ResearchPage  = named(() => import("./pages/ResearchPage.jsx"), "ResearchPage");
+const AlertsPage    = named(() => import("./pages/AlertsPage.jsx"), "AlertsPage");
 
 
 
@@ -932,7 +933,7 @@ export default function App() {
       consensusVintage: CONSENSUS_VINTAGE, recessionSources: effectiveRecessionSources, recessionCadence: RECESSION_SOURCE_CADENCE,
       fedLanguage: FED_LANGUAGE_STATUS, secYields: SEC_YIELDS, southboundFeed: sbFeedTop,
       fedPathFeed: liveInd?.fedPathFeed ?? null, ismFeed: liveInd?.ismFeed ?? null,
-      analystBoard: { asOf: "2026-06-29", cadence: 90 }, recessionProse: { asOf: "2026-09-30", cadence: 30 },
+      analystBoard: { asOf: "2026-06-29", cadence: 90 }, recessionProse: { asOf: "2026-11-08", cadence: 30 },
       announced: {
         pceCore: { ...ANNOUNCED_PRINTS.pceCore, fredAsOf: liveInd?.asOf?.pceCoreCurrent ?? null },
         gdpGrowth: { ...ANNOUNCED_PRINTS.gdpGrowth, fredAsOf: liveInd?.asOf?.gdpGrowth ?? null },
@@ -1415,6 +1416,9 @@ export default function App() {
               return null;
             }} />
         )}
+
+        {/* ── RULES & ALERTS (src/pages/AlertsPage.jsx, lib/alerts.js) ── */}
+        {tab === "alerts" && <AlertsPage />}
 
         {/* ── THE PAPER TRIAL (src/MlsPanel.jsx) ── */}
         {tab === "mls" && <MlsPanel />}

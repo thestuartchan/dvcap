@@ -9,10 +9,10 @@
 # unchanged page changes no reading. It still commits: lastFetch in the file records when the
 # fetch ran and whether each source worked, which is what the Korea panel's "Last fetched" line
 # shows. A Korean holiday finds yesterday's figures and changes no reading.
-# The panel's Fetch now button runs the same fetch (lib/koreaFetch.js) through api/korea-save.js.
+# The panel's Fetch now button runs the same fetch (lib/koreaFetch.js) through lib/routes/korea-save.js.
 #
 # WHERE IT GOES. data/korea_kofia.json, the same file the hand paste commits through
-# api/korea-save.js, merged by the same code (lib/koreaStore.js). The commit redeploys, which is how
+# lib/routes/korea-save.js, merged by the same code (lib/koreaStore.js). The commit redeploys, which is how
 # the Pre-Reads and the Korea panel pick it up — exactly as after a paste.
 #
 # The log prints the readings, which are public market statistics. Nothing about the account.

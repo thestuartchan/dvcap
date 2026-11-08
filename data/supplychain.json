@@ -1,22 +1,16 @@
 {
  "_README": "Supplier, customer and competitor links read from each company's own latest annual report on EDGAR, plus its latest 10-Q when filed after it (scripts/supplychain-build.mjs; method in docs/supply-chain.md). Each link quotes the sentence and names the filing it came from. relation = what the counterparty is to the filer. named=false is an anonymised customer as the filing states it.",
- "_generated": "2026-11-01T11:29:59.261Z",
+ "_generated": "2026-11-08T11:31:07.650Z",
  "companies": {
   "AAPL": {
    "cik": 320193,
    "name": "Apple Inc.",
-   "asOf": "2026-07-31",
+   "asOf": "2026-11-03",
    "filing": {
     "form": "10-K",
-    "accession": "0000320193-25-000079",
-    "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/aapl-20250927.htm",
-    "date": "2025-10-31"
-   },
-   "quarter": {
-    "form": "10-Q",
-    "accession": "0000320193-26-000020",
-    "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000020/aapl-20260627.htm",
-    "date": "2026-07-31"
+    "accession": "0000320193-26-000026",
+    "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000026/aapl-20260926.htm",
+    "date": "2026-11-03"
    },
    "links": [
     {
@@ -26,12 +20,12 @@
      "named": true,
      "share": null,
      "quote": "For example, the Company earns revenue from licensing arrangements with Google LLC (\"Google\") and other companies to offer their search services on the Company’s platforms and applications, and certain of these arrangements are currently subject to government investigations and legal proceedings.",
-     "mentions": 2,
+     "mentions": 1,
      "filing": {
       "form": "10-K",
-      "accession": "0000320193-25-000079",
-      "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/aapl-20250927.htm",
-      "date": "2025-10-31"
+      "accession": "0000320193-26-000026",
+      "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000026/aapl-20260926.htm",
+      "date": "2026-11-03"
      }
     }
    ]
@@ -122,7 +116,7 @@
   "AMD": {
    "cik": 2488,
    "name": "ADVANCED MICRO DEVICES INC",
-   "asOf": "2026-08-05",
+   "asOf": "2026-11-04",
    "filing": {
     "form": "10-K",
     "accession": "0000002488-26-000018",
@@ -131,9 +125,9 @@
    },
    "quarter": {
     "form": "10-Q",
-    "accession": "0000002488-26-000123",
-    "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248826000123/amd-20260627.htm",
-    "date": "2026-08-05"
+    "accession": "0000002488-26-000191",
+    "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248826000191/amd-20260926.htm",
+    "date": "2026-11-04"
    },
    "links": [
     {
@@ -358,7 +352,7 @@
   "ANET": {
    "cik": 1596532,
    "name": "Arista Networks, Inc.",
-   "asOf": "2026-08-05",
+   "asOf": "2026-11-04",
    "filing": {
     "form": "10-K",
     "accession": "0001596532-26-000013",
@@ -367,9 +361,9 @@
    },
    "quarter": {
     "form": "10-Q",
-    "accession": "0001596532-26-000175",
-    "url": "https://www.sec.gov/Archives/edgar/data/1596532/000159653226000175/anet-20260630.htm",
-    "date": "2026-08-05"
+    "accession": "0001596532-26-000254",
+    "url": "https://www.sec.gov/Archives/edgar/data/1596532/000159653226000254/anet-20260930.htm",
+    "date": "2026-11-04"
    },
    "links": [
     {
@@ -848,7 +842,7 @@
   "ETN": {
    "cik": 1551182,
    "name": "Eaton Corp plc",
-   "asOf": "2026-07-31",
+   "asOf": "2026-11-03",
    "filing": {
     "form": "10-K",
     "accession": "0001551182-26-000007",
@@ -857,9 +851,9 @@
    },
    "quarter": {
     "form": "10-Q",
-    "accession": "0001551182-26-000030",
-    "url": "https://www.sec.gov/Archives/edgar/data/1551182/000155118226000030/etn-20260630.htm",
-    "date": "2026-07-31"
+    "accession": "0001551182-26-000040",
+    "url": "https://www.sec.gov/Archives/edgar/data/1551182/000155118226000040/etn-20260930.htm",
+    "date": "2026-11-03"
    },
    "links": []
   },
@@ -2246,18 +2240,12 @@
   "QCOM": {
    "cik": 804328,
    "name": "QUALCOMM INC/DE",
-   "asOf": "2026-07-29",
+   "asOf": "2026-11-04",
    "filing": {
     "form": "10-K",
-    "accession": "0000804328-25-000085",
-    "url": "https://www.sec.gov/Archives/edgar/data/804328/000080432825000085/qcom-20250928.htm",
-    "date": "2025-11-05"
-   },
-   "quarter": {
-    "form": "10-Q",
-    "accession": "0000804328-26-000086",
-    "url": "https://www.sec.gov/Archives/edgar/data/804328/000080432826000086/qcom-20260628.htm",
-    "date": "2026-07-29"
+    "accession": "0000804328-26-000128",
+    "url": "https://www.sec.gov/Archives/edgar/data/804328/000080432826000128/qcom-20260927.htm",
+    "date": "2026-11-04"
    },
    "links": [
     {
@@ -2266,13 +2254,13 @@
      "relation": "supplier",
      "named": true,
      "share": null,
-     "quote": "The primary foundry suppliers for our various digital, analog/mixed-signal, RF and PM integrated circuits include Taiwan Semiconductor Manufacturing Company (TSMC), Samsung Electronics and Global Foundries.",
+     "quote": "The primary foundry suppliers for our various digital, analog/mixed-signal, RF and PM integrated circuits include Taiwan Semiconductor Manufacturing Company (TSMC), Samsung Electronics and GlobalFoundries.",
      "mentions": 1,
      "filing": {
       "form": "10-K",
-      "accession": "0000804328-25-000085",
-      "url": "https://www.sec.gov/Archives/edgar/data/804328/000080432825000085/qcom-20250928.htm",
-      "date": "2025-11-05"
+      "accession": "0000804328-26-000128",
+      "url": "https://www.sec.gov/Archives/edgar/data/804328/000080432826000128/qcom-20260927.htm",
+      "date": "2026-11-04"
      }
     },
     {
@@ -2281,13 +2269,13 @@
      "relation": "supplier",
      "named": true,
      "share": null,
-     "quote": "The primary foundry suppliers for our various digital, analog/mixed-signal, RF and PM integrated circuits include Taiwan Semiconductor Manufacturing Company (TSMC), Samsung Electronics and Global Foundries.",
+     "quote": "The primary foundry suppliers for our various digital, analog/mixed-signal, RF and PM integrated circuits include Taiwan Semiconductor Manufacturing Company (TSMC), Samsung Electronics and GlobalFoundries.",
      "mentions": 1,
      "filing": {
       "form": "10-K",
-      "accession": "0000804328-25-000085",
-      "url": "https://www.sec.gov/Archives/edgar/data/804328/000080432825000085/qcom-20250928.htm",
-      "date": "2025-11-05"
+      "accession": "0000804328-26-000128",
+      "url": "https://www.sec.gov/Archives/edgar/data/804328/000080432826000128/qcom-20260927.htm",
+      "date": "2026-11-04"
      }
     },
     {
@@ -2296,13 +2284,13 @@
      "relation": "supplier",
      "named": true,
      "share": null,
-     "quote": "The primary foundry suppliers for our various digital, analog/mixed-signal, RF and PM integrated circuits include Taiwan Semiconductor Manufacturing Company (TSMC), Samsung Electronics and Global Foundries.",
+     "quote": "The primary foundry suppliers for our various digital, analog/mixed-signal, RF and PM integrated circuits include Taiwan Semiconductor Manufacturing Company (TSMC), Samsung Electronics and GlobalFoundries.",
      "mentions": 1,
      "filing": {
       "form": "10-K",
-      "accession": "0000804328-25-000085",
-      "url": "https://www.sec.gov/Archives/edgar/data/804328/000080432825000085/qcom-20250928.htm",
-      "date": "2025-11-05"
+      "accession": "0000804328-26-000128",
+      "url": "https://www.sec.gov/Archives/edgar/data/804328/000080432826000128/qcom-20260927.htm",
+      "date": "2026-11-04"
      }
     },
     {
@@ -2311,13 +2299,13 @@
      "relation": "supplier",
      "named": true,
      "share": null,
-     "quote": "Our primary semiconductor assembly and test suppliers are Advanced Semiconductor Engineering, Amkor Technology, Siliconware Precision Industries and STATSChipPAC.",
+     "quote": "Our primary semiconductor assembly and test suppliers are Amkor Technology, Advanced Semiconductor Engineering, Siliconware Precision Industries and STATS ChipPAC.",
      "mentions": 1,
      "filing": {
       "form": "10-K",
-      "accession": "0000804328-25-000085",
-      "url": "https://www.sec.gov/Archives/edgar/data/804328/000080432825000085/qcom-20250928.htm",
-      "date": "2025-11-05"
+      "accession": "0000804328-26-000128",
+      "url": "https://www.sec.gov/Archives/edgar/data/804328/000080432826000128/qcom-20260927.htm",
+      "date": "2026-11-04"
      }
     },
     {
@@ -2326,13 +2314,13 @@
      "relation": "supplier",
      "named": true,
      "share": null,
-     "quote": "Our primary semiconductor assembly and test suppliers are Advanced Semiconductor Engineering, Amkor Technology, Siliconware Precision Industries and STATSChipPAC.",
+     "quote": "Our primary semiconductor assembly and test suppliers are Amkor Technology, Advanced Semiconductor Engineering, Siliconware Precision Industries and STATS ChipPAC.",
      "mentions": 1,
      "filing": {
       "form": "10-K",
-      "accession": "0000804328-25-000085",
-      "url": "https://www.sec.gov/Archives/edgar/data/804328/000080432825000085/qcom-20250928.htm",
-      "date": "2025-11-05"
+      "accession": "0000804328-26-000128",
+      "url": "https://www.sec.gov/Archives/edgar/data/804328/000080432826000128/qcom-20260927.htm",
+      "date": "2026-11-04"
      }
     },
     {
@@ -2341,13 +2329,13 @@
      "relation": "customer",
      "named": true,
      "share": null,
-     "quote": "In fiscal 2025, revenues from Apple, Samsung and Xiaomi each comprised 10% or more of our consolidated revenues.",
-     "mentions": 3,
+     "quote": "In fiscal 2026, revenues from Apple and Samsung each comprised 10% or more of our consolidated revenues.",
+     "mentions": 2,
      "filing": {
       "form": "10-K",
-      "accession": "0000804328-25-000085",
-      "url": "https://www.sec.gov/Archives/edgar/data/804328/000080432825000085/qcom-20250928.htm",
-      "date": "2025-11-05"
+      "accession": "0000804328-26-000128",
+      "url": "https://www.sec.gov/Archives/edgar/data/804328/000080432826000128/qcom-20260927.htm",
+      "date": "2026-11-04"
      }
     },
     {
@@ -2356,13 +2344,13 @@
      "relation": "customer",
      "named": true,
      "share": null,
-     "quote": "In fiscal 2025, revenues from Apple, Samsung and Xiaomi each comprised 10% or more of our consolidated revenues.",
-     "mentions": 3,
+     "quote": "In fiscal 2026, revenues from Apple and Samsung each comprised 10% or more of our consolidated revenues.",
+     "mentions": 1,
      "filing": {
       "form": "10-K",
-      "accession": "0000804328-25-000085",
-      "url": "https://www.sec.gov/Archives/edgar/data/804328/000080432825000085/qcom-20250928.htm",
-      "date": "2025-11-05"
+      "accession": "0000804328-26-000128",
+      "url": "https://www.sec.gov/Archives/edgar/data/804328/000080432826000128/qcom-20260927.htm",
+      "date": "2026-11-04"
      }
     }
    ]
@@ -2382,12 +2370,18 @@
   "SMCI": {
    "cik": 1375365,
    "name": "Super Micro Computer, Inc.",
-   "asOf": "2026-08-31",
+   "asOf": "2026-11-06",
    "filing": {
     "form": "10-K",
     "accession": "0001375365-26-000022",
     "url": "https://www.sec.gov/Archives/edgar/data/1375365/000137536526000022/smci-20260630.htm",
     "date": "2026-08-31"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0001375365-26-000027",
+    "url": "https://www.sec.gov/Archives/edgar/data/1375365/000137536526000027/smci-20260930.htm",
+    "date": "2026-11-06"
    },
    "links": [
     {
@@ -2455,14 +2449,14 @@
      "label": "One customer",
      "relation": "customer",
      "named": false,
-     "share": 28.1,
-     "quote": "For the fiscal year ended June 30, 2026, sales to one customer represented 28.1 % of total net sales.",
+     "share": 44,
+     "quote": "For the three months ended September 30, 2026, sales to one customer represented 44.0 % of total net sales.",
      "mentions": 1,
      "filing": {
-      "form": "10-K",
-      "accession": "0001375365-26-000022",
-      "url": "https://www.sec.gov/Archives/edgar/data/1375365/000137536526000022/smci-20260630.htm",
-      "date": "2026-08-31"
+      "form": "10-Q",
+      "accession": "0001375365-26-000027",
+      "url": "https://www.sec.gov/Archives/edgar/data/1375365/000137536526000027/smci-20260930.htm",
+      "date": "2026-11-06"
      }
     }
    ]
