@@ -567,7 +567,7 @@ select option:disabled { color: var(--text-muted); }
   .mwd-tagline { display: none !important; }
   .mwd-title   { font-size: 16px !important; }
 
-  /* Eight pages and the GO key do not fit one phone-width row, and a row that scrolls sideways hides
+  /* Nine pages and the GO key do not fit one phone-width row, and a row that scrolls sideways hides
      the pages you cannot see. Below 640px the page row wraps to two lines instead; most pages have
      no view row under them, so the nav is no taller than the old two rows. */
   .mwd-grouprow { gap: 4px !important; flex-wrap: wrap; overflow-x: visible !important; }

@@ -18,7 +18,8 @@ import { entrylessCards } from '../lib/optionLedger.js';
 import { kvGetJson, kvSetJson, kvConfigured, kvSetNxEx, kvDel, kvIncrEx, CONSOLE_KEY, OPTION_MARKS_KEY, WALLET_SNAPSHOT_KEY, WALLET_PROVENANCE_KEY, WALLET_PENDING_KEY } from '../lib/kv.js';
 import { contractsByRoot, markOf } from '../lib/instruments.js';
 import { fetchCboeGreeks } from '../lib/cboe.js';
-import { derivePosition, positionPnl, levelHits, applyRolls } from '../lib/positions.js';
+import { derivePosition, positionPnl, levelHits, levelHit, distancePct, applyRolls } from '../lib/positions.js';
+import { sendAlert, ruleList, logView, channelView, ALERT_LOG_KEY, SOURCES } from '../lib/alerts.js';
 import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard, isStaleEvent, isOptionTrade } from '../lib/tradecard.js';
 import { upsertCard, post, remove, send, webhookFromEnv, walletWebhookFromEnv, ideasWebhookFromEnv, eventsWebhookFromEnv, daytradeWebhookFromEnv, postWithFiles, editWithFiles, webhookInfo, mentionFromEnv, ideasMentionFromEnv, alertTtlMin, CARD_KEY, IDEAS_CARD_KEY, privateWebhookFromEnv } from '../lib/discord.js';
 import { parseUpsert, eventPayload, cardHash, roleFromEnv, EVENTS_CARD_KEY, jumpLink, noticePayload } from '../lib/eventcard.js';
@@ -89,7 +90,8 @@ export async function snapshot(origin) {
       if (!isOptionTrade(r) || r.derived.status === 'closed') {
         const hits = levelHits([r], () => quoted)
           .map(h => `${h.level.kind} ${h.level.at}${h.level.to ? `–${h.level.to}` : ''} reached`);
-        return { ...r, price: quoted, pnl: positionPnl(r.derived, quoted), levelHits: hits };
+        return { ...r, price: quoted, pnl: positionPnl(r.derived, quoted), levelHits: hits,
+                 levelStates: r.derived.status === 'closed' ? [] : levelStatesOf(r, () => quoted) };
       }
       // A typed mark or the last fill is NOT a price for the card — a spread marked at its own
       // entry is a P&L of zero that reads as flat. Live or IBKR's close, or nothing.
@@ -98,8 +100,22 @@ export async function snapshot(origin) {
       const hits = levelHits([r], (_p, lv) => (lv?.on === 'underlying' ? quoted : price))
         .map(h => `${h.level.kind} ${h.level.on === 'underlying' ? `${r.symbol} ` : ''}${h.level.at}${h.level.to ? `–${h.level.to}` : ''} reached`);
       return { ...r, price, underlyingPx: quoted, markSource: price == null ? null : m.source, markAsOf: m.asOf || null,
-               pnl: positionPnl(r.derived, price), levelHits: hits };
+               pnl: positionPnl(r.derived, price), levelHits: hits, levelStates: levelStatesOf(r, (lv) => (lv?.on === 'underlying' ? quoted : price)) };
     });
+}
+
+// Every level on a card with its live state, for the Rules & Alerts page and for naming the rule an
+// alert came from (lib/alerts.js). `label` is the same text a hit announces ("stop 50 reached"), so a
+// hit can be traced back to its level.
+function levelStatesOf(r, priceFor) {
+  const side = r?.derived?.side === 'short' ? 'short' : (r?.side || 'long');
+  return (r.levels || []).map(lv => {
+    const price = priceFor(lv);
+    const p = Number.isFinite(Number(price)) && price != null ? Number(price) : null;
+    const label = `${lv.kind} ${isOptionTrade(r) && lv.on === 'underlying' ? `${r.symbol} ` : ''}${lv.at}${lv.to ? `–${lv.to}` : ''} reached`;
+    return { ruleId: `console:${r.id}:${lv.id || label}`, id: lv.id ?? null, kind: lv.kind, at: lv.at, to: lv.to ?? null, on: lv.on ?? null,
+             price: p, hit: p != null && levelHit(lv, p, side), distPct: p == null ? null : distancePct(lv, p), label };
+  });
 }
 
 // Published marks for the contracts the open option rows hold, keyed as lib/instruments.js keys
@@ -142,10 +158,17 @@ export async function refresh(origin, { now = Date.now() } = {}) {
   const mention = mentionFromEnv();
   const ttl = alertTtlMin();
   const pending = Array.isArray(state.alerts) ? [...state.alerts] : [];
+  const alertKv = { get: kvGetJson, set: kvSetJson };
   for (const ev of events) {
     const row = rows.find(r => r.id === ev.row.id);
     if (!row || isStaleEvent(ev, row, now)) continue;
-    const id = await post(webhook, buildAlert({ ...ev, row }, { mentionId: mention }));
+    // Through the one alert module (lib/alerts.js): same channel, now logged against its rule.
+    const ruleId = ev.kind === 'level'
+      ? ((row.levelStates || []).find(s => s.label === ev.level)?.ruleId || `console:${row.id}:${ev.level}`)
+      : `console:${row.id}:${ev.kind}`;
+    const { messageId: id } = await sendAlert({ source: 'console', payload: buildAlert({ ...ev, row }, { mentionId: mention }),
+      items: [{ ruleId, title: ev.kind === 'level' ? ev.level : ev.kind === 'opened' ? 'trade opened' : 'trade closed', symbol: row.symbol, state: ev.kind === 'level' ? 'hit' : ev.kind }] },
+      { deliver: post, kv: alertKv, webhook, now: new Date(now) });
     if (id && ttl > 0) pending.push({ id, expires: now + ttl * 60000 });
   }
 
@@ -431,7 +454,9 @@ export async function ideasCard(req, res, { webhook = ideasWebhookFromEnv(), kv 
         const mid = a.id && r.state?.[a.id]?.messageId;
         if (mid && !where) where = await info(webhook).catch(() => null);
         const jump = mid ? jumpLink(where?.guildId, where?.channelId, mid) : null;
-        const id = await notifier(webhook, alertPayload(a, { mention, jump }));
+        const { messageId: id } = await sendAlert({ source: 'idea', payload: alertPayload(a, { mention, jump }),
+          items: [{ ruleId: `idea:${a.id || a.key}`, title: a.text, symbol: a.symbol || null, state: 'hit' }] },
+          { deliver: notifier, kv: { get: kv.get, set: kv.set }, webhook });
         if (id) { sent.push(a.key); alerted.push(a.id || a.key); }
         else r.errors.push({ id: a.id, error: 'alert post failed' });
       }
@@ -597,10 +622,32 @@ export async function deskRulesCheck({ origin, now = new Date(), quote = tvDaily
   const prev = await kvGetJson(DESK_CHECKS_KEY).catch(() => null);
   const checks = runChecks(mirror, { quotes, marks, today, ...periodEnds(today, HOLIDAYS?.US?.closed || []), prev, now: now.toISOString() });
   await kvSetJson(DESK_CHECKS_KEY, checks);
-  const card = deskAlertCard(newHits(prev, checks), { today, now: now.toISOString() });
+  const hits = newHits(prev, checks);
+  const card = deskAlertCard(hits, { today, now: now.toISOString() });
   let posted = false;
-  if (card && webhook) posted = !!(await deliver(webhook, card).catch(() => null));
+  if (card) {
+    // One message, one log line per rule it carries (lib/alerts.js).
+    const items = hits.fresh.map(x => ({ ruleId: `desk:${x.deskId}:${x.rule.id}`, title: `${x.name} · ${x.rule.kind}${x.rule.note ? ` · ${x.rule.note}` : ''}`, symbol: x.rule.symbol || null, state: x.rule.state }));
+    posted = (await sendAlert({ source: 'desk', payload: card, items }, { deliver, kv: { get: kvGetJson, set: kvSetJson }, webhook: webhook || null, now })).ok;
+  }
   return { ok: true, ...checks.counts, symbols: symbols.length, priced: Object.keys(quotes).length, alert: card ? (posted ? 'posted' : webhook ? 'post failed' : 'DISCORD_PRIVATE_WEBHOOK unset') : 'nothing new' };
+}
+
+// The Rules & Alerts page's data (lib/alerts.js): the Desk rules with the close check's states, the
+// console levels priced now, the last 100 alerts and what went out in the last 7 days per source.
+export async function alertsView({ origin, now = new Date(), snap = snapshot, kv = { get: kvGetJson } } = {}) {
+  if (!kvConfigured()) return { ok: false, why: 'Redis is not configured' };
+  const [mirror, checks, log] = await Promise.all([kv.get(DESK_RULES_KEY), kv.get(DESK_CHECKS_KEY), kv.get(ALERT_LOG_KEY)].map(p => p.catch(() => null)));
+  let consoleRows = [], consoleError = null;
+  try { consoleRows = await snap(origin); } catch (e) { consoleError = String(e?.message || e).slice(0, 100); }
+  const { rules, counts } = ruleList({ mirror, checks, consoleRows });
+  const since = now.getTime() - 7 * 86400000;
+  const week = {};
+  for (const l of Array.isArray(log) ? log : []) if (Date.parse(l.at) >= since) {
+    const w = (week[l.source] ||= { sent: 0, failed: 0 }); l.ok ? w.sent++ : w.failed++;
+  }
+  return { ok: true, at: now.toISOString(), sources: SOURCES, channels: channelView(), rules, counts, week,
+           deskCheckedAt: checks?.at || null, deskMirrorAt: mirror?.at || null, consoleError, log: logView(log, { limit: 100 }) };
 }
 
 // The last 20 book-connector requests as SHAPES (lib/bookMcp.js bookRequestShape): never the token,
@@ -637,6 +684,15 @@ export default async function handler(req, res) {
       res.status(200).json(await checkpointPing({ now: new Date(), payload: signalBoardPayload, webhook: daytradeWebhookFromEnv() || webhookFromEnv(), upsert: upsertCard,
         kv: { configured: kvConfigured, get: kvGetJson, set: kvSetJson } }));
     } catch (e) { console.error('checkpoint ping', e); res.status(200).json({ ok: false, error: String(e?.message || e) }); }
+    return;
+  }
+  // ?alerts=1 — the Rules & Alerts page: every rule with its state, the alert log, the channel policy.
+  // Book data, so behind the login above and never cached.
+  if (String(req.query?.alerts || '') === '1') {
+    res.setHeader('Cache-Control', 'private, no-store');
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    try { res.status(200).json(await alertsView({ origin: `${proto}://${req.headers.host}` })); }
+    catch (e) { console.error('alerts view failed'); res.status(200).json({ ok: false, why: String(e?.message || e).slice(0, 140) }); }
     return;
   }
   if (String(req.query?.deskrules || '') === '1') {

@@ -42,6 +42,7 @@ import { optionPlans, positionsByContract, costsByContract, planLine, planFix, a
 import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, unrecordedTrades, dropCreatedAdds } from '../lib/flexTrades.js';
 import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf, planAck, reconcilingFill, flexEnv, flexConfigured, isoDate, optionFindings, addLabel, cashBookOf, optionMarksOf, classOf, optionContractOf } from '../lib/flex.js';
 import { post, webhookFromEnv } from '../lib/discord.js';
+import { sendAlert } from '../lib/alerts.js';
 import { refresh } from './tradecard.js';
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
 import { fetchCboeGreeks, fetchCboeIndex } from '../lib/cboe.js';
@@ -83,8 +84,10 @@ async function tell(rec, asOf, tradePlan = null, journal = null) {
   if (!line) return { posted: false, reason: 'nothing needs acting on' };
   const hook = webhookFromEnv();
   if (!hook) return { posted: false, reason: 'no webhook configured' };
-  await post(hook, { content: `🧾 IBKR statement ${asOf || ''} — ${line}`.trim(), allowed_mentions: { parse: [] } });
-  return { posted: true };
+  // Through the one alert module (lib/alerts.js). The log line carries counts and symbols only, as the post does.
+  const sent = await sendAlert({ source: 'statement', payload: { content: `🧾 IBKR statement ${asOf || ''} — ${line}`.trim(), allowed_mentions: { parse: [] } },
+    items: [{ ruleId: `statement:${asOf || 'latest'}`, title: line, state: 'notice' }] }, { deliver: post, kv: { get: kvGetJson, set: kvSetJson }, webhook: hook });
+  return { posted: sent.ok };
 }
 
 export async function sync(origin, { apply = false, ack = [], trades = false, from: from0 = null, peek = false, unrecorded = false, since = null } = {}) {
