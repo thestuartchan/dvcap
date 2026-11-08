@@ -180,7 +180,7 @@ export function FedPathCard({ effr, feed = null, onSaved = null }) {
   }
 
   // ── FED, WITH THE HAND ENTRY AS THE OVERRIDE ──
-  // The ZQ strip comes from api/indicators.js (Yahoo, last daily close). The typed settle still
+  // The ZQ strip comes from lib/routes/indicators.js (Yahoo, last daily close). The typed settle still
   // wins for its own date — a settle is a better number than a delayed close — but a feed row
   // dated later than the last entry is the current one, and the daily hand entry is no longer
   // the only way this card stays alive.

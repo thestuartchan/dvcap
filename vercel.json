@@ -9,14 +9,42 @@
     "api/preread.js": {
       "includeFiles": "data/render/**"
     },
-    "api/atr.js": {
-      "maxDuration": 60
-    },
     "api/regime-log.js": {
       "maxDuration": 300
+    },
+    "api/market.js": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
+    {
+      "source": "/api/prices",
+      "destination": "/api/market?route=prices"
+    },
+    {
+      "source": "/api/atr",
+      "destination": "/api/market?route=atr"
+    },
+    {
+      "source": "/api/indicators",
+      "destination": "/api/macro?route=indicators"
+    },
+    {
+      "source": "/api/playbook",
+      "destination": "/api/macro?route=playbook"
+    },
+    {
+      "source": "/api/manual-entry",
+      "destination": "/api/inputs?route=manual-entry"
+    },
+    {
+      "source": "/api/korea-save",
+      "destination": "/api/inputs?route=korea-save"
+    },
+    {
+      "source": "/api/login",
+      "destination": "/api/inputs?route=login"
+    },
     {
       "source": "/api/ideas-card",
       "destination": "/api/tradecard?card=ideas"

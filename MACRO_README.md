@@ -16,7 +16,7 @@ macro calendar.
 
 ## Env vars (Vercel project settings)
 ```
-FRED_API_KEY       st. louis FRED key (yields, OAS) — free. Shared with api/indicators.js.
+FRED_API_KEY       st. louis FRED key (yields, OAS) — free. Shared with lib/routes/indicators.js.
 ANTHROPIC_API_KEY  for the prose read
 DISCORD_WEBHOOK    channel webhook for auto-posting
 GITHUB_TOKEN       fine-grained PAT with contents:write on this repo — lets /api/scrape-7709

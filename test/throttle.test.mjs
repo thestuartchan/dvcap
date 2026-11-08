@@ -117,7 +117,7 @@ function harness() {
   // The gate lives next to the fetch now and both sides draw on the ONE instance. These assert the
   // arrangement rather than the old shape: a second limiter appearing anywhere in the FRED path is
   // the regression, and it would look exactly like a fix.
-  const ind = bare(readFileSync(new URL('../api/indicators.js', import.meta.url), 'utf8'));
+  const ind = bare(readFileSync(new URL('../lib/routes/indicators.js', import.meta.url), 'utf8'));
   const fredSrc = bare(readFileSync(new URL('../lib/fred.js', import.meta.url), 'utf8'));
 
   ok('the FRED gate is built in lib/fred.js', /export const fredGate = limiter\(/.test(fredSrc));
@@ -127,7 +127,7 @@ function harness() {
   // at all — it hands URLs to fredJsonEx — so the thing to assert is that nothing in the route
   // reaches fetch, a gate, or a backoff on its own.
   ok('and indicators draws on it through fredJsonEx instead of building a second',
-     /import \{[^}]*fredJsonEx[^}]*\} from '\.\.\/lib\/fred\.js'/.test(ind) && /await fredJsonEx\(/.test(ind));
+     /import \{[^}]*fredJsonEx[^}]*\} from '\.\.\/(lib\/)?fred\.js'/.test(ind) && /await fredJsonEx\(/.test(ind));
   eq('indicators builds no limiter of its own', (ind.match(/limiter\(/g) || []).length, 0);
   eq('and calls no gate of its own — the gate is inside the fetch it delegates to', (ind.match(/fredGate\(/g) || []).length, 0);
   eq('and no backoff of its own', (ind.match(/backoffMs\(/g) || []).length, 0);

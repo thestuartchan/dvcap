@@ -13,7 +13,7 @@ Pipeline verified end-to-end live: GET /api/preread?region=asia returns the full
   (foundry/memory/litho/equip/index/megacap/gpu) + `leader` flags. Single source of truth.
 - `lib/quotes.js` — DATA SPINE. Normalized quote shape, honest `stale` flag on every
   print. Sources: Yahoo (equities/indices/oil, keyless — `lib/yahoo.js`) + FRED
-  (yields/OAS — `lib/fred.js`, shares `FRED_API_KEY` with `api/indicators.js`).
+  (yields/OAS — `lib/fred.js`, shares `FRED_API_KEY` with `lib/routes/indicators.js`).
   Everything reads this. [Reconciled: was FMP-primary + placeholder oil; moved onto the
   repo's existing keyless Yahoo stack and unified the FRED key.]
 - `lib/regime.js` — DETERMINISTIC regime engine (memory-vs-foundry split, credit
@@ -57,10 +57,10 @@ regime engine encodes). Read it before touching regime.js or universe.js.
 
 ## FIRST TASKS in Claude Code (in order)
 1. ✅ DONE — Merged & reconciled against the existing `api/` stack: spine now reads the
-   repo's keyless Yahoo endpoint (`lib/yahoo.js`, same one `api/prices.js`/`indicators.js`
+   repo's keyless Yahoo endpoint (`lib/yahoo.js`, same one `lib/routes/prices.js`/`indicators.js`
    use) and shares the FRED key via `lib/fred.js` (`FRED_API_KEY`). No duplicate key.
 2. ✅ DONE — Oil is NOT a gap: `oilQuote()` reads Yahoo `CL=F`/`BZ=F` (keyless), the same
-   WTI source `api/indicators.js` already uses. No OIL_KEY / paid feed needed.
+   WTI source `lib/routes/indicators.js` already uses. No OIL_KEY / paid feed needed.
 3. ✅ DONE — Vercel env set (FRED_API_KEY, ANTHROPIC_API_KEY, DISCORD_WEBHOOK) and
    verified live in production. FMP_KEY / OIL_KEY no longer used. (CSOP 7709 fully retired
    2026-07-15 — no GITHUB_TOKEN/scraper anymore; see Known gaps.)

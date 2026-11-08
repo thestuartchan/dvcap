@@ -27,6 +27,7 @@ import { execFileSync } from 'node:child_process';
 // `process.env[CONST]` form, whose value is declared next to it as `export const CONST = 'NAME'`.
 const sources = [
   ...readdirSync('lib').filter(f => f.endsWith('.js')).map(f => `lib/${f}`),
+  ...readdirSync('lib/routes').filter(f => f.endsWith('.js')).map(f => `lib/routes/${f}`),
   ...readdirSync('api').filter(f => f.endsWith('.js')).map(f => `api/${f}`),
   'middleware.js',
 ];

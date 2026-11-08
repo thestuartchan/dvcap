@@ -267,7 +267,7 @@ eq('signed in, configured: the fills drafted and one line back', [synced.code, s
 eq('nothing about the book is written by Sync now — only the drafts, seen, processed, lag and lock keys', [...mem.keys()].filter(k => /console/.test(k)), []);
 
 // Bulk confirm through the console's route: one log entry per trade, with bulk: true.
-const { default: entry } = await import('../api/manual-entry.js');
+const { default: entry } = await import('../lib/routes/manual-entry.js');
 const callEntry = async (body) => {
   const out = { code: 0, body: null };
   const res = { status(c) { out.code = c; return res; }, json(b) { out.body = b; return res; }, setHeader() {}, end() { return res; } };
