@@ -440,7 +440,8 @@ export async function ideasCard(req, res, { webhook = ideasWebhookFromEnv(), kv 
   // editing a Vercel variable. Same ideas token; touches no card. Answered on its own when sent alone.
   if (Array.isArray(body?.disclosuresWatch)) {
     const extra = [...watchSet([], body.disclosuresWatch.join(','))];
-    const ok = kvConfigured() ? !!(await kvSetJson(DISCLOSURES_EXTRA_KEY, extra).catch(() => null)) : false;
+    // Through the injected store, like the rest of this route: a test must never reach the real Redis.
+    const ok = kv.configured() ? !!(await kv.set(DISCLOSURES_EXTRA_KEY, extra).catch(() => null)) : false;
     if (!Array.isArray(body.ideas) && !hasAlerts) return res.status(200).json({ ok, disclosuresWatch: extra });
   }
   if (!body || typeof body !== 'object' || (!Array.isArray(body.ideas) && !hasAlerts)) return res.status(400).json({ error: 'expected { ideas: [...] } and/or { alerts: [...] }' });
