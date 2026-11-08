@@ -20,14 +20,19 @@ const PUBLIC = {
   'preread.js':    'the composed brief; deliberately reachable so a run can be triggered by hand',
 };
 
-const files = readdirSync('api').filter(f => f.endsWith('.js')).sort();
+// Route handlers live in api/ (one function each) or lib/routes/ (several routes sharing one
+// function through lib/routes/dispatch.js). Every handler is checked; a dispatcher is not a
+// handler — it only forwards to the lib/routes modules it imports, each checked here on its own.
+const ROUTE_DIRS = ['api', 'lib/routes'];
+const files = ROUTE_DIRS.flatMap(d => readdirSync(d).filter(f => f.endsWith('.js') && f !== 'dispatch.js').map(f => `${d}/${f}`))
+  .filter(p => !/^\s*export default dispatch\(/m.test(readFileSync(p, 'utf8'))).sort();
 const open = [];
 for (const f of files) {
-  if (PUBLIC[f]) continue;
+  if (PUBLIC[f.split('/').pop()]) continue;
   // Comments are stripped first. The first version of this flagged api/tradecard.js for the
   // fail-open pattern quoted in the comment ABOVE the fix that removed it — a checker that reads
   // prose as code will be argued with until it is switched off.
-  const raw = readFileSync(`api/${f}`, 'utf8');
+  const raw = readFileSync(f, 'utf8');
   const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   const gated = /authorised\s*\(|hasSessionCookie\s*\(|mwd_auth/.test(src);
   if (!gated) open.push(f);
@@ -49,7 +54,7 @@ for (const f of files) {
 
 if (open.length) {
   console.error(`✖ api-auth check FAILED — ${open.length} route${open.length === 1 ? '' : 's'} not gated:`);
-  for (const f of open) console.error(`    api/${f}`);
+  for (const f of open) console.error(`    ${f}`);
   console.error('  Add authorised(req) from lib/apiauth.js, or list it in PUBLIC here with a reason.');
   process.exit(1);
 }

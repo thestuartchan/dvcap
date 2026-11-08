@@ -48,7 +48,7 @@ globalThis.fetch = async (url, init = {}) => {
   throw new Error(`unexpected network call in a test: ${url}`);
 };
 
-const { default: manualEntry } = await import('../api/manual-entry.js');
+const { default: manualEntry } = await import('../lib/routes/manual-entry.js');
 const { runJournal, resolveDraft } = await import('../lib/journalStore.js');
 const { hasServiceKey, authorised } = await import('../lib/apiauth.js');
 

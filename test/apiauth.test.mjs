@@ -16,7 +16,7 @@ const clear = () => { for (const n of SERVICE_KEY_ENVS) delete process.env[n]; }
 
 // ── THE COOKIE HAS TO PROVE SOMETHING ────────────────────────────────────────
 // It did not. The value was the literal `mwd_auth=true` and the check was a regex for that
-// literal, so being logged in meant sending a string printed in api/login.js — in a PUBLIC
+// literal, so being logged in meant sending a string printed in lib/routes/login.js — in a PUBLIC
 // repository. Every route closed on 2026-09-06 was closed against callers who send no cookie,
 // which is not the caller anyone was worried about.
 //
@@ -138,8 +138,8 @@ for (const m of messages) ok('the refusal leaks nothing about the payload', !/eq
 
 clear();
 // ── NO LITERAL COOKIE CHECK SURVIVES ANYWHERE ────────────────────────────────
-// The constant was in five files: api/login.js minted it, middleware.js matched it, and
-// api/manual-entry.js, api/regime-log.js and api/korea-save.js each carried their own copy of the
+// The constant was in five files: lib/routes/login.js minted it, middleware.js matched it, and
+// lib/routes/manual-entry.js, api/regime-log.js and lib/routes/korea-save.js each carried their own copy of the
 // regex. That is how a thing gets fixed in one place and stays broken in four. Scanned as SOURCE
 // with comments stripped, because this file and lib/session.js both quote the old cookie in prose
 // while explaining why it is gone.
@@ -151,7 +151,7 @@ clear();
   eq('no file still treats "true" as a session', offenders, []);
 
   // And no route reads the INCOMING cookie for itself. Scoped to `req.headers.cookie` rather than
-  // the word "cookie": api/prices.js holds a Yahoo cookie for an OUTBOUND call, which is a
+  // the word "cookie": lib/routes/prices.js holds a Yahoo cookie for an OUTBOUND call, which is a
   // different thing entirely and flagged the first version of this.
   const rolled = files.filter(f => f.startsWith('api/') &&
     /req\s*(\.headers\s*\.\s*cookie|\.headers\s*\[\s*['"`]cookie)/.test(strip(fs.readFileSync(f, 'utf8'))));
@@ -159,7 +159,7 @@ clear();
 
   // The mint and the verify read the SAME environment variable. Naming it twice is how
   // TRADECARD_KEY and TRADECARD_SECRET became two names for one value in two systems.
-  ok('login mints through lib/session.js', /mintSession\s*\(/.test(fs.readFileSync('api/login.js', 'utf8')));
+  ok('login mints through lib/session.js', /mintSession\s*\(/.test(fs.readFileSync('lib/routes/login.js', 'utf8')));
   ok('and the middleware verifies through it', /verifySession\s*\(/.test(fs.readFileSync('middleware.js', 'utf8')));
   ok('the middleware awaits that verification', /await\s+verifySession/.test(fs.readFileSync('middleware.js', 'utf8')));
   ok('and is async, or the await would be a syntax error', /export\s+default\s+async\s+function\s+middleware/.test(fs.readFileSync('middleware.js', 'utf8')));

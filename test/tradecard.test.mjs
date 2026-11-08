@@ -180,13 +180,13 @@ ok('a real card stays inside the description limit', buildCard(mk(120).map(v => 
   symbol: v.symbol, price: v.price, derived: { status: 'open', avgCost: v.avg, firstDate: '2026-06-10', scaleOuts: [] }, pnl: { totalPct: v.pct },
 }))).embeds[0].description.length <= 4096);
 
-// ── the contract between api/tradecard.js and api/prices.js ──
+// ── the contract between api/tradecard.js and lib/routes/prices.js ──
 // This is not a unit test of either file; it is the seam between them, and the seam is where the
 // first live run broke. tradecard asked for ?symbols= while prices reads req.query.tickers, so the
 // call 400'd, every price came back null, and the card rendered "—" and "0.00%" for the whole book
 // without anything reporting a failure. Reading the parameter name out of the provider and
 // asserting the consumer uses it costs nothing and catches a rename from either side.
-const pricesSrc = fs.readFileSync(new URL('../api/prices.js', import.meta.url), 'utf8');
+const pricesSrc = fs.readFileSync(new URL('../lib/routes/prices.js', import.meta.url), 'utf8');
 const cardSrc = fs.readFileSync(new URL('../api/tradecard.js', import.meta.url), 'utf8');
 const wantsParam = /const \{ (\w+) \} = req\.query/.exec(pricesSrc)?.[1];
 const sendsParam = /api\/prices\?(\w+)=/.exec(cardSrc)?.[1];

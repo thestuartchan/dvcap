@@ -1,7 +1,7 @@
 // test/growth.test.mjs — the weekly leg of the growth axis.
 //
 // Built from inputs, never from a captured output: every fixture is a synthetic FRED block with
-// the shape api/indicators.js produces, so the verdict is exercised on the arithmetic, and the
+// the shape lib/routes/indicators.js produces, so the verdict is exercised on the arithmetic, and the
 // clock is pinned so no assertion here can drift with the calendar.
 import { growthPulse, marketPulse, monthlyPulse, growthAxis, MARKET_LABEL, MARKET_PAIRS, MONTHLY_SERIES, CFNAI_RECESSION, ISM_STALE_DAYS, MARKET_LOOKBACK, GROWTH_SERIES, CLAIMS_WINDOW, CLAIMS_LOOKBACK, CLAIMS_RISE_PCT, WEI_STRONG, GDPNOW_STRONG, GDPNOW_WEAK, MIN_LEGS, vintageOf } from '../lib/growth.js';
 

@@ -157,8 +157,8 @@ const CSOP = [
 
 // ── WIRING ──
 {
-  const save = readFileSync('api/korea-save.js', 'utf8');
-  ok('the hand paste merges through the same code', /from '\.\.\/lib\/koreaStore\.js'/.test(save) && /applyKofia\(store, parsed\.list, snapshot\)/.test(save));
+  const save = readFileSync('lib/routes/korea-save.js', 'utf8');
+  ok('the hand paste merges through the same code', /from '\.\.\/(lib\/)?koreaStore\.js'/.test(save) && /applyKofia\(store, parsed\.list, snapshot\)/.test(save));
   const wf = readFileSync('.github/workflows/korea-fetch.yml', 'utf8');
   // Since 6 Nov 2026 the scheduler (lib/cronRouter.js) dispatches the workflow on time instead of GitHub's own cron.
   const { JOBS } = await import('../lib/cronRouter.js');

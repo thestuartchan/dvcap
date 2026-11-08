@@ -15,7 +15,8 @@ if (fns.length > LIMIT) {
   console.error(`✖ function-count check FAILED — ${fns.length} serverless functions, Vercel Hobby allows ${LIMIT}:`);
   for (const f of fns) console.error(`    api/${f}`);
   console.error('  The deployment will NOT ship and the previous build will keep serving.');
-  console.error('  Merge two routes into one with a mode parameter, as api/gex.js does.');
+  console.error('  Add the route to a domain group instead: a module in lib/routes/, served by api/market.js,');
+  console.error('  api/macro.js or api/inputs.js through lib/routes/dispatch.js, with a rewrite in vercel.json.');
   process.exit(1);
 }
 const headroom = LIMIT - fns.length;
