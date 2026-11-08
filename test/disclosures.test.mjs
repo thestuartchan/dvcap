@@ -1,6 +1,6 @@
 // test/disclosures.test.mjs — politicians' and insiders' trades from the filings (lib/disclosures.js).
 import { deflateRawSync } from 'node:zlib';
-import { unzipEntry, parseHouseIndex, parsePtrText, amountMin, flagsFor, congressCard, parseForm4, insiderDigest, insiderCard, watchSet } from '../lib/disclosures.js';
+import { unzipEntry, parseHouseIndex, parsePtrText, amountMin, flagsFor, congressCard, parseForm4, form4Flags, insiderClusters, insiderScanCard, insiderRoundupCard, parseCurrentFeed, ideaTickers, watchSet } from '../lib/disclosures.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 
@@ -74,12 +74,26 @@ const f4 = (code, shares, price, { plan = false, officer = '' } = {}) => `<owner
 <transactionAmounts><transactionShares><value>${shares}</value></transactionShares><transactionPricePerShare><value>${price}</value></transactionPricePerShare><transactionAcquiredDisposedCode><value>${code === 'P' ? 'A' : 'D'}</value></transactionAcquiredDisposedCode></transactionAmounts></nonDerivativeTransaction></nonDerivativeTable></ownershipDocument>`;
 const buy = parseForm4(f4('P', 1000, 50));
 eq('Form 4 parse: ticker upper-cased, role, code, value', [buy.ticker, buy.role, buy.txns[0].code, buy.txns[0].value, buy.plan], ['ACME', 'Director', 'P', 50000, false]);
-const sale = parseForm4(f4('S', 40000, 50, { officer: 'CFO' })), planned = parseForm4(f4('S', 40000, 50, { officer: 'CEO', plan: true })), gift = parseForm4(f4('G', 500000, 0));
-const d = insiderDigest([buy, sale, planned, gift, { ...buy, owner: 'SMITH J' }], { watch: new Set(['ACME']) });
-eq('digest: buys on the watchlist, unplanned $1M+ sales, gifts and planned sales left out', [d.buys.length, d.sales.length, d.sales[0].role], [2, 1, 'CFO']);
-eq('digest: two insiders buying one issuer is a cluster', d.clusters, [{ ticker: 'ACME', insiders: 2 }]);
-eq('insider card renders a quiet week plainly', insiderCard({ buys: [], sales: [], clusters: [] }, { from: 'a', to: 'b' }).embeds[0].description.startsWith('No open-market'), true);
-
+const sale = parseForm4(f4('S', 40000, 50, { officer: 'CFO' })), planned = parseForm4(f4('S', 40000, 50, { officer: 'CEO', plan: true }));
+const bigBuy = parseForm4(f4('P', 20000, 50)), ceoBuy = parseForm4(f4('P', 3000, 50, { officer: 'Chief Executive Officer' })), gift = parseForm4(f4('G', 500000, 0));
+const W = new Set(['ACME']);
+eq('flags: a $500k+ open-market buy anywhere', form4Flags(bigBuy).flags, ['$500k+ buy']);
+eq('flags: a CEO buying $100k+ anywhere', form4Flags(ceoBuy).flags, ['CEO/CFO buy']);
+eq('flags: a small director buy only counts on the watchlist', [form4Flags(buy).flags, form4Flags(buy, { watch: W }).flags], [[], ['watchlist buy']]);
+eq('flags: an unplanned $1M+ sale on the watchlist; a planned one and a gift never', [form4Flags(sale, { watch: W }).flags, form4Flags(planned, { watch: W }).flags, form4Flags(gift, { watch: W }).flags], [['watchlist: unplanned sale'], [], []]);
+const hist4 = [{ ticker: 'ACME', owner: 'A', date: '2026-11-01' }, { ticker: 'ACME', owner: 'B', date: '2026-11-03' }, { ticker: 'ACME', owner: 'C', date: '2026-11-05' },
+               { ticker: 'ZZZ', owner: 'A', date: '2026-11-05' }, { ticker: 'ZZZ', owner: 'A', date: '2026-11-06' }, { ticker: 'OLD', owner: 'A', date: '2026-09-01' }, { ticker: 'OLD', owner: 'B', date: '2026-09-02' }, { ticker: 'OLD', owner: 'C', date: '2026-09-03' }];
+eq('clusters: 3 different insiders inside 14 days; repeats and old buys do not count', insiderClusters(hist4, { today: '2026-11-06' }), [{ ticker: 'ACME', insiders: 3 }]);
+eq('clusters: one already posted is not posted again', insiderClusters(hist4, { today: '2026-11-06', already: ['ACME'] }), []);
+eq('scan card: nothing flagged, nothing posted', insiderScanCard([], []), null);
+const sc = insiderScanCard([{ ...bigBuy, ...form4Flags(bigBuy) }], [{ ticker: 'ACME', insiders: 3 }]).embeds[0].description;
+eq('scan card: cluster first, then the flagged buy', sc, '🧲 **ACME** cluster: 3 insiders bought in the last 14 days\n🟢 **ACME** BUY $1.0M · DOE JANE P (Director) · 2026-11-04 · _$500k+ buy_');
+eq('roundup: a quiet week says so', insiderRoundupCard([], { from: 'a', to: 'b' }).embeds[0].description, 'No open-market insider buys recorded this week.');
+const atom = `<feed><entry><title>4 - DOE JANE (0001) (Reporting)</title><link rel="alternate" type="text/html" href="https://www.sec.gov/Archives/edgar/data/1/000119312526452288/0001193125-26-452288-index.htm"/><category scheme="https://www.sec.gov/" label="form type" term="4"/></entry>
+<entry><title>4 - ACME (0001121788) (Issuer)</title><link rel="alternate" type="text/html" href="https://www.sec.gov/Archives/edgar/data/1121788/000119312526452288/0001193125-26-452288-index.htm"/><category scheme="https://www.sec.gov/" label="form type" term="4"/></entry>
+<entry><title>4/A - X (0009) (Issuer)</title><link rel="alternate" type="text/html" href="https://www.sec.gov/Archives/edgar/data/9/000000000926000001/x-index.htm"/><category scheme="https://www.sec.gov/" label="form type" term="4/A"/></entry></feed>`;
+eq('latest-filings feed: one row per Form 4, from the issuer entry', parseCurrentFeed(atom), [{ cik: '1121788', acc: '000119312526452288' }]);
+eq('idea tickers: pairs give both legs', ideaTickers([{ ticker: 'XSW/SOXX' }, { ticker: 'RSP vs QQQ' }, { ticker: 'NKE' }, {}]), ['XSW', 'SOXX', 'RSP', 'QQQ', 'NKE']);
 eq('watchlist: US tickers only, from the book and the env list', [...watchSet(['NVDA', '0981.HK', 'MCL', 'BRK.B', 'DEWA.AE'], 'crwd, xsw')], ['NVDA', 'MCL', 'BRK.B', 'CRWD', 'XSW']);
 
 console.log(`\n${pass} passed, ${fail} failed`);

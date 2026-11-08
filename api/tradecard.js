@@ -15,7 +15,7 @@
 
 import { normalizeRows } from '../lib/rowRepairs.js';
 import { entrylessCards } from '../lib/optionLedger.js';
-import { kvGetJson, kvSetJson, kvSetJsonEx, kvConfigured, kvSetNxEx, kvDel, kvIncrEx, CONSOLE_KEY, OPTION_MARKS_KEY, WALLET_SNAPSHOT_KEY, WALLET_PROVENANCE_KEY, WALLET_PENDING_KEY } from '../lib/kv.js';
+import { kvGetJson, kvSetJson, kvConfigured, kvSetNxEx, kvDel, kvIncrEx, CONSOLE_KEY, OPTION_MARKS_KEY, WALLET_SNAPSHOT_KEY, WALLET_PROVENANCE_KEY, WALLET_PENDING_KEY } from '../lib/kv.js';
 import { contractsByRoot, markOf } from '../lib/instruments.js';
 import { fetchCboeGreeks } from '../lib/cboe.js';
 import { derivePosition, positionPnl, levelHits, applyRolls } from '../lib/positions.js';
@@ -30,8 +30,8 @@ import { signalBoardPayload } from '../lib/signalBoardFeed.js';
 import { DESK_RULES_KEY, DESK_CHECKS_KEY, runChecks, newHits, deskAlertCard, checksView, periodEnds } from '../lib/deskRules.js';
 import { TC_TODAY_KEY } from '../lib/sameDayFills.js';
 import { tvDaily } from '../lib/tradingview.js';
-import { runCongress, runInsiders, watchSet } from '../lib/disclosures.js';
-import { secUserAgent, tickerMap, secTicker, TICKERS_URL, SEC_TICKERS_KEY, SEC_TICKERS_TTL_S } from '../lib/secDes.js';
+import { runCongress, runInsiderScan, runInsiderRoundup, watchSet, ideaTickers, IDEAS_TICKERS_KEY } from '../lib/disclosures.js';
+import { secUserAgent } from '../lib/secDes.js';
 import HOLIDAYS from '../data/holidays.json' with { type: 'json' };
 import { fetchWallets } from '../lib/wallet.js';
 import { fetchSpotContext, fetchHyperliquid, fetchHlAccount, fetchHlSpot, fetchHlOrders } from '../lib/hyperliquid.js';
@@ -439,6 +439,9 @@ export async function ideasCard(req, res, { webhook = ideasWebhookFromEnv(), kv 
       }
     }
     const saved = await kv.set(IDEAS_CARD_KEY, { cards: r.state, alertsSent: sent.slice(-50), updatedAt: new Date().toISOString() });
+    // The disclosures watchlist (lib/disclosures.js): the ideas' tickers, straight to Redis (not the
+    // injected card store, whose one slot is the card map).
+    if (Array.isArray(body.ideas) && kvConfigured()) await kvSetJson(IDEAS_TICKERS_KEY, ideaTickers(body.ideas)).catch(() => {});
     if (!saved) r.errors.push({ error: 'could not save the message ids — the next call may re-post' });
     return res.status(200).json({ ok: r.errors.length === 0, posted: r.posted, edited: r.edited, deleted: r.deleted, unchanged: r.unchanged, ...(hasAlerts ? { alerted, skipped } : {}), errors: r.errors });
   } catch (e) {
@@ -606,11 +609,12 @@ export async function deskRulesCheck({ origin, now = new Date(), quote = tvDaily
 }
 
 
-// ?disclosures=congress|insiders — politicians' and insiders' trades from the filings themselves
-// (lib/disclosures.js): the House Clerk's index hourly, a week of Form 4s on the watchlist on
-// Fridays. Public-filing data to the PRIVATE disclosures channel; the watchlist is dvcap's US book
-// symbols plus DISCLOSURES_WATCHLIST, and the card says "watchlist", never "held". &dry=1 answers
-// with the cards instead of posting (no state written).
+// ?disclosures=congress|insiders|roundup — politicians' and insiders' trades from the filings
+// themselves (lib/disclosures.js): the House Clerk's index hourly, every new Form 4 across the market
+// every 30 minutes, and Friday's insider roundup. Public-filing data to the PRIVATE disclosures
+// channel. The watchlist maintains itself: dvcap's US book symbols, the tickers of the Trading Ideas
+// cards (stored as the ideas card syncs), plus DISCLOSURES_WATCHLIST for anything else. The card
+// says "watchlist", never "held". &dry=1 answers with the cards instead of posting (no state written).
 async function pdfText(bytes) {
   const { getDocumentProxy, extractText } = await import('unpdf');
   const pdf = await getDocumentProxy(bytes);
@@ -618,36 +622,21 @@ async function pdfText(bytes) {
 }
 async function disclosureWatch(origin, snap = snapshot) {
   let syms = [];
-  try { syms = (await snap(origin)).map(r => r?.symbol || r?.underlying || r?.ticker).filter(Boolean); } catch { /* env list only */ }
-  return watchSet(syms, process.env.DISCLOSURES_WATCHLIST);
-}
-async function secCik(sym, cache) {
-  if (!cache.map) {
-    cache.map = (await kvGetJson(SEC_TICKERS_KEY).catch(() => null)) || null;
-    if (!cache.map) {
-      try {
-        const r = await fetch(TICKERS_URL, { headers: { 'User-Agent': secUserAgent() || '', Accept: 'application/json' }, signal: AbortSignal.timeout(20000) });
-        if (r.ok) { cache.map = tickerMap(await r.json()); await kvSetJsonEx(SEC_TICKERS_KEY, cache.map, SEC_TICKERS_TTL_S).catch(() => {}); }
-      } catch { /* no map, no CIKs */ }
-    }
-  }
-  return cache.map?.[secTicker(sym)]?.[0] ?? null;
+  try { syms = (await snap(origin)).map(r => r?.symbol || r?.underlying || r?.ticker).filter(Boolean); } catch { /* ideas and env only */ }
+  const ideas = (await kvGetJson(IDEAS_TICKERS_KEY).catch(() => null)) || [];
+  return watchSet([...syms, ...ideas], process.env.DISCLOSURES_WATCHLIST);
 }
 export async function disclosuresRun(kind, { origin, dry = false, now = new Date() } = {}) {
   if (!kvConfigured()) return { ok: false, why: 'Redis is not configured' };
   const webhook = disclosuresWebhookFromEnv();
   const deliver = webhook ? (card) => post(webhook, card) : null;
+  const kv = { get: kvGetJson, set: kvSetJson };
+  const channel = webhook ? 'set' : 'DISCORD_DISCLOSURES_WEBHOOK unset';
+  if (kind === 'roundup') return { ...(await runInsiderRoundup({ now, kv, deliver, dry })), channel };
   const watch = await disclosureWatch(origin);
-  if (kind === 'congress') {
-    const out = await runCongress({ now, kv: { get: kvGetJson, set: kvSetJson }, pdfText, deliver, watch, dry });
-    return { ...out, watch: watch.size, channel: webhook ? 'set' : 'DISCORD_DISCLOSURES_WEBHOOK unset' };
-  }
-  if (kind === 'insiders') {
-    const cache = {};
-    const out = await runInsiders({ now, cikOf: (t) => secCik(t, cache), ua: secUserAgent(), deliver, watch, dry });
-    return { ...out, watch: watch.size, channel: webhook ? 'set' : 'DISCORD_DISCLOSURES_WEBHOOK unset' };
-  }
-  return { ok: false, why: 'disclosures must be congress or insiders' };
+  if (kind === 'congress') return { ...(await runCongress({ now, kv, pdfText, deliver, watch, dry })), watch: watch.size, channel };
+  if (kind === 'insiders') return { ...(await runInsiderScan({ now, kv, ua: secUserAgent(), deliver, watch, dry })), watch: watch.size, channel };
+  return { ok: false, why: 'disclosures must be congress, insiders or roundup' };
 }
 
 // The last 20 book-connector requests as SHAPES (lib/bookMcp.js bookRequestShape): never the token,
