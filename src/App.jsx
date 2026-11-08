@@ -932,7 +932,7 @@ export default function App() {
       consensusVintage: CONSENSUS_VINTAGE, recessionSources: effectiveRecessionSources, recessionCadence: RECESSION_SOURCE_CADENCE,
       fedLanguage: FED_LANGUAGE_STATUS, secYields: SEC_YIELDS, southboundFeed: sbFeedTop,
       fedPathFeed: liveInd?.fedPathFeed ?? null, ismFeed: liveInd?.ismFeed ?? null,
-      analystBoard: { asOf: "2026-06-29", cadence: 90 }, recessionProse: { asOf: "2026-09-30", cadence: 30 },
+      analystBoard: { asOf: "2026-06-29", cadence: 90 }, recessionProse: { asOf: "2026-11-08", cadence: 30 },
       announced: {
         pceCore: { ...ANNOUNCED_PRINTS.pceCore, fredAsOf: liveInd?.asOf?.pceCoreCurrent ?? null },
         gdpGrowth: { ...ANNOUNCED_PRINTS.gdpGrowth, fredAsOf: liveInd?.asOf?.gdpGrowth ?? null },
