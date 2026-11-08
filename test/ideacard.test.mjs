@@ -232,7 +232,14 @@ try {
   const good = { [IDEAS_TOKEN_HEADER]: IDEAS };
   eq('no webhook: 200, ok false, nothing posted', (await call(good, { ideas: [base] }, { webhook: null })).body, { ok: false, reason: 'no webhook' });
   eq('a body without ideas is a 400', (await call(good, { nope: 1 })).code, 400);
-  eq('a disclosures watchlist on its own is answered without touching cards', (await call(good, { disclosuresWatch: ['crwd', 'XSW', '0981.HK'] })).body, { ok: false, disclosuresWatch: ['CRWD', 'XSW'] });
+  {
+    // Through the injected store only (it once reached the real Redis from a build with credentials).
+    const m = memKv();
+    eq('a disclosures watchlist on its own is answered without touching cards', (await call(good, { disclosuresWatch: ['crwd', 'XSW', '0981.HK'] }, { kv: m })).body, { ok: true, disclosuresWatch: ['CRWD', 'XSW'] });
+    eq('and it is written to the injected store', m.store.v, ['CRWD', 'XSW']);
+    const off = memKv(); off.kv.configured = () => false;
+    eq('no store configured: not saved, and it says so', (await call(good, { disclosuresWatch: ['XSW'] }, { kv: off })).body, { ok: false, disclosuresWatch: ['XSW'] });
+  }
   const res405 = mkRes();
   await ideasCard({ method: 'GET', headers: good, query: {} }, res405, { webhook: WEBHOOK, kv: memKv().kv, sender: mockDiscord().send });
   eq('GET is refused', res405.code, 405);
