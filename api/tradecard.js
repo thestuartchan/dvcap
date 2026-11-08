@@ -30,7 +30,7 @@ import { signalBoardPayload } from '../lib/signalBoardFeed.js';
 import { DESK_RULES_KEY, DESK_CHECKS_KEY, runChecks, newHits, deskAlertCard, checksView, periodEnds } from '../lib/deskRules.js';
 import { TC_TODAY_KEY } from '../lib/sameDayFills.js';
 import { tvDaily } from '../lib/tradingview.js';
-import { runCongress, runInsiderScan, runInsiderRoundup, watchSet, ideaTickers, IDEAS_TICKERS_KEY } from '../lib/disclosures.js';
+import { runCongress, runInsiderScan, runInsiderRoundup, watchSet, ideaTickers, IDEAS_TICKERS_KEY, DISCLOSURES_EXTRA_KEY } from '../lib/disclosures.js';
 import { secUserAgent } from '../lib/secDes.js';
 import HOLIDAYS from '../data/holidays.json' with { type: 'json' };
 import { fetchWallets } from '../lib/wallet.js';
@@ -412,6 +412,14 @@ export async function ideasCard(req, res, { webhook = ideasWebhookFromEnv(), kv 
   // `alerts` (optional) are trigger notices posted as NEW messages; with alerts and no `ideas`, the
   // call only notifies and leaves the cards alone (a missing `ideas` is NOT an empty set).
   const hasAlerts = Array.isArray(body?.alerts) && body.alerts.length > 0;
+  // { disclosuresWatch: [tickers] } — the disclosures watchlist's extra names (lib/disclosures.js),
+  // the WHOLE set each time, kept in Redis so Stu adds or drops a name by asking in chat instead of
+  // editing a Vercel variable. Same ideas token; touches no card. Answered on its own when sent alone.
+  if (Array.isArray(body?.disclosuresWatch)) {
+    const extra = [...watchSet([], body.disclosuresWatch.join(','))];
+    const ok = kvConfigured() ? !!(await kvSetJson(DISCLOSURES_EXTRA_KEY, extra).catch(() => null)) : false;
+    if (!Array.isArray(body.ideas) && !hasAlerts) return res.status(200).json({ ok, disclosuresWatch: extra });
+  }
   if (!body || typeof body !== 'object' || (!Array.isArray(body.ideas) && !hasAlerts)) return res.status(400).json({ error: 'expected { ideas: [...] } and/or { alerts: [...] }' });
   if (!kv.configured()) return res.status(200).json({ ok: false, reason: 'no store — Redis is not configured, there is nowhere to keep the message ids' });
   // ONE RECONCILE AT A TIME. Two overlapping calls would each see the same stored map and each
@@ -613,7 +621,8 @@ export async function deskRulesCheck({ origin, now = new Date(), quote = tvDaily
 // themselves (lib/disclosures.js): the House Clerk's index hourly, every new Form 4 across the market
 // every 30 minutes, and Friday's insider roundup. Public-filing data to the PRIVATE disclosures
 // channel. The watchlist maintains itself: dvcap's US book symbols, the tickers of the Trading Ideas
-// cards (stored as the ideas card syncs), plus DISCLOSURES_WATCHLIST for anything else. The card
+// cards (stored as the ideas card syncs), plus extra names Claude sends on the ideas endpoint
+// ({ disclosuresWatch: [...] }) when Stu asks in chat — no Vercel variable to edit. The card
 // says "watchlist", never "held". &dry=1 answers with the cards instead of posting (no state written).
 async function pdfText(bytes) {
   const { getDocumentProxy, extractText } = await import('unpdf');
@@ -624,7 +633,8 @@ async function disclosureWatch(origin, snap = snapshot) {
   let syms = [];
   try { syms = (await snap(origin)).map(r => r?.symbol || r?.underlying || r?.ticker).filter(Boolean); } catch { /* ideas and env only */ }
   const ideas = (await kvGetJson(IDEAS_TICKERS_KEY).catch(() => null)) || [];
-  return watchSet([...syms, ...ideas], process.env.DISCLOSURES_WATCHLIST);
+  const extra = (await kvGetJson(DISCLOSURES_EXTRA_KEY).catch(() => null)) || [];
+  return watchSet([...syms, ...ideas, ...extra]);
 }
 export async function disclosuresRun(kind, { origin, dry = false, now = new Date() } = {}) {
   if (!kvConfigured()) return { ok: false, why: 'Redis is not configured' };
