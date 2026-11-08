@@ -9,7 +9,8 @@
 // twenty times a day produces one row, and a later intraday state supersedes an earlier one.
 // Uses the same GitHub commit-back store as the Korea entry — no new infrastructure.
 
-import { hasSessionCookie, hasCronSecret, refuse } from '../lib/apiauth.js';
+import { hasSessionCookie, hasCronSecret, refuse, authorised } from '../lib/apiauth.js';
+import { backupDocs } from '../lib/docBackup.js';
 import { tick, statusView, healthSummary, failureCard, privateTestCard, nyDayOf, jobLabel, FAIL_ALERT_KEY, LAST_KEY as CRON_LAST_KEY } from '../lib/cronRouter.js';
 import { post, privateWebhookFromEnv } from '../lib/discord.js';
 import { sendAlert } from '../lib/alerts.js';
@@ -71,6 +72,14 @@ async function cronTick(req, res) {
 
 export default async function handler(req, res) {
   if (req.query?.tick != null) return cronTick(req, res);
+  // ?backup=1 — the nightly copy of the Redis documents to the data-backup branch (lib/docBackup.js).
+  // The scheduler's service key or the dashboard login.
+  if (String(req.query?.backup || '') === '1') {
+    res.setHeader('Cache-Control', 'private, no-store');
+    if (!(await authorised(req))) return refuse(res);
+    try { return res.status(200).json(await backupDocs({ kv: { get: kvGetJson, set: kvSetJson } })); }
+    catch (e) { return res.status(200).json({ ok: false, why: String(e?.message || e).slice(0, 140) }); }
+  }
   // GET → read the log back (for the sparkline). No auth needed to read.
   if (req.method === 'GET') {
     if (!logConfigured()) return res.status(200).json({ rows: [], note: 'store not configured' });
@@ -89,7 +98,7 @@ export default async function handler(req, res) {
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'GET or POST only' });
   if (!(await hasSessionCookie(req))) return refuse(res);
-  if (!logConfigured()) return res.status(500).json({ error: 'GITHUB_TOKEN / GITHUB_REPO not configured' });
+  if (!logConfigured()) return res.status(500).json({ error: 'Redis is not configured' });
 
   const b = req.body || {};
   const date = String(b.date || '').slice(0, 10);

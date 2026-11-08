@@ -28,7 +28,7 @@ import { computeMarketState, stateLogRow } from '../lib/marketState.js';
 import { FED_LANGUAGE_STATUS } from '../lib/fedLanguage.js';
 import { measuredAxes, axesLogRow } from '../lib/quadrant.js';
 import { nextMeetingOdds } from '../lib/fedpath.js';
-import MANUAL_STORE from '../data/manual_entry.json' with { type: 'json' };
+import { readDoc } from '../lib/docStore.js';
 
 // wallAgreement answers for ONE wall at a time; the levels section needs both, each on its own
 // terms. A pair verdict was what previously let "0 of 6" sit beside a wall that was in fact one
@@ -1185,6 +1185,7 @@ async function logRegime(req) {
     const r = await fetch(`${origin}/api/indicators`, { signal: AbortSignal.timeout(25000) });
     if (!r.ok) return { ok: false, error: `indicators HTTP ${r.status}` };
     const ind = await r.json();
+    const MANUAL_STORE = (await readDoc('manual').catch(() => null))?.doc || {};   // Redis, not the build-time file
     const snap = regimeSnapshot(ind, { overrides: MANUAL_STORE?.recession || {} });
     if (!snap.derivedRegimes) return { ok: false, error: 'no consensus — engine returned no probabilities' };
     const axes = measuredAxes(ind, { ism: MANUAL_STORE?.ism || null });
