@@ -86,6 +86,15 @@ const hist4 = [{ ticker: 'ACME', owner: 'A', date: '2026-11-01' }, { ticker: 'AC
 eq('clusters: 3 different insiders inside 14 days; repeats and old buys do not count', insiderClusters(hist4, { today: '2026-11-06' }), [{ ticker: 'ACME', insiders: 3 }]);
 eq('clusters: one already posted is not posted again', insiderClusters(hist4, { today: '2026-11-06', already: ['ACME'] }), []);
 eq('scan card: nothing flagged, nothing posted', insiderScanCard([], []), null);
+{
+  const big = { ...sale, role: 'President and CEO', txns: sale.txns.map(x => ({ ...x, value: 12_000_000 })) };
+  eq('flags: a top exec\'s unplanned $10M+ sale anywhere; planned, 10% owner or under $10M never',
+    [form4Flags(big).flags, form4Flags({ ...big, plan: true }).flags, form4Flags({ ...big, role: 'President and CEO, 10% owner' }).flags,
+     form4Flags({ ...big, txns: sale.txns.map(x => ({ ...x, value: 9_000_000 })) }).flags],
+    [['top-exec unplanned sale'], [], [], []]);
+  eq('parse: a 10b5-1 plan named only in a footnote counts as planned',
+    parseForm4('<issuer><issuerTradingSymbol>ACME</issuerTradingSymbol></issuer><footnotes><footnote id="F1">Sold under a Rule 10b5-1 trading plan adopted May 2026.</footnote></footnotes>').plan, true);
+}
 const sc = insiderScanCard([{ ...bigBuy, ...form4Flags(bigBuy) }], [{ ticker: 'ACME', insiders: 3 }]).embeds[0].description;
 eq('scan card: cluster first, then the flagged buy', sc, '🧲 **ACME** cluster: 3 insiders bought in the last 14 days\n🟢 **ACME** BUY $1.0M · DOE JANE P (Director) · 2026-11-04 · _$500k+ buy_');
 eq('roundup: a quiet week says so', insiderRoundupCard([], { from: 'a', to: 'b' }).embeds[0].description, 'No open-market insider buys recorded this week.');
