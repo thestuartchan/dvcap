@@ -1,5 +1,6 @@
 // src/pages/editors.jsx — the hand-kept input editors that more than one page opens: the yen
-// intervention flag, the Fed path card, the USFR SEC-yield form and the ISM entry. Drivers shows
+// intervention flag, the Fed path card, the USFR SEC-yield form, the ISM entry and the recession
+// panel overrides. Drivers shows
 // them in place; Ops opens the same component from its hand-entry list, with the same save path.
 import { useState, useEffect } from "react";
 import { C } from "../theme.js";
@@ -13,6 +14,7 @@ import { ISSUER_PAGE } from "../../lib/cashyield.js";
 import { parseSecYieldPaste, parseYieldValue } from "../../lib/fundYield.js";
 import { dubaiEt } from "../../lib/timeFmt.js";
 import { mergeIsm } from "../../lib/ismFeed.js";
+import { RECESSION_SOURCES, recessionSrcKey } from "../../lib/regimeEngine.js";
 
 // ─── FED PATH — market-implied (P6.2) ─────────────────────────────────────────
 // The Fed Language card is the QUALITATIVE read; this is the quantitative one beside it.
@@ -465,5 +467,97 @@ export function InterventionAutoBlock({ auto, compact = false }) {
         </div>
       )}
     </div>
+  );
+}
+
+// Task 1b — manual-entry panel for the recession sources, on the same POST-to-/api/manual-entry
+// pattern as the KOFIA / fed-path / intervention panels. Source dropdown → probability → as-of →
+// notes → save; a save writes an override keyed by recessionSrcKey that outranks the live feed and
+// the static default, and Clear removes it. Always rendered; an unauthenticated save 401s and the
+// error is shown inline (no client-side gate — the cookie check lives on the server).
+export function RecessionEntryPanel({ overrides, onSaved }) {
+  const options = RECESSION_SOURCES.map((r) => ({
+    key: recessionSrcKey(r),
+    label: r.name + (r.year === 2027 ? " · End-2027" : ""),
+  }));
+  const [sel, setSel] = useState(options[0].key);
+  const [prob, setProb] = useState("");
+  const [asOf, setAsOf] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const current = overrides?.[sel] || null;
+  // Prefill from the existing override when the operator switches source, so an edit starts from
+  // what is stored rather than blank. Deliberately keyed on `sel` only — retyping should not be
+  // clobbered by a background refresh of `overrides`.
+  useEffect(() => {
+    setProb(current?.probability != null ? String(current.probability) : "");
+    setAsOf(current?.asOf || "");
+    setNotes(current?.notes || "");
+    setMsg(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel]);
+
+  async function save(clear = false) {
+    if (!clear && !/\d/.test(prob)) { setMsg({ ok: false, text: "enter a probability (a number, e.g. 22 or ~18%)" }); return; }
+    if (!clear && asOf.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(asOf.trim())) { setMsg({ ok: false, text: "as-of must be YYYY-MM-DD" }); return; }
+    setSaving(true); setMsg(null);
+    try {
+      const body = clear
+        ? { recession: { name: sel, clear: true } }
+        : { recession: { name: sel, probability: prob.trim(), asOf: asOf.trim() || null, notes: notes.trim() || null } };
+      const r = await fetch("/api/manual-entry", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        credentials: "include", body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      if (r.ok) {
+        const fresh = await fetch("/api/manual-entry").then((x) => x.json()).catch(() => null);
+        onSaved?.(fresh?.recession || {});
+        setMsg({ ok: true, text: clear ? "Override cleared — feed/static value restored" : `Saved — ${sel} now ${/%/.test(prob) ? prob : prob + "%"}` });
+        if (clear) { setProb(""); setAsOf(""); setNotes(""); }
+      } else setMsg({ ok: false, text: j.error || "save failed" });
+    } catch (e) { setMsg({ ok: false, text: String(e.message) }); }
+    setSaving(false);
+  }
+
+  const inp = { padding: "6px 9px", fontSize: 12, border: "1px solid " + C.bdrMd, borderRadius: 6, background: C.surf, color: C.text };
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <SLabel>✍️ Manual recession-source entry</SLabel>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>overrides the feed &amp; static value · commits to the store</span>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <select value={sel} onChange={(e) => setSel(e.target.value)} style={{ ...inp, flex: "1 1 210px", minWidth: 0 }}>
+          {options.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+        </select>
+        <input value={prob} onChange={(e) => setProb(e.target.value)} placeholder="probability (e.g. 22 or ~18%)"
+          style={{ ...inp, flex: "1 1 150px", minWidth: 0 }} />
+        <input value={asOf} onChange={(e) => setAsOf(e.target.value)} placeholder="as-of (YYYY-MM-DD)"
+          style={{ ...inp, flex: "1 1 130px", minWidth: 0 }} />
+      </div>
+      <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="notes (optional)"
+        style={{ ...inp, width: "100%", marginTop: 8, boxSizing: "border-box" }} />
+      <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <button onClick={() => save(false)} disabled={saving}
+          style={{ background: C.blue, color: C.onFill, border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 12.5, fontWeight: 800, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 }}>
+          {saving ? "Saving…" : "Save override"}
+        </button>
+        {current && (
+          <button onClick={() => save(true)} disabled={saving}
+            style={{ background: C.surf, color: C.mid, border: "1.5px solid " + C.bdrMd, borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: saving ? "wait" : "pointer" }}>
+            Clear override
+          </button>
+        )}
+        {current && (
+          <span style={{ fontSize: 11, color: C.blue, fontWeight: 700 }}>
+            active: {current.probability}{current.asOf ? ` · ${current.asOf}` : ""}
+          </span>
+        )}
+      </div>
+      {msg && <div style={{ fontSize: 11.5, fontWeight: 700, marginTop: 8, color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
+    </Card>
   );
 }
