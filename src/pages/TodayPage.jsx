@@ -1246,7 +1246,7 @@ export function SouthboundPanel({ onSaved = null } = {}) {
 }
 
 // Korea manual-entry: paste the KOFIA panel → preview (with the recompute-pct guard) →
-// Save (commits data/korea_kofia.json via /api/korea-save so Pre-Reads pick it up too).
+// Save (to the Redis document via /api/korea-save, so Pre-Reads pick it up too).
 export function KoreaManualEntry({ kofia, gate2 = null, onSaved }) {
   const [blob, setBlob] = useState("");
   const [u7709, setU7709] = useState("");

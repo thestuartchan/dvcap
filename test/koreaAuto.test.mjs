@@ -159,12 +159,11 @@ const CSOP = [
 {
   const save = readFileSync('lib/routes/korea-save.js', 'utf8');
   ok('the hand paste merges through the same code', /from '\.\.\/(lib\/)?koreaStore\.js'/.test(save) && /applyKofia\(store, parsed\.list, snapshot\)/.test(save));
-  const wf = readFileSync('.github/workflows/korea-fetch.yml', 'utf8');
-  // Since 6 Nov 2026 the scheduler (lib/cronRouter.js) dispatches the workflow on time instead of GitHub's own cron.
+  // Since 8 Nov 2026 (build step 6) the scheduler calls the route itself, which saves to Redis.
   const { JOBS } = await import('../lib/cronRouter.js');
-  const kj = JOBS.find(j => j.workflow === 'korea-fetch.yml');
-  ok('the workflow is dispatched after the Seoul close on weekdays', !!kj && kj.tz === 'UTC' && kj.at.join() === '07:10,11:10' && kj.days.join() === 'Mon,Tue,Wed,Thu,Fri' && /workflow_dispatch/.test(wf));
-  ok('and commits only data/korea_kofia.json', /git add data\/korea_kofia\.json/.test(wf) && !/git add -A|git add \./.test(wf));
+  const kj = JOBS.find(j => j.id === 'korea-fetch');
+  ok('the fetch runs after the Seoul close on weekdays, through the save route', !!kj && kj.tz === 'UTC' && kj.at.join() === '07:10,11:10' && kj.days.join() === 'Mon,Tue,Wed,Thu,Fri' && /korea-save\?fetch=1/.test(kj.path));
+  ok('and saves to the Redis document, never a commit', /writeDoc\('kofia'/.test(save) && !/contents\//.test(save));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

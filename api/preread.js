@@ -17,7 +17,6 @@ import { coreSpread } from '../lib/inflation.js';
 // was a human noticing an absence in a Discord channel, which is how this morning's was found.
 const PREREAD_LAST_KEY = 'dvcap:preread:last:v1';
 import { kofiaStoredLine, koreaFlowRead, koreaFlowImplication } from '../lib/kofia.js';
-import KOFIA_STORE from '../data/korea_kofia.json' with { type: 'json' };
 import { readGex, repriceStored, settledGex, GEX_SYMBOLS } from '../lib/gexStore.js';
 import { renderGexSection, renderGexParts, mapCards, pinOf, RUNGS } from '../lib/gexBrief.js';
 import { wallAgreement } from '../lib/gexRead.js';
@@ -162,12 +161,12 @@ function displayQuote(q, region, now = new Date()) {
 // at 13:29Z on 2026-09-11 changed the rendered asia brief, failed the golden, failed `prebuild`,
 // and failed the Vercel deploy — for three commits, none of which had touched any of it.
 //
-// It is a parameter now. Production passes nothing and gets the file, exactly as before; the
-// golden suite passes test/fixtures-kofia.json, frozen at the fixtures' own capture instant, so
-// the brief is rendered from ONE set of inputs and a hand entry can no longer move it.
+// It is a parameter now. Production passes the Redis document (lib/docStore.js `kofia`, build step
+// 6); the golden suite passes test/fixtures-kofia.json, frozen at the fixtures' own capture instant,
+// so the brief is rendered from ONE set of inputs and a hand entry can no longer move it.
 export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox, opts = {}) {
   const { leaning = null, composed = null, foreign = {}, prevSnap = null, now = new Date(),
-          kofia = KOFIA_STORE } = opts;
+          kofia = {} } = opts;
   const R = UNIVERSE[region];
   const names = R.names;
 
@@ -532,7 +531,7 @@ export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, 
 }
 
 // Korea-stress cluster block (Asia only). null when there's no Korea gate.
-function buildKorea(k, kofia = KOFIA_STORE, now = new Date()) {
+function buildKorea(k, kofia = {}, now = new Date()) {
   if (!k) return null;
   const { won, vol } = k;
   const wonLine = won.level != null
@@ -967,8 +966,9 @@ async function runRegion(region, req) {
                hyg, nqLow, usRthOpen, usPrevSession } } };
   }
 
+  const kofia = (await readDoc('kofia').catch(() => null))?.doc || {};
   const blocks = buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox,
-    { leaning, composed, auctions, monetization, handoff, smicAH, foreign: extraQuotes, prevSnap: previous?.snap || null });
+    { leaning, composed, auctions, monetization, handoff, smicAH, foreign: extraQuotes, prevSnap: previous?.snap || null, kofia });
   // THE REGION'S OWN TAPE, FIRST (lib/regionTape.js). A pre-read fires before its market opens, so
   // this is the LAST session, dated. Omitted rather than faked if the bars do not come back.
   try {

@@ -74,6 +74,16 @@ eq('the regime log no longer writes through the contents API', /contents\//.test
 eq('manual-entry writes its document to Redis', strip('lib/routes/manual-entry.js').includes("writeDoc('manual'"), true);
 eq('manual-entry no longer reads or writes data/manual_entry.json on GitHub', /manual_entry\.json/.test(strip('lib/routes/manual-entry.js')), false);
 eq('no server module bakes the manual store in at build time', ['lib/assemble.js', 'api/preread.js'].some(p => /manual_entry\.json/.test(strip(p))), false);
+// The four documents are imported only by lib/docStore.js (as seeds); everything else reads Redis.
+{
+  const { readdirSync } = await import('node:fs');
+  const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(`${d}/${e.name}`) : [`${d}/${e.name}`]);
+  const files = ['api', 'lib', 'src'].flatMap(walk).filter(f => /\.(js|jsx|mjs)$/.test(f) && f !== 'lib/docStore.js');
+  const baked = files.filter(f => /(manual_entry|regime_history|korea_kofia|signal_board_history)\.json['"]\s*with/.test(readFileSync(f, 'utf8')));
+  eq('no module bakes a document in at build time', baked, []);
+}
+const workflows = (await import('node:fs')).readdirSync('.github/workflows');
+eq('the workflows that committed Korea and the Signal Board are gone', workflows.filter(w => /korea-fetch|signal-board/.test(w)), []);
 const vercel = JSON.parse(readFileSync('vercel.json', 'utf8'));
 eq('a backup commit is never a deployment', vercel.ignoreCommand, '[ "$VERCEL_GIT_COMMIT_REF" = "data-backup" ]');
 
