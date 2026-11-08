@@ -49,6 +49,7 @@ const DriversPage   = named(() => import("./pages/MarketsPage.jsx"), "DriversPag
 const HedgesView    = named(() => import("./pages/RiskPage.jsx"), "HedgesView");
 const IncomeView    = named(() => import("./pages/RiskPage.jsx"), "IncomeView");
 const ResearchPage  = named(() => import("./pages/ResearchPage.jsx"), "ResearchPage");
+const AlertsPage    = named(() => import("./pages/AlertsPage.jsx"), "AlertsPage");
 
 
 
@@ -1415,6 +1416,9 @@ export default function App() {
               return null;
             }} />
         )}
+
+        {/* ── RULES & ALERTS (src/pages/AlertsPage.jsx, lib/alerts.js) ── */}
+        {tab === "alerts" && <AlertsPage />}
 
         {/* ── THE PAPER TRIAL (src/MlsPanel.jsx) ── */}
         {tab === "mls" && <MlsPanel />}
