@@ -715,9 +715,9 @@ const JOB_WORD = { ok: "ok", failed: "failed", missed: "missed", waiting: "waiti
 const JOB_ORDER = { failed: 0, missed: 1, waiting: 2, ok: 3 };
 export function JobHealth({ st }) {
   const [test, setTest] = useState(null);   // null | "sending" | {ok, why}
-  const sendTest = () => {
+  const sendTest = (all) => {
     setTest("sending");
-    fetch("/api/regime-log?tick=test-private", { method: "POST", credentials: "include" }).then(r => r.json())
+    fetch(`/api/regime-log?tick=test-private${all ? "&all=1" : ""}`, { method: "POST", credentials: "include" }).then(r => r.json())
       .then(j => setTest(j)).catch(e => setTest({ ok: false, why: String(e?.message || e) }));
   };
   const s = st?.summary;
@@ -770,10 +770,13 @@ export function JobHealth({ st }) {
       </div>
       {st?.privateChannel && (
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
-          <button type="button" onClick={sendTest} disabled={test === "sending"}
-            style={{ font: "inherit", fontSize: 12, padding: "4px 10px", borderRadius: 6, border: "1px solid " + C.bdr, background: C.inset, color: C.text, cursor: test === "sending" ? "default" : "pointer" }}>
-            {test === "sending" ? "Sending…" : "Send test message"}</button>
-          {test && test !== "sending" && <span style={{ fontWeight: 700, color: test.ok ? C.green : C.amber }}>{test.ok ? "Sent: check the private channel" : `Not sent: ${test.why || "no answer"}`}</span>}
+          {[["Send test message", false], ["Send one of every type", true]].map(([label, all]) => (
+            <button key={label} type="button" onClick={() => sendTest(all)} disabled={test === "sending"}
+              style={{ font: "inherit", fontSize: 12, padding: "4px 10px", borderRadius: 6, border: "1px solid " + C.bdr, background: C.inset, color: C.text, cursor: test === "sending" ? "default" : "pointer" }}>
+              {test === "sending" ? "Sending…" : label}</button>
+          ))}
+          {test && test !== "sending" && <span style={{ fontWeight: 700, color: test.ok ? C.green : C.amber }}>{test.ok ? `Sent${test.sent ? ` ${test.sent.length} messages` : ""}: check the private channel` : `Not sent: ${test.why || "no answer"}`}</span>}
+          {test?.sent && <span style={{ color: C.mid }}>{test.sent.map(x => `${x.ok ? "✓" : "✗"} ${x.type}`).join(" · ")}</span>}
         </div>
       )}
     </Card>

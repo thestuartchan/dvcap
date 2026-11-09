@@ -91,5 +91,11 @@ eq('the option card says expired from 16:00 on the day, not from the next mornin
    optionDerived(opt, { today: '2026-10-17', now: new Date('2026-10-17T12:00:00Z') }).expired, optionDerived(opt, { today: '2026-10-15', now: new Date('2026-10-15T21:00:00Z') }).expired],
   [false, true, true, false]);
 
+// 9 Nov 2026: cached per date. The same answer twice (summer and winter), and fast enough for the
+// flip scan, which asks millions of times per capture.
+eq('the cached answer is the same answer', [expiryCloseMs('2026-10-16'), expiryCloseMs('2026-12-18')].map(ms => new Date(ms).toISOString()),
+   ['2026-10-16T20:00:00.000Z', '2026-12-18T21:00:00.000Z']);
+{ const t = Date.now(); for (let i = 0; i < 200000; i++) expiryCloseMs(i % 2 ? '2026-11-20' : '2026-12-18'); eq('200,000 asks take well under a second', Date.now() - t < 1000, true); }
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
