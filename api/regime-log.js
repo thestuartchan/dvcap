@@ -14,6 +14,7 @@ import { backupDocs } from '../lib/docBackup.js';
 import { tick, statusView, healthSummary, failureCard, privateTestCard, nyDayOf, jobLabel, FAIL_ALERT_KEY, LAST_KEY as CRON_LAST_KEY } from '../lib/cronRouter.js';
 import { post, privateWebhookFromEnv } from '../lib/discord.js';
 import { sendAlert } from '../lib/alerts.js';
+import { privateSamples } from '../lib/privateSamples.js';
 import { dispatchOne } from '../lib/githubDispatch.js';
 import { kvConfigured, kvGetJson, kvSetJson, kvSetNxEx } from '../lib/kv.js';
 import HOLIDAYS from '../data/holidays.json' with { type: 'json' };
@@ -34,7 +35,7 @@ async function cronTick(req, res) {
     return res.status(200).json({ now: new Date().toISOString(), cronSecret: !!String(process.env.CRON_SECRET || '').trim(),
       privateChannel: !!privateWebhookFromEnv(), summary: healthSummary(jobs), jobs });
   }
-  // ?tick=test-private (POST, dashboard login): one test message to the private channel, from the
+  // ?tick=test-private[&all=1] (POST, dashboard login): one test message (or one of every type) to the private channel, from the
   // deployment's own webhook, so it can be checked without the URL ever leaving Vercel. Once a minute.
   if (String(req.query.tick) === 'test-private') {
     if (req.method !== 'POST') return res.status(405).json({ ok: false, why: 'POST from the dashboard' });
@@ -42,6 +43,17 @@ async function cronTick(req, res) {
     const webhook = privateWebhookFromEnv();
     if (!webhook) return res.status(200).json({ ok: false, why: 'DISCORD_PRIVATE_WEBHOOK is not set in this deployment (redeploy after adding it)' });
     if (kvConfigured() && !(await kvSetNxEx('dvcap:discord:private:test:v1', 1, 60).catch(() => true))) return res.status(200).json({ ok: false, why: 'a test was sent in the last minute' });
+    // &all=1: one sample of every private message type (lib/privateSamples.js), marked TEST, in turn.
+    if (String(req.query.all || '') === '1') {
+      const sent = [];
+      for (const s of privateSamples()) {
+        const r = await post(webhook, s.payload).catch(() => null);
+        sent.push({ type: s.label, ok: !!r });
+        await new Promise(ok => setTimeout(ok, 700));   // inside Discord's per-webhook rate limit
+      }
+      const n = sent.filter(x => x.ok).length;
+      return res.status(200).json({ ok: n === sent.length, sent, why: n === sent.length ? null : `${sent.length - n} of ${sent.length} not accepted by Discord` });
+    }
     const sent = await post(webhook, privateTestCard()).catch(() => null);
     return res.status(200).json(sent ? { ok: true } : { ok: false, why: 'Discord did not accept the message: check the webhook URL' });
   }
