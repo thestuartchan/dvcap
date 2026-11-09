@@ -57,7 +57,8 @@ async function cronTick(req, res) {
   if (out.ran?.length) console.log(`[cron] ${out.ran.map(r => `${r.id}@${r.slot.slice(11, 16)}Z ${r.ok ? 'ok' : 'FAIL'} ${r.status ?? '-'} ${r.ms}ms${r.ok || !r.note ? '' : ` (${r.note})`}`).join(' · ')}`);
   // A failed job tells Stu in the private channel, once per job per New York day. The note is the
   // route's own error line (lib/cronRouter.js outcomeOf keeps nothing else from its answer).
-  const failed = (out.ran || []).filter(r => !r.ok);
+  // A retryable failure with a retry slot still to come stays quiet: only the last try alerts.
+  const failed = (out.ran || []).filter(r => !r.ok && !(r.retryable && r.retriesLeft > 0));
   const webhook = failed.length ? privateWebhookFromEnv() : null;
   if (webhook) {
     for (const r of failed) {

@@ -106,5 +106,37 @@ function fakeRes() {
   if (saved != null) process.env.CRON_SECRET = saved;
 }
 
+// ── RETRY SLOTS (flex-sync, 9 Nov 2026) ─────────────────────────────────────
+{
+  const fx = { id: 'fx', tz: 'UTC', at: ['12:00'], retryAfterMin: [3, 7], days: null, path: '/api/fx' };
+  eq('a retry slot comes due three minutes after the base slot', dueSlots(fx, at('2026-11-09T12:04:00Z')).map(s => [s.retry ?? 0, s.base ?? null]),
+     [[0, null], [1, '2026-11-09T12:00:00.000Z']]);
+  const kv = fakeKv();
+  let answers = [{ ok: false, error: 'statement still generating after 9 attempts', retryable: true }, { ok: false, error: 'statement still generating after 9 attempts', retryable: true }, { ok: true }];
+  const calls = [];
+  const fetchImpl = async (url) => { calls.push(url); const b = answers.shift(); return { status: 200, json: async () => b }; };
+  const run = (iso) => tick({ now: at(iso), kv, origin: 'https://example.test', env: {}, fetchImpl, jobs: [fx] });
+  const r1 = await run('2026-11-09T12:00:30Z');
+  eq('a retryable failure says how many tries are left', [r1.ran[0].ok, r1.ran[0].retryable, r1.ran[0].retriesLeft], [false, true, 2]);
+  const r2 = await run('2026-11-09T12:03:30Z');
+  eq('the first retry runs and is still retryable', [r2.ran.length, r2.ran[0].retry, r2.ran[0].retriesLeft], [1, 1, 1]);
+  const r3 = await run('2026-11-09T12:07:30Z');
+  eq('the last retry succeeds', [r3.ran.length, r3.ran[0].ok, calls.length], [1, true, 3]);
+  // A success ends the retries.
+  const kv2 = fakeKv(); answers = [{ ok: true }];
+  const t2 = (iso) => tick({ now: at(iso), kv: kv2, origin: 'https://example.test', env: {}, fetchImpl, jobs: [fx] });
+  await t2('2026-11-09T12:00:30Z');
+  const s2 = await t2('2026-11-09T12:03:30Z');
+  eq('after a success the retry slot does not run', [s2.ran.length, calls.length], [0, 4]);
+  // A hard failure (not retryable) ends them too.
+  const kv3 = fakeKv(); answers = [{ ok: false, error: 'IBKR_FLEX_TOKEN / IBKR_FLEX_QUERY_ID not set' }];
+  const t3 = (iso) => tick({ now: at(iso), kv: kv3, origin: 'https://example.test', env: {}, fetchImpl, jobs: [fx] });
+  const h1 = await t3('2026-11-09T12:00:30Z');
+  const h2 = await t3('2026-11-09T12:03:30Z');
+  eq('after a hard failure the retry slot does not run', [h1.ran[0].retryable ?? false, h2.ran.length], [false, 0]);
+  eq('outcomeOf keeps retryable only on a failure', [outcomeOf(200, { ok: false, retryable: true }, 1).retryable, outcomeOf(200, { ok: true, retryable: true }, 1).retryable ?? null], [true, null]);
+  ok('the live flex-sync job has retry slots', (job('flex-sync').retryAfterMin || []).length >= 3);
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);
