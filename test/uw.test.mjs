@@ -2,7 +2,7 @@
 // each normaliser on UW-shaped answers, the snapshot failing one part at a time, the public health
 // answer carrying no numbers, and the close keeping one row a day and posting once, privately.
 // Fake tickers and made-up numbers only: UW data is licensed for personal use and never enters the repo.
-import { tideSummary, netPremSummary, flowAlertRows, darkpoolLevels, gexLevelsOf, nopeLast, gammaCrossCheck, flowSnapshot, healthOf, dailyRow, closeCard, uwGet, uwConfigured } from '../lib/uw.js';
+import { tideSummary, netPremSummary, flowAlertRows, darkpoolLevels, gexLevelsOf, nopeLast, gammaCrossCheck, flowSnapshot, healthOf, dailyRow, closeCard, plainRead, uwGet, uwConfigured } from '../lib/uw.js';
 import { closeOut, UW_DAILY_KEY } from '../lib/routes/flow.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -64,6 +64,19 @@ eq('daily row: one compact line for the scorecard', dailyRow(snap), { date: '203
 const card = closeCard(snap);
 eq('close card: says it is personal use, private only', card.embeds[0].footer.text.includes('private channel only'), true);
 eq('close card: no mentions', card.allowed_mentions, { parse: [] });
+eq('close card: the date reads as a day', card.embeds[0].title, '🐋 Flow at the close · Wed 2 Jan');
+eq('close card: the plain read first, then Market Tide with the lean in words', [card.embeds[0].fields[0].name, card.embeds[0].fields[1].name, card.embeds[0].fields[1].value.startsWith('**Puts lead**')], ['What it says', 'Market Tide', true]);
+eq('close card: one field per ticker', card.embeds[0].fields.map(f => f.name), ['What it says', 'Market Tide', 'FAKE']);
+eq('plain read: bearish tide in words', card.embeds[0].fields[0].value.split('\n')[0].includes('leaned **bearish**'), true);
+const nz = closeCard({ tide: { date: '2030-01-02', netCall: 1, netPut: 1, lean: 'flat' }, tickers: { FAKE: { nope: { nope: -0.001 }, alerts: [{ type: 'call', strike: 10, expiry: '2030-01-18', premium: 139000, side: 'bid' }] } } });
+eq('close card: −0.00 reads 0.00; a premium has no plus sign; the side in words', [nz.embeds[0].fields.at(-1).value.includes('NOPE 0.00'), nz.embeds[0].fields.at(-1).value.includes('Top alert: call 10 Fri 18 Jan · $139k at the bid')], [true, true]);
+
+{
+  const pr = plainRead({ tide: { lean: 'calls', net: 300e6 }, tickers: { FAKE: { netPrem: { net: 90e6 }, nope: { nope: 0.12 }, spot: 99, gex: { flip: 100, callWall: 102 }, alerts: [{ type: 'call', premium: 1, side: 'bid' }] } } });
+  eq('plain read: tide, then one line per ticker in simple words', pr, [
+    'Market-wide: options money leaned **bullish** (heavy call buying / put selling).',
+    "FAKE: clear **bullish** flow; options not pushing the price; price below UW's flip (100): moves can run further; ceiling near 102; biggest unusual trade: calls sold."]);
+}
 
 // ── The close: one row a day, posted once, privately ──
 const memKv = () => { const m = new Map(); return { m, configured: () => true, get: async (k) => m.get(k) ?? null, set: async (k, v) => { m.set(k, v); return true; } }; };

@@ -1,6 +1,6 @@
 // test/deskRules.test.mjs — the Position Desk's rules on the close (lib/deskRules.js), the same-day
 // summary (lib/sameDayFills.js todayNet) and the job health states (lib/cronRouter.js). Fake tickers.
-import { normalizeMirror, evaluateRule, runChecks, newHits, deskAlertCard, checksView, periodEnds, directionOf } from '../lib/deskRules.js';
+import { normalizeMirror, evaluateRule, runChecks, newHits, deskAlertCard, checksView, periodEnds, directionOf, isRatioSymbol, quoteRatio } from '../lib/deskRules.js';
 import { todayNet, legKeyOf } from '../lib/sameDayFills.js';
 import { attachToday, bookView, bookRpc } from '../lib/bookMcp.js';
 import { JOBS, prevSlot, healthOf, statusView, healthSummary, failureCard } from '../lib/cronRouter.js';
@@ -59,7 +59,7 @@ const ok = (n, c) => eq(n, !!c, true);
   ok('a field per rule: position, rule and the number', card.fields[0].name === '🔴 ZZQ' && /Stop · close below 50/.test(card.fields[0].value) && /close 49/.test(card.fields[0].value));
   eq('nothing new: no card', deskAlertCard({ fresh: [], near: [{}] }), null);
   ok('no mentions', JSON.stringify(deskAlertCard(nh, { today: '2026-11-06' }).allowed_mentions) === '{"parse":[]}');
-  eq('counts for the log', day2.counts, { hit: 3, due: 0, near: 0, ok: 0, unchecked: 0 });
+  eq('counts for the log', day2.counts, { hit: 3, due: 0, near: 0, ok: 0, unchecked: 0, closed: 0 });
   const v = checksView(day2);
   eq('the connector carries states, not the rule text', Object.keys(v.positions[0].rules[0]).sort(), ['checkedAt', 'id', 'note', 'price', 'state']);
   eq('Friday 6 Nov 2026 ends the week, not the month', periodEnds('2026-11-06'), { isWeekEnd: true, isMonthEnd: false });
@@ -128,6 +128,38 @@ const ok = (n, c) => eq(n, !!c, true);
   eq('no answer: the timeout note, and the answer says none', (({ description, fields }) => [description, fields[1].value])(failureCard({ id: 'gex-recompute', slot: '2026-11-06T12:15:00.000Z', status: null, note: 'no answer within 240s' }).embeds[0]), ['no answer within 240s', 'none']);
   const dc = deskAlertCard({ fresh: [{ name: 'ZZQ', rule: { kind: 'stop', state: 'hit', text: 't', note: 'n' } }, { name: 'ZZR', rule: { kind: 'review', state: 'due', text: 't', note: 'n' } }], near: [] }, { today: '2026-11-06' }).embeds[0];
   eq('the headline splits hit from due; only due rules go amber', [dc.description, deskAlertCard({ fresh: [{ name: 'ZZR', rule: { kind: 'review', state: 'due' } }], near: [] }).embeds[0].color], ['1 hit · 1 due', 0xf1c40f]);
+}
+
+// ── PAIR RULES ON A RATIO (9 Nov 2026) ───────────────────────────────────────
+{
+  const m = normalizeMirror({ positions: [{ deskId: 'pair', name: 'Pair', dvcapId: 'pair-1', rules: [
+    { id: 'stop', kind: 'stop', level: 0.30, symbol: 'aaa/bbb', cond: 'close_below' },
+    { id: 'tp', kind: 'tp', level: 0.31, symbol: 'XNYS:AAA/XNAS:BBB', cond: 'close_above' },
+    { id: 'bad', kind: 'stop', level: 0.30, symbol: 'AAA ÷ BBB', cond: 'close_below' },
+  ] }] }).mirror;
+  const [stop, tp, bad] = m.positions[0].rules;
+  eq('a ratio symbol is kept (upper-cased, bare or with exchanges)', [stop.symbol, tp.symbol], ['AAA/BBB', 'XNYS:AAA/XNAS:BBB']);
+  eq('an unreadable symbol is flagged, not dropped silently', [bad.symbol, bad.badSymbol], [null, 'AAA÷BBB']);
+  eq('and is never judged on the position value', evaluateRule(bad, { today: '2026-11-09', mark: 220 }).state, 'unchecked');
+  eq('isRatioSymbol', [isRatioSymbol('AAA/BBB'), isRatioSymbol('XNAS:AAA'), isRatioSymbol('A/B/C')], [true, false, false]);
+  const quotes = { 'NYSE:AAA': { close: 30 }, 'NASDAQ:BBB': { close: 100 } };
+  const quote = async (s) => quotes[s] || null;
+  const q = await quoteRatio('AAA/BBB', quote);
+  eq('a bare leg is found on the usual listings and the ratio priced', [q && +q.close.toFixed(4), q?.atr], [0.3, null]);
+  eq('a missing leg gives no quote', await quoteRatio('AAA/ZZZ', quote), null);
+  const below = evaluateRule(stop, { today: '2026-11-09', quote: { close: 0.299, atr: null }, mark: 220 });
+  eq('the ratio stop trips on the ratio, not the value', [below.state, below.note], ['hit', 'close 0.299, 0.001 below 0.3']);
+  eq('and stays ok above it', evaluateRule(stop, { today: '2026-11-09', quote: { close: 0.32 }, mark: 220 }).state, 'ok');
+}
+
+// ── POSITIONS CLOSED TODAY (9 Nov 2026) ──────────────────────────────────────
+{
+  const { closedTodayIds } = await import('../lib/deskRules.js');
+  const ids = closedTodayIds([{ id: 'a', qty: 2, today: { change: -2 } }, { id: 'b', qty: 2, today: { change: -1 } }, { id: 'c', qty: 1 }]);
+  eq('closed today: only a position whose fills took it to zero', [...ids], ['a']);
+  const m = normalizeMirror({ positions: [{ deskId: 'x', dvcapId: 'a', name: 'X', rules: [{ id: 'tp', kind: 'tp', level: 10, symbol: 'XNAS:FAKE', cond: 'close_above' }] }] }).mirror;
+  const c = runChecks(m, { quotes: { 'XNAS:FAKE': { close: 12 } }, today: '2026-11-09', closedToday: ids });
+  eq('its rules are not judged and cannot alert', [c.positions[0].rules[0].state, c.counts.closed, newHits(null, c).fresh.length], ['closed', 1, 0]);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
