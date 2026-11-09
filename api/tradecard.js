@@ -26,9 +26,9 @@ import { parseUpsert, eventPayload, cardHash, roleFromEnv, EVENTS_CARD_KEY, jump
 import { authorised as gate, refusalReason, hasIdeasToken, hasCronSecret, refuse } from '../lib/apiauth.js';
 import { reconcileIdeas, parseAlerts, alertPayload } from '../lib/ideacard.js';
 import { checkpointPing } from '../lib/checkpointPing.js';
-import { bookRpc, bookTokenMatches, bookRateBucket, ipHashOf, bookSecretReport, bookRequestShape, BOOK_RATE_PER_MIN, BOOK_LOG_KEY } from '../lib/bookMcp.js';
+import { bookRpc, bookView, bookTokenMatches, bookRateBucket, ipHashOf, bookSecretReport, bookRequestShape, BOOK_RATE_PER_MIN, BOOK_LOG_KEY } from '../lib/bookMcp.js';
 import { signalBoardPayload } from '../lib/signalBoardFeed.js';
-import { DESK_RULES_KEY, DESK_CHECKS_KEY, runChecks, newHits, deskAlertCard, checksView, periodEnds } from '../lib/deskRules.js';
+import { DESK_RULES_KEY, DESK_CHECKS_KEY, runChecks, newHits, deskAlertCard, checksView, periodEnds, isRatioSymbol, quoteRatio, closedTodayIds } from '../lib/deskRules.js';
 import { TC_TODAY_KEY } from '../lib/sameDayFills.js';
 import { tvDaily } from '../lib/tradingview.js';
 import { runCongress, runInsiderScan, runInsiderRoundup, watchSet, ideaTickers, IDEAS_TICKERS_KEY, DISCLOSURES_EXTRA_KEY } from '../lib/disclosures.js';
@@ -627,14 +627,21 @@ export async function deskRulesCheck({ origin, now = new Date(), quote = tvDaily
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(now);
   const symbols = [...new Set(mirror.positions.flatMap(p => p.rules.map(r => r.symbol)).filter(Boolean))].slice(0, 80);
   const quotes = {};
-  for (const s of symbols) { const q = await quote(s); if (q) quotes[s] = q; }   // one at a time: a public endpoint
+  // One at a time: a public endpoint. A pair rule's ratio (RSP/QQQ) is priced from its two legs.
+  for (const s of symbols) { const q = isRatioSymbol(s) ? await quoteRatio(s, quote) : await quote(s); if (q) quotes[s] = q; }
   const marks = {};
+  let closedToday = null;
   if (mirror.positions.some(p => p.dvcapId)) {
-    try { for (const r of await snap(origin)) if (r?.id) marks[r.id] = { mark: r.price ?? null, side: r?.derived?.side === 'short' ? 'short' : 'long' }; }
-    catch { /* rules on a position's value stay unchecked */ }
+    try {
+      const rows = await snap(origin);
+      for (const r of rows) if (r?.id) marks[r.id] = { mark: r.price ?? null, side: r?.derived?.side === 'short' ? 'short' : 'long' };
+      // Positions closed today are in the book until tomorrow's statement: IBKR's same-day report says so now.
+      const sameDay = await kvGetJson(TC_TODAY_KEY).catch(() => null);
+      if (sameDay) closedToday = closedTodayIds(bookView(rows, { asOf: now.toISOString(), sameDay }).positions);
+    } catch { /* rules on a position's value stay unchecked */ }
   }
   const prev = await kvGetJson(DESK_CHECKS_KEY).catch(() => null);
-  const checks = runChecks(mirror, { quotes, marks, today, ...periodEnds(today, HOLIDAYS?.US?.closed || []), prev, now: now.toISOString() });
+  const checks = runChecks(mirror, { quotes, marks, today, ...periodEnds(today, HOLIDAYS?.US?.closed || []), prev, closedToday, now: now.toISOString() });
   await kvSetJson(DESK_CHECKS_KEY, checks);
   const hits = newHits(prev, checks);
   const card = deskAlertCard(hits, { today, now: now.toISOString() });
