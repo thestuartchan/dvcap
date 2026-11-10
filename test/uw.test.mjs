@@ -135,6 +135,9 @@ eq('close card: −0.00 reads 0.00; a premium has no plus sign; the side in word
   eq('context: picked by name, field names kept', [ctx.ivRank, ctx.impliedMovePct, ctx.earningsDate, ctx.termRegime, ctx.fields.length], [62, 0.051, '2030-01-20', 'backwardation', 4]);
   const eh = earningsHistory({ data: [{ report_date: '2029-10-20', post_earnings_move_1d: '-6.0' }, { report_date: '2029-07-20', post_earnings_move_1d: 0.02 }] });
   eq('earnings history: newest first, percent read either way', [eh.n, +eh.meanAbsMove.toFixed(3), eh.lastMove], [2, 0.04, -0.06]);
+  eq('context: UW\'s earnings_report_time is the report time', volContext({ data: { earnings_report_time: 'premarket' } }).earningsTime, 'premarket');
+  const up = earningsHistory({ data: [{ report_date: '2030-01-20', report_time: 'postmarket', expected_move_perc: '0.071', post_earnings_move_1d: null }, { report_date: '2029-10-20', post_earnings_move_1d: 0.05 }] }, { today: '2030-01-03' });
+  eq('earnings: the upcoming report gives the implied move and its date', [up.next, up.n], [{ date: '2030-01-20', time: 'postmarket', expectedMovePct: 0.071 }, 1]);
   const answers = {
     '/api/stock/FAKE/ohlc/1d': { data: big.map((b, i) => ({ ...b, volume: 2e6, market_time: 'r', date: `2029-11-${String(i + 1).padStart(2, '0')}` })) },
     '/api/stock/FAKE/volatility/term-structure': { data: [{ dte: 3, volatility: 2.0 }, { dte: 60, volatility: 0.3 }] },
