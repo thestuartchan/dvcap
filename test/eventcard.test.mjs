@@ -19,9 +19,11 @@ eq('text is capped', parseUpsert({ ...good, text: 'x'.repeat(5000) }).card.text.
 
 // ── PAYLOAD ──────────────────────────────────────────────────────────────────
 const c = parseUpsert(good).card;
-eq('heading, role ping, text in that order', eventPayload(c, { roleId: '123456789' }).content, '## FOMC — Wednesday 28 October 2026\n<@&123456789>\nDecision 2:00pm ET.');
+eq('the ping is the message line; the card carries heading, text and the PNG', (({ content, embeds }) => [content, embeds[0].title, embeds[0].description, embeds[0].image.url])(eventPayload(c, { roleId: '123456789' })),
+  ['<@&123456789>', 'FOMC — Wednesday 28 October 2026', 'Decision 2:00pm ET.', `attachment://${c.filename}`]);
+eq('the attachment the card points at is uploaded', eventPayload(c).attachments, [{ id: 0, filename: c.filename }]);
 eq('only the role may be pinged', eventPayload(c, { roleId: '123456789' }).allowed_mentions, { parse: [], roles: ['123456789'] });
-eq('no role → no ping line', eventPayload(c).content, '## FOMC — Wednesday 28 October 2026\nDecision 2:00pm ET.');
+eq('no role → no ping, card unchanged', [eventPayload(c).content, eventPayload(c).embeds[0].title], ['', 'FOMC — Wednesday 28 October 2026']);
 eq('role id must be numeric', roleFromEnv({ DISCORD_EVENTS_ROLE_ID: '@Gayros' }), null);
 eq('hash changes with the picture', cardHash(c) === cardHash({ ...c, bytes: Buffer.concat([c.bytes, Buffer.from([9])]) }), false);
 
