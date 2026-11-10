@@ -3,7 +3,7 @@
 // levels and the latest flow alerts. Read-only. UW data is licensed for personal use: the route
 // answers only the dashboard session, and nothing here is posted anywhere.
 import { useEffect, useState, useCallback } from "react";
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from "recharts";
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, ReferenceArea, ComposedChart, Area } from "recharts";
 import { C } from "./theme.js";
 import { Card, SLabel } from "./ui.jsx";
 import { gammaCrossCheck } from "../lib/uw.js";
@@ -71,6 +71,82 @@ function Ticker({ sym, t, board }) {
   );
 }
 
+// ── 0DTE FLOW CHART (10 Nov 2026) ─────────────────────────────────────────────
+// Price with dvcap's levels, and beneath it the running options buying vs selling pressure (UW
+// directional delta flow, all expiries and today's expiry). A view only: no signal, no alerts.
+const delta = (v) => (v == null || !Number.isFinite(v) ? "—" : `${v < 0 ? "−" : "+"}${Math.abs(v) >= 1e6 ? (Math.abs(v) / 1e6).toFixed(1) + "M" : Math.round(Math.abs(v) / 1e3) + "k"}`);
+const nyClock = () => {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date()).map(x => [x.type, x.value]));
+  return { wd: p.weekday, min: +p.hour * 60 + +p.minute };
+};
+const sessionLive = () => { const c = nyClock(); return !["Sat", "Sun"].includes(c.wd) && c.min >= 9 * 60 + 25 && c.min <= 16 * 60 + 20; };
+const hhmmNy = (iso) => new Date(iso).toLocaleTimeString("en-GB", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit" });
+
+function IntradayChart({ sym, board }) {
+  const [snap, setSnap] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    let stop = false;
+    const load = () => fetch(`/api/flow?intraday=1&symbol=${sym}`, { credentials: "include" })
+      .then(r => r.json()).then(j => { if (stop) return; if (j?.snap) { setSnap(j.snap); setErr(j.ok ? null : "no flow yet today"); } else setErr(j?.why || "no answer"); })
+      .catch(e => !stop && setErr(String(e?.message || e)));
+    load();
+    // Once a minute, only while the US session is live and this tab is visible.
+    const id = setInterval(() => { if (sessionLive() && document.visibilityState === "visible") load(); }, 60000);
+    return () => { stop = true; clearInterval(id); };
+  }, [sym]);
+  const pts = (snap?.points || []).map(p => ({ ...p, hm: hhmmNy(p.t) }));
+  const last = snap?.last;
+  const lean = (v) => (v == null ? C.mid : v > 0 ? C.green : v < 0 ? C.purple : C.mid);
+  const prices = pts.map(p => p.price).filter(v => v != null);
+  const lvls = [board?.callWall, board?.putWall, board?.flip].filter(v => v != null && prices.length && v > Math.min(...prices) * 0.985 && v < Math.max(...prices) * 1.015);
+  const lo = prices.length ? Math.min(...prices, ...lvls) : 0, hi = prices.length ? Math.max(...prices, ...lvls) : 1;
+  return (
+    <div style={{ border: "1px solid " + C.bdr, borderRadius: 10, padding: 12, display: "grid", gap: 8, minWidth: 0 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <b style={{ fontSize: 16 }}>{sym} · 0DTE flow</b>
+        <span style={{ fontSize: 11.5, color: C.muted }}>{snap?.at ? `updated ${dubaiEtStamp(snap.at)}` : err ? "" : "loading…"}</span>
+      </div>
+      {err && !pts.length && <div style={{ fontSize: 12.5, color: C.amber }}>Flow not available: {err}</div>}
+      {pts.length > 2 && (<>
+        <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "2px 12px", fontSize: 12.5, fontVariantNumeric: "tabular-nums" }}>
+          <span style={{ color: C.lbl, fontWeight: 700 }}>Flow now</span>
+          <span style={{ color: lean(last?.cum), fontWeight: 800 }}>{delta(last?.cum)} Δ · {last?.cum > 0 ? "options buyers in control" : last?.cum < 0 ? "options sellers in control" : "balanced"}</span>
+          <span style={{ color: C.lbl, fontWeight: 700 }}>0DTE only</span>
+          <span style={{ color: lean(last?.cum0), fontWeight: 800 }}>{delta(last?.cum0)} Δ · {last?.cum0 > 0 ? "today's expiry leaning up" : last?.cum0 < 0 ? "today's expiry leaning down" : "balanced"}</span>
+        </div>
+        <div style={{ height: 150 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={pts} margin={{ top: 4, right: 8, bottom: 0, left: 0 }} syncId={`flow-${sym}`}>
+              <CartesianGrid stroke={C.bdr} strokeDasharray="2 4" />
+              <XAxis dataKey="hm" tick={{ fontSize: 10, fill: C.muted }} interval="preserveStartEnd" minTickGap={40} />
+              <YAxis domain={[lo, hi]} tick={{ fontSize: 10, fill: C.muted }} width={48} tickFormatter={(v) => (+v).toFixed(0)} />
+              <Tooltip formatter={(v, n) => [n === "price" ? (+v).toFixed(2) : v, n]} />
+              {board?.flipLo != null && board?.flipHi != null && <ReferenceArea y1={board.flipLo} y2={board.flipHi} fill={C.amber} fillOpacity={0.12} />}
+              {board?.callWall != null && <ReferenceLine y={board.callWall} stroke={C.green} strokeDasharray="4 3" label={{ value: `call wall ${board.callWall}`, fontSize: 10, fill: C.green, position: "insideTopRight" }} />}
+              {board?.putWall != null && <ReferenceLine y={board.putWall} stroke={C.purple} strokeDasharray="4 3" label={{ value: `put support ${board.putWall}`, fontSize: 10, fill: C.purple, position: "insideBottomRight" }} />}
+              <Line type="monotone" dataKey="price" stroke={C.text} dot={false} strokeWidth={1.8} connectNulls />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <div style={{ height: 110 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={pts} margin={{ top: 4, right: 8, bottom: 0, left: 0 }} syncId={`flow-${sym}`}>
+              <CartesianGrid stroke={C.bdr} strokeDasharray="2 4" />
+              <XAxis dataKey="hm" tick={{ fontSize: 10, fill: C.muted }} interval="preserveStartEnd" minTickGap={40} />
+              <YAxis tick={{ fontSize: 10, fill: C.muted }} width={48} tickFormatter={(v) => delta(v)} />
+              <Tooltip formatter={(v, n) => [delta(v), n === "cum" ? "all expiries" : "0DTE"]} />
+              <ReferenceLine y={0} stroke={C.mid} />
+              <Area type="monotone" dataKey="cum" stroke={lean(last?.cum)} fill={lean(last?.cum)} fillOpacity={0.18} strokeWidth={1.6} />
+              <Line type="monotone" dataKey="cum0" stroke={C.amber} dot={false} strokeWidth={1.4} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      </>)}
+    </div>
+  );
+}
+
 export function FlowPanel() {
   const [d, setD] = useState(null);
   const [err, setErr] = useState(null);
@@ -86,7 +162,7 @@ export function FlowPanel() {
   // dvcap's own board for the cross-check (the same stored board the Gamma panel above reads).
   useEffect(() => {
     ["QQQ", "SPY"].forEach(s => fetch(`/api/gex?symbol=${s}`, { credentials: "include" }).then(r => r.json())
-      .then(j => { const l = j?.latest; if (l) setBoards(b => ({ ...b, [s]: { callWall: l.callWall ?? null, flip: l.flipLevel ?? null, spot: l.spot ?? null } })); })
+      .then(j => { const l = j?.latest; if (l) setBoards(b => ({ ...b, [s]: { callWall: l.callWall ?? null, putWall: l.putWall ?? null, flip: l.flipLevel ?? null, flipLo: l.flipZoneLo ?? null, flipHi: l.flipZoneHi ?? null, spot: l.spot ?? null } })); })
       .catch(() => {}));
   }, []);
   if (hidden) return null;
@@ -126,17 +202,22 @@ export function FlowPanel() {
           )}
         </div>
       )}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 12, marginTop: 12 }}>
+        {["QQQ", "SPY"].map(s => <IntradayChart key={s} sym={s} board={boards[s]} />)}
+      </div>
       {d?.tickers && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: 12, marginTop: 12 }}>
           {Object.entries(d.tickers).map(([s, t]) => <Ticker key={s} sym={s} t={t} board={boards[s]} />)}
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "2px 12px", fontSize: 11.5, color: C.muted, marginTop: 12 }}>
+        <b>0DTE flow</b><span>running total of options delta bought minus sold since the open (green = buyers, purple = sellers); amber line = today&apos;s expiry only. A view, not a signal</span>
+        <b>Levels</b><span>dvcap&apos;s call wall, put support and flip zone (shaded) on the price chart</span>
         <b>Tide</b><span>net premium at the ask minus at the bid, market-wide, cumulative</span>
         <b>Net premium</b><span>the same, for one ticker</span>
         <b>UW GEX</b><span>built from the day&apos;s directional volume; dvcap&apos;s board from open interest</span>
         <b>Alerts</b><span>UW&apos;s unusual-activity rules; side = where ≥60% of premium traded</span>
-        <b>Source</b><span>Unusual Whales API · personal use · snapshots 09:50, 12:30, 15:30 ET and the close</span>
+        <b>Source</b><span>Unusual Whales API · personal use · snapshots 09:50, 12:30, 15:30 ET and the close; 0DTE chart every minute while open in the session</span>
       </div>
     </Card>
   );

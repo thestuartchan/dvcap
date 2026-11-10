@@ -2,7 +2,7 @@
 // each normaliser on UW-shaped answers, the snapshot failing one part at a time, the public health
 // answer carrying no numbers, and the close keeping one row a day and posting once, privately.
 // Fake tickers and made-up numbers only: UW data is licensed for personal use and never enters the repo.
-import { tideSummary, netPremSummary, flowAlertRows, darkpoolLevels, gexLevelsOf, nopeLast, gammaCrossCheck, flowSnapshot, healthOf, dailyRow, closeCard, plainRead, uwGet, uwConfigured } from '../lib/uw.js';
+import { tideSummary, netPremSummary, flowAlertRows, darkpoolLevels, gexLevelsOf, nopeLast, gammaCrossCheck, flowSnapshot, healthOf, dailyRow, closeCard, plainRead, dirDeltaByMinute, closesByMinute, intradayPoints, intradaySnapshot, nyDayOf, uwUsage, uwGet, uwConfigured } from '../lib/uw.js';
 import { closeOut, UW_DAILY_KEY } from '../lib/routes/flow.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -76,6 +76,33 @@ eq('close card: −0.00 reads 0.00; a premium has no plus sign; the side in word
   eq('plain read: tide, then one line per ticker in simple words', pr, [
     'Market-wide: options money leaned **bullish** (heavy call buying / put selling).',
     "FAKE: clear **bullish** flow; options not pushing the price; price below UW's flip (100): moves can run further; ceiling near 102; biggest unusual trade: calls sold."]);
+}
+
+// ── 0DTE intraday flow (fake ticker, made-up numbers) ──
+{
+  const day = '2030-01-02';                               // a Wednesday; 14:30Z = 09:30 New York (EST)
+  const g = { data: [
+    { timestamp: '2030-01-02T14:20:00Z', dir_delta_flow: '999' },   // pre-open: dropped
+    { timestamp: '2030-01-02T14:30:00Z', dir_delta_flow: '1000' },
+    { timestamp: '2030-01-02T14:31:00Z', dir_delta_flow: '-400.5' },
+    { timestamp: '2030-01-02T14:32:00Z', dir_delta_flow: 'n/a' },   // unreadable: dropped
+  ] };
+  const flow = dirDeltaByMinute(g, day);
+  eq('intraday: session minutes only, numbers parsed', [...flow.values()], [1000, -400.5]);
+  const px = closesByMinute({ data: [{ start_time: '2030-01-02T14:31:00Z', close: '101.5' }, { start: '2030-01-02T14:30:00Z', c: 101 }] }, day);
+  eq('intraday: closes from REST or short field names', [...px.entries()].sort().map(([, v]) => v), [101, 101.5]);
+  const pts = intradayPoints({ all: flow, zero: new Map([['2030-01-02T14:31:00.000Z', -50]]), price: px });
+  eq('intraday: running totals from the open', pts.map(p => [p.price, p.cum, p.cum0]), [[101, 1000, 0], [101.5, 600, -50]]);
+  const get = async (path) => {
+    if (path === '/api/stock/FAKE/greek-flow') return g;
+    if (path === `/api/stock/FAKE/greek-flow/${day}`) return { data: [] };
+    if (path === '/api/stock/FAKE/ohlc/1m') return { data: [{ start_time: '2030-01-02T14:30:00Z', close: 100 }] };
+    throw new Error('UW 404');
+  };
+  const snap = await intradaySnapshot({ ticker: 'fake', get, now: new Date('2030-01-02T15:00:00Z') });
+  eq('intraday: each part reports alone; an empty 0DTE answer is "empty", not an error', [snap.ticker, snap.day, snap.parts, snap.ok, snap.of], ['FAKE', day, { flow: 'ok', '0dte': 'empty', price: 'ok' }, 2, 3]);
+  eq('intraday: the New York day, not the UTC one', nyDayOf(new Date('2030-01-03T03:00:00Z')), '2030-01-02');
+  eq('usage counts start unknown', [typeof uwUsage.today, typeof uwUsage.limit].every(t => t === 'object' || t === 'number'), true);
 }
 
 // ── The close: one row a day, posted once, privately ──
