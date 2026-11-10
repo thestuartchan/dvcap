@@ -416,6 +416,15 @@ ok('and marks itself retryable, so the workflow tries again', r5.retryable === t
   urls.length = 0;
   const gone = await fetchStatement({ token: 'T', queryId: 'Q', fetchImpl: rec('<FlexStatementResponse><Status>Fail</Status><ErrorCode>1018</ErrorCode><ErrorMessage>expired</ErrorMessage></FlexStatementResponse>', SENT, STMT), sleep: async () => {}, pending: out.pending });
   eq('a forgotten reference: starts fresh and still gets the statement', [gone.ok, urls.some(u => /SendRequest/.test(u))], [true, true]);
+  // 10 Nov: a reference IBKR never finishes is not polled forever. Past 6 minutes, ask again.
+  eq('the reference carries when it was asked for', typeof out.pending?.at, 'string');
+  urls.length = 0;
+  const later = Date.parse(out.pending.at) + 7 * 60 * 1000;
+  const stale = await fetchStatement({ token: 'T', queryId: 'Q', fetchImpl: rec(SENT, STMT), sleep: async () => {}, pending: out.pending, now: () => later });
+  eq('a reference older than 6 minutes: a fresh request, not the stuck one', [stale.ok, urls.some(u => /SendRequest/.test(u)), urls.some(u => /q=R1/.test(u))], [true, true, false]);
+  urls.length = 0;
+  const oldShape = await fetchStatement({ token: 'T', queryId: 'Q', fetchImpl: rec(SENT, STMT), sleep: async () => {}, pending: { url: out.pending.url, referenceCode: 'R1' } });
+  eq('a reference saved without a time (before this change) is treated as stale', [oldShape.ok, urls.some(u => /SendRequest/.test(u))], [true, true]);
 }
 // A query saved WITHOUT open positions produces a statement that parses to nothing — a silent
 // no-op is the worst answer, so it is an error naming the fix.
