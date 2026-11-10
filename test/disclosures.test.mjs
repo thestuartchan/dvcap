@@ -1,6 +1,6 @@
 // test/disclosures.test.mjs — politicians' and insiders' trades from the filings (lib/disclosures.js).
 import { deflateRawSync } from 'node:zlib';
-import { unzipEntry, parseHouseIndex, parsePtrText, amountMin, flagsFor, congressCard, parseForm4, form4Flags, insiderClusters, insiderScanCard, insiderRoundupCard, parseCurrentFeed, ideaTickers, watchSet } from '../lib/disclosures.js';
+import { unzipEntry, parseHouseIndex, parsePtrText, companyName, settleCompany, amountMin, flagsFor, congressCard, parseForm4, form4Flags, insiderClusters, insiderScanCard, insiderRoundupCard, parseCurrentFeed, ideaTickers, watchSet } from '../lib/disclosures.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 
@@ -62,9 +62,15 @@ eq('flags: the same member twice is not a cluster', flagsFor(csco, { member: 'B'
 const filing = { docId: '20035778', name: 'Hon. Maria Elvira Salazar', district: 'FL27', filed: '2026-11-05' };
 eq('no flagged trade, no card', congressCard(filing, [{ tr: csco, flags: [] }]), null);
 const card = congressCard(filing, [{ tr: csco, flags: [] }, { tr: nvda, flags: ['$250k+', 'option'] }], { url: 'https://x' });
-eq('card: one line per flagged trade plus the unflagged count, no mentions',
+eq('card: one line per flagged trade with the company name, plus the unflagged count, no mentions',
   [card.embeds[0].description, card.allowed_mentions.parse.length],
-  ['**NVDA** BUY option · $250,001 - $500,000 · traded 2026-10-23 · _$250k+, option_\n+1 other trade in this filing, unflagged', 0]);
+  ['**NVDA** NVIDIA Corporation · BUY option · $250,001 - $500,000 · traded 2026-10-23 · _$250k+, option_\n+1 other trade in this filing, unflagged', 0]);
+eq('company names read in both layouts', [parsePtrText(unpdfText).map(t => t.company), parsePtrText(plumberText).map(t => t.company)],
+  [['Cisco Systems, Inc.', 'NVIDIA Corporation', 'Procter & Gamble Company'], ['Cisco Systems, Inc.', 'NVIDIA Corporation', 'Procter & Gamble Company']]);
+eq('company name drops owner code and share class', companyName('SP Alphabet Inc. - Class A Common Stock'), 'Alphabet Inc.');
+eq('SEC name trims an account label in front', settleCompany({ ticker: 'TSM', company: 'Brokerage Taiwan Semiconductor Manufacturing Company Ltd.' }, { TSM: [1, 'TAIWAN SEMICONDUCTOR MANUFACTURING CO LTD'] }), 'Taiwan Semiconductor Manufacturing Company Ltd.');
+eq('SEC name fills in when the text had none', settleCompany({ ticker: 'BRK.B', company: null }, { 'BRK-B': [1, 'BERKSHIRE HATHAWAY INC'] }), 'BERKSHIRE HATHAWAY INC');
+eq('no ticker, no company line', congressCard(filing, [{ tr: { ticker: null, asset: 'US Treasury Note', side: 'buy', amount: '$1,001 - $15,000', traded: '2026-10-01' }, flags: ['$250k+'] }]).embeds[0].description.startsWith('**US Treasury Note** BUY'), true);
 eq('card says nothing about holdings', /held|position|size/i.test(JSON.stringify(card)), false);
 
 // Form 4: a director's open-market buy, and an officer's unplanned sale.
