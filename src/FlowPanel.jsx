@@ -147,6 +147,54 @@ function IntradayChart({ sym, board }) {
   );
 }
 
+// ── VOLATILITY & EARNINGS (build step 9) ───────────────────────────────────────
+const pct = (v, d = 0) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(d)}%`);
+const VERDICT_TONE = { Recommended: C.green, Consider: C.amber, Avoid: C.muted };
+function VolBoard() {
+  const [b, setB] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    fetch("/api/flow?vol=1", { credentials: "include" }).then(r => r.json())
+      .then(j => (j?.board ? setB(j.board) : setErr(j?.why || "no answer"))).catch(e => setErr(String(e?.message || e)));
+  }, []);
+  if (!b && !err) return null;
+  const th = { textAlign: "left", fontWeight: 700, color: C.lbl, padding: "4px 6px", whiteSpace: "nowrap" };
+  const td = { padding: "4px 6px", borderTop: "1px solid " + C.bdr, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" };
+  return (
+    <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+        <b style={{ fontSize: 14 }}>Volatility &amp; earnings</b>
+        <span style={{ fontSize: 11.5, color: C.muted }}>{b?.at ? `as of ${dubaiEtStamp(b.at)} · QQQ, SPY and your Desk names` : ""}</span>
+      </div>
+      {err && <div style={{ fontSize: 12.5, color: C.amber }}>Not available: {err}</div>}
+      {b && (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ borderCollapse: "collapse", fontSize: 12, width: "100%" }}>
+            <thead><tr>{["Ticker", "Options vs moves", "IV30", "IV rank", "Next earnings", "Implied move", "Past moves (avg)", "UW calendar screen"].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <tbody>{b.rows.map(r => (
+              <tr key={r.ticker}>
+                <td style={{ ...td, fontWeight: 800 }}>{r.ticker}</td>
+                <td style={{ ...td, color: r.rich === "rich" ? C.red : r.rich === "cheap" ? C.green : C.text, fontWeight: 700 }}>{r.rich ? `${r.rich} (${r.ivRv.toFixed(2)}×)` : "—"}</td>
+                <td style={td}>{pct(r.iv30)}</td>
+                <td style={td}>{r.ivRank != null ? Math.round(r.ivRank) : "—"}</td>
+                <td style={td}>{r.earningsDate ? `${String(r.earningsDate).slice(5, 10)}${r.earningsTime ? ` ${r.earningsTime}` : ""}` : "—"}</td>
+                <td style={td}>{r.impliedMovePct != null ? pct(r.impliedMovePct > 1.5 ? r.impliedMovePct / 100 : r.impliedMovePct, 1) : "—"}</td>
+                <td style={td}>{r.pastN ? `${pct(r.pastMove, 1)} (${r.pastN})` : "—"}</td>
+                <td style={{ ...td, color: VERDICT_TONE[r.uwVerdict] || C.muted, fontWeight: 700 }} title={r.slopeWhy || ""}>{r.uwVerdict || "—"}</td>
+              </tr>))}</tbody>
+          </table>
+        </div>
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "2px 12px", fontSize: 11.5, color: C.muted }}>
+        <b>Options vs moves</b><span>30-day implied vol ÷ 30-day realised (Yang-Zhang): rich ≥ 1.25×, fair 0.9–1.25×, cheap &lt; 0.9×</span>
+        <b>IV rank</b><span>where today&apos;s implied vol sits in its 1-year range (0–100)</span>
+        <b>Past moves</b><span>average next-day move after the last earnings reports (count in brackets)</span>
+        <b>UW calendar screen</b><span>Unusual Whales&apos; own screen for an earnings long-calendar spread (volume ≥ 1.5M, IV/RV ≥ 1.25, front IV above 45-day IV). UW&apos;s label, not a dvcap call or a recommendation</span>
+      </div>
+    </div>
+  );
+}
+
 export function FlowPanel() {
   const [d, setD] = useState(null);
   const [err, setErr] = useState(null);
@@ -210,6 +258,7 @@ export function FlowPanel() {
           {Object.entries(d.tickers).map(([s, t]) => <Ticker key={s} sym={s} t={t} board={boards[s]} />)}
         </div>
       )}
+      <VolBoard />
       <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "2px 12px", fontSize: 11.5, color: C.muted, marginTop: 12 }}>
         <b>0DTE flow</b><span>running total of options delta bought minus sold since the open (green = buyers, purple = sellers); amber line = today&apos;s expiry only. A view, not a signal</span>
         <b>Levels</b><span>dvcap&apos;s call wall, put support and flip zone (shaded) on the price chart</span>

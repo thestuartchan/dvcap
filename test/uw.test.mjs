@@ -2,7 +2,7 @@
 // each normaliser on UW-shaped answers, the snapshot failing one part at a time, the public health
 // answer carrying no numbers, and the close keeping one row a day and posting once, privately.
 // Fake tickers and made-up numbers only: UW data is licensed for personal use and never enters the repo.
-import { tideSummary, netPremSummary, flowAlertRows, darkpoolLevels, gexLevelsOf, nopeLast, gammaCrossCheck, flowSnapshot, healthOf, dailyRow, closeCard, plainRead, dirDeltaByMinute, closesByMinute, intradayPoints, intradaySnapshot, nyDayOf, uwUsage, uwGet, uwConfigured } from '../lib/uw.js';
+import { tideSummary, netPremSummary, flowAlertRows, darkpoolLevels, gexLevelsOf, nopeLast, gammaCrossCheck, flowSnapshot, healthOf, dailyRow, closeCard, plainRead, dirDeltaByMinute, closesByMinute, intradayPoints, intradaySnapshot, nyDayOf, uwUsage, UW_SCAN, dailyBars, yangZhang, termCurve, termSlope, uwCalendarVerdict, richWord, volContext, earningsHistory, volRow, deskTickers, uwGet, uwConfigured } from '../lib/uw.js';
 import { closeOut, UW_DAILY_KEY } from '../lib/routes/flow.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -103,6 +103,48 @@ eq('close card: −0.00 reads 0.00; a premium has no plus sign; the side in word
   eq('intraday: each part reports alone; an empty 0DTE answer is "empty", not an error', [snap.ticker, snap.day, snap.parts, snap.ok, snap.of], ['FAKE', day, { flow: 'ok', '0dte': 'empty', price: 'ok' }, 2, 3]);
   eq('intraday: the New York day, not the UTC one', nyDayOf(new Date('2030-01-03T03:00:00Z')), '2030-01-02');
   eq('usage counts start unknown', [typeof uwUsage.today, typeof uwUsage.limit].every(t => t === 'object' || t === 'number'), true);
+}
+
+// ── Volatility & earnings: UW's earnings-calendar screen (fake tickers, made-up numbers) ──
+{
+  // UW's verdict matrix, all eight rows: slope gates everything.
+  const rows = [];
+  for (const slopePass of [true, false]) for (const volumePass of [true, false]) for (const ivRvPass of [true, false]) rows.push(uwCalendarVerdict({ slopePass, volumePass, ivRvPass }));
+  eq('UW verdict: all eight rows (slope gates)', rows, ['Recommended', 'Consider', 'Consider', 'Avoid', 'Avoid', 'Avoid', 'Avoid', 'Avoid']);
+  eq('UW thresholds as published', [UW_SCAN.avgVolume, UW_SCAN.ivRv, UW_SCAN.slope, UW_SCAN.rvWindow, UW_SCAN.slopeDays, UW_SCAN.periods], [1500000, 1.25, -0.00406, 30, 45, 251]);
+  const curve = termCurve({ data: [{ dte: 0, volatility: 0.9 }, { dte: 3, volatility: '0.60' }, { dte: 31, volatility: 0.40 }, { dte: 59, volatility: 0.36 }, { dte: 31, volatility: 0.99 }] });
+  eq('term curve: expired dropped, sorted, one point per DTE', curve, [[3, 0.6], [31, 0.4], [59, 0.36]]);
+  const sl = termSlope(curve);
+  eq('slope: nearest expiry to 45 DTE, per day', [+sl.slope.toFixed(6), sl.nearestDte], [+(((0.4 + (0.36 - 0.4) * 14 / 28) - 0.6) / 42).toFixed(6), 3]);
+  eq('slope: never extrapolated past the furthest expiry', termSlope([[3, 0.6], [30, 0.4]]).slope, null);
+  eq('slope: undefined when the nearest expiry is past 45 DTE', termSlope([[50, 0.6], [80, 0.4]]).why, 'nearest expiry 50 DTE');
+  const bars = dailyBars({ data: [
+    { date: '2030-01-03', open: 1, high: 1, low: 1, close: 1, market_time: 'r' },   // today: dropped
+    { date: '2030-01-02', open: 10, high: 11, low: 9, close: 10.5, volume: 100, market_time: 'r' },
+    { date: '2030-01-02', open: 10, high: 11, low: 9, close: 10.5, volume: 100, market_time: 'po' },   // post-market: dropped
+  ] }, '2030-01-03');
+  eq('daily bars: completed regular sessions only', bars.length, 1);
+  const flat = Array.from({ length: 31 }, () => ({ open: 100, high: 100, low: 100, close: 100 }));
+  eq('Yang-Zhang: no movement is no number, not zero', yangZhang(flat), null);
+  const wiggle = Array.from({ length: 31 }, (_, i) => ({ open: 100 + (i % 2), high: 102 + (i % 2), low: 98 + (i % 2), close: 100.5 + (i % 2) }));
+  const big = Array.from({ length: 31 }, (_, i) => ({ open: 100 + 4 * (i % 2), high: 108 + 4 * (i % 2), low: 92 + 4 * (i % 2), close: 102 + 4 * (i % 2) }));
+  eq('Yang-Zhang: bigger ranges, higher vol', yangZhang(big) > yangZhang(wiggle) && yangZhang(wiggle) > 0, true);
+  eq('Yang-Zhang: needs 31 bars', yangZhang(wiggle.slice(0, 30)), null);
+  eq('rich / fair / cheap', [richWord(1.3), richWord(1.0), richWord(0.8), richWord(null)], ['rich', 'fair', 'cheap', null]);
+  const ctx = volContext({ data: { iv_rank: '62', implied_move_perc: 0.051, next_earnings_date: '2030-01-20', term_structure_regime: 'backwardation' } });
+  eq('context: picked by name, field names kept', [ctx.ivRank, ctx.impliedMovePct, ctx.earningsDate, ctx.termRegime, ctx.fields.length], [62, 0.051, '2030-01-20', 'backwardation', 4]);
+  const eh = earningsHistory({ data: [{ report_date: '2029-10-20', post_earnings_move_1d: '-6.0' }, { report_date: '2029-07-20', post_earnings_move_1d: 0.02 }] });
+  eq('earnings history: newest first, percent read either way', [eh.n, +eh.meanAbsMove.toFixed(3), eh.lastMove], [2, 0.04, -0.06]);
+  const answers = {
+    '/api/stock/FAKE/ohlc/1d': { data: big.map((b, i) => ({ ...b, volume: 2e6, market_time: 'r', date: `2029-11-${String(i + 1).padStart(2, '0')}` })) },
+    '/api/stock/FAKE/volatility/term-structure': { data: [{ dte: 3, volatility: 2.0 }, { dte: 60, volatility: 0.3 }] },
+    '/api/stock/FAKE/volatility/context': { data: { iv_rank: 80 } },
+  };
+  const row = await volRow({ ticker: 'FAKE', get: async (p) => { if (p in answers) return answers[p]; throw new Error('UW 404'); }, today: '2030-01-03' });
+  eq('vol row: each part alone; a missing earnings history is an error code, not a crash', row.parts, { ohlc: 'ok', term: 'ok', context: 'ok', earnings: 'UW 404' });
+  eq('vol row: the screen runs on the parts it has', [row.volumePass, row.slopePass, typeof row.ivRv, ['Recommended', 'Consider', 'Avoid'].includes(row.uwVerdict)], [true, true, 'number', true]);
+  const mirror = { positions: [{ rules: [{ symbol: 'NASDAQ:FAKA' }, { symbol: 'HKEX:7515' }, { symbol: 'FAKB/FAKC' }, { symbol: 'DJ:DJI' }, { symbol: 'NYSE:FAKA' }] }] };
+  eq('desk tickers: US listings and pair legs, QQQ and SPY first, no indices or HK', deskTickers(mirror), ['QQQ', 'SPY', 'FAKA', 'FAKB', 'FAKC']);
 }
 
 // ── The close: one row a day, posted once, privately ──
