@@ -11,7 +11,7 @@
 
 import { hasSessionCookie, hasCronSecret, refuse, authorised } from '../lib/apiauth.js';
 import { backupDocs } from '../lib/docBackup.js';
-import { tick, shouldAlert, JOBS, statusView, healthSummary, failureCard, privateTestCard, nyDayOf, jobLabel, FAIL_ALERT_KEY, LAST_KEY as CRON_LAST_KEY } from '../lib/cronRouter.js';
+import { tick, shouldAlert, JOBS, statusView, healthSummary, failureCard, recoveredCard, privateTestCard, nyDayOf, jobLabel, FAIL_ALERT_KEY, OPEN_ALERT_KEY, LAST_KEY as CRON_LAST_KEY } from '../lib/cronRouter.js';
 import { post, privateWebhookFromEnv } from '../lib/discord.js';
 import { sendAlert } from '../lib/alerts.js';
 import { privateSamples } from '../lib/privateSamples.js';
@@ -72,12 +72,24 @@ async function cronTick(req, res) {
   // A retryable failure with a retry slot still to come stays quiet: only the last try alerts.
   // Frequent jobs (alertAfter: 2) wait for a second failure in a row.
   const failed = (out.ran || []).filter(r => shouldAlert(r, JOBS.find(j => j.id === r.id)));
-  const webhook = failed.length ? privateWebhookFromEnv() : null;
+  const good = (out.ran || []).filter(r => r.ok);
+  const webhook = failed.length || good.length ? privateWebhookFromEnv() : null;
   if (webhook) {
     for (const r of failed) {
       const first = await kvSetNxEx(FAIL_ALERT_KEY(r.id, nyDayOf(Date.now())), 1, 2 * 86400).catch(() => false);
       // Through the one alert module (lib/alerts.js): private channel, logged against the job.
-      if (first) await sendAlert({ source: 'job', payload: failureCard(r), items: [{ ruleId: `job:${r.id}`, title: `${jobLabel(r.id)} failed${r.note ? ` · ${r.note}` : ''}`, state: 'failed' }] },
+      if (first) {
+        const sent = await sendAlert({ source: 'job', payload: failureCard(r), items: [{ ruleId: `job:${r.id}`, title: `${jobLabel(r.id)} failed${r.note ? ` · ${r.note}` : ''}`, state: 'failed' }] },
+          { deliver: post, kv: { get: kvGetJson, set: kvSetJson }, webhook }).catch(() => null);
+        if (sent?.ok) await kvSetJson(OPEN_ALERT_KEY(r.id), { slot: r.slot, at: new Date().toISOString() }).catch(() => {});
+      }
+    }
+    // The all-clear: a job whose failure card went out ran fine again. Once, then the marker clears.
+    for (const r of good) {
+      const open = await kvGetJson(OPEN_ALERT_KEY(r.id)).catch(() => null);
+      if (!open) continue;
+      await kvSetJson(OPEN_ALERT_KEY(r.id), null).catch(() => {});
+      await sendAlert({ source: 'job', payload: recoveredCard(r, open), items: [{ ruleId: `job:${r.id}`, title: `${jobLabel(r.id)} recovered`, state: 'recovered' }] },
         { deliver: post, kv: { get: kvGetJson, set: kvSetJson }, webhook }).catch(() => null);
     }
   }
