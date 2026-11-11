@@ -252,6 +252,52 @@ function GammaScore() {
   );
 }
 
+// ── 60-DAY SCORECARD (build step 13) ─────────────────────────────────────────
+// Each close's flow beside the session's move; the keep / downgrade / cancel call is Stu's at day 60.
+const VERDICT_COL = { "beats chance": C.green, "no edge": C.muted, "too few": C.muted };
+const rateCell = (s) => (s?.n ? `${Math.round(s.rate * 100)}% of ${s.n}` : "—");
+function Scorecard() {
+  const [sc, setSc] = useState(null);
+  useEffect(() => {
+    fetch("/api/flow?scorecard=1", { credentials: "include" }).then(r => r.json()).then(j => (j?.ok ? setSc(j.scorecard) : null)).catch(() => {});
+  }, []);
+  if (!sc?.start) return null;
+  const th = { textAlign: "left", fontWeight: 700, color: C.lbl, padding: "3px 6px", whiteSpace: "nowrap" };
+  const td = { padding: "3px 6px", borderTop: "1px solid " + C.bdr, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" };
+  return (
+    <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+        <b style={{ fontSize: 14 }}>UW 60-day scorecard</b>
+        <span style={{ fontSize: 11.5, color: C.muted }}>day {Math.min(sc.day, sc.of)} of {sc.of} · {sc.sessions} flow days · verdict due {sc.dueDate}</span>
+      </div>
+      <div style={{ fontSize: 12.5, fontWeight: 700 }}>{sc.read}</div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: 12, width: "100%" }}>
+          <thead><tr>{["Signal", "Next day", "Chance", "Next-day read", "Same day"].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <tbody>{sc.signals.map(s => (
+            <tr key={s.id}>
+              <td style={{ ...td, fontWeight: 700 }}>{s.label}</td>
+              <td style={td}>{rateCell(s.next)}</td>
+              <td style={td}>{s.next.guess != null ? `${Math.round(s.next.guess * 100)}%` : "—"}</td>
+              <td style={{ ...td, color: VERDICT_COL[s.next.verdict] || C.muted, fontWeight: 700 }}>{s.next.verdict}</td>
+              <td style={td}>{rateCell(s.same)}</td>
+            </tr>))}</tbody>
+        </table>
+      </div>
+      {sc.gamma.length > 0 && <div style={{ fontSize: 12, color: C.text }}>
+        {sc.gamma.map(g => <div key={g.symbol}>Gamma, {g.symbol}: UW agrees with dvcap on {g.rate != null ? `${Math.round(g.rate * 100)}%` : "—"} of {g.of} checks ({g.readings} readings)</div>)}
+      </div>}
+      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "2px 12px", fontSize: 11.5, color: C.muted }}>
+        <b>Next day</b><span>the close&apos;s flow sign vs the next session&apos;s close-to-close move: the forecast test</span>
+        <b>Chance</b><span>always guessing the more common direction over the same days</span>
+        <b>Beats chance</b><span>the 95% range sits wholly above chance; needs 20+ days</span>
+        <b>Same day</b><span>flow vs that day&apos;s own move: describes the day, not a forecast</span>
+        <b>Day 60</b><span>one private card with the full scorecard; your call: keep, downgrade or cancel</span>
+      </div>
+    </div>
+  );
+}
+
 export function FlowPanel() {
   const [d, setD] = useState(null);
   const [err, setErr] = useState(null);
@@ -316,6 +362,7 @@ export function FlowPanel() {
         </div>
       )}
       <GammaScore />
+      <Scorecard />
       <VolBoard />
       <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "2px 12px", fontSize: 11.5, color: C.muted, marginTop: 12 }}>
         <b>0DTE flow</b><span>running total of options delta bought minus sold since the open (green = buyers, purple = sellers); amber line = today&apos;s expiry only. A view, not a signal</span>
