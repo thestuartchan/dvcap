@@ -2,8 +2,9 @@
 // each normaliser on UW-shaped answers, the snapshot failing one part at a time, the public health
 // answer carrying no numbers, and the close keeping one row a day and posting once, privately.
 // Fake tickers and made-up numbers only: UW data is licensed for personal use and never enters the repo.
-import { tideSummary, netPremSummary, flowAlertRows, darkpoolLevels, gexLevelsOf, nopeLast, gammaCrossCheck, flowSnapshot, healthOf, dailyRow, closeCard, plainRead, dirDeltaByMinute, closesByMinute, intradayPoints, intradaySnapshot, nyDayOf, uwUsage, UW_SCAN, dailyBars, yangZhang, termCurve, termSlope, uwCalendarVerdict, richWord, volContext, earningsHistory, volRow, deskTickers, uwGet, uwConfigured } from '../lib/uw.js';
-import { closeOut, UW_DAILY_KEY } from '../lib/routes/flow.js';
+import { tideSummary, netPremSummary, flowAlertRows, darkpoolLevels, gexLevelsOf, nopeLast, gammaCrossCheck, flowSnapshot, healthOf, dailyRow, closeCard, plainRead, dirDeltaByMinute, closesByMinute, intradayPoints, intradaySnapshot, nyDayOf, uwUsage, UW_SCAN, dailyBars, yangZhang, termCurve, termSlope, uwCalendarVerdict, richWord, volContext, earningsHistory, volRow, deskTickers, nameFlow, isNotable, namesCard, NAMES_NOTABLE, uwGet, uwConfigured } from '../lib/uw.js';
+import { closeOut, namesOut, UW_DAILY_KEY } from '../lib/routes/flow.js';
+import { DESK_RULES_KEY } from '../lib/deskRules.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 
@@ -150,6 +151,27 @@ eq('close card: −0.00 reads 0.00; a premium has no plus sign; the side in word
   eq('desk tickers: US listings and pair legs, QQQ and SPY first, no indices or HK', deskTickers(mirror), ['QQQ', 'SPY', 'FAKA', 'FAKB', 'FAKC']);
 }
 
+// ── Step 10: flow on the Desk's names (fake tickers, made-up numbers) ──
+{
+  const day = '2030-01-02';
+  const get = async (p) => {
+    if (p === '/api/stock/FAKA/net-prem-ticks') return { data: [{ net_call_premium: '7000000', net_put_premium: '1000000' }] };
+    if (p === '/api/stock/FAKA/flow-alerts') return { data: [
+      { ticker: 'FAKA', type: 'call', strike: '10', expiry: '2030-01-17', total_premium: '1500000', total_ask_side_prem: '1400000', total_bid_side_prem: '100000', has_sweep: true, all_opening_trades: true, created_at: '2030-01-02T16:00:00Z' },
+      { ticker: 'FAKA', type: 'put', strike: '9', expiry: '2030-01-17', total_premium: '9000000', created_at: '2029-12-20T16:00:00Z' },   // an older day: ignored
+    ] };
+    throw new Error('UW 404');
+  };
+  const r = await nameFlow({ ticker: 'FAKA', get, day });
+  eq('names: net premium, today\'s alerts only, opening sweeps counted', [r.net, r.alerts, r.sweeps, r.top.premium, r.top.side], [6000000, 1, 1, 1500000, 'ask']);
+  eq('names: notable by net, by a big trade, or by sweeps; quiet otherwise', [isNotable({ net: 6e6 }), isNotable({ net: 1e6, top: { premium: 1.2e6 } }), isNotable({ sweeps: 3 }), isNotable({ net: 1e6, top: { premium: 2e5 }, sweeps: 1 })], [true, true, true, false]);
+  eq('names: thresholds', [NAMES_NOTABLE.net, NAMES_NOTABLE.top, NAMES_NOTABLE.sweeps], [5e6, 1e6, 3]);
+  const card = namesCard([r, { ticker: 'FAKB', net: -8e6, alerts: 0, sweeps: 0, top: null }, { ticker: 'FAKC', net: 1e5, alerts: 0, sweeps: 0, top: null }], { day });
+  eq('names card: notable names only, biggest net first, plain words', [card.embeds[0].fields.map(f => f.name), card.embeds[0].fields[0].value.startsWith('**bearish**'), card.embeds[0].fields[1].value.includes('Biggest: calls bought $1.5M')], [['FAKB', 'FAKA'], true, true]);
+  eq('names card: nothing notable, nothing posted', namesCard([{ ticker: 'FAKC', net: 1e5 }], { day }), null);
+  eq('names card: private, no mentions', [card.embeds[0].footer.text.includes('private channel only'), card.allowed_mentions], [true, { parse: [] }]);
+}
+
 // ── The close: one row a day, posted once, privately ──
 const memKv = () => { const m = new Map(); return { m, configured: () => true, get: async (k) => m.get(k) ?? null, set: async (k, v) => { m.set(k, v); return true; } }; };
 const kv = memKv(); const sent = [];
@@ -163,6 +185,22 @@ eq('close: a second run the same day keeps one row and does not post again', [kv
 const kv2 = memKv();
 const r3 = await closeOut(snap, { kv: kv2, deliver, env: {} });
 eq('close: with no private webhook nothing is posted anywhere, and it says so', [r3.alert, kv2.m.get(UW_DAILY_KEY)[0].posted], ['not posted (private webhook unset or Discord refused)', false]);
+
+// ── Step 10 at the close: the names card, private, once a day ──
+{
+  const kvN = memKv(); const sentN = [];
+  kvN.m.set(DESK_RULES_KEY, { positions: [{ rules: [{ symbol: 'NASDAQ:FAKA' }, { symbol: 'HKEX:7515' }] }] });
+  const deliverN = async (hook, payload) => { sentN.push({ hook, payload }); return 'msg-n'; };
+  const getN = async (p) => {
+    if (p === '/api/stock/FAKA/net-prem-ticks') return { data: [{ net_call_premium: '9000000', net_put_premium: '0' }] };
+    if (p === '/api/stock/FAKA/flow-alerts') return { data: [] };
+    throw new Error('UW 404');
+  };
+  const now = new Date('2030-01-02T21:12:00Z');
+  const n1 = await namesOut({ kv: kvN, deliver: deliverN, env, now, get: getN });
+  const n2 = await namesOut({ kv: kvN, deliver: deliverN, env, now, get: getN });
+  eq('names: posted once, to the PRIVATE webhook, only the Desk\'s US names (QQQ/SPY are on the close card)', [n1.alert, n1.names, n2.alert, sentN.length, sentN[0]?.hook], ['posted', 1, 'already sent today', 1, env.DISCORD_PRIVATE_WEBHOOK]);
+}
 
 // ── The GET ──
 eq('no key, no call', await uwGet('/api/market/market-tide', { env: {} }).then(() => 'called', e => e.message), 'UW_API_KEY unset');
