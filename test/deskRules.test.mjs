@@ -128,6 +128,15 @@ const ok = (n, c) => eq(n, !!c, true);
   eq('no answer: the timeout note, and the answer says none', (({ description, fields }) => [description, fields[1].value])(failureCard({ id: 'gex-recompute', slot: '2026-11-06T12:15:00.000Z', status: null, note: 'no answer within 240s' }).embeds[0]), ['no answer within 240s', 'none']);
   const dc = deskAlertCard({ fresh: [{ name: 'ZZQ', rule: { kind: 'stop', state: 'hit', text: 't', note: 'n' } }, { name: 'ZZR', rule: { kind: 'review', state: 'due', text: 't', note: 'n' } }], near: [] }, { today: '2026-11-06' }).embeds[0];
   eq('the headline splits hit from due; only due rules go amber', [dc.description, deskAlertCard({ fresh: [{ name: 'ZZR', rule: { kind: 'review', state: 'due' } }], near: [] }).embeds[0].color], ['1 hit · 1 due', 0xf1c40f]);
+  // Near a level: one entry per rule, shaped like a hit; the kind is not said twice.
+  const nc = deskAlertCard({ fresh: [{ name: 'ZZQ pair', rule: { kind: 'add', state: 'hit', text: 'T2 add', note: 'close 1.34, 0.06 below 1.40' } }],
+    near: [{ name: 'ZZR inverse', rule: { kind: 'tp', text: 'Take profit at HK$15.20', note: 'close 15.03, 0.17 below 15.2' } },
+           { name: 'ZZS', rule: { kind: 'review', text: 'revisit if ZZS reclaims 764.4', note: 'close 759.84, 4.56 below 764.4' } }] }).embeds[0];
+  eq('near: one field per rule, after the hits', nc.fields.map(f => f.name), ['🔴 ZZQ pair', '🟡 ZZR inverse', '🟡 ZZS']);
+  eq('near: rule, then where it closed', nc.fields[1].value, 'Take profit at HK$15.20\nclose 15.03, 0.17 below 15.2');
+  eq('near: kind kept when the text does not start with it', nc.fields[2].value.split('\n')[0], 'Review · revisit if ZZS reclaims 764.4');
+  const many = deskAlertCard({ fresh: [{ name: 'A', rule: { kind: 'stop', state: 'hit' } }], near: Array.from({ length: 14 }, (_, k) => ({ name: `N${k}`, rule: { kind: 'tp' } })) }).embeds[0];
+  eq('near: ten shown, the rest in one closing line', [many.fields.length, many.fields.at(-1).name], [12, '🟡 +4 more near a level']);
 }
 
 // ── PAIR RULES ON A RATIO (9 Nov 2026) ───────────────────────────────────────
