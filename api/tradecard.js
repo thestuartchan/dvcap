@@ -29,6 +29,7 @@ import { checkpointPing } from '../lib/checkpointPing.js';
 import { bookRpc, bookView, bookTokenMatches, bookRateBucket, ipHashOf, bookSecretReport, bookRequestShape, BOOK_RATE_PER_MIN, BOOK_LOG_KEY } from '../lib/bookMcp.js';
 import { signalBoardPayload } from '../lib/signalBoardFeed.js';
 import { DESK_RULES_KEY, DESK_CHECKS_KEY, runChecks, newHits, deskAlertCard, checksView, periodEnds, isRatioSymbol, quoteRatio, closedTodayIds } from '../lib/deskRules.js';
+import { UW_NAMES_KEY, usTickerOf, flowLineShort } from '../lib/uw.js';
 import { TC_TODAY_KEY } from '../lib/sameDayFills.js';
 import { tvDaily } from '../lib/tradingview.js';
 import { runCongress, runInsiderScan, runInsiderRoundup, watchSet, ideaTickers, IDEAS_TICKERS_KEY, DISCLOSURES_EXTRA_KEY } from '../lib/disclosures.js';
@@ -644,7 +645,16 @@ export async function deskRulesCheck({ origin, now = new Date(), quote = tvDaily
   const checks = runChecks(mirror, { quotes, marks, today, ...periodEnds(today, HOLIDAYS?.US?.closed || []), prev, closedToday, now: now.toISOString() });
   await kvSetJson(DESK_CHECKS_KEY, checks);
   const hits = newHits(prev, checks);
-  const card = deskAlertCard(hits, { today, now: now.toISOString() });
+  // Step 12: the 16:12 flow pull's rows (lib/routes/flow.js namesOut), today's only. A name is its
+  // rule's US ticker, else the first word of the Desk name when that is a ticker.
+  const flowDay = await kvGetJson(UW_NAMES_KEY).catch(() => null);
+  const flowRows = flowDay?.day === today ? new Map((flowDay.rows || []).map(r => [r.ticker, r])) : null;
+  const flowFor = flowRows ? (x) => {
+    const word = /^[A-Z]{1,5}\b/.exec(String(x.name || ''))?.[0];
+    const t = usTickerOf(x.rule.symbol) || word;
+    return t && flowRows.has(t) ? flowLineShort(flowRows.get(t)) : null;
+  } : null;
+  const card = deskAlertCard(hits, { today, now: now.toISOString(), flowFor });
   let posted = false;
   if (card) {
     // One message, one log line per rule it carries (lib/alerts.js).
