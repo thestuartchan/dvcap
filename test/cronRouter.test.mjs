@@ -1,5 +1,5 @@
 // test/cronRouter.test.mjs — the one-tick scheduler (lib/cronRouter.js, api/regime-log.js ?tick).
-import { JOBS, zonedToUtc, dueSlots, allDue, tick, runJob, outcomeOf, nextSlot, statusView, claimKey, LAST_KEY, WINDOW_MIN, privateTestCard } from '../lib/cronRouter.js';
+import { JOBS, zonedToUtc, dueSlots, allDue, tick, runJob, outcomeOf, shouldAlert, nextSlot, statusView, claimKey, LAST_KEY, WINDOW_MIN, privateTestCard } from '../lib/cronRouter.js';
 import handler from '../api/regime-log.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -136,6 +136,20 @@ function fakeRes() {
   eq('after a hard failure the retry slot does not run', [h1.ran[0].retryable ?? false, h2.ran.length], [false, 0]);
   eq('outcomeOf keeps retryable only on a failure', [outcomeOf(200, { ok: false, retryable: true }, 1).retryable, outcomeOf(200, { ok: true, retryable: true }, 1).retryable ?? null], [true, null]);
   ok('the live flex-sync job has retry slots', (job('flex-sync').retryAfterMin || []).length >= 3);
+}
+
+// ── ALERT ON THE SECOND MISS FOR FREQUENT JOBS (11 Nov 2026) ─────────────────
+{
+  const fq = { id: 'fq', tz: 'UTC', at: ['08:00', '08:30', '09:00', '09:30'], days: null, alertAfter: 2, path: '/api/fq' };
+  const kv = fakeKv();
+  let answers = [{ ok: false, error: 'timeout' }, { ok: true }, { ok: false, error: 'timeout' }, { ok: false, error: 'timeout' }];
+  const fetchImpl = async () => { const b = answers.shift(); return { status: 200, json: async () => b }; };
+  const run = async (iso) => (await tick({ now: Date.parse(iso), kv, origin: 'https://example.test', env: {}, fetchImpl, jobs: [fq] })).ran[0];
+  const a = await run('2026-11-11T08:00:30Z'), b = await run('2026-11-11T08:30:30Z'), c = await run('2026-11-11T09:00:30Z'), d = await run('2026-11-11T09:30:30Z');
+  eq('streak counts consecutive failures and resets on a success', [a.streak, b.streak, c.streak, d.streak], [1, 0, 1, 2]);
+  eq('a frequent job alerts only on its second failure in a row', [shouldAlert(a, fq), shouldAlert(c, fq), shouldAlert(d, fq)], [false, false, true]);
+  eq('an ordinary job still alerts on its first failure', shouldAlert({ ok: false, streak: 1 }, { id: 'x' }), true);
+  eq('the frequent public-feed jobs carry alertAfter 2', ['disclosures-insiders', 'disclosures-congress', 'walletcard', 'same-day-book'].map(id => job(id).alertAfter), [2, 2, 2, 2]);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

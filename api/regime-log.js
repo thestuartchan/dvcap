@@ -11,7 +11,7 @@
 
 import { hasSessionCookie, hasCronSecret, refuse, authorised } from '../lib/apiauth.js';
 import { backupDocs } from '../lib/docBackup.js';
-import { tick, statusView, healthSummary, failureCard, privateTestCard, nyDayOf, jobLabel, FAIL_ALERT_KEY, LAST_KEY as CRON_LAST_KEY } from '../lib/cronRouter.js';
+import { tick, shouldAlert, JOBS, statusView, healthSummary, failureCard, privateTestCard, nyDayOf, jobLabel, FAIL_ALERT_KEY, LAST_KEY as CRON_LAST_KEY } from '../lib/cronRouter.js';
 import { post, privateWebhookFromEnv } from '../lib/discord.js';
 import { sendAlert } from '../lib/alerts.js';
 import { privateSamples } from '../lib/privateSamples.js';
@@ -70,7 +70,8 @@ async function cronTick(req, res) {
   // A failed job tells Stu in the private channel, once per job per New York day. The note is the
   // route's own error line (lib/cronRouter.js outcomeOf keeps nothing else from its answer).
   // A retryable failure with a retry slot still to come stays quiet: only the last try alerts.
-  const failed = (out.ran || []).filter(r => !r.ok && !(r.retryable && r.retriesLeft > 0));
+  // Frequent jobs (alertAfter: 2) wait for a second failure in a row.
+  const failed = (out.ran || []).filter(r => shouldAlert(r, JOBS.find(j => j.id === r.id)));
   const webhook = failed.length ? privateWebhookFromEnv() : null;
   if (webhook) {
     for (const r of failed) {
