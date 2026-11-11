@@ -195,6 +195,63 @@ function VolBoard() {
   );
 }
 
+// ── UW GAMMA vs DVCAP (build step 11) ────────────────────────────────────────
+// UW's open-interest book, read at each dvcap capture and scored on dvcap's definitions.
+const STATE = { match: ["✓", C.green], near: ["≈", C.green], differ: ["✗", C.amber], context: ["·", C.muted], unknown: ["—", C.muted] };
+const cell = (v) => (v == null ? "—" : typeof v === "number" ? lvl(v) : String(v));
+function GammaScore() {
+  const [g, setG] = useState(null);
+  useEffect(() => {
+    fetch("/api/flow?gamma=1", { credentials: "include" }).then(r => r.json()).then(j => (j?.ok ? setG(j) : null)).catch(() => {});
+  }, []);
+  const syms = Object.keys(g?.latest || {}).sort();
+  if (!g) return null;
+  const th = { textAlign: "left", fontWeight: 700, color: C.lbl, padding: "3px 6px", whiteSpace: "nowrap" };
+  const td = { padding: "3px 6px", borderTop: "1px solid " + C.bdr, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" };
+  return (
+    <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
+      <b style={{ fontSize: 14 }}>UW gamma vs dvcap&apos;s board</b>
+      {!syms.length && <div style={{ fontSize: 12.5, color: C.muted }}>No sessions scored yet: the first runs with the next gamma snapshot (10:15 ET).</div>}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 12 }}>
+        {syms.map(sym => {
+          const r = g.latest[sym], sc = g.score?.[sym];
+          return (
+            <div key={sym} style={{ border: "1px solid " + C.bdr, borderRadius: 10, padding: 10, minWidth: 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                <b>{sym}</b>
+                <span style={{ fontSize: 11.5, color: C.muted }}>{r.session} · {dubaiEtStamp(r.at)}</span>
+              </div>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: r.agree === r.scored ? C.green : C.amber, margin: "4px 0" }}>
+                {r.scored ? `Agree on ${r.agree} of ${r.scored}` : "Nothing scored"}
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ borderCollapse: "collapse", fontSize: 12, width: "100%" }}>
+                  <thead><tr>{["Check", "dvcap", "UW", "", "Agree so far"].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
+                  <tbody>{(r.checks || []).filter(c => c.score).map(c => {
+                    const [mark, col] = STATE[c.state] || STATE.unknown;
+                    const t = sc?.checks?.[c.name];
+                    return (
+                      <tr key={c.name} title={c.detail || ""}>
+                        <td style={td}>{c.name}</td><td style={td}>{cell(c.ours)}</td><td style={td}>{cell(c.theirs)}</td>
+                        <td style={{ ...td, color: col, fontWeight: 800 }}>{mark}</td>
+                        <td style={td}>{t ? `${t.agree}/${t.of}` : "—"}</td>
+                      </tr>);
+                  })}</tbody>
+                </table>
+              </div>
+              {r.uwLevels && <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>
+                UW&apos;s own levels (its definitions): call wall {lvl(r.uwLevels.callWall)} · put wall {lvl(r.uwLevels.putWall)} · flip {lvl(r.uwLevels.flip)}
+              </div>}
+              {sc && <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>
+                {sc.sessions} reading{sc.sessions === 1 ? "" : "s"} since {sc.first}{sc.medianFlipGapPct != null ? ` · typical flip gap ${sc.medianFlipGapPct}% of spot` : ""}
+              </div>}
+            </div>);
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function FlowPanel() {
   const [d, setD] = useState(null);
   const [err, setErr] = useState(null);
@@ -258,6 +315,7 @@ export function FlowPanel() {
           {Object.entries(d.tickers).map(([s, t]) => <Ticker key={s} sym={s} t={t} board={boards[s]} />)}
         </div>
       )}
+      <GammaScore />
       <VolBoard />
       <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "2px 12px", fontSize: 11.5, color: C.muted, marginTop: 12 }}>
         <b>0DTE flow</b><span>running total of options delta bought minus sold since the open (green = buyers, purple = sellers); amber line = today&apos;s expiry only. A view, not a signal</span>
@@ -265,6 +323,8 @@ export function FlowPanel() {
         <b>Tide</b><span>net premium at the ask minus at the bid, market-wide, cumulative</span>
         <b>Net premium</b><span>the same, for one ticker</span>
         <b>UW GEX</b><span>built from the day&apos;s directional volume; dvcap&apos;s board from open interest</span>
+        <b>UW gamma check</b><span>UW&apos;s open-interest book, read at each dvcap gamma snapshot (10:15 and 17:00 ET) and scored on dvcap&apos;s definitions</span>
+        <b>✓ / ≈ / ✗</b><span>same strike / within 0.5% of spot / further apart. Both books shown; neither overrides</span>
         <b>Alerts</b><span>UW&apos;s unusual-activity rules; side = where ≥60% of premium traded</span>
         <b>Source</b><span>Unusual Whales API · personal use · snapshots 09:50, 12:30, 15:30 ET and the close; 0DTE chart every minute while open in the session</span>
       </div>
