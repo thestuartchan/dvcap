@@ -16,7 +16,7 @@ eq('all three are taken at the latest date they share, not each at its own lates
 eq('the day change is KOFIA\'s own figure', [k.margin.value, k.kospi.value], [-1.98, -1.98]);
 eq('the flow keeps its sign and unit', [k.foreignNet.value, k.foreignNet.unit], [-450, '십억원']);
 eq('each leg carries a noise floor from its own history', [k.margin.atr > 0, k.kospi.atr > 0], [true, true]);
-eq('without the pct the change is computed from the levels', kmInputs({ ...series, marginLoans: series.marginLoans.map(({ pct, ...r }) => r) }).margin.value, -1.98);
+eq('without the pct the change is computed from the levels', kmInputs({ ...series, marginLoans: series.marginLoans.map(({ pct: _pct, ...r }) => r) }).margin.value, -1.98);
 eq('no shared date, no inputs', kmInputs({ marginLoans: series.marginLoans, kospi: [], foreignNet: [] }), null);
 
 console.log(`\n${pass} passed, ${fail} failed`);

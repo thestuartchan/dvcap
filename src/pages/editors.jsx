@@ -47,6 +47,7 @@ export function InterventionToggle({ jpyChangePct, dxyChangePct, onChange, auto 
       if (j.intervention?.note) setNote(j.intervention.note);
       onChange?.(j.intervention || null);
     }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- deps deliberately narrowed: the omitted values derive from the listed ones, or adding them would re-fire the effect
   }, []);
 
   const active = !!iv?.active;
@@ -492,6 +493,7 @@ export function RecessionEntryPanel({ overrides, onSaved }) {
   // what is stored rather than blank. Deliberately keyed on `sel` only — retyping should not be
   // clobbered by a background refresh of `overrides`.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate sync from storage, the network or a prop change; kept as is so behaviour does not change
     setProb(current?.probability != null ? String(current.probability) : "");
     setAsOf(current?.asOf || "");
     setNotes(current?.notes || "");

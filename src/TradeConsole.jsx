@@ -12,7 +12,7 @@
 
 import { isCashEquivalent } from "../lib/cashEquivalents.js";
 import { Fragment, useState, useEffect, useMemo, useCallback } from "react";
-import { FUTURES_MULTIPLIER, multiplierFor, backfillMultipliers, quoteConvention, looksMisquoted, isUnambiguousFuture } from '../lib/futures.js';
+import { multiplierFor, backfillMultipliers, quoteConvention, looksMisquoted, isUnambiguousFuture } from '../lib/futures.js';
 import { cryptoSymbolCheck, cryptoQuoteSymbol, isSpotCrypto, isCryptoAsset, assetClassGroups, priceMaxDp } from '../lib/crypto.js';
 import { fundingRead, basisRead, isHlPerp, hlPerpCoin, estimateLiquidation, liquidationVsStop } from '../lib/hyperliquid.js';
 import {
@@ -24,7 +24,7 @@ import { SLabel, Card, Btn, StaleChip } from "./ui.jsx";
 import { navCheck, NAV_DRIFT_PCT, pricesStamp, nlvDate } from "../lib/consoleStamps.js";
 import { dubaiEt, dubaiEtStamp } from "../lib/timeFmt.js";
 import { ASSETS } from "../lib/assets.js";
-import { derivePosition, applyRolls, splitIntoTrades, collapseFills, oversellSplit, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, summarize, archiveCurve } from "../lib/positions.js";
+import { derivePosition, applyRolls, splitIntoTrades, collapseFills, oversellSplit, positionPnl, levelHit, levelHits, distancePct, POINT_TOLERANCE_PCT, archiveCurve } from "../lib/positions.js";
 import { sideOf, isShort, openSideFor, closeSideFor, geometryCheck, levelVocab, fillVerb, SIDES, SIDE_LABEL, DEFAULT_SIDE } from "../lib/side.js";
 import { fmtPrice } from "../lib/price.js";
 import { markGap, statementMark } from "../lib/listings.js";
@@ -3145,6 +3145,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   useEffect(() => {
     try {
       const c = JSON.parse(localStorage.getItem(LS) || "null");
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate sync from storage, the network or a prop change; kept as is so behaviour does not change
       if (c) { setRows(normalizeRows(backfillMultipliers(c.rows || []).rows).rows); setSettings(s => ({ ...s, ...(c.settings || {}) })); }
     } catch { /* no cache */ }
     readLive().then(j => {
@@ -3266,6 +3267,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     const syms = [...new Set(rows
       .filter(r => derivePosition(r.fills || [], { multiplier: r.multiplier, side: r.side }).status !== "closed")
       .map(quoteSym).filter(Boolean))];
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate sync from storage, the network or a prop change; kept as is so behaviour does not change
     if (!syms.length) { setAtrFetch({ status: "idle", asked: [] }); return; }
     let cancelled = false;
     setAtrFetch({ status: "loading", asked: syms });
@@ -3550,6 +3552,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
         return { code, rate: pinned ? numOrNull(one.fxRate) : fxRates[code] ?? null, pinned };
       }),
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- deps deliberately narrowed: the omitted values derive from the listed ones, or adding them would re-fire the effect
   }, [archived, fxRates, baseCcy]);
   // ── PERIODS, EACH CARRYING ITS OWN SUBTOTAL ──────────────────────────────────────────────────
   // Every period is listed whether or not its rows are shown, so five years reads as sixty header
@@ -3558,6 +3561,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   // so a row with no rate is counted apart rather than added at face value.
   const periods = useMemo(
     () => archivePeriods(archived, { grain, realisedOf: (r) => toBase(r.derived.realized, r) }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deps deliberately narrowed: the omitted values derive from the listed ones, or adding them would re-fire the effect
     [archived, grain, fxRates, baseCcy]);
   // ── THE PERPS THE VENUE SAYS ARE OPEN ────────────────────────────────────────────────────────
   // livePositions is keyed by coin because every consumer looks one up; the section below wants
@@ -3569,11 +3573,14 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     [rows]);
 
   const isOpen = (p) => periodOpen[p.key] ?? p.open;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- deps deliberately narrowed: the omitted values derive from the listed ones, or adding them would re-fire the effect
   const shownPeriods = useMemo(() => periods.map(p => ({ ...p, shown: isOpen(p) })), [periods, periodOpen]);
   const hidden = useMemo(
     () => hiddenSummary(shownPeriods.map(p => ({ ...p, open: p.shown })), (r) => toBase(r.derived.realized, r)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deps deliberately narrowed: the omitted values derive from the listed ones, or adding them would re-fire the effect
     [shownPeriods, fxRates, baseCcy]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- deps deliberately narrowed: the omitted values derive from the listed ones, or adding them would re-fire the effect
   const curve    = useMemo(() => archiveCurve(archived, derivedRows, toBase), [derivedRows, fxRates, baseCcy, kindNow]);
 
   // ── currency, taken from the exchange rather than assumed ──
@@ -3587,6 +3594,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     }).action === "adopt");
     if (!fixes.length) return;
     const patch = new Map(fixes.map(r => [r.id, prices[quoteSym(r)].currency]));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate sync from storage, the network or a prop change; kept as is so behaviour does not change
     setRows(p => p.map(r => patch.has(r.id) ? { ...r, currency: patch.get(r.id) } : r));
     touch();
   }, [rows, prices]);
@@ -3603,6 +3611,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       const name = h.position.opt ? `${h.position.symbol} ${h.position.opt.label}` : h.position.symbol;
       try { new Notification(`${name} — ${h.level.kind} level`, { body: `${h.level.kind} ${h.level.at}${h.level.to ? "–" + h.level.to : ""} · ${what} ${h.price}` }); } catch { /* ignore */ }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- deps deliberately narrowed: the omitted values derive from the listed ones, or adding them would re-fire the effect
   }, [hits, settings.alertsEnabled]);
 
   // ── KEYBOARD ──
@@ -4326,6 +4335,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     const noted = settings.swingNotes || {};
     const fresh = reclassified.filter(r => noted[r.symbol] !== today);
     if (!fresh.length) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate sync from storage, the network or a prop change; kept as is so behaviour does not change
     setSettings(x => ({ ...x, swingNotes: { ...(x.swingNotes || {}), ...Object.fromEntries(fresh.map(r => [r.symbol, today])) } }));
     touch();
     for (const r of fresh) {
@@ -4416,6 +4426,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
       add: addToLoser({ derived: dr.derived, pct: dr.pnl?.unrealizedPct,
                         side: openSideFor(dr.derived?.side), fillPrice: price }),
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- deps deliberately narrowed: the omitted values derive from the listed ones, or adding them would re-fire the effect
   }, [fillFor, rows, derivedRows, atrBySym, atrFetch, equityBase, fxRates, baseCcy, coverage, prices]);
 
   const ctx = {

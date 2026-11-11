@@ -223,7 +223,7 @@ eq('one slug per chain', Object.keys(DEX_CHAIN).sort(), ['arbitrum', 'base', 'et
   eq('a settled token is not asked twice', urls.length, 1);
 
   // Still refused after the follow-up is still refused — the second look is not a lower bar.
-  const dead = async (url) => ({ ok: true, json: async () => [p(TSM, 0.0015, 900)] });
+  const dead = async (_url) => ({ ok: true, json: async () => [p(TSM, 0.0015, 900)] });
   const no = await fetchDexPrices({ chainSlug: 'robinhood', addresses: ['0xau'], quoteAllow: allowQuotes(VERIFIED), fetchImpl: dead });
   ok('a genuinely unpriceable token stays unpriced', no.prices.get('0xau').price == null);
   ok('with a reason', /liquidity/.test(no.prices.get('0xau').refused));

@@ -615,7 +615,7 @@ async function fetchMacroIndicators() {
     // the US Treasury's public JSON API (free, no key required).
     // HY spreads require a paid data provider; we return null for that field.
     try {
-      const res = await fetch("https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value_month=" + new Date().toISOString().slice(0,7).replace("-",""));
+      await fetch("https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value_month=" + new Date().toISOString().slice(0,7).replace("-",""));
       // Treasury returns XML; parsing is complex — recommend proxy mode for indicators
       console.info("Treasury XML parsing not implemented client-side. Use proxy mode for live indicators.");
       return null;
@@ -819,9 +819,6 @@ async function loadFunds() {
   return null;
 }
 
-async function persistFunds(funds) {
-  try { await window.storage.set("funds_v4", JSON.stringify(funds)); } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ }
-}
 
 
 
@@ -998,7 +995,9 @@ export default function App() {
     ? { phase: mstate.hedgePhase.id, why: `conditions: ${mstate.hedgePhase.why}` }
     : suggestInsurancePhase(pbData?.us?.volTerm, pbData?.us?.macro?.oas?.series);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate sync from storage, the network or a prop change; kept as is so behaviour does not change
     if (!insurancePinned && insuranceSuggest?.phase && insuranceSuggest.phase !== insurancePhase) setInsurancePhase(insuranceSuggest.phase);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- deps deliberately narrowed: the omitted values derive from the listed ones, or adding them would re-fire the effect
   }, [insuranceSuggest?.phase, insurancePinned]);
   // Income and hedges are ranked on the measured regime MIX (expected rank over the quadrant probabilities);
   // the consensus regime is the fallback while the axes have not loaded.
@@ -1016,7 +1015,9 @@ export default function App() {
 
   // Follow the engine unless the user has explicitly pinned a view.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate sync from storage, the network or a prop change; kept as is so behaviour does not change
     if (!regimePin.pinned && liveRegime && activeRegime.id !== liveRegime.id) setActiveRegime(liveRegime);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- deps deliberately narrowed: the omitted values derive from the listed ones, or adding them would re-fire the effect
   }, [liveRegime?.id, regimePin.pinned]);
 
   // ── P0.3 — append one row per day, with the RAW INPUTS so logic changes stay backtestable.
@@ -1051,6 +1052,7 @@ export default function App() {
     fetch("/api/regime-log", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), credentials: "include" })
       .then(r => r.ok ? cacheSave("regime_log_last_v1", today) : null)
       .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- deps deliberately narrowed: the omitted values derive from the listed ones, or adding them would re-fire the effect
   }, [derivedRegimes?.stagflation, liveRegime?.id, activeRegime.id, stateFeedStatus.done]);
 
   // ── P2.5 — OAS/HYG reconciliation, run on the same daily hook ───────────────
@@ -1070,6 +1072,7 @@ export default function App() {
     })
       .then(r => r.ok ? fetch("/api/manual-entry").then(x => x.json()).then(j => setOasRecon(j.oasRecon || [])) : null)
       .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- deps deliberately narrowed: the omitted values derive from the listed ones, or adding them would re-fire the effect
   }, [regimeHistory.length, pbData?.us?.macro?.oas?.date, oasRecon.length]);
   const reconSummary = reconStats(oasRecon);
 
@@ -1107,6 +1110,7 @@ export default function App() {
   useEffect(function() {
     try {
       const pv = localStorage.getItem("portfolio_total_value");
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate sync from storage, the network or a prop change; kept as is so behaviour does not change
       if (pv) setPortfolioValue(pv.replace(/[^0-9]/g, ""));
     } catch (_) { /* storage refused — a private window stores nothing, and none of this is load-bearing */ }
   }, []);

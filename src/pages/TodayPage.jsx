@@ -39,7 +39,6 @@ function trendBps(series, lookbackDays) {
 // Live macro/semi spine + deterministic regime per region, from /api/playbook (no
 // model). Asia additionally renders the Korea-local stress gate.
 const pbFmtPct     = p => (p == null ? "—" : `${p > 0 ? "+" : ""}${p.toFixed(1)}%`);
-const pbFmtNum     = n => (n == null ? "—" : Number(n).toLocaleString("en-US"));
 const pbPctColor   = p => (p == null ? C.muted : p > 0.15 ? C.green : p < -0.15 ? C.red : C.muted);
 // Gate colours. Level names come from lib/gates.js (2-D gates), so accept both the
 // upper-case band labels and the lower-cased effective state.
@@ -51,14 +50,6 @@ const pbBandColor  = b => ({ normal: C.green, elevated: C.amber, high: C.red, ex
 // "~Nm delayed" / "prior close" / "holiday" / "no print" instead of a blanket "stale"
 // badge that fires on live-but-delayed feeds. Returns null when live (no chip). The
 // backend (playbook spine) computes `freshness` via lib/sessions.js.
-
-function pbFresh(fr) {
-  const txt = freshnessText(fr);           // shared vocab: "" (live) / prior close / stale · Nh ago / ⚠ date
-  if (!txt) return null;
-  const color = (fr.state === "no-print" || fr.state === "future") ? C.red
-              : fr.state === "stale" ? C.amber : C.muted;
-  return { txt, color };
-}
 
 // Prior-close coherence guard, recomputed AT RENDER from price/prevClose. Deliberately does
 // not just trust the payload's pctSuspect flag: a payload cached from an older build has no
@@ -147,6 +138,7 @@ function CrossRow({ r }) {
   // 16.24 intraday, and the card gave no indication the two could differ.
   const age = (() => {
     if (!r.ts) return null;
+    // eslint-disable-next-line react-hooks/purity -- Date.now for an age label; each render refreshes it, which is the intent
     const min = Math.floor((Date.now() - r.ts * 1000) / 60000);
     if (min < 0) return null;                       // clock skew — say nothing rather than lie
     if (min <= 20) return null;                     // live enough for a 1D card
@@ -1059,7 +1051,6 @@ function KoreaStressPanel({ korea }) {
   // USD/KRW: a rising won (weakening) is bad → red; falling (stabilizing) → green.
   const wonCol = won.dir === "rising" ? C.red : won.dir === "falling" ? C.green : C.amber;
   const vCol = pbBandColor(vol.band);
-  const box = { background: C.bg, border: "1.5px solid " + C.bdr, borderRadius: 10, padding: "12px 14px" };
   return (
     <Card style={{ borderTop: "4px solid " + cCol }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
@@ -1576,7 +1567,7 @@ function DataFold({ children }) {
   );
 }
 
-export function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, errorBy = {}, updatedBy = {}, onRefresh, fmtTime, reconSummary, liveIntervention, regime = null, layers = null, onOpenCalendar = null }) {
+export function GlobalPlaybook({ byRegion, regions, toggleRegion, loading, errorBy = {}, updatedBy = {}, onRefresh, fmtTime, reconSummary: _reconSummary, liveIntervention, regime = null, layers = null, onOpenCalendar = null }) {
   // Both All and single-region are filtered views of ONE spine. `active` = loaded data for
   // the selected region(s); `data` heads the page — the stance, scenarios, tripwires, the read —
   // and is the US whenever it is selected and loaded (lib/overviewRegions.js), not whichever
