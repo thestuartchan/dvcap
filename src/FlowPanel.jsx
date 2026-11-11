@@ -298,6 +298,72 @@ function Scorecard() {
   );
 }
 
+// ── SECTOR FLOW (11 Nov 2026) ────────────────────────────────────────────────
+// UW's sector ETF board: bullish minus bearish premium per sector. Shown, never voted.
+function SectorFlow({ rows }) {
+  if (!rows?.length) return null;
+  const max = Math.max(...rows.map(r => Math.abs(r.net || 0)), 1);
+  return (
+    <div style={{ display: "grid", gap: 6, marginTop: 14 }}>
+      <b style={{ fontSize: 14 }}>Sector flow</b>
+      <div style={{ display: "grid", gridTemplateColumns: "auto auto 1fr auto", gap: "3px 10px", fontSize: 12, alignItems: "center", fontVariantNumeric: "tabular-nums" }}>
+        {rows.map(r => (
+          <div key={r.ticker} style={{ display: "contents" }}>
+            <b>{r.ticker}</b>
+            <span style={{ color: C.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>{String(r.name).replace(/ Select Sector SPDR( Fund)?/i, "")}</span>
+            <div style={{ height: 8, background: C.bdr, borderRadius: 4, position: "relative", minWidth: 60 }}>
+              <div style={{ position: "absolute", top: 0, bottom: 0, left: r.net >= 0 ? "50%" : `${50 - (Math.abs(r.net || 0) / max) * 50}%`, width: `${(Math.abs(r.net || 0) / max) * 50}%`, background: tone(r.net), borderRadius: 4 }} />
+            </div>
+            <span style={{ color: tone(r.net), fontWeight: 700 }}>{usd(r.net)}</span>
+          </div>))}
+      </div>
+    </div>
+  );
+}
+
+// ── SHORT INTEREST & SQUEEZE CONTEXT (11 Nov 2026) ───────────────────────────
+const READ_TONE = { crowded: C.red, elevated: C.amber, normal: C.muted };
+const shares = (v) => (v == null ? "—" : v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${Math.round(v / 1e3)}k` : String(Math.round(v)));
+function ShortsBoard() {
+  const [b, setB] = useState(null);
+  useEffect(() => {
+    fetch("/api/flow?shorts=1", { credentials: "include" }).then(r => r.json()).then(j => (j?.board ? setB(j.board) : null)).catch(() => {});
+  }, []);
+  if (!b?.rows?.length) return null;
+  const th = { textAlign: "left", fontWeight: 700, color: C.lbl, padding: "4px 6px", whiteSpace: "nowrap" };
+  const td = { padding: "4px 6px", borderTop: "1px solid " + C.bdr, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" };
+  return (
+    <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+        <b style={{ fontSize: 14 }}>Short interest &amp; squeeze context</b>
+        <span style={{ fontSize: 11.5, color: C.muted }}>as of {dubaiEtStamp(b.at)} · your Desk and Ideas names</span>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: 12, width: "100%" }}>
+          <thead><tr>{["Ticker", "Read", "Short % float", "Days to cover", "Borrow fee", "Short vol (20d avg)", "FTDs (20d avg)"].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <tbody>{b.rows.map(r => (
+            <tr key={r.ticker}>
+              <td style={{ ...td, fontWeight: 800 }}>{r.ticker}</td>
+              <td style={{ ...td, color: READ_TONE[r.read] || C.muted, fontWeight: 700 }}>{r.read || "—"}</td>
+              <td style={td} title={r.siDate ? `FINRA, settled ${r.siDate}` : ""}>{pct(r.siFloat, 1)}</td>
+              <td style={td}>{r.daysToCover != null ? r.daysToCover.toFixed(1) : "—"}</td>
+              <td style={td}>{r.fee != null ? `${r.fee.toFixed(2)}%` : "—"}</td>
+              <td style={td}>{r.svRatio != null ? `${pct(r.svRatio)} (${pct(r.svAvg)})` : "—"}</td>
+              <td style={td}>{r.ftd != null ? `${shares(r.ftd)} (${shares(r.ftdAvg)})` : "—"}</td>
+            </tr>))}</tbody>
+        </table>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "2px 12px", fontSize: 11.5, color: C.muted }}>
+        <b>Crowded</b><span>short ≥ 20% of float, or ≥ 5 days to cover, or borrow ≥ 10%/yr</span>
+        <b>Elevated</b><span>≥ 10% of float, or ≥ 3 days, or borrow ≥ 3%/yr. A label for context, not a squeeze call</span>
+        <b>Short % float</b><span>FINRA short interest, published twice a month: 2–4 weeks old</span>
+        <b>Short vol</b><span>share of the day&apos;s volume sold short (includes market-maker hedging), latest vs 20-day average</span>
+        <b>FTDs</b><span>shares failed to deliver, latest SEC day vs 20-day average</span>
+      </div>
+    </div>
+  );
+}
+
 export function FlowPanel() {
   const [d, setD] = useState(null);
   const [err, setErr] = useState(null);
@@ -361,9 +427,11 @@ export function FlowPanel() {
           {Object.entries(d.tickers).map(([s, t]) => <Ticker key={s} sym={s} t={t} board={boards[s]} />)}
         </div>
       )}
+      <SectorFlow rows={d?.sectors} />
       <GammaScore />
       <Scorecard />
       <VolBoard />
+      <ShortsBoard />
       <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "2px 12px", fontSize: 11.5, color: C.muted, marginTop: 12 }}>
         <b>0DTE flow</b><span>running total of options delta bought minus sold since the open (green = buyers, purple = sellers); amber line = today&apos;s expiry only. A view, not a signal</span>
         <b>Levels</b><span>dvcap&apos;s call wall, put support and flip zone (shaded) on the price chart</span>
@@ -372,6 +440,7 @@ export function FlowPanel() {
         <b>UW GEX</b><span>built from the day&apos;s directional volume; dvcap&apos;s board from open interest</span>
         <b>UW gamma check</b><span>UW&apos;s open-interest book, read at each dvcap gamma snapshot (10:15 and 17:00 ET) and scored on dvcap&apos;s definitions</span>
         <b>✓ / ≈ / ✗</b><span>same strike / within 0.5% of spot / further apart. Both books shown; neither overrides</span>
+        <b>Sector flow</b><span>UW&apos;s bullish minus bearish options premium on each sector ETF today. Shown beside the board, never a vote</span>
         <b>Alerts</b><span>UW&apos;s unusual-activity rules; side = where ≥60% of premium traded</span>
         <b>Source</b><span>Unusual Whales API · personal use · snapshots 09:50, 12:30, 15:30 ET and the close; 0DTE chart every minute while open in the session</span>
       </div>
