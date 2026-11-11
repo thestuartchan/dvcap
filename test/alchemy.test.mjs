@@ -162,7 +162,7 @@ const ADDR = '0x000000000000000000000000000000000000dEaD';
 
   // Bounded: a wallet with tens of thousands of dust transfers must not become an unbounded read.
   let pages = 0;
-  const endless = async (_u, o) => { pages += 1;
+  const endless = async (_u, _o) => { pages += 1;
     return { ok: true, json: async () => ({ result: { transfers: [rx('0x' + pages, '0xY')], pageKey: 'more' } }) }; };
   const capped = await fetchAcquisition({ network: 'n', address: wallet, key: 'k', fetchImpl: endless });
   eq('a capped read says so', capped.truncated, true);

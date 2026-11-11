@@ -227,7 +227,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   // Nothing below writes on the strength of the trade list alone: the plan is applied to a COPY,
   // re-derived, and held against the Open Positions section of the same statement. Only a batch
   // that reconciles is committed, and a batch that does not is discarded whole.
-  let tradePlan = null, gate = null, tradeRows = null;
+  let tradePlan = null, gate, tradeRows = null;
   if (trades) {
     const parsed = parseTrades(got.xml);
     // The watermark is set once. Passing ?from=YYYY-MM-DD writes it into the console's settings so

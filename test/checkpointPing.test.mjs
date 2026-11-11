@@ -1,6 +1,6 @@
 // test/checkpointPing.test.mjs — the daily trade-day card (lib/checkpointPing.js): one embed posted at the
 // first layer and edited in place, colour = current read, no mention, QQQ and SPY. No network, Redis or Discord: everything is injected.
-import { checkpointPing, stageLayer, renderCard, stageAt, CHECKPOINT_PING_KEY, STAGES, COLOUR } from '../lib/checkpointPing.js';
+import { checkpointPing, stageAt, CHECKPOINT_PING_KEY, STAGES, COLOUR } from '../lib/checkpointPing.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);

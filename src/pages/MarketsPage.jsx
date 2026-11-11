@@ -251,6 +251,7 @@ function CashComparisonCard({ liveInd }) {
           to be out — which SGOV, the fund that CAN be observed, is the only evidence for. */}
       <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 8 }}>
         {rows.filter(r => r.asOf).map(r => {
+          // eslint-disable-next-line react-hooks/purity -- Date.now for an age label; each render refreshes it, which is the intent
           const age = Math.round((Date.now() - Date.parse(r.asOf + "T00:00:00Z")) / 86400000);
           return (
             <div key={`v-${r.k}`} style={{ fontSize: 11, color: r.live ? C.mid : C.amber }}>
@@ -687,7 +688,7 @@ function InflationAxisPanel({ data, liveInd }) {
   );
 }
 
-function LaborPanel({ labor, depth = "full", extras = null, announced = false }) {
+function LaborPanel({ labor, depth = "full", extras = null, announced: _announced = false }) {
   if (!labor) return null;
   const g = k => labor[k] && labor[k].ok ? labor[k] : null;
   const s = {

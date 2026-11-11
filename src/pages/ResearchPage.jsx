@@ -408,6 +408,7 @@ function AnalystViewBoard({ live, probFor, engineRegime, consensus }) {
 const SM_NOTES_WRITTEN = { fedContext: "2026-09-28", aiInfra: "2026-08-24", q2Signal: "2026-08-24" };
 
 function WrittenOn({ date }) {
+  // eslint-disable-next-line react-hooks/purity -- Date.now for an age label; each render refreshes it, which is the intent
   const days = Math.floor((Date.now() - Date.parse(date + "T12:00:00Z")) / 86400000);
   const old = days > 30;
   return (

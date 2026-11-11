@@ -122,6 +122,7 @@ export function MetricCard({ label, labelRight, value, valueColor, strike, sub, 
 // is meant to be refreshed on — so a stale essay looks stale rather than current.
 export function HandKept({ asOf, cadenceDays = null, what = null }) {
   const t = Date.parse(asOf || "");
+  // eslint-disable-next-line react-hooks/purity -- Date.now for an age label; each render refreshes it, which is the intent
   const days = Number.isFinite(t) ? Math.floor((Date.now() - t) / 86400000) : null;
   const stale = cadenceDays != null && days != null && days > cadenceDays;
   const col = stale ? C.amber : C.muted;
