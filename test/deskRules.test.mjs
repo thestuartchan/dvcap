@@ -162,5 +162,14 @@ const ok = (n, c) => eq(n, !!c, true);
   eq('its rules are not judged and cannot alert', [c.positions[0].rules[0].state, c.counts.closed, newHits(null, c).fresh.length], ['closed', 1, 0]);
 }
 
+// ── TRADING IDEAS WATCH LIST (11 Nov 2026) ───────────────────────────────────
+{
+  const { checkBookArgs } = await import('../lib/bookMcp.js');
+  const m = normalizeMirror({ positions: [], watch: ['faka', 'NASDAQ:FAKB', 'FAKA', '7515', 'not a ticker', 42] }).mirror;
+  eq('watch: tickers only, upper-cased, deduplicated; numbers and junk dropped', m.watch, ['FAKA', 'NASDAQ:FAKB']);
+  eq('watch: optional (no list, empty)', normalizeMirror({ positions: [] }).mirror.watch, []);
+  eq('put_desk_rules accepts watch and still refuses anything else', [!!checkBookArgs('put_desk_rules', { positions: [], watch: ['FAKA'] }).args, checkBookArgs('put_desk_rules', { positions: [], other: 1 }).error], [true, 'unknown argument: other']);
+}
+
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

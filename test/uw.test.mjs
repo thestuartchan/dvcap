@@ -149,6 +149,7 @@ eq('close card: −0.00 reads 0.00; a premium has no plus sign; the side in word
   eq('vol row: the screen runs on the parts it has', [row.volumePass, row.slopePass, typeof row.ivRv, ['Recommended', 'Consider', 'Avoid'].includes(row.uwVerdict)], [true, true, 'number', true]);
   const mirror = { positions: [{ rules: [{ symbol: 'NASDAQ:FAKA' }, { symbol: 'HKEX:7515' }, { symbol: 'FAKB/FAKC' }, { symbol: 'DJ:DJI' }, { symbol: 'NYSE:FAKA' }] }] };
   eq('desk tickers: US listings and pair legs, QQQ and SPY first, no indices or HK', deskTickers(mirror), ['QQQ', 'SPY', 'FAKA', 'FAKB', 'FAKC']);
+  eq('desk tickers: the Trading Ideas watch list is added, once', deskTickers({ ...mirror, watch: ['FAKD', 'NYSE:FAKA', 'HKEX:700'] }), ['QQQ', 'SPY', 'FAKA', 'FAKB', 'FAKC', 'FAKD']);
 }
 
 // ── Step 10: flow on the Desk's names (fake tickers, made-up numbers) ──
