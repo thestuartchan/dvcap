@@ -4242,6 +4242,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     if (incoming) {
       const clean = incoming.map(r => ({
         id: r.id || `${String(r.symbol || "").toUpperCase()}-${Math.random().toString(36).slice(2, 8)}`,
+        _hadId: !!r.id,
         symbol: String(r.symbol || "").toUpperCase(), currency: (r.currency || "USD").toUpperCase(),
         thesis: r.thesis || "", trade: r.trade ? String(r.trade).slice(0, 40) : "",
         // A margined row with no multiplier is filled from the table rather than coerced to 1 —
@@ -4258,7 +4259,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
         tags: Array.isArray(r.tags) ? r.tags : [],
         tag: tagOf(r),
       })).filter(r => r.symbol);
-      if (mode === "replace") setRows(clean);
+      if (mode === "replace") setRows(clean.map(({ _hadId, ...r }) => r));
       else {
         // Merge on ROW ID, not on symbol. One symbol can legitimately hold several rows — two
         // separate METU trades, one archived and one open, are two trades and not one position —
@@ -4269,9 +4270,12 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
         const byId = new Map(next.map((r, i) => [r.id, i]));
         const symCount = new Map();
         for (const r of next) symCount.set(r.symbol, (symCount.get(r.symbol) || 0) + 1);
-        for (const r of clean) {
+        // A row that brings its OWN id is that row: unknown here, it is added, never laid over another
+        // row that happens to share its symbol (12 Nov: two MCL trades imported with ids both landed
+        // on the one MCL row left on the console, and the second overwrote the first).
+        for (const { _hadId, ...r } of clean) {
           let i = byId.has(r.id) ? byId.get(r.id) : -1;
-          if (i < 0 && symCount.get(r.symbol) === 1) i = next.findIndex(x => x.symbol === r.symbol);
+          if (i < 0 && !_hadId && symCount.get(r.symbol) === 1) i = next.findIndex(x => x.symbol === r.symbol);
           if (i >= 0) next[i] = { ...next[i], ...r, id: next[i].id };
           else { byId.set(r.id, next.length); symCount.set(r.symbol, (symCount.get(r.symbol) || 0) + 1); next.push(r); }
         }
