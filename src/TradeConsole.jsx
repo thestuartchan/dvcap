@@ -4679,7 +4679,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           </div>
         </div>
       )}
-      {flexNote && flexNote.at !== noteSeen && (flexNote.applied || flexNote.needsYou?.length || flexNote.discarded) && (
+      {flexNote && flexNote.at !== noteSeen && (flexNote.applied || flexNote.needsYou?.length || flexNote.discarded || flexNote.held) && (
         <div style={{ padding: "10px 13px", borderRadius: 10, border: "1.5px solid " + (flexNote.needsYou?.length || flexNote.discarded ? C.aBdr : C.bdr), background: flexNote.needsYou?.length || flexNote.discarded ? C.aBg : C.surf }}>
           <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
             <b style={{ fontSize: 12.5, color: flexNote.needsYou?.length || flexNote.discarded ? C.amber : C.blue }}>
@@ -4715,6 +4715,11 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
                   Set "IBKR is the record from" to {flexNote.suggestedFrom}
                 </button>
               )}
+            </div>
+          )}
+          {flexNote.held && (
+            <div style={{ marginTop: 6, fontSize: 11.5, color: C.amber, fontWeight: 700 }}>
+              Held back — {flexNote.held}
             </div>
           )}
           {ackMsg && <div style={{ marginTop: 6, fontSize: 11.5, color: ackMsg.ok ? C.green : C.amber, fontWeight: 700 }}>{ackMsg.text}</div>}

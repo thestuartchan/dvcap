@@ -22,6 +22,7 @@ eq('a missed weekday run is a warning', [mon.tone, mon.text], ['warn', '⚠ no s
 // Something to decide.
 eq('a disagreement needs you', syncStatus({ ...note, needsYou: [{ what: 'x' }] }, { now: T('2026-09-26T03:00:00Z') }).text.endsWith('1 needs you'), true);
 eq('a discarded batch is a warning', syncStatus({ ...note, discarded: 'did not reconcile' }, { now: T('2026-09-26T03:00:00Z') }).tone, 'warn');
+eq('a partly held batch says so, as a warning', (({ text, tone }) => [text.endsWith('applied, some held back'), tone])(syncStatus({ ...note, applied: true, held: 'ZZB held back' }, { now: T('2026-09-26T03:00:00Z') })), [true, 'warn']);
 eq('applied changes are said', syncStatus({ ...note, applied: true }, { now: T('2026-09-26T03:00:00Z') }).text.endsWith('changes applied'), true);
 // An older note without the counts still reads.
 eq('an older note without counts', syncStatus({ at: note.at, asOf: note.asOf }, { now: T('2026-09-26T03:00:00Z') }).text, 'IBKR synced 10h ago · statement 2026-09-24 · nothing new');

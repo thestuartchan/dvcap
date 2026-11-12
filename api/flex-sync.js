@@ -39,7 +39,7 @@ const SYNC_BUDGET_MS = 50000;
 import { derivePosition, splitIntoTrades } from '../lib/positions.js';
 import { parseOptionEae, eaeSectionPresent } from '../lib/optionExpiry.js';
 import { optionPlans, positionsByContract, costsByContract, planLine, planFix, autoApplies, applyPlans, ledgerWindow, sameTradeCards, sameTradeLine, rolledContracts, coveredBy, entrylessCards, entrylessLine } from '../lib/optionLedger.js';
-import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, unrecordedTrades, dropCreatedAdds } from '../lib/flexTrades.js';
+import { parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, unrecordedTrades, dropCreatedAdds, partialBatch } from '../lib/flexTrades.js';
 import { fetchStatement, reconcile, summarise, summariseActionable, signatureOf, planAck, reconcilingFill, flexEnv, flexConfigured, isoDate, optionFindings, addLabel, cashBookOf, optionMarksOf, classOf, optionContractOf } from '../lib/flex.js';
 import { post, webhookFromEnv } from '../lib/discord.js';
 import { sendAlert } from '../lib/alerts.js';
@@ -226,8 +226,8 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
   //
   // Nothing below writes on the strength of the trade list alone: the plan is applied to a COPY,
   // re-derived, and held against the Open Positions section of the same statement. Only a batch
-  // that reconciles is committed, and a batch that does not is discarded whole.
-  let tradePlan = null, gate, tradeRows = null;
+  // that reconciles is committed; when some roots do not, only those are held back (partialBatch).
+  let tradePlan = null, fullPlan = null, gate, tradeRows = null;
   if (trades) {
     const parsed = parseTrades(got.xml);
     // The watermark is set once. Passing ?from=YYYY-MM-DD writes it into the console's settings so
@@ -247,6 +247,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
       // wrong in a way that only real data could show, and each cost a round trip to find.
       if (peek) result.trades.sample = parsed.filter(t => t.date >= from).slice(0, 25);
       tradePlan = planTrades(adoptedDerived, parsed, { from, positions: got.statement.positions });
+      fullPlan = tradePlan;
       const after = applyPlan(adoption.rows, tradePlan);
       gate = verify(after, got.statement.positions, {
         derive: deriveRow,
@@ -276,7 +277,21 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
           result.trades.suggestedFrom = day;
           suggest = ` — the fills that built it are dated ${phantomDates[0]}${phantomDates.length > 1 ? ` to ${phantomDates[phantomDates.length - 1]}` : ''}, before the hand entries they should have matched; set "IBKR is the record from" to ${day} to take the statement from there`;
         }
-        result.trades.discarded = `the batch did not reconcile against the statement’s own position list${who.length ? ` — ${who.join('; ')}` : ''} — so none of it was applied${suggest}`;
+        // ── HOLD BACK ONLY WHAT FAILED (12 Nov 2026) ── the roots that did not reconcile keep their
+        // stored rows; the rest is re-applied and re-verified alone (lib/flexTrades.js partialBatch).
+        // From here `tradePlan` is what is WRITTEN, so the note, the channel and the console all say
+        // what actually changed; `fullPlan` keeps the whole statement for the journal's matching.
+        const part = partialBatch({ rows, adoptedRows: adoption.rows, plan: tradePlan, problems: gate.problems,
+          positions: got.statement.positions, derive: deriveRow, asOf, adoptionRoots: adoption.roots });
+        if (part && part.changes && part.gate.ok) {
+          tradeRows = part.rows;
+          tradePlan = part.plan;
+          result.trades.summary = summariseTrades(tradePlan);
+          result.trades.partial = { held: part.held, written: part.changes };
+          result.trades.held = `${part.held.join(', ')} held back: ${who.length ? who.join('; ') : 'did not reconcile'} against the statement’s own position list. Everything else was written${suggest}`;
+        } else {
+          result.trades.discarded = `the batch did not reconcile against the statement’s own position list${who.length ? ` — ${who.join('; ')}` : ''} — so none of it was applied${suggest}`;
+        }
       }
     }
   }
@@ -291,7 +306,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
     const parsedAll = parseTrades(got.xml);
     const known = new Set();
     for (const r of adoption.rows) for (const f of (r.fills || [])) if (f.tradeId) known.add(String(f.tradeId));
-    for (const a of (tradePlan?.adopt || [])) known.add(String(a.tradeId));
+    for (const a of (fullPlan?.adopt || [])) known.add(String(a.tradeId));
     journal = await runJournal({ trades: parsedAll, known, today: new Date().toISOString().slice(0, 10),
       holidays: HOLIDAYS?.US?.closed || [], apply, asOf });
     result.journal = { ok: journal.ok, applied: !!journal.applied, inbox: journal.inbox ?? null, counts: journal.counts || null, reason: journal.reason || null };
@@ -346,6 +361,7 @@ export async function sync(origin, { apply = false, ack = [], trades = false, fr
     recorded: tradePlan ? tradePlan.apply.length : 0,
     opened: tradePlan ? tradePlan.creates.map(c => c.symbol) : [],
     discarded: result.trades?.discarded || null,
+    held: result.trades?.held || null,
     suggestedFrom: result.trades?.suggestedFrom || null,
     // Same-day fills the statement took over, and the ones it did not contain — the card flags
     // those by fill id (lib/sameDayFills.js provisionalBadge). Ids and dates, no sizes.

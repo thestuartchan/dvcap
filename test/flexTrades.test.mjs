@@ -2,9 +2,9 @@
 //
 // The property that matters most is not that a trade is recorded correctly; it is that a trade
 // recorded INcorrectly cannot reach the console. Every plan is applied to a copy and held against
-// the Open Positions section of the same statement, and a batch that does not reconcile is
-// discarded whole. Most of what follows is about that gate.
-import { flexTimeMs, heldUnderADay, parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, fillFrom, dropCreatedAdds } from '../lib/flexTrades.js';
+// the Open Positions section of the same statement; roots that do not reconcile are held back
+// and the rest is written only if it reconciles on its own. Most of what follows is about that gate.
+import { flexTimeMs, heldUnderADay, parseTrades, tradeSections, planTrades, applyPlan, verify, planTouches, summariseTrades, fillFrom, dropCreatedAdds, partialBatch } from '../lib/flexTrades.js';
 import { parseStatement } from '../lib/flex.js';
 import { readFileSync } from 'node:fs';
 import { derivePosition } from '../lib/positions.js';
@@ -600,6 +600,38 @@ eq('a fill carries the id that stops it being recorded twice', fillFrom({ tradeI
   // Different instants keep the statement's own order.
   const apart = xml.replace(`tradeID="602"`, `tradeID="603"`).replace(new RegExp(`(tradeID="603"[^>]*)dateTime="${at}"`), `$1dateTime="20261030;090000"`);
   eq('at different times, the earlier fill goes first', planTrades(withDerived([row]), parseTrades(apart), { from: '2026-10-01' }).apply.map(a => a.fill.tradeId.split(':')[0]), ['603', '601']);
+}
+
+// ── PARTIAL WRITE (12 Nov 2026) ──────────────────────────────────────────────
+// One root that does not reconcile used to hold back every fill in the statement. Now only that root
+// is held: its rows stay as stored, and the rest is re-verified alone and written if it passes.
+{
+  const zza = { id: 'ZZA-open', symbol: 'ZZA', fills: [{ id: 'a0', side: 'buy', qty: 100, price: 10, date: '2026-11-02' }] };
+  const zzb = { id: 'ZZB-open', symbol: 'ZZB', fills: [{ id: 'b0', side: 'buy', qty: 50, price: 20, date: '2026-11-02' }] };
+  const t = T({ tradeID: '901', symbol: 'ZZA', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'SELL', quantity: -100, tradePrice: 11, ibCommission: -1, tradeDate: '20261110' })
+          + T({ tradeID: '902', symbol: 'ZZB', assetCategory: 'STK', currency: 'USD', multiplier: 1, buySell: 'BUY', quantity: 10, tradePrice: 21, ibCommission: -1, tradeDate: '20261110' });
+  // The statement: ZZA gone (sold), ZZB held at 80 — the console's 50 + 10 = 60 cannot match.
+  const positions = POS({ symbol: 'ZZB', assetCategory: 'STK', currency: 'USD', position: 80, costBasisPrice: 20, markPrice: 21, multiplier: 1 });
+  const rows = [zza, zzb];
+  const plan = planTrades(withDerived(rows), parseTrades(t), { from: '2026-11-01', positions });
+  const full = verify(applyPlan(rows, plan), positions, { derive, roots: planTouches(plan), asOf: '2026-11-10' });
+  eq('the whole batch fails on ZZB alone', [full.ok, full.problems.map(p => p.root)], [false, ['ZZB|USD']]);
+  const part = partialBatch({ rows, plan, problems: full.problems, positions, derive, asOf: '2026-11-10' });
+  eq('ZZB is held back', part.held, ['ZZB']);
+  eq('the rest re-verifies on its own', part.gate.ok, true);
+  eq('ZZA\'s sale is written', part.rows.find(r => r.id === 'ZZA-open').fills.length, 2);
+  eq('ZZB\'s row is exactly as stored', part.rows.find(r => r.id === 'ZZB-open'), zzb);
+  eq('the written plan carries only ZZA', part.plan.apply.map(a => a.root), ['ZZA']);
+  eq('one change written', part.changes, 1);
+  // When every touched root fails there is nothing left to write.
+  const onlyB = planTrades(withDerived([zzb]), parseTrades(t), { from: '2026-11-01', positions });
+  const fb = verify(applyPlan([zzb], onlyB), positions, { derive, roots: planTouches(onlyB), asOf: '2026-11-10' });
+  eq('all held: nothing to write', partialBatch({ rows: [zzb], plan: onlyB, problems: fb.problems, positions, derive, asOf: '2026-11-10' }).changes, 0);
+  eq('nothing failed: no partial', partialBatch({ rows, plan, problems: [], positions, derive }), null);
+  // A held root's same-day adoption waits too: its row goes back to the stored copy.
+  const adopted = [zza, { ...zzb, fills: [{ ...zzb.fills[0], tradeId: '777:ZZB' }] }];
+  const pa = partialBatch({ rows, adoptedRows: adopted, plan, problems: full.problems, positions, derive, asOf: '2026-11-10' });
+  eq('held root: adoption reverted', pa.rows.find(r => r.id === 'ZZB-open').fills[0].tradeId, undefined);
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
