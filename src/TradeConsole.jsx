@@ -41,7 +41,7 @@ import { bookExposure, parseOptionSymbol, contractKey, expiredLine } from "../li
 import { sizeTrade, sizeFuture, sizerRun, reconcileRuns, mismatchReview, capReview, futuresReview, leveragedReview, SIZER_LIMITS, SINGLE_NAME_EXEMPT } from "../lib/sizer.js";
 import { leverageFor, SWING, roomInWrappers } from "../lib/leverage.js";
 import { modelledDelta } from "../lib/blackscholes.js";
-import { stateOf, byState, afterFill, thesisOk, archivePatch, restorePatch, hoursToArchive, TABS } from "../lib/lifecycle.js";
+import { stateOf, byState, afterFill, thesisOk, thesisHint, THESIS_MIN_WORDS, archivePatch, restorePatch, hoursToArchive, TABS } from "../lib/lifecycle.js";
 import { normalizeRows } from "../lib/rowRepairs.js";
 import { fitId } from "../lib/rowIds.js";
 import { sameTradeCards, sameTradeLine, entrylessCards, entrylessLine } from "../lib/optionLedger.js";
@@ -187,11 +187,12 @@ const EntryRow = ({ ctx, row }) => {
                                     border: "1.5px " + (mine ? "solid " + (isOpening ? C.green : C.blue) : "dashed " + C.bdr) }}>
       {needThesis && (
         <div style={{ marginBottom: 8, padding: "8px 10px", borderRadius: 8, background: C.aBg, border: "1.5px solid " + C.amber }}>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: C.amber }}>One line on why, before this is recorded.</div>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: C.amber }}>One line on why, at least {THESIS_MIN_WORDS} words, before this is recorded.</div>
           <div style={{ fontSize: 11.5, color: C.mid, marginTop: 2, lineHeight: 1.5 }}>The monthly review reads the thesis, and a trade with no stated reason cannot be reviewed against anything. Your fill is still in the boxes below.</div>
           <input autoFocus value={r.thesis || ""} onChange={e => upd(r.id, { thesis: e.target.value })} placeholder="e.g. accumulate on a pullback to the 200-day"
             onKeyDown={e => { if (e.key === "Enter" && thesisOk(e.target.value)) { e.preventDefault(); saveFill(); } }}
             style={{ ...IN, width: "100%", boxSizing: "border-box", marginTop: 6, borderColor: thesisOk(r.thesis) ? C.green : C.aBdr }} />
+          <div style={{ fontSize: 11.5, fontWeight: 700, marginTop: 4, color: thesisOk(r.thesis) ? C.green : C.amber }}>{thesisHint(r.thesis)}</div>
         </div>
       )}
       {adding && (
@@ -770,7 +771,7 @@ const {
           {/* ── 1. THESIS AND LABEL ── first, because it is required before a fill can be recorded. */}
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
             <label style={{ flex: "1 1 280px", fontSize: 11.5, color: thesisOk(r.thesis) ? C.lbl : C.amber, fontWeight: 700 }}>
-              Thesis {thesisOk(r.thesis) ? <span style={{ fontWeight: 400, color: C.muted }}>— why you are in, or watching</span> : <span style={{ fontWeight: 700 }}>— required before a fill is recorded (one line)</span>}<br />
+              Thesis {thesisOk(r.thesis) ? <span style={{ fontWeight: 400, color: C.muted }}>— why you are in, or watching</span> : <span style={{ fontWeight: 700 }}>— required before a fill is recorded (one line, at least {THESIS_MIN_WORDS} words)</span>}<br />
               {/* A textarea, so a dated amend appended on its own line is read, not scrolled past. */}
               <textarea value={r.thesis || ""} onChange={e => upd(r.id, { thesis: e.target.value })} placeholder="e.g. accumulate on a pullback to the 200dma"
                 rows={Math.min(5, String(r.thesis || "").split("\n").length + Math.floor(String(r.thesis || "").length / 140))}
