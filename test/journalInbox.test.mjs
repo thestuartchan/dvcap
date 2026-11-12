@@ -162,6 +162,18 @@ const TODAY = '2026-10-01';
   eq('a spread already entered by hand is adopted, not doubled', [r3.how, r3.rows[0].fills.length, r3.rows[0].fills[0].tradeId, r3.rows[0].tag], ['adopted', 1, '900', 'hedge']);
   const handOff = [{ ...hand[0], fills: [{ id: 'h1', side: 'buy', qty: 2, price: 4.90, date: '2026-09-30' }] }];
   eq('a hand fill at a different price is a different fill', applyDraft(handOff, d[0], {}, { today: TODAY }).how, 'added');
+  // OPENED FROM THE STATEMENT (12 Nov): one average-cost fill, dated after the orders, already stands
+  // for them. Confirming an order takes its share out of that fill rather than adding on top.
+  const fromStmt = [{ ...hand[0], id: 'SPY-flex', fills: [{ id: 'f0', side: 'buy', qty: 4, price: 4.45, date: '2026-10-03', note: "IBKR legs' average costs, netted" }] }];
+  const r4 = applyDraft(fromStmt, d[0], {}, { today: TODAY });
+  const q4 = (rs) => derivePosition(rs[0].fills, { multiplier: 100 }).qty;
+  eq('statement placeholder: replaced, not added', [r4.how, q4(r4.rows)], ['replaced', 4]);
+  eq('the placeholder shrinks by the order, the real fill goes in', r4.rows[0].fills.map(f => [f.id, f.qty]), [['f0', 2], [r4.rows[0].fills[1].id, 2]]);
+  eq('it says so', /replaced its share/.test(r4.message), true);
+  const twice = applyDraft(r4.rows, { ...d[0], fill: { ...d[0].fill, orderId: '9001', tradeIds: [], price: 4.30, rawPrice: 4.30 } }, {}, { today: TODAY });
+  eq('the second order empties the placeholder and it goes', [twice.how, twice.rows[0].fills.some(f => f.id === 'f0'), q4(twice.rows)], ['replaced', false, 4]);
+  const later = [{ ...fromStmt[0], fills: [{ ...fromStmt[0].fills[0], date: '2026-09-29' }] }];
+  eq('a placeholder dated before the order does not stand for it', applyDraft(later, d[0], {}, { today: TODAY }).how, 'added');
 }
 
 // ── CASE 2: the NFLX plan, 215 sold the next day ─────────────────────────────
