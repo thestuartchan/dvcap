@@ -132,9 +132,14 @@ const ok = (n, c) => eq(n, !!c, true);
   const nc = deskAlertCard({ fresh: [{ name: 'ZZQ pair', rule: { kind: 'add', state: 'hit', text: 'T2 add', note: 'close 1.34, 0.06 below 1.40' } }],
     near: [{ name: 'ZZR inverse', rule: { kind: 'tp', text: 'Take profit at HK$15.20', note: 'close 15.03, 0.17 below 15.2' } },
            { name: 'ZZS', rule: { kind: 'review', text: 'revisit if ZZS reclaims 764.4', note: 'close 759.84, 4.56 below 764.4' } }] }).embeds[0];
-  eq('near: one field per rule, after the hits', nc.fields.map(f => f.name), ['🔴 ZZQ pair', '🟡 ZZR inverse', '🟡 ZZS']);
-  eq('near: rule, then where it closed', nc.fields[1].value, 'Take profit at HK$15.20\nclose 15.03, 0.17 below 15.2');
-  eq('near: kind kept when the text does not start with it', nc.fields[2].value.split('\n')[0], 'Review · revisit if ZZS reclaims 764.4');
+  eq('near: one section per position, after the hits', nc.fields.map(f => f.name), ['🔴 ZZQ pair', '🟡 ZZR inverse', '🟡 ZZS']);
+  eq('near: rule, then where it closed, then a gap', nc.fields[1].value, 'Take profit at HK$15.20\n*close 15.03, 0.17 below 15.2*\n\u200b');
+  eq('near: the last section has no trailing gap', nc.fields[2].value, 'Review · revisit if ZZS reclaims 764.4\n*close 759.84, 4.56 below 764.4*');
+  const grouped = deskAlertCard({ fresh: [{ name: 'A', rule: { kind: 'stop', state: 'hit' } }], near: [
+    { deskId: 'n', name: 'ZZN inverse', rule: { kind: 'tp', text: 'Take profit at 15.20', note: 'n1' } },
+    { deskId: 'n', name: 'ZZN inverse', rule: { kind: 'tp', text: 'ZZN 61,900 take-profit', note: 'n2' } }] }).embeds[0];
+  eq('near: two rules on one position share one section', grouped.fields.map(f => f.name), ['🔴 A', '🟡 ZZN inverse']);
+  eq('near: the kind is dropped when the text already says it (take-profit)', grouped.fields[1].value, 'Take profit at 15.20\n*n1*\n\nZZN 61,900 take-profit\n*n2*');
   const many = deskAlertCard({ fresh: [{ name: 'A', rule: { kind: 'stop', state: 'hit' } }], near: Array.from({ length: 14 }, (_, k) => ({ name: `N${k}`, rule: { kind: 'tp' } })) }).embeds[0];
   eq('near: ten shown, the rest in one closing line', [many.fields.length, many.fields.at(-1).name], [12, '🟡 +4 more near a level']);
 }
