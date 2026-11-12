@@ -1,0 +1,61 @@
+# NYSE up / down volume history for the Signal Board's 9-to-1 row (scripts/vol-thrust-history.py →
+# data/nyse_updown_volume.json; lib/volThrust.js reads it, docs/vol-thrust has the backtest).
+#
+# WHEN. Weekdays 22:20 UTC (17:20 ET in winter, 18:20 in summer): after the close and after TradingView
+# settles the day's USI:UVOL / USI:DVOL bars. The board also asks TradingView live and the WSJ diary, so
+# a late or missed run only matters if both of those fail; then the row says "stale".
+#
+# QUIET. A run that adds no session leaves the file untouched: nothing is committed, nothing redeploys.
+# The log prints the session count and the date range — market data only.
+name: vol thrust history
+
+on:
+  schedule:
+    - cron: '20 22 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vol-thrust-history
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Read TradingView USI:UVOL / USI:DVOL
+        run: |
+          pip install --quiet websocket-client==1.8.0
+          python -I scripts/vol-thrust-history.py "$RUNNER_TEMP/nyse.json"
+      - name: Keep it only if it adds sessions
+        run: |
+          python -I - "$RUNNER_TEMP/nyse.json" data/nyse_updown_volume.json <<'EOF'
+          import json, sys, shutil
+          new, old = json.load(open(sys.argv[1])), json.load(open(sys.argv[2]))
+          if len(new['rows']) < len(old['rows']) or new['rows'][-1][0] <= old['rows'][-1][0]:
+              print(f"no new session (file ends {old['rows'][-1][0]}, fetch ends {new['rows'][-1][0]}, {len(new['rows'])} rows)")
+          else:
+              shutil.copy(sys.argv[1], sys.argv[2]); print(f"{len(new['rows'])} sessions → {new['rows'][-1][0]}")
+          EOF
+      - name: Commit
+        run: |
+          if git diff --quiet -- data/nyse_updown_volume.json; then echo "no change to commit"; exit 0; fi
+          git config user.name "dvcap-bot"
+          git config user.email "dvcap-bot@users.noreply.github.com"
+          git add data/nyse_updown_volume.json
+          git commit -m "NYSE up/down volume auto @ $(date -u +%F)"
+          for i in 1 2 3; do
+            if git push origin HEAD:main; then exit 0; fi
+            git fetch origin main && git rebase origin/main || exit 1
+            sleep $((i * 5))
+          done
+          echo "::error::could not push after three attempts"; exit 1
