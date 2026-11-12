@@ -4,7 +4,7 @@
 // with no confirm; sell 200 @ 19.25 leaves 300 open with realised shown; sell 300 @ 18.90 closes
 // it with realised frozen and, after 24 hours, it is in the Archive; Restore brings it back to
 // CLOSED, not OPEN; a fill with no thesis is held, not recorded.
-import { stateOf, afterFill, thesisOk, byState, archivePatch, restorePatch, hoursToArchive, isReadOnly, STATES, TABS, ARCHIVE_AFTER_MS, ENGINE_STATUS, THESIS_MIN_WORDS } from '../lib/lifecycle.js';
+import { stateOf, afterFill, thesisOk, thesisHint, byState, archivePatch, restorePatch, hoursToArchive, isReadOnly, STATES, TABS, ARCHIVE_AFTER_MS, ENGINE_STATUS, THESIS_MIN_WORDS } from '../lib/lifecycle.js';
 import { derivePosition } from '../lib/positions.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -74,6 +74,10 @@ const SELL2 = { id: 's2', date: '2026-09-26', side: 'sell', qty: 300, price: 18.
   eq('three words', THESIS_MIN_WORDS, 3);
   ok('one sentence passes', thesisOk('Accumulate on a pullback to the 200-day.'));
   ok('three words pass', thesisOk('buy the dip'));
+  // The prompt says the rule and the count (12 Nov: a two-word thesis was held with no reason given).
+  eq('a two-word thesis is told why', thesisHint('War resurgence'), 'At least 3 words: 2 so far');
+  eq('three words: ready', thesisHint('War resurgence, oil'), 'Ready: press Enter to record');
+  eq('empty: zero so far', thesisHint(''), 'At least 3 words: 0 so far');
   ok('a ticker does not', !thesisOk('SOFI'));
   ok('two words do not', !thesisOk('fintech rerate'));
   ok('nothing does not', !thesisOk('') && !thesisOk(null) && !thesisOk('   '));
