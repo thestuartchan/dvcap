@@ -19,7 +19,7 @@ import { kvGetJson, kvSetJson, kvConfigured, kvSetNxEx, kvDel, kvIncrEx, CONSOLE
 import { contractsByRoot, markOf } from '../lib/instruments.js';
 import { fetchCboeGreeks } from '../lib/cboe.js';
 import { derivePosition, positionPnl, levelHits, levelHit, distancePct, applyRolls } from '../lib/positions.js';
-import { sendAlert, ruleList, logView, channelView, ALERT_LOG_KEY, SOURCES } from '../lib/alerts.js';
+import { sendAlert, ruleList, logView, channelView, webhookFor, ALERT_LOG_KEY, SOURCES } from '../lib/alerts.js';
 import { buildCard, buildClosedCard, buildAlert, diffRows, showsOnCard, isStaleEvent, isOptionTrade } from '../lib/tradecard.js';
 import { upsertCard, post, remove, send, webhookFromEnv, walletWebhookFromEnv, ideasWebhookFromEnv, eventsWebhookFromEnv, daytradeWebhookFromEnv, postWithFiles, editWithFiles, webhookInfo, mentionFromEnv, ideasMentionFromEnv, alertTtlMin, CARD_KEY, IDEAS_CARD_KEY, privateWebhookFromEnv, disclosuresWebhookFromEnv } from '../lib/discord.js';
 import { parseUpsert, eventPayload, cardHash, roleFromEnv, EVENTS_CARD_KEY, jumpLink, noticePayload } from '../lib/eventcard.js';
@@ -699,7 +699,9 @@ export async function disclosuresRun(kind, { origin, dry = false, now = new Date
   // The Senate and the President / VP (lib/officials.js), hourly; each part fails alone.
   if (kind === 'officials') {
     const senate = await runSenate({ now, kv, deliver, watch, dry }).catch(e => ({ ok: false, why: String(e?.message || e).slice(0, 80) }));
-    const oge = await runOge({ kv, deliver, dry }).catch(e => ({ ok: false, why: String(e?.message || e).slice(0, 80) }));
+    // The President's and VP's filings go to the Trump channel too (Stu, 13 Nov), when it is set.
+    const trumpHook = webhookFor('trump');
+    const oge = await runOge({ kv, deliver, alsoDeliver: trumpHook ? (card) => post(trumpHook, card) : null, dry }).catch(e => ({ ok: false, why: String(e?.message || e).slice(0, 80) }));
     return { ok: !!(senate.ok && oge.ok), senate, oge, channel };
   }
   return { ok: false, why: 'disclosures must be congress, insiders, roundup or officials' };

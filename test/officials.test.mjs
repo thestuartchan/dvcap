@@ -1,7 +1,7 @@
 // test/officials.test.mjs — the Senate and the President / VP trade filings (lib/officials.js):
 // list parsing, the Senate report table, the OGE 278-T filter, cold start, once-only posting, and the
 // agreement form being posted before the Senate search. Made-up filers and fake tickers only.
-import { senateRows, senateTrades, senateCard, ogeFilings, ogeCard, runOge, runSenate, SENATE_SEEN_KEY, OGE_SEEN_KEY } from '../lib/officials.js';
+import { senateRows, senateTrades, senateCard, ogeFilings, ogeCard, runOge, runSenate, SENATE_SEEN_KEY, OGE_SEEN_KEY, OGE_BACKFILL_KEY } from '../lib/officials.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const memKv = () => { const m = new Map(); return { m, get: async (k) => m.get(k) ?? null, set: async (k, v) => { m.set(k, v); return true; } }; };
@@ -42,9 +42,21 @@ eq('card says the PDF is scanned and links it', [/scanned PDF/.test(ogeCard(of[0
 
 const fakeOge = async () => ({ ok: true, json: async () => oge });
 const kv = memKv(); const posted = []; const deliver = async (c) => { posted.push(c); return 'id'; };
-eq('OGE cold start: remembered, nothing posted', [(await runOge({ fetchImpl: fakeOge, kv, deliver })).seeded, posted.length], [1, 0]);
+eq('OGE cold start: remembered, nothing posted', [(await runOge({ fetchImpl: fakeOge, kv, deliver, backfillFrom: null })).seeded, posted.length], [1, 0]);
 kv.m.set(OGE_SEEN_KEY, ['old']);
-eq('OGE: a new filing is posted once', [(await runOge({ fetchImpl: fakeOge, kv, deliver })).posted, (await runOge({ fetchImpl: fakeOge, kv, deliver })).posted], [1, 0]);
+eq('OGE: a new filing is posted once', [(await runOge({ fetchImpl: fakeOge, kv, deliver, backfillFrom: null })).posted, (await runOge({ fetchImpl: fakeOge, kv, deliver, backfillFrom: null })).posted], [1, 0]);
+// The one-off backfill: filings posted since the date, to both channels, once, even if already seen.
+{
+  const bkv = memKv(); bkv.m.set(OGE_SEEN_KEY, ['0BDCCCE7DE13AEFA85258E8A002DE2B5']);
+  const a = [], b = [];
+  const r1 = await runOge({ fetchImpl: fakeOge, kv: bkv, deliver: async (c) => { a.push(c); return 'id'; }, alsoDeliver: async (c) => { b.push(c); return 'id'; }, backfillFrom: '2030-10-01' });
+  eq('backfill: the in-window filing, to both channels', [r1.backfilled, r1.of, a.length, b.length], [1, 1, 1, 1]);
+  eq('backfill: flagged', !!bkv.m.get(OGE_BACKFILL_KEY), true);
+  const r2 = await runOge({ fetchImpl: fakeOge, kv: bkv, deliver: async (c) => { a.push(c); return 'id'; }, alsoDeliver: async (c) => { b.push(c); return 'id'; }, backfillFrom: '2030-10-01' });
+  eq('backfill: never twice, and nothing new', [r2.backfilled, r2.new, a.length], [undefined, 0, 1]);
+  const ekv = memKv();
+  eq('backfill before any seeding: everything else is remembered, not posted', [(await runOge({ fetchImpl: fakeOge, kv: ekv, deliver: async () => 'id', backfillFrom: '2031-01-01' })).backfilled, ekv.m.get(OGE_SEEN_KEY).length], [0, 1]);
+}
 
 // ── the Senate run: agreement first, then the list, then the report ──
 const calls = [];
