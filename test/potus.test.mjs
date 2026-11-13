@@ -1,7 +1,7 @@
 // test/potus.test.mjs — Trump's posts and schedule to the private channel (lib/potus.js,
 // lib/routes/flow.js potusPostsOut / potusScheduleOut). Made-up posts and fake tickers only.
 import { marketWhy, newPosts, postsCard, scheduleOf, scheduleCard } from '../lib/potus.js';
-import { potusPostsOut, potusScheduleOut, POTUS_LAST_KEY, POTUS_SCHEDULE_POSTED_KEY } from '../lib/routes/flow.js';
+import { potusPostsOut, potusScheduleOut, POTUS_LAST_KEY, POTUS_SCHEDULE_POSTED_KEY, POTUS_BACKFILL_KEY } from '../lib/routes/flow.js';
 import { DESK_RULES_KEY } from '../lib/deskRules.js';
 import { channelOf } from '../lib/alerts.js';
 let pass = 0, fail = 0;
@@ -30,7 +30,7 @@ eq('the card carries only relevant posts', card.embeds.length, 1);
 eq('post text in full, reasons in a field', [card.embeds[0].description, card.embeds[0].fields[0].value], ['Oil prices are coming down, fast!', 'oil']);
 eq('private footer, no mentions', [/private channel only/.test(card.embeds[0].footer.text), card.allowed_mentions], [true, { parse: [] }]);
 eq('nothing relevant: no card', postsCard([{ at: 1, text: 'rally', why: [] }]), null);
-eq('the source goes to the private channel', channelOf('potus'), 'private');
+eq('the source goes to the Trump channel', channelOf('potus'), 'trump');
 
 // ── the schedule ──
 const sched = scheduleOf({ data: [
@@ -66,6 +66,29 @@ const sget = async () => ({ data: [{ type: 'President Schedule', date: '2030-01-
 const s1 = await potusScheduleOut({ kv, deliver, env, get: sget });
 eq('schedule: sent once', [s1.sent, kv.m.get(POTUS_SCHEDULE_POSTED_KEY)], [1, '2030-01-03']);
 eq('schedule: never twice for the same day', (await potusScheduleOut({ kv, deliver, env, get: sget })).why, 'already sent');
+
+// ── the Trump channel and its one-time backfill ──
+{
+  const tenv = { DISCORD_PRIVATE_WEBHOOK: 'https://discord.com/api/webhooks/1/priv', DISCORD_TRUMP_WEBHOOK: 'https://discord.com/api/webhooks/2/trump' };
+  const now = new Date('2030-01-10T12:00:00Z');
+  const day = 86400000;
+  const week = { data: [
+    ...Array.from({ length: 12 }, (_, i) => ({ timestamp: now.getTime() - (i + 1) * 3600000, post: `Tariffs update number ${i}` })),
+    { timestamp: now.getTime() - 2 * day, post: 'A great rally tonight!' },
+    { timestamp: now.getTime() - 9 * day, post: 'Old tariffs post, outside the week' },
+  ] };
+  const tsent = []; const tdeliver = async (h, p) => { tsent.push({ h, n: p.embeds.length }); return 'msg'; };
+  const tkv = memKv(); tkv.m.set(POTUS_LAST_KEY, { at: 1 });
+  const b = await potusPostsOut({ kv: tkv, deliver: tdeliver, env: tenv, now, get: async () => week });
+  eq('backfill: the past week\'s relevant posts, ten to a message', [b.backfill, tsent.map(x => x.n)], [12, [10, 2]]);
+  eq('backfill: to the Trump channel', tsent.every(x => x.h === tenv.DISCORD_TRUMP_WEBHOOK), true);
+  eq('backfill: once, and the mark moves to the newest post', [!!tkv.m.get(POTUS_BACKFILL_KEY), tkv.m.get(POTUS_LAST_KEY).at], [true, now.getTime() - 3600000]);
+  const again = await potusPostsOut({ kv: tkv, deliver: tdeliver, env: tenv, now, get: async () => week });
+  eq('backfill: never twice', [again.backfill, again.sent, tsent.length], [undefined, 0, 2]);
+  const sk = memKv();
+  await potusScheduleOut({ kv: sk, deliver: tdeliver, env: tenv, get: async () => ({ data: [{ type: 'President Schedule', date: '2030-01-10', time: '2030-01-10T18:30:00Z', details: 'The President participates in an interview' }] }) });
+  eq('the schedule goes to the Trump channel too', tsent.at(-1).h, tenv.DISCORD_TRUMP_WEBHOOK);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

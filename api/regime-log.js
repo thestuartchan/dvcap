@@ -13,7 +13,7 @@ import { hasSessionCookie, hasCronSecret, refuse, authorised } from '../lib/apia
 import { backupDocs } from '../lib/docBackup.js';
 import { tick, shouldAlert, JOBS, statusView, healthSummary, failureCard, recoveredCard, privateTestCard, nyDayOf, jobLabel, FAIL_ALERT_KEY, OPEN_ALERT_KEY, LAST_KEY as CRON_LAST_KEY } from '../lib/cronRouter.js';
 import { post, privateWebhookFromEnv } from '../lib/discord.js';
-import { sendAlert } from '../lib/alerts.js';
+import { sendAlert, channelOf, webhookFor } from '../lib/alerts.js';
 import { privateSamples } from '../lib/privateSamples.js';
 import { dispatchOne } from '../lib/githubDispatch.js';
 import { kvConfigured, kvGetJson, kvSetJson, kvSetNxEx } from '../lib/kv.js';
@@ -47,7 +47,8 @@ async function cronTick(req, res) {
     if (String(req.query.all || '') === '1') {
       const sent = [];
       for (const s of privateSamples()) {
-        const r = await post(webhook, s.payload).catch(() => null);
+        // Each type to the channel it really goes to (Trump cards to the Trump channel when it is set).
+        const r = await post((channelOf(s.source) && webhookFor(channelOf(s.source))) || webhook, s.payload).catch(() => null);
         sent.push({ type: s.label, ok: !!r });
         await new Promise(ok => setTimeout(ok, 700));   // inside Discord's per-webhook rate limit
       }
