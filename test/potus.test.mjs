@@ -1,6 +1,6 @@
 // test/potus.test.mjs — Trump's posts and schedule to the private channel (lib/potus.js,
 // lib/routes/flow.js potusPostsOut / potusScheduleOut). Made-up posts and fake tickers only.
-import { marketWhy, newPosts, postsCard, scheduleOf, scheduleCard } from '../lib/potus.js';
+import { marketWhy, newPosts, postsCard, postsCards, scheduleOf, scheduleCard, DISCORD_EMBED_CHARS } from '../lib/potus.js';
 import { potusPostsOut, potusScheduleOut, POTUS_LAST_KEY, POTUS_SCHEDULE_POSTED_KEY, POTUS_BACKFILL_KEY } from '../lib/routes/flow.js';
 import { DESK_RULES_KEY } from '../lib/deskRules.js';
 import { channelOf } from '../lib/alerts.js';
@@ -31,6 +31,16 @@ eq('post text in full, reasons in a field', [card.embeds[0].description, card.em
 eq('private footer, no mentions', [/private channel only/.test(card.embeds[0].footer.text), card.allowed_mentions], [true, { parse: [] }]);
 eq('nothing relevant: no card', postsCard([{ at: 1, text: 'rally', why: [] }]), null);
 eq('the source goes to the Trump channel', channelOf('potus'), 'trump');
+
+// Discord's 6,000-character cap per message: long posts are packed into several messages.
+{
+  const long = Array.from({ length: 6 }, (_, i) => ({ at: 1000 + i, text: `Tariffs ${'x'.repeat(2500)} ${i}`, why: ['tariffs'] }));
+  const cards = postsCards(long);
+  const chars = (c) => c.embeds.reduce((a, e) => a + e.title.length + e.description.length + e.footer.text.length + e.fields.reduce((b, f) => b + f.name.length + f.value.length, 0), 0);
+  eq('long posts: split so no message passes the cap', [cards.length > 1, cards.every(c => chars(c) <= DISCORD_EMBED_CHARS)], [true, true]);
+  eq('long posts: none lost, order kept', cards.flatMap(c => c.embeds.map(e => e.description.slice(-1))), ['0', '1', '2', '3', '4', '5']);
+  eq('short posts: ten to a message at most', postsCards(Array.from({ length: 12 }, (_, i) => ({ at: i, text: 'oil', why: ['oil'] }))).map(c => c.embeds.length), [10, 2]);
+}
 
 // ── the schedule ──
 const sched = scheduleOf({ data: [
@@ -80,7 +90,7 @@ eq('schedule: never twice for the same day', (await potusScheduleOut({ kv, deliv
   const tsent = []; const tdeliver = async (h, p) => { tsent.push({ h, n: p.embeds.length }); return 'msg'; };
   const tkv = memKv(); tkv.m.set(POTUS_LAST_KEY, { at: 1 });
   const b = await potusPostsOut({ kv: tkv, deliver: tdeliver, env: tenv, now, get: async () => week });
-  eq('backfill: the past week\'s relevant posts, ten to a message', [b.backfill, tsent.map(x => x.n)], [12, [10, 2]]);
+  eq('backfill: the past week\'s relevant posts, packed into messages', [b.backfill, tsent.map(x => x.n)], [12, [10, 2]]);
   eq('backfill: to the Trump channel', tsent.every(x => x.h === tenv.DISCORD_TRUMP_WEBHOOK), true);
   eq('backfill: once, and the mark moves to the newest post', [!!tkv.m.get(POTUS_BACKFILL_KEY), tkv.m.get(POTUS_LAST_KEY).at], [true, now.getTime() - 3600000]);
   const again = await potusPostsOut({ kv: tkv, deliver: tdeliver, env: tenv, now, get: async () => week });
