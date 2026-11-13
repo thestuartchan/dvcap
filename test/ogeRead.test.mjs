@@ -1,7 +1,7 @@
 // test/ogeRead.test.mjs — reading the OGE 278-T scans (lib/ogeRead.js) and the card that lists the
 // biggest trades with their row numbers (lib/officials.js ogeCard / runOge). Made-up companies and
 // fake tickers only; the OCR noise is the kind the real text layer carries.
-import { linesOf, rowsOf, amountOf, isBond, nameKey, tickerIndex, guessTicker, tradesBlock, BRACKETS } from '../lib/ogeRead.js';
+import { linesOf, rowsOf, amountOf, isBond, nameKey, tickerIndex, guessTicker, tradesBlock, groupTrades, BRACKETS } from '../lib/ogeRead.js';
 import { ogeCard, runOge, OGE_SEEN_KEY } from '../lib/officials.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -51,6 +51,14 @@ eq('biggest buy first, row number and guessed ticker shown', text.split('\n').fi
 eq('sells by size', text.indexOf('`#8`') < text.indexOf('`#10`'), true);
 eq('bonds in one line', /\*\*Bonds\*\* \(1\): munis and notes · biggest \$250K–\$500K ×1 \(rows 9\)/.test(text), true);
 eq('a date that does not fit the report is dropped', tradesBlock([{ row: 1, name: 'ZETA QUANTUM CORP', side: 'Buy', date: '3/11', amount: BRACKETS[0], bond: false }], { idx, through: '2030-09-17' }).text.includes('Mar 11'), false);
+// One line per company per side, and a known big company ahead of an unknown name in the same bracket.
+{
+  const gi = tickerIndex({ ZZB: [9, 'Zeta Big Corp'], ZZQ: [1, 'Zeta Quantum Corp'] });
+  const r = (row, name, label) => ({ row, name, side: 'Buy', amount: BRACKETS.find(x => x.label === label), ticker: guessTicker(name, gi), bond: false });
+  const g = groupTrades([r(5, 'GARBLED ETF NAME', '$500K–$1M'), r(40, 'Zeta Quantum Corp', '$500K–$1M'), r(30, 'ZETA BIG CORP', '$500K–$1M'), r(7, 'ZETA BIG CORP', '$250K–$500K'), r(9, 'ZETA BIG CORP', '$1K–$15K')], gi);
+  eq('grouped by company, biggest company first', g.map(x => [x.row, x.ticker, x.more.map(m => m.row)]), [[30, 'ZZB', [7, 9]], [40, 'ZZQ', []], [5, null, []]]);
+  eq('the other rows ride on the line', /\+2 more: #7 \$250K–\$500K, #9 \$1K–\$15K/.test(tradesBlock([r(30, 'ZETA BIG CORP', '$500K–$1M'), r(7, 'ZETA BIG CORP', '$250K–$500K'), r(9, 'ZETA BIG CORP', '$1K–$15K')], { idx: gi }).text), true);
+}
 eq('says it is machine-read', /Machine-read from the scan/.test(text), true);
 
 // ── the card and the run ──
