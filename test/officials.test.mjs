@@ -23,7 +23,8 @@ eq('report rows', tr.map(t => [t.date, t.owner, t.ticker, t.type, t.amount]), [[
 eq('entities decoded', tr[0].asset, 'Sample Corp & Co');
 const card = senateCard(rows[0], tr, { watch: new Set(['ZZQ']) });
 eq('card lines, watchlist and owner marked', card.embeds[0].description.split('\n'), ['**ZZQ** Sample Corp & Co · Sale (Full) · $1,001 - $15,000 · traded 10/21/2030 · _watchlist_', '**SAMPLE CITY BONDS 5% 2042** Purchase · $15,001 - $50,000 · traded 10/22/2030 · Spouse']);
-eq('unread report: says so, keeps the link', [/would not serve/.test(senateCard(rows[0], null).embeds[0].description), senateCard(rows[0], null).embeds[0].url], [true, rows[0].url]);
+eq('no card says dvcap', [senateCard(rows[0], null), senateCard(rows[1], null), senateCard(rows[0], tr)].every(c => !/dvcap/i.test(JSON.stringify(c))), true);
+eq('unread report: says so, keeps the link', [/would not serve the report automatically/.test(senateCard(rows[0], null).embeds[0].description), senateCard(rows[0], null).embeds[0].url], [true, rows[0].url]);
 eq('paper filing: says scanned', /on paper/.test(senateCard(rows[1], null).embeds[0].description), true);
 eq('no table: null', senateTrades('<p>nothing</p>'), null);
 
@@ -37,7 +38,8 @@ const oge = { data: [
 const filer = { name: 'Trump, Donald J', title: 'President', label: 'President Trump' };
 const of = ogeFilings(oge, filer);
 eq('only posted 278-Ts in office', of.map(f => [f.id, f.through, f.posted]), [['0BDCCCE7DE13AEFA85258E8A002DE2B5', '2030-09-17', '2030-10-08']]);
-eq('full PDF link', of[0].url.startsWith('https://extapps2.oge.gov/201/Presiden.nsf/PAS+Index/'), true);
+eq('full PDF link, + and $ encoded', of[0].url, 'https://extapps2.oge.gov/201/Presiden.nsf/PAS%2BIndex/0BDCCCE7DE13AEFA85258E8A002DE2B5/%24FILE/Donald-J-Trump.09.17.2030-278T.pdf');
+eq('the card links the PDF in its text too, and never says dvcap', [ogeCard(of[0]).embeds[0].description.includes(`[open the PDF](${of[0].url})`), /dvcap/i.test(JSON.stringify(ogeCard(of[0])))], [true, false]);
 eq('card says the PDF is scanned and links it', [/scanned PDF/.test(ogeCard(of[0]).embeds[0].description), ogeCard(of[0]).embeds[0].url], [true, of[0].url]);
 
 const fakeOge = async () => ({ ok: true, json: async () => oge });
