@@ -1,5 +1,5 @@
 // test/cronRouter.test.mjs — the one-tick scheduler (lib/cronRouter.js, api/regime-log.js ?tick).
-import { JOBS, zonedToUtc, dueSlots, allDue, tick, runJob, outcomeOf, shouldAlert, nextSlot, statusView, claimKey, LAST_KEY, WINDOW_MIN, privateTestCard } from '../lib/cronRouter.js';
+import { JOBS, POLLERS, zonedToUtc, dueSlots, allDue, tick, runJob, outcomeOf, shouldAlert, nextSlot, statusView, claimKey, LAST_KEY, WINDOW_MIN, privateTestCard } from '../lib/cronRouter.js';
 import handler from '../api/regime-log.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -30,8 +30,11 @@ const job = (id) => JOBS.find(j => j.id === id);
   eq('the Asia pre-read runs on UTC Sunday (Monday in Hong Kong)', dueSlots(job('preread-asia'), at('2026-11-08T22:43:00Z')).length, 1);
   eq('and not on UTC Friday (Saturday in Hong Kong)', dueSlots(job('preread-asia'), at('2026-11-06T22:43:00Z')).length, 0);
   eq('the MLS trial on UTC Saturday, after Friday\'s US session', dueSlots(job('mls-paper'), at('2026-11-07T05:16:00Z')).length, 1);
-  const quiet = allDue(JOBS, at('2026-11-07T03:03:00Z'));
-  eq('a Saturday night in UTC has nothing due', quiet.length, 0);
+  const quiet = allDue(JOBS, at('2026-11-07T03:03:00Z')).filter(d => !POLLERS.includes(d.job.id));
+  eq('a Saturday night in UTC has nothing due (apart from the always-on pollers)', quiet.length, 0);
+  // A poller with two slots inside the catch-up window runs once, on the newest.
+  const polls = allDue(JOBS, at('2026-11-07T03:09:00Z')).filter(d => d.job.id === 'potus-posts');
+  eq('latestOnly: one run per tick, the newest slot', [polls.length, polls[0]?.slot?.slice(11, 16)], [1, '03:07']);
   ok('every job has a route or a workflow, and a clock', JOBS.every(j => (j.path || j.workflow) && j.tz && j.at.length));
   ok('every route is relative to this deployment', JOBS.filter(j => j.path).every(j => j.path.startsWith('/api/')));
   eq('ids are unique', new Set(JOBS.map(j => j.id)).size, JOBS.length);
@@ -47,11 +50,11 @@ function fakeKv() {
   const calls = [];
   const fetchImpl = async (url, opts) => { calls.push({ url, key: opts.headers['x-tradecard-key'] }); return { status: 200, json: async () => ({ ok: true, secret: 'account data' }) }; };
   const now = at('2026-11-06T15:03:00Z');
-  const r1 = await tick({ now, kv, origin: 'https://example.test', env: { TRADECARD_KEY: 'k' }, fetchImpl, dispatch: async () => ({ ok: true }) });
+  const r1 = await tick({ now, kv, origin: 'https://example.test', env: { TRADECARD_KEY: 'k' }, fetchImpl, dispatch: async () => ({ ok: true }), jobs: JOBS.filter(x => !POLLERS.includes(x.id)) });
   eq('every due job runs once, with the service key (10:02 checkpoint, 15:00 wallet card)', [r1.ran.map(x => x.id), calls.map(c => [c.url, c.key])],
      [['checkpoint', 'walletcard'], [['https://example.test/api/tradecard?card=checkpoint', 'k'], ['https://example.test/api/tradecard?card=wallet', 'k']]]);
   ok('its slot is claimed', kv.m.has(claimKey('checkpoint', '2026-11-06T15:02:00.000Z')));
-  const r2 = await tick({ now: now + 60000, kv, origin: 'https://example.test', env: {}, fetchImpl, dispatch: async () => ({ ok: true }) });
+  const r2 = await tick({ now: now + 60000, kv, origin: 'https://example.test', env: {}, fetchImpl, dispatch: async () => ({ ok: true }), jobs: JOBS.filter(x => !POLLERS.includes(x.id)) });
   eq('the next tick does not run them again', [r2.ran.length, r2.skipped, calls.length], [0, 2, 2]);
   const last = kv.m.get(LAST_KEY);
   eq('the outcome is recorded', [last.checkpoint.ok, last.checkpoint.status, last.checkpoint.slot], [true, 200, '2026-11-06T15:02:00.000Z']);

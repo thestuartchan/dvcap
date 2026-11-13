@@ -33,6 +33,7 @@ import { UW_NAMES_KEY, usTickerOf, flowLineShort } from '../lib/uw.js';
 import { TC_TODAY_KEY } from '../lib/sameDayFills.js';
 import { tvDaily } from '../lib/tradingview.js';
 import { runCongress, runInsiderScan, runInsiderRoundup, watchSet, ideaTickers, IDEAS_TICKERS_KEY, DISCLOSURES_EXTRA_KEY } from '../lib/disclosures.js';
+import { runSenate, runOge } from '../lib/officials.js';
 import { secUserAgent } from '../lib/secDes.js';
 import HOLIDAYS from '../data/holidays.json' with { type: 'json' };
 import { fetchWallets } from '../lib/wallet.js';
@@ -665,7 +666,8 @@ export async function deskRulesCheck({ origin, now = new Date(), quote = tvDaily
 }
 
 
-// ?disclosures=congress|insiders|roundup — politicians' and insiders' trades from the filings
+// ?disclosures=congress|insiders|roundup|officials — politicians' and insiders' trades from the filings
+// (officials: the Senate and the President / Vice President, lib/officials.js)
 // themselves (lib/disclosures.js): the House Clerk's index hourly, every new Form 4 across the market
 // every 30 minutes, and Friday's insider roundup. Public-filing data to the PRIVATE disclosures
 // channel. The watchlist maintains itself: dvcap's US book symbols, the tickers of the Trading Ideas
@@ -694,7 +696,13 @@ export async function disclosuresRun(kind, { origin, dry = false, now = new Date
   const watch = await disclosureWatch(origin);
   if (kind === 'congress') return { ...(await runCongress({ now, kv, pdfText, deliver, watch, dry })), watch: watch.size, channel };
   if (kind === 'insiders') return { ...(await runInsiderScan({ now, kv, ua: secUserAgent(), deliver, watch, dry })), watch: watch.size, channel };
-  return { ok: false, why: 'disclosures must be congress, insiders or roundup' };
+  // The Senate and the President / VP (lib/officials.js), hourly; each part fails alone.
+  if (kind === 'officials') {
+    const senate = await runSenate({ now, kv, deliver, watch, dry }).catch(e => ({ ok: false, why: String(e?.message || e).slice(0, 80) }));
+    const oge = await runOge({ kv, deliver, dry }).catch(e => ({ ok: false, why: String(e?.message || e).slice(0, 80) }));
+    return { ok: !!(senate.ok && oge.ok), senate, oge, channel };
+  }
+  return { ok: false, why: 'disclosures must be congress, insiders, roundup or officials' };
 }
 
 // The Rules & Alerts page's data (lib/alerts.js): the Desk rules with the close check's states, the
