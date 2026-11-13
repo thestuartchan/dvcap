@@ -1,8 +1,8 @@
 // test/ogeRead.test.mjs — reading the OGE 278-T scans (lib/ogeRead.js) and the card that lists the
 // biggest trades with their row numbers (lib/officials.js ogeCard / runOge). Made-up companies and
 // fake tickers only; the OCR noise is the kind the real text layer carries.
-import { linesOf, rowsOf, amountOf, isBond, nameKey, tickerIndex, guessTicker, tradesBlock, groupTrades, BRACKETS } from '../lib/ogeRead.js';
-import { ogeCard, runOge, OGE_SEEN_KEY } from '../lib/officials.js';
+import { linesOf, rowsOf, amountOf, isBond, nameKey, tickerIndex, guessTicker, tradesBlock, groupTrades, annualRows, holdingsBlock, BRACKETS } from '../lib/ogeRead.js';
+import { ogeCard, runOge, OGE_SEEN_KEY, ogeAnnuals, runOgeAnnual, OGE_ANNUAL_SEEN_KEY } from '../lib/officials.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 
@@ -77,6 +77,41 @@ const kv = { get: async (k) => m.get(k) ?? null, set: async (k, v) => { m.set(k,
 const sent = [];
 const r = await runOge({ fetchImpl, kv, deliver: async (c) => { sent.push(c); return 'id'; }, backfillFrom: null, lines: async () => lines });
 eq('a new filing is read and its trades listed', [r.posted, /`#7` \*\*ZZQ\?\*\*/.test(sent[0]?.embeds[0].description || '')], [1, true]);
+
+// ── annual reports: holdings ──
+{
+  const L = (page, cells) => ({ page, y: 0, cells: cells.map(([x, t]) => ({ x, t })) });
+  const lines = [
+    L(3, [[32, 'Part 2: Filer\'s Employment Assets & Income and Retirement Accounts']]),
+    L(3, [[32, '#'], [59, 'Description'], [284, 'EIF'], [312, 'Value'], [429, 'Income Type'], [519, 'Income Amount']]),
+    L(3, [[33, 'I.'], [59, 'Sample Brokerage IRA'], [290, 'No']]),
+    L(3, [[32, 'I.I.'], [59, 'ZZQ - Zeta Quantum Corp'], [288, 'Yes $100,001 - $250,000'], [519, 'None (or less than $201)']]),
+    L(3, [[32, '2.1.'], [59, 'Sample Bank (cash account)'], [289, 'N/A $1 ,000,001 - $5,000,000'], [519, 'None (or less than $201)']]),
+    L(3, [[32, '3.'], [59, 'ZETA ROBOTICS HLDGS INC'], [289, 'N/A $5,000,001 - $25,000,000'], [429, 'Dividend']]),
+    L(3, [[32, '4.'], [59, 'SAMPLE CNTY BIE 5.00 % Duo Jun 1 2027'], [289, 'N/A $250,001 - $500,000'], [429, 'Interest']]),
+    L(3, [[32, '5.'], [59, 'Tiny Holding LLC'], [289, 'N/A None (or less than $1 ,001)']]),
+    L(4, [[3, 'Part 7: Transactions']]),
+    L(4, [[3, '#'], [38, 'Description'], [612, 'Type'], [660, 'Date'], [706, 'Amount']]),
+    L(4, [[3, '9'], [38, 'ZETA QUANTUM CORP'], [612, 'purchase'], [677, '10/15/2025 $1,001 - $15,000']]),
+  ];
+  const ar = annualRows(lines);
+  eq('annual rows: valued lines only, transactions page skipped', ar.map(r => [r.label, r.amount?.label ?? null, r.bond]),
+    [['1.1', '$100K–$250K', false], ['2.1', '$1M–$5M', false], ['3', '$5M–$25M', false], ['4', '$250K–$500K', true], ['5', null, false]]);
+  const hb = holdingsBlock(ar, { idx }).text;
+  eq('listed first: a ticker the filing names has no ?, a guessed one has ?', [/\*\*Biggest listed stocks & funds\*\*\n`#3` \*\*ZZR\?\*\* ZETA ROBOTICS HLDGS INC · \*\*\$5M–\$25M\*\*\n`#1\.1` \*\*ZZQ\*\* ZZQ - Zeta Quantum Corp/.test(hb)], [true]);
+  eq('cash is private, never a ticker guess', /\*\*Biggest private holdings, property & cash\*\*\n`#2\.1` \*\*Sample Bank \(cash account\)\*\* · \*\*\$1M–\$5M\*\*/.test(hb), true);
+  eq('bonds in one line, small ones counted', [/\*\*Bonds\*\* \(1\)/.test(hb), /1 under \$1K/.test(hb)], [true, true]);
+
+  const row = (y, d, id) => ({ docDate: d, title: 'President', name: 'Trump, Donald J', amended: '', type: `<a href='/201/Presiden.nsf/PAS+Index/${id}/$FILE/r.pdf'>Annual (${y})</a>` });
+  const list = { data: [row(2030, '2030-07-01T04:00:00Z', 'A'.repeat(32)), row(2029, '2029-06-14T04:00:00Z', 'B'.repeat(32))] };
+  eq('annual list: year and id', ogeAnnuals(list, { name: 'Trump, Donald J', title: 'President', label: 'President Trump' }).map(f => [f.year, f.id.slice(0, 1)]), [[2030, 'A'], [2029, 'B']]);
+  const fetchImpl = async (url) => (url.endsWith('.pdf') ? { ok: true, arrayBuffer: async () => new ArrayBuffer(8) } : { ok: true, json: async () => (url.includes('Trump') ? list : { data: [] }) });
+  const m = new Map(); const kv = { get: async (k) => m.get(k) ?? null, set: async (k, v) => { m.set(k, v); return true; } };
+  const sent = [], also = [];
+  const r1 = await runOgeAnnual({ fetchImpl, kv, deliver: async (c) => { sent.push(c); return 'id'; }, alsoDeliver: async (c) => { also.push(c); return 'id'; }, lines: async () => lines });
+  eq('first run: only the latest report, to both channels, with its holdings', [r1.posted, also.length, /Annual report 2030\*\* \(covers 2029\)/.test(sent[0]?.embeds[0].description), /Biggest listed/.test(sent[0]?.embeds[0].description), /dvcap/i.test(JSON.stringify(sent[0]))], [1, 1, true, true, false]);
+  eq('both remembered: nothing twice', [(await runOgeAnnual({ fetchImpl, kv, deliver: async () => 'id', lines: async () => lines })).new, m.get(OGE_ANNUAL_SEEN_KEY).length], [0, 2]);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
