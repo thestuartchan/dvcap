@@ -18,7 +18,8 @@ eq('every source names a channel that exists', Object.values(SOURCES).every(s =>
 eq('a channel resolves to its own webhook', ['private', 'trades', 'ideas'].map(c => webhookFor(c, env)), [HOOK(1), HOOK(2), HOOK(3)]);
 eq('a value that is not a Discord webhook is no webhook', webhookFor('private', { DISCORD_PRIVATE_WEBHOOK: 'https://example.com/x' }), null);
 eq('the page sees whether a webhook is set, never its value', JSON.stringify(channelView(env)).includes('tok-'), false);
-eq('and which sources each channel carries', channelView(env).find(c => c.id === 'private').sources, ['desk', 'job', 'flow', 'potus']);
+eq('and which sources each channel carries', channelView(env).find(c => c.id === 'private').sources, ['desk', 'job', 'flow']);
+eq('Trump posts have their own Stu-only channel', [channelView(env).find(c => c.id === 'trump').sources, channelView(env).find(c => c.id === 'trump').who], [['potus'], 'Stu only']);
 
 // ── Send and log ──
 {
