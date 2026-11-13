@@ -33,7 +33,7 @@ import { UW_NAMES_KEY, usTickerOf, flowLineShort } from '../lib/uw.js';
 import { TC_TODAY_KEY } from '../lib/sameDayFills.js';
 import { tvDaily } from '../lib/tradingview.js';
 import { runCongress, runInsiderScan, runInsiderRoundup, watchSet, ideaTickers, IDEAS_TICKERS_KEY, DISCLOSURES_EXTRA_KEY } from '../lib/disclosures.js';
-import { runSenate, runOge } from '../lib/officials.js';
+import { runSenate, runOge, runOgeAnnual } from '../lib/officials.js';
 import { secUserAgent } from '../lib/secDes.js';
 import HOLIDAYS from '../data/holidays.json' with { type: 'json' };
 import { fetchWallets } from '../lib/wallet.js';
@@ -701,10 +701,13 @@ export async function disclosuresRun(kind, { origin, dry = false, now = new Date
     const senate = await runSenate({ now, kv, deliver, watch, dry }).catch(e => ({ ok: false, why: String(e?.message || e).slice(0, 80) }));
     // The President's and VP's filings go to the Trump channel too (Stu, 13 Nov), when it is set.
     const trumpHook = webhookFor('trump');
-    const oge = await runOge({ kv, deliver, alsoDeliver: trumpHook ? (card) => post(trumpHook, card) : null, dry }).catch(e => ({ ok: false, why: String(e?.message || e).slice(0, 80) }));
+    const also = trumpHook ? (card) => post(trumpHook, card) : null;
+    const oge = await runOge({ kv, deliver, alsoDeliver: also, dry }).catch(e => ({ ok: false, why: String(e?.message || e).slice(0, 80) }));
+    // Their annual reports (holdings), same channels.
+    const annual = await runOgeAnnual({ kv, deliver, alsoDeliver: also, dry }).catch(e => ({ ok: false, why: String(e?.message || e).slice(0, 80) }));
     // The failing part and its reason, top level, so Job health and the failure card can say which.
-    const why = [senate.ok ? null : `Senate: ${senate.why || 'failed'}`, oge.ok ? null : `OGE: ${oge.why || 'failed'}`].filter(Boolean).join(' · ') || null;
-    return { ok: !!(senate.ok && oge.ok), ...(why ? { why } : {}), senate, oge, channel };
+    const why = [senate.ok ? null : `Senate: ${senate.why || 'failed'}`, oge.ok ? null : `OGE: ${oge.why || 'failed'}`, annual.ok ? null : `OGE annual: ${annual.why || 'failed'}`].filter(Boolean).join(' · ') || null;
+    return { ok: !!(senate.ok && oge.ok && annual.ok), ...(why ? { why } : {}), senate, oge, annual, channel };
   }
   return { ok: false, why: 'disclosures must be congress, insiders, roundup or officials' };
 }
