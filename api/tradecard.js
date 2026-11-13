@@ -702,7 +702,9 @@ export async function disclosuresRun(kind, { origin, dry = false, now = new Date
     // The President's and VP's filings go to the Trump channel too (Stu, 13 Nov), when it is set.
     const trumpHook = webhookFor('trump');
     const oge = await runOge({ kv, deliver, alsoDeliver: trumpHook ? (card) => post(trumpHook, card) : null, dry }).catch(e => ({ ok: false, why: String(e?.message || e).slice(0, 80) }));
-    return { ok: !!(senate.ok && oge.ok), senate, oge, channel };
+    // The failing part and its reason, top level, so Job health and the failure card can say which.
+    const why = [senate.ok ? null : `Senate: ${senate.why || 'failed'}`, oge.ok ? null : `OGE: ${oge.why || 'failed'}`].filter(Boolean).join(' · ') || null;
+    return { ok: !!(senate.ok && oge.ok), ...(why ? { why } : {}), senate, oge, channel };
   }
   return { ok: false, why: 'disclosures must be congress, insiders, roundup or officials' };
 }
