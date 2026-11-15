@@ -14,7 +14,7 @@
 // Its output holds the user's trades: never print it, never commit it, never post it anywhere public.
 // Only counts and totals are printed here.
 import { readFileSync, writeFileSync } from 'node:fs';
-import { journalReason, withSessionDates, mergeWeeks } from '../lib/dayTradeJournal.js';
+import { journalReason, withSessionDates, mergeWeeks, COPY_REASON } from '../lib/dayTradeJournal.js';
 
 const args = process.argv.slice(2);
 const [inPath, outPath] = args.filter(a => !a.startsWith('--'));
@@ -25,7 +25,7 @@ const before = JSON.parse(readFileSync(inPath, 'utf8'));
 const kept = [], dropped = [];
 for (const doc of before) for (const t of doc.trades || []) {
   const r = withSessionDates(t);
-  r.reason = journalReason(r) || (keep.has(t.id) ? 'ticked copy trade, held overnight' : null);
+  r.reason = journalReason(r) || (keep.has(t.id) ? COPY_REASON : null);
   (r.reason ? kept : dropped).push(r);
 }
 const weeks = mergeWeeks([], kept);
