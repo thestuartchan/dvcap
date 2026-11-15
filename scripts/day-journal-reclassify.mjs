@@ -3,7 +3,11 @@
 // that day). Each stored round trip gets its exchange session dates and its reason again; one that
 // no longer qualifies is dropped, and the weeks are rebuilt (a Hong Kong morning can move a week).
 //
-//   node scripts/day-journal-reclassify.mjs <weeks.json> <out.json>
+//   node scripts/day-journal-reclassify.mjs <weeks.json> <out.json> [--keep=<ids.json>]
+//
+// --keep  a JSON array of trade ids kept whatever the rule says: the trades Stu ticked as copy
+//         trades (the marks collection). Stu, 14 Nov: keep them "as they are still reflective of the
+//         true nature of cash trade flow", separated by their mark as before. Their reason says so.
 //
 // <weeks.json> the weeks collection as read back (an array of { week, trades, ... } documents)
 // <out.json>   receives { weeks: [...every week after], emptied: [weeks left with no trades] }
@@ -12,13 +16,16 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { journalReason, withSessionDates, mergeWeeks } from '../lib/dayTradeJournal.js';
 
-const [inPath, outPath] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const [inPath, outPath] = args.filter(a => !a.startsWith('--'));
+const keepArg = args.find(a => a.startsWith('--keep='));
+const keep = new Set(keepArg ? JSON.parse(readFileSync(keepArg.slice(7), 'utf8')) : []);
 if (!inPath || !outPath) { console.error('usage: day-journal-reclassify.mjs <weeks.json> <out.json>'); process.exit(2); }
 const before = JSON.parse(readFileSync(inPath, 'utf8'));
 const kept = [], dropped = [];
 for (const doc of before) for (const t of doc.trades || []) {
   const r = withSessionDates(t);
-  r.reason = journalReason(r);
+  r.reason = journalReason(r) || (keep.has(t.id) ? 'ticked copy trade, held overnight' : null);
   (r.reason ? kept : dropped).push(r);
 }
 const weeks = mergeWeeks([], kept);
