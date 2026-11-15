@@ -1,6 +1,6 @@
 {
  "_README": "Supplier, customer and competitor links read from each company's own latest annual report on EDGAR, plus its latest 10-Q when filed after it (scripts/supplychain-build.mjs; method in docs/supply-chain.md). Each link quotes the sentence and names the filing it came from. relation = what the counterparty is to the filer. named=false is an anonymised customer as the filing states it.",
- "_generated": "2026-11-08T11:31:07.650Z",
+ "_generated": "2026-11-15T12:16:12.817Z",
  "companies": {
   "AAPL": {
    "cik": 320193,
@@ -638,7 +638,7 @@
   "CEG": {
    "cik": 1868275,
    "name": "Constellation Energy Corp",
-   "asOf": "2026-08-06",
+   "asOf": "2026-11-09",
    "filing": {
     "form": "10-K",
     "accession": "0001868275-26-000032",
@@ -647,16 +647,16 @@
    },
    "quarter": {
     "form": "10-Q",
-    "accession": "0001868275-26-000104",
-    "url": "https://www.sec.gov/Archives/edgar/data/1868275/000186827526000104/ceg-20260630.htm",
-    "date": "2026-08-06"
+    "accession": "0001868275-26-000119",
+    "url": "https://www.sec.gov/Archives/edgar/data/1868275/000186827526000119/ceg-20260930.htm",
+    "date": "2026-11-09"
    },
    "links": []
   },
   "CRWV": {
    "cik": 1769628,
    "name": "CoreWeave, Inc.",
-   "asOf": "2026-08-12",
+   "asOf": "2026-11-12",
    "filing": {
     "form": "10-K",
     "accession": "0001769628-26-000104",
@@ -665,9 +665,9 @@
    },
    "quarter": {
     "form": "10-Q",
-    "accession": "0001769628-26-000366",
-    "url": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000366/crwv-20260630.htm",
-    "date": "2026-08-12"
+    "accession": "0001769628-26-000465",
+    "url": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/crwv-20260930.htm",
+    "date": "2026-11-12"
    },
    "links": [
     {
@@ -2743,7 +2743,7 @@
   "VST": {
    "cik": 1692819,
    "name": "Vistra Corp.",
-   "asOf": "2026-08-10",
+   "asOf": "2026-11-09",
    "filing": {
     "form": "10-K",
     "accession": "0001692819-26-000006",
@@ -2752,9 +2752,9 @@
    },
    "quarter": {
     "form": "10-Q",
-    "accession": "0001692819-26-000019",
-    "url": "https://www.sec.gov/Archives/edgar/data/1692819/000169281926000019/vistra-20260630.htm",
-    "date": "2026-08-10"
+    "accession": "0001692819-26-000025",
+    "url": "https://www.sec.gov/Archives/edgar/data/1692819/000169281926000025/vistra-20260930.htm",
+    "date": "2026-11-09"
    },
    "links": []
   },
