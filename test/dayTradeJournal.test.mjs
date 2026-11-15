@@ -1,6 +1,6 @@
 // test/dayTradeJournal.test.mjs — the day-trading record: what the console's rules leave out.
 import { parseBrokerFills } from '../lib/fillAudit.js';
-import { nyDate, isoWeek, weekOf, mergeWeeks, journalReason, roundTripsFromSheet, roundTripsFromIbkr, toWeeks, FEED_FROM,
+import { nyDate, isoWeek, weekOf, mergeWeeks, journalReason, sessionDate, roundTripsFromSheet, roundTripsFromIbkr, toWeeks, FEED_FROM,
   contractFromDescription, contractKey, journalOrdersFromFlex } from '../lib/dayTradeJournal.js';
 import { sendRequestUrl } from '../lib/flex.js';
 import { hasJournalReadKey, hasServiceKey } from '../lib/apiauth.js';
@@ -15,13 +15,18 @@ const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w);
 eq('New York date of a late UTC instant', nyDate('2026-10-06T02:30:00Z'), '2026-10-05');
 eq('ISO weeks (Monday start; the Thursday decides the year)', [isoWeek('2026-10-05'), isoWeek('2026-10-11'), isoWeek('2027-01-01'), isoWeek('2026-01-01')], ['2026-W41', '2026-W41', '2026-W53', '2026-W01']);
 
-// ── the rules ──
-eq('under 24h is a day trade', journalReason({ kind: 'stock', underlying: 'NVDA', holdMin: 600 }), 'held under 24h');
-eq('24h or more is the console\'s', journalReason({ kind: 'stock', underlying: 'NVDA', holdMin: 1440 }), null);
-eq('an option opened at 1 DTE is a day trade however long it is held', journalReason({ kind: 'option', underlying: 'SPY', holdMin: 2000, dte: 1 }), 'opened at 1 DTE');
-eq('a 2 DTE option held two days is the console\'s', journalReason({ kind: 'option', underlying: 'SPY', holdMin: 2880, dte: 2 }), null);
-eq('a QQQ option is always here', journalReason({ kind: 'option', underlying: 'QQQ', holdMin: 30000, dte: 30 }), 'QQQ options are day-trade only');
-eq('QQQ shares follow the 24h rule', journalReason({ kind: 'stock', underlying: 'QQQ', holdMin: 3000 }), null);
+// ── the rule (14 Nov): a decision made on the day, for that day ──
+const RT = (o) => ({ kind: 'stock', underlying: 'NVDA', ...o });
+eq('opened and closed the same New York session is a day trade', journalReason(RT({ openedAt: '2026-11-10T14:40:00Z', closedAt: '2026-11-10T20:50:00Z' })), 'opened and closed the same session');
+eq('under 24h but across a night is not (bought Tuesday afternoon, sold Wednesday morning)', journalReason(RT({ kind: 'option', dte: 3, openedAt: '2030-03-05T18:00:00Z', closedAt: '2030-03-06T15:00:00Z', holdMin: 1260 })), null);
+eq('a 1DTE option carried past the session is still the day\'s decision, and says so', journalReason(RT({ kind: 'option', underlying: 'SPY', dte: 1, openedAt: '2026-11-10T20:30:00Z', closedAt: '2026-11-11T14:45:00Z' })), 'opened at 1 DTE, carried overnight');
+eq('a 2DTE option held two days is not', journalReason(RT({ kind: 'option', underlying: 'SPY', dte: 2, openedAt: '2026-11-10T15:00:00Z', closedAt: '2026-11-12T15:00:00Z' })), null);
+eq('a QQQ option held for days is not (the 6 Oct rule kept every QQQ option)', journalReason(RT({ kind: 'option', underlying: 'QQQ', dte: 30, openedAt: '2026-11-02T15:00:00Z', closedAt: '2026-11-09T15:00:00Z' })), null);
+eq('QQQ 0DTE in and out the same day is', journalReason(RT({ kind: 'option', underlying: 'QQQ', dte: 0, openedAt: '2026-11-10T15:00:00Z', closedAt: '2026-11-10T15:20:00Z' })), 'opened and closed the same session');
+eq('a Hong Kong morning is filed under Hong Kong\'s day, not New York\'s day before', [sessionDate('2030-03-06T01:45:00Z', { underlying: '0000.HK' }), nyDate('2030-03-06T01:45:00Z')], ['2030-03-06', '2030-03-05']);
+eq('a Hong Kong session across lunch is one session', journalReason({ kind: 'stock', underlying: '0000.HK', openedAt: '2030-03-06T02:00:00Z', closedAt: '2030-03-06T06:00:00Z' }), 'opened and closed the same session');
+eq('a futures fill on Sunday evening ET belongs to Monday\'s CME session', sessionDate('2026-11-08T23:30:00Z', { kind: 'future' }), '2026-11-09');
+eq('futures: Monday 19:00 ET to Tuesday 10:00 ET is one CME session', journalReason({ kind: 'future', underlying: 'MCL', openedAt: '2026-11-10T00:00:00Z', closedAt: '2026-11-10T15:00:00Z' }), 'opened and closed the same session');
 
 // ── from the sheet ──
 const CSV = `"UID","Venue","DateTime (UTC)","Date","Symbol","Direction","Qty","Price","Realized PnL","Fee","Ccy"
@@ -31,17 +36,17 @@ const CSV = `"UID","Venue","DateTime (UTC)","Date","Symbol","Direction","Qty","P
 "IBKR-4","IBKR","2026-09-04T10:00:00.000Z","2026-09-04","AMD","SELL","-10","110","98.00","-1.00","USD"
 "IBKR-5","IBKR","2026-08-12T10:00:00.000Z","2026-08-12","QQQ   260918C00754000","BUY","2","10","0.00","-1.00","USD"
 "IBKR-6","IBKR","2026-09-01T10:00:00.000Z","2026-09-01","QQQ   260918C00754000","SELL","-2","5","-1001.00","-1.00","USD"
-"IBKR-7","IBKR","2026-09-10T10:00:00.000Z","2026-09-10","981","BUY","1000","60","0.00","-10.00","HKD"
-"IBKR-8","IBKR","2026-09-10T13:00:00.000Z","2026-09-10","981","SELL","-1000","61","990.00","-10.00","HKD"
+"IBKR-7","IBKR","2026-09-09T22:00:00.000Z","2026-09-10","981","BUY","1000","60","0.00","-10.00","HKD"
+"IBKR-8","IBKR","2026-09-10T01:00:00.000Z","2026-09-10","981","SELL","-1000","61","990.00","-10.00","HKD"
 "IBKR-9","IBKR","2026-10-05T10:00:00.000Z","2026-10-05","TSLA","BUY","1","100","0.00","-1.00","USD"
 "IBKR-10","IBKR","2026-10-05T11:00:00.000Z","2026-10-05","TSLA","SELL","-1","101","0.00","-1.00","USD"
 "HL-1","Hyperliquid","2026-09-03T10:00:00.000Z","2026-09-03","HYPE","Open Long","10","50","0.00","0.50","USDC"
 "HL-2","Hyperliquid","2026-09-03T11:00:00.000Z","2026-09-03","HYPE","Close Long","-10","51","10.00","0.50","USDC"`;
 const sheet = roundTripsFromSheet(parseBrokerFills(CSV).fills);
 const by = Object.fromEntries(sheet.map(t => [t.underlying, t]));
-eq('day trades and the QQQ option swing; the AMD swing, Hyperliquid and anything from the feed date are not', sheet.map(t => t.underlying).sort(), ['0981.HK', 'NVDA', 'QQQ'].sort());
-eq('NVDA round trip', [by.NVDA.side, by.NVDA.holdMin, by.NVDA.avgIn, by.NVDA.avgOut, by.NVDA.pnl, by.NVDA.reason], ['long', 120, 100, 101, 9, 'held under 24h']);
-eq('the QQQ option carries its contract', [by.QQQ.kind, by.QQQ.contract, by.QQQ.pnl, by.QQQ.reason], ['option', 'QQQ 2026-09-18 754C', -1001, 'QQQ options are day-trade only']);
+eq('same-session trades only: the QQQ option swing, the AMD swing, Hyperliquid and anything from the feed date are not', sheet.map(t => t.underlying).sort(), ['0981.HK', 'NVDA'].sort());
+eq('NVDA round trip', [by.NVDA.side, by.NVDA.holdMin, by.NVDA.avgIn, by.NVDA.avgOut, by.NVDA.pnl, by.NVDA.reason], ['long', 120, 100, 101, 9, 'opened and closed the same session']);
+eq('the HK round trip is dated by its Hong Kong session', [by['0981.HK'].date, by['0981.HK'].closeDate], ['2026-09-10', '2026-09-10']);
 eq('HKD converted at the peg', [by['0981.HK'].ccy, by['0981.HK'].pnl, by['0981.HK'].pnlUsd], ['HKD', 990, 126.92]);
 ok('ids are stable and prefixed', by.NVDA.id === 'ib-IBKR-1');
 ok('every row is before the feed date', sheet.every(t => t.date < FEED_FROM));
@@ -69,7 +74,7 @@ const positions = [
   { contract_description: "WFC Oct23'26 89 CALL @AMEX", position: 30, average_price: 1.12, asset_class: 'OPT' },
 ];
 const feed = roundTripsFromIbkr({ trades, positions });
-eq('the feed: QQQ and the SPY scalp only', feed.map(t => [t.symbol, t.pnl, t.reason]), [['QQQ options', 248, 'held under 24h'], ['SPY options', 19, 'held under 24h']]);
+eq('the feed: QQQ and the SPY scalp only', feed.map(t => [t.symbol, t.pnl, t.reason]), [['QQQ options', 248, 'opened and closed the same session'], ['SPY options', 19, 'opened and closed the same session']]);
 eq('feed rows are flagged and dated', [feed[0].source, feed[0].id, feed[0].date, feed[0].holdMin], ['ibkr', 'ib-1', '2026-10-05', 60]);
 eq('nothing before the feed date', roundTripsFromIbkr({ trades: trades.slice(0, 2), positions: [], since: '2026-10-06' }).length, 0);
 
@@ -83,7 +88,7 @@ const weeks = toWeeks([...sheet, ...feed]);
 eq('one document per closing week, in order', weeks.map(w => w.week), ['2026-W36', '2026-W37', '2026-W41']);
 const w41 = weeks.at(-1);
 eq('a week totals its trades', [w41.count, w41.pnlUsd, w41.source], [2, 267, 'ibkr']);
-eq('the QQQ swing files under the week it closed', weeks[0].trades.map(t => t.underlying).sort(), ['NVDA', 'QQQ']);
+eq('a week holds only its own day trades (the QQQ swing is gone)', weeks[0].trades.map(t => t.underlying).sort(), ['NVDA']);
 
 eq('a Sunday-evening futures close is next week\'s; a Saturday close is this week\'s', [weekOf({ kind: 'future', closeDate: '2026-10-11' }), weekOf({ kind: 'future', closeDate: '2026-10-10' })], ['2026-W42', '2026-W41']);
 const merged = mergeWeeks(weeks, [{ ...feed[1], pnl: 20, pnlUsd: 20 }, { ...feed[0], id: 'ib-99', closeDate: '2026-10-08', openedAt: '2026-10-08T14:00:00Z', closedAt: '2026-10-08T15:00:00Z' }]);
@@ -128,7 +133,7 @@ eq('a put, and a share line is not a contract', [contractKey(contractFromDescrip
   const report = {};
   const split = roundTripsFromIbkr({ trades, positions, since: '2026-10-01', contracts: orders, report });
   eq('by contract it is three', split.map(r => [r.contract, r.reason]), [
-    ['XYZ 2026-10-15 100C', 'opened at 1 DTE'], ['XYZ 2026-10-16 95P', 'held under 24h'], ['XYZ 2026-10-16 90P', 'held under 24h']]);
+    ['XYZ 2026-10-15 100C', 'opened at 1 DTE, carried overnight'], ['XYZ 2026-10-16 95P', 'opened and closed the same session'], ['XYZ 2026-10-16 90P', 'opened and closed the same session']]);
   eq('the expiry booking closes the call it belongs to', split[0].closedAt, '2026-10-17T05:00:00Z');
   eq('each keeps IBKR\'s own realised P&L', split.map(r => r.pnlUsd), [-765, 245, 297]);
   eq('and the three add up to what the merged trade was', split.reduce((a, r) => a + r.pnlUsd, 0), -765 + 245 + 297);
