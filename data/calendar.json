@@ -857,11 +857,35 @@
   "tz": "America/New_York"
  },
  {
+  "date": "2026-11-17",
+  "title": "Home Depot Q3 earnings (BMO) \u2014 housing and the consumer",
+  "region": "US",
+  "tier": 2,
+  "time": "09:00",
+  "tz": "America/New_York"
+ },
+ {
+  "date": "2026-11-17",
+  "title": "NVIDIA Q3 FY27 earnings (AC) \u2014 the AI capex bellwether",
+  "region": "US",
+  "tier": 1,
+  "time": "17:00",
+  "tz": "America/New_York"
+ },
+ {
   "date": "2026-11-18",
   "title": "FOMC minutes (Oct meeting)",
   "region": "US",
   "tier": 2,
   "time": "14:00",
+  "tz": "America/New_York"
+ },
+ {
+  "date": "2026-11-19",
+  "title": "Walmart Q3 FY27 earnings (BMO) \u2014 the US consumer",
+  "region": "US",
+  "tier": 1,
+  "time": "08:00",
   "tz": "America/New_York"
  },
  {
