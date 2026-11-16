@@ -1,7 +1,7 @@
 // test/officials.test.mjs — the Senate and the President / VP trade filings (lib/officials.js):
 // list parsing, the Senate report table, the OGE 278-T filter, cold start, once-only posting, and the
 // agreement form being posted before the Senate search. Made-up filers and fake tickers only.
-import { senateRows, senateTrades, senateCard, ogeFilings, ogeCard, runOge, runSenate, SENATE_SEEN_KEY, OGE_SEEN_KEY, OGE_BACKFILL_KEY } from '../lib/officials.js';
+import { senateRows, senateTrades, senateCard, ogeFilings, ogeCard, runOge, runSenate, senateMaintenance, SENATE_DOWN_KEY, SENATE_SEEN_KEY, OGE_SEEN_KEY, OGE_BACKFILL_KEY } from '../lib/officials.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
 const memKv = () => { const m = new Map(); return { m, get: async (k) => m.get(k) ?? null, set: async (k, v) => { m.set(k, v); return true; } }; };
@@ -79,6 +79,25 @@ eq('agreement body carries the form token', calls[1][2], 'prohibition_agreement=
 eq('two new filings posted, one read', [s.new, s.posted, s.read], [2, 2, 1]);
 eq('the report trades are on the card', /\*\*ZZQ\*\*/.test(sp[0].embeds[0].description), true);
 eq('seen, so never twice', (await runSenate({ fetchImpl: fakeSenate, kv: skv, deliver: async () => 'id' })).new, 0);
+
+// ── The Senate's maintenance page (16 Nov 2026): green for 72 hours, then a failure; cleared on return ──
+const MAINT = '<html><title>U.S. Senate: Site Under Maintenance</title></html>';
+eq('the maintenance page is recognised', [senateMaintenance(503, MAINT), senateMaintenance(503, 'Service Unavailable'), senateMaintenance(200, MAINT)], [true, false, false]);
+const listDown = async (url, opts = {}) => url.endsWith('/search/report/data/') ? res(MAINT, { status: 503 }) : fakeSenate(url, opts);
+const homeDown = async (url, opts = {}) => url.endsWith('/search/home/') && !opts.method ? res(MAINT, { status: 503 }) : fakeSenate(url, opts);
+const dkv = memKv(); dkv.m.set(SENATE_SEEN_KEY, ['zzz']);
+const t0 = new Date('2030-11-15T18:41:00Z');
+const d1 = await runSenate({ now: t0, fetchImpl: listDown, kv: dkv, deliver: async () => 'id' });
+eq('list under maintenance: skipped, not failed', [d1.ok, d1.skipped, d1.hours], [true, 'Senate site under maintenance', 0]);
+eq('the outage start is kept', dkv.m.get(SENATE_DOWN_KEY), { since: '2030-11-15T18:41:00.000Z' });
+const d2 = await runSenate({ now: new Date('2030-11-16T05:41:00Z'), fetchImpl: homeDown, kv: dkv, deliver: async () => 'id' });
+eq('home page under maintenance 11h later: still skipped, same start', [d2.ok, d2.hours, dkv.m.get(SENATE_DOWN_KEY).since], [true, 11, '2030-11-15T18:41:00.000Z']);
+const d3 = await runSenate({ now: new Date('2030-11-18T18:41:00Z'), fetchImpl: listDown, kv: dkv, deliver: async () => 'id' });
+eq('72 hours down: now a failure, with how long', [d3.ok, d3.why], [false, 'Senate site under maintenance for 72h (since 2030-11-15 18:41 UTC)']);
+const d4 = await runSenate({ now: new Date('2030-11-18T19:41:00Z'), fetchImpl: fakeSenate, kv: dkv, deliver: async () => 'id' });
+eq('back up: catches up on what it missed and clears the outage', [d4.ok, d4.new, dkv.m.get(SENATE_DOWN_KEY)], [true, 2, null]);
+const e5 = await runSenate({ fetchImpl: async (url, opts = {}) => url.endsWith('/search/report/data/') ? res('Service Unavailable', { status: 503 }) : fakeSenate(url, opts), kv: memKv(), deliver: async () => 'id' });
+eq('a 503 without the maintenance page is still a failure', [e5.ok, e5.why], [false, 'Senate list HTTP 503']);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
