@@ -1,5 +1,5 @@
 // test/cronRouter.test.mjs — the one-tick scheduler (lib/cronRouter.js, api/regime-log.js ?tick).
-import { JOBS, POLLERS, zonedToUtc, dueSlots, allDue, tick, runJob, outcomeOf, shouldAlert, nextSlot, statusView, claimKey, LAST_KEY, WINDOW_MIN, privateTestCard } from '../lib/cronRouter.js';
+import { JOBS, POLLERS, zonedToUtc, dueSlots, allDue, tick, runJob, outcomeOf, shouldAlert, alertStillOpen, ALERT_REPEAT_H, failureCard, nextSlot, statusView, claimKey, LAST_KEY, WINDOW_MIN, privateTestCard } from '../lib/cronRouter.js';
 import handler from '../api/regime-log.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const ok = JSON.stringify(g) === JSON.stringify(w); console.log(`${ok ? '✅' : '❌'} ${n}` + (ok ? '' : `  got ${JSON.stringify(g)} want ${JSON.stringify(w)}`)); ok ? pass++ : fail++; };
@@ -153,6 +153,15 @@ function fakeRes() {
   eq('a frequent job alerts only on its second failure in a row', [shouldAlert(a, fq), shouldAlert(c, fq), shouldAlert(d, fq)], [false, false, true]);
   eq('an ordinary job still alerts on its first failure', shouldAlert({ ok: false, streak: 1 }, { id: 'x' }), true);
   eq('the frequent public-feed jobs carry alertAfter 2', ['disclosures-insiders', 'disclosures-congress', 'walletcard', 'same-day-book'].map(id => job(id).alertAfter), [2, 2, 2, 2]);
+}
+
+// One failure card per outage (16 Nov 2026: one Senate outage across New York midnight posted twice).
+{
+  const at = Date.parse('2030-11-16T01:41:00Z');
+  eq('no open alert: a card may go out', alertStillOpen(null, at), false);
+  eq('an open alert 4 hours old (a new New York day): no second card', alertStillOpen({ slot: '2030-11-16T01:41:00Z', at: '2030-11-16T01:41:05Z' }, at + 4 * 3600000), true);
+  eq('still broken after 72 hours: a reminder may go out', alertStillOpen({ at: '2030-11-16T01:41:05Z' }, at + ALERT_REPEAT_H * 3600000 + 10000), false);
+  ok('the card says one per outage', /one card per outage/.test(failureCard({ id: 'disclosures-officials', slot: '2030-11-16T01:41:00Z', status: 200, note: 'x' }).embeds[0].footer.text));
 }
 
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);

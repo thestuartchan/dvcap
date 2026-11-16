@@ -11,7 +11,7 @@
 
 import { hasSessionCookie, hasCronSecret, refuse, authorised } from '../lib/apiauth.js';
 import { backupDocs } from '../lib/docBackup.js';
-import { tick, shouldAlert, JOBS, statusView, healthSummary, failureCard, recoveredCard, privateTestCard, nyDayOf, jobLabel, FAIL_ALERT_KEY, OPEN_ALERT_KEY, LAST_KEY as CRON_LAST_KEY } from '../lib/cronRouter.js';
+import { tick, shouldAlert, alertStillOpen, JOBS, statusView, healthSummary, failureCard, recoveredCard, privateTestCard, nyDayOf, jobLabel, FAIL_ALERT_KEY, OPEN_ALERT_KEY, LAST_KEY as CRON_LAST_KEY } from '../lib/cronRouter.js';
 import { post, privateWebhookFromEnv } from '../lib/discord.js';
 import { sendAlert, channelOf, webhookFor } from '../lib/alerts.js';
 import { privateSamples } from '../lib/privateSamples.js';
@@ -68,7 +68,7 @@ async function cronTick(req, res) {
   });
   // One line per tick that ran something: job, slot, verdict. Nothing from the routes' answers.
   if (out.ran?.length) console.log(`[cron] ${out.ran.map(r => `${r.id}@${r.slot.slice(11, 16)}Z ${r.ok ? 'ok' : 'FAIL'} ${r.status ?? '-'} ${r.ms}ms${r.ok || !r.note ? '' : ` (${r.note})`}`).join(' · ')}`);
-  // A failed job tells Stu in the private channel, once per job per New York day. The note is the
+  // A failed job tells Stu in the private channel, once per outage (and at most once per New York day). The note is the
   // route's own error line (lib/cronRouter.js outcomeOf keeps nothing else from its answer).
   // A retryable failure with a retry slot still to come stays quiet: only the last try alerts.
   // Frequent jobs (alertAfter: 2) wait for a second failure in a row.
@@ -77,6 +77,8 @@ async function cronTick(req, res) {
   const webhook = failed.length || good.length ? privateWebhookFromEnv() : null;
   if (webhook) {
     for (const r of failed) {
+      // Already told about this outage and it has not recovered: no second card (lib/cronRouter.js).
+      if (alertStillOpen(await kvGetJson(OPEN_ALERT_KEY(r.id)).catch(() => null))) continue;
       const first = await kvSetNxEx(FAIL_ALERT_KEY(r.id, nyDayOf(Date.now())), 1, 2 * 86400).catch(() => false);
       // Through the one alert module (lib/alerts.js): private channel, logged against the job.
       if (first) {
