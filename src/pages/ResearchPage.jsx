@@ -23,28 +23,32 @@ const SC = [C.blue,C.green,P.amber600,P.violet700,P.amber700,P.pink700,P.teal700
 // The 13F vintage every equity row shares until the next EDGAR refresh. A 13F describes holdings
 // AS OF quarter-end and lands up to 45 days later — so it is ~6 weeks stale the day it arrives, and
 // says nothing about what changed since. Both dates travel with the data so no row reads as current.
-// Q2 2026 vintage. All 6 US 13F filers are in (Berkshire, Pershing, Bridgewater, Duquesne, Tiger,
-// Appaloosa, all as of Jun 30, filed by the Aug 14 deadline). Pershing's Q2 book is now filed via its
-// public parent Pershing Square Inc. (CIK 0002026053) — Capital Management filed a 13F-NT notice.
-// Fairfax is not a US 13F filer. No 13F-HR/A amendments have been filed since the Aug 15 Pass-1 pull.
-const MATRIX_13F = { positionsAsOf: "2026-06-30", filed: "Aug 2026 (by Aug 14 deadline)", label: "Q2 2026" };
+// Q3 2026 vintage (Pass 1, Nov 17). All 6 US 13F filers are in (Berkshire, Pershing, Bridgewater,
+// Duquesne, Tiger, Appaloosa, all as of Sep 30, filed Nov 16 — the deadline, Nov 14 being a Saturday).
+// Pershing files via its public parent Pershing Square Inc. (CIK 0002026053); Capital Management again
+// filed a 13F-NT. Amendment: Pershing Square Inc. filed a 13F-HR/A (NEW HOLDINGS) for Q2 on Nov 16,
+// adding one row — its own shares held by affiliated funds (184.3M shares, $6.06B at Jun 30); its Q3
+// filing carries the same row ($10.3B), shown in aum but left out of the weights so Q2 and Q3 compare.
+// Duquesne reports values in thousands (the others in dollars). Fairfax is not a US 13F filer.
+const MATRIX_13F = { positionsAsOf: "2026-09-30", asOfLabel: "Sep 30", filed: "Nov 2026 (by the Nov 16 deadline)", label: "Q3 2026" };
 
 // Per-row provenance. `source` is the ACTUAL disclosure the row is built from — not everything here
 // is 13F. 13F covers LONG US-LISTED EQUITY only; cash, bonds, shorts, options and foreign listings
 // are invisible to it, so those rows are tagged to their real source (10-Q / manager disclosure)
 // and carry their own as-of, independent of the 13F cycle.
-// Columns: [Berkshire, Pershing(Q2), Bridgewater, Duquesne, Tiger, Appaloosa, Fairfax(non-13F)].
+// Columns: [Berkshire, Pershing, Bridgewater, Duquesne, Tiger, Appaloosa, Fairfax(non-13F)].
 const CONSENSUS_ROWS = [
-  {theme:"AI Chips / Semis",            source:"13F",  vals:["◯","◯","●","●","●","●","◯"],note:"4/7 heavily long — crowding INTENSIFIED in Q2: Micron top-2 at Appaloosa, NEW Cerebras + Intel re-entry at Tiger, Lam/AMAT added at Tiger+Bridgewater. Berkshire/Pershing hold NO chips (Alphabet is a hyperscaler, not a chip)."},
-  {theme:"Hyperscalers (AMZN/GOOG/MSFT)",source:"13F", vals:["●","●","●","◐","●","●","◯"],note:"Berkshire built Alphabet to ~12.6% (GOOGL added + new GOOG Class C, top-4); Druckenmiller RE-ENTERED AMZN+GOOGL after exiting in Q1"},
-  {theme:"Legacy SaaS",                 source:"13F",  vals:["◯","◯","◐","◯","◯","◯","◯"],note:"Bridgewater holds ORCL in the tail; no one adding aggressively"},
-  {theme:"China / EM",                  source:"13F",  vals:["◯","◯","◐","●","◐","●","●"],note:"Druckenmiller heavy Brazil/Argentina/Mexico; Tepper CUT BABA to ~2.5% (China conviction reduced) while adding Korea (EWY); Fairfax India off-13F"},
-  {theme:"Gold / Commodities",          source:"13F+mgr", vals:["◐","◯","◐","●","◯","◐","◐"],note:"Druckenmiller ~25–30% gold off-13F; Bridgewater Newmont+Barrick; Appaloosa power/energy (Vistra/NRG/pipelines); Fairfax commodity-linked"},
-  {theme:"Energy / Airlines",           source:"13F",  vals:["●","◯","◯","◐","◯","●","◯"],note:"Berkshire CVX+OXY+DAL; Appaloosa Vistra+NRG+AAL+pipelines (power-demand); Druckenmiller YPF+United"},
-  {theme:"Biotech / Healthcare",        source:"13F",  vals:["◐","◯","◯","●","◯","◯","◯"],note:"Druckenmiller deep (Natera #1, Insmed, Revolution, NewAmsterdam); Berkshire holds DaVita"},
-  {theme:"Financials / Insurance",      source:"13F+mgr", vals:["●","●","◯","◯","◐","◯","●"],note:"Ackman NEW Visa+Mastercard+S&P Global on top of Brookfield (Q2 — a financial-infrastructure tilt); Tiger Corpay+Apollo+Visa; Berkshire + Fairfax core insurance float is operating, off-13F"},
-  {theme:"Cash / T-Bills",             source:"10-Q", asOf:"2026-06-30", vals:["●●","◯","◯","◯","◯","◯","◐"],note:"Berkshire $365.5B (Q2 10-Q, filed Aug 8 — not 13F), DOWN from $397B: first quarterly decline in ~4yr as Berkshire turned net buyer. Fairfax float in T-bills/bonds (annual report)"},
-  {theme:"Macro Hedges / Tail Risk",    source:"Manager disclosure", asOf:"ongoing / 2025 AR", vals:["◯","◐","●","◐","◯","◐","●"],note:"Fairfax deflation/CPI hedges; Bridgewater risk-parity; Appaloosa initiated an AAPL PUT (new tail hedge); Druckenmiller heavy call usage"},
+  {theme:"AI Chips / Semis",            source:"13F",  vals:["◯","◯","●","●","●","●","◯"],note:"Still 4/7 heavily long, but the mix ROTATED in Q3 — memory/storage UP: Micron is now Appaloosa's #1 (17.6%, +28%), Bridgewater Micron +103%, Druckenmiller Seagate +180% to #2. TSM CUT (Tiger −36%, Druckenmiller −94%). Tiger cut Lam/Applied but added Nvidia back to #1, Cerebras +48%, Intel +30%; Bridgewater Nvidia −30% but Applied +93%. Berkshire/Pershing hold no chips."},
+  {theme:"Hyperscalers (AMZN/GOOG/MSFT)",source:"13F", vals:["●","●","◐","◐","●","●","◯"],note:"Crowding DOWN in Q3: Alphabet trimmed by four of its five holders (Tiger −42%, Appaloosa −46%, Bridgewater −65%, Druckenmiller exited) — only Berkshire held (~11.9%). Meta trimmed at Tiger, Appaloosa and Pershing; Microsoft cut at Pershing (−35%) and Bridgewater (−69%). Amazon the exception: Druckenmiller +43%."},
+  {theme:"Legacy SaaS",                 source:"13F",  vals:["◯","◯","◐","◯","◯","◐","◯"],note:"Tepper NEW Oracle (2.3%); Bridgewater trimmed ORCL −18% in the tail"},
+  {theme:"China / EM",                  source:"13F",  vals:["◯","◯","◐","●","◐","●","●"],note:"Druckenmiller kept Argentina/Brazil (YPF +13%, EWZ held) and added Sea +45%, cut BBB Foods −43%; Tepper trimmed Korea (EWY −13%) and BABA (−7%, 2.6%); Tiger Sea −43% but MercadoLibre +60%; Fairfax India off-13F"},
+  {theme:"Gold / Commodities",          source:"13F+mgr", vals:["◐","◯","◐","●","◯","◐","◐"],note:"Druckenmiller NEW on-13F gold miners (Newmont, Barrick, Agnico, ~1% each) beside the gold he holds off-13F (earlier manager disclosure; size not in the filing); Bridgewater trimmed Newmont −22% / Barrick −10%; Appaloosa power (Vistra; NRG −19%); Fairfax commodity-linked"},
+  {theme:"Energy / Airlines",           source:"13F",  vals:["●","◯","◯","◐","◯","●","◯"],note:"Berkshire CVX+OXY, Delta +12%; Druckenmiller EXITED United + Delta (kept YPF); Appaloosa Vistra/NRG, American −48%; Bridgewater NEW Occidental, Shell +35% (tail)"},
+  {theme:"Biotech / Healthcare",        source:"13F",  vals:["◐","◐","◯","●","◯","◯","◯"],note:"Druckenmiller deepest — Natera now 29% of his 13F, plus Insmed, Revolution, NewAmsterdam, NEW Humana; Ackman NEW Alcon (4.7%); Berkshire holds DaVita"},
+  {theme:"Financials / Insurance",      source:"13F+mgr", vals:["●","●","◯","◯","◐","◯","●"],note:"Ackman NEW Intercontinental Exchange on top of S&P Global, Visa, Mastercard (V/MA trimmed −11–12%); Berkshire trimmed Bank of America −6%, Capital One −62%; Tiger Corpay; Berkshire + Fairfax insurance float is operating, off-13F"},
+  {theme:"Space (SpaceX)",              source:"13F",  vals:["◯","◯","◯","◐","◐","●","◯"],note:"NEW theme in Q3 once SpaceX showed on 13Fs: Tepper built it to 7.4% (#4); Druckenmiller (~0.7%) and Tiger (~0.3%) hold small stakes"},
+  {theme:"Cash / T-Bills",             source:"10-Q", asOf:"2026-06-30", vals:["●●","◯","◯","◯","◯","◯","◐"],note:"Berkshire $365.5B (Q2 10-Q, filed Aug 8 — not 13F), down from $397B. ⚠ The Q3 10-Q was not read this run. Fairfax float in T-bills/bonds (annual report)"},
+  {theme:"Macro Hedges / Tail Risk",    source:"Manager disclosure", asOf:"Q3 13F / 2025 AR", vals:["◯","◐","●","◐","◯","◯","●"],note:"Tepper CLOSED his AAPL put in Q3 — no equity put shows in any of the six filings. Druckenmiller still uses calls for leverage (AMZN, Seagate, Insmed, CDW, Tesla); Bridgewater risk-parity; Fairfax deflation/CPI hedges (2025 AR)"},
 ];
 
 // How each source tag renders: label + colour. 13F is the default equity vintage; the others are
@@ -61,12 +65,12 @@ const SOURCE_TAGS = {
 // how much of the real book the filing actually captures — so the long-only limit is structural, not
 // a footnote. Each note cites the disclosed figures the ratio is built from (no invented precision).
 const FUND_COVERAGE = {
-  berkshire:   { band: "Partial", note: "Shows the ~$324B equity book; the $365.5B cash (Q2 10-Q, Aug 8) is off-13F — the filing is ~47% of the equity+cash balance sheet, and misses the Q2 net-buying + the $10B Alphabet private placement." },
-  pershing:    { band: "Most",    note: "Concentrated long US equity — the 13F (filed via the public parent) captures nearly the whole book." },
-  bridgewater: { band: "Partial", note: "$24.4B 13F of ~$92B total AUM (~27%); futures, FX and global-macro overlays are off-13F." },
-  duquesne:    { band: "Partial", note: "$5.2B 13F, but ~25–30% gold and heavy index/single-name CALL leverage are off-13F — the filing understates both size and leverage." },
+  berkshire:   { band: "Partial", note: "Shows the $304.2B equity book; the cash (last read $365.5B, Q2 10-Q, Aug 8) is off-13F — the filing is roughly half of the equity+cash balance sheet, and misses the $10B Alphabet private placement." },
+  pershing:    { band: "Most",    note: "Concentrated long US equity — the 13F (filed via the public parent) captures nearly the whole book ($20.5B), plus a $10.3B row of Pershing Square Inc.'s own shares held by affiliated funds." },
+  bridgewater: { band: "Partial", note: "$23.0B 13F of ~$92B total AUM (~25%); futures, FX and global-macro overlays are off-13F." },
+  duquesne:    { band: "Partial", note: "$4.5B 13F (incl. calls at notional), but the gold held off-13F and any index-level leverage are not in it — the filing understates both size and leverage." },
   tiger:       { band: "Most",    note: "The US-listed equity core is captured; a large private/VC book (and any pre-listing stakes) sits off-13F." },
-  appaloosa:   { band: "Most",    note: "Long US equity captured, and the AAPL PUT shows on-13F; any shorts or non-equity hedges would not." },
+  appaloosa:   { band: "Most",    note: "Long US equity captured ($7.6B). Listed options would show (the Q2 AAPL put did; it is gone in Q3); shorts and non-equity hedges would not." },
   fairfax:     { band: "None",    note: "Not a US 13F filer — files on SEDAR+. Holdings shown are from the 2025 annual report, not a 13F." },
 };
 
@@ -95,13 +99,13 @@ const FUND_HEDGES = {
 const ABSENCE_WATCH = [
   { label: "Long-duration Treasuries (TLT / ZROZ / IEF)", tickers: ["TLT", "ZROZ", "IEF"], why: "no one is positioned for a deflationary rate-collapse",
     note: "But the absence is a SUPPLY story, not a 'deflation is impossible' one: the 30Y hit a 19-year high in August and the Treasury DOUBLED its long-end buyback to $4bn/operation (Aug 19) — the long end is selling on issuance + term premium. Meanwhile the labour base has broken down (July payrolls −23k vs +83k expected; 12-mo avg +26k stall speed; May/June revised −103k; emp-pop 58.9%, 2nd decline). If the QCEW benchmark restates the base lower AND the issuer keeps supporting the long end, both objections to owning duration disappear at once — watch Q3 filings." },
-  { label: "Index shorts / broad puts (SH / SQQQ / SPXU)", tickers: ["SH", "SQQQ", "SPXU", "PSQ"], why: "no outright bearish index bet — Appaloosa's AAPL put is the lone equity hedge" },
+  { label: "Index shorts / broad puts (SH / SQQQ / SPXU)", tickers: ["SH", "SQQQ", "SPXU", "PSQ"], why: "no outright bearish index bet — and Appaloosa closed its AAPL put in Q3, so no equity hedge shows on any 13F" },
   { label: "Utilities / defensive REITs (XLU / VNQ)", tickers: ["XLU", "VNQ", "XLRE"], why: "no rate-sensitive defensive tilt" },
 ];
 
 // ── Improvement #1 — mark-to-market since the 13F as-of date. A 13F reports position VALUE ($, at
 // quarter-end) and SHARE COUNT, so the implied filing price is value/shares; the live price vs that
-// is how the disclosed position has moved since Jun 30. Only computed where BOTH shares (from the
+// is how the disclosed position has moved since quarter-end. Only computed where BOTH shares (from the
 // filing) and a live price exist — never estimated. `h.value` is in $B, `h.shares` a raw share count.
 function sinceFiling(h, prices) {
   const p = prices?.[h?.name];
@@ -208,7 +212,7 @@ function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated 
 
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-          <SLabel>Top Holdings — {fund.id === "fairfax" ? "Annual Report 2025" : "Q2 2026 · as of Jun 30"}</SLabel>
+          <SLabel>Top Holdings — {fund.id === "fairfax" ? "Annual Report 2025" : `${MATRIX_13F.label} · as of ${MATRIX_13F.asOfLabel}`}</SLabel>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             {/* #1 — value-weighted move of the disclosed book since the filing date. */}
             {(() => {
@@ -405,7 +409,7 @@ function AnalystViewBoard({ live, probFor, engineRegime, consensus }) {
 // HAND-WRITTEN SMART MONEY NOTES carry the date they were written (P14), read from the commit
 // that last changed each one. They describe a moment; without a date a note from August reads
 // as this morning's. Update the date whenever the note's text is rewritten.
-const SM_NOTES_WRITTEN = { fedContext: "2026-09-28", aiInfra: "2026-08-24", q2Signal: "2026-08-24" };
+const SM_NOTES_WRITTEN = { fedContext: "2026-11-17", aiInfra: "2026-08-24", q3Signal: "2026-11-17" };
 
 function WrittenOn({ date }) {
   // eslint-disable-next-line react-hooks/purity -- Date.now for an age label; each render refreshes it, which is the intent
@@ -739,14 +743,14 @@ export function ResearchPage({ funds, selectedFund, setSelectedFund, prices, fet
             <div style={{ background: C.aBg, border: "1.5px solid " + C.aBdr, borderRadius: 12, padding: "11px 15px", color: C.amber, fontSize: 13.5, lineHeight: 1.6 }}>
               <div style={{ fontWeight: 800, marginBottom: 3 }}>⚠️ This is {MATRIX_13F.label} data — positions as of {MATRIX_13F.positionsAsOf}, filed {MATRIX_13F.filed}. Label it as of quarter-end, not current.</div>
               <div style={{ fontWeight: 500 }}>
-                13F shows <b>long US-listed equity positions as of quarter-end</b> and arrives up to 45 days later (~6 weeks stale on arrival — the July memory crash, Iran de-escalation and yen intervention are all invisible here). Shorts, cash, bonds, options and foreign-listed securities are <b>not disclosed</b>; absence from a row may mean a position isn't reportable, not that it doesn't exist. The <b>Cash / T-Bills</b> and <b>Macro Hedges</b> rows come from 10-Q / manager disclosure, not 13F, and carry their own as-of. All 6 US 13F filers are in for Q2; <b>Pershing Square now files via its public parent Pershing Square Inc.</b> (Capital Management filed a 13F-NT notice) and <b>Fairfax</b> is not a US 13F filer — both flagged on their cards.
+                13F shows <b>long US-listed equity positions as of quarter-end</b> and arrives up to 45 days later (~6 weeks stale on arrival — anything that happened after quarter-end is invisible here). Shorts, cash, bonds, options and foreign-listed securities are <b>not disclosed</b>; absence from a row may mean a position isn't reportable, not that it doesn't exist. The <b>Cash / T-Bills</b> and <b>Macro Hedges</b> rows come from 10-Q / manager disclosure, not 13F, and carry their own as-of. All 6 US 13F filers are in for {MATRIX_13F.label}; <b>Pershing Square files via its public parent Pershing Square Inc.</b> (Capital Management filed a 13F-NT notice; the parent's filing also lists its own shares, left out of the weights) and <b>Fairfax</b> is not a US 13F filer — both flagged on their cards.
               </div>
             </div>
-            {/* B5 — Fed context the snapshot lacks. The book was set on Jun 30; the Fed path has moved
+            {/* B5 — Fed context the snapshot lacks. The book was set on Sep 30; the Fed path has moved
                 since, and the positioning reads differently against it. */}
             <div style={{ padding: "8px 11px", background: C.blBg, border: "1px solid " + C.blBdr, borderRadius: 8, fontSize: 11.5, color: C.mid, lineHeight: 1.6 }}>
-              <b style={{ color: C.blue }}>Fed context since Jun 30</b><WrittenOn date={SM_NOTES_WRITTEN.fedContext} /><b style={{ color: C.blue }}>: </b>
-              July was a <b>9–3 hold</b> with three presidents dissenting <i>for</i> a hike, and the Aug 19 minutes said "many participants" saw tightening as likely necessary. On <b>Sep 16 the Fed hiked 25bp to 3.75–4.00%, 12–0</b>, and the September dots added one more hike for 2026 and no cut in 2027. The book below was set before all of this — every position in it was chosen against a Fed that was still holding.
+              <b style={{ color: C.blue }}>Fed context since Sep 30</b><WrittenOn date={SM_NOTES_WRITTEN.fedContext} /><b style={{ color: C.blue }}>: </b>
+              The Sep 16 hike (25bp to 3.75–4.00%) came <b>before</b> the quarter-end, so this book was set knowing it. Since then: on <b>Oct 28 the Fed held, 10–2</b>, with two dissents for another hike, and the statement read stronger ("expanding at a strong pace", "inflation remains elevated"). <b>December 8–9</b> (with new projections) is live.
             </div>
             {/* Cross-Fund Positioning Matrix — rendered above the fund selector (Fix 3) */}
             <Card>
@@ -903,8 +907,8 @@ export function ResearchPage({ funds, selectedFund, setSelectedFund, prices, fet
                 </table>
               </div>
               <div style={{ marginTop: 12, padding: "12px 14px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8 }}>
-                <span style={{ color: C.amber, fontWeight: 700, fontSize: 13 }}>⚠️ The Q2 signal (as of Jun 30)<WrittenOn date={SM_NOTES_WRITTEN.q2Signal} />: </span>
-                <span style={{ color: C.amber, fontSize: 14 }}>The AI-chip long got MORE crowded, not less — Micron became Appaloosa's #2, Tiger added a new Cerebras stake and re-entered Intel, and semis moved to the top of Tiger's book. But hedges are appearing at the edges: Tepper initiated an AAPL put and cut BABA. Berkshire built Alphabet to a top-4 position (its most AI-adjacent bet) while holding ~$397B cash. Druckenmiller re-entered the mega-caps he'd exited. Ackman (now filing via the public parent Pershing Square Inc.) added Visa, Mastercard, S&P Global and Netflix — a shift toward quality compounders. Positions as of Jun 30 — not current.</span>
+                <span style={{ color: C.amber, fontWeight: 700, fontSize: 13 }}>⚠️ The Q3 signal (as of Sep 30)<WrittenOn date={SM_NOTES_WRITTEN.q3Signal} />: </span>
+                <span style={{ color: C.amber, fontSize: 14 }}>The crowd thinned the hyperscalers and rotated inside AI rather than leaving it. Alphabet was trimmed by four of its five holders (only Berkshire held); Meta and Microsoft were cut too. Inside chips the money moved to memory and storage — Micron became Tepper's #1, Bridgewater doubled Micron, Druckenmiller tripled Seagate — while TSM was cut at Tiger (−36%) and Druckenmiller (−94%). Tiger de-grossed (book $24.0B → $20.2B) but put Nvidia back at #1. The one equity hedge in the set, Tepper's AAPL put, is gone. New theme: SpaceX (Tepper 7.4%). Berkshire had a quiet quarter; Ackman added ICE and Alcon. Positions as of Sep 30 — not current.</span>
               </div>
             </Card>
 
