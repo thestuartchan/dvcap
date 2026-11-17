@@ -618,6 +618,26 @@ globalThis.fetch = realFetch;
     eq('…and confirming it closes the trade', [ap.how, derivePosition(ap.rows[0].fills, { multiplier: 100, side: 'long' }).status], ['added', 'closed']);
   }
 
+  // A FILL FROM IBKR IS NOT A HAND ENTRY (17 Nov 2026). The same-day report held only the day's buy of
+  // one more spread; the row's fill from the day before (from IBKR, its order id outside this report)
+  // was taken for a hand entry of it — same contract, a day apart, price within 2% — and the new buy
+  // was withdrawn as already on the console. Made-up name and numbers.
+  {
+    const DEF = (id, strike, side, px, date, time) => O({ ibOrderID: id, conid: `${id}1`, symbol: `DEF   261218P00${strike}000`, underlyingSymbol: 'DEF', assetCategory: 'OPT',
+      putCall: 'P', strike, expiry: '20261218', multiplier: 100, buySell: side, quantity: side === 'SELL' ? -1 : 1, tradePrice: px, ibCommission: -0.6, tradeDate: date, dateTime: `${date};${time}` });
+    const ROWD = (fill) => ({ id: 'DEF-v', symbol: 'DEF', underlying: 'DEF', instrument: 'spread', side: 'long', multiplier: 100, currency: 'USD', hardDate: '2026-12-11',
+      legs: [{ right: 'P', strike: 25, expiry: '2026-12-18', side: 'short', ratio: 1 }, { right: 'P', strike: 45, expiry: '2026-12-18', side: 'long', ratio: 1 }], fills: [fill] });
+    const day2 = trades(DEF('5301', 45, 'BUY', 12.55, '20261113', '132426'), DEF('5302', 25, 'SELL', 4.0, '20261113', '132426'));
+    const fromIbkr = ROWD({ id: 'p1', side: 'buy', qty: 1, price: 8.66, date: '2026-11-12', tradeId: '5201+5202' });
+    const o = processInbox({ trades: day2, today: '2026-11-13', holidays: US, rows: [fromIbkr], provisional: true });
+    eq('the day-2 buy is offered: yesterday\'s IBKR fill is not a hand entry of it', [o.drafts.map(d => d.fill?.orderId), o.fate['5301']], [['5301+5302'], 'combined']);
+    const typed = ROWD({ id: 'h1', side: 'buy', qty: 1, price: 8.56, date: '2026-11-13' });
+    const o2 = processInbox({ trades: day2, today: '2026-11-13', holidays: US, rows: [typed], provisional: true });
+    eq('…but a fill typed by hand for it still withdraws the draft', [o2.drafts.length, o2.fate['5301']], [0, 'known']);
+    const moved = ROWD({ id: 't1', side: 'buy', qty: 1, price: 8.56, date: '2026-11-13', transfer: true });
+    eq('…and a split\'s transfer entry never does', processInbox({ trades: day2, today: '2026-11-13', holidays: US, rows: [moved], provisional: true }).drafts.length, 1);
+  }
+
   // A CLOSE NOTE FOR THE WHOLE STRADDLE, AFTER THE PUTS WENT (16 Oct). The book above holds 3 calls
   // and no puts; the last order sells the calls, and the note names both legs.
   const XYZ16 = (id, right, qty, px) => O({ ibOrderID: id, conid: `${id}1`, symbol: `XYZ   261120${right}00040000`, underlyingSymbol: 'XYZ', assetCategory: 'OPT',
