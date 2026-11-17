@@ -250,13 +250,13 @@ const INCOME_PLAYS = [
 const DEFAULT_FUNDS = [
   {
     id:"berkshire", name:"Berkshire Hathaway", manager:"Greg Abel (Buffett chairman)",
-    aum:"$304.2B equity (Q3 13F) · $365.5B cash (Q2 10-Q, Aug 8)", style:"Quality compounder / Value", color:C.blue,
-    turnover:"Low", signal:"QUIET QUARTER", signalColor:C.blue,
-    lastUpdated:"Q3 2026 · as of Sep 30 · ⚠ cash still the Q2 10-Q (Aug 8)",
-    regimeBet:"Holding — few 13F moves; cash read is Q2",
+    aum:"$304.2B equity (Q3 13F) · $377.4B cash + T-bills (Q3 10-Q, Nov 9)", style:"Quality compounder / Value", color:C.blue,
+    turnover:"Low", signal:"BUYING ITSELF BACK", signalColor:C.blue,
+    lastUpdated:"Q3 2026 · as of Sep 30 · cash Q3 10-Q (Nov 9)",
+    regimeBet:"Buybacks over stocks — small net seller",
     regimeBetColor:C.blue,
-    regimeBetSignal:"Q3 13F is quiet: no exits, one new name (Bending Spoons, $0.69B), Lennar doubled, Delta +12%, Bank of America −6%. The book rose to $304.2B (from $299.3B) mostly on price. Cash and net buying come from the 10-Q, not the 13F: the last read is Q2 ($365.5B, down from $397B); the Q3 10-Q was not read this run.",
-    thesis:"Q3: a holding quarter on the 13F. No exits; one new stake (Bending Spoons, $0.69B). Lennar roughly doubled (+99% shares), Delta +12%. Trims at the edges: Bank of America −6% (still #5), VeriSign −34%, Kroger −10%, Nucor −15%, Capital One −62%. Alphabet unchanged at ~11.9% across GOOGL + GOOG (top-4). Apple is back to 25% of the book on price alone (shares unchanged). The $10B Alphabet private placement and the cash pile sit outside the 13F; cash is still the Q2 10-Q figure. Positions as of Sep 30.",
+    regimeBetSignal:"Q3 10-Q: a small NET SELLER of stocks ($2.4B bought vs $2.8B sold) after Q2's net buying — but $9.3B of BUYBACKS, about double Q2's $4.4B, plus $6.5B of acquisitions. Cash + T-bills $377.4B (from $365.5B), though that includes $20.5B of T-bill purchases not yet settled: $356.9B net of them. The 13F is quiet: no exits, one new name (Bending Spoons), Lennar doubled.",
+    thesis:"Q3: a holding quarter on the 13F. No exits; one new stake (Bending Spoons, $0.69B). Lennar roughly doubled (+99% shares), Delta +12%. Trims at the edges: Bank of America −6% (still #5), VeriSign −34%, Kroger −10%, Nucor −15%, Capital One −62%. Alphabet unchanged at ~11.9% across GOOGL + GOOG (top-4). Apple is back to 25% of the book on price alone (shares unchanged). Off the 13F (Q3 10-Q, filed Nov 9): stocks bought $2.4B vs sold $2.8B — a small net seller after Q2's buying — while buybacks jumped to $9.3B (Q2 $4.4B) and acquisitions took $6.5B. Cash + T-bills $377.4B (Q2 $365.5B), including $20.5B of T-bill purchases awaiting settlement ($356.9B net of them). The $10B Alphabet private placement also sits outside the 13F. Positions as of Sep 30.",
     holdings:[
       {name:"AAPL", shares:227917808, pct:25.0,value:75.90,sector:"Tech",      action:"hold"},
       {name:"AXP",  shares:151610700, pct:15.2,value:46.10,sector:"Financials",action:"hold"},
@@ -1497,7 +1497,7 @@ export default function App() {
 
         {/* FOOTER */}
         <div style={{ color: C.lbl, fontSize: 12, textAlign: "center", marginTop: 20, paddingTop: 14, borderTop: "1px solid " + C.bdr }}>
-          Data: SEC 13F (Q3 2026 · positions as of Sep 30, filed by the Nov 16 deadline · read direct from EDGAR) — Pershing files via public parent Pershing Square Inc., Fairfax non-13F · FRED / ICE BofA / US Treasury · Berkshire cash $365.5B is the Q2 10-Q (Q3 10-Q not read).<br />
+          Data: SEC 13F (Q3 2026 · positions as of Sep 30, filed by the Nov 16 deadline · read direct from EDGAR) — Pershing files via public parent Pershing Square Inc., Fairfax non-13F · FRED / ICE BofA / US Treasury · Berkshire cash + T-bills $377.4B is the Q3 10-Q (Nov 9; $356.9B net of unsettled T-bill purchases).<br />
           Editable fund data auto-saves to browser storage · Global family portfolio (UAE/HK/Canada) — consult local tax advisors for withholding treatment · Not investment advice.
         </div>
       </div>

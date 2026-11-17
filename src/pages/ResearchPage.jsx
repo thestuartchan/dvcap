@@ -47,7 +47,7 @@ const CONSENSUS_ROWS = [
   {theme:"Biotech / Healthcare",        source:"13F",  vals:["◐","◐","◯","●","◯","◯","◯"],note:"Druckenmiller deepest — Natera now 29% of his 13F, plus Insmed, Revolution, NewAmsterdam, NEW Humana; Ackman NEW Alcon (4.7%); Berkshire holds DaVita"},
   {theme:"Financials / Insurance",      source:"13F+mgr", vals:["●","●","◯","◯","◐","◯","●"],note:"Ackman NEW Intercontinental Exchange on top of S&P Global, Visa, Mastercard (V/MA trimmed −11–12%); Berkshire trimmed Bank of America −6%, Capital One −62%; Tiger Corpay; Berkshire + Fairfax insurance float is operating, off-13F"},
   {theme:"Space (SpaceX)",              source:"13F",  vals:["◯","◯","◯","◐","◐","●","◯"],note:"NEW theme in Q3 once SpaceX showed on 13Fs: Tepper built it to 7.4% (#4); Druckenmiller (~0.7%) and Tiger (~0.3%) hold small stakes"},
-  {theme:"Cash / T-Bills",             source:"10-Q", asOf:"2026-06-30", vals:["●●","◯","◯","◯","◯","◯","◐"],note:"Berkshire $365.5B (Q2 10-Q, filed Aug 8 — not 13F), down from $397B. ⚠ The Q3 10-Q was not read this run. Fairfax float in T-bills/bonds (annual report)"},
+  {theme:"Cash / T-Bills",             source:"10-Q", asOf:"2026-09-30", vals:["●●","◯","◯","◯","◯","◯","◐"],note:"Berkshire $377.4B cash + T-bills (Q3 10-Q, filed Nov 9 — not 13F), up from $365.5B — but $20.5B of that is T-bill purchases not yet settled ($356.9B net of them). Q3 it bought back $9.3B of its own stock and was a small net seller of equities. Fairfax float in T-bills/bonds (annual report)"},
   {theme:"Macro Hedges / Tail Risk",    source:"Manager disclosure", asOf:"Q3 13F / 2025 AR", vals:["◯","◐","●","◐","◯","◯","●"],note:"Tepper CLOSED his AAPL put in Q3 — no equity put shows in any of the six filings. Druckenmiller still uses calls for leverage (AMZN, Seagate, Insmed, CDW, Tesla); Bridgewater risk-parity; Fairfax deflation/CPI hedges (2025 AR)"},
 ];
 
@@ -65,7 +65,7 @@ const SOURCE_TAGS = {
 // how much of the real book the filing actually captures — so the long-only limit is structural, not
 // a footnote. Each note cites the disclosed figures the ratio is built from (no invented precision).
 const FUND_COVERAGE = {
-  berkshire:   { band: "Partial", note: "Shows the $304.2B equity book; the cash (last read $365.5B, Q2 10-Q, Aug 8) is off-13F — the filing is roughly half of the equity+cash balance sheet, and misses the $10B Alphabet private placement." },
+  berkshire:   { band: "Partial", note: "Shows the $304.2B equity book; the $377.4B cash + T-bills (Q3 10-Q, Nov 9) is off-13F — the filing is under half of the equity+cash balance sheet, and misses the $9.3B of Q3 buybacks and the $10B Alphabet private placement." },
   pershing:    { band: "Most",    note: "Concentrated long US equity — the 13F (filed via the public parent) captures nearly the whole book ($20.5B), plus a $10.3B row of Pershing Square Inc.'s own shares held by affiliated funds." },
   bridgewater: { band: "Partial", note: "$23.0B 13F of ~$92B total AUM (~25%); futures, FX and global-macro overlays are off-13F." },
   duquesne:    { band: "Partial", note: "$4.5B 13F (incl. calls at notional), but the gold held off-13F and any index-level leverage are not in it — the filing understates both size and leverage." },
@@ -908,7 +908,7 @@ export function ResearchPage({ funds, selectedFund, setSelectedFund, prices, fet
               </div>
               <div style={{ marginTop: 12, padding: "12px 14px", background: C.aBg, border: "1px solid " + C.aBdr, borderRadius: 8 }}>
                 <span style={{ color: C.amber, fontWeight: 700, fontSize: 13 }}>⚠️ The Q3 signal (as of Sep 30)<WrittenOn date={SM_NOTES_WRITTEN.q3Signal} />: </span>
-                <span style={{ color: C.amber, fontSize: 14 }}>The crowd thinned the hyperscalers and rotated inside AI rather than leaving it. Alphabet was trimmed by four of its five holders (only Berkshire held); Meta and Microsoft were cut too. Inside chips the money moved to memory and storage — Micron became Tepper's #1, Bridgewater doubled Micron, Druckenmiller tripled Seagate — while TSM was cut at Tiger (−36%) and Druckenmiller (−94%). Tiger de-grossed (book $24.0B → $20.2B) but put Nvidia back at #1. The one equity hedge in the set, Tepper's AAPL put, is gone. New theme: SpaceX (Tepper 7.4%). Berkshire had a quiet quarter; Ackman added ICE and Alcon. Positions as of Sep 30 — not current.</span>
+                <span style={{ color: C.amber, fontSize: 14 }}>The crowd thinned the hyperscalers and rotated inside AI rather than leaving it. Alphabet was trimmed by four of its five holders (only Berkshire held); Meta and Microsoft were cut too. Inside chips the money moved to memory and storage — Micron became Tepper's #1, Bridgewater doubled Micron, Druckenmiller tripled Seagate — while TSM was cut at Tiger (−36%) and Druckenmiller (−94%). Tiger de-grossed (book $24.0B → $20.2B) but put Nvidia back at #1. The one equity hedge in the set, Tepper's AAPL put, is gone. New theme: SpaceX (Tepper 7.4%). Berkshire was a small net seller of stocks but bought back $9.3B of its own (10-Q); Ackman added ICE and Alcon. Positions as of Sep 30 — not current.</span>
               </div>
             </Card>
 
