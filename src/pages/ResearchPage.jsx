@@ -41,14 +41,14 @@ const CONSENSUS_ROWS = [
   {theme:"AI Chips / Semis",            source:"13F",  vals:["◯","◯","●","●","●","●","◯"],note:"Still 4/7 heavily long, but the mix ROTATED in Q3 — memory/storage UP: Micron is now Appaloosa's #1 (17.6%, +28%), Bridgewater Micron +103%, Druckenmiller Seagate +180% to #2. TSM CUT (Tiger −36%, Druckenmiller −94%). Tiger cut Lam/Applied but added Nvidia back to #1, Cerebras +48%, Intel +30%; Bridgewater Nvidia −30% but Applied +93%. Berkshire/Pershing hold no chips."},
   {theme:"Hyperscalers (AMZN/GOOG/MSFT)",source:"13F", vals:["●","●","◐","◐","●","●","◯"],note:"Crowding DOWN in Q3: Alphabet trimmed by four of its five holders (Tiger −42%, Appaloosa −46%, Bridgewater −65%, Druckenmiller exited) — only Berkshire held (~11.9%). Meta trimmed at Tiger, Appaloosa and Pershing; Microsoft cut at Pershing (−35%) and Bridgewater (−69%). Amazon the exception: Druckenmiller +43%."},
   {theme:"Legacy SaaS",                 source:"13F",  vals:["◯","◯","◐","◯","◯","◐","◯"],note:"Tepper NEW Oracle (2.3%); Bridgewater trimmed ORCL −18% in the tail"},
-  {theme:"China / EM",                  source:"13F",  vals:["◯","◯","◐","●","◐","●","●"],note:"Druckenmiller kept Argentina/Brazil (YPF +13%, EWZ held) and added Sea +45%, cut BBB Foods −43%; Tepper trimmed Korea (EWY −13%) and BABA (−7%, 2.6%); Tiger Sea −43% but MercadoLibre +60%; Fairfax India off-13F"},
-  {theme:"Gold / Commodities",          source:"13F+mgr", vals:["◐","◯","◐","●","◯","◐","◐"],note:"Druckenmiller NEW on-13F gold miners (Newmont, Barrick, Agnico, ~1% each) beside the gold he holds off-13F (earlier manager disclosure; size not in the filing); Bridgewater trimmed Newmont −22% / Barrick −10%; Appaloosa power (Vistra; NRG −19%); Fairfax commodity-linked"},
+  {theme:"China / EM",                  source:"13F",  vals:["◯","◯","◐","●","◐","●","●"],note:"Druckenmiller kept Argentina/Brazil (YPF +13%, EWZ held) and added Sea +45%, cut BBB Foods −43%; Tepper trimmed Korea (EWY −13%) and BABA (−7%, 2.6%); Tiger Sea −43% but MercadoLibre +60%; Fairfax India ($3.4B fair value, Q3 interim) and the IDBI Bank bid (~$5.6B, not yet binding) off-13F"},
+  {theme:"Gold / Commodities",          source:"13F+mgr", vals:["◐","◯","◐","●","◯","◐","◐"],note:"Druckenmiller NEW on-13F gold miners (Newmont, Barrick, Agnico, ~1% each) beside the gold he holds off-13F (earlier manager disclosure; size not in the filing); Bridgewater trimmed Newmont −22% / Barrick −10%; Appaloosa power (Vistra; NRG −19%); Fairfax energy via Waterous Energy Fund ($0.75B) and EXCO ($0.59B)"},
   {theme:"Energy / Airlines",           source:"13F",  vals:["●","◯","◯","◐","◯","●","◯"],note:"Berkshire CVX+OXY, Delta +12%; Druckenmiller EXITED United + Delta (kept YPF); Appaloosa Vistra/NRG, American −48%; Bridgewater NEW Occidental, Shell +35% (tail)"},
   {theme:"Biotech / Healthcare",        source:"13F",  vals:["◐","◐","◯","●","◯","◯","◯"],note:"Druckenmiller deepest — Natera now 29% of his 13F, plus Insmed, Revolution, NewAmsterdam, NEW Humana; Ackman NEW Alcon (4.7%); Berkshire holds DaVita"},
-  {theme:"Financials / Insurance",      source:"13F+mgr", vals:["●","●","◯","◯","◐","◯","●"],note:"Ackman NEW Intercontinental Exchange on top of S&P Global, Visa, Mastercard (V/MA trimmed −11–12%); Berkshire trimmed Bank of America −6%, Capital One −62%; Tiger Corpay; Berkshire + Fairfax insurance float is operating, off-13F"},
+  {theme:"Financials / Insurance",      source:"13F+mgr", vals:["●","●","◯","◯","◐","◯","●"],note:"Ackman NEW Intercontinental Exchange on top of S&P Global, Visa, Mastercard (V/MA trimmed −11–12%); Berkshire trimmed Bank of America −6%, Capital One −62%; Tiger Corpay; Berkshire + Fairfax insurance float is operating, off-13F; Fairfax holds 31.8% of Eurobank ($6.4B)"},
   {theme:"Space (SpaceX)",              source:"13F",  vals:["◯","◯","◯","◐","◐","●","◯"],note:"NEW theme in Q3 once SpaceX showed on 13Fs: Tepper built it to 7.4% (#4); Druckenmiller (~0.7%) and Tiger (~0.3%) hold small stakes"},
-  {theme:"Cash / T-Bills",             source:"10-Q", asOf:"2026-09-30", vals:["●●","◯","◯","◯","◯","◯","◐"],note:"Berkshire $377.4B cash + T-bills (Q3 10-Q, filed Nov 9 — not 13F), up from $365.5B — but $20.5B of that is T-bill purchases not yet settled ($356.9B net of them). Q3 it bought back $9.3B of its own stock and was a small net seller of equities. Fairfax float in T-bills/bonds (annual report)"},
-  {theme:"Macro Hedges / Tail Risk",    source:"Manager disclosure", asOf:"Q3 13F / 2025 AR", vals:["◯","◐","●","◐","◯","◯","●"],note:"Tepper CLOSED his AAPL put in Q3 — no equity put shows in any of the six filings. Druckenmiller still uses calls for leverage (AMZN, Seagate, Insmed, CDW, Tesla); Bridgewater risk-parity; Fairfax deflation/CPI hedges (2025 AR)"},
+  {theme:"Cash / T-Bills",             source:"10-Q", asOf:"2026-09-30", vals:["●●","◯","◯","◯","◯","◯","◐"],note:"Berkshire $377.4B cash + T-bills (Q3 10-Q, filed Nov 9 — not 13F), up from $365.5B — but $20.5B of that is T-bill purchases not yet settled ($356.9B net of them). Q3 it bought back $9.3B of its own stock and was a small net seller of equities. Fairfax $10.4B cash and short-term plus $20.9B of short US Treasuries (Q3 interim)"},
+  {theme:"Macro Hedges / Tail Risk",    source:"Manager disclosure", asOf:"Q3 13F / Q3 interim", vals:["◯","◐","●","◐","◯","◯","◐"],note:"Tepper CLOSED his AAPL put in Q3 — no equity put shows in any of the six filings. Druckenmiller still uses calls for leverage (AMZN, Seagate, Insmed, CDW, Tesla); Bridgewater risk-parity; Fairfax's Q3 interim shows no CPI or deflation hedges — a short bond book plus a small Treasury forward"},
 ];
 
 // How each source tag renders: label + colour. 13F is the default equity vintage; the others are
@@ -71,7 +71,7 @@ const FUND_COVERAGE = {
   duquesne:    { band: "Partial", note: "$4.5B 13F (incl. calls at notional), but the gold held off-13F and any index-level leverage are not in it — the filing understates both size and leverage." },
   tiger:       { band: "Most",    note: "The US-listed equity core is captured; a large private/VC book (and any pre-listing stakes) sits off-13F." },
   appaloosa:   { band: "Most",    note: "Long US equity captured ($7.6B). Listed options would show (the Q2 AAPL put did; it is gone in Q3); shorts and non-equity hedges would not." },
-  fairfax:     { band: "None",    note: "Not a US 13F filer — files on SEDAR+. Holdings shown are from the 2025 annual report, not a 13F." },
+  fairfax:     { band: "None",    note: "Not a US 13F filer — files on SEDAR+. Figures are from its Q3 2026 interim report (fairfax.ca), as of Sep 30: the whole balance sheet, not just US equity." },
 };
 
 const COVERAGE_BAND = {
@@ -81,16 +81,17 @@ const COVERAGE_BAND = {
   None:    { col: C.red, bg: C.rBg, bdr: P.red200 },
 };
 
-// ── B4 — HEDGES per manager. The disclosed downside/tail protection (mostly off-13F), tracked so Q3
-// can be diffed for whether hedging SPREADS across the group. `flag:true` = an explicit equity hedge.
+// ── B4 — HEDGES per manager. The disclosed downside/tail protection (mostly off-13F), tracked so each
+// quarter can be diffed for whether hedging SPREADS across the group. `flag:true` = an explicit equity
+// hedge. Q3 2026 answer: it did not spread — the one equity hedge (Appaloosa's AAPL put) was closed.
 const FUND_HEDGES = {
-  berkshire:   { text: "None — net long; the (now shrinking) $365.5B cash pile is the de-facto hedge." },
+  berkshire:   { text: "None — net long; the $377.4B cash + T-bills (Q3 10-Q; $356.9B net of unsettled purchases) is the de-facto hedge." },
   pershing:    { text: "None disclosed — long-only quality compounders." },
-  bridgewater: { text: "Risk-parity overlay + a gold sleeve (Newmont, Barrick) as the portfolio hedge; no single-name equity hedge on the 13F." },
-  duquesne:    { text: "Heavy index/single-name CALL usage (RSP/IWM/SPY/EWZ/INSM/TSLA) for leverage — not downside; ~25–30% gold off-13F is the macro hedge." },
+  bridgewater: { text: "Risk-parity overlay + a gold sleeve (Newmont, Barrick — both trimmed in Q3); no single-name equity hedge on the 13F." },
+  duquesne:    { text: "CALLS for leverage (AMZN, Seagate, Insmed, CDW, Tesla) — not downside protection; gold held off-13F plus new on-13F gold miners is the macro hedge." },
   tiger:       { text: "None — an unhedged growth/AI long (style: 90 growth, 20 defensiveness)." },
-  appaloosa:   { flag: true, text: "NEW AAPL PUT (~3.1%) — the ONLY explicit equity hedge in the set, run alongside its Micron top-2 long: long the thesis, hedged the multiple." },
-  fairfax:     { text: "CPI-linked derivatives + deflation / tail hedges (manager disclosure, off-13F) — the group's most hedge-forward book." },
+  appaloosa:   { text: "None now — the AAPL PUT (~3.1% in Q2, the only explicit equity hedge in the set) was CLOSED in Q3, while Micron grew to #1." },
+  fairfax:     { text: "No CPI-linked or deflation hedges in the Q3 interim. A small US Treasury forward (~$247M notional) hedges rate risk; the real defence is a short bond book (US Treasuries nearly all within 5 years) and $10.4B of cash." },
 };
 
 // ── Improvement #3b — NOTABLE ABSENCES. Trades worth checking for; presence/absence is COMPUTED from
@@ -212,7 +213,7 @@ function FundDetail({ fund, prices, onFetchPrices, pricesLoading, pricesUpdated 
 
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-          <SLabel>Top Holdings — {fund.id === "fairfax" ? "Annual Report 2025" : `${MATRIX_13F.label} · as of ${MATRIX_13F.asOfLabel}`}</SLabel>
+          <SLabel>Top Holdings — {fund.id === "fairfax" ? "Q3 2026 interim · as of Sep 30" : `${MATRIX_13F.label} · as of ${MATRIX_13F.asOfLabel}`}</SLabel>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             {/* #1 — value-weighted move of the disclosed book since the filing date. */}
             {(() => {
