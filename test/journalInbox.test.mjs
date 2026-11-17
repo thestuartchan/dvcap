@@ -5,7 +5,7 @@
 // gate), how it meets its fill, and that nothing a note says reaches the channel or the repo.
 import { validateNote, orderUnits, matchNote, processInbox, applyDraft, journalLine, draftCounts, expectationText,
          tradingDaysBetween, chooseCandidate, appendProcessed, whyNot, explainWaiting, assembledSpreads, fmtPx, amendTargets, productRoot, retryAmends, resolveAmend, amendRow, INBOX_KEY, DRAFTS_KEY,
-         legTargets, pairLegOuts, legOutOf, closeView, exactMatch, legOutShortfall } from '../lib/journalInbox.js';
+         legTargets, pairLegOuts, legOutOf, closeView, exactMatch, legOutShortfall, pairWaiting } from '../lib/journalInbox.js';
 import { derivePosition } from '../lib/positions.js';
 import { upgradeDrafts } from '../lib/sameDayFills.js';
 import { fillOf } from '../lib/journalInbox.js';
@@ -609,6 +609,11 @@ globalThis.fetch = realFetch;
     const pr = o2.drafts.find(d => d.paired);
     eq('missing buy recorded: the next run pairs them into one close of 3', [pr?.fill.type, pr?.fill.side, pr?.fill.qty, pr?.paired.rowId, o2.drafts.filter(d => d.legOut).length], ['COMBO', 'SELL', 3, 'ABC-v', 0]);
     eq('…no shortfall left', o2.drafts.map(d => legOutShortfall(d, [fixed])).filter(Boolean).length, 0);
+    // The trap (17 Nov): the buy typed in, but no sync yet — the cards are still single legs. Confirming
+    // one would split the spread; pairWaiting holds it until a sync pairs them.
+    eq('buy recorded, not yet synced: each single leg waits for the pair', legs.map(d => pairWaiting(d, o1.drafts, [fixed])).map(x => x && [x.rowId, x.qty]), [['ABC-v', 3], ['ABC-v', 3]]);
+    eq('…but not while the row is still short (that card says a buy is missing)', legs.map(d => pairWaiting(d, o1.drafts, [VERT])), [null, null]);
+    eq('…and never for the paired card itself', pairWaiting(pr, o2.drafts, [fixed]), null);
     const ap = applyDraft([fixed], pr, {}, { today: '2026-11-16' });
     eq('…and confirming it closes the trade', [ap.how, derivePosition(ap.rows[0].fills, { multiplier: 100, side: 'long' }).status], ['added', 'closed']);
   }
