@@ -47,7 +47,7 @@ import { fitId } from "../lib/rowIds.js";
 import { sameTradeCards, sameTradeLine, entrylessCards, entrylessLine } from "../lib/optionLedger.js";
 import { parseCommand, resolveCandidates, commandRow, commandSummary, firstFill, priceText } from "../lib/commandBar.js";
 import { actionItems } from "../lib/actions.js";
-import { applyDraft, LEVEL_LABEL as JOURNAL_LEVEL_LABEL } from "../lib/journalInbox.js";
+import { applyDraft, pairWaiting, LEVEL_LABEL as JOURNAL_LEVEL_LABEL } from "../lib/journalInbox.js";
 import { provisionalBadge } from "../lib/sameDayFills.js";
 import JournalDrafts from "./JournalDrafts.jsx";
 import FillAudit from "./FillAudit.jsx";
@@ -4146,6 +4146,10 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
     return { ok: res.ok, error: j?.journal?.error };
   };
   const confirmDraft = async (draft, edits) => {
+    // Two legs closed together whose row now holds enough to pair them: a sync makes them one close
+    // (lib/journalInbox.js pairWaiting) — confirming one alone would split the trade instead.
+    const w = pairWaiting(draft, journal?.drafts || [], rows);
+    if (w) { setJournalMsg({ err: true, text: `Press Sync now first — this leg and its partner become one close of ${w.qty} on ${w.rowId}.` }); return; }
     const r = applyDraft(rows, draft, edits, { today: new Date().toISOString().slice(0, 10) });
     if (r.error) { setJournalMsg({ err: true, text: r.error }); return; }
     setJournalBusy(true); setJournalMsg(null);
@@ -4167,6 +4171,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
   const confirmMany = async (list) => {
     let next = rows; const done = [], skipped = [];
     for (const d of list) {
+      if (pairWaiting(d, journal?.drafts || [], next)) { skipped.push(`${d.fill?.label || d.id}: press Sync now first — it pairs with its other leg`); continue; }
       const r = applyDraft(next, d, {}, { today: new Date().toISOString().slice(0, 10) });
       if (r.error) { skipped.push(`${d.fill?.label || d.id}: ${r.error}`); continue; }
       next = r.rows; done.push(d.id);
