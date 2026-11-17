@@ -7,7 +7,7 @@
 // disagrees with its note can still be confirmed, because the fill is what happened.
 import { useState } from "react";
 import { C } from "./theme.js";
-import { draftCounts, expectationText, fmtPx, amendRow, NOTE_TAGS, LEVEL_LABEL, bulkCandidates, bulkLabel, legTargets } from "../lib/journalInbox.js";
+import { draftCounts, expectationText, fmtPx, amendRow, NOTE_TAGS, LEVEL_LABEL, bulkCandidates, bulkLabel, legTargets, legOutShortfall } from "../lib/journalInbox.js";
 
 const isRuleChange = (d) => d.kind === "amend" || (d.kind === "ambiguous" && !!d.candidates?.[0]?.row);
 const GROUPS = [
@@ -131,6 +131,8 @@ function DraftCard({ d, rows, onConfirm, onDismiss, onChoose, busy }) {
   const exp = d.fill ? expectationText(d) : null;
   const startEdit = () => setEdit({ tag: d.note?.tag || null, rationale: d.note?.rationale || "", levels: { ...(d.note?.levels || {}) }, rules: d.note?.rules || [], rulesGiven: d.note?.rulesGiven });
   const cleaned = () => edit && { ...edit, levels: Object.fromEntries(Object.entries(edit.levels || {}).filter(([, x]) => x)) };
+  // IBKR closed more of this leg than the trade holds: confirming cannot work until the missing buy is in.
+  const short = legOutShortfall(d, rows);
   return (
     <div style={{ border: "1.5px solid " + ((exp && !exp.ok) || d.recordedParts?.length ? C.aBdr : C.bdr), background: (exp && !exp.ok) || d.recordedParts?.length ? C.aBg : C.surf, borderRadius: 9, padding: "8px 10px", display: "grid", gap: 5 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
@@ -168,7 +170,13 @@ function DraftCard({ d, rows, onConfirm, onDismiss, onChoose, busy }) {
           This leg belongs to {d.legOut.ambiguous.length} open trades ({d.legOut.ambiguous.map(x => x.rowId).join(", ")}) — nothing will be split.
         </div>
       )}
-      {!d.paired && d.legOut?.rowId && (() => {
+      {short && (
+        <div style={{ fontSize: 12, color: C.amber, fontWeight: 700, lineHeight: 1.45 }}>
+          Can't confirm yet: IBKR closed <b>{short.sells}</b> but <b>{short.label}</b> ({short.rowId}) holds <b>{short.holds}</b> — a buy is missing from the console.
+          Record that buy on the trade (its Fills row), then press Sync now: the legs closed together then become one close.
+        </div>
+      )}
+      {!short && !d.paired && d.legOut?.rowId && (() => {
         const live = legTargets(d.fill, rows || []).find(t => t.rowId === d.legOut.rowId);
         const units = live?.units ?? d.legOut.units;
         const side = d.legOut.right === "P" ? "puts" : "calls", one = d.legOut.right === "P" ? "put" : "call";
@@ -214,8 +222,8 @@ function DraftCard({ d, rows, onConfirm, onDismiss, onChoose, busy }) {
         {(d.kind === "fill" || d.kind === "amend") && (edit
           ? <button style={btn("go")} disabled={busy} onClick={() => onConfirm(d, cleaned())}>Confirm edited</button>
           : <>
-              <button style={btn("go")} disabled={busy} onClick={() => onConfirm(d, {})}>Confirm</button>
-              <button style={btn()} disabled={busy} onClick={startEdit}>Edit then confirm</button>
+              <button style={btn("go")} disabled={busy || !!short} title={short ? "A buy is missing from the console — see above" : undefined} onClick={() => onConfirm(d, {})}>Confirm</button>
+              <button style={btn()} disabled={busy || !!short} onClick={startEdit}>Edit then confirm</button>
             </>)}
         {edit && <button style={btn()} onClick={() => setEdit(null)}>Cancel edit</button>}
         <button style={btn()} disabled={busy} onClick={() => onDismiss(d)}>Dismiss</button>

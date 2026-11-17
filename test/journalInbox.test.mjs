@@ -5,7 +5,7 @@
 // gate), how it meets its fill, and that nothing a note says reaches the channel or the repo.
 import { validateNote, orderUnits, matchNote, processInbox, applyDraft, journalLine, draftCounts, expectationText,
          tradingDaysBetween, chooseCandidate, appendProcessed, whyNot, explainWaiting, assembledSpreads, fmtPx, amendTargets, productRoot, retryAmends, resolveAmend, amendRow, INBOX_KEY, DRAFTS_KEY,
-         legTargets, pairLegOuts, legOutOf, closeView, exactMatch } from '../lib/journalInbox.js';
+         legTargets, pairLegOuts, legOutOf, closeView, exactMatch, legOutShortfall } from '../lib/journalInbox.js';
 import { derivePosition } from '../lib/positions.js';
 import { upgradeDrafts } from '../lib/sameDayFills.js';
 import { fillOf } from '../lib/journalInbox.js';
@@ -587,6 +587,31 @@ globalThis.fetch = realFetch;
   eq('more than the leg holds: refused', /holds 6/.test(applyDraft([STRADDLE], { ...leg, fill: { ...leg.fill, qty: 9 } }).error || ''), true);
   const buys = out.drafts.filter(d => d.legOut).map(d => ({ ...d, fill: { ...d.fill, side: 'BUY' } }));
   eq('pairLegOuts never pairs legs bought the same way as held', pairLegOuts(buys, [STRADDLE]).made.length, 0);
+
+  // MORE CLOSED THAN THE ROW HOLDS (17 Nov 2026). A put vertical the console holds 2 of; IBKR closed 3
+  // (one buy never reached the console) with both legs in one minute. Nothing pairs and nothing splits —
+  // and the card says why, instead of a Confirm that does nothing. Once the missing buy is recorded,
+  // the next run pairs the legs into one close of 3. Made-up name and numbers.
+  {
+    const ABC = (id, right, strike, side, qty, px) => O({ ibOrderID: id, conid: `${id}1`, symbol: `ABC   261218${right}00${strike}000`, underlyingSymbol: 'ABC', assetCategory: 'OPT',
+      putCall: right, strike, expiry: '20261218', multiplier: 100, buySell: side, quantity: side === 'SELL' ? -qty : qty, tradePrice: px, ibCommission: -1.1, tradeDate: '20261116', dateTime: '20261116;145858' });
+    const VERT = { id: 'ABC-v', symbol: 'ABC', underlying: 'ABC', instrument: 'spread', side: 'long', multiplier: 100, currency: 'USD', hardDate: '2026-12-11',
+      legs: [{ right: 'P', strike: 25, expiry: '2026-12-18', side: 'short', ratio: 1 }, { right: 'P', strike: 45, expiry: '2026-12-18', side: 'long', ratio: 1 }],
+      fills: [{ id: 'v1', side: 'buy', qty: 2, price: 8.3, date: '2026-11-12' }], thesis: 'made-up vertical', tags: ['journal'] };
+    const TV = trades(ABC('701', 'P', 45, 'SELL', 3, 12.4), ABC('702', 'P', 25, 'BUY', 3, 3.9));
+    const o1 = processInbox({ trades: TV, today: '2026-11-16', holidays: US, rows: [VERT], provisional: true });
+    const legs = o1.drafts.filter(d => d.legOut);
+    eq('3 closed against 2 held: the legs do not pair', [o1.drafts.filter(d => d.paired).length, legs.length], [0, 2]);
+    eq('…each card knows it is short of a buy', legs.map(d => legOutShortfall(d, [VERT])).map(x => x && [x.rowId, x.sells, x.holds]), [['ABC-v', 3, 2], ['ABC-v', 3, 2]]);
+    eq('…and confirming says what is missing', /a buy is missing/.test(applyDraft([VERT], legs[0], {}, { today: '2026-11-16' }).error || ''), true);
+    const fixed = { ...VERT, fills: [...VERT.fills, { id: 'v2', side: 'buy', qty: 1, price: 8.56, date: '2026-11-13' }] };
+    const o2 = processInbox({ trades: TV, today: '2026-11-16', holidays: US, rows: [fixed], provisional: true, drafts: o1.drafts, seen: o1.seen });
+    const pr = o2.drafts.find(d => d.paired);
+    eq('missing buy recorded: the next run pairs them into one close of 3', [pr?.fill.type, pr?.fill.side, pr?.fill.qty, pr?.paired.rowId, o2.drafts.filter(d => d.legOut).length], ['COMBO', 'SELL', 3, 'ABC-v', 0]);
+    eq('…no shortfall left', o2.drafts.map(d => legOutShortfall(d, [fixed])).filter(Boolean).length, 0);
+    const ap = applyDraft([fixed], pr, {}, { today: '2026-11-16' });
+    eq('…and confirming it closes the trade', [ap.how, derivePosition(ap.rows[0].fills, { multiplier: 100, side: 'long' }).status], ['added', 'closed']);
+  }
 
   // A CLOSE NOTE FOR THE WHOLE STRADDLE, AFTER THE PUTS WENT (16 Oct). The book above holds 3 calls
   // and no puts; the last order sells the calls, and the note names both legs.
