@@ -9,6 +9,7 @@
 //   GET /api/gex?symbol=QQQ          read the stored series (default)
 //   GET /api/gex?snapshot=1[&dry=1]  capture today's chain — the cron target
 //   GET /api/gex?custom=INTC         one typed name, on demand, nothing stored (gated)
+//   GET|POST /api/gex?tape=…         the level tape, its grades and the watch list (gated; lib/tapeRoute.js)
 //   GET /api/g/<slug>/<ticker>       the read-only gamma JSON feed (vercel.json rewrites it to
 //                                    ?feed=<slug>&symbol=<ticker>); the slug is the protection
 //   GET /api/g/<slug>/crosscheck     the cross-check JSON under the same slug and limits: credit,
@@ -36,6 +37,7 @@ import { marketState } from '../lib/sessions.js';
 import { rollSummary, OCC_CONFIRM_MIN } from '../lib/occ.js';
 import { healthSummary, transitionRuns, confirmMinVerdict } from '../lib/occHealth.js';
 import { feedBoard, resolveSpot } from '../lib/gexFeedBoard.js';
+import { serveTape } from '../lib/tapeRoute.js';
 
 // ── THE READ-ONLY FEED ───────────────────────────────────────────────────────
 // For a consumer that cannot send an auth header. The slug (32 random bytes, minted below and
@@ -200,6 +202,8 @@ export default async function handler(req, res) {
   if (!kvConfigured()) return res.status(200).json({ available: false, ok: false, reason: 'KV not configured' });
 
   if (req.query?.feed != null) return serveFeed(req, res);
+  // The level tape and the watch list (lib/tapeRoute.js): gated, every branch.
+  if (req.query?.tape != null) return serveTape(req, res);
 
   // GET /api/gex?spmap=1 — the S&P map for the Gamma panel's S&P side: SPY's board and SPX's (SPX +
   // SPXW) converted into SPY prices, the dual ladder rows, both flips and the agreement flags. Market

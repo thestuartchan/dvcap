@@ -39,6 +39,7 @@ import { dubaiEtStamp } from "../lib/timeFmt.js";
 const named = (load, name) => lazy(() => load().then(m => ({ default: m[name] })));
 const TradeConsole  = named(() => import("./TradeConsole.jsx"), "TradeConsole");
 const GexPanel      = named(() => import("./GexPanel.jsx"), "GexPanel");
+const LevelTape     = named(() => import("./LevelTape.jsx"), "LevelTape");
 const FlowPanel     = named(() => import("./FlowPanel.jsx"), "FlowPanel");
 const RatiosPanel   = named(() => import("./RatiosPanel.jsx"), "RatiosPanel");
 const CalendarPanel = named(() => import("./CalendarPanel.jsx"), "CalendarPanel");
@@ -1360,6 +1361,8 @@ export default function App() {
         )}
         {/* A Go bar request is spent once Gamma has acted on it, so returning to the tab later opens it as usual. */}
         {tab === "gex" && <GexPanel request={gexRequest} onRequestDone={() => setGexRequest(null)} />}
+        {/* The level tape and the watch list: a name picked there opens its board above. */}
+        {tab === "gex" && <div style={{ marginTop: 14 }}><LevelTape onOpen={(s) => setGexRequest({ symbol: s, n: Date.now() })} /></div>}
         {/* Unusual Whales flow under the board (build step 8): hidden unless the session can read it. */}
         {tab === "gex" && <FlowPanel />}
         {/* The Console's rows reach the ticker page from the store this browser already loaded; the

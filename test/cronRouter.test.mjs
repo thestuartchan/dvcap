@@ -51,11 +51,11 @@ function fakeKv() {
   const fetchImpl = async (url, opts) => { calls.push({ url, key: opts.headers['x-tradecard-key'] }); return { status: 200, json: async () => ({ ok: true, secret: 'account data' }) }; };
   const now = at('2026-11-06T15:03:00Z');
   const r1 = await tick({ now, kv, origin: 'https://example.test', env: { TRADECARD_KEY: 'k' }, fetchImpl, dispatch: async () => ({ ok: true }), jobs: JOBS.filter(x => !POLLERS.includes(x.id)) });
-  eq('every due job runs once, with the service key (10:02 checkpoint, 15:00 wallet card)', [r1.ran.map(x => x.id), calls.map(c => [c.url, c.key])],
-     [['checkpoint', 'walletcard'], [['https://example.test/api/tradecard?card=checkpoint', 'k'], ['https://example.test/api/tradecard?card=wallet', 'k']]]);
+  eq('every due job runs once, with the service key (10:02 checkpoint, 15:00 wallet card, 10:00 level tape)', [r1.ran.map(x => x.id), calls.map(c => [c.url, c.key])],
+     [['checkpoint', 'walletcard', 'level-tape'], [['https://example.test/api/tradecard?card=checkpoint', 'k'], ['https://example.test/api/tradecard?card=wallet', 'k'], ['https://example.test/api/gex?tape=capture', 'k']]]);
   ok('its slot is claimed', kv.m.has(claimKey('checkpoint', '2026-11-06T15:02:00.000Z')));
   const r2 = await tick({ now: now + 60000, kv, origin: 'https://example.test', env: {}, fetchImpl, dispatch: async () => ({ ok: true }), jobs: JOBS.filter(x => !POLLERS.includes(x.id)) });
-  eq('the next tick does not run them again', [r2.ran.length, r2.skipped, calls.length], [0, 2, 2]);
+  eq('the next tick does not run them again', [r2.ran.length, r2.skipped, calls.length], [0, 3, 3]);
   const last = kv.m.get(LAST_KEY);
   eq('the outcome is recorded', [last.checkpoint.ok, last.checkpoint.status, last.checkpoint.slot], [true, 200, '2026-11-06T15:02:00.000Z']);
   ok('and nothing from the route\'s body but its verdict', !JSON.stringify(last).includes('account data'));
