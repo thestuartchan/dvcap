@@ -32,7 +32,9 @@
 // eighteen minutes before the captures, and eighteen minutes is enough to move a quote across the
 // live/delayed boundary — so the golden would have described a freshness that never existed.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { buildBlocks, assembleDiscord } from '../api/preread.js';
+import { buildBlocks, assembleDiscord, globalMoneyLines, globalChangeLines, globalSnapOf } from '../api/preread.js';
+import { assembleGlobal, globalCalendar } from '../lib/globalMacro.js';
+import { weekHighlights } from '../lib/calendar.js';
 import { regionTapeRead } from '../lib/regionTape.js';
 import { ctaSection } from '../lib/briefSections.js';
 import { UNIVERSE } from '../data/universe.js';
@@ -57,7 +59,32 @@ const REGIONS = ['asia', 'eu', 'us'];
 const UPDATE = process.env.UPDATE_GOLDEN === '1';
 
 // One function, called twice — once for the golden and once under a shimmed wall clock (below).
-function renderRegion(region) {
+function renderRegion(region, { globalPrev = null } = {}) {
+  const { s, NOW, leaning, composed } = inputsFor(region);
+  const blocks = buildBlocks(region, s.quotes, s.indices, s.macro, s.regime, s.cal, s.cross, s.sox,
+    { leaning, composed, auctions: s.auctions || null, monetization: s.monetization || null,
+     handoff: s.handoff || null, smicAH: s.smicAH || null, foreign: {}, kofia: KOFIA_STORE, now: NOW, globalPrev });
+  const text = assembleDiscord(region, UNIVERSE[region].label, blocks)
+    // The header carries the render time and is the one line that cannot be frozen.
+    .replace(/· \d{4}-\d{2}-\d{2} \d{2}:\d{2}Z\*\*/, '· <TIME>**');
+  return text;
+}
+
+// THE OVERVIEW'S SHARED HALF, from the same frozen inputs: the rates / credit / supply / oil /
+// inflation lines and the global tripwires the three briefs used to repeat. The ratios, FX and
+// cross-asset sections read a year of closes, which no fixture carries; they are asserted in
+// test/globalMacro.test.mjs against constructed series.
+function renderGlobal(region) {
+  const { s, NOW, leaning, composed } = inputsFor(region);
+  const blocks = {
+    money: globalMoneyLines(s.macro, s.regime, s.cross, { composed, auctions: s.auctions || null }),
+    calendar: globalCalendar(weekHighlights(NOW, null, 'America/New_York'), { today: NOW.toISOString().slice(0, 10) }),
+    changeLines: globalChangeLines(composed, leaning),
+  };
+  return assembleGlobal(blocks, { at: NOW }).replace(/· \d{4}-\d{2}-\d{2} \d{2}:\d{2}Z/, '· <TIME>');
+}
+
+function inputsFor(region) {
   const fx = JSON.parse(readFileSync(new URL(`./fixtures-preread-${region}.json`, import.meta.url), 'utf8'));
   const s = fx.state;
   const NOW = new Date(fx.capturedAt);
@@ -87,18 +114,12 @@ function renderRegion(region) {
     // between, which is the same drift already fixed for the per-quote freshness labels turning up
     // one layer down.
   }, { region, now: NOW });
-  const blocks = buildBlocks(region, s.quotes, s.indices, s.macro, s.regime, s.cal, s.cross, s.sox,
-    { leaning, composed, auctions: s.auctions || null, monetization: s.monetization || null,
-     handoff: s.handoff || null, smicAH: s.smicAH || null, foreign: {}, kofia: KOFIA_STORE, now: NOW });
-  const text = assembleDiscord(region, UNIVERSE[region].label, blocks)
-    // The header carries the render time and is the one line that cannot be frozen.
-    .replace(/· \d{4}-\d{2}-\d{2} \d{2}:\d{2}Z\*\*/, '· <TIME>**');
-  return text;
+  return { fx, s, NOW, leaning, composed };
 }
 
 const rendered = {};
-for (const region of REGIONS) {
-  const text = renderRegion(region);
+for (const region of [...REGIONS, 'global-asia']) {
+  const text = region.startsWith('global-') ? renderGlobal(region.slice(7)) : renderRegion(region);
   rendered[region] = text;
 
   const goldenUrl = new URL(`./golden-preread-${region}.txt`, import.meta.url);
@@ -114,6 +135,42 @@ for (const region of REGIONS) {
     }
     console.log('   Re-run with UPDATE_GOLDEN=1 once the new output is what you intend.');
   }
+}
+
+// ── THE 🌐 LINE: WHAT MOVED SINCE THE OVERVIEW ───────────────────────────────
+// The regional briefs carry one line for the global backdrop. Rendered through the real builder
+// against the fixture's own snapshot, once moved (VIX down two points, the 10-year up ten basis
+// points, the 30-year tripwire flipped) and once unmoved.
+{
+  const { s, NOW, leaning, composed } = inputsFor('us');
+  const snap = globalSnapOf({ macro: s.macro, cross: s.cross, items: (composed?.leaning || leaning)?.items || [] });
+  const at = new Date(NOW.getTime() - 14 * 3600000).toISOString();
+  const wire = Object.keys(snap.wires)[0];
+  const moved = renderRegion('us', { globalPrev: { at, snap: { ...snap, vix: snap.vix + 2, us10y: snap.us10y - 0.1, wires: { ...snap.wires, [wire]: !snap.wires[wire] } } } });
+  rendered._globalLine = moved;
+  const line = moved.split('\n').find(l => l.startsWith('🌐'));
+  ok('the 🌐 line renders on a regional brief', !!line && /since the Overview \(\d{2}:\d{2}Z\)/.test(line));
+  ok('directly under the header, before the first section', moved.indexOf('🌐') < moved.indexOf('───'));
+  ok('it names the VIX and 10-year moves', /VIX [\d.]+ → \*\*[\d.]+\*\*/.test(line) && /10yr/.test(line));
+  ok('and the tripwire that changed state', line.includes(wire));
+  const still = renderRegion('us', { globalPrev: { at, snap } }).split('\n').find(l => l.startsWith('🌐'));
+  ok('an unmoved backdrop says so in one line', /nothing material has moved since the Overview/.test(still || ''));
+  const old = renderRegion('us', { globalPrev: { at: new Date(NOW.getTime() - 50 * 3600000).toISOString(), snap } }).split('\n').find(l => l.startsWith('🌐'));
+  ok('an Overview older than a day carries its date', /Overview \(\d{2}-\d{2} \d{2}:\d{2}Z\)/.test(old || ''));
+  ok('and a brief with no Overview yet has no 🌐 line', !/🌐/.test(rendered.us));
+  ok('the regional brief no longer repeats the global lines', !/💵 \*\*Money|🩹 \*\*Credit|🛢️ \*\*Oil|🌡️ \*\*Inflation/.test(rendered.asia + rendered.eu + rendered.us));
+  ok('and the Overview carries them', /💵 \*\*Money/.test(rendered['global-asia']) && /🩹 \*\*Credit/.test(rendered['global-asia']));
+  ok('the Korea tripwires stay on the Asia brief', /The won weakens past/.test(rendered.asia) && !/The won weakens past/.test(rendered['global-asia']));
+}
+// THE OVERVIEW'S SECTION HEADS, through the real assembler with stand-in rows (the closes-driven
+// sections are asserted line by line in test/globalMacro.test.mjs).
+{
+  const text = assembleGlobal({ ratios: { headline: 'h', lines: ['r'] }, fx: { lines: ['f'], breadth: '👉 b' }, cross: ['c'],
+    money: ['m'], ctaLines: '• t', calendar: ['k'], changeLines: '• w' }, { at: new Date('2026-11-19T22:20:00Z') });
+  rendered._globalShape = text;
+  const order = ['⚖️ **RATIOS**', '💱 **FX**', '🧭 **CROSS-ASSET**', '💵 **RATES, CREDIT, INFLATION**', '📐 **TREND FUNDS', '📆 **THIS WEEK**', '🔀 **WHAT WOULD CHANGE IT**'];
+  ok('the Overview renders its seven sections in order', order.every((h, i) => text.indexOf(h) >= 0 && (i === 0 || text.indexOf(h) > text.indexOf(order[i - 1]))));
+  ok('and drops a section with nothing in it', !/💱/.test(assembleGlobal({ ratios: { headline: null, lines: ['r'] } })));
 }
 
 // ── THE GOLDEN MUST NOT KNOW WHAT DAY IT IS ──────────────────────────────────
@@ -147,8 +204,8 @@ for (const region of REGIONS) {
     }
     globalThis.Date = ShimDate;
     try {
-      for (const region of REGIONS) {
-        const again = renderRegion(region);
+      for (const region of [...REGIONS, 'global-asia']) {
+        const again = region.startsWith('global-') ? renderGlobal(region.slice(7)) : renderRegion(region);
         const same = again === rendered[region];
         ok(`the ${region} brief renders the same with the wall clock moved to ${label}`, same);
         if (!same) {
@@ -173,7 +230,8 @@ for (const region of REGIONS) {
   const s = JSON.parse(readFileSync(new URL('./fixtures-preread-asia.json', import.meta.url), 'utf8')).state;
   const pce = s.macro?.corePce?.value, cpi = s.macro?.coreCpi?.value;
   ok('the fixture actually exercises the inflation branch', pce != null && cpi != null);
-  const line = rendered.asia.split('\n').find(l => /Inflation:/.test(l));
+  // The inflation line lives in the Overview now (19 Nov 2026), rendered from the same fixture.
+  const line = rendered['global-asia'].split('\n').find(l => /Inflation:/.test(l));
   ok('and the line renders at all', !!line);
   if (line) {
     // Whichever number is larger, the sentence must not call the Fed's gauge the smaller one.
@@ -279,7 +337,7 @@ for (const region of REGIONS) {
 // is stable across rewording. A new marker fails the build until a fixture produces it or it is
 // waived below with a reason.
 {
-  const sources = ['../api/preread.js', '../lib/briefSections.js', '../lib/gexBrief.js', '../lib/watchlist.js']
+  const sources = ['../api/preread.js', '../lib/briefSections.js', '../lib/gexBrief.js', '../lib/watchlist.js', '../lib/globalMacro.js']
     .map(f => readFileSync(new URL(f, import.meta.url), 'utf8')).join('\n');
   // Only inside template literals and quoted strings, and only where the emoji opens the content —
   // a `${...}` or a bullet may precede it. The commentary above each line is full of the same
