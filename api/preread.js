@@ -50,6 +50,11 @@ import {
   ctaSection,
 } from '../lib/briefSections.js';
 import { buildCta } from '../lib/ctaBook.js';
+import { yahooDailyCloses } from '../lib/yahoo.js';
+import {
+  GLOBAL_FX, GLOBAL_CROSS, GLOBAL_SYMBOLS, RATIO_SYMBOLS, fxRow, crossRow as globalCrossRow, dollarBreadth, ratioRows,
+  globalDeltaLine, assembleGlobal, fetchCloses, globalCalendar, GLOBAL_OVERVIEW_KEY,
+} from '../lib/globalMacro.js';
 
 
 function fmtPct(p) { return p == null ? '—' : `${p > 0 ? '+' : ''}${p.toFixed(1)}%`; }
@@ -436,54 +441,24 @@ export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, 
     if (regime.staleWhileOpen) out.push('⚠️ **Equity prints are stale** — the market is open but these are prior closes, so the sector cuts are suppressed');
     // THE HANDOFF FIRST, because it is the only row about the session that has not started.
     out.push(handoffLine(opts.handoff || null));
-    out.push(ratesLine({ us2y: macro.us2y?.value, us10y: macro.us10y?.value, us30y: macro.us30y?.value,
-                         jgb: macro.jgb || null }));
-    out.push(creditLine({
-      oas: macro.oas?.value, date: macro.oas?.date, state: regime.credit.state,
-      stale: composed?.structured?.rows?.find(r => r.label === 'CREDIT')?.stale ?? false,
-      hygPct: crossRow('volCredit', 'HYG')?.changePct ?? null,
-    }));
-    // SUPPLY sits directly under credit because it is the other half of the same question — what
-    // it costs to borrow, and who is willing to lend at it.
-    out.push(supplyLine(opts.auctions || null));
-    // The AI monetization gate. Sits with the backdrop rather than the map because it is a read on
-    // the capex cycle, not on today's positioning — and it renders only when the pair has said
-    // something, which most days it has not.
-    out.push(monetizationLine(opts.monetization || null));
-    out.push(oilLine({ wti: macro.wti?.price, brent: macro.brent?.price, above: regime.oil.above, stale: macro.wti?.stale }));
+    // ── THE GLOBAL LINES LIVE IN THE OVERVIEW NOW (19 Nov 2026) ──────────────
+    // Rates, credit, Treasury supply, oil, the inflation gap and the yuan were identical in all three
+    // briefs. They render once a day in the Daily Global Macro Overview (globalMoneyLines below,
+    // lib/globalMacro.js) and this brief carries one 🌐 line for what moved since it was posted.
+    // Software vs chips is a US sector read, so it stays on the US brief only.
+    // Treasury SUPPLY is a session event ("auction today, bids close 1 PM ET"): it belongs in the
+    // brief that fires before that session, not in an Overview posted after the close.
+    if (region === 'us') out.push(supplyLine(opts.auctions || null));
+    if (region === 'us') out.push(monetizationLine(opts.monetization || null));
     // ONCE PER BRIEF. For Asia and Europe the VIX is part of the US handoff and OVERNIGHT already
-    // carries it; printing it again here put the same number, to the same two decimals, in two
-    // sections of one message. The US brief has no US handoff, so this is its only rendering.
+    // carries it. The US brief has no US handoff, and the VIX is the US session's own fear gauge, so
+    // it keeps it here.
     if (region === 'us') {
       const vixRow = crossRow('volCredit', 'VIX');
       out.push(volLine({ vix: vixRow?.price, changePct: vixRow?.changePct, band: vixRow?.benchmark?.band }));
     }
-    // The inflation gap, only when it is saying something — see the note on coreSpread above.
-    // The dates go in, so a gap across two release months is not reported as a movement in
-    // inflation — see the note in lib/inflation.js. CPI publishes around the 11th and PCE at month
-    // end, so for about two weeks of every month these are different months.
-    const sp = coreSpread(macro.corePce?.value, macro.coreCpi?.value,
-      { pceDate: macro.corePce?.date, cpiDate: macro.coreCpi?.date });
-    // BACKWARDS AS SHIPPED. `divergent` in lib/inflation.js means core PCE is ABOVE core CPI and
-    // still elevated — core CPI looks like the job is done and the series the Fed actually targets
-    // says it is not. The line read "the one it targets is the lower of the two", which is the
-    // reassuring reading of the alarming case, and it went out on the live Asia brief at 00:24Z
-    // over PCE 3.34% against CPI 2.47%.
-    if (sp?.sameVintage === false) {
-      // Not the reading, because there isn't one this week.
-      out.push(`🌡️ **Inflation:** the two core measures are a month apart right now — ${sp.vintageNote}`);
-    } else if (sp?.divergent) {
-      out.push(`🌡️ **Inflation:** the headline-style measure reads **${sp.cpi}%**, but the gauge the Fed actually targets is **higher at ${sp.pce}%**`
-        + ` — the cooler of the two is not the one policy is set against`);
-    }
-    // China, on the same principle Korea has: one line carrying the currency and the one gauge
-    // that is specific to it. Rendered for every region — the yuan and the A/H premium are read by
-    // anyone holding the names, and the Asia brief is simply where most of them are.
-    out.push(chinaLine({
-      cnh: crossRow('fx', 'USD/CNH')?.price ?? null,
-      cnhPct: crossRow('fx', 'USD/CNH')?.changePct ?? null,
-      ah: opts.smicAH || null,
-    }));
+    // The SMIC A/H premium is an Asia read; the yuan moved to the Overview's FX section.
+    if (region === 'asia') out.push(chinaLine({ ah: opts.smicAH || null }));
     // Korea keeps its own line rather than its own section: one gate, one sentence.
     if (koreaLines && regime.korea) {
       const k = regime.korea;
@@ -505,29 +480,99 @@ export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, 
   // ── 🔀 WHAT WOULD CHANGE IT ────────────────────────────────────────────────
   // composed.leaning, not the raw one — see the note on its return in lib/read.js. A US brief must
   // not carry a Korean flow gauge among its own tripwires.
+  // REGIONAL TRIPWIRES ONLY. The global ones (credit, VIX, Nasdaq futures, the 30-year) render in
+  // the Overview; a crossing since it was posted shows on the 🌐 line.
+  const allItems = (composed?.leaning || leaning)?.items || [];
+  const lead = composed?.structured?.lead || null;
   const changeLines = changeSection({
-    items: ((composed?.leaning || leaning)?.items || []).map(plainTripwire).filter(Boolean),
+    items: allItems.filter(i => isRegionalWire(i?.name)).map(plainTripwire).filter(Boolean),
     flipsIf: composed?.structured?.flipsIf || null,
-    lead: composed?.structured?.lead || null,
+    lead: lead && isRegionalLead(lead) ? lead : null,
   });
 
   // ── 🔄 SINCE YESTERDAY ─────────────────────────────────────────────────────
   // The slow gauges only, and only when one of them actually moved. The snapshot is built here
   // from the same values the sections above rendered, so the delta can never describe a figure the
   // brief did not show.
-  const vixNow = crossRow('volCredit', 'VIX');
+  // Regional gauges only: credit, VIX and oil moved to the 🌐 line, measured against the Overview.
   const snap = {
-    oas: macro.oas?.value ?? null,
-    vix: vixNow?.price ?? null,
     krw: regime.korea?.won?.level ?? null,
-    wti: macro.wti?.price ?? null,
-    wires: Object.fromEntries(((composed?.leaning || leaning)?.items || [])
-      .filter(i => i?.name && i.tripped != null)
+    wires: Object.fromEntries(allItems
+      .filter(i => i?.name && i.tripped != null && isRegionalWire(i.name))
       .map(i => [plainTripwire(i)?.name || i.name, !!i.tripped])),
   };
   const sinceLines = sinceSection(snap, prevSnap);
+  // 🌐 What moved since the Overview, from the same assembled feeds it was built on.
+  const globalLine = opts.globalPrev ? globalDeltaLine(globalSnapOf({ macro, cross, items: allItems }), opts.globalPrev.snap, { at: opts.globalPrev.at, ref: now }) : null;
 
-  return { clockLines, overnightLines: overnight, backdropLines, changeLines, halfDayNote, snap, sinceLines };
+  return { clockLines, overnightLines: overnight, backdropLines, changeLines, halfDayNote, snap, sinceLines, globalLine };
+}
+
+// ── WHAT IS GLOBAL AND WHAT IS REGIONAL ─────────────────────────────────────
+// Korea's won and its retail flow are the only regional tripwires; every other one is global and
+// renders in the Overview. A lead conflict about Korea stays on the Asia brief.
+export const isRegionalWire = (name) => /^KRW|^Retail not absorbing/i.test(String(name || ''));
+export const isRegionalLead = (lead) => /^Korea/i.test(String(lead || ''));
+
+// The figures the 🌐 line compares, from one assembled state. The Overview stores this at post time
+// and every regional brief computes it again from its own assembly, so both sides are the same feeds.
+export function globalSnapOf({ macro = {}, cross = {}, items = [] } = {}) {
+  const row = (g, name) => (cross?.[g]?.rows || []).find(r => r.name === name) || null;
+  return {
+    vix: row('volCredit', 'VIX')?.price ?? null,
+    oas: macro.oas?.value ?? null,
+    us10y: macro.us10y?.value ?? null,
+    us30y: macro.us30y?.value ?? null,
+    wti: macro.wti?.price ?? null,
+    gold: row('breadth', 'GLD')?.price ?? null,
+    dxy: row('fx', 'DXY (summary)')?.price ?? null,
+    usdjpy: row('fx', 'USD/JPY')?.price ?? null,
+    cnh: row('fx', 'USD/CNH')?.price ?? null,
+    wires: Object.fromEntries((items || []).filter(i => i?.name && i.tripped != null && !isRegionalWire(i.name))
+      .map(i => [plainTripwire(i)?.name || i.name, !!i.tripped])),
+  };
+}
+
+// The Overview's rates / credit / supply / oil / inflation lines — the lines the three briefs used
+// to repeat, built by the same helpers over the same assembled feeds.
+export function globalMoneyLines(macro, regime, cross, opts = {}) {
+  const { composed = null } = opts;
+  const crossRow = (group, name) => (cross?.[group]?.rows || []).find(r => r.name === name) || null;
+  const out = [];
+  out.push(ratesLine({ us2y: macro.us2y?.value, us10y: macro.us10y?.value, us30y: macro.us30y?.value,
+                       jgb: macro.jgb || null }));
+  out.push(creditLine({
+    oas: macro.oas?.value, date: macro.oas?.date, state: regime.credit.state,
+    stale: composed?.structured?.rows?.find(r => r.label === 'CREDIT')?.stale ?? false,
+    hygPct: crossRow('volCredit', 'HYG')?.changePct ?? null,
+  }));
+  out.push(oilLine({ wti: macro.wti?.price, brent: macro.brent?.price, above: regime.oil.above, stale: macro.wti?.stale }));
+  // The inflation gap, only when it is saying something — see the note on coreSpread above.
+  // The dates go in, so a gap across two release months is not reported as a movement in
+  // inflation — see the note in lib/inflation.js. CPI publishes around the 11th and PCE at month
+  // end, so for about two weeks of every month these are different months.
+  const sp = coreSpread(macro.corePce?.value, macro.coreCpi?.value,
+    { pceDate: macro.corePce?.date, cpiDate: macro.coreCpi?.date });
+  // BACKWARDS AS SHIPPED. `divergent` in lib/inflation.js means core PCE is ABOVE core CPI and
+  // still elevated — core CPI looks like the job is done and the series the Fed actually targets
+  // says it is not. The line read "the one it targets is the lower of the two", which is the
+  // reassuring reading of the alarming case, and it went out on the live Asia brief at 00:24Z
+  // over PCE 3.34% against CPI 2.47%.
+  if (sp?.sameVintage === false) {
+    // Not the reading, because there isn't one this week.
+    out.push(`🌡️ **Inflation:** the two core measures are a month apart right now — ${sp.vintageNote}`);
+  } else if (sp?.divergent) {
+    out.push(`🌡️ **Inflation:** the headline-style measure reads **${sp.cpi}%**, but the gauge the Fed actually targets is **higher at ${sp.pce}%**`
+      + ` — the cooler of the two is not the one policy is set against`);
+  }
+  return out.filter(Boolean);
+}
+
+// The global tripwires, for the Overview's WHAT WOULD CHANGE IT.
+export function globalChangeLines(composed, leaning) {
+  const items = ((composed?.leaning || leaning)?.items || []).filter(i => !isRegionalWire(i?.name));
+  const lead = composed?.structured?.lead || null;
+  return changeSection({ items: items.map(plainTripwire).filter(Boolean), lead: lead && !isRegionalLead(lead) ? lead : null });
 }
 
 // Korea-stress cluster block (Asia only). null when there's no Korea gate.
@@ -776,6 +821,8 @@ export function assembleDiscord(region, label, blocks) {
     // Prominent half-day warning right under the header (only when applicable).
     ...(blocks.halfDayNote ? [blocks.halfDayNote] : []),
     ...(blocks.regionTapeLine ? [blocks.regionTapeLine] : []),
+    // One line for the global backdrop: what moved since the Daily Global Macro Overview.
+    ...(blocks.globalLine ? [blocks.globalLine] : []),
     ...sections.flatMap(s => [RULE, s]),
     RULE,
     `*👉 = what the arrangement is consistent with, never what to do · "prior close" = that market was shut when the price was taken*`,
@@ -968,7 +1015,8 @@ async function runRegion(region, req) {
 
   const kofia = (await readDoc('kofia').catch(() => null))?.doc || {};
   const blocks = buildBlocks(region, quotes, indices, macro, regime, cal, cross, sox,
-    { leaning, composed, auctions, monetization, handoff, smicAH, foreign: extraQuotes, prevSnap: previous?.snap || null, kofia });
+    { leaning, composed, auctions, monetization, handoff, smicAH, foreign: extraQuotes, prevSnap: previous?.snap || null, kofia,
+      globalPrev: prevLog?.global || null });
   // THE REGION'S OWN TAPE, FIRST (lib/regionTape.js). A pre-read fires before its market opens, so
   // this is the LAST session, dated. Omitted rather than faked if the bars do not come back.
   try {
@@ -1063,7 +1111,8 @@ async function runRegion(region, req) {
   } catch { blocks.watchLines = null; }
   // TREND FUNDS — the CTA replica's read, from the same cached book the Daily tab shows. Best-effort
   // like the sections around it: a model that cannot be read is omitted, never faked.
-  try { blocks.ctaLines = ctaSection(await buildCta()); } catch { blocks.ctaLines = null; }
+  // MOVED TO THE OVERVIEW (19 Nov 2026): the model reads daily closes, so it says the same thing in
+  // all three briefs of a day. It renders once, in the Daily Global Macro Overview.
   // THE READ SECTION IS GONE, NOT LOST. Its structured rows are what BACKDROP now renders and its
   // tripwires are what WHAT WOULD CHANGE IT now renders — both from the same composed object, so
   // there is still no model call anywhere in this path and every figure traces to a parsed field.
@@ -1145,6 +1194,83 @@ function gexVintageLabel(v) {
     : `the ${v.from || 'last'} capture as taken`;
 }
 
+// ── THE DAILY GLOBAL MACRO OVERVIEW ─────────────────────────────────────────
+// Once a day after the US close (the scheduler's global-macro job, 17:20 New York), before the Asia
+// brief. Rates, credit, supply, oil and inflation come from the US assembly — the same feeds and the
+// same line builders the briefs used — and the ratios, FX and cross-asset reads from a year of
+// daily closes (lib/globalMacro.js). Posted to the pre-read channel; the snapshot it stores is what
+// every regional brief's 🌐 line compares against.
+const NY_TZ = 'America/New_York';
+
+async function runGlobal(req) {
+  const posting = req.query.post === '1';
+  const nyDate = localDateIn(NY_TZ);
+  if (posting && req.query.force !== '1') {
+    // After a session only: a weekend or a full US holiday has no new close to read.
+    const shut = closedExchanges(['SPY']);
+    if (isWeekendIn(NY_TZ) || shut.allClosed) {
+      return { status: 200, body: { region: 'global', skipped: true, noSession: true, localDate: nyDate,
+        reason: `${nyDate} had no US session — nothing new closed. Add &force=1 to post anyway.` } };
+    }
+  }
+  let prevLog = null;
+  if (kvConfigured()) { try { prevLog = (await kvGetJson(PREREAD_LAST_KEY)) || {}; } catch { prevLog = null; } }
+  if (req.query.cron === '1') {
+    if (prevLog?.global?.localDate === nyDate) {
+      return { status: 200, body: { region: 'global', skipped: true, previous: prevLog.global,
+        reason: `already delivered for ${nyDate} (posted ${prevLog.global.at})` } };
+    }
+    // The close must have settled, and the Asia brief must not have gone yet.
+    const m = localMinutesOfDay(NY_TZ);
+    if (m < 16 * 60 + 15 || m >= 22 * 60) {
+      return { status: 200, body: { region: 'global', skipped: true, reason: 'off-window (16:15–22:00 New York)' } };
+    }
+  }
+
+  const a = await assembleRegion('us');
+  const { macro, regime, cross, leaning, read: composed, auctions } = a;
+  const closes = await fetchCloses([...new Set([...RATIO_SYMBOLS, ...GLOBAL_SYMBOLS])], { fetchCloses: yahooDailyCloses, range: '1y' });
+  const ratios = ratioRows(closes);
+  const fxRows = GLOBAL_FX.map(d => fxRow(d, closes[d.sym])).filter(Boolean);
+  const cross2 = GLOBAL_CROSS.map(d => globalCrossRow(d, closes)).filter(Boolean);
+  const ctaLines = await buildCta().then(b => ctaSection(b)).catch(() => null);
+  const now = new Date();
+  const blocks = {
+    ratios: { headline: ratios.headline, lines: ratios.lines },
+    fx: fxRows.length ? { lines: fxRows.map(r => r.line), breadth: dollarBreadth(fxRows) } : null,
+    cross: cross2.map(r => r.line),
+    money: globalMoneyLines(macro, regime, cross, { composed, auctions }),
+    ctaLines,
+    calendar: globalCalendar(weekHighlights(now, null, NY_TZ), { today: nyDate }),
+    changeLines: globalChangeLines(composed, leaning),
+  };
+  const message = assembleGlobal(blocks, { at: now });
+  const snap = globalSnapOf({ macro, cross, items: (composed?.leaning || leaning)?.items || [] });
+
+  let posted = null;
+  if (posting) {
+    if (!process.env.DISCORD_WEBHOOK) posted = { ok: false, error: 'DISCORD_WEBHOOK not set' };
+    else {
+      try { posted = await postLong(process.env.DISCORD_WEBHOOK, message, { label: 'Global' }); }
+      catch (e) { posted = { ok: false, error: String(e?.message || e) }; }
+    }
+  }
+  // Kept for the regional briefs' 🌐 line and for the Daily Read (the gamma connector's
+  // get_global_macro tool) — only once it reached the channel, so both describe what was posted.
+  if (kvConfigured() && posted?.ok) {
+    try {
+      await kvSetJson(PREREAD_LAST_KEY, { ...(prevLog || {}), global: { at: now.toISOString(), localDate: nyDate, cron: req.query.cron === '1', snap } });
+      await kvSetJson(GLOBAL_OVERVIEW_KEY, { at: now.toISOString(), localDate: nyDate, message, blocks,
+        ratios: ratios.rows, fx: fxRows.map(({ short, last, usd1, usd5, usd20, trend }) => ({ short, last, usd1, usd5, usd20, trend })),
+        cross: cross2.map(({ short, last, trend, yearPos }) => ({ short, last, trend, yearPos })) });
+    } catch { /* the post matters more than the bookkeeping */ }
+  }
+  // A post that did not land is a failure the scheduler should retry and, after its retries, alert on.
+  const failed = posting && !posted?.ok;
+  return { status: 200, body: { region: 'global', ...(failed ? { ok: false, retryable: true, why: `not posted — ${posted?.error || 'Discord refused'}` } : {}), message, posted, generatedAt: now.toISOString(),
+    parts: { ratios: ratios.built.filter(b => b.stats).length, fx: fxRows.length, cross: cross2.length, cta: !!ctaLines } } };
+}
+
 // ── ALL MODE, AND WHY IT EXISTS ──────────────────────────────────────────────
 // Vercel's Hobby plan allows two CRON ENTRIES, and the original design spent five on this — one
 // per region per DST half — of which only the first two ever ran. Moving to GitHub Actions traded
@@ -1209,6 +1335,11 @@ async function logRegime(req) {
 }
 
 export default async function handler(req, res) {
+  // ?region=global — the Daily Global Macro Overview (runGlobal below).
+  if (String(req.query.region || '').toLowerCase() === 'global') {
+    const g = await runGlobal(req);
+    return res.status(g.status).json(g.body);
+  }
   const r = req.query.all === '1'
     ? await runAll(req)
     : await runRegion((req.query.region || 'asia').toLowerCase(), req);

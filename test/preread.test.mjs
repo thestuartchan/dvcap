@@ -347,7 +347,7 @@ ok('an hour late does not', !at(7, 40, 7).accept);
   // Vercel Pro (6 Nov 2026): the per-minute scheduler (lib/cronRouter.js) runs every region too.
   const { JOBS } = await import('../lib/cronRouter.js');
   const routerRegions = [...new Set(JOBS.filter(j => j.path?.startsWith('/api/preread')).map(j => j.path.match(/region=(\w+)/)[1]))].sort();
-  eq('the scheduler runs all three regions', routerRegions, ['asia', 'eu', 'us']);
+  eq('the scheduler runs all three regions and the Overview', routerRegions, ['asia', 'eu', 'global', 'us']);
   eq('vercel holds only the scheduler tick', crons.length, 1);
   eq('and no GitHub workflow schedules a region any more', wfRegions, []);
 
@@ -374,7 +374,8 @@ ok('an hour late does not', !at(7, 40, 7).accept);
   // A weekend, every region, in its own local date — three of them now that EU is scheduled.
   const sat = prereadStatus({}, { ...deps, now: at('2026-09-05T14:00:00Z') });
   eq('a weekend is no session either', sat.map(r => r.state), ['no-session', 'no-session', 'no-session']);
-  eq('and that covers all three regions', sat.length, SCHEDULED_REGIONS.length);
+  // The Overview is scheduled but not a universe region, so the delivery panel does not watch it.
+  eq('and that covers all three regions', sat.length, SCHEDULED_REGIONS.filter(r => r !== 'global').length);
   eq('and flags nothing', prereadMissed(sat).length, 0);
 
   // THE GUARD MUST NOT OVER-SUPPRESS. An ordinary trading day with nothing delivered past the

@@ -38,6 +38,7 @@ import { rollSummary, OCC_CONFIRM_MIN } from '../lib/occ.js';
 import { healthSummary, transitionRuns, confirmMinVerdict } from '../lib/occHealth.js';
 import { feedBoard, resolveSpot } from '../lib/gexFeedBoard.js';
 import { serveTape } from '../lib/tapeRoute.js';
+import { GLOBAL_OVERVIEW_KEY } from '../lib/globalMacro.js';
 
 // ── THE READ-ONLY FEED ───────────────────────────────────────────────────────
 // For a consumer that cannot send an auth header. The slug (32 random bytes, minted below and
@@ -84,6 +85,20 @@ async function serveFeed(req, res) {
 // call feedBoard and the feed's payload builder in-process — the same board, the same numbers.
 async function mcpTool(name, args) {
   const today = nyToday();
+  if (name === 'get_global_macro') {
+    // The Overview as it was posted (api/preread.js runGlobal). Market data by construction; still
+    // refused if any account-data word reached it.
+    try {
+      const o = await kvGetJson(GLOBAL_OVERVIEW_KEY);
+      if (!o?.at) return toolError('no Overview posted yet — the first goes out after the next US close');
+      const b = o.blocks || {};
+      const out = { at: o.at, date: o.localDate, sections: {
+        ratios: b.ratios || null, fx: b.fx || null, cross: b.cross || [], rates_credit_inflation: b.money || [],
+        trend_funds: b.ctaLines || null, this_week: b.calendar || [], what_would_change_it: b.changeLines || null },
+        ratio_rows: o.ratios || [], fx_rows: o.fx || [], cross_rows: o.cross || [] };
+      return /\b(nlv|qty|journal)\b/i.test(JSON.stringify(out)) ? toolError('overview unavailable') : toolOk(out);
+    } catch { return toolError('overview unavailable'); }
+  }
   if (name === 'get_signal_board') {
     // The Signal Board, as /api/indicators?board=1 serves it; the same leak check as the boards.
     try {
