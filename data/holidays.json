@@ -260,23 +260,13 @@
       "2026-12-03"
     ],
     "half": [],
-    "tentative": [
-      "2027-01-01",
-      "2027-03-10",
-      "2027-03-11",
-      "2027-03-12",
-      "2027-05-17",
-      "2027-05-18",
-      "2027-12-02",
-      "2027-12-03"
-    ]
+    "tentative": []
   },
   "_uae": {
     "source": "DFM circulars (annual calendar, holiday, closure and resumption circulars); UAE public calendar for years DFM has not published",
-    "checkedAt": "2026-11-18T23:03:47.030Z",
+    "checkedAt": "2026-11-19T23:11:49.458Z",
     "basis": {
-      "2026": "dfm-annual",
-      "2027": "feed"
+      "2026": "dfm-annual"
     },
     "openClosure": null,
     "managed": [
@@ -313,15 +303,7 @@
       "2026-06-15": "New Hijri Year 1448 · DFM 09/2026",
       "2026-08-28": "Prophet's Birthday · DFM 11/2026",
       "2026-12-02": "UAE NATIONAL DAY · DFM 12/2025",
-      "2026-12-03": "UAE NATIONAL DAY · DFM 12/2025",
-      "2027-01-01": "New Year's Day · UAE public calendar",
-      "2027-03-10": "Eid al-Fitr · UAE public calendar",
-      "2027-03-11": "Eid al-Fitr Holiday · UAE public calendar",
-      "2027-03-12": "Eid al-Fitr Holiday · UAE public calendar",
-      "2027-05-17": "Eid al-Adha Holiday · UAE public calendar",
-      "2027-05-18": "Eid al-Adha Holiday · UAE public calendar",
-      "2027-12-02": "National Day · UAE public calendar",
-      "2027-12-03": "National Day Holiday · UAE public calendar"
+      "2026-12-03": "UAE NATIONAL DAY · DFM 12/2025"
     }
   }
 }
