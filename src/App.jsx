@@ -10,6 +10,7 @@ import { PB_REGIONS } from "./pages/regions.js";
 import { ASSETS } from "../lib/assets.js";
 import { REGIMES, REGIME_PALETTE } from "../lib/regimes.js";
 import { GoBar, GoKey } from "./GoBar.jsx";
+import { useNewVersion } from "./useNewVersion.js";
 import { PAGES, VIEWS, pageOf } from "./pages/nav.js";
 import { pendingReconciliations, reconStats } from "../lib/recon.js";
 import {  } from "../lib/regimeProb.js";
@@ -843,6 +844,8 @@ export default function App() {
   // THE GO BAR (src/GoBar.jsx): open state, and the last Gamma symbol it asked for.
   const [goOpen, setGoOpen] = useState(false);
   const [gexRequest, setGexRequest] = useState(null);
+  // A newer build shipped since this tab loaded: say so, or new features are silently missing.
+  const newVersion = useNewVersion();
   // The ticker page's symbol, kept across visits in this browser (a convenience, nothing private).
   const [tickerSym, setTickerSymRaw] = useState(() => { try { return localStorage.getItem("ticker_last_v1") || "NVDA"; } catch { return "NVDA"; } });
   const setTickerSym = (s) => { setTickerSymRaw(s); try { localStorage.setItem("ticker_last_v1", s); } catch { /* private window: the last symbol is only a convenience */ } };
@@ -1354,6 +1357,12 @@ export default function App() {
         {/* A FAILED MACRO REFRESH IS SAID, ON EVERY TAB THAT READS IT. The error was rendered only
             on the retired Indicators tab, so State, Drivers, Plan, Hedges and Income kept drawing
             the last stored copy with nothing to say it was old. */}
+        {newVersion && (
+          <div style={{ padding: "8px 12px", marginBottom: 10, borderRadius: 8, background: C.blBg, border: "1px solid " + C.blue, color: C.blue, fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            ↻ dvcap was updated since this tab opened.
+            <button onClick={() => window.location.reload()} style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, padding: "3px 10px", borderRadius: 7, border: "1.5px solid " + C.blue, background: C.surf, color: C.blue }}>Reload</button>
+          </div>
+        )}
         {indError && ["state", "drivers", "plan", "insurance", "income", "global", "street"].includes(tab) && (
           <div style={{ padding: "8px 12px", marginBottom: 10, borderRadius: 8, background: C.aBg, border: "1px solid " + C.aBdr, color: C.amber, fontSize: 12.5, fontWeight: 700 }}>
             ⚠ Macro indicators did not refresh — {indError} Showing the copy from {indUpdated ? dubaiEtStamp(indUpdated) : "an earlier load"}.

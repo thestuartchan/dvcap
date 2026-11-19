@@ -51,7 +51,7 @@ export function LevelTape({ onOpen = null }) {
     try {
       const r = await fetch("/api/gex?tape=read", { credentials: "include" });
       const j = await r.json().catch(() => null);
-      if (r.status === 401) { setErr(401); return; }   // hidden, like the flow panel, unless the session can read it
+      if (r.status === 401) { setErr(401); return; }
       if (!j?.ok) { setErr(j?.error || j?.reason || `HTTP ${r.status}`); return; }
       setErr(null); setData(j);
     } catch (e) { setErr(String(e?.message || e)); }
@@ -122,7 +122,8 @@ export function LevelTape({ onOpen = null }) {
     </div>
   );
 
-  if (err === 401) return null;
+  // A refusal is shown, not hidden: a panel that vanishes looks exactly like one that never shipped.
+  if (err === 401) return <Card><SLabel style={{ marginBottom: 4 }}>🎯 Level tape</SLabel><div style={{ fontSize: 12.5, color: C.amber }}>The server refused this session — reload the page and sign in again.</div></Card>;
   if (err) return <Card>{header}<div style={{ marginTop: 8, fontSize: 12.5, color: C.amber }}>{err}</div></Card>;
   if (!data) return <Card>{header}<div style={{ marginTop: 8, fontSize: 12.5, color: C.muted }}>Loading…</div></Card>;
 
