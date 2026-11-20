@@ -42,9 +42,8 @@
 #
 # Inputs, one directory $D (the same curl lines as scripts/trade-day-checkpoint-backtest.py, plus SPY daily):
 #   curl -sS https://squeezemetrics.com/monitor/static/DIX.csv -o $D/dix.csv
-#   curl -sSL https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv -o $D/VIX.csv
-#   curl -sSL https://cdn.cboe.com/api/global/us_indices/daily_prices/VXN_History.csv -o $D/VXN.csv
-#   for s in QQQ SPY %5EGSPC; do curl -sS -A Mozilla/5.0 \
+#   (VIX and VXN: Yahoo's ^VIX / ^VXN since Cboe closed its history CSVs to automated clients, 19 Nov 2026)
+#   for s in QQQ SPY %5EGSPC %5EVIX %5EVXN; do curl -sS -A Mozilla/5.0 \
 #     "https://query2.finance.yahoo.com/v8/finance/chart/$s?interval=1d&period1=1293840000&period2=$(date +%s)" -o "$D/d_$s.json"; done
 import json, sys, os, math, datetime as dt
 import numpy as np, pandas as pd
@@ -62,15 +61,27 @@ def yahoo_daily(f):
                         index=pd.to_datetime(r['timestamp'], unit='s').normalize()).dropna()
 
 def cboe(f):
+    # Cboe's VIX/VXN history CSV — kept for a saved copy; Cboe closed it to automated clients on
+    # 19 Nov 2026, so the workflow now fetches Yahoo's ^VIX / ^VXN daily bars (vol_index below).
     d = pd.read_csv(f); d.index = pd.to_datetime(d.DATE)
     return d[['OPEN', 'CLOSE']].rename(columns={'OPEN': 'ivo', 'CLOSE': 'iv'})
+
+def vol_index(f):
+    # The vol index's OPEN (ivo, for the overnight change) and CLOSE (iv) — from Yahoo's daily chart
+    # JSON (^VIX, ^VXN), or Cboe's CSV if a saved one is given. Same column meanings either way.
+    if f.endswith('.json'):
+        d = yahoo_daily(f)
+        return d[['o', 'c']].rename(columns={'o': 'ivo', 'c': 'iv'})
+    return cboe(f)
 
 def panels(D):
     dix = pd.read_csv(f'{D}/dix.csv', parse_dates=['date']).set_index('date')
     dix['pct'] = dix.gex.rolling(253).apply(lambda x: (x[:-1] < x[-1]).mean(), raw=True)
     out = {}
-    for name, px, iv in [('QQQ', 'd_QQQ.json', 'VXN.csv'), ('SPX', 'd_%5EGSPC.json', 'VIX.csv'), ('SPY', 'd_SPY.json', 'VIX.csv')]:
-        p = yahoo_daily(f'{D}/{px}').join(cboe(f'{D}/{iv}'), how='inner')
+    pick = lambda j, c: j if os.path.exists(f'{D}/{j}') else c
+    vxn, vix = pick('d_%5EVXN.json', 'VXN.csv'), pick('d_%5EVIX.json', 'VIX.csv')
+    for name, px, iv in [('QQQ', 'd_QQQ.json', vxn), ('SPX', 'd_%5EGSPC.json', vix), ('SPY', 'd_SPY.json', vix)]:
+        p = yahoo_daily(f'{D}/{px}').join(vol_index(f'{D}/{iv}'), how='inner')
         p['pc'] = p.c.shift(1); p['ivp'] = p.iv.shift(1)
         p['imp'] = p.ivp / 100 / np.sqrt(252)
         p['R'] = (p.h - p.l) / p.o / p.imp

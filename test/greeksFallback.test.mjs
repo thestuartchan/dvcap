@@ -21,7 +21,7 @@ const store = { asOf: '2030-01-02', marks: { 'XYZ|2030-03-15|P|100': 6.5, 'XYZ|2
   globalThis.fetch = async () => ({ ok: false, status: 403, json: async () => ({}) });
   try {
     const r = await exposureGreeks('XYZ|2030-03-15|P|100,XYZ|2030-03-15|P|80,ABC|2030-03-15|C|10', { marksStore: store });
-    eq('the feed refusing is reported, not hidden', r.failed.map(x => x.reason.includes('403')), [true, true]);
+    eq('the walled feed is reported, not hidden', r.failed.map(x => /Cloudflare bot wall/.test(x.reason)), [true, true]);
     eq('the statement fills what it holds', [r.matched, r.missing], [2, ['ABC|2030-03-15|C|10']]);
     ok('and the answer says where the figures came from', /IBKR statement marks/.test(r.source) && r.fallback?.asOf === '2030-01-02');
   } finally { globalThis.fetch = real; }
