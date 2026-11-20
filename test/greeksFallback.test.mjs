@@ -17,14 +17,17 @@ const store = { asOf: '2030-01-02', marks: { 'XYZ|2030-03-15|P|100': 6.5, 'XYZ|2
   eq('no store, nothing filled', fillFromStatementMarks({}, ['XYZ|2030-03-15|P|100'], null).filled, 0);
 }
 {
-  const real = globalThis.fetch;
+  // ENVIRONMENT-INDEPENDENT: the build (Vercel) carries UW_API_KEY, which routes the lookup to UW.
+  // This case is the CBOE-walled path with no UW key; the UW path is covered in test/cboeWall.test.mjs.
+  const real = globalThis.fetch, uwKey = process.env.UW_API_KEY;
+  delete process.env.UW_API_KEY;
   globalThis.fetch = async () => ({ ok: false, status: 403, json: async () => ({}) });
   try {
     const r = await exposureGreeks('XYZ|2030-03-15|P|100,XYZ|2030-03-15|P|80,ABC|2030-03-15|C|10', { marksStore: store });
     eq('the walled feed is reported, not hidden', r.failed.map(x => /Cloudflare bot wall/.test(x.reason)), [true, true]);
     eq('the statement fills what it holds', [r.matched, r.missing], [2, ['ABC|2030-03-15|C|10']]);
     ok('and the answer says where the figures came from', /IBKR statement marks/.test(r.source) && r.fallback?.asOf === '2030-01-02');
-  } finally { globalThis.fetch = real; }
+  } finally { globalThis.fetch = real; if (uwKey !== undefined) process.env.UW_API_KEY = uwKey; }
 }
 {
   const row = { id: 'x', symbol: 'XYZ', underlying: 'XYZ', instrument: 'spread', side: 'long', multiplier: 100,
