@@ -43,5 +43,12 @@ const stock = chart({ dates: ['2026-10-15', '2026-10-16'], regStart: '2026-10-16
 eq('a stock at 15:00 New York: left out', await withFeed(stock, '2026-10-16T19:00:00Z'), '2026-10-15');
 eq('a stock at 16:20 New York: in, as before', await withFeed({ ...stock, chart: { result: [{ ...stock.chart.result[0], meta: { ...stock.chart.result[0].meta, regularMarketTime: Z('2026-10-16T20:00:00Z') } }] } }, '2026-10-16T20:20:00Z'), '2026-10-16');
 
+// 20 Nov 2026, 03:38 New York: the feed already describes FRIDAY's session as current while the last
+// bar is Thursday's. Thursday is settled and must stay in; it was being dropped until the close.
+const overnight = chart({ dates: ['2026-11-18', '2026-11-19'], regStart: '2026-11-20T14:30:00Z', regEnd: '2026-11-20T21:00:00Z', mt: '2026-11-19T21:00:01Z' });
+eq('a stock at 03:38 New York the next morning: yesterday in (the 20 Nov case)', await withFeed(overnight, '2026-11-20T08:38:00Z'), '2026-11-19');
+const preOpen = chart({ dates: ['2026-11-19', '2026-11-20'], regStart: '2026-11-20T14:30:00Z', regEnd: '2026-11-20T21:00:00Z', mt: '2026-11-20T13:00:00Z' });
+eq('but a bar for today, before today\'s close, is still left out', await withFeed(preOpen, '2026-11-20T13:05:00Z'), '2026-11-19');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

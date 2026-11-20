@@ -547,7 +547,28 @@ export async function sameDayPeek({ now = new Date(), fetchImpl = fetch, sleep }
 export const EXPOSURE_TREND_KEY = 'dvcap:exposure:trend:v1';
 const MAX_CONTRACTS = 60;
 
-export async function exposureGreeks(spec = '') {
+// ── WHEN THE EXCHANGE FEED IS SHUT ───────────────────────────────────────────
+// 20 Nov 2026: CBOE moved its delayed quotes behind a Cloudflare bot wall (cdn.cboe.com → cdn-api,
+// "Attention Required"), so every root answered 403 and every option line read "no delta yet". A
+// wall is not something this project gets round. The contracts the book holds are on IBKR's own
+// statement with a mark each (lib/flex.js optionMarksOf, kept at every sync), so a contract the feed
+// could not price takes that mark; the console then models its delta from the mark and the live
+// underlying (lib/instruments.js comboGreeks → modelledDelta) and labels the reading modelled.
+// A worthless leg (mark 0) has no solvable vol and no delta to speak of: it is given delta 0.
+export function fillFromStatementMarks(greeks = {}, missing = [], store = null) {
+  const marks = store?.marks || {};
+  let filled = 0;
+  const out = { ...greeks };
+  for (const k of missing) {
+    const m = Number(marks[k]);
+    if (!Number.isFinite(m) || m < 0) continue;
+    out[k] = { mark: m, bid: m, ask: m, ...(m === 0 ? { delta: 0, theta: 0 } : {}), source: 'ibkr-close' };
+    filled++;
+  }
+  return { greeks: out, filled, asOf: store?.asOf || null };
+}
+
+export async function exposureGreeks(spec = '', { marksStore = undefined } = {}) {
   // "QQQ|2026-10-16|C|730,AVGO|2026-10-16|C|390" — or bare symbols, which parse to the same key.
   const keys = [...new Set(String(spec || '').split(',').map(x => x.trim()).filter(Boolean))].slice(0, MAX_CONTRACTS);
   const parsed = keys.map(k => {
@@ -578,11 +599,23 @@ export async function exposureGreeks(spec = '') {
     // The OLDEST stamp across the roots wins — a tile cannot be fresher than the stalest leg in it.
     if (r.asOf && (asOf == null || r.asOf < asOf)) asOf = r.asOf;
   }
-  const missing = parsed.map(contractKey).filter(k => !greeks[k]);
+  let missing = parsed.map(contractKey).filter(k => !greeks[k]);
+  let fallback = null;
+  if (missing.length) {
+    const store = marksStore !== undefined ? marksStore : (kvConfigured() ? await kvGetJson(OPTION_MARKS_KEY).catch(() => null) : null);
+    const f = fillFromStatementMarks(greeks, missing, store);
+    if (f.filled) {
+      Object.assign(greeks, f.greeks);
+      missing = parsed.map(contractKey).filter(k => !greeks[k]);
+      fallback = { source: 'IBKR statement marks — delta modelled in the console from the mark and the live underlying', asOf: f.asOf, filled: f.filled };
+    }
+  }
   return {
-    ok: true, greeks, spots, asOf, failed, missing,
+    ok: true, greeks, spots, asOf, failed, missing, fallback,
     requested: parsed.length, matched: Object.keys(greeks).length,
-    source: 'CBOE delayed quotes — published greeks, not modelled',
+    source: fallback && !Object.values(greeks).some(g => g.source !== 'ibkr-close')
+      ? 'IBKR statement marks (CBOE unavailable) — deltas modelled'
+      : 'CBOE delayed quotes — published greeks, not modelled',
   };
 }
 
