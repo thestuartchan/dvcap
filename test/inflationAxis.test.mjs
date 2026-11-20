@@ -91,7 +91,13 @@ const fred = (id, history) => ({ id, ok: true, verified: true, mismatch: null, v
   eq(`a breakeven back to 2.47 after 2.52 stays hot until it is ${BE_EXIT_BP}bp inside the line`, [bh.score, bh.held], [1, true]);
   ok('and the read and flip name 2.45, not a rounded 2.5', /until below 2\.45/.test(bh.read) && /below 2\.45/.test(bh.flip));
   eq('at 2.44 it is between again', b([2.52, 2.44]).score, 0);
-  eq('a breakeven that never crossed is read on the plain band', [b([2.47]).score, b([2.47]).held], [0, false]);
+  eq('a breakeven that never crossed, moving less than the trend bar, is read on the plain band', [b([2.42]).score, b([2.42]).held], [0, false]);
+  // 20 Nov 2026 — inside the band, a 20-session move of BE_TREND_BP or more votes its way.
+  const down = b([2.12]);
+  eq(`inside the band, −18bp over 20 sessions votes cool`, [down.score, down.trending], [-1, true]);
+  ok('and the read says the market is repricing inflation lower', /repricing inflation lower/.test(down.read));
+  eq(`+17bp inside the band votes hot`, b([2.47]).score, 1);
+  eq('outside the band the level still wins over the trend', b([2.52, 2.47]).score, 1);
 }
 
 // ── THE AXIS ─────────────────────────────────────────────────────────────────

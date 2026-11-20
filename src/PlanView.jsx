@@ -16,7 +16,8 @@ import { Chip, ClosestCallout, Delta5 } from "./MarketState.jsx";
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 const BAND_LABEL = { calm: "Calm", caution: "Caution", stress: "Stress", crisis: "Crisis" };
 const BAND_COLOR = { calm: C.green, caution: C.amber, stress: C.orange, crisis: C.red };
-const REGIME_ABBR = { ref: "Refl", inf: "Infl", stag: "Stag", def: "Defl" };
+// Narrow column headers: Goldilocks / Reflation / Stagflation / Deflation (lib/regimeNames.js).
+const REGIME_ABBR = { ref: "Goldi", inf: "Refl", stag: "Stag", def: "Defl" };
 const BUCKET_SHORT = { cash: "Cash", insurance: "Hedges", income: "Income", longTermHolds: "Core", deploymentReady: "Deploy" };
 const TONE = { bad: C.red, warn: C.amber, good: C.green };
 const pp = (v) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(1)}pp`;

@@ -1,6 +1,6 @@
 // test/marketState.test.mjs — one measured state: regime from the axes, conditions from the gauges.
 import { pctRank, upTo, onOrBefore, creditComponent, ratesVolComponent, equityVolComponent, fundingComponent, dollarComponent,
-         breadthComponent, realYieldComponent, conditionsAt, conditions, liquidity, legScore, phi, axisScore, regime, axisWords,
+         breadthComponent, realYieldComponent, conditionsAt, conditions, liquidity, legScore, phi, axisScore, regime, axisWords, freshness, QUADRANTS,
          sizing, stage, hedgePhase, transitions, computeMarketState, stateLogRow, bandOf, STRESS_AT, CONDITION_WEIGHTS,
          CONDITION_SIZING, STAGES, conditionsScore } from '../lib/marketState.js';
 import { seriesHealth, DRIVER_GROUPS, SERIES_META, inflationMomentum, PLAYBOOKS, INSTRUMENTS, stageOf, STAGE_AT } from '../lib/marketState.js';
@@ -92,7 +92,8 @@ const calm = {
   const ax = (g, i) => ({ growth: { pulses: { market: pulse(g[0] * 5, 5, Math.sign(g[0])), weekly: pulse(g[1] * 4, 4, Math.sign(g[1])), monthly: pulse(g[2] * 3, 3, Math.sign(g[2])) } },
                           inflation: { pulses: { market: pulse(i[0] * 3, 3, Math.sign(i[0])), nowcast: pulse(i[1] * 2, 2, Math.sign(i[1])), printed: pulse(i[2] * 3, 3, Math.sign(i[2])) } } });
   const clear = regime(ax([1, 1, 1], [-1, -1, -1]));
-  eq('every leg agreeing: reflation, not contested', [clear.id, clear.contested, clear.headline], ['ref', false, 'Reflation']);
+  eq('every leg agreeing (growth firm, inflation cool): Goldilocks, not contested', [clear.id, clear.contested, clear.headline], ['ref', false, 'Goldilocks']);
+  eq('the four names (lib/regimeNames.js)', Object.values(QUADRANTS).map(q => q.label), ['Goldilocks', 'Reflation', 'Stagflation', 'Deflation']);
   ok('with most of the probability', clear.probs.ref >= 80);
   eq('probabilities are whole percentages summing to 100', Object.values(clear.probs).reduce((a, b) => a + b, 0), 100);
   const today = regime(ax([-0.6, 0.5, 1 / 3], [0, 0, -1 / 3]));
@@ -102,6 +103,13 @@ const calm = {
   eq('axis words', axisWords({ level: 0.5, drift: 0 }, { level: -0.5, drift: -0.6 }), { growth: 'growth firm', inflation: 'inflation cool and cooling' });
   const s = axisScore({ market: pulse(-3, 5, -1), weekly: pulse(2, 4, 1), monthly: pulse(1, 3, 1) }, { market: 0.45, weekly: 0.35, monthly: 0.20 });
   eq('axis score: weighted level, fast-minus-slow drift', [s.level, s.drift], [-0.03, -0.93]);
+  // 20 Nov 2026 — freshness: a leg's weight falls with the age of its inputs.
+  eq('freshness: full to a month, a quarter at three months, a straight line between', [freshness(0), freshness(22), freshness(44), freshness(66), freshness(120), freshness(null)], [1, 1, 0.625, 0.25, 0.25, 1]);
+  const aged = (score, usable, lean, bizDays) => ({ score, usable, lean, legs: Array.from({ length: usable }, () => ({ available: true, vintage: { bizDays } })) });
+  const fresh = axisScore({ market: aged(-3, 3, -1, 1), nowcast: aged(1, 2, 1, 1), printed: aged(3, 3, 1, 1) }, { market: 0.45, nowcast: 0.35, printed: 0.20 });
+  const stale = axisScore({ market: aged(-3, 3, -1, 1), nowcast: aged(1, 2, 1, 1), printed: aged(3, 3, 1, 60) }, { market: 0.45, nowcast: 0.35, printed: 0.20 });
+  ok('a two-month-old print counts for less than a fresh one, so the cooling market weighs more', stale.level < fresh.level);
+  eq('and the weights say so', [stale.weights.printed.age, stale.weights.printed.fresh], [60, 0.35]);
 }
 {
   const st = { regime: { available: true, probs: { ref: 100, inf: 0, stag: 0, def: 0 } }, conditions: { band: { id: 'caution' } } };

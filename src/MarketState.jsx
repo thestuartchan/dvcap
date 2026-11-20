@@ -127,7 +127,7 @@ function RegimeMap({ r }) {
       <line y1={M} y2={M} x1="0" x2={S} style={{ stroke: C.bdrMd, strokeWidth: 1 }} />
       {Object.entries(corner).map(([id, [x, y, anchor]]) => (
         <text key={id} x={x} y={y} textAnchor={anchor} style={{ fill: REGIME_PALETTE[id].color, fontSize: 10.5, fontWeight: 800, fontFamily: MONO }}>
-          {QUADRANTS[id].short.replace("Inflationary boom", "Infl. boom").replace("Deflationary bust", "Defl. bust")} {r.probs[id]}%
+          {QUADRANTS[id].short} {r.probs[id]}%
         </text>
       ))}
       <text x={S - 4} y={M - 4} textAnchor="end" style={{ fill: C.lbl, fontSize: 8.5, fontFamily: MONO }}>growth →</text>
@@ -149,11 +149,18 @@ function AxisRow({ name, a, words }) {
       </div>
       <div style={{ fontSize: 12, color: C.mid }}>{words}</div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {legs.map(([k, v]) => (
-          <span key={k} style={{ fontSize: 11, fontFamily: MONO, color: v > 0.2 ? C.text : v < -0.2 ? C.text : C.muted, background: C.inset, borderRadius: 5, padding: "2px 6px" }}>
-            {LEG_NAME[k] || k} {sgn(v, 2)}
-          </span>
-        ))}
+        {legs.map(([k, v]) => {
+          // The weight each leg carried after the freshness cut (lib/marketState.js axisScore), and
+          // the age of its data when it is old enough to have been cut — so a stale print's pull is visible.
+          const w = a.weights?.[k];
+          const aged = w && w.fresh < 1 ? ` · ${w.age}d old` : "";
+          return (
+            <span key={k} title={w ? `weight ${Math.round(w.used * 100)}% (base ${Math.round(w.base * 100)}%${w.fresh < 1 ? `, cut to ${Math.round(w.fresh * 100)}% for data ${w.age} business days old` : ""})` : undefined}
+              style={{ fontSize: 11, fontFamily: MONO, color: v > 0.2 ? C.text : v < -0.2 ? C.text : C.muted, background: C.inset, borderRadius: 5, padding: "2px 6px" }}>
+              {LEG_NAME[k] || k} {sgn(v, 2)}{w ? ` · ${Math.round(w.used * 100)}%${aged}` : ""}
+            </span>
+          );
+        })}
       </div>
     </div>
   );
