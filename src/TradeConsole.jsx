@@ -2958,6 +2958,17 @@ function Holdings({ data, title, note, open, onToggle, money, bare = false, look
   );
 }
 
+
+// The contract-size card's acknowledgement, per finding (symbols, sizes and the review list), kept
+// in this browser. A new finding has a new signature and shows again.
+const MULT_SEEN_LS = "console_multnote_seen_v1";
+const multNoteSig = (back) => JSON.stringify([
+  (back?.fixed || []).map(f => `${f.symbol}:${f.from ?? 1}>${f.to}`).sort(),
+  (back?.review || []).map(r => r.symbol).sort(),
+]);
+const readMultSeen = () => { try { return localStorage.getItem(MULT_SEEN_LS); } catch { return null; } };
+const writeMultSeen = (sig) => { try { if (sig) localStorage.setItem(MULT_SEEN_LS, sig); } catch { /* private window: the card may show again */ } };
+
 export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger, contested, regimeDiverged, regimeVintage = null, marketState = null, prices, fetchPrices, pricesLoading }) {
   const LS = "dvcap_console_v2";
   // Dismissal is by TIMESTAMP, not a flag: the next run's news must reappear rather than being
@@ -3174,8 +3185,15 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
           // (lib/rowRepairs.js), the same way the sync and the Discord card read them.
           const uniq = normalizeRows(back.rows);
           setRows(uniq.rows);
-          if (uniq.renamed.length || uniq.fixed.length) touch();
-          if (back.changed || back.review.length) setMultNote({ fixed: back.fixed, review: back.review });
+          // THE BACKFILL MUST BE SAVED TO STICK (20 Nov 2026). It ran on every load and fixed the rows
+          // in memory only — nothing marked the page dirty, so Save never offered itself, the stored
+          // rows stayed at ×1, and the next load found them wrong again and showed the card again,
+          // every time. Marked dirty like the id repair above, so one Save ends it.
+          if (uniq.renamed.length || uniq.fixed.length || back.changed) touch();
+          // The card once per finding: "Got it" remembers what it acknowledged, so a review list
+          // that only a human can settle does not reappear on every load.
+          const sig = multNoteSig(back);
+          if ((back.changed || back.review.length) && sig !== readMultSeen()) setMultNote({ fixed: back.fixed, review: back.review, sig });
         }
         else if (Array.isArray(c.watchlist)) setRows(migrateV1(c.watchlist));   // one-time v1 → v2
         if (c.settings) setSettings(s => ({ ...s, ...c.settings }));
@@ -4624,7 +4642,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
         <Card style={{ borderColor: C.aBdr, background: C.aBg, marginBottom: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
             <b style={{ fontSize: 12.5, color: C.amber }}>Contract sizes</b>
-            <button onClick={() => setMultNote(null)}
+            <button onClick={() => { writeMultSeen(multNote.sig); setMultNote(null); }}
               style={{ cursor: "pointer", fontSize: 11, fontWeight: 800, border: "1px solid " + C.aBdr,
                        background: "transparent", color: C.amber, borderRadius: 6, padding: "2px 8px" }}>✕ Got it</button>
           </div>
@@ -4634,7 +4652,7 @@ export function TradeConsole({ liveRegime, consensusRegime = null, creditDanger,
               {multNote.fixed.map(f => `${f.symbol} ×${Number(f.to).toLocaleString("en-US")} (was ×${f.from ?? 1}${f.by === "option on a future" ? ", an option on a future" : ""})${f.alsoMargined ? " (also marked margined)" : ""}`).join(", ")}. Every money figure on
               {multNote.fixed.length === 1 ? " it was" : " them was"} previously computed at the old size, so
               realised P&L and the archive total have changed — the percentages have not, because a
-              percentage is multiplier-free.
+              percentage is multiplier-free. <b>Save to cloud</b> to keep the new sizes.
             </div>
           )}
           {multNote.review.length > 0 && (
