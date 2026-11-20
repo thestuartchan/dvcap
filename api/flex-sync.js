@@ -60,6 +60,7 @@ import { parseTradeConfirms, tcSections } from '../lib/flexTrades.js';
 import { adoptProvisional, tcQueryId, TC_QUERY_ENV, TC_WAITS_MS, SYNC_NOW_MIN_INTERVAL_S, skipOnSameDay, syncNowLine, recordLag, lagText, todayNet, TC_TODAY_KEY, TC_TODAY_TTL_S, SAME_DAY_PEEK_MIN_INTERVAL_S } from '../lib/sameDayFills.js';
 import { isCashEquivalent } from '../lib/cashEquivalents.js';
 import { hasSessionCookie, hasJournalReadKey } from '../lib/apiauth.js';
+import { saveIsmCalendar } from '../lib/ismCalendar.js';
 import { journalOrdersFromFlex } from '../lib/dayTradeJournal.js';
 import { readJournal } from '../lib/journalStore.js';
 import { kvSetNxEx } from '../lib/kv.js';
@@ -690,6 +691,10 @@ async function journalOrders(range) {
 
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') { res.status(405).json({ error: 'method not allowed' }); return; }
+  // ── ?ism=calendar — the month's ISM PMIs from the economic calendar (lib/ismCalendar.js) ──
+  // Here rather than on /api/indicators because the scheduled tasks' environment sends the journal
+  // read key to this path only. Its own validated write, behind that key; nothing below is reachable.
+  if (String(req.query?.ism ?? '') === 'calendar') return saveIsmCalendar(req, res);
   if (String(req.query?.journal ?? '') === '1') {
     res.setHeader('Cache-Control', 'private, no-store');
     if (!(hasJournalReadKey(req) || await hasSessionCookie(req))) { res.status(401).json({ ok: false, error: 'unauthorised' }); return; }
