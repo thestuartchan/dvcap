@@ -50,6 +50,7 @@ import {
   ctaSection,
 } from '../lib/briefSections.js';
 import { buildCta } from '../lib/ctaBook.js';
+import { lastSettledSession } from '../lib/ratios.js';
 import { yahooDailyCloses } from '../lib/yahoo.js';
 import {
   GLOBAL_FX, GLOBAL_CROSS, GLOBAL_SYMBOLS, RATIO_SYMBOLS, fxRow, crossRow as globalCrossRow, dollarBreadth, ratioRows,
@@ -1205,6 +1206,8 @@ const NY_TZ = 'America/New_York';
 async function runGlobal(req) {
   const posting = req.query.post === '1';
   const nyDate = localDateIn(NY_TZ);
+  // The US session this Overview covers: the last one that has closed.
+  const session = lastSettledSession(Date.now());
   if (posting && req.query.force !== '1') {
     // After a session only: a weekend or a full US holiday has no new close to read.
     const shut = closedExchanges(['SPY']);
@@ -1216,9 +1219,13 @@ async function runGlobal(req) {
   let prevLog = null;
   if (kvConfigured()) { try { prevLog = (await kvGetJson(PREREAD_LAST_KEY)) || {}; } catch { prevLog = null; } }
   if (req.query.cron === '1') {
-    if (prevLog?.global?.localDate === nyDate) {
+    // ONCE PER US SESSION, NOT PER CALENDAR DAY (20 Nov 2026). The guard keyed on the New York date,
+    // so a catch-up post at 05:27 ET on the 19th — covering the 18th's close — took the 19th's slot,
+    // and the scheduled post after the 19th's close was skipped as a duplicate. Keyed on the session
+    // the Overview covers (the last settled one), a morning catch-up and that evening's post differ.
+    if (prevLog?.global?.session === session) {
       return { status: 200, body: { region: 'global', skipped: true, previous: prevLog.global,
-        reason: `already delivered for ${nyDate} (posted ${prevLog.global.at})` } };
+        reason: `already delivered for the ${session} session (posted ${prevLog.global.at})` } };
     }
     // The close must have settled, and the Asia brief must not have gone yet.
     const m = localMinutesOfDay(NY_TZ);
@@ -1259,8 +1266,8 @@ async function runGlobal(req) {
   // get_global_macro tool) — only once it reached the channel, so both describe what was posted.
   if (kvConfigured() && posted?.ok) {
     try {
-      await kvSetJson(PREREAD_LAST_KEY, { ...(prevLog || {}), global: { at: now.toISOString(), localDate: nyDate, cron: req.query.cron === '1', snap } });
-      await kvSetJson(GLOBAL_OVERVIEW_KEY, { at: now.toISOString(), localDate: nyDate, message, blocks,
+      await kvSetJson(PREREAD_LAST_KEY, { ...(prevLog || {}), global: { at: now.toISOString(), localDate: nyDate, session, cron: req.query.cron === '1', snap } });
+      await kvSetJson(GLOBAL_OVERVIEW_KEY, { at: now.toISOString(), localDate: nyDate, session, message, blocks,
         ratios: ratios.rows, fx: fxRows.map(({ short, last, usd1, usd5, usd20, trend }) => ({ short, last, usd1, usd5, usd20, trend })),
         cross: cross2.map(({ short, last, trend, yearPos }) => ({ short, last, trend, yearPos })) });
     } catch { /* the post matters more than the bookkeeping */ }
