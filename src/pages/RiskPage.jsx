@@ -91,13 +91,13 @@ const PHASE_NOTES = {
 // macro state (not a crash, but its insurance behaves least intuitively — every yield-competing
 // asset, including the usual defensives, is sold at once). The `Resolution:` prefix marks the
 // three outcome columns as crash resolutions, NOT current-state regimes — critically, this
-// "Debasement" column is a CRISIS and is the OPPOSITE of Macro's "Inflationary Boom".
+// "Debasement" column is a CRISIS and is the OPPOSITE of Macro's "Reflation".
 const INSURANCE_PHASES = [
   { k:"preCrash",  col:"preCrash",  label:"Pre-Crash",                 short:"Pre-Crash",         color:STATUS.WATCH.color,  bg:STATUS.WATCH.bg,  bdr:STATUS.WATCH.bdr,  desc:"Signals deteriorating, no drawdown yet — the accumulation window. Protection is cheap: puts and VIX calls are the right instruments here, before IV reprices. GLD works; miners lag (equity beta).", size:{ band:"0–3%", note:"protection is cheap (VIX low, IV not yet repriced) — begin sizing puts / VIX calls; don't fully activate yet." } },
   { k:"liquidity", col:"liquidity", label:"Liquidity Phase",           short:"Liquidity Phase",   color:STATUS.DANGER.color, bg:STATUS.DANGER.bg, bdr:STATUS.DANGER.bdr, desc:"Drawdown underway — margin calls, correlations going to 1. Gold is SOLD here because it is liquid and profitable: it fell ~12% over ~8 sessions in March 2020 and ~30% from its March 2008 high to its October 2008 low, both times while equities collapsed. Miners are worse (GDX ~−70% in 2008). Protection bought now is expensive — IV has already repriced, so puts and VIX calls are a poor purchase. Cash is the only thing that works cleanly.", size:{ band:"hold · add ~0%", note:"protection is now expensive (IV repriced) — don't chase it. Raise cash and prepare the recovery buy." } },
   { k:"recovery",  col:"recovery",  label:"Recovery / Post-Trough",    short:"Recovery",          color:P.emerald700, bg:P.emerald50, bdr:P.emerald200, desc:"VIX has peaked and is rolling over, credit has stopped widening, forced selling is exhausted — resolution not yet determined. This is THE BUY: gold miners, BTC and equities lead off the trough (the NYSE Arca Gold Miners Index ran +100% Oct'07→Mar'09 while the S&P fell 57%, +40% in Apr'20, +27% in a single day Nov'08 — all of it here, none in the collapse column). Sell the decay hedges into the vol collapse: holding the right hedge past its window is where most insurance P&L is given back. Miners here are a post-trough TRADE with a trigger, never a hedge and never a hold.", size:{ band:"insurance → ~0%", note:"unwind the decay hedges into the vol collapse and rotate the proceeds + dry powder into the recovery buy (miners / BTC / equities)." } },
-  { k:"def",       col:"def",       label:"Deflationary Recession",    short:"Defl. Recession",   color:C.blue, bg:C.blBg, bdr:C.blBdr, desc:"Crash resolves through debt deflation — falling prices, Japan-style. TLT wins. Gold moderate. BTC loses. Same term as the regime on State: a deflationary recession, whether you're reading it (State) or hedging its arrival (here).", size:{ band:"10–18%", note:"the highest insurance allocation — TLT and SPY puts dominate; add IEF as a lower-vol duration alternative." } },
-  { k:"inf",       col:"inf",       label:"Resolution: Debasement",    short:"Res: Debasement",   color:P.violet600, bg:P.violet50, bdr:P.violet300, desc:"Crash resolves through DEBASEMENT — Fed prints, dollar credibility erodes, currency stress, loss of monetary confidence. Gold and BTC win; TLT is a trap. This is a CRISIS — the OPPOSITE of Macro's 'Inflationary Boom' (a good, growth-strong outcome you'd want to be long). Read at speed, the shared word invites exactly the wrong action; hence 'Resolution: Debasement'. Its slow-motion, multi-year cousin — Financial Repression (negative real yields held for years, Japan-style) — is a Macro-tab regime STATE, not a crash resolution; see the Regime-shift scenarios there, not a column here.", size:{ band:"5–10%", note:"gold and BTC as MONETARY insurance (not crash insurance) — TLT is a trap here." } },
+  { k:"def",       col:"def",       label:"Resolution: Deflation",     short:"Res: Deflation",   color:C.blue, bg:C.blBg, bdr:C.blBdr, desc:"Crash resolves through debt deflation — falling prices, Japan-style. TLT wins. Gold moderate. BTC loses. Same name as the Deflation regime on State, whether you're reading it (State) or hedging its arrival (here).", size:{ band:"10–18%", note:"the highest insurance allocation — TLT and SPY puts dominate; add IEF as a lower-vol duration alternative." } },
+  { k:"inf",       col:"inf",       label:"Resolution: Debasement",    short:"Res: Debasement",   color:P.violet600, bg:P.violet50, bdr:P.violet300, desc:"Crash resolves through DEBASEMENT — Fed prints, dollar credibility erodes, currency stress, loss of monetary confidence. Gold and BTC win; TLT is a trap. This is a CRISIS — the OPPOSITE of Macro's 'Reflation' regime (growth firm with inflation running hot, an outcome you'd want to be long). Read at speed, the shared word invites exactly the wrong action; hence 'Resolution: Debasement'. Its slow-motion, multi-year cousin — Financial Repression (negative real yields held for years, Japan-style) — is a Macro-tab regime STATE, not a crash resolution; see the Regime-shift scenarios there, not a column here.", size:{ band:"5–10%", note:"gold and BTC as MONETARY insurance (not crash insurance) — TLT is a trap here." } },
   { k:"stag",      col:"stag",      label:"Resolution: Stagflation",   short:"Res: Stagflation",  color:P.teal700, bg:P.teal50, bdr:P.teal300, desc:"Persistent stagflation — slow grind, not a sharp crash. Favour passive real-asset hedges (GLD, XLP, farmland, HYG puts) over active short instruments. Avoid VIX calls (contango) and SQQQ (daily decay). Size conservatively; favour longer-dated instruments to reduce theta bleed.", size:{ band:"8–15%", note:"gold / staples / HYG puts; size conservatively and favour longer-dated to cut theta bleed over a slow grind." } },
   { k:"hawkish",   col:"hawkish",   label:"Hawkish Rates Repricing",   short:"Hawkish Repricing", color:P.amber700, bg:C.oBg, bdr:P.orange200, desc:"Not a crash — a rates repricing (occurred 2026-07-31: gold −2.07%, TLT −0.87%, XLU −0.37%, XLP −0.80%, IWM −0.70%, BTC −1.8%, SPY roughly flat). Nothing hedges this except the front end. Duration is the risk, and every asset that competes with cash for yield gets sold simultaneously — including the defensives (GLD, TLT, staples) that work in every other scenario.", size:{ band:"front-end only", note:"nothing hedges a rates repricing except the front end (bills / USFR) — duration IS the risk." } },
 ];
@@ -248,7 +248,7 @@ function getCrashSignalRead(liveInd, activeRegime) {
     reason: `CPI ${liveInd.cpiYoY?.toFixed(1)}% YoY, M2 rising, sticky inflation environment`,
   };
   if (deflationary) return {
-    lean: "Deflationary Recession", phaseKey: "def",
+    lean: "Resolution: Deflation", phaseKey: "def",
     reason: `Yield curve ${liveInd.yieldSpread?.toFixed(2)}%, credit spreads ${liveInd.creditSpread?.toFixed(1)}%`,
   };
   return {
@@ -400,8 +400,8 @@ export function HedgesView({ insurancePhase, insuranceSuggest, planRegime, mstat
             {/* Item 4 — purpose line: the two tabs answer different questions. This one is about
                 crash OUTCOMES, not the current regime. Item 5 — explicit macro→column link. */}
             {(() => {
-              // Macro regimes that map to a crash-resolution column. inf (Inflationary Boom) and
-              // ref (Reflationary Growth) are GROWTH regimes, not crashes — deliberately no map.
+              // Macro regimes that map to a crash-resolution column. inf (Reflation) and
+              // ref (Goldilocks) are GROWTH regimes, not crashes — deliberately no map.
               const macroToCol = { stag: "stag", def: "def" };
               // The MEASURED regime (its leading quadrant; the whole mix ranks the assets), with the
               // consensus regime only while the axes have not loaded.
@@ -695,17 +695,17 @@ export function HedgesView({ insurancePhase, insuranceSuggest, planRegime, mstat
                   )}
                   {planRegime.id === "def" && (
                     <div style={{ marginTop: 10, color: planRegime.color, fontSize: 14, lineHeight: 1.6 }}>
-                      📉 Deflation/recession: TLT is #1 insurance. Demand collapses, rates fall hard, gold acts as safe haven. Miners underperform until Fed pivots.
+                      📉 Deflation: TLT is #1 insurance. Demand collapses, rates fall hard, gold acts as safe haven. Miners underperform until Fed pivots.
                     </div>
                   )}
                   {planRegime.id === "ref" && (
                     <div style={{ marginTop: 10, color: planRegime.color, fontSize: 14, lineHeight: 1.6 }}>
-                      🌱 Reflationary growth: Staples and farmland outperform. Miners lag as gold safe-haven bid fades. TLT vulnerable to rising rates.
+                      🌱 Goldilocks: Staples and farmland outperform. Miners lag as gold safe-haven bid fades. TLT vulnerable to rising rates.
                     </div>
                   )}
                   {planRegime.id === "inf" && (
                     <div style={{ marginTop: 10, color: planRegime.color, fontSize: 14, lineHeight: 1.6 }}>
-                      🔥 Inflationary boom: Physical gold is the best insurance; BTC and the gold-linked miners follow. Bonds are toxic. Real assets dominate — the leveraged farmland REIT lags the metals (2022: GDX −9% vs FPI −14%).
+                      🔥 Reflation: Physical gold is the best insurance; BTC and the gold-linked miners follow. Bonds are toxic. Real assets dominate — the leveraged farmland REIT lags the metals (2022: GDX −9% vs FPI −14%).
                     </div>
                   )}
                 </div>
@@ -794,9 +794,9 @@ export function IncomeView({ incomeSorted, planRegime, mstate, activeIncome, set
                   <div style={{ marginTop: 10, color: planRegime.color, fontSize: 13, lineHeight: 1.6 }}>
                     {{
                       stag: "Stagflation: pipelines + T-bills + REITs dominate. Avoid covered calls (capped upside in volatile regime). MLPs pass inflation through contracts.",
-                      def:  "Deflation/recession: Cash (#1) is king — 4%+ risk-free while everything else reprices. Aristocrats (#2) hold dividends. Avoid pipelines (oil demand collapse) and covered calls.",
-                      ref:  "Reflationary growth: REITs rally on rate cuts (#1). Aristocrats grow dividends with the economy (#2). Covered calls work in low-vol environment (#3).",
-                      inf:  "Inflationary boom: pipelines pass through inflation via contract escalators (#1). Covered calls generate income in volatile market (#2). Cash erodes in real terms — avoid.",
+                      def:  "Deflation: Cash (#1) is king — 4%+ risk-free while everything else reprices. Aristocrats (#2) hold dividends. Avoid pipelines (oil demand collapse) and covered calls.",
+                      ref:  "Goldilocks: REITs rally on rate cuts (#1). Aristocrats grow dividends with the economy (#2). Covered calls work in low-vol environment (#3).",
+                      inf:  "Reflation: pipelines pass through inflation via contract escalators (#1). Covered calls generate income in volatile market (#2). Cash erodes in real terms — avoid.",
                     }[ir.id]}{measured && mstate.regime.contested ? " Between regimes, the order above weighs all four columns by probability — the lead regime's note is shown." : ""}
                   </div>
                 </div>

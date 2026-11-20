@@ -143,6 +143,11 @@ function daily(endDate, n, gen) {
   return out;
 }
 const ratio = (series) => ({ ok: true, series });
+// 20 Nov 2026: no market ratio may be measured against a cap-weighted index — a mega-cap sell-off
+// lifts every X/SPY ratio at once and reads as growth.
+eq('no market-growth ratio has SPY, QQQ or another cap-weighted index as its denominator',
+  Object.values(MARKET_PAIRS).filter(m => ['SPY', 'QQQ', 'IVV', 'VOO', 'DIA'].includes(m.den)).map(m => m.num), []);
+eq('RSP/SPY (a concentration gauge, not growth) is no longer a growth ratio', Object.values(MARKET_PAIRS).some(m => m.num === 'RSP'), false);
 const flatPairs = () => Object.fromEntries(Object.keys(MARKET_PAIRS).map(k => [k, ratio(daily('2026-09-11', 45, () => 1.0))]));
 {
   const p = marketPulse({ pairs: flatPairs() }, { now: NOW });
@@ -150,23 +155,23 @@ const flatPairs = () => Object.fromEntries(Object.keys(MARKET_PAIRS).map(k => [k
   ok('the read says the ratios sit inside their bands', /All 5 market ratios sit inside their bands/.test(p.read));
   const c = p.legs.find(l => l.key === 'cyclicals');
   eq(`the change is measured over ${MARKET_LOOKBACK} sessions`, c.change, 0);
-  ok('and the flip names the pair, both bars and the base date', /XLY\/XLP above 1\.02 \(\+2\.0%\) or below 0\.98 \(−2\.0%\) vs the 2026-08-14 base/.test(c.flip));
+  ok('and the flip names the pair, both bars and the base date', /RSPD\/RSPS above 1\.02 \(\+2\.0%\) or below 0\.98 \(−2\.0%\) vs the 2026-08-14 base/.test(c.flip));
   eq('a flat market leg is labelled FLAT for the reader while the verdict token stays shared', [p.label, p.verdict], ['FLAT', 'MIXED']);
   ok('and the read uses the market\'s own words', /no growth tilt priced/.test(p.read));
 }
 {
-  // Cyclicals +3% over the month, copper/gold −5%, breadth +2%, the rest flat.
+  // Cyclicals +3% over the month, copper/gold −5%, industrials/utilities +2%, the rest flat.
   const pairs = flatPairs();
   pairs.cyclicals = ratio(daily('2026-09-11', 45, (i, n) => i >= n - 1 ? 1.03 : 1.0));
   pairs.copperGold = ratio(daily('2026-09-11', 45, (i, n) => i >= n - 1 ? 0.95 : 1.0));
-  pairs.breadth = ratio(daily('2026-09-11', 45, (i, n) => i >= n - 1 ? 1.02 : 1.0));
+  pairs.industrials = ratio(daily('2026-09-11', 45, (i, n) => i >= n - 1 ? 1.02 : 1.0));
   const p = marketPulse({ pairs }, { now: NOW });
   eq('cyclicals +3% votes for growth', p.legs.find(l => l.key === 'cyclicals').score, 1);
   eq('copper/gold −5% votes against, past its wider 4% bar', p.legs.find(l => l.key === 'copperGold').score, -1);
-  eq('breadth +2% votes for, past its 1.5% bar', p.legs.find(l => l.key === 'breadth').score, 1);
+  eq('industrials/utilities +2% votes for, at its 2% bar', p.legs.find(l => l.key === 'industrials').score, 1);
   eq('two for, one against, two flat is EXPANDING on the sum', [p.verdict, p.score], ['EXPANDING', 1]);
   eq('shown to the reader as PAYING FOR GROWTH', p.label, MARKET_LABEL.EXPANDING);
-  ok('the read names the pairs by label', /Copper \/ gold weakening/.test(p.read) && /Cyclicals \/ defensives, Equal-weight \/ cap-weight firm/.test(p.read));
+  ok('the read names the pairs by label', /Copper \/ gold weakening/.test(p.read) && /Cyclicals \/ defensives \(equal-weight\), Industrials \/ utilities firm/.test(p.read));
   ok('a moving pair reads paying for growth or safety', /paying for growth/.test(p.legs.find(l => l.key === 'cyclicals').read) && /paying for safety/.test(p.legs.find(l => l.key === 'copperGold').read));
 }
 {
@@ -177,8 +182,8 @@ const flatPairs = () => Object.fromEntries(Object.keys(MARKET_PAIRS).map(k => [k
   const t = p.legs.find(l => l.key === 'transports');
   eq('a quiet feed is excluded', t.available, false);
   ok('with its last session and age', /has not printed since 2026-09-01 \(9 business days\)/.test(t.reason));
-  const short = marketPulse({ pairs: { ...flatPairs(), breadth: ratio(daily('2026-09-11', 12, () => 1.0)) } }, { now: NOW });
-  ok('too few sessions is excluded with the count', /needs 21 sessions, have 12/.test(short.legs.find(l => l.key === 'breadth').reason));
+  const short = marketPulse({ pairs: { ...flatPairs(), industrials: ratio(daily('2026-09-11', 12, () => 1.0)) } }, { now: NOW });
+  ok('too few sessions is excluded with the count', /needs 21 sessions, have 12/.test(short.legs.find(l => l.key === 'industrials').reason));
   const none = marketPulse({}, { now: NOW });
   eq('no pairs at all is INSUFFICIENT with every ratio excluded', [none.verdict, none.excluded.length], ['INSUFFICIENT', 5]);
   eq('a market leg never reports unverified series — there is no title to check', none.unverified, []);

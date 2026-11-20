@@ -9,6 +9,7 @@ import { GlobalPlaybook, SouthboundPanel, KoreaManualEntry } from "./pages/Today
 import { PB_REGIONS } from "./pages/regions.js";
 import { ASSETS } from "../lib/assets.js";
 import { REGIMES, REGIME_PALETTE } from "../lib/regimes.js";
+import { regimeName } from "../lib/regimeNames.js";
 import { GoBar, GoKey } from "./GoBar.jsx";
 import { useNewVersion } from "./useNewVersion.js";
 import { PAGES, VIEWS, pageOf } from "./pages/nav.js";
@@ -1290,15 +1291,15 @@ export default function App() {
             const pal = r.available ? REGIME_PALETTE[r.id] : null;
             const bandCol = { calm: C.green, caution: C.amber, stress: C.orange, crisis: C.red }[c?.band?.id] || C.mid;
             const regTxt = !r.available ? "no read" : r.contested
-              ? `Between · ${["ref", "inf", "stag", "def"].sort((a, b) => r.probs[b] - r.probs[a]).slice(0, 2).map(id => `${{ ref: "Refl", inf: "Infl", stag: "Stag", def: "Defl" }[id]} ${r.probs[id]}%`).join(" / ")}`
+              ? `Between · ${["ref", "inf", "stag", "def"].sort((a, b) => r.probs[b] - r.probs[a]).slice(0, 2).map(id => `${regimeName(id)} ${r.probs[id]}%`).join(" / ")}`
               : `${REGIMES.find(x => x.id === r.id)?.label ?? r.label} ${r.probs[r.id]}%`;
             const streetDisagrees = r.available && liveRegime && !r.contested && liveRegime.id !== r.id;
             return (
               // WRAPS, NOT SCROLLS. On a 390px phone the strip ran past the edge with its scrollbar
-              // hidden, so "Inflationary Boom 48% → defl" read as cut off and the chips after it
+              // hidden, so "Reflation 48% → deflation" read as cut off and the chips after it
               // were invisible. It now breaks onto a second line.
               <div style={{ display: "flex", columnGap: 14, rowGap: 4, alignItems: "center", flexWrap: "wrap", padding: "7px 2px 3px", borderTop: "1px solid " + C.bdr, marginTop: 4 }}>
-                {chip("Regime", `${regTxt}${r.available && r.drifting ? ` → ${{ ref: "refl", inf: "infl", stag: "stag", def: "defl" }[r.drifting]}` : ""}`, pal?.color || C.mid, () => setTab("state"))}
+                {chip("Regime", `${regTxt}${r.available && r.drifting ? ` → ${regimeName(r.drifting).toLowerCase()}` : ""}`, pal?.color || C.mid, () => setTab("state"))}
                 <span style={{ color: C.bdr }}>·</span>
                 {chip("Conditions", c?.score != null ? `${c.score} ${c.band.label}${c.trend === "rising" ? " ↑" : c.trend === "easing" ? " ↓" : ""}` : "—", bandCol, () => setTab("state"))}
                 <span style={{ color: C.bdr }}>·</span>
@@ -1389,8 +1390,8 @@ export default function App() {
         {tab === "console" && (
           <TradeConsole
             // THE MEASURED REGIME, as the header shows it. The console was handed the consensus
-            // engine's pick (the Street's stagflation) while the strip above it read Reflationary
-            // Growth — so the multiplier tile marked Stagflation "live" and each card's regime fit
+            // engine's pick (the Street's stagflation) while the strip above it read Goldilocks
+            // — so the multiplier tile marked Stagflation "live" and each card's regime fit
             // argued from it. The consensus regime stays where it belongs, on the Street chip.
             liveRegime={(mstate.regime.available && REGIMES.find(r => r.id === mstate.regime.id)) || liveRegime}
             liveInd={liveInd}
@@ -1480,7 +1481,7 @@ export default function App() {
                probability of the two hostile quadrants, and the conditions band (Stress or Crisis
                withholds RISK-ON on its own). The consensus regime only while the axes load. */
             regime={mstate.regime.available
-              ? { id: mstate.regime.probs.stag >= mstate.regime.probs.def ? "stag" : "def", label: "Stagflation or deflationary bust (measured)",
+              ? { id: mstate.regime.probs.stag >= mstate.regime.probs.def ? "stag" : "def", label: `${regimeName("stag")} or ${regimeName("def")} (measured)`,
                   pct: mstate.regime.probs.stag + mstate.regime.probs.def, band: mstate.conditions.band?.id ?? null, score: mstate.conditions.score }
               : { id: liveRegime?.id, label: liveRegime?.label, pct: regimeProbFor(liveRegime?.id) }}
             /* The two slower layers the stance card names beside today's tape, and the IF/THEN
