@@ -5,6 +5,8 @@
 # information. This is the test a gauge has to pass before it may feed the regime score — the rule
 # the gamma flip is held to. Market data only, read raw. Fetch into a scratch directory first:
 #   D=/tmp/corr; mkdir -p $D
+#   NOTE: Cboe closed these history CSVs to automated clients on 19 Nov 2026; VIX and DSPX are on Yahoo (^VIX, ^DSPX),
+#   COR1M and VIXEQ have no free full history — a saved copy is needed to rerun this.
 #   for s in COR1M VIXEQ VIX DSPX; do curl -sSL "https://cdn.cboe.com/api/global/us_indices/daily_prices/${s}_History.csv" -o $D/$s.csv; done
 #   curl -sS https://squeezemetrics.com/monitor/static/DIX.csv -o $D/dix.csv
 #   for s in SPY QQQ; do curl -sS -A Mozilla/5.0 \

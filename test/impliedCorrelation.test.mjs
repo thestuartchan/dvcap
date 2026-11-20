@@ -73,14 +73,21 @@ const fake = (map) => async (url) => {
   const [, body] = hit;
   return { ok: true, status: 200, text: async () => body, json: async () => body };
 };
-const viaCboe = await fetchSeries('COR1M', { fetchImpl: fake({ [CBOE_HISTORY_URL('COR1M')]: csv }) });
+// The Cboe path, as it ran before Cboe walled its histories (19 Nov 2026), kept testable with walled:false.
+const viaCboe = await fetchSeries('COR1M', { walled: false, fetchImpl: fake({ [CBOE_HISTORY_URL('COR1M')]: csv }) });
 eq('Cboe answers: Cboe is the source, with its as-of date', [viaCboe.ok, viaCboe.source, viaCboe.asOf], [true, 'Cboe', day(299)]);
 const viaYahoo = await fetchSeries('DSPX', { fetchImpl: fake({ 'finance.yahoo.com': yj }) });
 eq('Cboe fails: Yahoo answers and says so', [viaYahoo.ok, viaYahoo.source], [true, 'Yahoo']);
-const neither = await fetchSeries('COR1M', { fetchImpl: fake({ 'finance.yahoo.com': { chart: { result: [{ timestamp: [1], indicators: { quote: [{ close: [6.9] }] } }] } } }) });
+const neither = await fetchSeries('COR1M', { walled: false, fetchImpl: fake({ 'finance.yahoo.com': { chart: { result: [{ timestamp: [1], indicators: { quote: [{ close: [6.9] }] } }] } } }) });
 eq('a one-point Yahoo answer is not a history: not available, both reasons given', [neither.ok, neither.error], [false, 'Cboe: HTTP 404; Yahoo: 1 session, not a history']);
-const pay = await correlationPayload({ fetchImpl: fake({ 'COR1M_History': csv, 'VIXEQ_History': csv, 'VIX_History': csv, 'DSPX_History': csv }) });
+const pay = await correlationPayload({ walled: false, fetchImpl: fake({ 'COR1M_History': csv, 'VIXEQ_History': csv, 'VIX_History': csv, 'DSPX_History': csv }) });
 eq('the payload: three rows, every source named, and the summary', [pay.ok, pay.rows.map(r => r.id), Object.values(pay.sources).map(x => x.source), !!pay.summary?.now], [true, ['cor1m', 'gap', 'dspx'], ['Cboe', 'Cboe', 'Cboe', 'Cboe'], true]);
 
+// Walled: Cboe is not asked at all, and the reason says so.
+{
+  let asked = 0;
+  const w = await fetchSeries('COR1M', { walled: true, fetchImpl: async (u) => { asked += /cboe/.test(String(u)) ? 1 : 0; return { ok: true, json: async () => ({ chart: { result: [{ timestamp: [1], indicators: { quote: [{ close: [6.9] }] } }] } }), text: async () => '' }; } });
+  eq('walled: Cboe never asked, the reason names the wall', [asked, w.ok, /walled since 19 Nov 2026/.test(w.error || '')], [0, false, true]);
+}
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

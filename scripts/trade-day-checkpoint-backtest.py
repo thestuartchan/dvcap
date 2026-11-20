@@ -24,8 +24,8 @@
 #
 # Inputs, fetched into one directory $D first:
 #   curl -sS https://squeezemetrics.com/monitor/static/DIX.csv -o $D/dix.csv
-#   curl -sSL https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv -o $D/VIX.csv
-#   curl -sSL https://cdn.cboe.com/api/global/us_indices/daily_prices/VXN_History.csv -o $D/VXN.csv
+#   VIX / VXN: Cboe closed its history CSVs to automated clients on 19 Nov 2026. Fetch Yahoo's ^VIX / ^VXN
+#   daily chart instead and convert to DATE,OPEN,CLOSE columns, or use scripts/trade-day-refit.py's vol_index.
 #   for s in QQQ %5EGSPC; do curl -sS -A Mozilla/5.0 \
 #     "https://query2.finance.yahoo.com/v8/finance/chart/$s?interval=1d&period1=1293840000&period2=$(date +%s)" -o "$D/d_$s.json"; done
 #   Intraday, regular session, saved as {SYM}_30m.json and {SYM}_1h.json for QQQ and SPY. Either

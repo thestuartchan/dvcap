@@ -45,7 +45,9 @@ import { post, webhookFromEnv } from '../lib/discord.js';
 import { sendAlert } from '../lib/alerts.js';
 import { refresh } from './tradecard.js';
 import { authorised as gate, refusalReason } from '../lib/apiauth.js';
-import { fetchCboeGreeks, fetchCboeIndex } from '../lib/cboe.js';
+import { fetchCboeGreeks, CBOE_WALLED } from '../lib/cboe.js';
+import { uwConfigured, uwGet, uwContractGreeks } from '../lib/uw.js';
+import { fetchYahooIndex } from '../lib/optionsChain.js';
 import { parseOptionSymbol, contractKey, TREND_WINDOW } from '../lib/bookExposure.js';
 import { appendRun, SIZER_RUNS_KEY, MAX_RUNS } from '../lib/sizer.js';
 import { catalystLookup } from '../lib/catalystFeed.js';
@@ -589,7 +591,12 @@ export async function exposureGreeks(spec = '', { marksStore = undefined } = {})
     if (!byRoot.has(c.root)) byRoot.set(c.root, []);
     byRoot.get(c.root).push(contractKey(c));
   }
-  const results = await Promise.all([...byRoot.entries()].map(([root, want]) => fetchCboeGreeks(root, want)));
+  // CBOE first while it served automated clients; since 19 Nov 2026 it does not (lib/cboe.js
+  // CBOE_WALLED), so the console's greeks are UW's (gated route, private), then IBKR's statement marks.
+  const useUw = CBOE_WALLED && uwConfigured();
+  const results = await Promise.all([...byRoot.entries()].map(([root, want]) => (useUw
+    ? uwContractGreeks({ root, keys: want, get: (path, o = {}) => uwGet(path, o) })
+    : fetchCboeGreeks(root, want))));
   const greeks = {}, spots = {}, failed = [];
   let asOf = null;
   for (const r of results) {
@@ -614,7 +621,8 @@ export async function exposureGreeks(spec = '', { marksStore = undefined } = {})
     ok: true, greeks, spots, asOf, failed, missing, fallback,
     requested: parsed.length, matched: Object.keys(greeks).length,
     source: fallback && !Object.values(greeks).some(g => g.source !== 'ibkr-close')
-      ? 'IBKR statement marks (CBOE unavailable) — deltas modelled'
+      ? 'IBKR statement marks (live greeks unavailable) — deltas modelled'
+      : useUw ? `Unusual Whales live NBBO and greeks${fallback ? ', IBKR statement marks where UW had none' : ''}`
       : 'CBOE delayed quotes — published greeks, not modelled',
   };
 }
@@ -776,7 +784,8 @@ export default async function handler(req, res) {
     try {
       if (!/^[A-Z][A-Z0-9.]{0,7}$/.test(chainQ)) { res.status(200).json({ ok: false, reason: 'not an underlying symbol' }); return; }
       res.setHeader('Cache-Control', 'no-store');
-      res.status(200).json(await fetchCboeIndex(chainQ));
+      // The entry form's expiries and strikes: Yahoo's chain since CBOE closed its delayed quotes.
+      res.status(200).json(await fetchYahooIndex(chainQ));
     } catch (e) {
       console.error('chain-index', e);
       res.status(200).json({ ok: false, reason: String(e?.message || e) });

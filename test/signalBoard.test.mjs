@@ -78,7 +78,7 @@ const ramp = (n, a, b) => Array.from({ length: n }, (_, i) => a + (b - a) * i / 
   eq('VIX9D ÷ VIX 1.06 is risk-off (front inverted)', [dr.find(r => r.id === 'vix9d_vix').state, /front inverted/.test(dr.find(r => r.id === 'vix9d_vix').text)], ['off', true]);
   const op = dr.find(r => r.id === 'opex');
   eq('opex: the next monthly, sessions to it, shown but never a vote', [op.opex, op.value, op.vote], ['2026-10-16', 0, false]);
-  eq('put/call missing → no state, said why', [dr.find(r => r.id === 'put_call').state, /not cached/.test(dr.find(r => r.id === 'put_call').text)], [null, true]);
+  eq('put/call missing → no state, said why (walled since 19 Nov 2026)', [dr.find(r => r.id === 'put_call').state, /not available: Cboe walled/.test(dr.find(r => r.id === 'put_call').text), dr.find(r => r.id === 'put_call').vote], [null, true, false]);
   eq('put/call from the cross-check block: 80th percentile is risk-off', dealerRows({ putCall: { as_of: '2026-10-16', equity_pct_rank_1y: 80, sessions: [{ equity: 0.7 }] } }, { today: '2026-10-16' }).find(r => r.id === 'put_call').state, 'off');
 }
 {
