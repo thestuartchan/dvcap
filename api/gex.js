@@ -29,7 +29,7 @@ import { handleRpc, dashboardFor, dashboardLeaks, tokenMatches, mcpRateBucket, t
 import { crossCheckLeaks } from '../lib/crossCheck.js';
 import { captureGex, readGex, settledGex, observeRoll, OCC_ROLL_LOG_KEY, OCC_HEALTH_KEY, GEX_SYMBOLS, CUSTOM_ROOT_RE,
          LAST_RECOMPUTE_KEY, LAST_RECOMPUTE_TTL_SEC, recomputeRecord, newerRecompute } from '../lib/gexStore.js';
-import { spxRatio, esBasis, spMap, spMapBlock, dualLadder, fetchSpRates, BAND_PCT as SP_BAND_PCT, LADDER_BAND_PCT, spHeatGrid } from '../lib/spMap.js';
+import { spxRatio, esBasis, spMap, spMapBlock, spxMapRows, dualLadder, fetchSpRates, BAND_PCT as SP_BAND_PCT, LADDER_BAND_PCT, spHeatGrid } from '../lib/spMap.js';
 import { instrumentKind } from '../lib/catalyst.js';
 import { authorised, refusalReason } from '../lib/apiauth.js';
 import { getQuotes } from '../lib/quotes.js';
@@ -85,6 +85,15 @@ async function serveFeed(req, res) {
 // call feedBoard and the feed's payload builder in-process — the same board, the same numbers.
 async function mcpTool(name, args) {
   const today = nyToday();
+  if (name === 'get_spx_map') {
+    // The Daily Read's S&P map rows, from the same SPX and SPY boards (lib/spMap.js spxMapRows).
+    try {
+      const m = await spMapNow({ ladderBandPct: 3.6 });
+      const out = spxMapRows(m.map, m.spxDash, m.spyDash);
+      if (!out.ok) return toolError(`S&P map unavailable — ${out.reason}`);
+      return dashboardLeaks(out).length ? toolError('S&P map unavailable') : toolOk(out);
+    } catch { return toolError('S&P map unavailable'); }
+  }
   if (name === 'get_global_macro') {
     // The Overview as it was posted (api/preread.js runGlobal). Market data by construction; still
     // refused if any account-data word reached it.
