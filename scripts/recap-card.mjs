@@ -9,6 +9,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createRequire } from 'node:module';
 import { selectRows, capStars, cardHtml } from '../lib/earningsCard.js';
 
 const [inPath, outPath] = process.argv.slice(2);
@@ -31,7 +32,8 @@ await Promise.all(rows.map(async (r) => {
 const html = cardHtml({ monday: input.monday, rows, stars, notes: input.notes || {}, headerRight: input.headerRight || '', logos });
 const htmlPath = join(tmpdir(), `recap-card-${process.pid}.html`);
 writeFileSync(htmlPath, html);
-const { chromium } = await import('playwright');
+// The container's Playwright is global (require() resolves it; an ESM import does not).
+const { chromium } = createRequire(import.meta.url)('playwright');
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 2000, height: 800 }, deviceScaleFactor: 1 });
 await page.goto(`file://${htmlPath}`);
