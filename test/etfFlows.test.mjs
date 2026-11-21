@@ -26,6 +26,8 @@ const r = rankFlows(funds);
 eq('ranked on the latest date only', r.date, '2026-11-20');
 eq('inflows biggest first, stale fund left out', r.inflows.map(f => f.ticker), ['AAA', 'CCC']);
 eq('outflows biggest first', r.outflows.map(f => f.ticker), ['BBB', 'EEE']);
+const early = rankFlows([{ ticker: 'AAA', date: '2026-11-19', day: 5 }, { ticker: 'BBB', date: '2026-11-19', day: -5 }, { ticker: 'GGG', date: '2026-11-20', day: -9 }]);
+eq('one fund posted early does not become the day ranked', early.date, '2026-11-19');
 
 const calls = [];
 const get = async (path, { query }) => { calls.push([path, query]); if (path.includes('/BAD/')) throw new Error('UW 402'); return ans; };
