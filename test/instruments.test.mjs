@@ -189,7 +189,7 @@ const TODAY = '2026-09-24';
   eq('a share row passes through', exposureLines({ id: 'x', symbol: 'SOFI', derived: { qty: 500 } }).length, 1);
   // Through the book: shares + the two legs sum under SOFI.
   const rows = [{ id: 'sh', symbol: 'SOFI', qty: 500, derived: { qty: 500 } }, ...lines.map(l => ({ ...l, qty: l.qty }))];
-  const book = bookExposure({ rows, greeks: { 'SOFI|2026-11-20|C|17': { delta: 0.62, mark: 1.42 }, 'SOFI|2026-11-20|C|20': { delta: 0.29, mark: 0.48 } }, underlyings: { SOFI: 16.7 }, nlv: 211000 });
+  const book = bookExposure({ rows, greeks: { 'SOFI|2026-11-20|C|17': { delta: 0.62, mark: 1.42 }, 'SOFI|2026-11-20|C|20': { delta: 0.29, mark: 0.48 } }, underlyings: { SOFI: 16.7 }, nlv: 211000, now: new Date('2026-11-16T15:00:00Z') });   // the fixture expires 20 Nov 2026: a fixed clock, not today
   const g = book.byUnderlying.SOFI;
   eq('shares 500 × 16.7', g.shares, 8350);
   eq('options 0.33 × 16.7 × 100 × 15', g.options, 8266.5);
