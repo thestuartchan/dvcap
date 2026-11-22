@@ -366,6 +366,16 @@ def main():
                     r0 = np.array([v[None] for v in vals]); r5 = np.array([v[0.5] for v in vals]); r3 = np.array([v[0.3] for v in vals])
                     w(f'| {t} | {kind} {lab} | {"real" if src == "real" else "PROXY"} | {len(r0)} | {pct((r0 > 0).mean(), 0)} | {pct(r0.mean(), 1)} | {pct(np.median(r0), 1)} | '
                       f'{pct(best_share(r0, 5), 0)} | {pct(r5.mean(), 1)} | {pct(r3.mean(), 1)} |')
+    # ---- the proxy against real trades on the SAME days (how far the model flatters)
+    w('\n## Proxy vs real, same days (Apr 2025 →, hold to 15:45)\n')
+    w('| Ticker | Structure | Days | Real mean | Real median | PROXY mean | PROXY median | Real mean without best 5 |'); w('|---|---|---|---|---|---|---|---|')
+    for t in TICKERS:
+        for kind in ('0dte', 'next', 'week'):
+            sub = O[(O.t == t) & (O.kind == kind) & (O.strike == 'ATM')]
+            pairs = [(r[None], p[None]) for r, p in zip(sub.real, sub.prox) if r and p]
+            if len(pairs) < 10: continue
+            R, P = np.array([a for a, _ in pairs]), np.array([b for _, b in pairs])
+            w(f'| {t} | {kind} ATM | {len(R)} | {pct(R.mean(), 1)} | {pct(np.median(R), 1)} | {pct(P.mean(), 1)} | {pct(np.median(P), 1)} | {pct(np.sort(R)[:-5].mean(), 1)} |')
     # ---- sizing on the reel's own structure (next expiry, ATM, hold) — real where it exists, proxy for the long view
     w('\n## Sizing — next-expiry ATM, all or nothing (hold to 15:45)\n')
     for src in ('real', 'prox'):
