@@ -1446,7 +1446,8 @@ export default function App() {
         {tab === "alerts" && <AlertsPage />}
 
         {/* ── THE PAPER TRIAL (src/MlsPanel.jsx) ── */}
-        {tab === "mls" && <><MlsPanel /><NoiseBandPanel /></>}
+        {tab === "mls" && <MlsPanel />}
+        {tab === "noiseband" && <NoiseBandPanel />}
 
         {/* ── PLAN ── */}
         {tab === "plan" && (

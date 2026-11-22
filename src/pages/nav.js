@@ -40,9 +40,10 @@ export const PAGES = Object.freeze([
   { id: "alerts",   label: "Rules & Alerts", title: "Every rule, its state, and every alert sent", tabs: [
     { id: "alerts",    label: "🔔 Rules & Alerts" },
   ] },
-  { id: "research", label: "Research",    title: "Smart Money (13F) and the paper trial", tabs: [
+  { id: "research", label: "Research",    title: "Smart Money (13F) and the paper trials", tabs: [
     { id: "street",    label: "🏦 Smart Money" },
     { id: "mls",       label: "🧪 Paper trial" },
+    { id: "noiseband", label: "📈 Noise band" },
   ] },
   { id: "ops",      label: "Ops",         title: "Data health and job health", dot: true, tabs: [
     { id: "health",    label: "🩺 Data health" },
