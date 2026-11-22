@@ -1,6 +1,6 @@
 {
  "_README": "Supplier, customer and competitor links read from each company's own latest annual report on EDGAR, plus its latest 10-Q when filed after it (scripts/supplychain-build.mjs; method in docs/supply-chain.md). Each link quotes the sentence and names the filing it came from. relation = what the counterparty is to the filer. named=false is an anonymised customer as the filing states it.",
- "_generated": "2026-11-15T12:16:12.817Z",
+ "_generated": "2026-11-22T12:52:15.267Z",
  "companies": {
   "AAPL": {
    "cik": 320193,
@@ -705,12 +705,18 @@
   "CSCO": {
    "cik": 858877,
    "name": "CISCO SYSTEMS, INC.",
-   "asOf": "2026-09-02",
+   "asOf": "2026-11-17",
    "filing": {
     "form": "10-K",
     "accession": "0000858877-26-000132",
     "url": "https://www.sec.gov/Archives/edgar/data/858877/000085887726000132/csco-20260725.htm",
     "date": "2026-09-02"
+   },
+   "quarter": {
+    "form": "10-Q",
+    "accession": "0000858877-26-000185",
+    "url": "https://www.sec.gov/Archives/edgar/data/858877/000085887726000185/csco-20261024.htm",
+    "date": "2026-11-17"
    },
    "links": [
     {
