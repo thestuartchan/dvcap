@@ -50,7 +50,7 @@ export function NoiseBandPanel() {
       </div>
     </div>
   );
-  const shell = (body) => <div style={{ marginTop: 14 }}><Card><SLabel>Paper trial — noise band (QQQ intraday)</SLabel>{head}{body}</Card></div>;
+  const shell = (body) => <div><Card><SLabel>Paper trial — noise band (QQQ intraday)</SLabel>{head}{body}</Card></div>;
   if (err) return shell(<div style={{ color: C.amber, fontWeight: 700, fontSize: 12.5 }}>Could not load the ledger: {err}</div>);
   if (!d) return shell(<div style={{ color: C.muted, fontSize: 12.5 }}>Loading…</div>);
   const s = d.summary;
