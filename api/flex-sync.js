@@ -63,6 +63,7 @@ import { hasSessionCookie, hasJournalReadKey } from '../lib/apiauth.js';
 import { saveIsmCalendar } from '../lib/ismCalendar.js';
 import { privatePostRoute } from '../lib/privatePost.js';
 import { etfFlowsRoute } from '../lib/etfFlows.js';
+import { uwHistoryRoute } from '../lib/uwHistory.js';
 import { journalOrdersFromFlex } from '../lib/dayTradeJournal.js';
 import { readJournal } from '../lib/journalStore.js';
 import { kvSetNxEx } from '../lib/kv.js';
@@ -701,6 +702,8 @@ export default async function handler(req, res) {
   if (String(req.query?.post ?? '') === 'private') return privatePostRoute(req, res);
   // ── ?uw=etf-flows — daily ETF inflows/outflows for the recap, keyed, private (lib/etfFlows.js) ──
   if (String(req.query?.uw ?? '') === 'etf-flows') return etfFlowsRoute(req, res);
+  // ── ?uw=hist — SPY/QQQ 1-minute history for the research backtest, keyed, private (lib/uwHistory.js) ──
+  if (String(req.query?.uw ?? '') === 'hist') return uwHistoryRoute(req, res);
   if (String(req.query?.journal ?? '') === '1') {
     res.setHeader('Cache-Control', 'private, no-store');
     if (!(hasJournalReadKey(req) || await hasSessionCookie(req))) { res.status(401).json({ ok: false, error: 'unauthorised' }); return; }
