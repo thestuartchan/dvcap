@@ -47,6 +47,7 @@ const RatiosPanel   = named(() => import("./RatiosPanel.jsx"), "RatiosPanel");
 const CalendarPanel = named(() => import("./CalendarPanel.jsx"), "CalendarPanel");
 const TickerPanel   = named(() => import("./TickerPanel.jsx"), "TickerPanel");
 const MlsPanel      = named(() => import("./MlsPanel.jsx"), "MlsPanel");
+const NoiseBandPanel = named(() => import("./NoiseBandPanel.jsx"), "NoiseBandPanel");
 const PlanView      = named(() => import("./PlanView.jsx"), "PlanView");
 const OpsPage       = named(() => import("./pages/OpsPage.jsx"), "OpsPage");
 const DriversPage   = named(() => import("./pages/MarketsPage.jsx"), "DriversPage");
@@ -1445,7 +1446,7 @@ export default function App() {
         {tab === "alerts" && <AlertsPage />}
 
         {/* ── THE PAPER TRIAL (src/MlsPanel.jsx) ── */}
-        {tab === "mls" && <MlsPanel />}
+        {tab === "mls" && <><MlsPanel /><NoiseBandPanel /></>}
 
         {/* ── PLAN ── */}
         {tab === "plan" && (
