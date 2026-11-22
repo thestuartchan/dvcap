@@ -897,6 +897,24 @@
   "tz": "Asia/Shanghai"
  },
  {
+  "date": "2026-11-23",
+  "title": "HPE Q4 earnings (AC) \u2014 AI-server demand",
+  "region": "US",
+  "tier": 2
+ },
+ {
+  "date": "2026-11-24",
+  "title": "Analog Devices Q4 earnings (BMO) \u2014 chip demand outside AI",
+  "region": "US",
+  "tier": 2
+ },
+ {
+  "date": "2026-11-24",
+  "title": "Dell Q3 earnings (AC) \u2014 the AI-server read; also Workday, HP, Autodesk",
+  "region": "US",
+  "tier": 1
+ },
+ {
   "date": "2026-11-25",
   "title": "Fed Beige Book",
   "region": "US",
@@ -912,6 +930,12 @@
   "scope": "global",
   "time": "08:30",
   "tz": "America/New_York"
+ },
+ {
+  "date": "2026-11-25",
+  "title": "Deere Q4 earnings (BMO) \u2014 the industrial check",
+  "region": "US",
+  "tier": 2
  },
  {
   "date": "2026-11-30",
@@ -940,6 +964,18 @@
   "tz": "America/New_York"
  },
  {
+  "date": "2026-12-01",
+  "title": "Marvell + CrowdStrike earnings (AC) \u2014 custom AI silicon and security",
+  "region": "US",
+  "tier": 1
+ },
+ {
+  "date": "2026-12-02",
+  "title": "Salesforce + Snowflake earnings (AC) \u2014 software and AI spend",
+  "region": "US",
+  "tier": 2
+ },
+ {
   "date": "2026-12-03",
   "title": "US ISM Services (Nov)",
   "region": "US",
@@ -947,6 +983,12 @@
   "scope": "global",
   "time": "10:00",
   "tz": "America/New_York"
+ },
+ {
+  "date": "2026-12-03",
+  "title": "Dollar General + Kroger (BMO), Ulta + Veeva (AC) earnings \u2014 the consumer",
+  "region": "US",
+  "tier": 2
  },
  {
   "date": "2026-12-04",
