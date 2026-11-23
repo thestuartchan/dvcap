@@ -54,7 +54,7 @@ import { lastSettledSession } from '../lib/ratios.js';
 import { yahooDailyCloses } from '../lib/yahoo.js';
 import {
   GLOBAL_FX, GLOBAL_CROSS, GLOBAL_SYMBOLS, RATIO_SYMBOLS, fxRow, crossRow as globalCrossRow, dollarBreadth, ratioRows,
-  globalDeltaLine, assembleGlobal, fetchCloses, globalCalendar, GLOBAL_OVERVIEW_KEY,
+  globalDeltaLine, assembleGlobal, fetchCloses, globalCalendar, GLOBAL_OVERVIEW_KEY, fetchWeekendMoves, weekendLines,
 } from '../lib/globalMacro.js';
 
 
@@ -912,7 +912,7 @@ async function runRegion(region, req) {
       const hh = Math.floor(nowMin / 60), mm = String(nowMin % 60).padStart(2, '0');
       return { status: 200, body: {
         region, skipped: true, lateMin: w.lateMin,
-        reason: `off-window (target ${R.prereadHourLocal}:00 ${R.tz}, delivery window ${Math.floor(openMin/60)}:${String(openMin%60).padStart(2,'0')}–${Math.floor(w.close/60)}:${String(w.close%60).padStart(2,'0')}, now ${hh}:${mm})`,
+        reason: `off-window (target ${Math.floor(R.prereadHourLocal)}:${String(Math.round((R.prereadHourLocal % 1) * 60)).padStart(2, '0')} ${R.tz}, delivery window ${Math.floor(openMin/60)}:${String(openMin%60).padStart(2,'0')}–${Math.floor(w.close/60)}:${String(w.close%60).padStart(2,'0')}, now ${hh}:${mm})`,
       } };
     }
   }
@@ -1208,7 +1208,12 @@ async function runGlobal(req) {
   const nyDate = localDateIn(NY_TZ);
   // The US session this Overview covers: the last one that has closed.
   const session = lastSettledSession(Date.now());
-  if (posting && req.query.force !== '1') {
+  // THE WEEKEND EDITION (23 Nov 2026, Stu). Friday's Overview is built and stored after the close but
+  // not posted (at 02:20 Dubai on Saturday nothing can be done with it); it is posted on Sunday at
+  // 18:20 ET with what moved since Friday's close (&edition=weekend, scheduler job global-weekend).
+  const weekend = req.query.edition === 'weekend';
+  const fridayHold = posting && !weekend && req.query.cron === '1' && new Date(`${session}T12:00:00Z`).getUTCDay() === 5;
+  if (posting && !weekend && req.query.force !== '1') {
     // After a session only: a weekend or a full US holiday has no new close to read.
     const shut = closedExchanges(['SPY']);
     if (isWeekendIn(NY_TZ) || shut.allClosed) {
@@ -1218,7 +1223,15 @@ async function runGlobal(req) {
   }
   let prevLog = null;
   if (kvConfigured()) { try { prevLog = (await kvGetJson(PREREAD_LAST_KEY)) || {}; } catch { prevLog = null; } }
-  if (req.query.cron === '1') {
+  if (req.query.cron === '1' && weekend) {
+    if (prevLog?.global?.weekendFor === session) {
+      return { status: 200, body: { region: 'global', skipped: true, previous: prevLog.global, reason: `weekend edition already delivered for the ${session} close` } };
+    }
+    const m = localMinutesOfDay(NY_TZ), sunday = new Date(`${nyDate}T12:00:00Z`).getUTCDay() === 0;
+    if (!sunday || m < 18 * 60 || m >= 22 * 60) {
+      return { status: 200, body: { region: 'global', skipped: true, reason: 'weekend edition: off-window (Sunday 18:00–22:00 New York)' } };
+    }
+  } else if (req.query.cron === '1') {
     // ONCE PER US SESSION, NOT PER CALENDAR DAY (20 Nov 2026). The guard keyed on the New York date,
     // so a catch-up post at 05:27 ET on the 19th — covering the 18th's close — took the 19th's slot,
     // and the scheduled post after the 19th's close was skipped as a duplicate. Keyed on the session
@@ -1250,12 +1263,14 @@ async function runGlobal(req) {
     ctaLines,
     calendar: globalCalendar(weekHighlights(now, null, NY_TZ), { today: nyDate }),
     changeLines: globalChangeLines(composed, leaning),
+    weekend: weekend ? weekendLines(await fetchWeekendMoves(session).catch(() => [])) : null,
   };
   const message = assembleGlobal(blocks, { at: now });
   const snap = globalSnapOf({ macro, cross, items: (composed?.leaning || leaning)?.items || [] });
 
   let posted = null;
-  if (posting) {
+  if (fridayHold) posted = { ok: false, held: true, reason: 'Friday close: held for the Sunday weekend edition' };
+  else if (posting) {
     if (!process.env.DISCORD_WEBHOOK) posted = { ok: false, error: 'DISCORD_WEBHOOK not set' };
     else {
       try { posted = await postLong(process.env.DISCORD_WEBHOOK, message, { label: 'Global' }); }
@@ -1264,16 +1279,18 @@ async function runGlobal(req) {
   }
   // Kept for the regional briefs' 🌐 line and for the Daily Read (the gamma connector's
   // get_global_macro tool) — only once it reached the channel, so both describe what was posted.
-  if (kvConfigured() && posted?.ok) {
+  // A Friday hold is stored too (the dashboard and the Daily Read read Friday's figures), marked held.
+  if (kvConfigured() && (posted?.ok || fridayHold)) {
     try {
-      await kvSetJson(PREREAD_LAST_KEY, { ...(prevLog || {}), global: { at: now.toISOString(), localDate: nyDate, session, cron: req.query.cron === '1', snap } });
-      await kvSetJson(GLOBAL_OVERVIEW_KEY, { at: now.toISOString(), localDate: nyDate, session, message, blocks,
+      await kvSetJson(PREREAD_LAST_KEY, { ...(prevLog || {}), global: { at: now.toISOString(), localDate: nyDate, session, cron: req.query.cron === '1', snap,
+        ...(fridayHold ? { held: true } : {}), ...(weekend ? { weekendFor: session } : {}) } });
+      await kvSetJson(GLOBAL_OVERVIEW_KEY, { at: now.toISOString(), localDate: nyDate, session, message, blocks, ...(fridayHold ? { held: true } : {}), ...(weekend ? { edition: 'weekend' } : {}),
         ratios: ratios.rows, fx: fxRows.map(({ short, last, usd1, usd5, usd20, trend }) => ({ short, last, usd1, usd5, usd20, trend })),
         cross: cross2.map(({ short, last, trend, yearPos }) => ({ short, last, trend, yearPos })) });
     } catch { /* the post matters more than the bookkeeping */ }
   }
   // A post that did not land is a failure the scheduler should retry and, after its retries, alert on.
-  const failed = posting && !posted?.ok;
+  const failed = posting && !posted?.ok && !fridayHold;
   return { status: 200, body: { region: 'global', ...(failed ? { ok: false, retryable: true, why: `not posted — ${posted?.error || 'Discord refused'}` } : {}), message, posted, generatedAt: now.toISOString(),
     parts: { ratios: ratios.built.filter(b => b.stats).length, fx: fxRows.length, cross: cross2.length, cta: !!ctaLines } } };
 }

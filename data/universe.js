@@ -11,7 +11,12 @@ export const UNIVERSE = {
   asia: {
     label: 'Asia',
     tz: 'Asia/Hong_Kong',
-    prereadHourLocal: 7,          // 07:00 HKT = pre-market brief, before Korea/Japan (08:00 HKT / 09:00 local) open. HK/KR/TW/JP keep no DST, so 23:00 UTC maps here year-round.
+    // 07:30 HKT (23:30 UTC year-round — HK/KR/TW/JP keep no DST), half an hour before Korea and Japan open
+    // (08:00 HKT / 09:00 local). Moved from 07:00 on 23 Nov 2026 (Stu): at 23:00 UTC the brief landed inside
+    // the CME futures halt in winter (17:00–18:00 ET = 22:00–23:00 UTC) and, on Mondays, before the Sunday
+    // reopen — it never saw the evening's futures. At 07:30 HKT futures have traded 30 minutes (winter) or
+    // 90 (summer).
+    prereadHourLocal: 7.5,
     // WHEN THE BRIEF STOPS BEING A PRE-READ. The target has a reason and so does the deadline:
     // Korea and Japan open at 08:00 HKT, and a brief that lands after that is a commentary, not a
     // pre-read. The gate accepts anything up to here rather than for a fixed number of minutes —
