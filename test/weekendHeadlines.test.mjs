@@ -1,0 +1,22 @@
+// lib/weekendHeadlines.js — the weekend edition's headlines door.
+import { validateHeadlines, headlineLines } from '../lib/weekendHeadlines.js';
+import { assembleGlobal } from '../lib/globalMacro.js';
+let pass = 0, fail = 0;
+const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w); if (a === b) { pass++; console.log('✅', n); } else { fail++; console.log('❌', n, ' got', a, 'want', b); } };
+const now = new Date('2026-11-22T23:00:00Z');
+const items = [{ line: 'Iran signals it wants talks; Trump says no acceptable deal yet', provider: 'Stocktwits' }, { line: 'Nvidia board says it accepted Huang\'s resignation', provider: 'Dow Jones' }, { line: 'Futures rebound after last week\'s AI sell-off', provider: 'Reuters' }];
+const v = validateHeadlines({ forSession: '2026-11-20', items }, { now });
+eq('three named lines for a Friday are accepted', [v.ok, v.doc.items.length], [true, 3]);
+eq('a non-Friday is refused', validateHeadlines({ forSession: '2026-11-21', items }, { now }).ok, false);
+eq('too few refused', validateHeadlines({ forSession: '2026-11-20', items: items.slice(0, 2) }, { now }).ok, false);
+eq('a provider is required', validateHeadlines({ forSession: '2026-11-20', items: [...items.slice(0, 2), { line: 'x' }] }, { now }).ok, false);
+eq('links refused', validateHeadlines({ forSession: '2026-11-20', items: [...items.slice(0, 2), { line: 'see https://x.y', provider: 'R' }] }, { now }).ok, false);
+eq('mentions refused', validateHeadlines({ forSession: '2026-11-20', items: [...items.slice(0, 2), { line: 'hi @everyone', provider: 'R' }] }, { now }).ok, false);
+eq('long lines refused', validateHeadlines({ forSession: '2026-11-20', items: [...items.slice(0, 2), { line: 'x'.repeat(161), provider: 'R' }] }, { now }).ok, false);
+const lines = headlineLines(v.doc, '2026-11-20', { now: new Date('2026-11-22T23:25:00Z') });
+eq('printed with the provider', lines[2], "Futures rebound after last week's AI sell-off _(Reuters)_");
+eq('another Friday\'s set is not printed', headlineLines(v.doc, '2026-11-27', { now }), null);
+eq('a stale set is not printed', headlineLines(v.doc, '2026-11-20', { now: new Date('2026-11-23T06:00:00Z') }), null);
+eq('the edition shows the section', assembleGlobal({ weekend: ['a'], headlines: lines }).includes('WEEKEND HEADLINES'), true);
+eq('no headlines, no section', assembleGlobal({ weekend: ['a'] }).includes('WEEKEND HEADLINES'), false);
+console.log(`\n${pass} passed, ${fail} failed`); if (fail) process.exit(1);

@@ -370,6 +370,9 @@ for (const region of [...REGIONS, 'global-asia']) {
     // 0.4pp to 0.8pp against a 1.5pp bar. The line is rendered through the real builder against a
     // divergent axis in the block directly under this one, so it is not a line nobody has seen.
     ['🤖', 'AI vs the rest — every capture is inside the 1.5pp bar; rendered through buildBlocks below'],
+    // The Global Macro weekend edition's headlines: only on a Sunday post with the task's lines stored;
+    // rendered and asserted through assembleGlobal in test/weekendHeadlines.test.mjs.
+    ['📰', 'weekend headlines — Sunday edition only; rendered in test/weekendHeadlines.test.mjs'],
   ]);
 
   const seen = new Set();
