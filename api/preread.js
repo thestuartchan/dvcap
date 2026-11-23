@@ -56,6 +56,7 @@ import {
   GLOBAL_FX, GLOBAL_CROSS, GLOBAL_SYMBOLS, RATIO_SYMBOLS, fxRow, crossRow as globalCrossRow, dollarBreadth, ratioRows,
   globalDeltaLine, assembleGlobal, fetchCloses, globalCalendar, GLOBAL_OVERVIEW_KEY, fetchWeekendMoves, weekendLines,
 } from '../lib/globalMacro.js';
+import { readHeadlines, headlineLines } from '../lib/weekendHeadlines.js';
 
 
 function fmtPct(p) { return p == null ? '—' : `${p > 0 ? '+' : ''}${p.toFixed(1)}%`; }
@@ -1264,6 +1265,7 @@ async function runGlobal(req) {
     calendar: globalCalendar(weekHighlights(now, null, NY_TZ), { today: nyDate }),
     changeLines: globalChangeLines(composed, leaning),
     weekend: weekend ? weekendLines(await fetchWeekendMoves(session).catch(() => [])) : null,
+    headlines: weekend ? headlineLines(await readHeadlines(), session) : null,
   };
   const message = assembleGlobal(blocks, { at: now });
   const snap = globalSnapOf({ macro, cross, items: (composed?.leaning || leaning)?.items || [] });
