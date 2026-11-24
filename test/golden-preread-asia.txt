@@ -22,7 +22,7 @@
 🌡️ **BACKDROP**
 • 📈 **Indices:** **Nikkei** -1.4% · **HSTECH** -0.8% · **KOSPI** +0.7% · **HSI** -0.2%
 • 📋 **Names:** **ASMPT** +4.7% · **BYD** -2.4% · **Xiaomi** -2.0% · **Samsung** -1.1% · **Hua Hong** +0.5% · **SMIC** -0.5% _(+5 more)_
-• 🔀 **Handoff:** **Gap-up risk**: Asia has not caught up with the US yet — Asia's indices last closed -0.4% on average, the US chip index (SOX) +0.4%, a **0.8pp** gap, 3h to the open · also overnight: 30Y +1bp · Oil +3.85%
+• 🔀 **Handoff:** **Gap-up risk**: Asia has not caught up with the US yet. Asia's indices last closed -0.4% on average, the US chip index (SOX) +0.4%, a gap of 0.8pp, 3h to the open · also overnight: 30Y +1bp · Oil +3.85%
 • 🇨🇳 **China:** SMIC A/H premium **116.6pp** (+3pp 5d) — widening: the Hong Kong shares are lagging the mainland ones
 • 🇰🇷 **Korea:** won at **1338.08** · Korean fear gauge **48.85** (high) — Korea washout draining
 • 👉 Cautious tone — foreigners are net sellers, and since foreign flow drives KOSPI, their exit is the dominant tell despite domestic buying. Dry powder is building (deposits ↑) — buffer and optionality intact for more upside.
@@ -30,7 +30,7 @@
 ───────────────
 
 🔀 **WHAT WOULD CHANGE IT**
-• 👁 **The won weakens past 1491** _(counts when a daily close is past it, not just an intraday move)_
+• 👁 **The won weakens past 1491** _(now 1,338.08, 11.4% away · counts when a daily close is past it, not just an intraday move)_
 • 🔴 **Korean retail stops absorbing foreign selling** — already true, which leaves no domestic bid under the selling
 • ↪ The Korea read changes if retail stops absorbing foreign selling or VKOSPI into EXTREME.
 
