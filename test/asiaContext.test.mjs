@@ -21,7 +21,7 @@ const LIVE = { forward: { available: true, verdict: 'GAP-DOWN RISK', tone: 'ambe
   const l = handoffLine(LIVE);
   ok('the verdict leads', /\*\*Gap-down risk\*\*/.test(l));
   ok('both sides of the gap are shown', /-0\.8%/.test(l) && /-2\.7%/.test(l));
-  ok('and the gap itself', /\*\*1\.8pp\*\*/.test(l));
+  ok('and the gap itself', /gap of 1\.8pp/.test(l));
   ok('with how long until it matters', /3h to the open/.test(l));
   ok('and what else moved, without repeating SOX', /also overnight: 30Y \+3bp · Oil \+8\.26%/.test(l) && (l.match(/SOX/g) || []).length === 1);
 
@@ -34,6 +34,12 @@ const LIVE = { forward: { available: true, verdict: 'GAP-DOWN RISK', tone: 'ambe
      handoffLine({ forward: { available: true, verdict: 'IN LINE', gap: 0.2, usRef: -0.3, asiaRef: -0.5 } }), null);
   ok('the floor is a named constant', HANDOFF_MIN_PP > 0 && HANDOFF_MIN_PP < 2);
   eq('an unavailable handoff renders nothing', handoffLine({ forward: { available: false } }), null);
+  // The expected open leads when the engine supplies it (lib/handoff.js openBeta).
+  const big = handoffLine({ forward: { available: true, verdict: 'GAP-UP RISK', gap: -12.0, expectedOpen: 2.4, openBeta: 0.2, minExpectedPct: 0.3,
+    usRef: 14.0, asiaRef: 2.0, nextOpenH: 3, drivers: [] } });
+  ok('the expected open leads, not the raw gap', /history points to an open around \*\*\+2\.4%\*\*/.test(big) && /about 20% of it/.test(big));
+  eq('a small expected open is not worth a line', handoffLine({ forward: { available: true, verdict: 'GAP-UP RISK', gap: -0.8, expectedOpen: 0.16,
+    minExpectedPct: 0.3, usRef: 0.4, asiaRef: -0.4, drivers: [] } }), null);
   eq('and neither does none at all', handoffLine(null), null);
   eq('nor one with no gap computed', handoffLine({ forward: { available: true, verdict: 'X' } }), null);
   // It works the other way up too — the Asia brief fires into both kinds of morning.

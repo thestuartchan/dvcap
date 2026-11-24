@@ -337,6 +337,8 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
     const items = [{ name: 'OAS widening', tripped: false }, { name: 'KRW > 1400', tripped: true },
                    { name: 'NQ lower low', tripped: null }].map(B.plainTripwire);
     const out = B.changeSection({ items });
+    const krw = B.changeSection({ items: [B.plainTripwire({ name: 'KRW > 1491', tripped: false, detail: '1342.2 (mechanical-zone)' })] });
+    ok('the won tripwire says how far away it is', /now 1,342\.2, 11\.1% away · counts when a daily close is past it/.test(krw));
     ok('a pending wire says what to watch for', /👁 \*\*Lenders start charging more to carry risk\*\* _\(counts when junk spreads are above 3.00pp/.test(out));
     // Something already true is a present condition, not a thing to watch for. Collapsing the two
     // is how a brief could show "2/5" while a reader took all five as pending.

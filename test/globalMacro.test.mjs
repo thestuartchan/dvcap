@@ -2,7 +2,7 @@
 // read (1/5/20 sessions, the 60-session band, trend / turning / breakout / range), FX in the dollar's
 // frame, the derived copper ÷ gold row, dollar breadth, the week's global calendar, and the 🌐 delta
 // line the regional briefs carry. Constructed series and made-up numbers only.
-import {
+import { todayAgainst,
   seriesStats, trendRead, fxRow, crossRow, dollarBreadth, globalDeltaLine, globalCalendar, fetchCloses, ratioRows,
   GLOBAL_FX, GLOBAL_CROSS, GLOBAL_SYMBOLS, RATIO_SYMBOLS,
 } from '../lib/globalMacro.js';
@@ -117,5 +117,9 @@ ok('copper ÷ gold pulls both legs', GLOBAL_SYMBOLS.includes('HG=F') && GLOBAL_S
   eq('a failed leg is an empty series, not a throw', out.C, []);
 }
 
+eq('a big day against the 20-day trend is said', todayAgainst('up', -0.258, 0.08), ' · **today ran the other way:** −25.8%, 3.2× a normal day');
+eq('an ordinary day against it is not', todayAgainst('up', -0.05, 0.08), null);
+eq('a big day with the trend is not', todayAgainst('down', -0.2, 0.05), null);
+eq('a flat trend has nothing to run against', todayAgainst('flat', -0.2, 0.05), null);
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 if (fail) process.exit(1);
