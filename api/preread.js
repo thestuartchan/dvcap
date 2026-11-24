@@ -57,6 +57,7 @@ import {
   globalDeltaLine, assembleGlobal, fetchCloses, globalCalendar, GLOBAL_OVERVIEW_KEY, fetchWeekendMoves, weekendLines,
 } from '../lib/globalMacro.js';
 import { readHeadlines, headlineLines } from '../lib/weekendHeadlines.js';
+import { fetchRssHeadlines } from '../lib/rssHeadlines.js';
 
 
 function fmtPct(p) { return p == null ? '—' : `${p > 0 ? '+' : ''}${p.toFixed(1)}%`; }
@@ -1256,6 +1257,10 @@ async function runGlobal(req) {
   const cross2 = GLOBAL_CROSS.map(d => globalCrossRow(d, closes)).filter(Boolean);
   const ctaLines = await buildCta().then(b => ctaSection(b)).catch(() => null);
   const now = new Date();
+  // Weekend headlines: the Sunday task's picked set when it is stored for this Friday and fresh,
+  // otherwise the public RSS feeds (lib/rssHeadlines.js), labelled as such.
+  const picked = weekend ? headlineLines(await readHeadlines(), session) : null;
+  const rss = weekend && !picked ? await fetchRssHeadlines(session).catch(() => null) : null;
   const blocks = {
     ratios: { headline: ratios.headline, lines: ratios.lines },
     fx: fxRows.length ? { lines: fxRows.map(r => r.line), breadth: dollarBreadth(fxRows) } : null,
@@ -1265,7 +1270,8 @@ async function runGlobal(req) {
     calendar: globalCalendar(weekHighlights(now, null, NY_TZ), { today: nyDate }),
     changeLines: globalChangeLines(composed, leaning),
     weekend: weekend ? weekendLines(await fetchWeekendMoves(session).catch(() => [])) : null,
-    headlines: weekend ? headlineLines(await readHeadlines(), session) : null,
+    headlines: picked || rss,
+    headlinesFrom: picked ? 'task' : rss ? 'rss' : null,
   };
   const message = assembleGlobal(blocks, { at: now });
   const snap = globalSnapOf({ macro, cross, items: (composed?.leaning || leaning)?.items || [] });
