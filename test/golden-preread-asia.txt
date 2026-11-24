@@ -13,7 +13,7 @@
 ───────────────
 
 🌙 **OVERNIGHT**
-• 📉 **Chips** SOX +0.4% · **SMH** +0.1% · **QQQ** -0.3% · **SPY** -0.5%
+• 📈 **Chips** SOX +0.4% · **SMH** +0.1% · **QQQ** -0.3% · **SPY** -0.5%
 • 😰 **VIX** 16.46 +4.7% · **junk-bond ETF (HYG)** -0.2%
 • 👉 Chips and the broad market moved opposite ways — the move belongs to chips, not to risk appetite generally.
 
@@ -22,17 +22,17 @@
 🌡️ **BACKDROP**
 • 📈 **Indices:** **Nikkei** -1.4% · **HSTECH** -0.8% · **KOSPI** +0.7% · **HSI** -0.2%
 • 📋 **Names:** **ASMPT** +4.7% · **BYD** -2.4% · **Xiaomi** -2.0% · **Samsung** -1.1% · **Hua Hong** +0.5% · **SMIC** -0.5% _(+5 more)_
-• 🔀 **Handoff:** **GAP-UP RISK** — Asia last closed -0.4% against a US finish of +0.4%, a **0.76pp** gap, 3h to the open · SOX +0.37% · 30Y +1bp · Oil +3.85%
-• 🇨🇳 **China:** SMIC A/H premium **116.6pp** (+3pp 5d) — widening, so the H-share is the funding leg rather than the beneficiary
+• 🔀 **Handoff:** **Gap-up risk**: Asia has not caught up with the US yet — Asia's indices last closed -0.4% on average, the US chip index (SOX) +0.4%, a **0.8pp** gap, 3h to the open · also overnight: 30Y +1bp · Oil +3.85%
+• 🇨🇳 **China:** SMIC A/H premium **116.6pp** (+3pp 5d) — widening: the Hong Kong shares are lagging the mainland ones
 • 🇰🇷 **Korea:** won at **1338.08** · Korean fear gauge **48.85** (high) — Korea washout draining
 • 👉 Cautious tone — foreigners are net sellers, and since foreign flow drives KOSPI, their exit is the dominant tell despite domestic buying. Dry powder is building (deposits ↑) — buffer and optionality intact for more upside.
 
 ───────────────
 
 🔀 **WHAT WOULD CHANGE IT**
-• 👁 **The won weakens past 1491** → that level, on a close rather than a wick
+• 👁 **The won weakens past 1491** _(counts when a daily close is past it, not just an intraday move)_
 • 🔴 **Korean retail stops absorbing foreign selling** — already true, which leaves no domestic bid under the selling
-• ↪ The Korea read changes if KRW >1491 or retail stops absorbing foreign selling or VKOSPI into EXTREME.
+• ↪ The Korea read changes if retail stops absorbing foreign selling or VKOSPI into EXTREME.
 
 ───────────────
 

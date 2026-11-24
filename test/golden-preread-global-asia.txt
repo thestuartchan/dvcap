@@ -7,7 +7,7 @@ _After the US close. Ratios, FX and cross-asset are read over 1, 5 and 20 sessio
 💵 **RATES, CREDIT, INFLATION**
 • 💵 **Money:** **2yr 4.39%** · **10yr 4.8%** · **30yr 5.25%** — the normal way round · 🇯🇵 **JGB** **10yr 2.891%** · **30yr 3.956%** _(as of 2026-09-09)_
 • 🩹 **Credit (HY OAS):** risky companies pay **2.67pp** over government debt _(as of 2026-09-08)_ — lenders are relaxed about risky borrowers · the junk-bond ETF (HYG) is **-0.2%** today
-• 🛢️ **Oil:** WTI **$96.61** · Brent **$101.33** — above its recent trend, so it adds to costs rather than easing them
+• 🛢️ **Oil:** WTI **$96.61** · Brent **$101.33** — still above the pivot, so it adds to costs rather than easing them
 • 🌡️ **Inflation:** the headline-style measure reads **2.47%**, but the gauge the Fed actually targets is **higher at 3.34%** — the cooler of the two is not the one policy is set against
 
 ───────────────
@@ -20,8 +20,8 @@ _After the US close. Ratios, FX and cross-asset are read over 1, 5 and 20 sessio
 ───────────────
 
 🔀 **WHAT WOULD CHANGE IT**
-• 👁 **Lenders start charging more to carry risk** → junk spreads above 3.00pp **and** still rising over five days
-• 👁 **Fear climbing from an already-high base** → VIX above 20 **and** rising, not just rising
+• 👁 **Lenders start charging more to carry risk** _(counts when junk spreads are above 3.00pp **and** still rising over five days)_
+• 👁 **Fear climbing from an already-high base** _(counts when VIX is above 20 **and** rising, not just rising)_
 • ⌀ **The 30-year yield clears 5.35%** — not scored: 5.25% · obs 2026-09-08, 2 business days old and inside the range it could have moved since
 • 🔴 **Nasdaq futures undercut yesterday's low** — already true, which puts yesterday's buyers underwater
 

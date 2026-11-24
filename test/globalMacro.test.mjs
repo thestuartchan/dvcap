@@ -64,7 +64,8 @@ const wiggle = (i) => 100 + 2 * Math.sin(i / 3);
   for (const s of RATIO_SYMBOLS) closes[s] = series(270, (i) => 100 + Math.sin(i / 4 + s.length));
   const r = ratioRows(closes, { now: Date.parse(`${closes.SPY.at(-1)[0]}T23:00:00Z`) });
   eq('every card renders a line', r.lines.length, 7);
-  ok('each line names its 5- and 20-day change', r.lines.every(l => /5d · .* 20d/.test(l) || /waiting on data/.test(l)));
+  ok('each line names its 20-day change, then its 5-day one', r.lines.every(l => /20d .*5d|20d .*last 5 days/.test(l) || /waiting on data/.test(l)));
+  ok('no bare "failed" or "the other way"', r.lines.every(l => !/↩|failed|the other way/.test(l)));
   ok('stale legs say they are waiting, not a guess', ratioRows({}, {}).lines.every(l => /waiting on data/.test(l)));
 }
 

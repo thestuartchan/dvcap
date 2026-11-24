@@ -1,5 +1,5 @@
 // lib/rssHeadlines.js — the weekend edition's RSS fallback.
-import { parseRss, decode, isFiller, sameStory, fridayCloseMs, pickRss, fetchRssHeadlines } from '../lib/rssHeadlines.js';
+import { RSS_FEEDS, parseRss, decode, isFiller, sameStory, fridayCloseMs, pickRss, fetchRssHeadlines } from '../lib/rssHeadlines.js';
 import { assembleGlobal } from '../lib/globalMacro.js';
 let pass = 0, fail = 0;
 const eq = (n, g, w) => { const a = JSON.stringify(g), b = JSON.stringify(w); if (a === b) { pass++; console.log('✅', n); } else { fail++; console.log('❌', n, ' got', a, 'want', b); } };
@@ -50,6 +50,14 @@ eq('takes the feeds in turn, newest first, skipping old, future, filler and dupl
   'Oil slips as talks resume _(MarketWatch)_',
 ]);
 eq('at most four', pickRss([{ provider: 'P', items: Array.from({ length: 9 }, (_, i) => ({ title: ['Oil slips as talks resume','Gold hits a record high','Copper rallies on China data','Bonds sell off before PCE','Dollar firms against the yen','Bitcoin drops below support','Wheat jumps on drought fears','Silver tracks gold higher','Banks lead European futures'][i], at: at('2026-11-22T12:00:00Z') + i })) }], '2026-11-20', { now }).length, 4);
+const fed = RSS_FEEDS.find(f => f.provider === 'Federal Reserve');
+const fedPick = pickRss([{ ...fed, items: [
+  { title: 'Federal Reserve announces College Fed Challenge winners', at: at('2026-11-21T15:00:00Z') },
+  { title: 'Federal Reserve Board issues enforcement action with former employee of a bank', at: at('2026-11-21T16:00:00Z') },
+  { title: 'Federal Reserve issues FOMC statement', at: at('2026-11-22T14:00:00Z') },
+] }], '2026-11-20', { now });
+eq('the Fed feed keeps policy items and drops admin notices', fedPick, ['Federal Reserve issues FOMC statement _(Federal Reserve)_']);
+eq('the Fed feed is listed first', RSS_FEEDS[0].provider, 'Federal Reserve');
 eq('nothing qualifying is null', pickRss([{ provider: 'P', items: [] }], '2026-11-20', { now }), null);
 const long = pickRss([{ provider: 'P', items: [{ title: 'word '.repeat(60).trim(), at: at('2026-11-22T12:00:00Z') }] }], '2026-11-20', { now })[0];
 eq('long titles are clipped to 160', long.replace(' _(P)_', '').length <= 160 && long.includes('…'), true);
