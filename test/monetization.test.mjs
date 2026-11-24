@@ -178,16 +178,16 @@ const FLAT = hist(Array.from({ length: 60 }, (_, i) => (i % 2 ? 2 : -2)));
     soft: 2.5, hard: -0.5, pure: 2.4, softHard: oneDay, softPure: FLAT,
     thirtyRising: true, thirtySource: 'live ^TYX' }));
   ok('the line opens with its own marker', line.startsWith('🧩 '));
-  ok('carrying both legs', /\*\*IGV\*\* \+2\.5% · \*\*SMH\*\* -0\.5%/.test(line));
-  ok('the spread in points AND in its own volatility', /\+3pp \(1\.5×ATR\)/.test(line));
-  ok('the candidate label with its pending flag', /\*\*ROTATION TO SOFTWARE\*\* — 1 session in this direction/.test(line));
+  ok('carrying both legs', /Software vs chips:\*\* IGV \+2\.5% · SMH -0\.5%/.test(line));
+  ok('the spread in points AND in its own volatility', /gap \+3pp, 1\.5× a normal day/.test(line));
+  ok('the candidate label with its pending flag', /leaning \*\*rotation to software\*\* \(1 of \d sessions needed to call it\)/.test(line));
   ok('the cumulative series, not only the tick', /20d [+-]/.test(line));
   ok('and the rates confound where it applies', /longer-duration leg/.test(line));
 
   // A confirmed state drops the pending clause and states the label.
   const fiveDays = [...FLAT.slice(0, 55), ...Array.from({ length: 5 }, (_, i) => ({ date: `2026-09-0${i + 5}`, a: 2.5, b: -0.5, spread: 3 }))];
   const held = monetizationLine(monetizationGate({ soft: 2.5, hard: -0.5, pure: 2.4, softHard: fiveDays, softPure: FLAT }));
-  ok('a confirmed state is stated plainly', /\*\*ROTATION TO SOFTWARE\*\*/.test(held) && !/pending/.test(held));
+  ok('a confirmed state is stated plainly', /\*\*rotation to software\*\*/.test(held) && !/leaning|needed/.test(held));
   // The contamination finding reaches the brief, because it changes the label.
   const disguised = monetizationLine(monetizationGate({ soft: 2.5, hard: -0.5, pure: 0.1, softHard: fiveDays, softPure: FLAT }));
   ok('a contaminated lead says so in the brief', /the megacap holdings are carrying it/.test(disguised));

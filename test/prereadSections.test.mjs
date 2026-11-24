@@ -337,7 +337,7 @@ const SPY = { name: 'SPY', spot: 762.40, putWall: 760, callWall: 770, flipLevel:
     const items = [{ name: 'OAS widening', tripped: false }, { name: 'KRW > 1400', tripped: true },
                    { name: 'NQ lower low', tripped: null }].map(B.plainTripwire);
     const out = B.changeSection({ items });
-    ok('a pending wire says what to watch for', /👁 \*\*Lenders start charging more to carry risk\*\* → junk spreads above 3.00pp/.test(out));
+    ok('a pending wire says what to watch for', /👁 \*\*Lenders start charging more to carry risk\*\* _\(counts when junk spreads are above 3.00pp/.test(out));
     // Something already true is a present condition, not a thing to watch for. Collapsing the two
     // is how a brief could show "2/5" while a reader took all five as pending.
     ok('a fired one says it has already happened', /🔴 \*\*The won weakens past 1400\*\* — already true/.test(out));

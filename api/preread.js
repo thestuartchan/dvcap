@@ -378,12 +378,12 @@ export function buildBlocks(region, quotes, indices, macro, regime, cal, cross, 
     const soxPct = sox?.changePct ?? null;
     const spy = crossRow('breadth', 'SPY');
     const legs = [
-      soxPct != null ? `📉 **Chips** SOX ${pctWord(soxPct)}` : null,
+      soxPct != null ? `${soxPct >= 0 ? '📈' : '📉'} **Chips** SOX ${pctWord(soxPct)}` : null,
       ...['SMH', 'QQQ', 'SPY'].map(n => { const r = crossRow('breadth', n); return r?.changePct != null ? `**${n}** ${pctWord(r.changePct)}` : null; }),
     ].filter(Boolean);
     const vix = crossRow('volCredit', 'VIX'), hyg = crossRow('volCredit', 'HYG');
     const risk = [
-      vix?.price != null ? `😰 **VIX** ${vix.price}${vix.changePct != null ? ` ${pctWord(vix.changePct)}` : ''}` : null,
+      vix?.price != null ? `${(vix.changePct ?? 0) < 0 ? '😌' : '😰'} **VIX** ${vix.price}${vix.changePct != null ? ` ${pctWord(vix.changePct)}` : ''}` : null,
       // NAMED FOR THE INSTRUMENT. "junk bonds -0.2%" is the ETF's PRICE and reads like the credit
       // spread, which is the other credit number in this brief and is quoted in percentage POINTS
       // at a level rather than as a daily change. Two different instruments, neither labelled, four
@@ -549,7 +549,7 @@ export function globalMoneyLines(macro, regime, cross, opts = {}) {
     stale: composed?.structured?.rows?.find(r => r.label === 'CREDIT')?.stale ?? false,
     hygPct: crossRow('volCredit', 'HYG')?.changePct ?? null,
   }));
-  out.push(oilLine({ wti: macro.wti?.price, brent: macro.brent?.price, above: regime.oil.above, stale: macro.wti?.stale }));
+  out.push(oilLine({ wti: macro.wti?.price, brent: macro.brent?.price, above: regime.oil.above, pivot: regime.oil.pivot ?? null, stale: macro.wti?.stale }));
   // The inflation gap, only when it is saying something — see the note on coreSpread above.
   // The dates go in, so a gap across two release months is not reported as a movement in
   // inflation — see the note in lib/inflation.js. CPI publishes around the 11th and PCE at month

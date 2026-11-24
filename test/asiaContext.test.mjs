@@ -19,11 +19,11 @@ const LIVE = { forward: { available: true, verdict: 'GAP-DOWN RISK', tone: 'ambe
   backward: { available: true, verdict: 'CONFIRMING', note: 'Validation: Asia down 0.84% with 2/3 of the overnight drivers.' } };
 {
   const l = handoffLine(LIVE);
-  ok('the verdict leads', /\*\*GAP-DOWN RISK\*\*/.test(l));
+  ok('the verdict leads', /\*\*Gap-down risk\*\*/.test(l));
   ok('both sides of the gap are shown', /-0\.8%/.test(l) && /-2\.7%/.test(l));
-  ok('and the gap itself', /\*\*1\.82pp\*\*/.test(l));
+  ok('and the gap itself', /\*\*1\.8pp\*\*/.test(l));
   ok('with how long until it matters', /3h to the open/.test(l));
-  ok('and what drove it', /SOX -2\.66% · 30Y \+3bp · Oil \+8\.26%/.test(l));
+  ok('and what else moved, without repeating SOX', /also overnight: 30Y \+3bp · Oil \+8\.26%/.test(l) && (l.match(/SOX/g) || []).length === 1);
 
   // FORWARD ONLY. The backward half validates a session that is over; the reader at 06:48 local is
   // deciding about the one that has not started.
@@ -37,7 +37,7 @@ const LIVE = { forward: { available: true, verdict: 'GAP-DOWN RISK', tone: 'ambe
   eq('and neither does none at all', handoffLine(null), null);
   eq('nor one with no gap computed', handoffLine({ forward: { available: true, verdict: 'X' } }), null);
   // It works the other way up too — the Asia brief fires into both kinds of morning.
-  ok('a gap-up reads as one', /GAP-UP RISK/.test(handoffLine({ forward: { available: true,
+  ok('a gap-up reads as one', /Gap-up risk/.test(handoffLine({ forward: { available: true,
      verdict: 'GAP-UP RISK', gap: 1.4, usRef: 1.2, asiaRef: -0.2, nextOpenH: 2, drivers: [] } })));
 }
 
@@ -54,9 +54,9 @@ const LIVE = { forward: { available: true, verdict: 'GAP-DOWN RISK', tone: 'ambe
   ok('and a hair either way as flat', /— flat/.test(chinaLine({ cnh: 6.71, cnhPct: 0.01 })));
 
   ok('the premium is carried with its 5-day move', /SMIC A\/H premium \*\*116\.6pp\*\* \(\+3pp 5d\)/.test(both));
-  ok('widening says which leg is the funding one', /the H-share is the funding leg/.test(both));
-  ok('and compressing says conviction is draining',
-     /mainland conviction draining/.test(chinaLine({ ah: { premium: 110, d5: -4 } })));
+  ok('widening says the Hong Kong shares are lagging', /Hong Kong shares are lagging the mainland/.test(both));
+  ok('and narrowing says mainland buyers are cooling',
+     /mainland buyers are cooling/.test(chinaLine({ ah: { premium: 110, d5: -4 } })));
 
   // Either half alone is a line; neither is not.
   ok('the currency alone renders', /USD\/CNH/.test(chinaLine({ cnh: 6.71, cnhPct: 0.2 })));
