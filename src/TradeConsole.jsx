@@ -77,6 +77,7 @@ import { syncStatus } from "../lib/flexStatus.js";
 import { searchBook } from "../lib/positionSearch.js";
 import { FACTORS, FACTOR_SYMBOLS, TAGS, tagOf, LIST_GROUPS, listGroupOf, groupCounts, sortByGroup, filterByGroups, holdingsOf, factorExposure, scenarioPnl, overnightFlag } from "../lib/factorExposure.js";
 import { lastSettledSession, sessionsBetween } from "../lib/ratios.js";
+import { tvFutureSymbol } from "../lib/futuresQuote.js";
 
 // Shown in the sizing note; kept a constant so the copy and the cap cannot drift apart.
 const CREDIT_DANGER_CAP_LABEL = `×${CREDIT_DANGER_CAP.toFixed(2)}`;
@@ -332,6 +333,9 @@ const quoteSym = (r) => {
   // greeks feed (see priceOf in the console); the underlying is what breakeven, a second trigger
   // and the company name key off, and it is the only thing Yahoo can quote anyway.
   const sym = isDerivativeRow(r) ? underlyingOf(r) : String(r?.symbol || '').trim();
+  // A future Yahoo does not list is quoted on its exact TradingView contract (lib/futuresQuote.js).
+  const tv = !isDerivativeRow(r) && r?.margined ? tvFutureSymbol(sym, r?.expiry || r?.contractMonth || null) : null;
+  if (tv) return tv;
   if (!isDerivativeRow(r) && (r?.margined || looksLikeFuture(sym))) {
     if (!sym.includes('=') && !sym.includes('.')) return `${sym.toUpperCase()}=F`;
     return sym;
