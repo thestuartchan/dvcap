@@ -32,6 +32,7 @@ import { DESK_RULES_KEY, DESK_CHECKS_KEY, runChecks, newHits, deskAlertCard, che
 import { UW_NAMES_KEY, usTickerOf, flowLineShort } from '../lib/uw.js';
 import { TC_TODAY_KEY } from '../lib/sameDayFills.js';
 import { tvDaily } from '../lib/tradingview.js';
+import { tvFutureSymbol } from '../lib/futuresQuote.js';
 import { runCongress, runInsiderScan, runInsiderRoundup, watchSet, ideaTickers, IDEAS_TICKERS_KEY, DISCLOSURES_EXTRA_KEY } from '../lib/disclosures.js';
 import { runSenate, runOge, runOgeAnnual } from '../lib/officials.js';
 import { secUserAgent } from '../lib/secDes.js';
@@ -47,6 +48,9 @@ const quoteSym = (r) => {
   const explicit = String(r?.quoteSymbol || '').trim();
   if (explicit) return explicit;
   const sym = String(r?.symbol || '').trim();
+  // A future Yahoo does not list is quoted on its exact TradingView contract (lib/futuresQuote.js).
+  const tv = r?.margined ? tvFutureSymbol(sym, r?.expiry || r?.contractMonth || null) : null;
+  if (tv) return tv;
   return (r?.margined || FUTURES_ROOTS.has(sym.toUpperCase())) && !sym.includes('=') && !sym.includes('.')
     ? `${sym.toUpperCase()}=F` : sym;
 };
