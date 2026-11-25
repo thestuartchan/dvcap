@@ -41,5 +41,5 @@ fs.writeFileSync(outPath, JSON.stringify(weeks));
 console.log(`held back for a tick (overnight single-leg options): ${rows.filter(r => r.reason === REVIEW_REASON).length} new · ${weeks.flatMap(w => w.trades).filter(t => t.reason === REVIEW_REASON).length} waiting in the weeks written · ${settled.kept} ticked and kept · ${settled.expired} unticked past ${REVIEW_DAYS} days, removed`);
 console.log(`${rows.length} round trips; week(s) to write: ${weeks.map(w => `${w.week} (${w.count})`).join(', ') || 'none'}`);
 console.log(contracts
-  ? `options split by contract: ${report.resolvedFills} fill(s) placed; ${report.unresolvedRoots.length} underlying(s) left grouped (a fill with no contract)`
+  ? `options split by contract: ${report.resolvedFills} fill(s) placed; ${report.unresolvedRoots.length} underlying(s) left grouped (a fill with no contract); ${report.deferredFills} fill(s) after the statement's last day left for the next sync`
   : 'options grouped by underlying: no --flex orders given');
