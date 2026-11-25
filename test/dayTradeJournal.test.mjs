@@ -167,6 +167,17 @@ eq('a put, and a share line is not a contract', [contractKey(contractFromDescrip
   const r3 = {};
   roundTripsFromIbkr({ trades, positions, since: '2026-10-01', contracts: twin, report: r3 });
   eq('an ambiguous match is not guessed at', r3.unresolvedRoots, ['XYZ']);
+  // A mid-week sync: the statement ends the day before the feed does. Today's fills wait for the
+  // next sync instead of sending the whole underlying back to one group.
+  const today = [...trades, T('d1', 18, 'BUY', 2, 1.00, '2026-10-19T14:00:00Z'), T('d2', 19, 'SELL', 2, 1.20, '2026-10-19T14:10:00Z', 39)];
+  const r4 = {};
+  const mid = roundTripsFromIbkr({ trades: today, positions, since: '2026-10-01', contracts: noIds, report: r4 });
+  eq('fills after the statement\'s last day are left for the next sync', [r4.unresolvedRoots, r4.deferredFills], [[], 2]);
+  eq('and the days it covers still split by contract', mid.map(r => r.contract), ['XYZ 2026-10-15 100C', 'XYZ 2026-10-16 95P', 'XYZ 2026-10-16 90P']);
+  // A fill inside the statement's days that it does not hold still falls back whole.
+  const r5 = {};
+  roundTripsFromIbkr({ trades: today, positions, since: '2026-10-01', contracts: noIds.filter(o => o.orderId !== 'x15'), report: r5 });
+  eq('a gap inside the statement\'s days is still not guessed at', r5.unresolvedRoots, ['XYZ']);
 }
 {
   const flexRows = [
