@@ -2,7 +2,7 @@
 // read (1/5/20 sessions, the 60-session band, trend / turning / breakout / range), FX in the dollar's
 // frame, the derived copper ÷ gold row, dollar breadth, the week's global calendar, and the 🌐 delta
 // line the regional briefs carry. Constructed series and made-up numbers only.
-import { todayAgainst,
+import { todayAgainst, againstWeek,
   seriesStats, trendRead, fxRow, crossRow, dollarBreadth, globalDeltaLine, globalCalendar, fetchCloses, ratioRows,
   GLOBAL_FX, GLOBAL_CROSS, GLOBAL_SYMBOLS, RATIO_SYMBOLS,
 } from '../lib/globalMacro.js';
@@ -64,7 +64,8 @@ const wiggle = (i) => 100 + 2 * Math.sin(i / 3);
   for (const s of RATIO_SYMBOLS) closes[s] = series(270, (i) => 100 + Math.sin(i / 4 + s.length));
   const r = ratioRows(closes, { now: Date.parse(`${closes.SPY.at(-1)[0]}T23:00:00Z`) });
   eq('every card renders a line', r.lines.length, 7);
-  ok('each line names its 20-day change, then its 5-day one', r.lines.every(l => /20d .*5d|20d .*last 5 days/.test(l) || /waiting on data/.test(l)));
+  ok('each line names its 20-day and 5-day change', r.lines.every(l => (/20d/.test(l) && /5d/.test(l)) || /waiting on data/.test(l)));
+  ok('no line says "reversing" next to the old direction', r.lines.every(l => !/reversing/.test(l)));
   ok('no bare "failed" or "the other way"', r.lines.every(l => !/↩|failed|the other way/.test(l)));
   ok('stale legs say they are waiting, not a guess', ratioRows({}, {}).lines.every(l => /waiting on data/.test(l)));
 }
@@ -121,5 +122,12 @@ eq('a big day against the 20-day trend is said', todayAgainst('up', -0.258, 0.08
 eq('an ordinary day against it is not', todayAgainst('up', -0.05, 0.08), null);
 eq('a big day with the trend is not', todayAgainst('down', -0.2, 0.05), null);
 eq('a flat trend has nothing to run against', todayAgainst('flat', -0.2, 0.05), null);
+const gpu = { up: 'the market is still funding the GPU clouds', down: 'the GPU clouds are weakening first, the funding-stress tell' };
+eq('a week bigger than the month leads, with the week\'s meaning', againstWeek({ ch5: -0.146, ch20: 0.003, meansFor: (d) => gpu[d] }),
+  { lead: 'down', text: '**turning:** the GPU clouds are weakening first, the funding-stress tell; this week undid the 20-day gain' });
+const nm = { up: 'the market is paying the supplier', down: 'the market is paying the spender' };
+eq('a smaller week is a counter-move inside the trend', againstWeek({ ch5: 0.049, ch20: -0.25, meansFor: (d) => nm[d] }),
+  { lead: 'down', text: 'the market is paying the spender · bounced this week, not yet a turn' });
+eq('and a pullback reads as one', againstWeek({ ch5: -0.02, ch20: 0.08, meansFor: () => null }).text, 'pulled back this week, not yet a turn');
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 if (fail) process.exit(1);
