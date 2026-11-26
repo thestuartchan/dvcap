@@ -299,5 +299,13 @@ const book = bookExposure({ rows: ROWS, greeks: GREEKS, underlyings: SPOTS, nlv:
   eq('no rate: unpriced and named, never summed unconverted', [none.lines[0].deltaNotional, none.lines[0].unpriced, none.unpriced[0]?.why, none.deltaNotional], [null, true, 'no JPY exchange rate', 0]);
 }
 
+// The OSE micro Nikkei, priced in yen: converted, and exempt from the single-name cap like NKD.
+{
+  const rows = [{ symbol: 'N225MC', instrument: 'future', assetCategory: 'FUT', qty: -4, multiplier: 10, currency: 'JPY', livePrice: 50000, openedAt: '2026-11-02' }];
+  const b = bookExposure({ rows, nlv: 100000, toBase: (a, c) => (c === 'JPY' ? a / 160 : a), now: new Date('2026-11-25T21:00:00Z') });
+  const l = b.lines[0];
+  eq('a yen future is converted to dollars', [l.kind, l.root, Math.round(l.deltaNotional)], ['future', 'N225MC', Math.round(-4 * 10 * 50000 / 160)]);
+  eq('and is not a single-name breach', [b.overCap.length, b.breaches.some(x => /N225MC/.test(x))], [0, false]);
+}
 console.log(fail ? `\n❌ ${fail} FAILED (${pass} passed)` : `\n✅ ALL ${pass} PASSED`);
 process.exit(fail ? 1 : 0);

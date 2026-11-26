@@ -15,6 +15,8 @@ const H = ['2026-09-07', '2026-11-26', '2026-12-25'];
   eq('the micro is its own family with CL as parent', [familyOf('MCL=F'), parentFamily('MCL'), FAMILIES.CL.micro], ['MCL', 'CL', 'MCL']);
   eq('a stock is not a family', [familyOf('WTI'), familyOf('QQQ'), familyOf(''), familyOf(null)], [null, null, null, null]);
   eq('index families are the market', [isIndexFamily('ES'), isIndexFamily('MES'), isIndexFamily('MNQ'), isIndexFamily('NKD'), isIndexFamily('CL'), isIndexFamily('GC'), isIndexFamily('6J')], [true, true, true, true, false, false, false]);
+  eq('the OSE micro Nikkei is the market too, ¥10 a point, priced in yen', [isIndexFamily('N225MC'), familyOf("N225MC Mar'27 @OSE.JPN"), MULTIPLIER.N225MC, FAMILIES.N225MC.currency], [true, 'N225MC', 10, 'JPY']);
+  eq('it stops trading the business day before the second Friday, with no feed month', [lastTradeDate('N225MC', 2027, 3), monthSymbol('N225MC', 2027, 3)], ['2027-03-11', null]);
   eq('physical delivery where the brief says', [FAMILIES.CL.physical, FAMILIES.MCL.physical, FAMILIES.NG.physical, FAMILIES.GC.physical, FAMILIES.ES.physical, FAMILIES['6J'].physical, FAMILIES.BZ.physical, FAMILIES.ZN.physical], [true, true, true, true, false, false, false, false]);
   eq('COIL is priced through BZ and says so', [parentFamily('COIL'), monthSymbol('COIL', 2026, 12), !!FAMILIES.COIL.note], ['BZ', 'BZZ26.NYM', true]);
   eq('the feed symbol for a month', [monthSymbol('CL', 2026, 11), monthSymbol('MCL', 2026, 12), monthSymbol('ES', 2026, 12), monthSymbol('GC', 2026, 12), monthSymbol('6J', 2026, 12), monthSymbol('ZN', 2026, 12)],
