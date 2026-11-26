@@ -398,6 +398,9 @@ const NLV = 202000;
   ok('…but a note says it is exempt and what governs', qqq.notes.some(n => /QQQ is on the index-ETF exempt list/.test(n) && /portfolio delta target governs/.test(n)));
   eq('SPY is exempt by default too; XLE, SMH, 7709 are not', [isExempt('SPY 2026-10-16 C650'), isExempt('XLE'), isExempt('SMH'), isExempt('7709')], [true, false, false, false]);
   eq('the list is editable', [isExempt('IWM', ['QQQ', 'SPY', 'iwm']), isExempt('QQQ', [])], [true, false]);
+  eq('index futures are exempt on any exchange: NKD and the OSE micro', [isExempt('NKD'), isExempt('N225MC'), isExempt("N225MC Mar'27")], [true, true, true]);
+  const yen = sizeFuture({ family: 'N225MC', price: 57000, atr: 900, nlv: 250000 });
+  eq('a yen-priced future is not sized in dollars', [yen.ok, /JPY/.test(yen.why)], [false, true]);
   const qqqStrict = sizeTrade({ kind: 'option', symbol: 'QQQ 2026-10-16 C730', price: 718.66, atr: 8.5, delta: 0.40, mark: 7.56,
     expiry: '2026-10-16', nlv: N, entered: 3, underlyingShares: 0, underlyingOptions: 0, exempt: [], now: NOW });
   eq('…and with QQQ off the list the same trade flags', qqqStrict.singleName.past, true);
